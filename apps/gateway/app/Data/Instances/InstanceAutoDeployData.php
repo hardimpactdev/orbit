@@ -7,6 +7,7 @@ namespace App\Data\Instances;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\AutomaticDeployState;
+use App\Domain\Instances\Deployment\DevelopmentDeployRetries;
 use App\Models\Instance;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -59,7 +60,7 @@ final class InstanceAutoDeployData extends Data
         return new self(
             eligible: $eligible,
             developmentEligible: $placement === 'production' ? new Optional : $developmentDefault,
-            developmentRetries: $placement === 'production' ? new Optional : ($state['development_retries'] ?? ['manual_after' => 0, 'observed_through' => 0, 'unsettled' => [], 'commits' => []]),
+            developmentRetries: $placement === 'production' ? new Optional : app(DevelopmentDeployRetries::class)->read($instance, is_string($state['head'] ?? null) ? [$state['head']] : []),
             resumedAfter: $instance->auto_deploy_resumed_after,
             blocked: $history === null ? [] : array_values(array_unique([...$automatic->blocked(), ...$history->rolledAway])),
             historyVersion: $history?->version,

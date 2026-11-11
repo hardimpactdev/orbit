@@ -28,10 +28,11 @@ sequenceDiagram
       %%> What it does:
       %%> - shares the retained behavior identity and development state; keeps pending admissions, backoff and retry limits
       %%> - reads a retained pending Operation by ID; ended Operations settle for their admitted commit; success reports up_to_date only when the current runtime seed matches
-      %%> - failed, cancelled, interrupted and timed-out Operations share one per-commit retry ledger in the Gateway development projection, independent of prunable history: ten minutes, twenty minutes, then stop after three failures; null-commit history retains the admission pin
+      %%> - failed, cancelled, interrupted and timed-out Operations share one per-commit retry table keyed by Instance and SHA in the Gateway development projection, independent of prunable history: ten minutes, twenty minutes, then stop after three failures; null-commit history retains the admission pin
       %%> - retains stopped SHAs without an age cutoff; receipt and history evidence count each attempt once, including after replay and pruning
       %%> - a lost admission response follows the development receipt by key; an absent admission is fenced before abandoning the intent and applying the same retry accounting
       %%> - toggling auto_deploy off and on never resets the retry clock, failure count or pending intent; only actual manual deployment history supplies a reset boundary
+      %%> - reads and publishes only the current head, pending SHA and fresh evidence records; Instance responses include only the recorded head, never the retry table
       %%> - a newer manual deployment clears terminal pending intent and accounting before its history boundary; evaluate the current runtime seed and head in that tick
       %%> - an old terminal checkpoint or failure cannot block a newer green head while the Instance is eligible and auto_deploy is on
       %%> - a finished Swamp run stays deploying until Gateway reconciliation or budget expiry ends its Operation; ineligibility preserves admitted identity until recovery

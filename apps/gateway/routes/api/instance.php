@@ -100,6 +100,7 @@ Route::middleware([
     Route::get('instances/{instance}/deployment-source/checks', [InstanceDeploymentSourceController::class, 'checks'])->name('instance:deployment-source:checks');
     Route::post('instances/{instance}/deploy/automatic/resolve', [InstanceDeploymentsController::class, 'resolve'])->name('instance:deploy:automatic:resolve');
     Route::get('instances/{instance}/deploy/automatic/receipt', [InstanceDeploymentsController::class, 'receipt'])->name('instance:deploy:automatic:receipt');
+    Route::get('instances/{instance}/auto-deploy/retries', [InstanceAutomaticDeployPolicyController::class, 'retries'])->name('instance:auto-deploy:retries');
     Route::put('instances/{instance}/auto-deploy/policy', [InstanceAutomaticDeployPolicyController::class, 'update'])->name('instance:auto-deploy:policy:update');
     Route::post('instances/{instance}/deploy/automatic', [InstanceDeploymentsController::class, 'automatic'])->name('instance:deploy:automatic');
     Route::post('instances/{instance}/deploy/automatic/development', [InstanceDeploymentsController::class, 'automaticDevelopment'])->name('instance:deploy:automatic:development');

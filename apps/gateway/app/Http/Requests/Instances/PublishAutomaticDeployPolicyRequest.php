@@ -23,7 +23,7 @@ final class PublishAutomaticDeployPolicyRequest extends FormRequest
             'development_retries.observed_through' => ['required_with:development_retries', 'integer', 'min:0'],
             'development_retries.unsettled' => ['present_with:development_retries', 'array', 'max:50'],
             'development_retries.unsettled.*' => ['integer', 'min:1', 'distinct'],
-            'development_retries.commits' => ['present_with:development_retries', 'array'],
+            'development_retries.commits' => ['present_with:development_retries', 'array', 'max:50'],
             'development_retries.commits.*' => ['array:commit,attempts,last_failure_at,stopped,evidence,reset_operation_id,reset_after,reset_at', 'required_array_keys:commit,attempts,last_failure_at,stopped,evidence,reset_after,reset_at'],
             'development_retries.commits.*.commit' => ['required', 'string', 'distinct', 'regex:/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D'],
             'development_retries.commits.*.attempts' => ['required', 'integer', 'min:0', 'max:3'],

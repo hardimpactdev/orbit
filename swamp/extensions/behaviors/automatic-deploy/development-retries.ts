@@ -20,7 +20,7 @@ const Entry = z.object({
     reset_after: z.number().int().nonnegative().default(0),
     reset_at: z.string().datetime({ offset: true }).nullable().default(null),
 });
-/** Stored only in the Gateway development projection, never in the Swamp checkpoint. */
+/** A decision-sized view of Gateway per-SHA records and the bounded history cursor. */
 export const DevelopmentRetries = z.object({
     manual_after: z.number().int().nonnegative().default(0),
     observed_through: z.number().int().nonnegative().default(0),

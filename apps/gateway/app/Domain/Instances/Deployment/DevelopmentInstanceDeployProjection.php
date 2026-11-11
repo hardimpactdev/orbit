@@ -66,11 +66,7 @@ final readonly class DevelopmentInstanceDeployProjection implements DirectOperat
                 $historyId = $row->id;
                 $locked->update(['state' => [...($locked->state ?? []), 'deployment_id' => $historyId]]);
                 if (! in_array($locked->triggered_by, AutomaticDeployHistory::Triggers, true)) {
-                    $ledger = ValidatedData::object($instance->auto_deploy_state['development_retries'] ?? []);
-                    $instance->auto_deploy_state = [...($instance->auto_deploy_state ?? []), 'development_retries' => [
-                        ...$ledger, 'manual_after' => $historyId, 'observed_through' => $ledger['observed_through'] ?? 0,
-                        'unsettled' => [], 'commits' => [],
-                    ]];
+                    app(DevelopmentDeployRetries::class)->manual($instance, $historyId);
                     $instance->save();
                 }
             }
@@ -107,17 +103,8 @@ final readonly class DevelopmentInstanceDeployProjection implements DirectOperat
             }
             $row = InstanceDeployment::query()->where('instance_id', $instance->id)->findOrFail($historyId);
             $this->history->recordNative($row, $status, ValidatedData::nullableString($data['error_code'] ?? null), $facts);
-            if ($status === 'succeeded' && is_array($instance->auto_deploy_state['development_retries'] ?? null)) {
-                $state = $instance->auto_deploy_state;
-                $ledger = ValidatedData::object($state['development_retries']);
-                foreach ($ledger['commits'] ?? [] as $index => $entry) {
-                    if ($entry['commit'] === $facts['commit']) {
-                        $ledger['commits'][$index] = [...$entry, 'attempts' => 0, 'last_failure_at' => null, 'stopped' => false,
-                            'evidence' => [], 'reset_operation_id' => $locked->id, 'reset_after' => $historyId, 'reset_at' => now()->toIso8601String()];
-                    }
-                }
-                $instance->auto_deploy_state = [...$state, 'development_retries' => $ledger];
-                $instance->save();
+            if ($status === 'succeeded' && is_string($facts['commit'])) {
+                app(DevelopmentDeployRetries::class)->succeeded($instance, $facts['commit'], $locked->id, $historyId);
             }
 
             return $projected;

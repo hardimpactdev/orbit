@@ -31,9 +31,7 @@ final class AutomaticDeployPublicationData extends Data
     public function projection(): array
     {
         $projection = array_diff_key($this->toArray(), array_flip(['resumed_after', 'last_deployment_id', 'history_version', 'route_operation_id']));
-        if ($this->developmentRetries === null) {
-            unset($projection['development_retries']);
-        }
+        unset($projection['development_retries']);
 
         return $projection;
     }

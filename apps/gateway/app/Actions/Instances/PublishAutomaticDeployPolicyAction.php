@@ -10,6 +10,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
+use App\Domain\Instances\Deployment\DevelopmentDeployRetries;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -45,6 +46,9 @@ final readonly class PublishAutomaticDeployPolicyAction
             }
             if ($data->developmentRetries !== null && ! $instance->placedOnAppDev()) {
                 throw new ResourceOperationException('instance.auto_deploy_development_required', 'Development retries require development placement.', 409);
+            }
+            if ($data->developmentRetries !== null) {
+                app(DevelopmentDeployRetries::class)->publish($instance, $data->developmentRetries);
             }
             $instance->auto_deploy_state = [...($instance->auto_deploy_state ?? []), ...$data->projection()];
             $instance->save();

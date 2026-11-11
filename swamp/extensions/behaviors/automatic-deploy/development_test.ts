@@ -63,8 +63,30 @@ function fixture() {
         let data: unknown;
         if (path === "/api/v1/nodes") data = [{ id: 9, roles: ["app-dev"] }];
         else if (path === "/api/v1/instances") data = listed;
-        else if (path === "/api/v1/instances/7") data = instance;
-        else if (path.endsWith("/deployments")) data = history;
+        else if (path === "/api/v1/instances/7") {
+            const ledger = instance.auto_deploy.development_retries;
+            data = {
+                ...instance,
+                auto_deploy: {
+                    ...instance.auto_deploy,
+                    development_retries: {
+                        ...ledger,
+                        commits:
+                            ((ledger.commits ?? []) as { commit: string }[])
+                                .filter((e) => e.commit === source.head),
+                    },
+                },
+            };
+        } else if (path.includes("/auto-deploy/retries?")) {
+            const commits = new URL(path, "https://gateway.test").searchParams
+                .getAll("commits[]");
+            const ledger = instance.auto_deploy.development_retries;
+            data = {
+                ...ledger,
+                commits: ((ledger.commits ?? []) as { commit: string }[])
+                    .filter((e) => commits.includes(e.commit)),
+            };
+        } else if (path.endsWith("/deployments")) data = history;
         else if (path.endsWith("/head")) data = source;
         else if (path.includes("/deployment-source/checks?")) {
             data = { gate: instance.auto_deploy.gate, runs: checks };
@@ -86,9 +108,25 @@ function fixture() {
                 (body as { development_retries?: Record<string, unknown> })
                     .development_retries;
             if (ledger) {
-                instance.auto_deploy.development_retries = structuredClone(
-                    ledger,
-                );
+                const previous = instance.auto_deploy.development_retries;
+                const entries = (previous.commits ?? []) as {
+                    commit: string;
+                }[];
+                const updates = ledger.commits as { commit: string }[];
+                instance.auto_deploy.development_retries = structuredClone({
+                    ...ledger,
+                    commits: Number(ledger.manual_after) >
+                            Number(previous.manual_after ?? 0)
+                        ? updates
+                        : [
+                            ...entries.map((e) =>
+                                updates.find((u) => u.commit === e.commit) ?? e
+                            ),
+                            ...updates.filter((u) =>
+                                !entries.some((e) => e.commit === u.commit)
+                            ),
+                        ],
+                });
             }
             data = {};
         } else throw new Error("Unexpected HTTP request");
@@ -2044,6 +2082,14 @@ for (const intent of matrixIntents) {
                 (f.memory.get("development-7")?.unrecorded_failures as {
                     commit: string;
                 }[]).filter((r) => r.commit === B).length,
+                0,
+            );
+            // Dropped checkpoint evidence remains authoritative in the per-SHA row.
+            assertEquals(
+                (f.instance.auto_deploy.development_retries.commits as {
+                    commit: string;
+                    attempts: number;
+                }[]).find((e) => e.commit === B)?.attempts,
                 1,
             );
         });
@@ -2341,4 +2387,119 @@ Deno.test("matrix durable-success-reset / replay-old-no-row-failure", async () =
         0,
     );
     assertEquals(f.starts.length, 1);
+});
+
+Deno.test("thousands of stopped SHAs do not enlarge retry reads or publications", async () => {
+    const f = fixture();
+    const entry = {
+        attempts: 3,
+        last_failure_at: now,
+        stopped: true,
+        evidence: [
+            { key: "one", deployment_id: null },
+            { key: "two", deployment_id: null },
+            { key: "three", deployment_id: null },
+        ],
+        reset_operation_id: 0,
+        reset_after: 0,
+        reset_at: null,
+    };
+    const commits = [{ commit: B, ...entry }];
+    f.instance.auto_deploy.development_retries = {
+        manual_after: 0,
+        observed_through: 0,
+        unsettled: [],
+        commits,
+    };
+    await f.run();
+    const before = f.requests.findLast((r) => r.method === "PUT")!.body;
+    commits.push(...Array.from({ length: 4000 }, (_, i) => ({
+        commit: (i + 1).toString(16).padStart(40, "0"),
+        ...entry,
+    })));
+    // The fixture simulates row storage separately from the filtered HTTP view.
+    f.instance.auto_deploy.development_retries.commits = commits;
+    f.requests.length = 0;
+    await f.run();
+    const after = f.requests.findLast((r) => r.method === "PUT")!.body;
+    assertEquals(after, before);
+    assertEquals(JSON.stringify(after).length, JSON.stringify(before).length);
+    const lookup = f.requests.find((r) => r.path.includes("/retries?"))!;
+    assertEquals(
+        new URL(lookup.path, "https://gateway.test").searchParams.getAll(
+            "commits[]",
+        ),
+        [B],
+    );
+    assertEquals(f.starts, []);
+    assertEquals(f.memory.get("development-7")?.result, "commit_failed");
+    assertEquals(
+        (f.instance.auto_deploy.development_retries.commits as unknown[])
+            .length,
+        4001,
+    );
+    f.source.head = "c".repeat(40);
+    await f.run();
+    assertEquals(f.starts.length, 1);
+    assertEquals(f.memory.get("development-7")?.unrecorded_failures, []);
+});
+
+Deno.test("old checkpoints use bounded batches and a partial publication replays without losing or doubling failures", async () => {
+    const f = fixture();
+    const evidence = Array.from({ length: 55 }, (_, i) => ({
+        key: `legacy.${i + 1}`,
+        commit: (i + 1).toString(16).padStart(40, "0"),
+        deployment_id: i < 50 ? i + 1 : null,
+        manual_after: 0,
+        finished_at: now,
+    }));
+    f.memory.set("development-7", { unrecorded_failures: evidence });
+    f.history.push(
+        ...evidence.slice(0, 50).map((e, i) => ({
+            ...failed(i + 1),
+            commit: e.commit,
+        })),
+    );
+    let publications = 0;
+    const failSecond: Http = (method, path, body, key) => {
+        if (method === "PUT" && ++publications === 2) {
+            return Promise.resolve({ status: 503, body: {} });
+        }
+        return f.http(method, path, body, key);
+    };
+    await assertRejects(() =>
+        tickDevelopment(failSecond, f.ctx, f.admissions, now, () => {}, [7])
+    );
+    assertEquals(
+        f.instance.auto_deploy.development_retries.observed_through,
+        0,
+    );
+    assertEquals(f.starts, []);
+    assertEquals(f.memory.get("development-7")?.unrecorded_failures, evidence);
+    await f.run();
+    assertEquals(
+        f.instance.auto_deploy.development_retries.observed_through,
+        50,
+    );
+    const entries = f.instance.auto_deploy.development_retries.commits as {
+        attempts: number;
+    }[];
+    assertEquals(entries.length, 55);
+    assertEquals(entries.every((e) => e.attempts === 1), true);
+    assertEquals(f.memory.get("development-7")?.unrecorded_failures, []);
+    assertEquals(f.starts.length, 1);
+    for (const request of f.requests) {
+        if (request.method === "PUT") {
+            const body = request.body as {
+                development_retries: { commits: unknown[] };
+            };
+            assertEquals(body.development_retries.commits.length <= 50, true);
+        } else if (request.path.includes("/retries?")) {
+            assertEquals(
+                new URL(request.path, "https://gateway.test").searchParams
+                    .getAll("commits[]").length <= 50,
+                true,
+            );
+        }
+    }
 });

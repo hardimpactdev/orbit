@@ -166,13 +166,17 @@ export async function tickDevelopment(
                 current.auto_deploy.policy_owner !== "swamp"
             ) continue;
             const instance = Instance.parse(record);
-            const retries = instance.auto_deploy.development_retries;
-            let savedRetries = JSON.stringify(retries);
+            const cursor = instance.auto_deploy.development_retries;
             let saveRetries: (() => Promise<void>) | undefined;
             let saved = JSON.stringify(state);
             const save = async () => {
                 // Persist retry evidence before dropping or advancing its checkpoint intent.
                 await saveRetries?.();
+                // Other SHAs already live durably in Gateway rows. Keep checkpoint
+                // evidence only for the head or an intent that still needs settling.
+                state.unrecorded_failures = state.unrecorded_failures.filter((
+                    f,
+                ) => f.commit === head || f.commit === state.pending?.commit);
                 if (JSON.stringify(state) === saved) return;
                 handles.set(
                     name,
@@ -189,36 +193,91 @@ export async function tickDevelopment(
                     `/api/v1/instances/${id}/deployment-source/head`,
                 ),
             ).head;
+            const relevant = new Set([
+                head,
+                ...(state.pending ? [state.pending.commit] : []),
+                ...state.unrecorded_failures.map((f) => f.commit),
+                ...history.filter((r) =>
+                    r.commit !== null && (r.id > cursor.observed_through ||
+                        cursor.unsettled.includes(r.id))
+                ).map((r) => r.commit!),
+            ]);
+            // Batch transport, never retention: old checkpoints can name many
+            // SHAs, but neither a lookup nor a publication grows with that set.
+            const commits = [...relevant];
+            const retries = DevelopmentRetries.parse({
+                ...cursor,
+                commits: [],
+            });
+            for (let offset = 0; offset < commits.length; offset += 50) {
+                const query = new URLSearchParams();
+                for (const commit of commits.slice(offset, offset + 50)) {
+                    query.append("commits[]", commit);
+                }
+                const selected = DevelopmentRetries.parse(
+                    await request(
+                        "GET",
+                        `/api/v1/instances/${id}/auto-deploy/retries?${query}`,
+                    ),
+                );
+                Object.assign(retries, {
+                    ...selected,
+                    commits: [...retries.commits, ...selected.commits],
+                });
+            }
+            const observedCursor = {
+                manual_after: retries.manual_after,
+                observed_through: retries.observed_through,
+                unsettled: [...retries.unsettled],
+            };
+            let savedRetries = JSON.stringify(retries);
             const project = async (
                 result: string,
                 routeOperationId: number | null = null,
                 commit = head,
             ) => {
-                return await request(
-                    "PUT",
-                    `/api/v1/instances/${id}/auto-deploy/policy`,
-                    {
-                        development_retries: retries,
-                        resumed_after: instance.auto_deploy.resumed_after,
-                        last_deployment_id: Math.max(
-                            0,
-                            ...history.map((r) => r.id),
-                        ),
-                        history_version: instance.auto_deploy.history_version,
-                        result,
-                        commit,
-                        head,
-                        since: state.since ?? now,
-                        error_code: result === "failed"
-                            ? "deployment.automatic_failed"
-                            : null,
-                        message: null,
-                        pause: null,
-                        ...(routeOperationId === null
-                            ? {}
-                            : { route_operation_id: routeOperationId }),
-                    },
-                );
+                for (
+                    let offset = 0;
+                    offset < Math.max(1, retries.commits.length);
+                    offset += 50
+                ) {
+                    const last = offset + 50 >= retries.commits.length;
+                    await request(
+                        "PUT",
+                        `/api/v1/instances/${id}/auto-deploy/policy`,
+                        {
+                            // Advance the history cursor only after every row is durable.
+                            // A partial publication reimports history through row deduplication.
+                            development_retries: {
+                                ...(last ? retries : observedCursor),
+                                manual_after: retries.manual_after,
+                                commits: retries.commits.slice(
+                                    offset,
+                                    offset + 50,
+                                ),
+                            },
+                            resumed_after: instance.auto_deploy.resumed_after,
+                            last_deployment_id: Math.max(
+                                0,
+                                ...history.map((r) => r.id),
+                            ),
+                            history_version:
+                                instance.auto_deploy.history_version,
+                            result,
+                            commit,
+                            head,
+                            since: state.since ?? now,
+                            error_code: result === "failed"
+                                ? "deployment.automatic_failed"
+                                : null,
+                            message: null,
+                            pause: null,
+                            ...(routeOperationId === null
+                                ? {}
+                                : { route_operation_id: routeOperationId }),
+                        },
+                    );
+                }
             };
             saveRetries = async () => {
                 if (JSON.stringify(retries) === savedRetries) return;
