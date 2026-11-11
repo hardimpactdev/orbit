@@ -69,11 +69,8 @@ def read_entries(executable, schedule_id, lines):
     truncated = False
     process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     try:
-        while True:
+        for raw in iter(lambda: process.stdout.readline(RECORD_LIMIT + 1), b''):
             # One JSON line is one entry, including a multiline message. Never accumulate an unbounded entry.
-            raw = process.stdout.readline(RECORD_LIMIT + 1)
-            if not raw:
-                break
             if len(raw) > RECORD_LIMIT or not raw.endswith(b'\n'):
                 truncated = True
                 break
