@@ -139,3 +139,9 @@ A proof candidate must install its own frozen observer pin after every base rest
 Instance container network ACLs live in Incus project `default`, even when the container lives in `orbit-instances`. Destroy removes the container first, then its ACL in the default project. Test both the project and a second removal with zero changes.
 
 A Process move disables the source units before copying. Render container units from a copy of their records and save the new paths only after cutover. A failed move removes the new container before restoring source units, so two runtimes never run the same writer.
+
+A retirement preflight is an early warning, not a deletion barrier. Retain the whole old checkout with a same-filesystem rename so tag-only commits, expired stash reflogs, nested repositories and worktrees added after the final listing keep their Git metadata. Never infer that recursive deletion is safe from a path match or a worktree listing.
+
+A migration overlay archive omits unchanged tracked symlinks: they arrive in the branch bundle. Use the checkout scan only for early refusal. Derive and apply rewrites inside the container from the exact copied tree after the bundle and overlay, mapping old-checkout targets without reading the host. This also keeps non-UTF-8 names out of Incus JSON arguments. Check dependency package links without entering installed package trees; never change source links.
+
+When resolving symlinks, retain directory requirements from raw targets ending in `/` or `/.` at every hop. Path normalization removes those suffixes and can turn an `ENOTDIR` target into a valid file link.

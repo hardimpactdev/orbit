@@ -16,7 +16,7 @@ orbit node:converge <node> [--base | --roles=a,b] [--idempotency-key=KEY] [--jso
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--base` | off | Apply only Orbit's own layer: the agent, CLI, Orbit-owned files and units. |
+| `--base` | off | Apply only Orbit's own layer: the agent, the Node’s CLI state, Orbit-owned files and units. |
 | `--roles=a,b` | all recorded roles | Apply the base plus only the named roles already assigned to the Node. |
 | `--idempotency-key=KEY` | none | Use the shared [keyed-start contract](/reference/operations#retry-a-start-with-a-key). |
 | `--json` | off | Follow the shared [CLI input and output standard](/reference/cli-ux#input-and-output-modes). |
@@ -36,7 +36,7 @@ Access follows the node family's [shared authority rule](/cli/node) (`NodeAccess
 Every run applies these phases in order, idempotently and within the selected scope:
 
 1. **Input.** Prepare the recorded desired state for this attempt.
-2. **Agent.** Apply the Node agent, Orbit CLI, Orbit-owned files and units at the release's versions, and the [kernel policy](/reference/node-provisioning#kernel-policy). Restart services only when their managed files change.
+2. **Agent.** Apply the Node agent, Orbit-owned files and units at the release's versions, and the [kernel policy](/reference/node-provisioning#kernel-policy). Keep the packaged CLI only on [CI runner Nodes](/reference/node-provisioning#orbit-cli); remove the managed CLI link, versioned binaries and root profile on other Nodes. These Nodes need no CLI release. Restart services only when their managed files change.
 3. **Software.** Read the selected software pins from `recipe.json`, install them and hold the packages at those pins.
 4. **Roles.** Repair the selected roles' configuration.
 5. **Tools.** Apply recorded Tools within scope. A failed Tool is marked failed on its own record; other Tools continue, and that Tool failure alone does not fail the Operation. When the Tool helper itself cannot run on the Swamp Node, the phase fails and marks no Tool failed ([converge the Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint)).

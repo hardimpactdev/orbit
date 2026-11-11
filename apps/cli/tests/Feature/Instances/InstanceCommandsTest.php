@@ -685,6 +685,22 @@ describe('instance:show', function (): void {
             ->assertExitCode(0);
     });
 
+    it('shows retained Git paths and times in human and JSON output', function (): void {
+        $payload = instance_payload();
+        $payload['retained_git_path'] = '/home/orbit/apps/orbit-docs/dev.orbit-retired-git';
+        $payload['retained_git_at'] = '2026-11-10T19:00:00+00:00';
+        MockClient::global([ShowInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
+
+        expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
+        expect(instance_source_text(Artisan::output()))
+            ->toContain('Retained Git /home/orbit/apps/orbit-docs/dev.orbit-retired-git', 'Git retention started 2026-11-10T19:00:00+00:00');
+
+        expect(Artisan::call('instance:show', ['instance' => '5', '--json' => true]))->toBe(0);
+        $data = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($data['retained_git_path'])->toBe($payload['retained_git_path'])
+            ->and($data['retained_git_at'])->toBe($payload['retained_git_at']);
+    });
+
     it('shows Instance source details for humans', function (): void {
         $payload = instance_payload();
         $payload['deployment_branch'] = 'release/next';

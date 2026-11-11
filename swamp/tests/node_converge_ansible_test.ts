@@ -82,16 +82,16 @@ Deno.test("peer DNS routing domains stay literal and a second application change
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
-for (const state of ["matching", "unavailable", "plan error", "invalid digest"]) {
-    Deno.test(`input ${state === "matching" ? "accepts the matching" : "rejects the " + state} base CLI without writes`, async () => {
+for (const state of ["matching", "unavailable", "plan error", "invalid digest", "no caller"]) {
+    Deno.test(`input ${state === "no caller" ? "needs no" : state === "matching" ? "accepts the matching" : "rejects the " + state} base CLI without writes`, async () => {
         const plays = parse(await Deno.readTextFile(new URL("../ansible/operation-node-converge.yml", import.meta.url))) as Array<{ tasks: Array<Record<string, unknown>> }>;
-        const input = plays[1].tasks.find((task) => task.name === "Require the pinned Linux platform")!;
+        const input = plays[1].tasks.filter((task) => ["Require the pinned Linux platform", "Require the recorded CLI pin only for a CLI caller"].includes(task.name as string));
         await localPlay({
             recipe, ansible_facts: { distribution: "Ubuntu", distribution_version: recipe.ubuntu.release, architecture: "x86_64" },
             secrets: { agent_verifier: "b".repeat(64) },
             intent: {
                 agent: { url: "https://fixtures.invalid/agent", sha256: "a".repeat(64) },
-                cli: {
+                cli: state === "no caller" ? null : {
                     skip_reason: state === "unavailable" ? "release_unavailable" : null,
                     plan_error: state === "plan error" ? "fleet.cli_plan_failed" : null,
                     release: state === "unavailable" ? null : { url: "https://fixtures.invalid/cli", sha256: state === "invalid digest" ? "invalid" : "c".repeat(64) },
@@ -99,8 +99,8 @@ for (const state of ["matching", "unavailable", "plan error", "invalid digest"])
             },
         }, [
             { name: "Record no input rejection yet", "ansible.builtin.set_fact": { rejected: false } },
-            { name: "Validate actual base input", block: [input], rescue: [{ name: "Record the input rejection", "ansible.builtin.set_fact": { rejected: true } }] },
-            { name: "Require the correct input outcome", "ansible.builtin.assert": { that: `rejected == ${state === "matching" ? "false" : "true"}`, quiet: true } },
+            { name: "Validate actual base input", block: input, rescue: [{ name: "Record the input rejection", "ansible.builtin.set_fact": { rejected: true } }] },
+            { name: "Require the correct input outcome", "ansible.builtin.assert": { that: `rejected == ${["matching", "no caller"].includes(state) ? "false" : "true"}`, quiet: true } },
         ]);
     });
 }

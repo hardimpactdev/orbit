@@ -198,6 +198,7 @@ final readonly class ProcessTargetResolver
                 checkoutPath: $directory,
                 instance: $instance,
                 environmentFile: "{$directory}/.env",
+                routeDomain: $this->developmentRouteDomain($instance),
                 container: ['instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name],
             );
         }

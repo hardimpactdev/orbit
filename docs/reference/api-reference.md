@@ -33,6 +33,8 @@ bin/docs-openapi
 
 `composer docs-openapi` runs the same script. `docs/openapi.json` and `docs/docs.json` are ignored build outputs, so nothing compares them with a stored copy. The script fails when the sources disagree with the API contract. Continuous integration and the local candidate gate run it, then `bin/mcp-tools` and `bin/api-fixtures --check`.
 
+`GET /api/v1/conn/environments` and `conn-environment-list` return the six flat Orbit fields described in [Instance servers](/reference/conn#instance-servers). Their nullable types come from `ConnEnvironmentData`; regenerate OpenAPI, the MCP manifest and web API types after changing this response.
+
 The generated `conn-pairing-revoke` tool includes optional `pairing_id`. Its description explains how to retry a revoked pairing whose session still lives. [Conn session cleanup](/reference/conn#session-cleanup) defines selection and failure behavior. Regenerate both OpenAPI and the MCP manifest when this request changes.
 
 Group assistance comments have separate collection and create schemas: `GET /api/v1/tasks/{task}/comments` returns an array of `TaskCommentData`, while POST returns one comment with HTTP 201. POST has no exact-retry 200 response: retries may insert another audit comment. Its 409 response describes the orchestration, group-status, and open-child guards. Keep these operation-specific mappings in `bin/docs-openapi`; [group assistance](/reference/tasks#group-assistance-after-all-children-end) owns the behavior.
@@ -164,3 +166,5 @@ After changing an operation description or response, run `bin/mcp-tools` to refr
 The owned-resource deletion commands are `ai-router:destroy` and `vault:destroy`. Their DELETE endpoints remain `/api/v1/ai-router` and `/api/v1/vault`. The API operation IDs and MCP tools use `ai-router-destroy` and `vault-destroy`.
 
 Automatic Gateway release commands use `gateway:auto-release:{status,enable,disable,resume}` and API operation IDs use `gateway-auto-release-*`. The HTTP paths stay under `/api/v1/gateway/release-automation`.
+
+Instance responses expose nullable `retained_git_path` and `retained_git_at` after [checkout migration](/cli/instance/migrate#retained-git-data). They identify retained Node-side Git data and the time it was retained.

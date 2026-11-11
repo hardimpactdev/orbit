@@ -6,6 +6,7 @@ use App\Actions\Hibernation\ActivateInstanceRuntimeAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceMigrateAction;
 use App\Actions\Operations\ExpireOperationAction;
+use App\Data\Instances\InstanceData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
@@ -13,7 +14,9 @@ use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
+use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
+use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceContainer;
@@ -23,6 +26,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Processes\ProcessOperationAdmission;
+use App\Domain\Processes\VpDevPreset;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
@@ -46,8 +50,10 @@ use App\Models\Project;
 use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 uses(LazilyRefreshDatabase::class);
@@ -571,25 +577,50 @@ describe('the end of a move', function (): void {
             ->and($feature->refresh()->checkout_path)->toBe(InstanceContainer::workspaceOnNode($feature));
     });
 
-    it('keeps an earlier reservation after a refused retirement preflight, and releases only a fresh one', function (bool $retry): void {
+    it('keeps an earlier reservation after a refused retirement preflight, and releases only a fresh one', function (bool $retry, string $code, string $message): void {
         $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
         if ($retry) {
             $previous = migrateStart($default);
             migrateEnd($previous, 'failed', ['ready' => false, 'moved' => false, 'restored' => false, 'failed_step' => 'files']);
         }
         $operation = migrateStart($default);
-        $message = 'Cannot retire checkout "/fixture". Other worktrees (1 total; first 20): ["/detached"]. Changed files (1 total; first 20): [" M index.php"].';
         $result = ['ready' => false, 'moved' => false, 'restored' => true, 'preflight_refused' => true,
-            'failed_step' => 'quiesce', 'error_code' => 'instance.migrate_retirement_blocked', 'error_message' => $message];
+            'failed_step' => 'quiesce', 'error_code' => $code, 'error_message' => $message];
 
         migrateEnd($operation, 'failed', $result);
 
         expect($operation->input['had_runtime_reservation'])->toBe($retry)
             ->and($default->runtime()->exists())->toBe($retry)
             ->and($default->refresh()->checkout_path)->toBe('/home/orbit/apps/tool/default')
-            ->and($operation->refresh()->error_code)->toBe('instance.migrate_retirement_blocked')
+            ->and($operation->refresh()->error_code)->toBe($code)
             ->and($operation->result['error_message'])->toBe($message);
-    })->with(['new move' => false, 'retry after failed restore' => true]);
+    })->with(['new move' => false, 'retry after failed restore' => true])->with([
+        'worktrees or changes' => ['instance.migrate_retirement_blocked', 'Cannot retire checkout "/fixture". Other worktrees (1 total; first 20): ["/detached"].'],
+        'unpushed commits' => ['instance.migrate_unpushed_commits', 'Cannot retire checkout "/fixture". Unpushed branches or detached HEAD (1 total): [{"branch": "spare", "commits": 2}].'],
+        'stashes' => ['instance.migrate_stashes_present', 'Cannot retire checkout "/fixture". Stashes: 2.'],
+    ]);
+
+    it('records a named symlink preflight refusal without changing checkout state or choosing a repair', function (string $reason, string $target): void {
+        $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $operation = migrateStart($default);
+        $checkout = $default->checkout_path;
+        $message = 'Cannot migrate checkout "'.$checkout.'". Unsupported symlinks: '.json_encode([
+            ['path' => 'public/storage', 'target' => $target, 'reason' => $reason],
+            ['path' => 'local-package', 'target' => $target, 'reason' => $reason],
+        ], JSON_THROW_ON_ERROR).'.';
+
+        migrateEnd($operation, 'failed', ['ready' => false, 'moved' => false, 'restored' => true, 'preflight_refused' => true,
+            'failed_step' => 'quiesce', 'error_code' => 'instance.migrate_symlink_unsupported', 'error_message' => $message]);
+
+        expect($operation->input['migrate']['checkout'])->toBe($checkout)
+            ->and($operation->input['container']['repository'])->toBe($checkout)
+            ->and($operation->input['container']['workspace'])->toBe('/srv/workspace')
+            ->and($operation->input['container']['steps'])->toBe([])
+            ->and($operation->refresh()->error_code)->toBe('instance.migrate_symlink_unsupported')
+            ->and($operation->result['error_message'])->toBe($message)
+            ->and($default->refresh()->only(['checkout_path', 'status']))->toBe(['checkout_path' => $checkout, 'status' => InstanceState::Active])
+            ->and($default->runtime()->exists())->toBeFalse();
+    })->with(['external' => ['outside checkout', '/shared/storage'], 'broken' => ['broken', '/missing/other-checkout/storage']]);
 
     it('leaves a checkout Instance as it was when the move failed and restored', function (): void {
         $node = containerDefaultNode();
@@ -646,17 +677,48 @@ describe('the end of a move', function (): void {
             ->and($default->runtime()->first()?->id)->toBe($reserved?->id);
     })->with(['first attempt' => false, 'failed restore retry' => true]);
 
-    it('keeps the Instance in its container when only the removal of the checkout failed', function (): void {
+    it('keeps the Instance in its container when only the removal of the checkout failed', function (string $code): void {
         $node = containerDefaultNode();
         $default = migrateCheckout(containerDefaultProject(), $node);
         $operation = migrateStart($default);
 
         migrateEnd($operation, 'failed', ['ready' => false, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40),
-            'failed_step' => 'retire', 'error_code' => 'instance.migrate_retire_failed']);
+            'failed_step' => 'retire', 'error_code' => $code, 'error_message' => 'Retirement refused without changing the source.']);
 
         expect($default->refresh()->checkout_path)->toBe(InstanceContainer::workspaceOnNode($default))
             ->and(InstanceRuntime::query()->where('instance_id', $default->id)->value('seed_commit'))->toBe(str_repeat('d', 40))
-            ->and($operation->refresh()->status->value)->toBe('failed');
+            ->and($operation->refresh()->status->value)->toBe('failed')
+            ->and($operation->error_code)->toBe($code)
+            ->and($operation->result['error_message'])->toBe('Retirement refused without changing the source.');
+    })->with(['instance.migrate_retire_failed', 'instance.migrate_retirement_blocked', 'instance.migrate_unpushed_commits', 'instance.migrate_stashes_present']);
+
+    it('records and exposes retained Git after retirement, including when a later retirement fails', function (bool $failed): void {
+        $default = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        expect(InstanceData::fromModel($default)->toArray())->toMatchArray(['retained_git_path' => null, 'retained_git_at' => null]);
+        $operation = migrateStart($default);
+        $path = '/home/orbit/apps/tool/default.orbit-retired-git';
+        $at = '2026-11-10T19:00:00+00:00';
+
+        migrateEnd($operation, $failed ? 'failed' : 'succeeded', [
+            'ready' => ! $failed, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40),
+            'retained_git_path' => $path, 'retained_git_at' => $at,
+            ...($failed ? ['failed_step' => 'retire', 'error_code' => 'instance.migrate_retire_failed'] : []),
+        ]);
+
+        expect($default->refresh()->retained_git_path)->toBe($path)
+            ->and($default->retained_git_at?->toIso8601String())->toBe($at)
+            ->and(InstanceData::fromModel($default)->toArray())->toMatchArray(['retained_git_path' => $path, 'retained_git_at' => $at]);
+    })->with(['completed retirement' => false, 'later retirement failed' => true]);
+
+    it('reverses the retained Git columns without touching Node data', function (): void {
+        $migration = require database_path('migrations/2027_02_04_000001_add_retained_git_to_instances.php');
+        $migration->down();
+        expect(Schema::hasColumn('instances', 'retained_git_path'))->toBeFalse()
+            ->and(Schema::hasColumn('instances', 'retained_git_at'))->toBeFalse();
+
+        $migration->up();
+        expect(Schema::hasColumn('instances', 'retained_git_path'))->toBeTrue()
+            ->and(Schema::hasColumn('instances', 'retained_git_at'))->toBeTrue();
     });
 
     it('refuses a succeeded run that does not prove the move', function (array $result): void {
@@ -812,7 +874,47 @@ function migrationWorker(Instance $instance, string $name = 'worker', string $de
             'environment' => ['QUEUE_TOKEN' => 'migration-process-secret']]]);
 }
 
+/** The supported preset as recorded on checkout Nodes, including the surveyed literal-port command. */
+function migrationVpDev(Instance $instance, string $desired = 'running', bool $surveyed = false, string $name = 'vite'): Process
+{
+    $instance->update(['vite_port' => 5195]);
+    $process = migrationWorker($instance, $name, $desired);
+    $process->update(['restart_policy' => 'on-failure', 'runtime_config' => [
+        'preset' => 'vp-dev',
+        'command' => $surveyed
+            ? ['/usr/bin/env', '-u', 'VITE_DEV_SERVER_CERT', '-u', 'VITE_DEV_SERVER_KEY', '/home/orbit/.vite-plus/bin/vp', 'dev', '--host=127.0.0.1', '--port=5195', '--strictPort']
+            : VpDevPreset::command(),
+        'environment_file' => $instance->checkout_path.'/.env',
+        'environment' => ['QUEUE_TOKEN' => 'migration-process-secret', 'CACHE_PATH' => $instance->checkout_path.'/storage/cache'],
+    ]]);
+
+    return $process;
+}
+
 describe('Processes moving into the container', function (): void {
+    it('reads Process records once per unit, environment or source render', function (string $render): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        migrationVpDev($instance);
+        migrationWorker($instance);
+        $operation = migrateStart($instance);
+        $processes = app(ContainerProcesses::class);
+
+        DB::enableQueryLog();
+        try {
+            $result = match ($render) {
+                'units' => $processes->units($instance),
+                'environments' => $processes->environments($instance, $operation->input['container']['processes']),
+                'source' => $processes->source($instance),
+            };
+            $reads = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'from "processes"'));
+            expect($result)->not->toBeEmpty();
+            expect($reads)->toHaveCount(1);
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+    })->with(['units', 'environments', 'source']);
+
     it('keeps existing Process ids and desired states, rendering their workspace and delivering values only through the vault', function (): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
         $running = migrationWorker($instance);
@@ -901,16 +1003,200 @@ describe('Processes moving into the container', function (): void {
             ->and($worker->refresh()->retired_runtime?->value)->toBe('docker');
     });
 
-    it('refuses existing Node-bound presets before migration, including stopped ones', function (string $desired): void {
-        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
-        $instance->update(['vite_port' => 5173]);
-        $worker = migrationWorker($instance, 'vite', $desired);
-        $worker->update(['runtime_config' => [...$worker->runtime_config, 'preset' => 'vp-dev']]);
+    it('carries the preset identity and desired state through the shared Process path', function (string $desired, bool $surveyed, ?int $version): void {
+        $instance = migrateCheckout(containerDefaultProject(ProjectType::LaravelApp, '8.5'), containerDefaultNode());
+        $instance->update(['selected_php_version' => '8.5', 'source_is_laravel' => true, 'root' => 'public']);
+        $route = Route::query()->create(['kind' => 'app', 'project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'provenance' => 'explicit',
+            'publication' => 'private', 'domain' => 'default.tool.test', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+        $route->update(['status' => 'active', 'sites_published' => true]);
+        app()->instance(LeafCertificateSigner::class, new class implements LeafCertificateSigner
+        {
+            public function rootCertificate(): string
+            {
+                return 'root-certificate';
+            }
+        });
+        $preset = migrationVpDev($instance, $desired, $surveyed);
+        if ($version !== null) {
+            $preset->update(['runtime_config' => [...$preset->runtime_config, 'preset_version' => $version]]);
+        }
+        $preset->update(['working_directory' => $instance->checkout_path.'/frontend']);
+        $vault = migrateVault();
 
-        expect(containerRefusal(fn () => migrateStart($instance)))->toBe('process.target_unsupported')
-            ->and($instance->runtime()->exists())->toBeFalse()
-            ->and(Operation::query()->count())->toBe(0);
+        $operation = migrateStart($instance);
+        $run = app(InstanceMigrateProjection::class)->input($operation);
+        $unit = $run['intent']['container']['processes'][0];
+
+        expect($unit)->toMatchArray(['id' => $preset->id, 'name' => "orbit-process-{$preset->id}-vite.service", 'desired' => $desired]);
+        expect($unit['content'])->toContain("User=orbit\n", "WorkingDirectory=/srv/workspace/frontend\n", '"/opt/orbit-runtime/current/bin/vp" "dev" "--host=0.0.0.0" "--port=5195" "--strictPort" "--base=/__orbit/vite/"')
+            ->not->toContain('/etc/orbit/vite/', '/home/orbit/.vite-plus/', '--host=127.0.0.1');
+        expect($unit['content'])->toContain('Environment=ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite',
+            'Environment=ORBIT_DEV_SERVER_HOST=default.tool.test', 'Environment=ORBIT_DEV_SERVER_PATH=/__orbit/vite', 'Environment=ORBIT_DEV_SERVER_PORT=5195');
+        expect($run['intent']['migrate']['processes'][0])->toMatchArray(['name' => $unit['name'], 'desired' => $desired]);
+        expect(json_encode($run['intent']))->not->toContain('migration-process-secret');
+        expect(collect($vault->puts)->firstWhere('key', 'instance-migrate-processes-'.$operation->id)['value'])
+            ->toContain('migration-process-secret', '/srv/workspace/storage/cache');
+        expect($preset->refresh()->working_directory)->toBe($instance->checkout_path.'/frontend');
+
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+
+        expect($preset->refresh()->runtime_config)->toMatchArray(['preset' => 'vp-dev', 'environment_file' => '/srv/workspace/.env']);
+        expect($preset->working_directory)->toBe('/srv/workspace/frontend')
+            ->and($preset->desired_state->value)->toBe($desired)
+            ->and($preset->systemd_activation_hash)->toBe(hash('sha256', $unit['content']));
+        expect($instance->refresh()->vite_port)->toBe(5195);
+        expect(Process::query()->where('owner_id', $instance->id)->count())->toBe(1);
+    })->with([
+        'catalogue running' => ['running', false, null], 'catalogue stopped' => ['stopped', false, null],
+        'surveyed running' => ['running', true, null], 'surveyed stopped' => ['stopped', true, null],
+        'explicit known version' => ['running', false, 1],
+    ]);
+
+    it('keeps the preset default environment file when the stored option is absent or null', function (bool $missing): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $preset = migrationVpDev($instance);
+        $config = $preset->runtime_config;
+        $config['environment_file'] = null;
+        if ($missing) {
+            unset($config['environment_file']);
+        }
+        $preset->update(['runtime_config' => $config]);
+
+        $operation = migrateStart($instance);
+
+        expect($operation->input['container']['processes'][0]['content'])->toContain("EnvironmentFile=-/srv/workspace/.env\n", '"ORBIT_DEV_SERVER_PORT=5195"');
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        expect($preset->refresh()->runtime_config['environment_file'])->toBe('/srv/workspace/.env');
+    })->with(['missing' => true, 'null' => false]);
+
+    it('refuses unsupported preset intent before reserving a runtime or stopping a Process', function (string $change, string $code, string $reason): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $preset = migrationVpDev($instance, 'stopped');
+        $config = $preset->runtime_config;
+        match ($change) {
+            'unknown preset' => $config['preset'] = 'future-dev',
+            'unknown version' => $config['preset_version'] = 99,
+            'null version' => $config['preset_version'] = null,
+            'custom command' => $config['command'] = ['/usr/bin/env', 'node', 'worker.js'],
+            'external cwd' => $preset->working_directory = '/opt/external-app',
+            'prefix sibling cwd' => $preset->working_directory = $instance->checkout_path.'-other',
+            'traversal cwd' => $preset->working_directory = $instance->checkout_path.'/../other',
+            'external env file' => $config['environment_file'] = '/etc/private/app.env',
+            'traversal env file' => $config['environment_file'] = $instance->checkout_path.'/../private.env',
+            'external env value' => $config['environment']['CACHE_PATH'] = '/opt/private/cache',
+            'unsupported options' => $config['user'] = 'root',
+        };
+        $preset->runtime_config = $config;
+        $preset->save();
+
+        try {
+            migrateStart($instance);
+            $this->fail('The unsupported Process was admitted.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe($code);
+            expect($exception->getMessage())->toContain((string) $preset->id, $preset->name, $reason);
+        }
+
+        expect($instance->runtime()->exists())->toBeFalse();
+        expect(Operation::query()->count())->toBe(0);
+        expect($preset->refresh()->systemd_activation_hash)->toBe('old-host-hash')
+            ->and($preset->desired_state->value)->toBe('stopped');
+    })->with([
+        'unknown preset' => ['unknown preset', 'process.container_preset_unsupported', 'preset'],
+        'unknown version' => ['unknown version', 'process.container_preset_unsupported', 'version'],
+        'null version' => ['null version', 'process.container_preset_unsupported', 'version'],
+        'bypass with custom command' => ['custom command', 'process.container_command_unsupported', 'command'],
+        'external cwd' => ['external cwd', 'process.container_path_unsupported', 'working directory'],
+        'prefix sibling cwd' => ['prefix sibling cwd', 'process.container_path_unsupported', 'working directory'],
+        'traversal cwd' => ['traversal cwd', 'process.container_path_unsupported', 'working directory'],
+        'external env file' => ['external env file', 'process.container_path_unsupported', 'environment'],
+        'traversal env file' => ['traversal env file', 'process.container_path_unsupported', 'environment'],
+        'external env value' => ['external env value', 'process.container_path_unsupported', 'environment'],
+        'unsupported options' => ['unsupported options', 'process.container_preset_unsupported', 'unsupported options'],
+    ]);
+
+    it('refuses a preset port conflict before downtime', function (string $conflict): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $preset = migrationVpDev($instance);
+        if ($conflict === 'missing') {
+            $instance->update(['vite_port' => null]);
+        } elseif ($conflict === 'reserved') {
+            $instance->update(['vite_port' => 8080]);
+        } elseif ($conflict === 'duplicate') {
+            migrationVpDev($instance, 'stopped', false, 'second-vite');
+        } else {
+            $worker = migrationWorker($instance);
+            $worker->update(['runtime_config' => $conflict === 'environment'
+                ? ['command' => ['/usr/bin/env', 'node', 'worker.js'], 'environment' => ['PORT' => '5195']]
+                : ['command' => ['/usr/bin/env', 'node', 'worker.js', '--port=5195']]]);
+        }
+
+        try {
+            migrateStart($instance);
+            $this->fail('The conflicting Process port was admitted.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe('process.container_port_conflict');
+            expect($exception->getMessage())->toContain((string) $preset->id, $preset->name, 'port');
+        }
+
+        expect($instance->runtime()->exists())->toBeFalse();
+        expect(Operation::query()->count())->toBe(0);
+        expect($preset->refresh()->systemd_activation_hash)->toBe('old-host-hash');
+    })->with(['missing', 'reserved', 'duplicate', 'environment', 'command']);
+
+    it('restores the source preset record and state after a failed move', function (string $desired): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $preset = migrationVpDev($instance, $desired, true);
+        $sourceConfig = $preset->runtime_config;
+        $sourceDirectory = $preset->working_directory;
+        $operation = migrateStart($instance);
+
+        migrateEnd($operation, 'failed', ['ready' => false, 'moved' => false, 'restored' => true,
+            'failed_step' => 'processes', 'error_code' => 'instance.migrate_processes_failed']);
+
+        expect($preset->refresh()->runtime_config)->toBe($sourceConfig);
+        expect($preset->working_directory)->toBe($sourceDirectory)
+            ->and($preset->systemd_activation_hash)->toBe('old-host-hash')
+            ->and($preset->desired_state->value)->toBe($desired)
+            ->and($preset->status)->toBe(LifecycleStatus::Active);
+        expect($instance->runtime()->exists())->toBeFalse();
     })->with(['running', 'stopped']);
+
+    it('admits the assigned preset port only from the Node and preserves it in deployment intent', function (bool $withPreset): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->update(['vite_port' => 5195]);
+        if ($withPreset) {
+            migrationVpDev($instance);
+        }
+
+        $operation = migrateStart($instance);
+        $ingress = $operation->input['container']['acl_rules']['ingress'];
+        $expected = ['action' => 'allow', 'source' => '10.253.0.1/32', 'protocol' => 'tcp', 'destination_port' => '5195', 'state' => 'enabled'];
+        expect(in_array($expected, $ingress, true))->toBe($withPreset);
+        expect(array_values(array_filter($ingress, static fn (array $rule): bool => $rule['destination_port'] === '5195')))->toBe($withPreset ? [$expected] : []);
+
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $deployment = app(InstanceDeploymentIntent::class)->snapshot($instance->refresh());
+
+        expect($deployment['variant'])->toBe('container');
+        expect($deployment['container']['acl_rules']['ingress'])->toBe($ingress);
+    })->with(['with preset' => true, 'without preset' => false]);
+
+    it('starts a moved preset through container systemd without Node Vite preparation', function (string $verb): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $preset = migrationVpDev($instance, 'stopped');
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $instance->refresh()->update(['provisioning_step' => 'active']);
+
+        $input = app(ProcessOperationAdmission::class)->inputFor($preset->refresh(), $verb);
+
+        expect($input['variant'])->toBe('systemd');
+        expect($input['container'])->toMatchArray(['instance_id' => $instance->id, 'name' => 'instance-'.$instance->id]);
+        expect($input['vite'])->toBeNull();
+        expect($input)->not->toHaveKey('vite_plan');
+        expect($instance->refresh()->vite_port)->toBe(5195);
+    })->with(['start', 'restart']);
 
     it('refuses Process changes while migration owns the Instance', function (): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());

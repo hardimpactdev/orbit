@@ -16,6 +16,8 @@ describe(InstanceResponse::class, function (): void {
             'name' => 'main',
             'source_layout' => 'checkout',
             'checkout_path' => '/home/orbit/apps/orbit-docs',
+            'retained_git_path' => '/home/orbit/apps/orbit-docs.orbit-retired-git',
+            'retained_git_at' => '2026-11-10T19:00:00+00:00',
             'production_user' => null,
             'production_home' => null,
             'root' => null,
@@ -41,6 +43,8 @@ describe(InstanceResponse::class, function (): void {
             'name' => 'main',
             'source_layout' => 'checkout',
             'checkout_path' => '/home/orbit/apps/orbit-docs',
+            'retained_git_path' => '/home/orbit/apps/orbit-docs.orbit-retired-git',
+            'retained_git_at' => '2026-11-10T19:00:00+00:00',
             'production_user' => null,
             'production_home' => null,
             'root' => null,
@@ -90,6 +94,8 @@ describe(InstanceResponse::class, function (): void {
             'root' => ['invalid'],
             'seed_path' => ['invalid'],
             'seed_commit' => false,
+            'retained_git_path' => [],
+            'retained_git_at' => false,
         ], 'request-id');
 
         expect($response->id)
@@ -97,7 +103,10 @@ describe(InstanceResponse::class, function (): void {
             ->and($response->root)
             ->toBeNull()
             ->and($response->seedPath)->toBeNull()
-            ->and($response->seedCommit)->toBeNull();
+            ->and($response->seedCommit)->toBeNull()
+            ->and($response->retainedGitPath)->toBeNull()
+            ->and($response->retainedGitAt)->toBeNull()
+            ->and($response->toArray())->not->toHaveKey('retained_git_path');
     });
 
     it('maps bounded removal progress and rejects an unsafe error code', function (): void {

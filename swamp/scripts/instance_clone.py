@@ -4,10 +4,14 @@ import datetime
 import json
 import os
 import pwd
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+# Mirrored by the guest emitter; the clone tests keep the two sets in sync.
+GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "systemctl", "t3")
 
 
 def main():
@@ -35,7 +39,14 @@ def main():
         )
         if check and result.returncode:
             # Tools may echo private input in stderr. Report the phase, never that output.
-            raise RuntimeError("instance.container_" + phase + "_failed")
+            raise RuntimeError(
+                "instance.container_"
+                + phase
+                + "_failed: command "
+                + Path(argv[0]).name
+                + " exited "
+                + str(result.returncode)
+            )
         return result
 
     def change(argv, content=None):
@@ -52,7 +63,25 @@ def main():
 
     def inside(member, private=""):
         payload = ["python3", "-c", guest, member, json.dumps(container)]
-        result = run(project + ["exec", name, "--"] + payload, private)
+        result = run(project + ["exec", name, "--"] + payload, private, check=False)
+        if result.returncode:
+            # Only the guest's complete, output-free diagnostic may cross this boundary.
+            diagnostic = result.stderr.strip()
+            if re.fullmatch(
+                r"instance\.container_"
+                + member
+                + r"_failed: command (?:"
+                + "|".join(GUEST_COMMANDS)
+                + r") exited -?[0-9]+",
+                diagnostic,
+            ):
+                raise RuntimeError(diagnostic)
+            raise RuntimeError(
+                "instance.container_"
+                + member
+                + "_failed: command incus exited "
+                + str(result.returncode)
+            )
         return json.loads(result.stdout)
 
     if phase == "cleanup":
@@ -330,12 +359,10 @@ def main():
         finally:
             credential.unlink(missing_ok=True)
     elif phase == "workspace":
-        # Native secret strings permit concatenation, not size/encoding. The run UUID separates two private values.
-        run_id = folder.name.removeprefix(
-            "orbit-clone-" + str(container["instance_id"]) + "-"
-        )
-        environment, process_json = secret.split("\n--orbit-" + run_id + "--\n")
-        processes = json.loads(process_json)
+        # Admission frames both private values in one vault copy for native SSH stdin.
+        workspace = json.loads(secret)
+        environment = workspace["environment"]
+        processes = workspace["processes"]
         git = [
             "git",
             "-c",
