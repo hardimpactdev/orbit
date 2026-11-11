@@ -93,9 +93,11 @@ Admission records local listener ownership before dispatch, in the same transact
 
 When a separate VPN resolver joins later, an owned Gateway switches resolver routing first, then disables and removes its local listener units, release and catalog. The ownership record is cleared only after withdrawal succeeds. A failed withdrawal keeps the record for retry. A Gateway with no local ownership claim receives no withdrawal input. Role removal also uses this record, including when a VPN joined before the next converge; a colocated VPN keeps the shared listener.
 
-Adding a VPN role to a no-VPN fleet while a Gateway role converge is queued can leave an untracked listener. This race is out of scope: no flow does this today. Local DNS exists only in fleets without a VPN assignment, such as the nested CI fleet. The worst case is an untracked listener on a disposable task-VM Gateway.
+Two races can leave an untracked listener. First, a VPN role is added to a fleet without a separate VPN while a Gateway role converge is queued. Second, the Gateway role is removed while a Node converge that carries the listener is still queued: removal takes no operation lock and clears ownership, and the later install does not claim it again.
 
-Closing this race needs one exclusion across role add, role converge, Node converge, role removal and rekey, which would change production locking. Revisit it for the first real fleet without a VPN Node.
+Both races are out of scope. No current automated fleet flow does either. `node:add` can enrol the first VPN Node, but no flow does that while a Gateway converge waits. Local DNS exists only in fleets without a separate VPN assignment, such as the nested CI fleet. The worst case is an untracked listener on a disposable task-VM Gateway.
+
+Closing these races needs one exclusion across role add, role converge, Node converge, role removal and rekey, which would change production locking. Revisit them for the first real fleet without a VPN Node.
 
 Check mode skips listener activation and live readiness probes. It does not prove an unapplied listener or a loaded catalog.
 
