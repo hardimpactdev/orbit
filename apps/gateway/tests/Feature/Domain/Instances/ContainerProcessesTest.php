@@ -6,6 +6,7 @@ use App\Actions\Doctor\Intent\RuntimeDoctorIntent;
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Actions\Processes\ListProcessesAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Instances\ContainerNodes;
@@ -16,8 +17,11 @@ use App\Domain\Logs\LogStreamTargetResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessLifecycleInput;
 use App\Domain\Processes\ProcessOperationAdmission;
+use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Processes\ProcessUsageIndex;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -37,6 +41,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -210,14 +215,94 @@ describe('the Process target of a container Instance', function (): void {
             ->and($intent['read'])->toBe(['action' => 'logs', 'lines' => 100, 'request' => 'req']);
     });
 
-    it('lists its status from the last read of the unit, and starts a read when it has none', function (): void {
-        $statuses = app(ProcessRuntimeStatusIndex::class)->statuses(collect([$this->process]));
+    it('keeps an expired inspection and its time while exactly one refresh is queued without waiting', function (): void {
+        $this->travelTo('2026-11-11 16:00:00 UTC');
+        completedContainerStatusInspection($this->process, 'succeeded', 'active');
+        Queue::fake();
+        $runtime = Mockery::mock(ProcessRuntimeManager::class);
+        $runtime->shouldNotReceive('status');
+        app()->instance(ProcessRuntimeManager::class, $runtime);
 
-        expect($statuses)->toBe([$this->process->id => 'unknown']);
-        Queue::assertPushed(RefreshContainerProcessStatus::class, fn (RefreshContainerProcessStatus $job): bool => $job->processId === $this->process->id);
+        $this->travel(31)->seconds();
+        foreach ([1, 2] as $read) {
+            $listed = listedContainerStatus($this->instance);
+            expect($listed['runtime_status'])->toBe('active')
+                ->and($listed['observed_at'])->toBe('2026-11-11T16:00:00.000000Z')
+                ->and($listed['runtime_error_code'])->toBeNull();
+        }
+        Queue::assertPushed(RefreshContainerProcessStatus::class, 1);
+    });
 
-        ContainerProcessObservation::remember($this->process->id, 'active');
-        expect(app(ProcessRuntimeStatusIndex::class)->statuses(collect([$this->process])))->toBe([$this->process->id => 'active']);
+    it('shows unknown without an observation before the first inspection', function (): void {
+        Queue::fake();
+
+        $listed = listedContainerStatus($this->instance);
+
+        expect($listed['runtime_status'])->toBe('unknown')
+            ->and($listed['observed_at'])->toBeNull()
+            ->and($listed['runtime_error_code'])->toBeNull();
+        Queue::assertPushed(RefreshContainerProcessStatus::class, 1);
+    });
+
+    it('replaces a stopped containers old active state with the inspection failure until a later success', function (): void {
+        $this->travelTo('2026-11-11 16:00:00 UTC');
+        completedContainerStatusInspection($this->process, 'succeeded', 'active');
+        $container = $this->instance->runtime()->firstOrFail();
+        $container->update(['power_state' => 'stopped']);
+        expect(listedContainerStatus($this->instance)['runtime_status'])->toBe('active');
+        $this->travel(1)->seconds();
+        completedContainerStatusInspection($this->process, 'failed', 'unknown', 'process.target_inactive');
+        app(ProcessRuntimeStatusIndex::class)->remember($this->process, 'active');
+
+        $failed = listedContainerStatus($this->instance);
+        expect($failed['runtime_status'])->toBe('unknown')
+            ->and($failed['observed_at'])->toBe('2026-11-11T16:00:01.000000Z')
+            ->and($failed['runtime_error_code'])->toBe('process.target_inactive');
+        $this->travel(31)->seconds();
+        expect(listedContainerStatus($this->instance)['runtime_status'])->toBe('unknown');
+        $container->update(['power_state' => 'running']);
+        completedContainerStatusInspection($this->process, 'succeeded', 'active');
+
+        $restored = listedContainerStatus($this->instance);
+        expect($restored['runtime_status'])->toBe('active')
+            ->and($restored['observed_at'])->toBe('2026-11-11T16:00:32.000000Z')
+            ->and($restored['runtime_error_code'])->toBeNull();
+    });
+
+    it('gives an unreadable inspection result a reason even when the workflow succeeded', function (): void {
+        completedContainerStatusInspection($this->process, 'succeeded', 'unknown');
+
+        $listed = listedContainerStatus($this->instance);
+
+        expect($listed['runtime_status'])->toBe('unknown')
+            ->and($listed['runtime_error_code'])->toBe('process.status_failed');
+    });
+
+    it('ignores an inspected state while the Instance migration runs or remains unfinished', function (string $status): void {
+        completedContainerStatusInspection($this->process, 'succeeded', 'active');
+        Operation::query()->create(['kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+            'node_id' => $this->instance->node_id, 'status' => $status, 'input' => [], 'result' => ['moved' => false]]);
+        Queue::fake();
+
+        $listed = listedContainerStatus($this->instance);
+
+        expect($listed['runtime_status'])->toBe('unknown')
+            ->and($listed['runtime_error_code'])->toBe('instance.lifecycle_busy');
+        Queue::assertNothingPushed();
+        Cache::forget(ContainerProcessObservation::key($this->process->id));
+        app(ContainerProcessObservation::class)->admit($this->process->id);
+        expect(Operation::query()->where('kind', 'process.inspect')->count())->toBe(1);
+    })->with(['queued', 'running', 'failed']);
+
+    it('leaves a host Process status unchanged', function (): void {
+        $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->instance->node_id,
+            'name' => 'host-worker', 'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/true']],
+            'status' => 'active', 'desired_state' => 'running']);
+        app(ProcessRuntimeStatusIndex::class)->remember($process, 'active');
+        Queue::fake();
+
+        expect(app(ProcessRuntimeStatusIndex::class)->statuses(collect([$process])))->toBe([$process->id => 'active']);
+        Queue::assertNothingPushed();
     });
 
     it('keeps the state a process.inspect read reports', function (): void {
@@ -282,3 +367,24 @@ it('keeps a checkout Instance\'s Processes on the Node', function (): void {
         ->and(app(ProcessTargetResolver::class)->forInspection($process)->container)->toBeNull()
         ->and(app(ProcessOperationAdmission::class)->inputFor($process, 'restart'))->not->toHaveKey('container');
 });
+
+/** Complete the real inspection projection, including its durable Operation result and refresh cache. */
+function completedContainerStatusInspection(Process $process, string $status, string $state, ?string $error = null): Operation
+{
+    $run = 'inspection-'.Str::uuid();
+    $operation = Operation::query()->create(['kind' => 'process.inspect', 'target_type' => 'process', 'target_id' => $process->id,
+        'status' => 'running', 'input' => ['process_id' => $process->id, 'intent' => []], 'state' => ['swamp_run_id' => $run]]);
+
+    return app(ContainerProcessObservation::class)->apply($operation, ['status' => $status, 'run_id' => $run,
+        'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => $error, 'result' => ['state' => $state]]);
+}
+
+/** @return array<string,mixed> */
+function listedContainerStatus(Instance $instance): array
+{
+    $usage = Mockery::mock(ProcessUsageIndex::class);
+    $usage->shouldReceive('usage')->andReturn([]);
+    app()->instance(ProcessUsageIndex::class, $usage);
+
+    return app(ListProcessesAction::class)->execute(ProcessTargetType::Instance, $instance->id)->sole();
+}

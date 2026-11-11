@@ -138,9 +138,13 @@ A Process list reads each Process's status from the Gateway's [view of the Node 
 
 In Prometheus, a systemd Process takes its state from `node_systemd_unit_state`. A missing unit is `inactive`. cAdvisor reports only running containers, so a Docker Process with a series is `running` and one without is `exited`. The Gateway caches this answer for 10 seconds.
 
+For a container Process, the latest completed `process.inspect` Operation supplies `runtime_status`, `observed_at` (its ISO 8601 UTC completion time) and `runtime_error_code`. After 30 seconds, lists keep that result and queue one new inspection without waiting for it. A never-inspected Process has `unknown` and a null observation time. A failed inspection replaces the previous state with `unknown` and its error code; a later successful inspection replaces that failure. Node and checkout Process status sources are unchanged, and their observation fields are null.
+
+A running or unfinished Instance migration shows `unknown` with `instance.lifecycle_busy` and starts no inspection. A stopped unit in a running container shows `inactive`. A stopped or hibernated container keeps its last inspected state and time until the next inspection fails the running-container check, then shows `unknown` with that inspection's reason. The time describes an observation, not a claim that the container is still running.
+
 These statuses describe sampled runtime state, not health. A systemd Process can appear `active` between crashes. [Doctor](/cli/doctor/doctor#what-each-family-checks) reports `process.crash_loop` from the unit's auto-restart sub-state or an increasing restart count when the Process is desired running; the [Processes reference](/reference/processes-and-schedules#process-runtime-state) owns that rule. Doctor does not need the Metrics role to inspect this evidence on the Node.
 
-After the Gateway starts, stops, or restarts a Process, it reads the new status from the Node and broadcasts `process.status`. Lists show that status for 30 seconds, ahead of the view and Prometheus. When Prometheus cannot answer, the list asks each remaining Node over SSH and does not cache the answer.
+After the Gateway starts, stops, or restarts a Process, it reads the new status from the Node and broadcasts `process.status`. Lists of Node and checkout Processes show that status for 30 seconds, ahead of the view and Prometheus. When Prometheus cannot answer, the list asks each remaining Node over SSH and does not cache the answer.
 
 ## Grafana access
 

@@ -10,10 +10,11 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve
   participant N as app-dev Node<br/>reached over ssh
-  Note over GW: A list needs a state<br/>none observed in 30 s
+  Note over GW: A list needs a state<br/>last inspection is over 30 s old
   %%> What it does:
-  %%> - neither Prometheus nor the Node agent sees a container's units, so the list answers `unknown` and starts a read off the request
+  %%> - neither Prometheus nor the Node agent sees a container's units, so the list keeps the last completed inspection's state, observed_at and reason, and starts a read off the request; only a never-inspected Process has no observation
   %%> - at most four reads start per list, and one read per Process at a time
+  %%> - a running or unfinished Instance migration answers unknown with instance.lifecycle_busy and starts no read
   GW->>SW: Start run, full intent<br/>operation-process-container
   SW->>N: Read the unit<br/>Ansible · tags process
   %%> What it does:
@@ -23,8 +24,8 @@ sequenceDiagram
   %%> - publishes the unit's state; journal lines of a log read go only to the vault
   alt the read passes
     SW-->>GW: Run succeeded<br/>terminal event
-    Note over GW: Keep the state 30 s<br/>lists show it
+    Note over GW: Keep the state and time<br/>refresh after 30 s
   else the read fails
     SW--xGW: Run failed<br/>failed step
-    Note over GW: Keep `unknown` 30 s<br/>the next list reads again
+    Note over GW: Replace state with unknown<br/>keep failure reason and time
   end

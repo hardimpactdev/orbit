@@ -26,6 +26,12 @@ interface ProcessRuntimeStatusIndex
     public function statuses(Collection $processes): array;
 
     /**
+     * @param  Collection<int, Process>  $processes
+     * @return array<int, array{runtime_status: string, observed_at: ?string, runtime_error_code: ?string}>
+     */
+    public function observations(Collection $processes): array;
+
+    /**
      * Keeps a status the Gateway just observed on the Node after it started, stopped, or
      * restarted a Process, so a list does not report an older reading until the index's own
      * source has caught up.

@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Infrastructure\Processes;
 
 use App\Domain\AgentView\AgentProcessView;
+use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\GrafanaPrometheusClient;
 use App\Jobs\Operations\RefreshContainerProcessStatus;
 use App\Models\Instance;
@@ -68,12 +70,23 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
     #[\Override]
     public function statuses(Collection $processes): array
     {
+        $statuses = [];
+        foreach ($this->observations($processes) as $id => $observation) {
+            $statuses[$id] = $observation['runtime_status'];
+        }
+
+        return $statuses;
+    }
+
+    #[\Override]
+    public function observations(Collection $processes): array
+    {
         if ($processes->isEmpty()) {
             return [];
         }
 
         $observed = Cache::many($processes->map(static fn (Process $process): string => self::OBSERVED_KEY.$process->id)->all());
-        $containers = $this->containerStatuses($processes, $observed);
+        $containers = $this->containerStatuses($processes);
         $processes = $processes->reject(static fn (Process $process): bool => array_key_exists((int) $process->id, $containers));
         if ($processes->isEmpty()) {
             return $containers;
@@ -88,38 +101,54 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
 
         foreach ($processes as $process) {
             $recent = $observed[self::OBSERVED_KEY.$process->id] ?? null;
-            $statuses[(int) $process->id] = match (true) {
+            $status = match (true) {
                 is_string($recent) => $recent,
                 isset($viewed[(int) $process->id]) => $viewed[(int) $process->id],
                 $states === null => $this->fromNode($process),
                 default => $this->fromStates($process, $states),
             };
+            $statuses[(int) $process->id] = ['runtime_status' => $status, 'observed_at' => null, 'runtime_error_code' => null];
         }
 
         return $statuses;
     }
 
     /**
-     * The Processes of Instance containers, whose units neither Prometheus nor the Node agent sees: a state a start, stop or restart
-     * observed, else the last read of the unit, else `unknown` while a new read runs. At most four reads start per call.
+     * Keep the last completed container inspection while a stale or absent refresh marker queues another read.
      *
      * @param  Collection<int, Process>  $processes
-     * @param  array<string, mixed>  $observed
-     * @return array<int, string>
+     * @return array<int, array{runtime_status: string, observed_at: ?string, runtime_error_code: ?string}>
      */
-    private function containerStatuses(Collection $processes, array $observed): array
+    private function containerStatuses(Collection $processes): array
     {
         $owners = $processes->filter(static fn (Process $process): bool => Instance::isMorphType($process->owner_type))->pluck('owner_id')->unique()->all();
-        $containers = $owners === [] ? [] : InstanceRuntime::query()->whereIn('instance_id', $owners)->pluck('instance_id')->all();
+        if ($owners === []) {
+            return [];
+        }
+        $runtimes = InstanceRuntime::query()->whereIn('instance_id', $owners)->with('instance')->get()->keyBy('instance_id');
+        if ($runtimes->isEmpty()) {
+            return [];
+        }
+        $containers = $processes->filter(static fn (Process $process): bool => Instance::isMorphType($process->owner_type) && $runtimes->has($process->owner_id));
+        $last = ContainerProcessObservation::latest($containers->map(static fn (Process $process): int => $process->id)->values()->all());
+        $blocked = [];
+        foreach ($runtimes as $runtime) {
+            try {
+                InstanceMigration::assertSettled($runtime->instance);
+            } catch (ResourceOperationException $error) {
+                $blocked[$runtime->instance_id] = $error->errorCode;
+            }
+        }
         $statuses = [];
         $reads = 0;
-        foreach ($processes as $process) {
-            if (! Instance::isMorphType($process->owner_type) || ! in_array($process->owner_id, $containers, true)) {
+        foreach ($containers as $process) {
+            if (isset($blocked[$process->owner_id])) {
+                $statuses[$process->id] = ['runtime_status' => 'unknown', 'observed_at' => null, 'runtime_error_code' => $blocked[$process->owner_id]];
+
                 continue;
             }
-            $recent = $observed[self::OBSERVED_KEY.$process->id] ?? Cache::get(ContainerProcessObservation::key($process->id));
-            $statuses[(int) $process->id] = is_string($recent) ? $recent : 'unknown';
-            if (! is_string($recent) && $reads < 4 && RefreshContainerProcessStatus::enqueue($process->id)) {
+            $statuses[$process->id] = $last[$process->id] ?? ['runtime_status' => 'unknown', 'observed_at' => null, 'runtime_error_code' => null];
+            if (! Cache::has(ContainerProcessObservation::key($process->id)) && $reads < 4 && RefreshContainerProcessStatus::enqueue($process->id)) {
                 $reads++;
             }
         }

@@ -54,7 +54,7 @@ final readonly class ListProcessesAction
     {
         // One lookup for every Process, rather than one round trip each: see
         // ProcessRuntimeStatusIndex for why a list cannot ask each Node in turn.
-        $statuses = $this->statuses->statuses($processes);
+        $observations = $this->statuses->observations($processes);
         $usage = $this->usage->usage($processes);
 
         $result = new Collection;
@@ -63,9 +63,11 @@ final readonly class ListProcessesAction
             $processUsage = $usage[(int) $process->id] ?? ['cpu' => null, 'memory_bytes' => null];
             $data = ProcessData::fromModel(
                 $process,
-                $statuses[(int) $process->id] ?? 'unknown',
+                $observations[(int) $process->id]['runtime_status'] ?? 'unknown',
                 $processUsage['cpu'],
                 $processUsage['memory_bytes'],
+                observedAt: $observations[(int) $process->id]['observed_at'] ?? null,
+                runtimeErrorCode: $observations[(int) $process->id]['runtime_error_code'] ?? null,
             )->toArray();
             $result->push($data);
         }

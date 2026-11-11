@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Processes;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationIdempotency;
@@ -20,8 +21,8 @@ use Illuminate\Support\Str;
 
 /**
  * The status of a container Process (docs/reference/development-containers.md#processes). Neither Prometheus nor the Node agent sees a
- * container's units, so a list answers from the state the last `process.inspect` read, and a missing one starts a new read. A start,
- * stop or restart records its own outcome in the same place.
+ * container's units, so lists retain the latest completed `process.inspect` result and its time. The short-lived cache only marks
+ * when a replacement read is due; lists never wait for it.
  */
 final readonly class ContainerProcessObservation implements DirectOperationProjection
 {
@@ -33,6 +34,30 @@ final readonly class ContainerProcessObservation implements DirectOperationProje
     public static function remember(int $processId, string $status): void
     {
         Cache::put(self::key($processId), $status, PrometheusProcessRuntimeStatusIndex::ObservedSeconds);
+    }
+
+    /**
+     * The latest completed inspection is durable; the cache only controls when another read is due.
+     *
+     * @param  array<int, int>  $processIds
+     * @return array<int, array{runtime_status: string, observed_at: ?string, runtime_error_code: ?string}>
+     */
+    public static function latest(array $processIds): array
+    {
+        $observations = [];
+        $latest = Operation::query()->selectRaw('max(id)')->where('kind', 'process.inspect')->where('target_type', 'process')
+            ->whereIn('target_id', $processIds)->whereIn('status', OperationStatus::terminalValues())->groupBy('target_id');
+        foreach (Operation::query()->whereIn('id', $latest)->get() as $operation) {
+            $state = $operation->status === OperationStatus::Succeeded
+                ? ValidatedData::string($operation->result['state'] ?? 'unknown') : 'unknown';
+            $observations[$operation->target_id] = [
+                'runtime_status' => $state,
+                'observed_at' => $operation->finished_at?->toISOString(),
+                'runtime_error_code' => $state === 'unknown' ? ($operation->error_code ?? 'process.status_failed') : null,
+            ];
+        }
+
+        return $observations;
     }
 
     public static function pending(int $processId): bool
@@ -52,6 +77,9 @@ final readonly class ContainerProcessObservation implements DirectOperationProje
                 $target = app(ProcessTargetResolver::class)->forInspection($process);
                 if ($target->container === null) {
                     return;
+                }
+                if ($target->instance !== null) {
+                    InstanceMigration::assertSettled($target->instance);
                 }
                 app(StartOperationAction::class)->execute('process.inspect', 'process', $processId, $target->node->id, [
                     'process_id' => $processId, 'run_budget_seconds' => 300,
