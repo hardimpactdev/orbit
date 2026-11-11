@@ -13,12 +13,17 @@ use App\Domain\Processes\VpDevPreset;
 use App\Domain\ProjectDefinitions\DefinitionEnvironment;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use InvalidArgumentException;
+use TypeError;
+use ValueError;
 
 /** Data-only capture, inside the transaction that records an authoritative container cutover. */
 final readonly class MigratedProcessDefinitions
@@ -71,7 +76,7 @@ final readonly class MigratedProcessDefinitions
         }
     }
 
-    /** Repair only complete migrated defaults, with every selected row proven before the transaction can commit. */
+    /** Capture each proven historical Process; record unproven rows without blocking the release. */
     public function repair(): void
     {
         DB::transaction(function (): void {
@@ -86,7 +91,7 @@ final readonly class MigratedProcessDefinitions
                 if ($instance->placedOnAppProd()) {
                     continue;
                 }
-                $runtime = $instance->runtime()->lockForUpdate()->firstOrFail();
+                $runtime = $instance->runtime()->lockForUpdate()->first();
                 $operation = Operation::query()->where('kind', 'instance.migrate')->where('target_type', 'instance')->where('target_id', $instance->id)
                     ->latest('id')->first();
                 // Fresh container defaults were never migrated and need no repair.
@@ -94,28 +99,37 @@ final readonly class MigratedProcessDefinitions
                     continue;
                 }
                 $result = $operation->result ?? [];
-                if (! $operation->status->terminal() || ($result['moved'] ?? null) !== true || ($result['restored'] ?? false) === true
-                    || (($result['ready'] ?? false) !== true && ($result['failed_step'] ?? null) !== 'retire')
-                    || ($result['instance_id'] ?? null) !== $instance->id || ($result['commit'] ?? null) !== $runtime->seed_commit
-                    || ($runtime->operation_id !== null && $runtime->operation_id !== $operation->id)
-                    || Operation::query()->where('target_type', 'instance')->where('target_id', $instance->id)
-                        ->whereIn('status', ['queued', 'waiting', 'running'])->exists()) {
-                    throw new ResourceOperationException('instance.migrate_process_definition_unproven',
-                        "Instance [{$instance->id}:{$instance->name}] has no proven settled migration for its direct Processes.", 409);
-                }
-                $admitted = ValidatedData::object($operation->input['container'] ?? [])['processes'] ?? [];
-                $current = collect($this->processes->units($instance, migrate: true))->keyBy('id');
                 $records = $instance->processes()->whereNull('source_definition_id')->where('status', '!=', LifecycleStatus::Removing->value)->lockForUpdate()->get();
                 foreach ($records as $process) {
-                    $unit = collect(is_array($admitted) ? $admitted : [])->firstWhere('id', $process->id);
-                    if (! is_array($unit) || ! is_string($unit['content'] ?? null) || $process->status !== LifecycleStatus::Active
-                        || $process->systemd_activation_hash !== hash('sha256', $unit['content'])
-                        || ($current->get($process->id)['content'] ?? null) !== $unit['content']) {
-                        throw new ResourceOperationException('instance.migrate_process_definition_unproven',
-                            "Process [{$process->id}:{$process->name}] is not proven by the migrated default's activation.", 409);
+                    try {
+                        $settled = $runtime !== null && $operation->status->terminal()
+                            && ($result['moved'] ?? null) === true && ($result['restored'] ?? false) !== true
+                            && (($result['ready'] ?? false) === true || ($result['failed_step'] ?? null) === 'retire')
+                            && ($result['instance_id'] ?? null) === $instance->id && ($result['commit'] ?? null) === $runtime->seed_commit
+                            && ($runtime->operation_id === null || $runtime->operation_id === $operation->id)
+                            && ! Operation::query()->where('target_type', 'instance')->where('target_id', $instance->id)
+                                ->whereIn('status', ['queued', 'waiting', 'running'])->exists();
+                        if (! $settled) {
+                            throw new ResourceOperationException('instance.migrate_process_definition_unproven',
+                                "Instance [{$instance->id}:{$instance->name}] has no proven settled migration for its direct Processes.", 409);
+                        }
+                        $admitted = ValidatedData::object($operation->input['container'] ?? [])['processes'] ?? [];
+                        $unit = collect(is_array($admitted) ? $admitted : [])->firstWhere('id', $process->id);
+                        if (! is_array($unit) || ! is_string($unit['content'] ?? null) || $process->status !== LifecycleStatus::Active
+                            || $process->systemd_activation_hash !== hash('sha256', $unit['content'])
+                            || $this->processes->unit($instance, $process, migrate: true)['content'] !== $unit['content']) {
+                            throw new ResourceOperationException('instance.migrate_process_definition_unproven',
+                                "Process [{$process->id}:{$process->name}] is not proven by the migrated default's activation.", 409);
+                        }
+                        $this->capture($instance, [$process->id], historical: true);
+                    } catch (ResourceOperationException|InvalidArgumentException|TypeError|ValueError $exception) {
+                        Activity::query()->create(['log_name' => 'instances', 'description' => 'instance.migrate_process_definition_skipped',
+                            'subject_type' => Instance::MorphAlias, 'subject_id' => $instance->id,
+                            'command' => 'instance:migrate:repair', 'request_id' => (string) Str::uuid(), 'status' => 'succeeded',
+                            'properties' => ['instance_id' => $instance->id, 'process_id' => $process->id, 'process_name' => $process->name,
+                                'reason' => $exception->getMessage()]]);
                     }
                 }
-                $this->capture($instance, ValidatedData::integerList(array_values($records->modelKeys())), historical: true);
             }
         });
     }

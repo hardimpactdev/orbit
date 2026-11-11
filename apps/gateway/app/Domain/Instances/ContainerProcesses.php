@@ -82,6 +82,12 @@ final readonly class ContainerProcesses
         return json_encode((object) $files, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 
+    /** @return array{id:int,name:string,content:string,environment:?string,desired:string} */
+    public function unit(Instance $instance, Process $process, bool $migrate = false): array
+    {
+        return $this->render($instance, new Collection([$process]), $migrate)[0];
+    }
+
     /**
      * Records the run's outcome on the admitted Processes: a passed run installed and started every one; a failed run leaves the
      * Processes it had not installed failed and the running ones as they were.
