@@ -38,7 +38,7 @@ jobs:
   shape:
     name: Swamp shape gate
     if: ${{ !inputs.changed-only || inputs.shape }}
-    # Static controls stay on; slow fixtures have a separate manual/scheduled job.
+    # Static controls stay on; ci-full-set.yml owns the after-merge fixtures.
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     defaults:
@@ -65,42 +65,6 @@ jobs:
         if: always()
         with:
           name: swamp-shape-metrics
-          path: ${{ runner.temp }}/shape.json
-
-  fixtures:
-    name: Full shape fixtures (report only)
-    # Only this workflow's own schedule or manual run: a CI run that calls it (changed-only) never starts the fixtures.
-    if: ${{ !inputs.changed-only && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
-    runs-on: ubuntu-26.04
-    timeout-minutes: 180
-    concurrency:
-      group: swamp-full-shape-fixtures
-      cancel-in-progress: true
-    defaults:
-      run:
-        working-directory: ${{ inputs.working-directory || 'swamp' }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
-        with:
-          deno-version: v2.9.8
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
-        with:
-          python-version: "3.13"
-      - uses: ./.github/actions/php
-        with:
-          coverage: none
-      - name: Run all fixtures with named command results
-        env:
-          SHAPE_BASE: ${{ inputs.base-ref || github.event.before || 'HEAD^' }}
-        run: python3 "$GITHUB_WORKSPACE/bin/swamp-shape-gate" --only shape --strict --base "$SHAPE_BASE" --reports "$RUNNER_TEMP"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
-        with:
-          name: full-shape-metrics
           path: ${{ runner.temp }}/shape.json
 
   validate:

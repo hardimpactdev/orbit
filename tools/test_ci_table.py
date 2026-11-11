@@ -221,7 +221,8 @@ class CiBudgetTest(unittest.TestCase):
 
     def test_full_fixtures_cannot_enter_the_pr_path(self):
         changed = copy.deepcopy(self.workflows)
-        changed['swamp-shape.yml']['jobs']['fixtures'].pop('if')
+        self.assertNotIn('fixtures', changed['swamp-shape.yml']['jobs'])
+        changed['swamp-shape.yml']['jobs']['fixtures'] = {'runs-on': 'ubuntu-26.04', 'timeout-minutes': 180}
         self.assert_rejected(changed, 'swamp/fixtures', 'must be unreachable')
 
     def test_checks_start_after_the_plan_and_never_recompute_scope(self):
