@@ -630,3 +630,26 @@ it('keeps an undefined allow-listed reference literal', function (): void {
 
     expect(app(InstanceEnvironmentRenderer::class)->resolveTemplateReferences($values, $values))->toBe($values);
 });
+
+it('preserves the stored entry shape except where literal allowed references need source provenance', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    $instanceBefore = $default->fresh()->getAttributes();
+    $environmentBefore = app(InstanceEnvironmentStore::class)->values($default);
+
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('9', 40), 'fixture', <<<'ENV'
+APP_NAME=Laravel
+VITE_APP_NAME="${APP_NAME}"
+VITE_LITERAL="\${APP_NAME}"
+SECRET_LITERAL='${DB_PASSWORD}'
+ENV);
+
+    expect($default->project->environmentTemplate()->sole()->entries)->toBe([
+        ['key' => 'APP_NAME', 'value' => 'Laravel', 'example' => 'Laravel', 'removed' => false],
+        ['key' => 'VITE_APP_NAME', 'value' => '${APP_NAME}', 'example' => '${APP_NAME}', 'removed' => false],
+        ['key' => 'VITE_LITERAL', 'value' => '${APP_NAME}', 'example' => '${APP_NAME}', 'removed' => false, 'literal_references' => [0]],
+        ['key' => 'SECRET_LITERAL', 'value' => '${DB_PASSWORD}', 'example' => '${DB_PASSWORD}', 'removed' => false],
+    ]);
+    expect($default->fresh()->getAttributes())->toBe($instanceBefore);
+    expect(app(InstanceEnvironmentStore::class)->values($default))->toBe($environmentBefore);
+});

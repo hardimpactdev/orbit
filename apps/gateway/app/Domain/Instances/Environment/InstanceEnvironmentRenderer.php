@@ -72,13 +72,13 @@ final readonly class InstanceEnvironmentRenderer
      *
      * @param  array<string, string>  $values
      * @param  array<string, string>  $template
-     * @param  array<string, list<int>>  $referencePositions  byte offsets retained by the template parser
+     * @param  array<string, list<int>>  $literalReferencePositions  byte offsets of literal allow-listed references
      * @return array<string, string>
      */
     public function resolveTemplateReferences(
         #[\SensitiveParameter] array $values,
         #[\SensitiveParameter] array $template,
-        array $referencePositions = [],
+        array $literalReferencePositions = [],
     ): array {
         foreach ($template as $key => $value) {
             preg_match_all('/\$\{([A-Za-z0-9_.]+)\}/', $value, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
@@ -86,12 +86,11 @@ final readonly class InstanceEnvironmentRenderer
             foreach (array_reverse($matches) as $match) {
                 $name = $match[1][0];
                 $offset = $match[0][1];
-                if (! in_array($name, self::TemplateReferences, true) || ! array_key_exists($name, $values)) {
+                if (! self::resolvesTemplateReference($name) || ! array_key_exists($name, $values)) {
                     continue;
                 }
-                if (isset($referencePositions[$key])
-                    ? ! in_array($offset, $referencePositions[$key], true)
-                    : ($offset > 0 && $value[$offset - 1] === '\\')) {
+                if (in_array($offset, $literalReferencePositions[$key] ?? [], true)
+                    || ($offset > 0 && $value[$offset - 1] === '\\')) {
                     continue;
                 }
                 $resolved = substr_replace($resolved, $values[$name], $offset, strlen($match[0][0]));
@@ -103,6 +102,11 @@ final readonly class InstanceEnvironmentRenderer
         }
 
         return $values;
+    }
+
+    public static function resolvesTemplateReference(string $name): bool
+    {
+        return in_array($name, self::TemplateReferences, true);
     }
 
     /** Quote one value as a double-quoted dotenv value. */

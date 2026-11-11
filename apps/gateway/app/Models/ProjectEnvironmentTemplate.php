@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * @property int $id
  * @property int $project_id
- * @property list<array{key: string, value: string, example: string|null, removed: bool, references?: list<int>}> $entries
+ * @property list<array{key: string, value: string, example: string|null, removed: bool, literal_references?: non-empty-list<int>}> $entries
  * @property string $source_path
  * @property string $source_commit
  * @property string|null $source_blob
