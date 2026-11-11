@@ -1,0 +1,58 @@
+sequenceDiagram
+  %% Record-only attachment: recorded Process intent, no Node execution.
+  %% status: draft
+  %% command: instance:node-service:attach
+  %% kind: instance.node_service_attach
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  CLI->>GW: instance:node-service<br/>attach INSTANCE PROCESS
+  %%> Command:
+  %%> - orbit instance:node-service:attach INSTANCE --process=PROCESS --host-env-key=KEY --port-env-key=KEY
+  %%> - syntax: instance:node-service:attach
+  %%> On failure:
+  %%> - The CLI refuses missing required options or invalid numeric IDs and port ranges before sending.
+  Note over GW: Check request and access
+  %%> On failure:
+  %%> - peer.identity_unknown, node_access.required or http.404 refuses the caller or numeric Instance.
+  %%> - validation.failed refuses invalid body fields or environment keys.
+  alt request refused
+    GW--xCLI: Named refusal<br/>No attachment change
+  else request admitted
+    Note over GW: Lock and check Instance
+    alt busy or container runtime
+      GW--xCLI: Instance refused<br/>No attachment change
+      %%> On failure:
+      %%> - instance.lifecycle_busy refuses an inactive Instance, running migration or detach.
+      %%> - instance.node_service_runtime_unsupported refuses an existing container runtime.
+    else checkout available
+      Note over GW: Check standalone Process<br/>and TCP publication
+      %%> Why:
+      %%> - Admission uses recorded ownership, desired state and Docker publication; it contacts no Node.
+      alt Process or endpoint refused
+        GW--xCLI: Target refused<br/>No attachment change
+        %%> On failure:
+        %%> - Missing, remote, service-owned or stopped Processes and non-TCP protocols return named refusals.
+        %%> - Ambiguous, unpublished, reserved or private-only ports and a missing bridge return named refusals.
+      else valid endpoint
+        alt identical attachment
+          GW-->>CLI: Already attached<br/>changed false, reason code
+          %%> Result:
+          %%> - instance.node_service_target_unchanged succeeds without a new record.
+        else environment key conflict
+          GW--xCLI: Key conflict<br/>No attachment change
+          %%> On failure:
+          %%> - instance.node_service_environment_conflict requires detaching the old record before a correction.
+        else unused keys
+          Note over GW: Record the attachment
+          alt transaction fails
+            GW--xCLI: Transaction failed<br/>Attachment write rolls back
+          else transaction commits
+            GW-->>CLI: Target result<br/>changed true, request ID
+          end
+        end
+      end
+    end
+  end

@@ -45,11 +45,12 @@ sequenceDiagram
     %%> - the role is unknown or protected, conflicts with an assigned role, has another singleton holder, or violates the ingress Cluster rule
     %%> - an existing assignment needs explicit convergence, except an active ingress assignment
     %%> - Analytics storage options are refused for another role
-  else Analytics storage invalid
+  else Analytics Process invalid
     %% path: analytics-storage-refused
-    GW--xCLI: Storage refused<br/>analytics.*
+    GW--xCLI: Process refused<br/>analytics.* or ownership conflict
     %%> Result:
     %%> - the storage error identifies the missing or unsuitable Process, port or credentials; no assignment is claimed
+    %%> - an attached collector or storage Process returns process.node_service_ownership_conflict and names every dependent Instance before owner state changes
   else storage path refused
     %% path: storage-path-refused
     GW--xCLI: Storage path refused<br/>node.settings_path_*

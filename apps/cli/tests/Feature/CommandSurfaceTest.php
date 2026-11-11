@@ -130,6 +130,8 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:list',
         'instance:logs',
         'instance:migrate',
+        'instance:node-service:attach',
+        'instance:node-service:detach',
         'instance:register',
         'instance:release:list',
         'instance:rename',
@@ -752,6 +754,8 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:list' => [[], ['json' => false]],
         'instance:logs' => [['instance'], ['lines' => '100', 'follow' => false, 'json' => false]],
         'instance:migrate' => [['instance'], ['force' => false, 'idempotency-key' => null, 'json' => false]],
+        'instance:node-service:attach' => [['instance'], ['process' => null, 'protocol' => 'tcp', 'port' => null, 'host-env-key' => null, 'port-env-key' => null, 'json' => false]],
+        'instance:node-service:detach' => [['instance', 'target'], ['yes' => false, 'json' => false]],
         'instance:register' => [
             [],
             [
@@ -1287,6 +1291,8 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:list' => [[], ...$profileMissing],
         'instance:logs' => [['instance' => '1'], ...$profileMissing],
         'instance:migrate' => [['instance' => '1', '--force' => true], ...$profileMissing],
+        'instance:node-service:attach' => [['instance' => '1', '--process' => '1', '--port' => '1025', '--host-env-key' => 'MAIL_HOST', '--port-env-key' => 'MAIL_PORT'], ...$profileMissing],
+        'instance:node-service:detach' => [['instance' => '1', 'target' => '1', '--yes' => true], ...$profileMissing],
         'instance:register' => [
             ['--project' => '1', '--no-interaction' => true, '--path' => '/tmp/orbit-command-surface-not-git'],
             'code' => 'instance.source_invalid',

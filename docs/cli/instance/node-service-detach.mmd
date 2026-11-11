@@ -6,9 +6,15 @@ sequenceDiagram
   autonumber
   %% lane CALL icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
-  participant CALL as API / MCP<br/>HTTP · MCP tools
+  participant CALL as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  CALL->>GW: Detach Node service target<br/>INSTANCE TARGET
+  CALL->>GW: instance:node-service<br/>detach INSTANCE TARGET
+  %%> Command:
+  %%> - orbit instance:node-service:detach INSTANCE TARGET
+  %%> - syntax: instance:node-service:detach
+  %%> On failure:
+  %%> - Invalid numeric IDs refuse locally; the CLI requires confirmation before its delete request.
+  %%> - A JSON or noninteractive call without --yes returns instance.node_service_confirmation_required; declining or cancelling returns input.cancelled. Neither sends a request.
   Note over GW: Check request and access
   %%> On failure:
   %%> - peer.identity_unknown or node_access.required (403): the caller lacks authority.
