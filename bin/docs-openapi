@@ -738,6 +738,7 @@ SUMMARIES = {
     'conn:profile:settings:show': 'Show profile settings', 'conn:profile:settings:update': 'Replace profile settings sections', 'conn:profile:settings:patch': 'Patch profile settings sections',
     'conn:environment:cleanup': 'Admit stale Gateway session cleanup',
     'conn:environment:list': 'List T3 servers', 'conn:environment:register': 'Register a T3 server',
+    'conn:project:branches': 'List a Conn Project’s remote branches',
     'conn:project:list': 'List the Projects a thread can start in', 'conn:instance:create': "Create a thread's clone",
     'conn:operation:show': 'Show a Conn operation', 'conn:operation:cancel': 'Cancel a Conn operation', 'conn:pairing:show': 'Read a one-time pairing URL',
     'conn:pairing:list': 'List pairings on a T3 server', 'conn:pairing:create': 'Mint a pairing link', 'conn:pairing:revoke': "Revoke a Node's sessions on a T3 server",
@@ -876,6 +877,7 @@ DESCRIPTIONS = {
     'conn:profile:settings:patch': 'Requires node access to at least one Node. Changes sections of the settings document, each with the version the client last read: `{"sections": {"appearance": {"version": 3, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}`. A section is `workspaces`, `appearance`, or `devices.<type>`; an unknown name returns `validation.failed` (422). A section with no recorded version reads as 0, including one written before sections had versions. A null value removes `appearance` or a device section; an empty string returns `validation.failed` (422). The request is all or nothing: if any section is at another version it returns `conn.settings_version_conflict` (409) with `details.current_version` and `details.sections`, the current version of each section sent, and writes nothing. A write adds 1 to each section version and to the document version.',
     'conn:environment:list': 'Lists the registered T3 servers whose registering Node the caller has node access to, with their URL, server version, registration time, and admin session expiry. `status` is `session_expired` when the server must register again; cleanup_pending records a newer registration revision awaiting Swamp cleanup. A server of a container Instance names its `instance_id` and the container\'s `power_state` (`running` or `stopped`); it also supplies `project_id`, `project_name`, `project_slug`, `instance_name`, `node_name`, and `instance_url` for Conn to display Orbit facts while container T3 servers stay stock. `instance_url` follows the Instance URL rule (authoritative Route, otherwise first Route, or null without a Route), separately from the T3 `url`. Other servers have null for all eight Instance fields.',
     'conn:environment:register': 'Needs no node access. The calling Node becomes the server\'s Node; an environment id that another Node registered, or whose Node was removed while the caller has no Gateway access, returns `conn.environment_owned` (409). Called from a T3 server\'s host on startup with an admin session from `t3 auth session issue --label "Orbit Gateway"`. The Gateway checks that `url` serves `environment_id` and that T3 accepts `admin_session` with admin scopes, stores the session encrypted, and records a cleanup revision. Swamp later revokes earlier Gateway sessions while preserving the current session. Returns `conn.environment_mismatch` or `conn.admin_scope_missing` (422), and `conn.server_unreachable`, `conn.session_rejected`, `conn.request_refused`, or `conn.response_invalid` (502).',
+    'conn:project:branches': 'Requires access to the ready default Instance, as Conn create does. Reads at most 100 matching remote branches: default first, then bytewise ascending names. query is an optional case-insensitive substring of at most 255 characters. Further matches are omitted; narrow query. Each branch names its newest open PR from this repository (creation time, then number descending) and the lowest-id visible matching Instance. Reads at most five pages of 100 open PRs; failure or overflow keeps branches with null PRs and meta.pull_requests_unavailable=true. Non-GitHub sources have null PRs. See /reference/conn#threads-in-an-orbit-project.',
     'conn:project:list': 'Requires node access to at least one Node. Lists each Project whose default Instance runs in a container, is active and has a seed snapshot, on a Node the caller has node access to, with that Node. See /reference/conn#threads-in-an-orbit-project.',
     'conn:instance:create': 'Requires node access to the Node of the Project\'s default Instance. Admits instance.create of a clone named `name` on that Node, as instance:create does, and returns the Operation (202) whose target_id is the new Instance. Follow it with conn:operation:show. The same name again resumes the caller\'s own clone; a name another device\'s create holds returns `instance.name_taken` (409). A name that resolves to `default` returns `validation.failed` (422); a Project without a ready container default returns `instance.default_missing` (409).',
     'conn:pairing:list': 'Requires node access to the Node that registered the server. Lists the pairing links the Gateway minted on one T3 server, newest first, with the Node and revocation time of each.',
@@ -1751,6 +1753,7 @@ RESPONSE_OVERRIDES = {
     }}},
 }
 CTRL_DATA_OVERRIDES = {
+    'ConnProjectBranchesController@index': ('ConnProjectBranchData', True),
     'InstanceNodeServiceTargetsController@index': ('InstanceNodeServiceTargetRecordData', True),
     'InstanceNodeServiceTargetsController@store': ('InstanceNodeServiceTargetData', False),
     'InstanceNodeServiceTargetsController@destroy': ('OperationData', False),
@@ -2205,6 +2208,12 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
+    if route['name'] == 'conn:project:branches':
+        meta = responses['200']['content']['application/json']['schema']['properties']
+        meta['meta'] = {'allOf': [{'$ref': '#/components/schemas/Meta'}, {'type': 'object', 'properties': {'pull_requests_unavailable': {'type': 'boolean', 'description': 'True when the bounded GitHub PR read failed or exceeded 500 open requests; all pull_request fields are null.'}}, 'required': ['pull_requests_unavailable']}]}
+        responses['502'] = error_response('The remote branches cannot be read (`source.head_unavailable`).')
+        responses['422'] = error_response('query must be a string of at most 255 characters without control characters (`validation.failed`).')
+        responses['409'] = error_response('The Project has no ready container default (`instance.default_missing`).')
     if route['name'] == 'operation:list':
         meta = responses['200']['content']['application/json']['schema']['properties']
         meta['meta'] = {'allOf': [{'$ref': '#/components/schemas/Meta'}, {'type': 'object', 'properties': {'next_cursor': {'type': ['string', 'null'], 'description': 'Send as `cursor` with the same filters for the next page; null on the last page.'}}, 'required': ['next_cursor']}]}

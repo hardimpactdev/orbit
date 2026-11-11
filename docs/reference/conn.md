@@ -183,6 +183,12 @@ Conn starts a thread in an Orbit Project in a new clone of the Project's default
 
 `GET /projects` lists the Projects a thread can start in. Each one has a `default` Instance that runs in a container, is active and has a seed snapshot. That default runs on a Node the caller has node access to, and the entry names that Node.
 
+`GET /projects/{id}/branches?query=` (MCP `conn-project-branches`) reads remote branches with the Project's source access. It requires access to the ready default Instance, as create does; a Project without one fails with `instance.default_missing` (409). Each entry has `name`, `default`, `pull_request` (`null` or `{number, title, url}`), and `instance` (`null` or `{id, name}`). The optional `query` is a case-insensitive substring of at most 255 characters; arrays and control characters fail with `validation.failed` (422). An unreadable remote, including a read that exceeds ten seconds or 4 MiB of remote-head output, fails with `source.head_unavailable` (502).
+
+The response contains at most 100 matches, after filtering: the Project's default branch first if it matches, then bytewise ascending branch names. Further matches are omitted; narrow `query` to find them. Instance matching uses the recorded branch, then branch override, then the default branch for `default` or the Instance name. Only Instances on Nodes the caller reaches can match; the lowest Instance id wins when several match. Entries contain no Node details.
+
+For a GitHub source, `pull_request` is the newest OPEN pull request whose head is that branch in the Project's repository, ordered by creation time descending, then number descending; closed requests are ignored. One repository listing reads up to five pages of 100 open requests, with a ten-second listing budget and at most five seconds per request. If GitHub fails, returns malformed data, or has more than 500 open requests, all entries keep `pull_request: null` and `meta.pull_requests_unavailable` is `true`. Otherwise that marker is `false`. A non-GitHub source still lists readable branches with null pull requests and a false marker.
+
 `POST /projects/{id}/instances` with `{"name"}` creates the thread's clone:
 
 - It admits `instance.create` on the default's Node, as `instance:create PROJECT NODE NAME` does.

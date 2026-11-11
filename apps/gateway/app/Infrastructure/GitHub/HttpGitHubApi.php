@@ -292,7 +292,7 @@ final readonly class HttpGitHubApi implements GitHubApi
                 $row['state'] === 'closed' => GitHubPullRequestState::Closed,
                 default => GitHubPullRequestState::Open,
             };
-            $pullRequests[] = new GitHubBranchPullRequest($url, $number, $state);
+            $pullRequests[] = new GitHubBranchPullRequest($url, $number, $state, $this->text($row['title'] ?? null));
         }
 
         return $pullRequests;

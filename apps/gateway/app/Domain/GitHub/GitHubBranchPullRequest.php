@@ -10,5 +10,6 @@ final readonly class GitHubBranchPullRequest
         public string $url,
         public int $number,
         public GitHubPullRequestState $state,
+        public ?string $title = null,
     ) {}
 }
