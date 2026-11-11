@@ -10,6 +10,7 @@ use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
+use App\Domain\InstanceMigration\MigratedProcessDefinitions;
 use App\Domain\InstanceMigration\MigrateSchedules;
 use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\ContainerProcesses;
@@ -91,6 +92,7 @@ final readonly class StartInstanceMigrateAction
             $before = $route === null ? null : $this->routes->before($route);
             $hadReservation = $instance->runtime()->exists();
             $runtime = $this->containers->reserve($instance, $node);
+            app(MigratedProcessDefinitions::class)->assertCanCapture($instance);
             $branch = $instance->branch ?? ValidatedData::string($instance->project->default_branch);
             // The Node's mirror fetches the branch from the checkout itself: commits that were never pushed come along, and it needs no token.
             $container = [...$this->containers->intent($instance, $runtime, $databases['servers'][0] ?? null, $branch, $route === null ? null : 'https://'.$route->domain),

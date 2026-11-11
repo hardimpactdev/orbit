@@ -46,7 +46,7 @@ sequenceDiagram
   %%> - before any Node change, checks the recorded branch and every planned retirement; a refusal leaves prior resources untouched
   %%> - checks checkout symlinks and dependency package links before creating the container, skipping `.git` and installed package contents; broken links or targets outside the checkout refuse with `instance.migrate_symlink_unsupported`, naming every path and target
   %%> - retirement preflight refuses unpushed local branches or detached HEAD and stashes, with their existing named errors; it reads local refs only
-  %%> - checks service hosts in the checkout and nested app `.env` files before any probe or Node change; direct services require an exact endpoint from the shared container access plan; unsupported endpoints refuse with `instance.migrate_env_service_unreachable`, naming the file, key and host:port without credentials; unreadable syntax names only the file and line, and traversal/read failures name only the path
+  %%> - checks service hosts selected by cache, session, queue, broadcasting, database or mail drivers (never by Redis client or endpoint declarations alone) in the checkout and nested app `.env` files before any probe or Node change; direct services require an exact endpoint from the shared container access plan; unsupported endpoints refuse with `instance.migrate_env_service_unreachable`, naming the file, key and host:port without credentials; unreadable syntax names only the file and line, and traversal/read failures name only the path
   %%> - deletes a container that an earlier failed move left, then creates and starts the new container through the shared container phase; discard leaves shared bridge endpoint rules for host reconciliation
   %%> - each attached target gets an exact TCP allow in both the bridge and NIC ACLs; both keep default reject. Endpoint adds reread on ETag conflict, at most five attempts with a one-second delay
   %%> - probes every attached target from inside the container before downtime, else `instance.database_unreachable`
@@ -95,9 +95,11 @@ sequenceDiagram
     %%> If it fails:
     %%> - the container stays the Instance; the run fails with `instance.migrate_retire_failed`, and the source or retained checkout stays on the Node
     SW-->>GW: Run succeeded<br/>terminal event
-    Note over GW: Record container runtime
+    Note over GW: Record runtime<br/>and Process definitions
     %%> Result:
     %%> - the Instance's workspace is the container's; the runtime runs, a default's row holds its seed commit
+    %%> - the same transaction captures each direct moved Process as a Project development definition and links its existing row; known commands use runtime names, opaque guest argv stays exact, and a changed same-name incompatible definition refuses instead of overwriting
+    %%> - proven cutover captures definitions even if retirement failed; preflight failures and restored checkout outcomes capture nothing
     %%> - a SQLite file moved with the files, so its connection record goes; stored `.env` values follow the new path
     %%> - the Conn layer records a non-default Instance's T3 server from the result
   else a step fails

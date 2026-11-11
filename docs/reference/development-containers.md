@@ -82,13 +82,25 @@ Create, clone and migrate add their endpoint rules before probing. These lifecyc
 
 Until then, an unguarded NIC can reach current and old translated endpoint tuples. Reuse of an old Docker address can expose a different service at that exact tuple. This permission lasts until host convergence removes it. Guarded NICs still require their own exact allow. ACL writes reread after an ETag conflict or a transient disappearing host-side veth, with at most five attempts and a one-second delay; exhaustion fails the phase.
 
-The host persists immutable Gateway endpoint records, named by published tuple and admission time. Readers deduplicate each tuple by its latest admission. Only host convergence compacts or removes records. A systemd oneshot refreshes resolved endpoint rules at boot after Docker and Incus, then every 15 seconds. It only adds rules, so a failed resolution never removes a working path.
+The host persists Gateway endpoint records, with immutable names formed from the published tuple and admission time. Admission and refresh stage each endpoint’s last exact translated tuple outside the active inventory. They commit its record only after the ACL allow is confirmed.
+
+All destructive record operations use the fixed state helper, which constructs filenames from state kinds and validated endpoint identities; callers cannot supply a destination filename.
+
+A timed-out GET or ambiguous PUT gets one readback under the same lock; a confirmed rule commits its staged record, and an absent rule does not. An unreadable result reports `instance.bridge_state_unresolved`; refresh preserves that warning until a successful full convergence.
+
+The internal `--withdraw --reconcile` writer mode retains persisted translated tuples without resolving stopped Docker publications. Readers deduplicate each tuple by its latest admission. Host convergence and explicit writer withdrawal compact or remove records, retaining admissions at or after their captured time. A systemd oneshot refreshes resolved endpoint rules at boot after Docker and Incus, then every 15 seconds. It only adds rules, so a failed resolution never removes a working path.
+
+Each confirmed endpoint removal also removes its obsolete refresh records under the same writer lock, including confirmations from bounded readback after a timeout. Retained shared endpoints and admissions at or after the reconciliation capture stay eligible. A Docker record without a saved translated tuple refuses reconciliation before any ACL mutation. Partial reconciliation persists `reconcile.pending`: ordinary refresh cannot clear its failure health, and a refresh after a crash reports `instance.bridge_state_unresolved`. A subsequent successful full reconciliation removes that marker and clears the warning.
 
 Gateway admission times are captured before reading targets. Owned ACL rules carry the same time in a strictly parsed description. Reattaching a tuple advances its rule’s stamp. Convergence preserves records and rules admitted at or after its capture, including admissions that arrive while it runs. Conditional ETag writes recheck this fence before deletion. An unknown description is never removed.
 
-The timer recovers missed Docker events and DNAT rules installed after a start event. systemd prevents overlapping refresh runs. An unchanged run writes nothing and sends no Incus write request. A Docker re-address heals after the next successful refresh; a host converge also removes the obsolete resolved tuple.
+The timer recovers missed Docker events and DNAT rules installed after a start event. Admission, refresh, host convergence and withdrawal hold one exclusive lock at `/var/lib/orbit/instance-bridge/writer.lock` before reading records, through the last record and ACL write. A concurrent refresh refuses immediately; a new invocation reads the remaining records, so it cannot restore a removed endpoint.
 
-Refresh errors stay in the journal and `/var/lib/orbit/instance-bridge/health.json`. The agent reads only its named public error code into its `host` fact, on the existing 60-second observation interval. Doctor reports `node.instance_bridge_unhealthy`, including that error code, and clears it after a healthy observation. The host role checks the enabled, running timer and healthy state file at its end.
+Lock acquisition makes one nonblocking attempt. An owned lock returns `instance.bridge_busy` immediately, without changing endpoint records, ACL rules or health. Retry the operation after the current writer finishes. Docker and NAT reads use the helper’s remaining budget: 30 seconds for refresh and 300 seconds for lifecycle work. Each Incus curl request keeps its five-second limit, with one request reserved for readback. A read timeout or curl exit 28 returns `instance.bridge_command_timeout` and releases the lock.
+
+Failure recording uses the held lock; a caller that cannot acquire it reports the error without waiting again. An unchanged run leaves active records and health unchanged and sends no Incus write request. A Docker re-address heals after the next successful refresh; a host converge also removes the obsolete resolved tuple.
+
+Refresh errors stay in the journal. A writer that acquired the lock also records its error in `/var/lib/orbit/instance-bridge/health.json`; a busy refusal leaves that file unchanged. The agent reads only its named public error code into its `host` fact, on the existing 60-second observation interval. Doctor reports `node.instance_bridge_unhealthy`, including that error code, and clears it after a healthy observation. The host role checks the enabled, running timer and healthy state file at its end.
 
 The converge creates no Instance. Each existing `app-dev` Node needs one converge of its Instance host role. It reconciles the attached-target union and moves existing NICs to the proxy ACL. Running containers keep working, with no restart.
 
@@ -517,9 +529,9 @@ A container Instance's Processes come from the Project's development Process def
 | --- | --- |
 | User | `orbit`, group `orbit`, `UMask=0007`, `HOME=/home/orbit` |
 | Directory | The workspace's application directory, `/srv/workspace` or the Project root in it |
-| `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders. A definition's command is an absolute path, such as `/opt/orbit-runtime/current/php/8.5/bin/php` |
+| `PATH` | The Project's PHP build, then runtime `bin` and system folders. Supported names, such as `php8.5` and `node`, resolve at rendering; proven opaque migration argv stays exact |
 | Environment | The workspace's `.env`, then the definition's own values in `/etc/orbit/processes/<id>/<sha256>.env`, root only, mode 0600. The values come only from the run's vault copy |
-| Runtime | systemd only. New definitions with Docker or a preset refuse with `process.target_unsupported`; migration also accepts the supported `vp-dev` preset |
+| Runtime | systemd only. Docker definitions refuse with `process.target_unsupported`. New preset definitions are unsupported; migration captures supported `vp-dev` definitions for clone and deployment rendering |
 
 The create run installs and starts the units after the deploy steps. A unit whose desired state is stopped is installed, not started.
 
@@ -681,7 +693,7 @@ The database is not cloned. An Instance's database name, owner and connection co
 
 The move keeps each ordinary systemd Process or supported `vp-dev` preset and its desired state. It stops and disables the host units before copying files, installs the same Processes in the container with their private environment files, and removes the host units and environment folders after the Route moves. A failed move removes the container before restoring the host units to their recorded desired states. An unfinished Process operation, removal or previous runtime cleanup blocks migration, and Process changes wait until migration settles. Docker Processes refuse with `process.target_unsupported`.
 
-The [migration command](/cli/instance/migrate#before-you-start) defines the supported preset forms and refusals. A migrated `vp-dev` uses the shared runtime, binds its assigned port in the container, and keeps `/__orbit/vite` on the Route. The container admits that port only from the Node, including after a deployment rebuilds its intent.
+The [migration command](/cli/instance/migrate#before-you-start) defines supported presets, definition capture and the skip-and-record repair of migrated defaults, including malformed stored data and runtimes with no seed commit, with findings reused on repeat and resolved after a later capture. [Container Vite ports](/reference/assigned-vite-ports#migrated-container-presets) use fixed `5173` for new copies and preserve migrated ports. A migrated `vp-dev` uses the shared runtime, binds its assigned port in the container, and keeps `/__orbit/vite` on the Route. The container admits that port only from the Node, including after a deployment rebuilds its intent.
 
 ## T3 registration and pairing
 
@@ -1002,6 +1014,9 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
 | `process.target_unavailable` | 503 | `process:logs` could not read a container Process's journal through Swamp |
+| `instance.bridge_busy` | 502 | Another shared endpoint writer owns the lock; this invocation applied no intent or health change |
+| `instance.bridge_command_timeout` | 502 | A Docker/NAT read exhausted the helper’s remaining budget, or an Incus request timed out |
+| `instance.bridge_state_unresolved` | 502 | A bounded ACL readback could not determine the result after a timeout or ambiguous write; retry convergence |
 | `instance.container_endpoint_unresolved` | 502 | A local Docker endpoint has no unique exact DNAT mapping; the phase refuses before probing or downtime |
 | `instance.container_network_unsafe` | 502 | The container NIC has no effective ACL or lacks its default egress reject. Orbit refuses to start it |
 | `instance.container_<phase>_failed` | 502 | A phase of a container default's create or deployment failed without a refusal, such as `instance.container_start_failed` |

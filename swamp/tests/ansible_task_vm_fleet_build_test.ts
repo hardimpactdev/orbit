@@ -1,8 +1,8 @@
 /**
  * The fleet phase of the common converge builds the nested fleet from stock Ubuntu when a container of it is missing, and changes nothing
  * on a complete fleet. The real task files run on localhost in the order of the role (the Incus part of the tools phase, then the fleet
- * phase) against a fake `incus`, `swamp` and `timeout` that log every call. The fake `wg` stops the run at the operator join, which needs
- * root and systemd: what the build does before it is the subject here.
+ * phase) against a fake `incus`, `swamp` and `timeout` that log every call. Most cases stop at the fake `wg`; the stock-role case uses
+ * a deterministic key pair and stops at the nested hub restart, before real WireGuard/systemd activation.
  */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
@@ -23,6 +23,10 @@ const tasks = new URL("../ansible/tasks/", import.meta.url).pathname;
 const user = new TextDecoder().decode(
   new Deno.Command("id", { args: ["-un"] }).outputSync().stdout,
 ).trim();
+
+// RFC 7748 Alice's X25519 pair, with the private scalar clamped as wg genkey does. Fixture data only.
+const operatorPrivateKey = "cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGo=";
+const operatorPublicKey = "hSDwCYkwp1R0i33ctD73Wg2/Og0mOBr066SpjqqbTmo=";
 
 const guests = {
   gateway: "nested-gateway",
@@ -189,7 +193,24 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
   Deno.writeTextFileSync(`${bin}/timeout`, `#!/bin/sh\nshift\nexec "$@"\n`);
   Deno.writeTextFileSync(
     `${bin}/wg`,
-    stockRoles ? `#!/bin/sh\nexec /usr/bin/wg "$@"\n` : `#!/bin/sh\nexit 1\n`,
+    stockRoles
+      ? `#!/usr/bin/env python3
+import sys
+private = "${operatorPrivateKey}"
+public = "${operatorPublicKey}"
+stdin = sys.stdin.read()
+if sys.argv[1:] == ["genkey"] and stdin == "":
+    key = private
+elif sys.argv[1:] == ["pubkey"] and stdin in (private, private + "\\n"):
+    key = public
+else:
+    print("fixture wg: unsupported arguments or stdin", file=sys.stderr)
+    sys.exit(1)
+with open("${folder}/log", "a") as log:
+    log.write("wg " + sys.argv[1] + "\\n")
+print(key)
+`
+      : `#!/bin/sh\nexit 1\n`,
   );
   for (const name of ["incus", "swamp", "timeout", "wg"]) {
     Deno.chmodSync(`${bin}/${name}`, 0o755);
@@ -305,6 +326,35 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
   const stamped = read("stamps/operator") !== "";
   const pushedInput = read("pushed-input");
   const operatorKey = stockRoles ? read("wireguard/wg-nested.key") : "";
+  const operatorKeyMode = stockRoles && operatorKey
+    ? Deno.statSync(`${folder}/wireguard/wg-nested.key`).mode! & 0o777
+    : null;
+  // Keep refusal checks in the stock case's registration; never invoke the runner's wg.
+  const wgRefusals = stockRoles
+    ? [
+      { args: ["pubkey"], stdin: "" },
+      { args: ["pubkey"], stdin: "wrong-key\n" },
+      { args: ["genkey"], stdin: "unexpected\n" },
+      { args: ["genkey", "extra"], stdin: "" },
+      { args: ["pubkey", "extra"], stdin: operatorPrivateKey + "\n" },
+      { args: ["show", "orbit", "public-key"], stdin: "" },
+    ].map(({ args, stdin }) => {
+      const result = new Deno.Command("sh", {
+        args: [
+          "-c",
+          'input=$1; shift; printf "%s" "$input" | "$@"',
+          "fixture-wg",
+          stdin,
+          `${bin}/wg`,
+          ...args,
+        ],
+      }).outputSync();
+      return {
+        code: result.code,
+        stdout: new TextDecoder().decode(result.stdout),
+      };
+    })
+    : [];
   const baseState = stockRoles ? JSON.parse(read("base-state.json")) : null;
   const roleOutputs = Object.fromEntries(
     [1, 2, 3, 4, 5].map((id) => [id, read(`role-${id}.output`)]),
@@ -315,6 +365,8 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
   return {
     baseState,
     operatorKey,
+    operatorKeyMode,
+    wgRefusals,
     roleOutputs,
     roleStatuses,
     log,
@@ -545,6 +597,23 @@ Deno.test({
       "Fixture stops before real nested WireGuard/systemd activation",
     );
     assertEquals(result.operatorKey.trim().length, 44);
+    assertEquals(result.operatorKey, operatorPrivateKey + "\n");
+    assertEquals(result.operatorKeyMode, 0o600);
+    assertEquals(result.log.filter((call) => call.startsWith("wg ")), [
+      "wg genkey",
+      "wg pubkey",
+    ]);
+    assertEquals(result.wgRefusals, Array(6).fill({ code: 1, stdout: "" }));
+    assertStringIncludes(
+      result.log.join("\n"),
+      `update nodes set wireguard_public_key = '${operatorPublicKey}' where name = 'operator'`,
+    );
+    assertStringIncludes(
+      result.pushedInput,
+      `[Peer]\n# operator\nPublicKey = ${operatorPublicKey}\nAllowedIPs = 10.45.0.10/32\n`,
+    );
+    assertEquals(result.output.includes(operatorPrivateKey), false);
+    assertEquals(result.log.join("\n").includes(operatorPrivateKey), false);
     assertStringIncludes(
       result.log.join("\n"),
       " -- systemctl restart wg-quick@orbit",

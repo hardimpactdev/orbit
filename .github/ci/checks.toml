@@ -240,12 +240,13 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_image_test.ts"
-# 158s, hosted four-worker run 43000765953 (completed case; its slice later reached 180.033 seconds).
-after_merge_cases = ["a new image definition is built, takes the stable alias and replaces the old image"]
-cost = 293
-# Completed Deno case times rounded up by one second; startup is added per slice.
-# Unmeasured cases use the observed maximum (84s); these are estimates, not completed measurements.
-slices = 5
+# Exact-head Beast receipt ede21ef9: /fast/scratch/stock-fix-image-green.log (9 cases passed).
+# Hosted forecasts are ceil(Beast seconds * 2.1) + 1; larger completed hosted costs stay.
+# The renamed first case retains its existing after-merge classification (158s hosted, run 43000765953).
+# The new full replacement case measured 70s on Beast: 148s estimated body + 6s startup exceeds the 150s lane.
+after_merge_cases = ["a new image definition takes the stable alias while retaining the old image", "the full prepared-image replacement and failure cleanup use the verified local socket despite the default remote"]
+cost = 401
+slices = 7
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "bin/swamp-shape-gate",
@@ -273,11 +274,13 @@ inputs = [
 ]
 
 [fixture.case_costs]
-  "a Node without its Instance pool is refused before anything changes" = 3 # completed body 1.403s, run 43010311414; larger completed history retained
-  "a directory pool skips the clone probe: a copy there is a full copy" = 81 # completed body 62.340s, run 43010311414; larger completed history retained
-  "an image that keeps a sudo path is never published" = 84 # completed body 64.008s, run 43010311414; larger completed history retained
-  "orbit-instance-build refuses an inherited unguarded profile NIC before starting" = 69 # completed body 45.934s, run 43010311414; larger completed history retained
-  "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting" = 56 # completed body 41.131s, run 43010311414; larger completed history retained
+  "a Node without its Instance pool is refused before anything changes" = 3 # completed body 1.403s, run 43010311414; larger completed history retained; ede21ef9 Beast 0.607s gives 3s estimate
+  "a directory pool skips the clone probe: a copy there is a full copy" = 81 # completed body 62.340s, run 43010311414; larger completed history retained; ede21ef9 Beast 26.0s gives 56s estimate
+  "an image that keeps a sudo path is never published" = 84 # completed body 64.008s, run 43010311414; larger completed history retained; ede21ef9 Beast 27.0s gives 58s estimate
+  "orbit-instance-build refuses an inherited unguarded profile NIC before starting" = 69 # completed body 45.934s, run 43010311414; larger completed history retained; ede21ef9 Beast 22.0s gives 48s estimate
+  "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting" = 56 # completed body 41.131s, run 43010311414; larger completed history retained; ede21ef9 Beast 17.0s gives 37s estimate
+  "prepared publication clears inherited stock build ownership" = 58 # ESTIMATE: ede21ef9 Beast 27.0s * 2.1, rounded up + 1s
+  "a prior prepared-image builder is refused by exact name and recipe without deletion" = 50 # ESTIMATE: ede21ef9 Beast 23.0s * 2.1, rounded up + 1s
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_runtime_test.ts"
@@ -810,6 +813,8 @@ inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/tasks/instance-bridge-rules.yml",
+  "swamp/tests/fixtures/instance-bridge-curl.py",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
@@ -963,8 +968,10 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_container_host_prepare_test.ts"
-cost = 590
-slices = 10 # One measured case per unit; equal file shares underpriced paired cases.
+# Exact-head Beast receipt ede21ef9: /fast/scratch/stock-fix-container-green.log (44 cases passed).
+# Hosted forecasts are ceil(Beast seconds * 2.1) + 1; larger completed hosted costs stay.
+cost = 702
+slices = 44 # One registered case per unit, including the adoption refusals.
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -979,16 +986,50 @@ inputs = [
 ]
 
 [fixture.case_costs]
-  "a container host is refused before its container side changes: another Incus line, SCTP, subordinate IDs, a taken bridge" = 58 # completed body 56.209s, run 43011901748; maximum completed observation, rounded up plus 1s
-  "a copy that Incus shifted fails the phase and leaves no probe" = 50 # completed body 48.946s, run 43017688111; maximum completed observation, rounded up plus 1s
-  "a clone probe that a failed run left is removed before the next probe" = 54 # completed body 52.105s, run 43017688111; maximum completed observation, rounded up plus 1s
-  "a container host on a native pool gets the ARC cap now and after reboot, and keeps it when containers go" = 104 # completed body 102.375s, run 43017688111; maximum completed observation, rounded up plus 1s
-  "a container host gets its kernel side, bridge, project and clone check beside the VM side, then changes nothing" = 79 # completed body 77.221s, run 43017688111; maximum completed observation, rounded up plus 1s
-  "the container rule never raises a cap the host already runs" = 50 # completed body 48.892s, run 43013527963; maximum completed observation, rounded up plus 1s
-  "the container bridge gets DHCP and DNS input rules under its own catalog names" = 47 # completed body 45.777s, run 43017688111; maximum completed observation, rounded up plus 1s
-  "an Incus package removed with its config files left counts as missing and is installed" = 48 # completed body 46.508s, run 43017688111; maximum completed observation, rounded up plus 1s
-  "a small host caps the ARC at 1 GiB" = 48 # completed body 46.428s, run 43017688111; maximum completed observation, rounded up plus 1s
-  "a host without Incus installs the recipe's pinned packages, fetched by digest" = 52 # completed body 50.154s, run 43017688111; maximum completed observation, rounded up plus 1s
+  "a container host gets its kernel side, bridge, project and clone check beside the VM side, then changes nothing" = 79 # completed body 77.221s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 26.0s gives 56s estimate
+  "the container bridge gets DHCP and DNS input rules under its own catalog names" = 47 # completed body 45.777s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 14.0s gives 31s estimate
+  "a small host caps the ARC at 1 GiB" = 48 # completed body 46.428s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 14.0s gives 31s estimate
+  "a host without Incus installs the recipe's pinned packages, fetched by digest" = 52 # completed body 50.154s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 15.0s gives 33s estimate
+  "a container host is refused before its container side changes: another Incus line, SCTP, subordinate IDs, a taken bridge" = 58 # completed body 56.209s, run 43011901748; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 16.0s gives 35s estimate
+  "a copy that Incus shifted fails the phase and leaves no probe" = 50 # completed body 48.946s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 16.0s gives 35s estimate
+  "a prior clone probe refuses with its exact name and recipe instead of being deleted" = 37 # ESTIMATE: ede21ef9 Beast 17.0s * 2.1, rounded up + 1s
+  "a container host on a native pool gets the ARC cap now and after reboot, and keeps it when containers go" = 104 # completed body 102.375s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 37.0s gives 79s estimate
+  "the container rule never raises a cap the host already runs" = 67 # ESTIMATE: ede21ef9 Beast 31.0s * 2.1, rounded up + 1s
+  "an Incus package removed with its config files left counts as missing and is installed" = 48 # completed body 46.508s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 16.0s gives 35s estimate
+  "fresh stock publication is independent and a healthy repeat retains all caches without changes" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s
+  "a prior builder refuses with exact resource and recipe even with copied stock properties" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s
+  "a prior candidate refuses with exact resource and recipe even with copied stock properties" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s
+  "a prior retirement refuses with exact resource and recipe even with copied stock properties" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s
+  "a prior unaliased publication refuses with exact resource and recipe even with copied stock properties" = 4 # ESTIMATE: ede21ef9 Beast 1.0s * 2.1, rounded up + 1s
+  "unmarked selected stock refuses with its full fingerprint and adoption recipe" = 4 # ESTIMATE: ede21ef9 Beast 1.0s * 2.1, rounded up + 1s
+  "replacement refuses an old selected record without a retention alias and never deletes it" = 4 # ESTIMATE: ede21ef9 Beast 1.0s * 2.1, rounded up + 1s
+  "a copied stock statement on a healthy selected image never licenses any deletion" = 4 # ESTIMATE: ede21ef9 Beast 1.0s * 2.1, rounded up + 1s
+  "a failed current publication removes only its current builder and leaves the exact interrupted image for operator cleanup" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s
+  "a missing current publication archive fails without deleting any image or cache" = 4 # ESTIMATE: ede21ef9 Beast 1.0s * 2.1, rounded up + 1s
+  "stock daemon identity refuses socket_server_pid mismatch before mutation" = 4 # ESTIMATE: ede21ef9 Beast 1.0s * 2.1, rounded up + 1s
+  "stock daemon identity refuses cli_server_pid mismatch before mutation" = 3 # ESTIMATE: ede21ef9 Beast 0.722s * 2.1, rounded up + 1s
+  "stock image commands use the approved local socket despite a same-PID default remote" = 4 # ESTIMATE: ede21ef9 Beast 1.0s * 2.1, rounded up + 1s
+  "the explicit fingerprint adoption recipe snapshots and retains legacy stock before one property set and ordinary convergence" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s
+  "the image fixture routes explicit remote prefixes ahead of the local environment" = 2 # ESTIMATE: ede21ef9 Beast 0.037s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal retention \"other:retain-stock\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.075s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal alias \"other:stock\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal project \"other:project\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal fingerprint \"other:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.048s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal retention \"stock/retain\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.047s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal alias \"stock/alias\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal project \"stock/project\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.048s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal retention \"--retain\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal alias \"-stock\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal project \"-project\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal retention \"retain stock\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal alias \"stock\\n\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal project \"\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.049s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal fingerprint \"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal fingerprint \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.047s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal fingerprint \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses mismatched approval tuples or existing metadata without mutation" = 3 # ESTIMATE: ede21ef9 Beast 0.767s * 2.1, rounded up + 1s
+  "the adoption recipe refuses interrupted resources and preserves every unrelated alias" = 2 # ESTIMATE: ede21ef9 Beast 0.304s * 2.1, rounded up + 1s
+  "explicit adoption can restore its saved metadata before or after replacement while retaining both images" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s
 
 [[fixture]]
 file = "swamp/tests/ansible_task_host_firewall_remove_test.ts"
@@ -1058,10 +1099,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_fleet_build_test.ts"
-cost = 598
-slices = 15
-after_merge_cases = ["a from-stock refresh with no Gateway release metadata reaches all nested roles after private DNS lets the websocket dependency listen"]
-reason = "From-stock operator case failed at Make the operator key in run 43020616292. Its wrapper needs /usr/bin/wg, absent from the hosted image manifest; direct runner confirmation and a measured remedy are pending. Full-set receiver retains this case; no claim of passing coverage."
+cost = 677
+slices = 16
 inputs = [
   "apps/gateway/tests/Fixtures/production-gateway-converge-main.json",
   "bin/swamp-shape-gate",
@@ -1088,6 +1127,7 @@ inputs = [
   "a fleet whose build stopped after its containers existed has no operator stamp: all three go and the build runs whole" = 37 # completed body 36.842s, run 43010311414; larger completed history retained
   "a build removes the operator stamp first, so a build that stops leaves the fleet incomplete" = 36 # completed body 35.292s, run 43010311414; larger completed history retained
   "a complete fleet creates nothing, restarts nothing and changes nothing" = 8 # completed body 7.327s, run 43010311414; larger completed history retained
+  "a from-stock refresh with no Gateway release metadata reaches all nested roles after private DNS lets the websocket dependency listen" = 79 # UNMEASURED hosted estimate: existing file maximum; fixture-owned keys passed locally in 27.045s body / 27.127s wall; current-head hosted proof pending
   "local Gateway DNS fails with a named error before activation when dig is missing" = 2 # completed body 1.642s, run 43010311414; larger completed history retained
   "local Gateway DNS fails with a named error before activation when dig is missing in check mode" = 2 # completed body 1.890s, run 43010311414; larger completed history retained
   "an already-running local listener is reused with zero changes and peer-managed Gateway DNS is preserved" = 68 # completed body 67.121s, run 43010311414; larger completed history retained

@@ -3,7 +3,16 @@ import {
     agentPythonFindings,
     GATEWAY_PRIMITIVES,
 } from "./check-swamp-shape.ts";
-import { run, script } from "./gate-test-support.ts";
+import {
+    BRIDGE_ACQUIRE,
+    BRIDGE_WRITER,
+    BRIDGE_RECORD_MUTATIONS,
+    bridgeContractViolations,
+    bridgeInodeViolations,
+    bridgeImportViolations,
+    run,
+    script,
+} from "./gate-test-support.ts";
 type Finding = { rule: string };
 async function scan(
     source: string,
@@ -426,4 +435,171 @@ Deno.test("native_certificate_signer_has_only_the_scoped_post_and_checked_numeri
             ),
         );
     }
+});
+
+async function bridgeScan(
+    source = BRIDGE_WRITER,
+    peers: Record<string, string> = {},
+) {
+    const result = await run("python3", [
+        script("swamp-shape-python.py"),
+        "[]",
+        "--source-context",
+    ], {
+        input: JSON.stringify({
+            source,
+            sources: { "arbitrary_name.py": source, ...peers },
+        }),
+    });
+    assertEquals(result.code, 0, result.stderr);
+    return JSON.parse(result.stdout) as Finding[];
+}
+
+Deno.test("bridge transaction proves one nonblocking acquisition and complete custody", async () => {
+    assertEquals(await bridgeScan(), []);
+    assert(
+        (await scan(BRIDGE_WRITER)).some((row) =>
+            row.rule === "custom-control"
+        ),
+    );
+    for (const [name, source] of bridgeContractViolations) {
+        assert(
+            (await bridgeScan(source)).some((row) =>
+                row.rule === "custom-control"
+            ),
+            name,
+        );
+    }
+});
+
+Deno.test("bridge custody cannot be bypassed by a caller, descriptor or binding change", async () => {
+    for (
+        const source of [
+            BRIDGE_WRITER.replace(
+                BRIDGE_ACQUIRE,
+                BRIDGE_ACQUIRE.replace("lock,", "other,"),
+            ),
+            BRIDGE_WRITER.replace(
+                BRIDGE_ACQUIRE,
+                BRIDGE_ACQUIRE.replace(" | fcntl.LOCK_NB", ""),
+            ),
+            BRIDGE_WRITER.replace(
+                "        yield",
+                "        fcntl.flock(lock, fcntl.LOCK_UN)\n        yield",
+            ),
+            BRIDGE_WRITER.replace("        yield", "    yield"),
+            BRIDGE_WRITER.replace(
+                "            raise PolicyError('instance.bridge_busy') from None",
+                "            pass",
+            ),
+            BRIDGE_WRITER.replace(
+                "    with writer_lock(root):",
+                "    write_file(root / 'health.json', {})\n    with writer_lock(root):",
+            ),
+            BRIDGE_WRITER.replace(
+                "    with writer_lock(root):",
+                "    apply_locked(root, incoming, reconcile, withdraw, deadline)\n    with writer_lock(root):",
+            ),
+            BRIDGE_WRITER.replace(
+                "            write_file(root / 'health.json', {'error_code': code})",
+                "            pass",
+            )
+                .replace(
+                    "            raise\n",
+                    "            raise\n    write_file(root / 'health.json', {})\n",
+                ),
+            BRIDGE_WRITER.replace(
+                "    main()",
+                "    apply_locked(None, None, False, False, 1)",
+            ),
+            BRIDGE_WRITER.replace("import fcntl", "import fake as fcntl"),
+            BRIDGE_WRITER.replace(
+                "    records =",
+                "    fcntl = fake\n    records =",
+            ),
+            BRIDGE_WRITER.replace(
+                "    records =",
+                "    alias = apply_locked\n    records =",
+            ),
+            BRIDGE_WRITER.replace(
+                "    records =",
+                "    (root / 'writer.lock').unlink()\n    records =",
+            ),
+            BRIDGE_WRITER + "\nwriter_lock = lambda root: None\n",
+        ]
+    ) {
+        assert(
+            (await bridgeScan(source)).some((row) =>
+                row.rule === "custom-control"
+            ),
+            source,
+        );
+    }
+    assert((await bridgeScan(BRIDGE_WRITER, {
+        "another.py":
+            "from arbitrary_name import apply_locked\napply_locked(None, None, False, False, 1)\n",
+    })).some((row) => row.rule === "custom-control"));
+});
+
+Deno.test("bridge proof denies destructive calls outside the closed state helper", async () => {
+    assertEquals(await bridgeScan(BRIDGE_RECORD_MUTATIONS), []);
+    for (const [name, source] of bridgeInodeViolations) {
+        assert(
+            (await bridgeScan(source)).some((row) =>
+                row.rule === "custom-control"
+            ),
+            name,
+        );
+    }
+});
+
+Deno.test("bridge proof rejects package and relative imports across the full inventory", async () => {
+    for (const [name, path, peer] of bridgeImportViolations) {
+        const sources = {
+            "ansible/package/renamed_writer.py": BRIDGE_WRITER,
+            ["ansible/" + path]: peer,
+        };
+        const result = await run("python3", [
+            script("swamp-shape-python.py"),
+            "[]",
+            "--source-context",
+        ], {
+            input: JSON.stringify({
+                source: BRIDGE_WRITER,
+                sources: { "ansible/package/renamed_writer.py": BRIDGE_WRITER },
+                bridge_sources: sources,
+            }),
+        });
+        assertEquals(result.code, 0, result.stderr);
+        assert(
+            (JSON.parse(result.stdout) as Finding[]).some((row) =>
+                row.rule === "custom-control"
+            ),
+            name,
+        );
+    }
+    const unrelated = {
+        "ansible/caller.py":
+            "from other import renamed_writer\nprint(renamed_writer)\n",
+    };
+    const result = await run("python3", [
+        script("swamp-shape-python.py"),
+        "[]",
+        "--source-context",
+    ], {
+        input: JSON.stringify({
+            source: BRIDGE_WRITER,
+            sources: { "ansible/package/renamed_writer.py": BRIDGE_WRITER },
+            bridge_sources: {
+                "ansible/package/renamed_writer.py": BRIDGE_WRITER,
+                ...unrelated,
+            },
+        }),
+    });
+    assertEquals(result.code, 0, result.stderr);
+    assertEquals(
+        JSON.parse(result.stdout),
+        [],
+        "An unrelated qualified module is not the writer",
+    );
 });

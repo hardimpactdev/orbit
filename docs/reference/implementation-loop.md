@@ -3,8 +3,8 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,test,ci-build-plan,ci-units,ci-cache-ref,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
-  - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy}.py,swamp/bin/check-swamp-shape.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
+  - bin/{review-check,test,ci-build-plan,ci-units,ci-cache-ref,ci-runner-prerequisites,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
+  - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy,swamp-shape-python,swamp_shape_host_tools}.py,swamp/bin/{check-swamp-shape,gate-test-support}.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - "{tools/check_budget.py,swamp/tests/_support/slice.ts}"
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py},agent_command.py}
@@ -67,6 +67,10 @@ Pull requests and main pushes run the fast Swamp control checks. Selected shape 
 The Gateway Pest job installs Gateway and CLI dev Composer dependencies and regenerates both autoloaders with `composer install --no-scripts`. It then runs `bin/build-api` so tests read the current OpenAPI and MCP contracts; these generated outputs are not cached. NodeMetrics runs the CLI's PHP consent fixture. Separate vendor caches use each project's manifest and lockfile, PHP 8.5, the runner OS and SDK Composer metadata; they never restore the runtime-only Gateway cache.
 
 The job downloads the recipe's Deno 2.9.8 artifact and checks its SHA-256 before extraction. It caches the archive and JSR/npm downloads and warms the firewall test imports before Pest. It downloads the recipe's Caddy 2.11.7 artifact, checks its SHA-512 before extraction and requires the executable and version before running tests. Missing Caddy fails setup. The real Caddy fixtures wait for every listener in the chain before sending their assertions; the echo server uses an ephemeral loopback admin port. SQLite stays in memory; no database or Redis service is started. The two privileged kernel cases remain in Gateway static analysis.
+
+Gateway static analysis checks `nft --version` before its two real-kernel cases. Pi checks `setfacl --version` and `getfacl --version` before its ACL tests and verifies passwordless access to `nobody`. When the tools work, both jobs skip apt. Missing tools use `bin/ci-runner-prerequisites`: a signed Ubuntu 26.04 main index from Azure, then `archive.ubuntu.com` if needed.
+
+Each attempt uses private source and index files, a three-second connection timeout and no retries. An incomplete index update fails the attempt. Update and install share ten seconds for Azure and twenty seconds for the fallback. At the deadline, the helper kills the attempt's process group. It verifies the installed commands and fails if neither attempt supplies them. The job limits remain two minutes.
 
 The CI policy tests run actionlint on the complete CI workflow to check Actions syntax, types and context availability. The checker downloads pinned actionlint 1.7.12 and verifies its archive's SHA-256 before extraction, including cache hits. Its runner-label catalog predates `ubuntu-26.04`, so the actionlint configuration adds that label explicitly.
 
@@ -132,7 +136,9 @@ The case inventory in `tools/tests/ci-fixture-cases.json` records measured regis
 
 Source hashes are evidence, not a gate on unrelated changes. Selected Deno units compare current registrations with their recorded population before running a body, including loop-generated cases. Changed populations, zero registrations and stale excluded names fail by name. A successful process must also provide a receipt proving that every selected case passed; ignored cases, unrun cases and missing receipts fail. New files use the default cost and the same runtime deadlines. Use `bin/ci-units collect --file PATH` to collect names without executing bodies, then review costs when updating a measured population.
 
-Three more cases run only after merge. Restarting the worker needs a running user systemd manager. Rebooting a persistently unreachable ordinary Node hit the shard deadline at 72.3 seconds. Creating the operator key during a refresh from stock needs diagnosis of the runner prerequisites. Their exact names and evidence are recorded in `checks.toml`. Other cases in those files remain eligible. Strict receipts and deadlines still apply, including in the full-set receiver. Deferral is a coverage gap until that receiver executes the case successfully.
+The from-stock fleet case runs in PR fixtures with a deterministic fixture key pair, without installed WireGuard tools. It checks the stored private key and both public-key consumers, then stops before real WireGuard or systemd activation. Its table cost remains an estimate until a hosted run measures the restored case.
+
+Two more cases run only after merge. Restarting the worker needs a running user systemd manager. Rebooting a persistently unreachable ordinary Node hit the shard deadline at 72.3 seconds. Their exact names and evidence are recorded in `checks.toml`. Other cases in those files remain eligible. Strict receipts and deadlines still apply, including in the full-set receiver. Deferral is a coverage gap until that receiver executes the case successfully.
 
 Shards publish source hashes, declared costs, unit and startup times, exact case names and completed case times as artifacts. Running cases at a cutoff are censored lower bounds, not completed measurements; queued cases remain `NOT RUN`. A failed Python file reports unknown case outcomes and retains unittest output. Startup time covers launch and module load before the first case.
 
@@ -160,11 +166,15 @@ Swamp source lives under `swamp/`. Its check inputs are declared in the same tab
 
 The Swamp shape job runs `bin/swamp-shape-gate --only control`. Scheduled and manual full-fixture runs use `--only shape`. The script runs the gate, Python analyzer, frozen-base policy and validation CI regression tests through Deno. It also runs pinned `ansible-lint` against the Node enrollment, role, development create, Route and task VM playbooks and checks the private Ansible input builder, the enrollment playbook contract and the waits of a nested fleet against a stub `incus`. The firewall regression test evaluates changed shapes, rule order and unchanged state through the pinned Ansible engine. The artifact tests cover candidate order, transport-only fallback, checksum rejection, cache reuse and staging cleanup.
 
+The bridge writer fixture executes the shipped Ansible task against a temporary ACL boundary. It checks immediate busy refusal, partial withdrawal followed by refresh, failure health and successful recovery. Its fixture input map includes the shipped task and fake curl boundary. It performs no live Incus operation.
+
 The task VM Incus tests require the SSH user's client config before parallel fleet work and preserve it on a second converge with zero changes.
 
 The gate also validates Instance task arguments against the real pinned Ansible module specifications, because fixture modules cannot reject arguments on the real modules' behalf.
 
 Baseline counts cannot grow. Stale evidence labels can be corrected only to labels found in the immutable base source. The check against frozen base rules always scans committed source, including gate scripts. It accepts a repair only when the baseline changes evidence labels alone, counts stay equal, base and head have identical findings, and all errors refer to the repaired labels. Added calls, changed endpoints and debt hidden by checker edits still fail.
+
+The Python policy proves the bridge writer’s nonblocking host-tool transaction as a complete structure, including its busy refusal, descriptor custody and failure health write. Tests run both the current checker and the checker frozen in the comparison commit. Both reject a missing lock, early release, mutation on busy, wait loops, destructive calls outside the exact state helper (including loop-carried and match rebindings), helper aliases or altered destinations, and package imports that bypass the locked entry point. The [bridge transaction contract](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md#bridge-writer-transaction-contract) owns the requirements; it adds no pathname or baseline allowance.
 
 The Deno test for worker renewal runs the installed Ansible playbook against fake CLI, journal and systemd boundaries. It holds drain and enrollment barriers to check renewal order, survivor capacity, queued follow-on work, failed enrollment and actual bootstrap/remint worker names.
 

@@ -2056,3 +2056,41 @@ Deno.test({
     }
   },
 });
+
+const real53Environment = "CACHE_STORE=database\nSESSION_DRIVER=database\nQUEUE_CONNECTION=database\nBROADCAST_CONNECTION=log\nMAIL_MAILER=log\nDB_CONNECTION=sqlite\nREDIS_CLIENT=phpredis\nREDIS_HOST=127.0.0.1\nREDIS_PORT=6379\nREDIS_PASSWORD=\n";
+for (const scenario of ["stock Laravel", "real53", "selected Redis", "attached Redis", "wrong Redis port"]) {
+  Deno.test({
+    name: `stock selector preflight: ${scenario}`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        const selected = scenario.includes("Redis");
+        const text = scenario === "stock Laravel"
+          ? Deno.readTextFileSync(new URL("fixtures/laravel-stock.env.example", import.meta.url))
+          : real53Environment.replace("CACHE_STORE=database", selected ? "CACHE_STORE=redis" : "CACHE_STORE=database");
+        Deno.writeTextFileSync(`${f.checkout}/.env`, text);
+        if (scenario === "attached Redis" || scenario === "wrong Redis port") {
+          f.migrate.environment.targets.push({ host: "127.0.0.1", port: scenario === "attached Redis" ? 6379 : 6380 });
+        }
+        f.write();
+        const before = f.state();
+        const result = f.run("container");
+        const refused = scenario === "selected Redis" || scenario === "wrong Redis port";
+        assertEquals(result.ok, !refused, result.output);
+        if (refused) {
+          assertEquals(f.result().error_code, "instance.migrate_env_service_unreachable");
+          assertEquals(f.result().preflight_refused, true);
+          assert(f.result().error_message.includes("REDIS_HOST=127.0.0.1:6379"));
+          assertEquals(f.state(), before);
+          assert(!exists(`${f.folder}/calls`), "refuse before any container command or probe");
+        } else {
+          assert(exists(`${f.folder}/calls`), "pass the real preflight and prepare the container");
+        }
+        assertEquals(Deno.readTextFileSync(`${f.checkout}/.env`), text);
+        assert(exists(f.migrate.awake.path));
+        assert(!exists(`${f.folder}/run/quiesced`));
+      } finally { f.cleanup(); }
+    },
+  });
+}

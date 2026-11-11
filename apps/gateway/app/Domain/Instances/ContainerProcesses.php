@@ -11,7 +11,6 @@ use App\Domain\Processes\VpDevPreset;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Instance;
 use App\Models\Process;
 use App\Support\ValidatedData;
@@ -25,7 +24,7 @@ use Illuminate\Support\Collection as SupportCollection;
  */
 final readonly class ContainerProcesses
 {
-    public function __construct(private ProcessTargetResolver $targets, private SystemdProcessRenderer $systemd, private RecipeImageBuilds $recipes) {}
+    public function __construct(private ProcessTargetResolver $targets, private SystemdProcessRenderer $systemd, private ContainerProcessCommands $commands) {}
 
     /**
      * The `processes` of the container intent, in id order. `environment` names the unit's own environment file, or null when its
@@ -52,7 +51,7 @@ final readonly class ContainerProcesses
             if ($target->container === null || $process->runtime !== ProcessRuntime::Systemd) {
                 throw new ResourceOperationException('process.target_unsupported', "Process [{$process->id}:{$process->name}] must use systemd in an Instance container.", 409);
             }
-            $units[] = ['id' => $process->id, 'name' => $this->systemd->unitName($process), 'content' => $this->systemd->render($process, $target),
+            $units[] = ['id' => $process->id, 'name' => $this->systemd->unitName($process), 'content' => $this->systemd->render($process, $target, resolveNames: ! $migrate),
                 'environment' => $this->hasEnvironment($process, $target) ? $this->systemd->environmentPath($process, $target) : null,
                 'desired' => $process->desired_state->value];
         }
@@ -81,6 +80,12 @@ final readonly class ContainerProcesses
         }
 
         return json_encode((object) $files, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+    }
+
+    /** @return array{id:int,name:string,content:string,environment:?string,desired:string} */
+    public function unit(Instance $instance, Process $process, bool $migrate = false): array
+    {
+        return $this->render($instance, new Collection([$process]), $migrate)[0];
     }
 
     /**
@@ -134,79 +139,36 @@ final readonly class ContainerProcesses
         return $placed;
     }
 
-    /** Map only the projected migration copy. The recipe owns command names and PHP versions; host records stay unchanged.
-     * @return list<string>
-     */
+    /** @return list<string> */
     private function migrateCommand(Process $process, Instance $instance): array
     {
-        $command = ValidatedData::stringList($process->runtime_config['command']);
-        $index = $this->commandIndex($command);
-        if ($index === null || ! $this->hostCommand($command[$index] ?? '')) {
-            return $command;
-        }
-        $path = $command[$index];
-        $name = basename($path);
-        $folders = $this->recipes->currentRecipe()->instances;
-        if (preg_match('/^php(?<version>[0-9]+[.][0-9]+)?$/', $name, $match) === 1) {
-            $version = $match['version'] ?? $instance->project->php_version;
-            if (! is_string($version) || ($folders->php[$version]->artifact ?? null) === null) {
-                throw new ResourceOperationException('instance.migrate_process_binary_unavailable',
-                    "Process [{$process->id}:{$process->name}] executable [{$path}] requires PHP [{$version}], which the container runtime does not ship.", 409);
-            }
-            array_splice($command, $index, 1, [InstanceHostIntent::RuntimeFolder.'/current/php/'.$version.'/bin/php']);
-        } else {
-            foreach ($folders->runtime ?? [] as $part) {
-                if (array_key_exists($name, $part->bin)) {
-                    array_splice($command, $index, 1, [InstanceHostIntent::RuntimeFolder.'/current/bin/'.$name]);
-                    break;
-                }
-            }
-        }
-
-        return $command;
+        return $this->commands->resolve(ValidatedData::stringList($process->runtime_config['command']), $instance->project->php_version,
+            "Process [{$process->id}:{$process->name}]", hostPaths: true);
     }
 
-    /** Known host install locations, shared by every recipe command and versioned PHP name. */
-    private function hostCommand(string $path): bool
+    /** The same validated placement used by migration rendering; no writes. */
+    public function forDefinition(Process $process, Instance $instance): Process
     {
-        return preg_match('~^(?:/(?:usr/bin|usr/local/bin|bin)/[^/]+|/(?:home/[^/]+|root)/[.]vite-plus/(?:bin/[^/]+|js_runtime/node/[^/]+/bin/node))$~', $path) === 1;
+        return $this->placed($process, $instance, $process->isVpDev() ? $this->vitePort($instance) : null, migrate: true);
     }
 
-    /** The actual command after env options and assignments. Shell strings and unknown options stay opaque.
-     * @param  list<string>  $command
+    /** Compare effective container intent, including environment values, without changing either record.
+     * @param  array<string,mixed>  $attributes
      */
-    private function commandIndex(array $command): ?int
+    public function matchesDefinition(Process $process, array $attributes, Instance $instance): bool
     {
-        if (($command[0] ?? null) !== '/usr/bin/env') {
-            return $command === [] ? null : 0;
+        if ($process->runtime !== ProcessRuntime::Systemd || $attributes['runtime'] !== ProcessRuntime::Systemd
+            || $process->keep_alive !== $attributes['keep_alive'] || $process->restart_on_deploy !== $attributes['restart_on_deploy']) {
+            return false;
         }
-        $options = true;
-        for ($index = 1; $index < count($command); $index++) {
-            $argument = $command[$index];
-            if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*=/', $argument) === 1) {
-                continue;
-            }
-            if ($options && $argument === '--') {
-                $options = false;
+        $actual = $this->forDefinition($process, $instance);
+        $expected = clone $actual;
+        $expected->forceFill($attributes);
+        $expected = $this->forDefinition($expected, $instance);
+        $target = $this->targets->forInspection($actual);
 
-                continue;
-            }
-            if ($options && ($argument === '-i' || str_starts_with($argument, '--unset='))) {
-                continue;
-            }
-            if ($options && $argument === '-u' && isset($command[$index + 1])) {
-                $index++;
-
-                continue;
-            }
-            if ($options && str_starts_with($argument, '-')) {
-                return null;
-            }
-
-            return $index;
-        }
-
-        return null;
+        return $this->systemd->render($actual, $target) === $this->systemd->render($expected, $target)
+            && $this->systemd->environmentContent($actual, $target) === $this->systemd->environmentContent($expected, $target);
     }
 
     /**
@@ -316,8 +278,8 @@ final readonly class ContainerProcesses
             }
             $command = ValidatedData::stringList($placed->runtime_config['command']);
             $original = ValidatedData::stringList($process->runtime_config['command']);
-            $index = $this->commandIndex($command);
-            $originalIndex = $this->commandIndex($original);
+            $index = $this->commands->commandIndex($command);
+            $originalIndex = $this->commands->commandIndex($original);
             $executables = [$command[0]];
             if ($index !== null && $index > 0 && str_starts_with($command[$index], '/')) {
                 $executables[] = $command[$index];

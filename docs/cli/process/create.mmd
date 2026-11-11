@@ -30,6 +30,7 @@ sequenceDiagram
   %%> - `--idempotency-key` reuses a task start; `--json` returns JSON
   %%> Not handled here:
   %%> - a Project definition with `--for=production` is recorded only; it starts no run (R1)
+  %%> - development container definitions store supported command names and resolve them when rendering; capture adopts only a compatible unlinked same-name Process, keeping its id and desired state
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   Note over GW: Validate, record the task<br/>Process 418: pending · #5130

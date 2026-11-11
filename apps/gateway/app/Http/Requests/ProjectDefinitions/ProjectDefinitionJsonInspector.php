@@ -32,6 +32,11 @@ final readonly class ProjectDefinitionJsonInspector
                 'volumes',
                 'restart_policy',
                 'keep_alive',
+                'restart_on_deploy',
+                'environment_file',
+                'required_mount_paths',
+                'preset',
+                'preset_version',
             ], 'process specification');
 
             if (property_exists($object->spec, 'environment') && ! $object->spec->environment instanceof stdClass) {

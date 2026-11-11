@@ -18,7 +18,8 @@
   ansible.builtin.command:
     argv: >-
       {{ ['python3', '/usr/local/libexec/orbit-instance-bridge', '--state-dir', '/var/lib/orbit/instance-bridge', '--intent']
-         + (['--reconcile'] if bridge_reconcile else []) }}
+         + (['--reconcile'] if bridge_reconcile else [])
+         + (['--withdraw'] if bridge_withdraw | default(false) else []) }}
     stdin: >-
       {{ {'network': bridge_network, 'cidr': bridge_cidr, 'endpoints': bridge_endpoints,
           'admitted_at': bridge_admitted_at | int, 'baseline': bridge_baseline | default({})} | to_json }}

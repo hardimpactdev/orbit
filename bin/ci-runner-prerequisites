@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Ubuntu 26.04 prerequisites for hosted CI's two-minute jobs.
+set -euo pipefail
+
+case "${1:-}" in
+    nftables) tools=(nft) ;;
+    acl) tools=(setfacl getfacl) ;;
+    *) echo 'Usage: ci-runner-prerequisites {nftables|acl}' >&2; exit 2 ;;
+esac
+package=$1
+
+have_tools() {
+    local tool
+    for tool in "${tools[@]}"; do
+        "$tool" --version >/dev/null 2>&1 || return 1
+    done
+}
+
+if have_tools; then
+    echo "Using installed $package prerequisites: ${tools[*]}"
+    exit 0
+fi
+
+scratch=$(mktemp -d -t orbit-ci-apt.XXXXXXXX)
+trap 'sudo -n rm -rf -- "$scratch"' EXIT
+chmod 755 "$scratch"
+
+for mirror in azure.archive.ubuntu.com archive.ubuntu.com; do
+    budget=10
+    if [[ "$mirror" == archive.ubuntu.com ]]; then budget=20; fi
+    attempt="$scratch/$mirror"
+    mkdir -m 755 "$attempt" "$attempt/lists"
+    # Both callers use ubuntu-26.04. Only the base main index is needed for these packages.
+    echo "deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://$mirror/ubuntu resolute main" > "$attempt/ubuntu.list"
+    options=(
+        -o "Dir::Etc::sourcelist=$attempt/ubuntu.list"
+        -o 'Dir::Etc::sourceparts=-'
+        -o "Dir::State::lists=$attempt/lists"
+        -o 'Acquire::Languages=none'
+        -o 'Acquire::Retries=0'
+        -o 'Acquire::http::Timeout=3'
+        -o 'Acquire::https::Timeout=3'
+        -o 'APT::Update::Error-Mode=any'
+        -o 'DPkg::Lock::Timeout=0'
+    )
+    echo "Installing $package from $mirror (update and install budget: ${budget}s)"
+    # Root owns each apt process group so it can kill all children at the shared deadline.
+    if sudo -n python3 - "$budget" "$package" "${options[@]}" <<'PYTHON'
+import os
+import signal
+import subprocess
+import sys
+import time
+
+deadline = time.monotonic() + int(sys.argv[1])
+for operation in (['update'], ['install', '--no-install-recommends', '--yes', sys.argv[2]]):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        sys.exit(124)
+    child = subprocess.Popen(['apt-get', *sys.argv[3:], *operation], start_new_session=True)
+    try:
+        result = child.wait(timeout=remaining)
+    except subprocess.TimeoutExpired:
+        os.killpg(child.pid, signal.SIGKILL)
+        child.wait()
+        sys.exit(124)
+    if result != 0:
+        sys.exit(1)
+PYTHON
+    then
+        if ! have_tools; then
+            echo "Installed $package did not supply working prerequisites" >&2
+            continue
+        fi
+        echo "Verified $package prerequisites: ${tools[*]}"
+        exit 0
+    fi
+    echo "Could not supply $package from $mirror" >&2
+done
+
+echo "Missing $package prerequisites after both Ubuntu mirrors" >&2
+exit 1
