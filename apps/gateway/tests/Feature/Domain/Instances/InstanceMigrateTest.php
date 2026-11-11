@@ -19,6 +19,7 @@ use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
+use App\Domain\Instances\InstanceAttachedTargets;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -492,6 +493,7 @@ describe('the databases of a move', function (): void {
             'instance_id' => $default->id, 'prefix' => 'SQLITE', 'database_connection_id' => $sqlite->id, 'network' => 'wireguard',
         ]);
 
+        $displayed = InstanceAttachedTargets::forInstance($default);
         $operation = migrateStart($default);
         $container = $operation->input['container'];
         $host = app(InstanceHostIntent::class)->for($node);
@@ -510,6 +512,26 @@ describe('the databases of a move', function (): void {
 
         $baseline = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
         expect(json_encode($network, JSON_THROW_ON_ERROR))->toBe(json_encode($baseline, JSON_THROW_ON_ERROR));
+
+        expect($displayed->pluck('id')->all())->toBe([2, 1, 3, 4, 5, 6])
+            ->and($displayed->pluck('database_connection_id')->all())->toBe([2, 1, 3, 2, 4, 5])
+            ->and($displayed->pluck('prefix')->all())->toBe(['DB', 'REDIS', 'FOOD_CATALOG', 'DB_ALIAS', 'REPORTING', 'SQLITE']);
+
+        $connections = $displayed->map(static fn (DatabaseConnectionTarget $target): DatabaseConnection => $target->databaseConnection);
+        $probes = $connections->reject(static fn (DatabaseConnection $connection): bool => $connection->driver === DatabaseDriver::Sqlite)
+            ->unique('id')->values()
+            ->map(static fn (DatabaseConnection $connection): array => ['host' => $connection->host, 'port' => $connection->port]);
+        expect($probes->all())->toBe($operation->input['migrate']['databases']);
+
+        $endpoints = $probes->unique(static fn (array $endpoint): string => $endpoint['host'].':'.$endpoint['port'])->values()->all();
+        $grants = array_map(static fn (array $grant): array => [
+            'host' => substr($grant['destination'], 0, -3), 'port' => (int) $grant['destination_port'],
+        ], $container['acl_rules']['egress']);
+        expect($endpoints)->toBe($grants);
+
+        $sqliteIds = $connections->filter(static fn (DatabaseConnection $connection): bool => $connection->driver === DatabaseDriver::Sqlite)
+            ->unique('id')->pluck('id')->values()->all();
+        expect($sqliteIds)->toBe($operation->input['sqlite_connection_ids']);
     });
 
     it('leaves a database on its server and gives the container its way to every server of the Instance', function (): void {
