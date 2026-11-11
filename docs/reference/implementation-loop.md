@@ -4,7 +4,7 @@ description: "How a change reaches main: review evidence, CI, local checks, work
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
   - bin/{review-check,test,ci-build-plan,ci-cache-ref,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
-  - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy}.py,swamp/bin/check-swamp-shape.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
+  - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy,swamp-shape-python,swamp_shape_host_tools}.py,swamp/bin/{check-swamp-shape,gate-test-support}.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py},agent_command.py}
@@ -149,6 +149,8 @@ The Swamp shape job runs `bin/swamp-shape-gate --only control`. Scheduled and ma
 The gate also validates Instance task arguments against the real pinned Ansible module specifications, because fixture modules cannot reject arguments on the real modules' behalf.
 
 Baseline counts cannot grow. Stale evidence labels can be corrected only to labels found in the immutable base source. The check against frozen base rules always scans committed source, including gate scripts. It accepts a repair only when the baseline changes evidence labels alone, counts stay equal, base and head have identical findings, and all errors refer to the repaired labels. Added calls, changed endpoints and debt hidden by checker edits still fail.
+
+The Python policy proves the bridge writer’s nonblocking host-tool transaction as a complete structure, including its busy refusal, descriptor custody and failure health write. Tests run both the current checker and the checker frozen in the comparison commit. Both reject a missing lock, early release, mutation on busy and wait loops. The [bridge transaction contract](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md#bridge-writer-transaction-contract) owns the requirements; it adds no pathname or baseline allowance.
 
 The Deno test for worker renewal runs the installed Ansible playbook against fake CLI, journal and systemd boundaries. It holds drain and enrollment barriers to check renewal order, survivor capacity, queued follow-on work, failed enrollment and actual bootstrap/remint worker names.
 

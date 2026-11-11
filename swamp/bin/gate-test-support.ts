@@ -198,3 +198,115 @@ export const PHP_ENTRY = String.raw`from monitor_common import execute, stage
 
 execute(stage)
 `;
+
+// Complete, inert source fixture for the bridge's host-tool custody contract.
+// It is analyzed, never executed. Keep it independent of the recognizer's ASTs.
+export const BRIDGE_WRITER = String.raw`import argparse
+import fcntl
+import json
+import subprocess
+import sys
+import time
+from contextlib import contextmanager
+from pathlib import Path
+
+REFRESH_BUDGET_SECONDS = 30
+LIFECYCLE_BUDGET_SECONDS = 300
+
+
+class PolicyError(Exception):
+    pass
+
+
+@contextmanager
+def writer_lock(root):
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / 'writer.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise PolicyError('instance.bridge_busy') from None
+        yield
+
+
+def apply(root, incoming, reconcile=False, withdraw=False):
+    deadline = time.monotonic() + (REFRESH_BUDGET_SECONDS if incoming is None else LIFECYCLE_BUDGET_SECONDS)
+    with writer_lock(root):
+        try:
+            return apply_locked(root, incoming, reconcile, withdraw, deadline)
+        except (PolicyError, ValueError, OSError, subprocess.SubprocessError) as error:
+            code = 'instance.bridge_state_unresolved' if unresolved_health(root) else failure_code(error)
+            write_file(root / 'health.json', {'error_code': code})
+            raise
+
+
+def apply_locked(root, incoming, reconcile, withdraw, deadline):
+    records = json.loads((root / 'endpoints.json').read_text())
+    subprocess.run(['curl', '--max-time', '5', 'http://localhost/1.0/network-acls/orbitinst0-egress'],
+                   input=json.dumps(records), timeout=deadline - time.monotonic(), check=True)
+    write_file(root / 'endpoints.json', incoming)
+    write_file(root / 'health.json', {'error_code': None})
+    return 1
+
+
+def write_file(path, value):
+    path.write_text(json.dumps(value))
+
+
+def unresolved_health(root):
+    return json.loads((root / 'health.json').read_text()).get('error_code') == 'instance.bridge_state_unresolved'
+
+
+def failure_code(error):
+    if isinstance(error, subprocess.TimeoutExpired):
+        return 'instance.bridge_command_timeout'
+    return str(error) if str(error).startswith('instance.') else 'instance.container_bridge_write_failed'
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--state-dir', type=Path, default=Path('/var/lib/orbit/instance-bridge'))
+    parser.add_argument('--intent', action='store_true')
+    parser.add_argument('--reconcile', action='store_true')
+    parser.add_argument('--withdraw', action='store_true')
+    args = parser.parse_args()
+    try:
+        changed = apply(args.state_dir, json.load(sys.stdin) if args.intent else None, args.reconcile, args.withdraw)
+        print(json.dumps({'changed': changed}))
+    except (PolicyError, ValueError, OSError, subprocess.SubprocessError) as error:
+        code = failure_code(error)
+        print(json.dumps({'error_code': code}))
+        print(str(error), file=sys.stderr)
+        raise SystemExit(1) from error
+
+
+if __name__ == '__main__':
+    main()
+`;
+export const BRIDGE_ACQUIRE =
+    "fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)";
+export const bridgeContractViolations = [
+    ["missing-lock", BRIDGE_WRITER.replace(BRIDGE_ACQUIRE, "pass")],
+    [
+        "early-unlock",
+        BRIDGE_WRITER.replace(
+            "        yield",
+            "        lock.close()\n        yield",
+        ),
+    ],
+    [
+        "mutation-on-busy",
+        BRIDGE_WRITER.replace(
+            "        except BlockingIOError:\n",
+            "        except BlockingIOError:\n            write_file(root / 'health.json', {'error_code': 'instance.bridge_busy'})\n",
+        ),
+    ],
+    [
+        "wait-loop",
+        BRIDGE_WRITER.replace(
+            "        try:\n            " + BRIDGE_ACQUIRE,
+            "        while True:\n            time.sleep(0.05)\n        try:\n            " +
+                BRIDGE_ACQUIRE,
+        ),
+    ],
+] as const;

@@ -4,6 +4,8 @@ import {
     assertStringIncludes,
 } from "jsr:@std/assert@1.0.19";
 import {
+    BRIDGE_WRITER,
+    bridgeContractViolations,
     commit,
     copyPolicy,
     git,
@@ -210,5 +212,80 @@ Deno.test("stale baseline evidence can be repaired without growing immutable sou
             assert((await shape()).code !== 0);
             assert((await frozen()).code !== 0);
         }
+    });
+});
+
+Deno.test("bridge transaction contract is enforced by current and immutable base rules", async () => {
+    await temporary(async (repo) => {
+        await init(repo);
+        await write(repo + "/.gitignore", "__pycache__/\n");
+        const swamp = repo + "/swamp";
+        await copyPolicy(swamp);
+        await write(
+            swamp + "/config/agent-command-kinds.json",
+            '{"agent.status":"observer"}',
+        );
+        const ledger = swamp + "/config/swamp-shape-baseline.json";
+        const baseline = JSON.stringify({ schema: 1, entries: [] });
+        await write(ledger, baseline);
+        // Freeze the structural policy first. Candidate source and checker changes
+        // cannot modify its rules, imports or zero-debt baseline afterwards.
+        const base = await commit(
+            repo,
+            "freeze bridge transaction policy without a runtime caller",
+        );
+        const source = swamp + "/ansible/renamed_writer.py";
+        const checker = swamp + "/bin/check-swamp-shape.ts";
+        const original = await Deno.readTextFile(checker);
+        const current = () =>
+            run(Deno.execPath(), ["run", "-A", checker, "--base", base], {
+                cwd: swamp,
+            });
+        const frozen = () =>
+            run("python3", [
+                script("check-swamp-base-policy.py"),
+                "--base",
+                base,
+            ], {
+                cwd: swamp,
+                env: { DENO_BIN: Deno.execPath() },
+            });
+        await write(source, BRIDGE_WRITER);
+        await commit(
+            repo,
+            "valid complete transaction under a different filename",
+        );
+        for (const check of [current, frozen]) {
+            const result = await check();
+            assertEquals(result.code, 0, result.stdout + result.stderr);
+        }
+        for (const [name, variant] of bridgeContractViolations) {
+            await write(source, variant);
+            await commit(repo, name);
+            for (const check of [current, frozen]) {
+                const result = await check();
+                assert(result.code !== 0, name + result.stdout + result.stderr);
+                assertStringIncludes(result.stderr, "custom-control");
+                assertStringIncludes(result.stderr, "exceeds 0");
+            }
+            assertEquals(
+                await Deno.readTextFile(ledger),
+                baseline,
+                "No grandfather allowance",
+            );
+        }
+        // Even a candidate checker that accepts everything cannot hide the broken
+        // custody from the real frozen checker and its immutable Python helper.
+        await write(checker, "Deno.exit(0);\n");
+        await commit(repo, "candidate checker cannot waive bridge custody");
+        assertEquals((await current()).code, 0);
+        const rejected = await frozen();
+        assert(rejected.code !== 0, rejected.stdout + rejected.stderr);
+        assertStringIncludes(rejected.stderr, "custom-control");
+        await write(source, BRIDGE_WRITER);
+        await write(checker, original);
+        await commit(repo, "restore valid transaction");
+        const restored = await frozen();
+        assertEquals(restored.code, 0, restored.stdout + restored.stderr);
     });
 });

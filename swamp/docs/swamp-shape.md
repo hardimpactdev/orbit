@@ -87,6 +87,12 @@ Existing violations are on a grandfather list that may only shrink.
 
 The gate follows static model references by name or UUID into their model definitions and type dependencies. A child workflow choice with two literal names is checked through both source graphs. Arbitrary dynamic references, missing or ambiguous targets, and models without a supported static type remain unknown.
 
+### Bridge writer transaction contract
+
+The Python shape policy proves the bridge writer's complete transaction structure. Admission, refresh and withdrawal enter the same context manager. It opens `writer.lock` once, attempts `LOCK_EX | LOCK_NB` once, and refuses immediately with `instance.bridge_busy` when another writer owns it. The busy path changes no endpoint record, ACL or health fact. The open file context keeps the descriptor until the record reads, ACL changes, confirmed record updates and success or failure health write have finished, and closes it on every exit. The lock inode is never replaced or removed.
+
+This is a structural contract, not a pathname allowance. The checker verifies the context manager, dispatcher, entry point, protected bindings and calls together. Missing acquisition, early release, mutation on busy and wait loops fail both the current checker and a checker frozen from the policy commit. A policy change must land before a caller relies on it; the frozen-base check keeps using its comparison commit's policy and baseline.
+
 ## Before and after
 
 Wrong (today's typical port):

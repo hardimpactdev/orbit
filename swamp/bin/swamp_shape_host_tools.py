@@ -1,4 +1,4 @@
-"""Narrow AST proof for the canonical parameterized PHP/FPM host transaction."""
+"""Structural proofs for canonical host-tool transactions."""
 
 import ast
 
@@ -540,3 +540,186 @@ def {function.name}({host}, {user}):
             }:
                 return False
     return calls > 0
+
+
+BRIDGE_LOCK = '''
+@contextmanager
+def writer_lock(root):
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / 'writer.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise PolicyError('instance.bridge_busy') from None
+        yield
+'''
+
+BRIDGE_APPLY = '''
+def apply(root, incoming, reconcile=False, withdraw=False):
+    deadline = time.monotonic() + (REFRESH_BUDGET_SECONDS if incoming is None else LIFECYCLE_BUDGET_SECONDS)
+    with writer_lock(root):
+        try:
+            return apply_locked(root, incoming, reconcile, withdraw, deadline)
+        except (PolicyError, ValueError, OSError, subprocess.SubprocessError) as error:
+            code = 'instance.bridge_state_unresolved' if unresolved_health(root) else failure_code(error)
+            write_file(root / 'health.json', {'error_code': code})
+            raise
+'''
+
+BRIDGE_MAIN = '''
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--state-dir', type=Path, default=Path('/var/lib/orbit/instance-bridge'))
+    parser.add_argument('--intent', action='store_true')
+    parser.add_argument('--reconcile', action='store_true')
+    parser.add_argument('--withdraw', action='store_true')
+    args = parser.parse_args()
+    try:
+        changed = apply(args.state_dir, json.load(sys.stdin) if args.intent else None, args.reconcile, args.withdraw)
+        print(json.dumps({'changed': changed}))
+    except (PolicyError, ValueError, OSError, subprocess.SubprocessError) as error:
+        code = failure_code(error)
+        print(json.dumps({'error_code': code}))
+        print(str(error), file=sys.stderr)
+        raise SystemExit(1) from error
+'''
+
+BRIDGE_FAILURE = '''
+def failure_code(error):
+    if isinstance(error, subprocess.TimeoutExpired):
+        return 'instance.bridge_command_timeout'
+    return str(error) if str(error).startswith('instance.') else 'instance.container_bridge_write_failed'
+'''
+
+
+def bridge_writer_transaction(tree, sources):
+    """Return (acquisition, rejected site) for the closed bridge-writer contract.
+
+    Compare custody, dispatch and the unlocked entry point in full. Other tool
+    functions run only through apply's locked body: no executable module code,
+    alternate entry point, callback escape, import replacement or rebinding can
+    bypass custody. This does not exempt a file or add a lock pathname allowance.
+    """
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    candidate = functions.get('writer_lock')
+    if candidate is None:
+        return None, None
+
+    def refused():
+        return None, candidate
+
+    # Require the complete source inventory, as for the PHP runtime proof.
+    try:
+        modules = {path: ast.parse(source) for path, source in sources.items()}
+    except SyntaxError:
+        return refused()
+    own = [path for path, module in modules.items() if ast.dump(module) == ast.dump(tree)]
+    if len(own) != 1:
+        return refused()
+    module = own[0].rsplit('/', 1)[-1].removesuffix('.py')
+    for path, peer in modules.items():
+        if path == own[0]:
+            continue
+        if any(isinstance(node, ast.ImportFrom) and node.module and node.module.rsplit('.', 1)[-1] == module
+               or isinstance(node, ast.Import) and any(alias.name.rsplit('.', 1)[-1] == module for alias in node.names)
+               for node in ast.walk(peer)):
+            return refused()
+
+    contracts = [ast.parse(source).body[0]
+                 for source in (BRIDGE_LOCK, BRIDGE_APPLY, BRIDGE_MAIN, BRIDGE_FAILURE)]
+    if any(contract.name not in functions or ast.dump(functions[contract.name]) != ast.dump(contract)
+           for contract in contracts):
+        return refused()
+    classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
+    if len(classes) != 1 or ast.dump(classes[0]) != ast.dump(ast.parse('class PolicyError(Exception):\n    pass').body[0]):
+        return refused()
+    standard = {'argparse', 'fcntl', 'ipaddress', 'json', 're', 'shlex', 'subprocess', 'sys', 'tempfile', 'time'}
+    imported = {}
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name not in standard or alias.asname or alias.name in imported:
+                    return refused()
+                imported[alias.name] = node
+        if isinstance(node, ast.ImportFrom):
+            if (node.level or (node.module, [(a.name, a.asname) for a in node.names]) not in
+                    [('contextlib', [('contextmanager', None)]), ('pathlib', [('Path', None)])]):
+                return refused()
+            alias = node.names[0].name
+            if alias in imported:
+                return refused()
+            imported[alias] = node
+    required = {'argparse', 'fcntl', 'json', 'subprocess', 'sys', 'time', 'contextmanager', 'Path'}
+    if not required <= imported.keys():
+        return refused()
+    # Literal constants are inert; all record/ACL/health work must remain in
+    # function bodies reached through the exact entry point and locked dispatch.
+    constants = set()
+    entry = ast.parse("if __name__ == '__main__':\n    main()").body[0]
+    for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.ClassDef)):
+            continue
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            continue
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and isinstance(node.value, ast.Constant):
+            identifier = node.targets[0].id
+            if identifier in constants:
+                return refused()
+            constants.add(identifier)
+            continue
+        if ast.dump(node) != ast.dump(entry) or node is not tree.body[-1]:
+            return refused()
+    builtins = {'BlockingIOError', 'Exception', 'ValueError', 'OSError', 'SystemExit', 'print', 'str', 'isinstance', '__name__'}
+    reserved = set(functions) | set(imported) | constants | builtins | {'PolicyError'}
+    if (set(functions) | set(imported) | constants) & builtins:
+        return refused()
+    declarations = [node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))]
+    if len(declarations) != len(set(declarations)) or (set(declarations) & (set(imported) | constants)) or set(imported) & constants:
+        return refused()
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    acquisition = next(node for node in ast.walk(candidate) if isinstance(node, ast.Call) and ast.unparse(node.func) == 'fcntl.flock')
+    held_nodes = set(ast.walk(candidate))
+    acquire_nodes = set(ast.walk(acquisition))
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)) and node not in tree.body:
+            return refused()
+        if isinstance(node, ast.ExceptHandler) and node.name in reserved:
+            return refused()
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)) and node.id in reserved:
+            if not (isinstance(parents.get(node), ast.Assign) and parents[node] in tree.body):
+                return refused()
+        if isinstance(node, ast.arg) and node.arg in reserved:
+            return refused()
+        if isinstance(node, ast.Global):
+            return refused()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node not in tree.body:
+            if node.name in reserved or not isinstance(node, ast.FunctionDef) or node.decorator_list:
+                return refused()
+        if isinstance(node, ast.FunctionDef):
+            if node is not candidate and node.decorator_list:
+                return refused()
+            if node in tree.body and (node.returns or any(arg.annotation for arg in ast.walk(node.args) if isinstance(arg, ast.arg))
+                                      or any(value is not None and not isinstance(value, ast.Constant)
+                                             for value in node.args.defaults + node.args.kw_defaults)):
+                return refused()
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            return refused()
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            parent = parents.get(node)
+            if node.id == 'fcntl' and node not in acquire_nodes:
+                return refused()
+            if node.id in functions:
+                if not (isinstance(parent, ast.Call) and parent.func is node):
+                    return refused()
+                enclosing = parent
+                while enclosing in parents and not isinstance(enclosing, ast.FunctionDef):
+                    enclosing = parents[enclosing]
+                caller = enclosing.name if isinstance(enclosing, ast.FunctionDef) else None
+                allowed = {'writer_lock': {'apply'}, 'apply': {'main'}, 'apply_locked': {'apply'}, 'main': {None}}
+                if node.id in allowed and caller not in allowed[node.id]:
+                    return refused()
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {'eval', 'exec', 'globals', 'locals', 'vars', 'getattr', 'setattr', 'delattr', '__import__', 'open'}:
+            return refused()
+        if isinstance(node, ast.Constant) and node.value == 'writer.lock' and node not in held_nodes:
+            return refused()
+    return acquisition, None
