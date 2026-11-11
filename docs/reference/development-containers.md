@@ -532,6 +532,8 @@ The end of the move and its failure:
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
 | After a failed restore | The site stays the checkout's, and a deployment refuses with `instance.lifecycle_busy` until the move has run again |
 
+The whole-run budget follows the declared phase timeouts, including restoration and cleanup. A deadline or confirmed cancel still projects the native end state and complete step history. A lost worker with no final result reports an unknown state and the [restore-only command](/cli/instance/migrate#failure); restoration refuses once retirement began.
+
 Restore changes host Process states and the awake marker only when quiesce began. A target probe failure leaves both untouched.
 
 The database is not cloned. An Instance's database name, owner and connection come from its Project and its name. So a second database for the same Instance has no name to take, and a clone would end with a drop of the old one. Leaving it in place cannot lose data. A clone of a moved default still copies the default's database with the template copy of [Clone the database](#clone-the-database): the default's connection record is the one it had.

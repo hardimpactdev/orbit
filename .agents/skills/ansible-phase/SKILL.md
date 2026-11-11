@@ -147,3 +147,5 @@ A migration overlay archive omits unchanged tracked symlinks: they arrive in the
 When resolving symlinks, retain directory requirements from raw targets ending in `/` or `/.` at every hop. Path normalization removes those suffixes and can turn an `ENOTDIR` target into a valid file link.
 
 FrankenPHP's `trusted_proxies` does not translate native PHP CGI variables. Match the real Node peer and forwarded HTTPS before setting scheme, port or client IP. Share one rendered Caddyfile between the Ansible Processes phase and the native clone guest, and test configuration drift without unit drift in both writers.
+
+A container Process must not pull in `network-online.target`: wait-online can remain pending inside an Incus guest while its network already serves. Keep the host renderer's network policy separate. Start container units with systemd's `--no-block`, then use bounded per-unit readiness reads inside the phase timeout; a timeout must not strand a synchronous unit-start command.

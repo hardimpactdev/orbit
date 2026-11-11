@@ -141,25 +141,12 @@ final readonly class SwampCommandStep
 
             return app(ExpireOperationAction::class)->execute($operation);
         }
-        $deadline = OperationRunBudgets::deadline($operation);
-        try {
-            $completedAt = is_string($run['completedAt'] ?? null) ? Carbon::parse($run['completedAt']) : null;
-        } catch (Throwable) {
-            throw $this->unavailable();
-        }
-        if ($deadline !== null && ! $deadline->isFuture() && ($completedAt === null || $completedAt->greaterThan($deadline))) {
-            $operation = app(ExpireOperationAction::class)->execute($operation);
-        }
-        // An expiry the run beat, typically at the admission deadline before a slow start reply bound the run.
-        if (ExpireOperationAction::expiredUnsettled($operation) && $completedAt !== null && $deadline !== null && $completedAt->lessThan($deadline)) {
-            $operation = app(ExpireOperationAction::class)->reopen($operation, $runId);
-        }
-        if (ExpireOperationAction::awaitsSettlement($operation)) {
-            return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status']);
-        }
         $result = $run['status'] === 'cancelled' && $direct->projection($operation) instanceof DirectOperationChildProjection
             ? [] : $this->terminalOutput($run, $selector);
         $status = $run['status'];
+        if ($status === 'cancelled' && is_string($result['error_code'] ?? null)) {
+            $status = 'failed';
+        }
         if (in_array($status, ['failed', 'interrupted'], true) && ($result === [] || ($result['outcome'] ?? null) === 'succeeded')) {
             $result = ['error_code' => 'operation.native_failed'];
         }
@@ -170,8 +157,9 @@ final readonly class SwampCommandStep
 
             return $current;
         });
-        if (ExpireOperationAction::awaitsSettlement($current)) {
-            return app(ExpireOperationAction::class)->settle($current, $runId, $status);
+        if (ExpireOperationAction::expiredUnsettled($current)) {
+            // The timeout is provisional. Only exact native terminal evidence can reopen it for its family projection.
+            $current = app(ExpireOperationAction::class)->reopen($current, $runId, $run['status']);
         }
         if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {
             return $current;
@@ -182,10 +170,11 @@ final readonly class SwampCommandStep
             'run_id' => $runId, 'status' => $status, 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
             'error_code' => in_array($status, ['failed', 'interrupted'], true) ? ($result['error_code'] ?? 'operation.native_failed') : null,
             'result' => $result, 'failure' => app(NativeStepFailure::class)->fromRun($run, $current),
+            'step_outcomes' => $this->recordedSteps($run),
         ]);
         $this->fillStepTimes($projected, $runId, $run);
 
-        return $projected;
+        return $projected->refresh();
     }
 
     /** The same declared terminal reader records completed children while their parent is open.
@@ -258,8 +247,8 @@ final readonly class SwampCommandStep
     }
 
     /**
-     * The step events carry no times; the terminal history has them for each step of the run and of its nested runs. Best effort:
-     * a failed read leaves the times empty and never fails the projection.
+     * Terminal history supplies the complete step receipt even when progress events were lost. Include nested runs. A failed
+     * optional history read never changes the domain result; its warning identifies the missing receipt evidence.
      *
      * @param  array<string,mixed>  $run
      */
@@ -267,21 +256,28 @@ final readonly class SwampCommandStep
     {
         try {
             $recorded = $this->recordedSteps($run);
-            foreach ($this->nestedRuns($runId, is_string($run['startedAt'] ?? null) ? $run['startedAt'] : '') as $nested) {
-                $recorded = [...$recorded, ...$this->recordedSteps($this->history($nested))];
+            try {
+                foreach ($this->nestedRuns($runId, is_string($run['startedAt'] ?? null) ? $run['startedAt'] : '') as $nested) {
+                    $recorded = [...$recorded, ...$this->recordedSteps($this->history($nested))];
+                }
+            } catch (Throwable $exception) {
+                // The verified root history remains valid evidence when a child history read is unavailable.
+                Log::warning('Nested step history was unavailable.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
             }
-            usort($recorded, static fn (array $left, array $right): int => strcmp($left['started_at'], $right['started_at']));
+            usort($recorded, static fn (array $left, array $right): int => strcmp($left['started_at'] ?? '9999', $right['started_at'] ?? '9999'));
             DB::transaction(function () use ($operation, $runId, $recorded): void {
                 $current = Operation::query()->lockForUpdate()->find($operation->id);
                 $progress = $current?->state['native_progress'] ?? null;
-                if ($current === null || ! is_array($progress) || ($progress['run'] ?? null) !== $runId || ! is_array($progress['steps'] ?? null)) {
+                if ($current === null || ($current->state['swamp_run_id'] ?? null) !== $runId) {
                     return;
                 }
-                $steps = app(NativeRunStepTimes::class)->merge($progress['steps'], $recorded);
-                if ($steps === $progress['steps']) {
+                $progress = is_array($progress) && ($progress['run'] ?? null) === $runId ? $progress : ['run' => $runId, 'seq' => 0];
+                // Terminal history is authoritative for both outcomes and times. Events can be absent or stop at expiry.
+                $steps = $recorded;
+                if ($steps === ($progress['steps'] ?? [])) {
                     return;
                 }
-                $state = [...($current->state ?? []), 'native_progress' => [...$progress, 'steps' => $steps]];
+                $state = [...($current->state ?? []), 'native_progress' => [...$progress, 'steps' => $steps, 'active' => []]];
                 app(OperationStore::class)->change($current, ['state' => $state]);
             });
         } catch (Throwable $exception) {
@@ -291,7 +287,7 @@ final readonly class SwampCommandStep
 
     /**
      * @param  array<string,mixed>  $run
-     * @return list<array{job:string,name:string,started_at:string,finished_at:string|null}>
+     * @return list<array{job:string,name:string,status:string,started_at:?string,finished_at:?string}>
      */
     private function recordedSteps(array $run): array
     {
@@ -304,8 +300,9 @@ final readonly class SwampCommandStep
                 $name = is_array($step) ? ($step['name'] ?? null) : null;
                 $started = is_array($step) ? ($step['startedAt'] ?? null) : null;
                 $finished = is_array($step) ? ($step['completedAt'] ?? null) : null;
-                if (is_string($jobName) && is_string($name) && is_string($started) && NativeRunTimestamp::parse($started) !== null) {
-                    $recorded[] = ['job' => $jobName, 'name' => $name, 'started_at' => $started,
+                if (is_string($jobName) && is_string($name) && in_array($step['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted', 'unknown', 'running', 'pending', 'skipped'], true)) {
+                    $recorded[] = ['job' => $jobName, 'name' => $name, 'status' => $step['status'],
+                        'started_at' => is_string($started) && NativeRunTimestamp::parse($started) !== null ? $started : null,
                         'finished_at' => is_string($finished) && NativeRunTimestamp::parse($finished) !== null ? $finished : null];
                 }
             }

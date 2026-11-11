@@ -21,12 +21,10 @@ sequenceDiagram
   Note over CLI: Confirm the downtime
   %%> What it asks:
   %%> - the Instance goes down during the move, and its old checkout moves to retention after it; `--force` answers yes
-  alt restore after an interrupted root without finish
-    Note over GW: Reuse the latest frozen intent
+  Note over GW: Restore uses frozen intent
     %%> - `--restore` requires the latest migrate to be interrupted without a native finish, else `instance.migrate_restore_unavailable`
     %%> - retirement must not have begun and the container must not own the Instance, else `instance.migrate_restore_unsafe`
     %%> - admits a new Operation of the same kind, with only Route restore, container removal and host Process/awake restore; it never repeats the move
-  end
   Note over GW: Validate, reserve runtime<br/>address · T3 port
   %%> Requirements:
   %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
@@ -43,6 +41,14 @@ sequenceDiagram
   %%> - the whole-run budget sums the declared workflow step timeouts, including Route children, restore and cleanup, plus admission and settlement margin
   GW->>SW: Start run, full intent<br/>operation-instance-migrate
   GW-->>CLI: 202 Accepted<br/>task ID
+  alt restore only
+    SW->>N: Restore the Route<br/>child route-mutation-restore
+    SW->>N: Restore the checkout<br/>Ansible · tags restore
+    %%> - checks the Node's retirement checkpoint and host checkout before deleting any container
+    %%> - removes the interrupted move's container, ACL, firewall rules and mirror, then restores the host Processes and awake marker if quiesce began
+    SW-->>GW: Native restore result<br/>moved false · restored true
+    Note over GW: Drop runtime reservation
+  else move the checkout
   SW->>N: Launch, probe container<br/>Ansible · tags container
   %%> What it does:
   %%> - before any Node change, checks the recorded branch and every planned retirement; a refusal leaves prior resources untouched
@@ -110,6 +116,7 @@ sequenceDiagram
     %%> - run the same command again; it starts with a new container
     %%> - a restore that failed keeps the reserved record and its address, and names the failed step
     %%> - an interrupted root with no finish records moved/restored/ready as unknown and names `orbit instance:migrate INSTANCE --restore --force`; restore refuses after retirement began
+  end
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show TASK

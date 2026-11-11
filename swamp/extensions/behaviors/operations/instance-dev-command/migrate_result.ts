@@ -46,27 +46,32 @@ export function migrateResult(
     server: string | null,
     written: WrittenFailure | null,
 ) {
+    if (intent.restore_only === true) {
+        const restored = phases.restore === "succeeded" && ["succeeded", "skipped"].includes(phases.restore_route);
+        return { ready: restored, stdout: JSON.stringify({ instance_id: intent.instance_id, moved: false, restored, ready: restored,
+            ...(restored ? {} : { failed_step: phases.restore_route === "failed" ? "restore_route" : "restore", error_code: written?.error_code && CODE.test(written.error_code) ? written.error_code : "instance.migrate_restore_failed" }) }) };
+    }
     const clone = (intent.container as { clone?: unknown } | null)?.clone ?? null;
     const routed = intent.route_mutations != null;
     const commit = workspace?.status === "succeeded" ? COMMIT.exec(String(workspace.outputs?.stdout ?? ""))?.[1] ?? null : null;
-    const done = (name: keyof Phases): [string, boolean, boolean] => [name, phases[name] === "succeeded", phases[name] === "failed"];
+    const done = (name: keyof Phases): [string, boolean, boolean] => [name, phases[name] === "succeeded", ["failed", "cancelled", "interrupted", "unknown"].includes(phases[name])];
     // [phase, finished, failed], in the order the run takes them.
     const outcomes: [string, boolean, boolean][] = [
         done("container"),
         done("quiesce"),
-        ["workspace", commit !== null, phases.workspace === "failed"],
+        ["workspace", commit !== null, ["failed", "cancelled", "interrupted", "unknown"].includes(phases.workspace)],
         done("files"),
         ...(clone === null ? [] : [done("agent")]),
         done("processes"),
         ...(clone === null ? [done("seed")] : [
             done("t3"),
-            ["register", phases.register === "succeeded" && typeof server === "string", phases.register === "failed"] as [string, boolean, boolean],
+            ["register", phases.register === "succeeded" && typeof server === "string", ["failed", "cancelled", "interrupted", "unknown"].includes(phases.register)] as [string, boolean, boolean],
         ]),
         ...(routed ? [done("route")] : []),
         done("retire"),
     ];
     const failed = outcomes.find(([, , failure]) => failure) ?? outcomes.find(([, finished]) => !finished);
-    const moved = phases.retire !== "skipped";
+    const moved = ["succeeded", "failed", "cancelled", "interrupted"].includes(phases.retire);
     const refusal = failed !== undefined && WRITES_RESULT.includes(failed[0]) && written !== null && CODE.test(written.error_code ?? "") &&
             !written.error_code?.startsWith("instance.container_")
         ? written.error_code ?? null
@@ -75,7 +80,7 @@ export function migrateResult(
         instance_id: intent.instance_id,
         ready: failed === undefined,
         moved,
-        restored: !moved && phases.restore === "succeeded" && phases.restore_route !== "failed",
+        restored: !moved && phases.restore === "succeeded" && ["succeeded", "skipped"].includes(phases.restore_route),
         ...(failed?.[0] === "container" && refusal !== null && written?.preflight_refused === true ? { preflight_refused: true } : {}),
         ...(commit ? { commit } : {}),
         ...(moved && written?.retained_git_path && written?.retained_git_at ? { retained_git_path: written.retained_git_path, retained_git_at: written.retained_git_at } : {}),

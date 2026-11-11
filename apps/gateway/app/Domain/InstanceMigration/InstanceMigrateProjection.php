@@ -48,12 +48,22 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         $instance = Instance::query()->findOrFail($operation->target_id);
         $container = ValidatedData::object($input['container']);
         $publication = ($input['route_publication'] ?? null) === null ? null : ValidatedData::object($input['route_publication']);
+        $restoring = isset($input['restore_operation_id']);
+        if ($restoring) {
+            return ['intent' => [
+                'instance_id' => $instance->id, 'instance_name' => $instance->name, 'ssh_execution' => $input['ssh_execution'],
+                'container' => $container, 'migrate' => $input['migrate'], 'restore_only' => true,
+                'restore_quiesced' => $input['restore_quiesced'],
+                'route_mutations' => $publication === null ? null : $publication['route_mutations'],
+            ], 'execution_secrets' => []];
+        }
         // Swamp evaluates the agent step's inputs for a default too, so every run has the copy; only an Instance with T3 holds a key.
         $model = ($container['clone'] ?? null) === null ? "# The default Instance runs no agent.\n"
             : app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(TaskVmModelRoute::class)->key());
 
         return ['intent' => [
             'instance_id' => $instance->id, 'instance_name' => $instance->name, 'ssh_execution' => $input['ssh_execution'],
+            'restore_only' => false, 'restore_quiesced' => false,
             'container' => $container, 'migrate' => ValidatedData::object($input['migrate']),
             'route_mutations' => $publication === null ? null : ValidatedData::object($publication['route_mutations']),
         ], 'execution_secrets' => [
@@ -68,6 +78,15 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
     {
         $container = ValidatedData::object($operation->input['container'] ?? []);
         $result = ValidatedData::object($data['result'] ?? []);
+        if ($data['status'] === 'interrupted' && ! array_key_exists('moved', $result)) {
+            $steps = array_map(ValidatedData::object(...), is_array($data['step_outcomes'] ?? null) ? $data['step_outcomes'] : []);
+            $began = static fn (string $name): bool => array_any($steps, static fn (array $step): bool => $step['job'] === 'migrate'
+                && $step['name'] === $name && ($step['started_at'] !== null || ! in_array($step['status'], ['skipped', 'pending'], true)));
+            $unsafe = $began('retire');
+            $result = [...$result, 'ready' => false, 'moved' => null, 'restored' => null, 'native_finish_missing' => true,
+                'quiesced' => $began('quiesce'), 'retirement_started' => $unsafe,
+                ...($unsafe ? [] : ['recovery_command' => 'orbit instance:migrate '.$operation->target_id.' --restore --force'])];
+        }
         // From the removal of the checkout on, the container is the Instance, whatever the removal itself did.
         $moved = ($result['moved'] ?? false) === true;
         // The T3 session is read from the vault before the transaction, so no lock waits on Swamp.
@@ -78,7 +97,8 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
             $operation->refresh();
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
             $instance = Instance::query()->lockForUpdate()->findOrFail($operation->target_id);
-            if (($data['status'] === 'succeeded' && (! $moved || ($result['ready'] ?? false) !== true))
+            if (($data['status'] === 'succeeded' && (($result['ready'] ?? false) !== true
+                    || (! $moved && ! (isset($operation->input['restore_operation_id']) && ($result['restored'] ?? false) === true))))
                 || ($moved && (($result['instance_id'] ?? null) !== $instance->id || ! is_string($result['commit'] ?? null)))) {
                 throw new ResourceOperationException('instance.result_invalid', 'The move did not prove its complete terminal result.');
             }
@@ -96,7 +116,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                     if ($server !== null) {
                         app(InstanceLifecycleContributions::class)->projectCreate($instance, $server);
                     }
-                } elseif (in_array($data['status'], ['failed', 'cancelled', 'interrupted'], true) && ($result['restored'] ?? false) === true
+                } elseif (($result['restored'] ?? false) === true
                     && ! (($result['preflight_refused'] ?? false) === true && ($operation->input['had_runtime_reservation'] ?? false) === true)) {
                     // The run removed its container, so the address is free again. A restore that failed keeps the row and its address.
                     $runtime?->delete();

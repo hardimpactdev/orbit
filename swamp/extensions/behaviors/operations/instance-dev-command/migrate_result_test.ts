@@ -141,3 +141,33 @@ Deno.test("symlink refusals keep every path and target and the preflight flag in
     const late = result(defaultIntent, { ...moved, files: "failed", retire: "skipped", restore: "succeeded" }, workspace, null, { ...failure, preflight_refused: false });
     assertEquals([late.error_code, late.error_message, late.preflight_refused], [failure.error_code, error_message, undefined]);
 });
+
+for (const stopped of ["failed", "cancelled", "interrupted"]) {
+    for (const phase of ["quiesce", "workspace", "files", "processes", "seed", "route"] as const) {
+        Deno.test(`${stopped} at ${phase} after quiesce records the restored host end state`, () => {
+            const phases = { ...moved, [phase]: stopped, retire: "skipped", restore: "succeeded" };
+            const receipt = result(defaultIntent, phases, workspace, null, null);
+            assertEquals(receipt.moved, false);
+            assertEquals(receipt.restored, true);
+            assertEquals(receipt.ready, false);
+            assertEquals(receipt.failed_step, phase);
+            assertEquals(receipt.error_code, `instance.migrate_${phase}_failed`);
+        });
+    }
+}
+
+Deno.test("a restore-only run reports restored without requiring any skipped forward phase", () => {
+    const phases = Object.fromEntries(Object.keys(moved).map((key) => [key, "skipped"])) as typeof moved;
+    phases.restore = "succeeded";
+    assertEquals(result({ ...defaultIntent, restore_only: true }, phases, null, null, null), {
+        instance_id: 53, moved: false, restored: true, ready: true,
+    });
+    phases.restore_route = "failed";
+    assertEquals(result({ ...defaultIntent, restore_only: true }, phases, null, null, null), {
+        instance_id: 53, moved: false, restored: false, ready: false, failed_step: "restore_route", error_code: "instance.migrate_restore_failed",
+    });
+});
+
+Deno.test("an interrupted Route restore never claims the host was restored", () => {
+    assertEquals(result(defaultIntent, { ...moved, processes: "interrupted", retire: "skipped", restore: "succeeded", restore_route: "interrupted" }, workspace, null, null).restored, false);
+});

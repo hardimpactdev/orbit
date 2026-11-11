@@ -8,6 +8,9 @@ use App\Domain\Tasks\TaskVmAdmission;
 use App\Models\Operation;
 use Carbon\CarbonImmutable;
 use Closure;
+use LogicException;
+use App\Support\ValidatedData;
+use Symfony\Component\Yaml\Yaml;
 
 /** Explicit execution budgets, measured history and a separate admission deadline. */
 final class OperationRunBudgets
@@ -63,6 +66,9 @@ final class OperationRunBudgets
         if (in_array($operation->kind, self::CapturedKinds, true) && is_int($captured) && $captured > 0) {
             return $captured;
         }
+        if ($operation->kind === 'instance.migrate') {
+            return self::workflowSeconds('operation-instance-migrate');
+        }
         $budget = OperationBudgetTable::SecondsByKind[$operation->kind] ?? null;
         if (is_int($budget)) {
             return $budget;
@@ -74,6 +80,50 @@ final class OperationRunBudgets
         }
 
         return self::historySeconds($operation->kind);
+    }
+
+    /**
+     * Sum the workflow's declared execution bounds, including both forward and restore children and cleanup. The extra 600 s
+     * covers admission, metadata steps and settlement. Reading the shipped declarations keeps their timeouts the only rule;
+     * no second table can silently fall behind a longer phase. Only migrate selects this rule until its other owners adopt it.
+     *
+     * @param  ?string  $directory  A workflow fixture directory; production reads the release's shipped workflow definitions.
+     */
+    public static function workflowSeconds(string $workflow, ?string $directory = null): int
+    {
+        $directory ??= dirname(base_path(), 2).'/swamp/workflows';
+        /** @var Closure(string, list<string>): int $sum */
+        $sum = static function (string $name, array $parents = []) use ($directory, &$sum): int {
+            if (preg_match('/\A[a-z0-9-]+\z/D', $name) !== 1 || in_array($name, $parents, true)) {
+                throw new LogicException('A run budget requires an acyclic, literal workflow declaration.');
+            }
+            /** @var array{jobs:list<array{steps:list<array{task:array{type:string,workflowIdOrName?:string,inputs?:array<string,mixed>}}}>}>} $definition */
+            $definition = Yaml::parseFile($directory.'/workflow-'.$name.'.yaml');
+            $seconds = 0;
+            foreach ($definition['jobs'] as $job) {
+                foreach ($job['steps'] as $step) {
+                    $task = $step['task'];
+                    if ($task['type'] === 'workflow') {
+                        $seconds += $sum(ValidatedData::string($task['workflowIdOrName'] ?? null), [...$parents, $name]);
+
+                        continue;
+                    }
+                    $inputs = $task['inputs'] ?? [];
+                    $bound = $inputs['timeoutSec'] ?? 0;
+                    if (! is_int($bound)) {
+                        throw new LogicException('A run budget requires a declared numeric step timeout.');
+                    }
+                    if (preg_match('/\Atimeout\s+([1-9][0-9]*)\s/', ValidatedData::string($inputs['run'] ?? ''), $match) === 1) {
+                        $bound = max($bound, (int) $match[1]);
+                    }
+                    $seconds += $bound;
+                }
+            }
+
+            return $seconds;
+        };
+
+        return 600 + $sum($workflow);
     }
 
     /** The longest successful run of the kind in the last 14 days x 1.5, rounded up to a minute, at least 15 minutes; 30 minutes without a success. */

@@ -7,6 +7,7 @@ use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceMigrateAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Data\Instances\InstanceData;
+use App\Data\Operations\OperationData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
@@ -28,6 +29,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Processes\ProcessOperationAdmission;
+use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectSourceReader;
@@ -39,6 +41,8 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\StartSwampRun;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -1103,7 +1107,8 @@ describe('Processes moving into the container', function (): void {
 
         expect($unit)->toMatchArray(['id' => $preset->id, 'name' => "orbit-process-{$preset->id}-vite.service", 'desired' => $desired]);
         expect($unit['content'])->toContain("User=orbit\n", "WorkingDirectory=/srv/workspace/frontend\n", '"/opt/orbit-runtime/current/bin/vp" "dev" "--host=0.0.0.0" "--port=5195" "--strictPort" "--base=/__orbit/vite/"')
-            ->not->toContain('/etc/orbit/vite/', '/home/orbit/.vite-plus/', '--host=127.0.0.1');
+            ->toContain("After=network.target\n")
+            ->not->toContain('network-online.target', '/etc/orbit/vite/', '/home/orbit/.vite-plus/', '--host=127.0.0.1');
         expect($unit['content'])->toContain('Environment=ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite',
             'Environment=ORBIT_DEV_SERVER_HOST=default.tool.test', 'Environment=ORBIT_DEV_SERVER_PATH=/__orbit/vite', 'Environment=ORBIT_DEV_SERVER_PORT=5195');
         expect($run['intent']['container']['web_config']['content'])->toContain('env HTTPS on', 'env REQUEST_SCHEME https',
@@ -1333,4 +1338,160 @@ it('captures the Node endpoint union from the same attached targets as each NIC,
     expect($containers->nodeEndpoints($node))->toBe($want);
     DatabaseConnectionTarget::query()->where('instance_id', $second->id)->delete();
     expect($containers->nodeEndpoints($node))->toBe([]);
+});
+
+it('projects the native restored end state and steps across each post-quiesce exit', function (string $exit, string $nativeStatus, bool $expired): void {
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $instance->update(['provisioning_step' => 'active']);
+    $worker = migrationWorker($instance);
+    $operation = migrateStart($instance);
+    $run = '0c69f6e8-bc50-4819-bcab-f3972557d2cc';
+    $started = now()->subHours(2)->toISOString();
+    $finished = now()->toISOString();
+    $operation->forceFill(['status' => 'running', 'attempts' => 1, 'started_at' => $started,
+        'finished_at' => null, 'error_code' => null, 'state' => ['swamp_run_id' => $run]])->save();
+    if ($expired) {
+        app(ExpireOperationAction::class)->execute($operation);
+    }
+    $result = ['instance_id' => $instance->id, 'moved' => false, 'restored' => true, 'ready' => false,
+        'failed_step' => 'processes', 'error_code' => 'instance.migrate_processes_failed'];
+    $history = ['id' => $run, 'workflowName' => 'operation-instance-migrate', 'status' => $nativeStatus,
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'instance.migrate'],
+        'startedAt' => $started, 'completedAt' => $finished, 'jobs' => [['name' => 'migrate', 'steps' => [
+            ['name' => 'quiesce', 'status' => 'succeeded', 'startedAt' => $started, 'completedAt' => $started],
+            ['name' => 'container-processes', 'status' => 'failed', 'startedAt' => $started, 'completedAt' => $finished,
+                'error' => $exit === 'step timeout' ? 'Command exited with code 124' : $exit],
+            ['name' => 'restore', 'status' => 'succeeded', 'startedAt' => $finished, 'completedAt' => $finished],
+            ['name' => 'finish', 'status' => 'succeeded', 'startedAt' => $finished, 'completedAt' => $finished,
+                'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]],
+        ]]]];
+    $frame = [];
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect', 'close')->andReturnNull();
+    $socket->shouldReceive('isConnected')->andReturnTrue();
+    $socket->shouldReceive('send')->andReturnUsing(function (array $message) use (&$frame): void {
+        $frame = $message;
+    });
+    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame, $history): array {
+        return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => $frame['type'] === 'workflow.history.get' ? $history : ['results' => []]]]];
+    });
+    app(SwampConnection::class)->release();
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'read-token']);
+    try {
+        $projected = app(SwampCommandStep::class)->projectTerminal($operation->refresh(), ['id' => $run],
+            ['job' => 'migrate', 'step' => 'finish'], atDeadline: true);
+
+        expect($projected->result)->toBe($result)
+            ->and($projected->error_code)->toBe('instance.migrate_processes_failed')
+            ->and($projected->lock_key)->toBeNull()
+            ->and($instance->runtime()->exists())->toBeFalse()
+            ->and($worker->refresh()->systemd_activation_hash)->toBe('old-host-hash')
+            ->and(app(ProcessTargetResolver::class)->forProcess($worker)->container)->toBeNull();
+        $steps = OperationData::summary($projected)->steps;
+        expect(array_map(static fn ($step) => $step->name, $steps))->toBe(['quiesce', 'container-processes', 'restore', 'finish'])
+            ->and($steps[2]->status)->toBe('succeeded')
+            ->and($steps[2]->finished_at)->toBe($finished);
+    } finally {
+        app(SwampConnection::class)->release();
+    }
+})->with([
+    'step failure' => ['step failure', 'failed', false],
+    'step timeout' => ['step timeout', 'failed', false],
+    'Gateway deadline before finish' => ['deadline', 'cancelled', true],
+    'confirmed cancel' => ['cancel', 'cancelled', false],
+    'lost worker' => ['lost worker', 'interrupted', false],
+]);
+
+function interruptedMigrate(Instance $instance, bool $retiring = false): Operation
+{
+    $operation = migrateStart($instance);
+    $run = '9a3ec7d8-95fc-4edf-9296-136237971282';
+    $operation->forceFill(['status' => 'running', 'finished_at' => null, 'error_code' => null, 'state' => ['swamp_run_id' => $run]])->save();
+    $history = json_decode((string) file_get_contents(base_path('tests/Fixtures/instance-migrate/interrupted-root.json')), true, flags: JSON_THROW_ON_ERROR);
+    $history = [...$history, 'id' => $run, 'workflowName' => 'operation-instance-migrate',
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'instance.migrate']];
+    if ($retiring) {
+        $history['jobs'][0]['steps'][] = ['name' => 'retire', 'status' => 'unknown', 'startedAt' => $history['startedAt']];
+    }
+    $frame = [];
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect', 'close')->andReturnNull();
+    $socket->shouldReceive('isConnected')->andReturnTrue();
+    $socket->shouldReceive('send')->andReturnUsing(function (array $message) use (&$frame): void {
+        $frame = $message;
+    });
+    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame, $history): array {
+        return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => $frame['type'] === 'workflow.history.get' ? $history : ['results' => []]]]];
+    });
+    app(SwampConnection::class)->release();
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'read-token']);
+    try {
+        return app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $run], ['job' => 'migrate', 'step' => 'finish']);
+    } finally {
+        app(SwampConnection::class)->release();
+        migrateVault();
+    }
+}
+
+it('reports a lost worker half-state and admits one restore command from its frozen intent', function (): void {
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $worker = migrationWorker($instance);
+    $interrupted = interruptedMigrate($instance);
+    expect($interrupted->result)->toMatchArray(['moved' => null, 'restored' => null, 'ready' => false, 'native_finish_missing' => true,
+        'recovery_command' => "orbit instance:migrate {$instance->id} --restore --force"]);
+    expect($instance->runtime()->exists())->toBeTrue();
+
+    $restoring = app(StartInstanceMigrateAction::class)->execute($instance, null, null, restore: true);
+    $intent = app(InstanceMigrateProjection::class)->input($restoring);
+    expect($restoring->id)->not->toBe($interrupted->id)
+        ->and($restoring->input['restore_operation_id'])->toBe($interrupted->id)
+        ->and($restoring->input['migrate'])->toBe($interrupted->input['migrate'])
+        ->and($restoring->input['container'])->toBe($interrupted->input['container'])
+        ->and($intent['intent'])->toMatchArray(['restore_only' => true, 'restore_quiesced' => true])
+        ->and($intent['execution_secrets'])->toBe([]);
+
+    $restored = migrateEnd($restoring, 'succeeded', ['ready' => true, 'moved' => false, 'restored' => true]);
+    expect($restored->status->value)->toBe('succeeded')
+        ->and($instance->runtime()->exists())->toBeFalse()
+        ->and($worker->refresh()->systemd_activation_hash)->toBe('old-host-hash');
+});
+
+it('refuses restore when no interrupted unfinished move exists', function (): void {
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    expect(containerRefusal(fn () => app(StartInstanceMigrateAction::class)->execute($instance, null, null, restore: true)))
+        ->toBe('instance.migrate_restore_unavailable');
+    migrateEnd(migrateStart($instance), 'failed', ['ready' => false, 'moved' => false, 'restored' => true]);
+    expect(containerRefusal(fn () => app(StartInstanceMigrateAction::class)->execute($instance, null, null, restore: true)))
+        ->toBe('instance.migrate_restore_unavailable');
+});
+
+it('refuses restore once retirement began or the container owns the Instance', function (bool $retiring): void {
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    interruptedMigrate($instance, $retiring);
+    if (! $retiring) {
+        $instance->runtime()->update(['seed_commit' => str_repeat('c', 40)]);
+    }
+    expect(containerRefusal(fn () => app(StartInstanceMigrateAction::class)->execute($instance, null, null, restore: true)))
+        ->toBe('instance.migrate_restore_unsafe');
+    expect($instance->runtime()->exists())->toBeTrue();
+})->with([true, false]);
+
+it('admits the generated restore boolean through HTTP and replays its fresh idempotency key', function (): void {
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    interruptedMigrate($instance);
+    $caller = \Tests\Support\SwampNodeFixture::ensure();
+    $caller->accessibleNodes()->syncWithoutDetaching([$instance->node_id]);
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
+    $headers = ['Idempotency-Key' => 'restore-interrupted-move'];
+
+    $response = $this->postJson('/api/v1/instances/'.$instance->id.'/migrate', ['restore' => true], $headers)
+        ->assertAccepted()->assertJsonPath('data.kind', 'instance.migrate');
+    $id = $response->json('data.id');
+    expect(Operation::query()->findOrFail($id)->input)->toHaveKey('restore_operation_id');
+    $this->postJson('/api/v1/instances/'.$instance->id.'/migrate', ['restore' => true], $headers)
+        ->assertAccepted()->assertJsonPath('data.id', $id);
+    $this->postJson('/api/v1/instances/'.$instance->id.'/migrate', ['restore' => 'true'])
+        ->assertUnprocessable();
 });
