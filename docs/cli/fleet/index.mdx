@@ -19,7 +19,7 @@ The rollout publishes the Node agent on each Node in turn. Each Node runs the `f
 
 <div className="flow-at" data-chart="fleet/cli-converge"></div>
 
-The fleet reboot reboots the managed Linux Nodes that need a reboot for their security fixes, one at a time, each night, after it drained their work. Each pass is one `fleet.reboot` Operation. [Fleet reboot](/reference/gateway-recovery#fleet-reboot) explains the order, the drain, the checks, connection retries and the alerts. A Node that stays unreachable halts the pass, including when it has a reboot hold.
+The fleet reboot reboots the managed Linux Nodes that need a reboot for their security fixes, one at a time, each night, after it drained their work. Each pass is one `fleet.reboot` Operation. [Fleet reboot](/reference/gateway-recovery#fleet-reboot) explains the order, the drain, the checks, safe read retries, interrupted runs and the alerts. A Node that stays unreachable halts the pass, including when it has a reboot hold.
 
 After a CI host reboots, Orbit asks GitHub to rerun jobs lost during the drain. It does not repeat that request if execution is lost while the request is in flight.
 

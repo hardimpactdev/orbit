@@ -62,11 +62,11 @@ sequenceDiagram
     %%> - every Node result shows `reboot_hold` as admitted; held task hosts keep taking work
     %%> - the Gateway records parked task VMs; a Node due for more than 3 days raises `reboot_overdue`
   else a Node fails or has unknown outcome
-    SW--xGW: Run failed<br/>NODE · error_code
+    SW--xGW: Pass failed<br/>outcomes · error_code
     %%> Why stop:
     %%> - without a Node report, the Gateway records `unknown` / `run_interrupted`, fails the pass and alerts once
     %%> - missing records before a recorded halt stay unknown; only Nodes after that halt may be `not_reached`
-    %%> - later Nodes record `skipped` / `halted` without SSH; the next pass starts again there
+    %%> - after a recorded Node failure, later Nodes record `skipped` / `halted` without SSH; the next pass starts again there
     Note over GW: Alert once<br/>reboot_halted
   end
   Note over GW: Confirm 209 boot<br/>from its uptime

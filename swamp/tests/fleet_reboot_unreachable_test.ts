@@ -26,7 +26,9 @@ async function phase(path: string, failures: number, held = false, name = "drain
     const block = play.tasks.find((task: any) => task.block).block;
     const read = block.findIndex((task: any) => task.name === (name === "drain" ? "Read the boot state" : "Wait for the boot to finish"));
     // An actual Ansible module over the real ssh connection plugin is needed: set_fact alone never connects.
-    block[read] = { name: "Read the fixture boot state", "ansible.builtin.ping": {} };
+    const readVars = block[read].vars;
+    if (readVars?.ansible_ssh_retries !== undefined && retries !== undefined) readVars.ansible_ssh_retries = Number(retries);
+    block[read] = { name: "Read the fixture boot state", "ansible.builtin.ping": {}, ...(readVars ? { vars: readVars } : {}) };
     if (name === "drain") block.splice(read + 1, 0, { name: "Keep fixture state", "ansible.builtin.set_fact": { boot: { due: false, kernel: "fixture-kernel" } } });
     const absolute = (value: any): any => {
         if (Array.isArray(value)) return value.map(absolute);
@@ -67,8 +69,10 @@ Deno.test("fleet reboot retries a first unreachable attempt and succeeds on the 
         assertEquals(record, { node_id: 9, outcome: "not_due", error_code: undefined });
         assertEquals(JSON.parse(await Deno.readTextFile(recordPath(path))).error_code, undefined);
         const env = steps[0].task.inputs.env;
-        assertEquals([env.ANSIBLE_SSH_RETRIES, env.ANSIBLE_TIMEOUT], ["7", "10"]);
+        assertEquals([env.ANSIBLE_SSH_RETRIES, env.ANSIBLE_TIMEOUT], ["0", "10"]);
         assertMatch(env.ANSIBLE_SSH_ARGS, /ConnectionAttempts=1/);
+        const drain = source.find((play) => play.name === "Drain the Node").tasks.find((task: any) => task.block).block;
+        assertEquals(drain.find((task: any) => task.name === "Read the boot state").vars.ansible_ssh_retries, 7);
     } finally { await Deno.remove(path, { recursive: true }); }
 });
 
@@ -124,7 +128,7 @@ Deno.test("fleet reboot records a started cut phase as failed instead of not rea
     } finally { await Deno.remove(path, { recursive: true }); }
 });
 
-Deno.test("a cut before controller finalization still reports an attempted Node as failed", async () => {
+Deno.test("collection can report a retained attempted-Node record when finalization was cut", async () => {
     const path = await folder();
     try {
         const run = await phase(path, 100, false, "drain", "1");
@@ -159,3 +163,42 @@ Deno.test("the controller records phase failures after succeeded, failed and ski
     assertEquals(record.dependsOn.map((dependency: any) => dependency.step), ["drain", "reboot", "check", "mint", "rerun"]);
     assertEquals(record.dependsOn.every((dependency: any) => JSON.stringify(dependency.condition) === JSON.stringify({ or: [{ type: "completed" }, { type: "skipped" }] })), true);
 });
+
+
+for (const name of ["drain", "reboot"]) {
+    Deno.test(`the ${name} phase never replays a command that executed before SSH disconnected`, async () => {
+        const path = await folder();
+        try {
+            const command = `${path}/harmless-change`;
+            await Deno.writeTextFile(command, '#!/bin/sh\nprintf "effect\\n" >> "$REBOOT_SSH_FIXTURE/effects"\nprintf after > "$REBOOT_SSH_FIXTURE/boot-id"\n');
+            await Deno.chmod(command, 0o755);
+            await Deno.writeTextFile(`${path}/boot-id`, "before");
+            await Deno.writeTextFile(`${path}/ssh.json`, JSON.stringify({ failures: 0, calls: 0, disconnect_after: command }));
+            const original = source.find((play) => play.hosts === "reboot_node" && play.tags.includes(name));
+            const block = original.tasks.find((task: any) => task.block);
+            const task = name === "reboot"
+                ? { ...structuredClone(block.block.find((task: any) => task.name === "Reboot and wait for the Node")),
+                    "ansible.builtin.reboot": { reboot_command: command, boot_time_command: `cat ${path}/boot-id`, test_command: "true", reboot_timeout: 5 } }
+                : { name: "Harmless drain stand-in", "ansible.builtin.raw": command };
+            const read = block.block.find((task: any) => task.name === "Read the boot state");
+            const tasks = name === "drain" ? [{ name: "Initial safe fixture read", "ansible.builtin.ping": {}, vars: read.vars ?? {} }, task] : [task];
+            await Deno.writeTextFile(`${path}/play.json`, JSON.stringify([
+                { hosts: "localhost", connection: "local", gather_facts: false, tags: [name], tasks: [{ name: "Address the local-only fixture", "ansible.builtin.add_host": {
+                    name: "fixture", groups: ["reboot_node"], ansible_host: "192.0.2.9", ansible_connection: "ssh", ansible_ssh_executable: fixture,
+                    ansible_python_interpreter: "{{ ansible_playbook_python }}", ansible_ssh_pipelining: true,
+                } }] },
+                { ...original, become: false, vars: { ...original.vars, ...(block.vars ?? {}) }, tasks },
+            ]));
+            const step = steps.find((step) => step.name === name);
+            const env = Object.fromEntries(Object.entries(step.task.inputs.env).filter(([, value]) => typeof value === "string" && !value.includes("${{"))) as Record<string, string>;
+            const result = await new Deno.Command("sh", {
+                args: ["-c", step.task.inputs.run.replace('"$ORBIT_ANSIBLE/operation-fleet-reboot.yml"', '"$ORBIT_RUN/play.json"')], stdout: "piped", stderr: "piped",
+                env: { ...env, ANSIBLE_CONFIG: `${ansible}ansible.cfg`, ANSIBLE_FORKS: "2", ORBIT_RUN: path, ORBIT_NODE_ID: "9", REBOOT_SSH_FIXTURE: path,
+                    ANSIBLE_COLLECTIONS_PATH: Deno.env.get("ANSIBLE_COLLECTIONS_PATH") ?? "/opt/orbit/ansible/collections" },
+            }).output();
+            const effects = (await Deno.readTextFile(`${path}/effects`)).trim().split("\n");
+            assertEquals(effects, ["effect"], "SSH retried a command after it already changed the Node");
+            assertEquals(result.code, name === "reboot" ? 0 : 4);
+        } finally { await Deno.remove(path, { recursive: true }); }
+    });
+}

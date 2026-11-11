@@ -71,7 +71,9 @@ The drain stops new work for the Node, waits for work in flight for at most 15 m
 - **The Gateway's own jobs.** The drain stops the scheduler and drains Horizon within the budget. A job still running then is cut, and Laravel runs it again after `retry_after`.
 - **Node 209.** It reboots itself after the pass ends. A transient path unit waits for the pass's cleanup step, then stops serve and the workers with their own drains, within the budget, and reboots. The Gateway confirms the new boot from the agent's uptime and raises `reboot_unconfirmed` after 30 minutes without one.
 
-When a reboot of the control path cuts a Swamp run, the run ends `interrupted`. The Gateway's reconciler records that Operation `interrupted` with its failed step, as for any lost run. Terminal Operations never reopen. The caller starts a new Operation: the next rollout pass, the next automatic deploy or the task orchestrator. Every machine phase is an idempotent playbook, so the new Operation repeats the cut phase safely.
+When a reboot of the control path cuts a Swamp run, the run ends `interrupted`. The Gateway's reconciler records that Operation `interrupted` with its failed step, as for any lost run.
+
+A `fleet.reboot` root without Node reports instead records a failed pass with unknown Node outcomes. Terminal Operations never reopen. The caller starts a new Operation: the next rollout pass, the next automatic deploy or the task orchestrator. Every machine phase is an idempotent playbook, so the new Operation repeats the cut phase safely.
 
 ### Shutdown never waits
 

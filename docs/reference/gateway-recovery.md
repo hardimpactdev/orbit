@@ -698,9 +698,11 @@ The child `fleet-reboot-node` runs three Ansible phases of `swamp/ansible/operat
 
 Each phase keeps its Ansible JSON callback report private. Before the child ends, `Record the Node` reads those reports on the controller, including after an unreachable target bypasses Ansible rescue. When collection runs, it records a started phase without a terminal report or Node outcome as `failed` with `fleet.reboot_cut`.
 
-If the root run ends before reporting any Node records, the Gateway cannot tell which Nodes were attempted: every Node records `unknown` with `run_interrupted`. Missing records without an earlier recorded halt also stay unknown. A pass with unknown Nodes fails with `fleet.reboot_interrupted` and raises `reboot_halted` once. Only missing Nodes after a recorded halt use `skipped` with `not_reached`.
+If the root run ends before reporting any Node records, the Gateway cannot tell which Nodes were attempted: every Node records `unknown` with `run_interrupted`. Missing records without an earlier recorded halt also stay unknown. Unknown outcomes make the pass fail and raise `reboot_halted` once. Without a recorded Node failure, its error code is `fleet.reboot_interrupted`. Only missing Nodes after a recorded halt use `skipped` with `not_reached`.
 
-Only the initial boot-state reads before any Node change retry SSH connection failures (exit 255). They get seven retries after the first attempt, with a 10-second connect timeout and one OpenSSH connection attempt per try. Ansible supplies the pauses: 0, 1, 3, 7, 15, 30 and 30 seconds. Eight timed-out attempts take at most 166 seconds per SSH invocation before process overhead. This covers a two-minute uplink outage, stays within the existing 2,400-second drain phase and leaves room for the 900-second drain and six 75-second guest stops. The phase timeouts remain the hard bounds. The window check runs after the read, so connection retries cannot make a Node start draining after the window's cutoff.
+Only the initial boot-state reads before any Node change retry SSH connection failures (exit 255). They get seven retries after the first attempt, with a 10-second connect timeout and one OpenSSH connection attempt per try. Ansible supplies the pauses: 0, 1, 3, 7, 15, 30 and 30 seconds. Eight timed-out attempts take at most 166 seconds per SSH invocation before process overhead. This covers a two-minute uplink outage, stays within the existing 2,400-second drain phase and leaves room for the 900-second drain and six 75-second guest stops.
+
+The phase timeouts remain the hard bounds. The window check runs after the read, so connection retries cannot make a Node start draining after the window's cutoff.
 
 The drain, guest and runner stops, recovery and reboot use zero SSH retries. A disconnect after a command started can therefore fail the phase, but cannot replay that command through the SSH retry plugin.
 
@@ -771,7 +773,7 @@ While serve is down, the Gateway's starts of new runs fail as they do for any se
 
 ### A cut Operation
 
-A reboot of the control path or of Node 209 can cut a Swamp run after the drain budget. The run ends `interrupted`, and the [reconciler](/reference/operations#read-an-operation) records its Operation `interrupted` with the failed step, as for any lost run. A terminal Operation never reopens: its caller starts a new one, such as the next rollout pass, the next automatic deploy, or the task orchestrator's repeat. Every machine phase is an idempotent playbook, so the new Operation repeats the cut phase safely.
+A reboot of the control path or of Node 209 can cut a Swamp run after the drain budget. The run ends `interrupted`, and the [reconciler](/reference/operations#read-an-operation) records its Operation `interrupted` with the failed step, as for any lost run. The `fleet.reboot` projection instead records a failed pass when Node evidence is [unknown](#one-node-of-the-pass). A terminal Operation never reopens: its caller starts a new one, such as the next rollout pass, the next automatic deploy, or the task orchestrator's repeat. Every machine phase is an idempotent playbook, so the new Operation repeats the cut phase safely.
 
 ### What is reported
 

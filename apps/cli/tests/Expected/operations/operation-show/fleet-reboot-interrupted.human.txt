@@ -1,0 +1,47 @@
+Loading operation...
+
+┌  Show operation
+│
+├  ● Loaded operation
+│
+└  Loaded operation.
+
+
+┌  Operation: 1
+│
+├  Kind               fleet.reboot
+│
+├  Target             fleet 1
+│
+├  Status             failed
+│
+├  Error code         fleet.reboot_interrupted
+│
+├  Current step       —
+│
+├  Step started       —
+│
+├  Step observed      —
+│
+├  Failed step        —
+│
+├  Error detail       —
+│
+├  Result             {"nodes":[{"node_id":213,"outcome":"unknown","reason":"run_interrupted","reboot_hold":true},{"node_id":212,"outcome":"unknown","reason":"run_interrupted","reboot_hold":false}],"e
+│                     rror_code":"fleet.reboot_interrupted"}
+│
+├  Cancel requested   —
+│
+├  Attempts           0
+│
+├  By                 —
+│
+├  Caller Node        —
+│
+├  Created            2026-11-11T02:10:00+00:00
+│
+├  Started            2026-11-11T02:10:00+00:00
+│
+└  Finished           2026-11-11T02:10:00+00:00
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

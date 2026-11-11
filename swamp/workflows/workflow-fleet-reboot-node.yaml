@@ -39,8 +39,8 @@ jobs:
           ANSIBLE_CONFIG: '${{ inputs.assets + "/ansible.cfg" }}'
           ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
           ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o ConnectionAttempts=1 -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=" + inputs.run_folder + "/known_hosts" }}'
-          # Retry only SSH exit 255, using the connection plugin's own backoff: eight attempts in at most 166 s plus overhead.
-          ANSIBLE_SSH_RETRIES: '7'
+          # A disconnect can follow execution: only the initial safe reads opt into retries in the playbook.
+          ANSIBLE_SSH_RETRIES: '0'
           ANSIBLE_TIMEOUT: '10'
           ANSIBLE_STDOUT_CALLBACK: ansible.posix.json
           ANSIBLE_FORCE_COLOR: '0'

@@ -64,6 +64,9 @@
               reboot_hold: "{{ target.defer == 'operator_hold' }}"
         - name: Read the boot state
           ansible.builtin.import_tasks: tasks/fleet-reboot-read.yml
+          # The SSH plugin repeats the entire invocation after exit 255. Only these reads are safe to repeat.
+          vars:
+            ansible_ssh_retries: 7
         - name: Record a Node that needs no reboot
           ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
           vars:

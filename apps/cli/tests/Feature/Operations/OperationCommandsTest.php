@@ -583,3 +583,10 @@ it('renders an unreachable fleet reboot failure and diagnostic from the recorded
     run_contract('operations/operation-show/fleet-reboot-unreachable', 'operation:show', ['operation' => '1', '--json' => true],
         'operations/operation-show/fleet-reboot-unreachable.json', 0);
 });
+
+it('renders unknown Node outcomes from an interrupted fleet reboot response', function (): void {
+    run_contract('operations/operation-show/fleet-reboot-interrupted', 'operation:show', ['operation' => '1'],
+        'operations/operation-show/fleet-reboot-interrupted.human.txt', 0);
+    run_contract('operations/operation-show/fleet-reboot-interrupted', 'operation:show', ['operation' => '1', '--json' => true],
+        'operations/operation-show/fleet-reboot-interrupted.json', 0);
+});

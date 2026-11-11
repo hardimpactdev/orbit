@@ -16,11 +16,11 @@ use Illuminate\Support\Facades\Validator;
 
 /**
  * Records each Node's outcome of a `fleet.reboot` pass (ADR 0253) on the Operation, in pass order. Task VMs that the drain stopped are recorded `parked`, so the next task call wakes them. A failed
- * Node raises `reboot_halted`; a Node due for more than three days raises `reboot_overdue`.
+ * or unknown Node raises `reboot_halted`; a Node due for more than three days raises `reboot_overdue`.
  */
 final readonly class FleetRebootProjection implements DirectOperationProjection
 {
-    public const array Outcomes = ['rebooted', 'scheduled', 'not_due', 'deferred', 'skipped', 'failed'];
+    public const array Outcomes = ['rebooted', 'scheduled', 'not_due', 'deferred', 'skipped', 'failed', 'unknown'];
 
     /** The record fields a Node's result keeps. */
     private const array Fields = ['node_id', 'name', 'outcome', 'reason', 'step', 'error_code', 'error_detail', 'kernel_before', 'kernel_after', 'due_since',
@@ -53,14 +53,25 @@ final readonly class FleetRebootProjection implements DirectOperationProjection
         // JSON object keys that are digits decode as integer keys, so read the admitted Node by its integer ID.
         $admitted = is_array($intent['nodes'] ?? null) ? $intent['nodes'] : [];
         $nodes = [];
+        $halted = false;
         foreach (ValidatedData::integerList($intent['order'] ?? []) as $id) {
-            // A Node the pass did not reach, after a failed Node or a cut run, has no record.
-            // The admitted reason also shows the hold when the run never reached this Node.
-            $nodes[] = [...($byNode[$id] ?? ['node_id' => $id, 'outcome' => 'skipped', 'reason' => 'not_reached']),
-                'reboot_hold' => is_array($admitted[$id] ?? null) && ($admitted[$id]['defer'] ?? null) === 'operator_hold'];
+            // A run-folder record cannot prove a visit unless the root delivered it. Only a recorded halt proves later Nodes were not reached.
+            $node = $byNode[$id] ?? ['node_id' => $id, 'outcome' => $halted ? 'skipped' : 'unknown',
+                'reason' => $halted ? 'not_reached' : 'run_interrupted'];
+            $nodes[] = [...$node, 'reboot_hold' => is_array($admitted[$id] ?? null) && ($admitted[$id]['defer'] ?? null) === 'operator_hold'];
+            $halted = $halted || ($node['outcome'] ?? null) === 'failed'
+                || (($node['outcome'] ?? null) === 'skipped' && ($node['reason'] ?? null) === 'halted');
         }
-        $failed = array_find($nodes, static fn (array $node): bool => ($node['outcome'] ?? null) === 'failed');
-        $result = ['nodes' => $nodes, ...($failed !== null ? ['error_code' => is_string($failed['error_code'] ?? null) ? $failed['error_code'] : 'fleet.reboot_failed'] : [])];
+        $unknown = array_find($nodes, static fn (array $node): bool => ($node['outcome'] ?? null) === 'unknown');
+        $failed = array_find($nodes, static fn (array $node): bool => ($node['outcome'] ?? null) === 'failed') ?? $unknown;
+        if ($failed !== null) {
+            $failed['error_code'] = is_string($failed['error_code'] ?? null) ? $failed['error_code']
+                : ($failed['outcome'] === 'unknown' ? 'fleet.reboot_interrupted' : 'fleet.reboot_failed');
+            if ($unknown !== null && in_array($data['status'] ?? null, ['succeeded', 'failed', 'interrupted', 'cancelled'], true)) {
+                $data = [...$data, 'status' => 'failed', 'error_code' => $failed['error_code']];
+            }
+        }
+        $result = ['nodes' => $nodes, ...($failed !== null ? ['error_code' => $failed['error_code']] : [])];
 
         return DB::transaction(function () use ($operation, $data, $result, $nodes, $failed): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
