@@ -9,6 +9,7 @@ use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use JsonException;
+use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Requests\Processes\UpdateProcessRequest;
 use Orbit\Sdk\Requests\Projects\ListProcessDefinitionsRequest;
@@ -32,7 +33,7 @@ final class UpdateProcessCommand extends ProcessCommand
         {--command=* : One command argument; repeat for each argv item}
         {--image= : Docker image}
         {--working-directory= : Runtime working directory}
-        {--environment=* : NAME=VALUE; repeat, or pass an empty value to clear}
+        {--environment=* : Docker NAME=VALUE; repeat as needed}
         {--port=* : Docker HOST:CONTAINER[/tcp|udp]; repeat as needed}
         {--volume=* : Docker SOURCE:TARGET[:ro]; repeat as needed}
         {--restart= : never, on-failure, always, or unless-stopped}
@@ -99,7 +100,7 @@ final class UpdateProcessCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $runtime = $this->stringOption('runtime');
+        $runtime = $this->stringOption('runtime') ?? ($installed ? null : 'systemd');
 
         if ($runtime !== null && ! in_array($runtime, ['systemd', 'docker'], strict: true)) {
             return $this->renderGatewayFailure(
@@ -109,6 +110,19 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         $command = $this->stringListOption('command');
+        if (! $installed && $command === [] && $this->consoleMode()->mayPrompt) {
+            do {
+                $argument = $this->commandPrompts()->run(fn () => new TextPrompt(
+                    label: 'Command argument', required: $command === [],
+                    validate: static fn (string $value): ?string => strlen($value) > 4096 || preg_match('/[\\x00\\r\\n]/', $value) === 1 ? 'Invalid command argument.' : null,
+                    hint: $command === [] ? 'One literal argv item; no shell evaluation.' : 'Leave empty to finish.',
+                ));
+                if (! is_string($argument) || $argument === '') {
+                    break;
+                }
+                $command[] = $argument;
+            } while (count($command) < 64);
+        }
 
         if (
             count($command) > 64
@@ -124,7 +138,7 @@ final class UpdateProcessCommand extends ProcessCommand
             );
         }
 
-        $restartPolicy = $this->stringOption('restart');
+        $restartPolicy = $this->stringOption('restart') ?? ($installed ? null : 'never');
 
         if (
             $restartPolicy !== null
@@ -137,9 +151,16 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         $image = $this->stringOption('image');
+        if (! $installed && $runtime === 'docker' && $image === null && $this->consoleMode()->mayPrompt) {
+            $answer = $this->commandPrompts()->run(fn () => new TextPrompt(
+                label: 'Docker image', required: true,
+                validate: static fn (string $value): ?string => strlen($value) > 255 || preg_match('/\\A[A-Za-z0-9][A-Za-z0-9._\\/:@-]*\\z/D', $value) !== 1 ? 'Invalid Docker image.' : null,
+            ));
+            $image = is_string($answer) ? $answer : null;
+        }
         $workingDirectory = $this->stringOption('working-directory');
         $environmentWasProvided = $this->input->hasParameterOption('--environment');
-        $environment = $this->stringListOption('environment') === [''] ? [] : $this->environment();
+        $environment = $this->environment();
 
         if ($environment === null) {
             return self::FAILURE;
@@ -220,19 +241,12 @@ final class UpdateProcessCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $spec = [];
-        if ($runtime !== null) {
-            $spec['runtime'] = $runtime;
-        }
-        if ($this->input->hasParameterOption('--command')) {
-            $spec['command'] = $command;
-        }
-        if ($restartPolicy !== null) {
-            $spec['restart_policy'] = $restartPolicy;
-        }
-        if ($this->option('keep-alive') === true) {
-            $spec['keep_alive'] = true;
-        }
+        $spec = [
+            'runtime' => $runtime,
+            'command' => $command,
+            'restart_policy' => $restartPolicy,
+            'keep_alive' => $this->option('keep-alive') === true,
+        ];
 
         if ($image !== null) {
             $spec['image'] = $image;
@@ -243,7 +257,7 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         if ($environmentWasProvided) {
-            $spec['environment'] = (object) $environment;
+            $spec['environment'] = $environment;
         }
 
         if ($portsWereProvided) {
@@ -259,7 +273,7 @@ final class UpdateProcessCommand extends ProcessCommand
                 [
                     'name' => $name,
                     'environments' => $environments,
-                    'spec' => (object) $spec,
+                    'spec' => $spec,
                 ],
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             );
@@ -271,6 +285,7 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         $connector = $this->gatewayConnector($repository, $connectors);
+
         if ($connector === null) {
             return self::FAILURE;
         }

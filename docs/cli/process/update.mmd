@@ -16,10 +16,10 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
   alt Project definition update
-    CLI->>GW: Update definition<br/>only supplied fields
-    Note over GW: Merge and validate<br/>preserve omitted values
+    CLI->>GW: Update definition<br/>full or partial specification
+    Note over GW: Merge and validate<br/>resolve placeholders
     %%> Changing runtime replaces the runtime specification; it requires the new runtime's command and fields.
-    %%> Empty maps and lists clear the supplied field. Preset command and metadata remain canonical.
+    %%> Null clears scalar overrides; empty maps and lists clear collections. Preset command and metadata remain canonical.
     GW-->>CLI: Updated or refused<br/>validation result
     %%> A later default development container deploy applies the definition to its linked Processes; new clones inherit it.
   else Installed Process update
