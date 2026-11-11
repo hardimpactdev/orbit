@@ -2,7 +2,7 @@ id: fdd25bfe-62c9-47b6-b401-ea3900ac8a69
 name: operation-instance-mail-update
 description: Apply only development mail keys in one current container environment file.
 vaults: [orbit-control-inputs]
-queueTimeout: 10
+queueTimeout: 30
 labels: {role: swamp}
 inputs:
   type: object
@@ -11,7 +11,18 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, const: instance.mail_update}
     intent: {type: object}
-    execution_secrets: {type: object}
+    execution_secrets:
+      type: object
+      properties:
+        resolver:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^instance-mail-resolver-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [resolver]
+      additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:

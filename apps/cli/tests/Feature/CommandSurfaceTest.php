@@ -14,9 +14,11 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceMailRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command;
@@ -1630,3 +1632,21 @@ it('applies mail without confirmation in JSON and noninteractive human mode', fu
         && is_string($request->headers()->get('Idempotency-Key')));
     MockClient::destroyGlobal();
 })->with([true, false]);
+
+it('preserves the typed mail Operation receipt and request correlation at the SDK boundary', function (): void {
+    $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a846';
+    $request = new UpdateInstanceMailRequest(501, 'mail-repair-proof');
+    $mock = new MockClient([$request::class => MockResponse::make([
+        'data' => ['id' => 901, 'kind' => 'instance.mail_update', 'target_type' => 'instance', 'target_id' => 501,
+            'status' => 'queued', 'sequence' => 1, 'steps' => []],
+        'meta' => ['request_id' => $requestId],
+    ], 202)]);
+    $connector = new GatewayConnector('https://gateway.example.test');
+    $connector->withMockClient($mock);
+    $result = $connector->send($request)->dto();
+    expect($result)->toBeInstanceOf(OperationResponse::class)
+        ->and($result->id)->toBe(901)->and($result->kind)->toBe('instance.mail_update')
+        ->and($result->requestId)->toBe($requestId)
+        ->and($mock->getLastPendingRequest()?->headers()->get('Idempotency-Key'))->toBe('mail-repair-proof')
+        ->and($request->resolveEndpoint())->toBe('/api/v1/instances/501/mail')->and($request->body()->all())->toBe([]);
+});

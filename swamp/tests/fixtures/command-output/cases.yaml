@@ -1446,6 +1446,10 @@ cases:
   context: ufw-deleted
   expected: true
 non_command_output:
+- file: instance-mail.yml
+  task: Write the failure result
+  field: ansible.builtin.copy.content
+  reason: Maps Ansible failure metadata to a public error code; does not parse command output.
 - file: tasks/task-container-host-prepare.yml
   task: Require absolute image daemon paths
   field: ansible.builtin.assert.that[0]
