@@ -85,9 +85,11 @@ The workload Caddy proxies `https://<domain>/__orbit/vite/` to the port and keep
 
 Set Vite's `server.origin` to the origin of `ORBIT_DEV_SERVER_ORIGIN` and `server.hmr.path` to `hmr`. Configure assets and HMR for the Route origin. Laravel's plugin writes the public URL into `public/hot`, but Orbit does not read that file. Plain Vite applications use the same setup.
 
-The `vp-dev` unit sets `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` to the Instance's Route hostnames, primary first and then Route ID order, separated by commas without schemes or ports. A stock `laravel-vite-plugin` configuration has no host list, so Vite would otherwise refuse the Instance's hostname.
+The `vp-dev` unit sets `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` to the Instance's authoritative Route hostnames, primary first and then Route ID order, separated by commas without schemes or ports. A stock `laravel-vite-plugin` configuration has no host list, so Vite would otherwise refuse the Instance's hostname.
 
 The unit renders on Process create/update and container clone, migration and deployment; later Route changes reach Vite at the next such render, as with `ORBIT_DEV_SERVER_HOST`, and existing container Instances receive this setting at their next deployment.
+
+Withdrawn Routes are excluded; initial creation includes its reserved primary Route before publication.
 
 Let Orbit pick the port. Do not select one by hand, and do not add `keep_alive` only to make the Process start on wake: `--start` already does that.
 

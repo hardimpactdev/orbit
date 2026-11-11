@@ -1,0 +1,26 @@
+[Unit]
+Description=Orbit process vite
+X-Orbit-Process-ID=41
+After=network.target
+
+[Service]
+Type=simple
+User=orbit
+Group=orbit
+UMask=0007
+WorkingDirectory=/srv/workspace
+Environment=HOME=/home/orbit
+Environment=PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin
+Environment=NODE_USE_SYSTEM_CA=1
+EnvironmentFile=-/srv/workspace/.env
+Environment=ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite
+Environment=ORBIT_DEV_SERVER_HOST=default.tool.test
+Environment=ORBIT_DEV_SERVER_PATH=/__orbit/vite
+Environment=ORBIT_DEV_SERVER_PORT=5195
+UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY
+ExecStart="/usr/bin/env" "ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite" "ORBIT_DEV_SERVER_HOST=default.tool.test" "ORBIT_DEV_SERVER_PATH=/__orbit/vite" "ORBIT_DEV_SERVER_PORT=5195" "/opt/orbit-runtime/current/bin/vp" "dev" "--host=0.0.0.0" "--port=5195" "--strictPort" "--base=/__orbit/vite/"
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

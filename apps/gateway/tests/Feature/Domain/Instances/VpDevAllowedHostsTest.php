@@ -2,14 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Domain\InstanceMigration\MigratedProcessDefinitions;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\VpDevPreset;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
+use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -32,7 +36,7 @@ function allowedHostsInstance(Node $node, Project $project, string $name, int $p
     $checkout = '/fast/apps/tool/'.$name;
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name,
         'checkout_path' => $checkout, 'branch' => 'main', 'vite_port' => $port, 'status' => 'active',
-        'provisioning_step' => 'active', 'source_is_laravel' => false]);
+        'provisioning_step' => 'active', 'first_setup_pending' => false, 'source_is_laravel' => false]);
     if ($container) {
         InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => 'orbit-instances',
             'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.'.(1 + $instance->id),
@@ -127,4 +131,62 @@ describe('the vp-dev unit host allowance', function (): void {
             DB::flushQueryLog();
         }
     });
+
+    it('excludes unpublished and retiring Route hostnames', function (string $status): void {
+        [$instance, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'default', 5173, true);
+        $withdrawn = allowedHostsRoute($instance, 'withdrawn.tool.test', 'docs/public');
+        $withdrawn->update(['status' => $status, 'sites_published' => false,
+            'failed_step' => $status === 'failed' ? 'publish' : null, 'error_code' => $status === 'failed' ? 'route.failed' : null]);
+
+        $unit = allowedHostsUnit($process);
+
+        expect($unit)->toContain("Environment=__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=default.tool.test\n");
+        expect($unit)->not->toContain('withdrawn.tool.test');
+    })->with(['pending', 'failed', 'retiring']);
+
+    it('does not authorize an inactive resolver fallback when no authoritative Route remains', function (): void {
+        [$instance, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'default', 5173, true);
+        $instance->routes()->firstOrFail()->update(['status' => 'retiring', 'sites_published' => false]);
+
+        expect(allowedHostsUnit($process))->not->toContain('__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS');
+    });
+
+    it('keeps the reserved primary hostname in a new clones first unit before Route publication', function (): void {
+        [$instance, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'clone', 5173, true);
+        $instance->routes()->firstOrFail()->update(['status' => 'pending', 'sites_published' => false]);
+        $instance->update(['first_setup_pending' => true, 'status' => 'reserved', 'provisioning_step' => 'reserved']);
+
+        expect(allowedHostsUnit($process))->toContain("Environment=__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=clone.tool.test\n");
+    });
+
+    it('records a repeatable historical skip for actual pre-change vp-dev unit bytes without weakening the activation proof', function (bool $alreadyRedeployed): void {
+        [$instance, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'default', 5195, true);
+        $commit = str_repeat('d', 40);
+        $instance->runtime()->firstOrFail()->update(['seed_commit' => $commit]);
+        // Captured with main's renderer at 1720d2e6, not synthesized by deleting lines from the current unit.
+        $legacy = file_get_contents(base_path('tests/Fixtures/vp-dev-before-allowed-hosts.service')) ?: throw new LogicException('Missing historical unit fixture.');
+        $legacy = str_replace('X-Orbit-Process-ID=41', 'X-Orbit-Process-ID='.$process->id, $legacy);
+        $unit = ['id' => $process->id, 'name' => app(SystemdProcessRenderer::class)->unitName($process),
+            'content' => $legacy, 'environment' => null, 'desired' => 'running'];
+        $operation = Operation::query()->create(['kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => $instance->id,
+            'node_id' => $instance->node_id, 'input' => ['container' => ['processes' => [$unit]]],
+            'status' => 'succeeded', 'result' => ['instance_id' => $instance->id, 'moved' => true, 'restored' => false,
+                'ready' => true, 'commit' => $commit]]);
+        $activation = hash('sha256', $alreadyRedeployed ? app(ContainerProcesses::class)->unit($instance, $process, migrate: true)['content'] : $legacy);
+        $process->forceFill(['systemd_activation_hash' => $activation])->save();
+
+        app(MigratedProcessDefinitions::class)->repair();
+        app(MigratedProcessDefinitions::class)->repair();
+
+        expect($process->refresh()->source_definition_id)->toBeNull();
+        expect($process->systemd_activation_hash)->toBe($activation);
+        expect(ProcessDefinition::query()->count())->toBe(0);
+        $finding = Activity::query()->where('command', 'instance:migrate:repair')->sole();
+        expect($finding->description)->toBe('instance.migrate_process_definition_skipped');
+        expect($finding->properties?->get('reason'))->toBe($alreadyRedeployed
+            ? "Process [{$process->id}:{$process->name}] is not proven by the migrated default's activation."
+            : "Process [{$process->id}:{$process->name}] current unit content differs from the admitted unit.");
+        expect($operation->refresh()->input)->toBe(['container' => ['processes' => [$unit]]]);
+    })->with(['original activation' => false, 'activated by a later deployment' => true]);
+
 });
