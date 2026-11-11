@@ -199,10 +199,14 @@
   "operation-fleet-peer-dns": {
    "Check resolution": "read-only"
   },
+  "operation-gateway-release": {
+   "Wait for active Operations": "read-only"
+  },
   "operation-gateway-swamp-load": {
    "Check the Ansible collections": "read-only"
   },
   "operation-instance-create": {
+   "clone-server-database-check": "read-only",
    "server-database-check": "unreviewed"
   },
   "operation-instance-deploy-direct": {
@@ -241,7 +245,8 @@
   },
   "operation-instance-destroy": {
    "Check it is gone": "read-only",
-   "Check work is pushed": "read-only"
+   "Check work is pushed": "read-only",
+   "Read container removal": "read-only"
   },
   "operation-instance-rollback": {
    "Read current back": "read-only"
