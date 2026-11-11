@@ -36,11 +36,14 @@ export async function storeInspection(
     const observed = z.object({ state: z.string().max(32), output: z.string() }).strict().parse(
         JSON.parse(value),
     );
+    const spec = "inspection";
+    const name = `inspection-${input.request}`;
+    // Native sensitive-field keys include method, spec AND resource instance.
     const key =
-        `nckrtl-process-command-assets-${ctx.modelId}-inspection-inspection-${input.request}-value`;
+        `nckrtl-process-command-assets-${ctx.modelId}-inspection-${spec}-${name}-value`;
     const secret = await ctx.writeResource(
-        "inspection",
-        `inspection-${input.request}`,
+        spec,
+        name,
         Inspection.parse({ value }),
     );
     const reference = Reference.parse({

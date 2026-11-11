@@ -49,6 +49,8 @@ Version 2 also checks each kind's public `execution_copies` declarations against
 Update the declaration and expected policy together. The check also runs when
 only this manifest changes; other Swamp-only changes keep their existing scope.
 
+Container Process status and log reads share the native inspection key described in [command steps](../../docs/reference/swamp-command-steps.md). Their regression tests derive keys from the production behavior's resource writes and check the grant, the returned reference and the Gateway reader together. Registry parity alone cannot detect a key that both the declaration and the manifest describe incorrectly; native `serve check-config` checks syntax, not which keys a behavior emits.
+
 The validation CI job runs `python3 bin/check-grant-patterns.py --cache <runtime-cache>` with the checksum-verified Swamp binary. It renders every `config/*grants*.json` input through the release renderer into a disposable repository, then runs native `serve check-config`. It requires `passed`, `wouldStart` and the complete grant-file count. Missing credentials or a native refusal fail Required checks. No server starts and no live grants change.
 
 This checks full CEL conditions, not an extracted regex helper. Pinned Swamp parses them with `@marcbachmann/cel-js` 7.6.1 and checks patterns with Deno/V8's JavaScript `RegExp` and its backtracking-safety guard. Native regressions cover an optional quantified group, invalid syntax, invalid CEL, omitted inputs and missing credentials. Expand rejected quantified groups into equivalent flat alternatives, and keep Gateway declarations identical to the manifest.
