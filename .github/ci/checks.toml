@@ -10,7 +10,7 @@ shard_ceiling_seconds = 240
 shard_workers = 4
 unit_ceiling_seconds = 180
 slice_seconds = 60
-slice_startup_seconds = 5
+slice_startup_seconds = 6
 pr_shards = 6
 default_cost = 30
 
@@ -192,12 +192,10 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_test.ts"
-# 180.032s, hosted four-worker run 43000765953 (unit cutoff; case unfinished).
-after_merge_cases = ["a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing"]
-cost = 113
+cost = 293
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (88s); these are estimates, not completed measurements.
-slices = 9
+slices = 10
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "bin/swamp-shape-gate",
@@ -225,6 +223,7 @@ inputs = [
 ]
 
 [fixture.case_costs]
+  "a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing" = 180 # UNMEASURED individual estimate; run 43000765953 cut a MULTI-CASE unit at 180.032s, not this case alone.
   "a stuck Instance host playbook throws with its last task and kills a descendant holding stdout" = 3 # completed body 2.153s, run 43010311414; larger completed history retained
   "a late playbook gets only the shared command budget left, then no new playbook starts" = 2 # UNMEASURED estimate; observed maximum body cost
   "the shared command budget stays exhausted across Deno test file isolates" = 3 # UNMEASURED estimate; observed maximum body cost
@@ -356,7 +355,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_acl_test.ts"
-cost = 131
+cost = 171
 # 180.026s, hosted four-worker run 43002948719 (unit cutoff; case unfinished).
 after_merge_cases = ["bridge remains reject after late unsafe attachments, and profile NICs use only the proxy ACL"]
 slices = 1
@@ -387,7 +386,7 @@ inputs = [
 ]
 
 [fixture.case_costs]
-  "host reconciles the endpoint union without wiping other rules and moves existing NICs without an open gate" = 131 # CENSORED lower bound 130.934s, run 43010311414; not a completed measurement
+  "host reconciles the endpoint union without wiping other rules and moves existing NICs without an open gate" = 171 # completed body 170.117s, run 43011901748; above the PR lane budget, not excluded
 
 [[fixture]]
 file = "swamp/bin/check-swamp-base-policy_test.ts"

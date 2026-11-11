@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
 units = module_from_spec(spec_from_loader(loader.name, loader))
 loader.exec_module(units)
-BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=5, pr_shards=6, default_cost=30)
+BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=6, default_cost=30)
 
 
 def fixture(file, cost=30, inputs=(), **options):
@@ -54,13 +54,13 @@ class PlanningTest(unittest.TestCase):
 
     def test_deno_slices_use_ceil_cost_and_python_stays_whole(self):
         self.assertEqual(units.units_for(fixture('swamp/a.ts', 121), BUDGET),
-                         [('swamp/a.ts#0/3', 121 / 3 + 5), ('swamp/a.ts#1/3', 121 / 3 + 5), ('swamp/a.ts#2/3', 121 / 3 + 5)])
+                         [('swamp/a.ts#0/3', 121 / 3 + 6), ('swamp/a.ts#1/3', 121 / 3 + 6), ('swamp/a.ts#2/3', 121 / 3 + 6)])
         self.assertEqual(units.units_for(fixture('swamp/a.py', 99), BUDGET), [('swamp/a.py', 99)])
         self.assertEqual(units.units_for(fixture('swamp/a.ts', 99, slices=False), BUDGET), [('swamp/a.ts', 99)])
-        self.assertEqual(units.units_for(fixture('swamp/a.ts', 60), BUDGET), [('swamp/a.ts', 65)])
+        self.assertEqual(units.units_for(fixture('swamp/a.ts', 60), BUDGET), [('swamp/a.ts', 66)])
         explicit = units.units_for(fixture('swamp/a.ts', 121, slices=5), BUDGET)
         self.assertEqual([u for u, _ in explicit], [f'swamp/a.ts#{k}/5' for k in range(5)])
-        self.assertTrue(all(cost == 121 / 5 + 5 for _, cost in explicit))
+        self.assertTrue(all(cost == 121 / 5 + 6 for _, cost in explicit))
 
     def test_limit_defers_names_and_keeps_direct_matches_over_shared_globs(self):
         fixtures = [fixture('swamp/direct.py', 100, ['swamp/tasks/input.yml']),
@@ -156,7 +156,7 @@ class TableTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch) / 'checks.toml'
             source = (ROOT / '.github/ci/checks.toml').read_text()
-            source = source.replace('a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing', 'renamed case no longer in source')
+            source = source.replace('a new image definition is built, takes the stable alias and replaces the old image', 'renamed case no longer in source')
             path.write_text(source)
             with self.assertRaisesRegex(ValueError, 'every after_merge_cases name must be registered'):
                 units.configuration(path)
@@ -408,13 +408,21 @@ class PopulationTest(unittest.TestCase):
     def test_named_case_costs_and_startup_replace_the_equal_share_estimate(self):
         f = fixture('swamp/cases.ts', 140, cases=['large', 'small'], slices=2,
                     case_costs={'large': 130, 'small': 10})
-        self.assertEqual(units.units_for(f, BUDGET), [('swamp/cases.ts#0/2', 135), ('swamp/cases.ts#1/2', 15)])
+        self.assertEqual(units.units_for(f, BUDGET), [('swamp/cases.ts#0/2', 136), ('swamp/cases.ts#1/2', 16)])
         f['slices'] = 100
         self.assertEqual(len(units.units_for(f, BUDGET)), 2, 'no empty slices')
         result = planned(['swamp/cases.ts'], [fixture('swamp/cases.ts', 2500, cases=[f'case-{i}' for i in range(25)], slices=25)])
         self.assertEqual(result['shards'], [])
         self.assertEqual(len(result['deferred']), 25)
-        self.assertEqual(result['capacity'], [{'file': 'swamp/cases.ts', 'seconds': 2625, 'shards': 7, 'workers': 28}])
+        self.assertEqual(result['capacity'], [{'file': 'swamp/cases.ts', 'seconds': 2650, 'shards': 7, 'workers': 28}])
+
+    def test_an_oversize_single_case_is_named_and_blocks_without_becoming_an_exclusion(self):
+        f = fixture('swamp/large.ts', 180, cases=['unresolved large case'])
+        result = planned(['swamp/large.ts'], [f])
+        self.assertEqual(result['shards'], [])
+        self.assertEqual(result['deferred'], ['swamp/large.ts'])
+        self.assertEqual(result['capacity'][0]['oversize'], [{'unit': 'swamp/large.ts', 'seconds': 186, 'cases': ['unresolved large case']}])
+        self.assertNotIn('after_merge_cases', f)
 
     def test_tool_setup_is_inside_the_shard_deadline_and_empty_runs_fail(self):
         step = units.gate.Step('shape', 'setup stand-in', [sys.executable, '-c', 'import signal; signal.pause()'])
