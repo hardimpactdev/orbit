@@ -2,8 +2,8 @@
 title: "Processes and schedules"
 description: "How Orbit runs Processes for an Instance or a Node, and how a Project declares Process and Schedule definitions that production Instances copy."
 covers:
-  - apps/gateway/app/Actions/{Processes,ProjectDefinitions}/**
-  - apps/gateway/app/{Domain,Data}/Processes/**
+  - apps/gateway/app/{Actions,Data}/{Processes,ProjectDefinitions}/**
+  - apps/gateway/app/Domain/Processes/**
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/app/Infrastructure/Processes/{RemoteProcessRuntimeManager,SystemdProcessRenderer,DockerProcessRenderer,NativeProcessAdmissionLock,NativeProcessRuntimeLease,SshProcessUserResolver}.php
   - apps/gateway/app/Http/{Controllers/Api/ProcessesController,Requests/Processes/*}.php
@@ -86,7 +86,7 @@ A Process uses one of two runtimes. Each runtime takes a complete specification.
 
 | Runtime | Required | Optional | Default working directory |
 | --- | --- | --- | --- |
-| systemd | Name, and an absolute executable with its arguments | Working directory, restart policy, keep-alive, initial start, and `user` on a Node | The Instance's application directory in its checkout on `app-dev`, or under `<production-home>/current` on `app-prod`, or the selected account's home for a Node (`/home/{managed user}` when `user` is omitted) |
+| systemd | Name, and an absolute executable with its arguments; development container definitions also accept supported runtime command names | Working directory, restart policy, keep-alive, initial start, and `user` on a Node | The Instance's application directory in its checkout on `app-dev`, or under `<production-home>/current` on `app-prod`, or the selected account's home for a Node (`/home/{managed user}` when `user` is omitted) |
 | Docker | Name, image, and command arguments | Working directory, environment, published ports, volumes, restart policy, keep-alive, initial start | The image's `WORKDIR` |
 
 For Docker, an omitted or null `working_directory` means no Orbit override. The Gateway stores null and omits Docker's `--workdir` option, so the image's `WORKDIR` takes effect. If the image declares no `WORKDIR`, Docker uses its own default. An explicit absolute directory is stored and passed as `--workdir`; Orbit never substitutes `/app`. Systemd keeps its owner-derived default.
@@ -298,7 +298,9 @@ A Project holds Process definitions and Schedule definitions. A definition has a
 | --- | --- |
 | `name` | 1 through 63 lowercase letters, digits, or hyphens. It starts and ends with a letter or digit. A Schedule definition name also allows no two hyphens in a row. |
 | `environments` | `production`, `development` or both; Schedule definitions accept only `production`. Production preparation copies definitions that include `production`. A development `instance:create` creates and starts definitions that include `development`, after its setup steps. |
-| `spec` | For a Process: the runtime fields above, without owner, start, user, or environment file. For a Schedule: `command`, `calendar`, and `timeout_seconds`, with the limits of a Schedule. |
+| `spec` | Process runtime fields, without owner, start or user. Development-only extensions are listed below. Schedule: `command`, `calendar` and `timeout_seconds`, with Schedule limits. |
+
+For systemd, definitions that apply only to development also accept `restart_on_deploy`, `environment_file`, `required_mount_paths` and private `environment`. Captured `vp-dev` definitions retain their preset name, version and canonical command; new preset definitions refuse.
 
 A Schedule definition has no host Node, so the Gateway does not run `systemd-analyze calendar` when it stores one. The host Node checks the calendar when production preparation installs the copy.
 
@@ -307,9 +309,9 @@ A Schedule definition has no host Node, so the Gateway does not run `systemd-ana
 | Process | `GET`, `POST /api/v1/projects/{project}/process-definitions` | `GET`, `PUT`, `DELETE /api/v1/projects/{project}/process-definitions/{name}` |
 | Schedule | `GET`, `POST /api/v1/projects/{project}/schedule-definitions` | `GET`, `PUT`, `DELETE /api/v1/projects/{project}/schedule-definitions/{name}` |
 
-These routes need an access grant to one Node that runs an Instance of the Project, or to the Gateway Node when the Project has no Instance. `PUT` replaces the whole definition. The API refuses unknown or duplicate members. Lists omit `spec.command`. An item response returns the complete definition with its UUID.
+These routes need an access grant to one Node that runs an Instance of the Project, or to the Gateway Node when the Project has no Instance. `PUT` replaces the whole definition. The API refuses unknown or duplicate members. Lists omit `spec.command`. An item response includes the command and UUID but redacts every private environment value as `[REDACTED]`. On update, that placeholder preserves the existing value for the same key; a placeholder for an unknown key refuses. Send a new value to replace it or omit a key to remove it.
 
-A definition change touches only the Project. It makes no remote call and does not change any existing copy. Removing an Instance keeps the definitions. Removing a Project deletes them.
+A definition edit records Project intent without a remote call. A later development container deployment reconciles linked copies with the edited definition. Production copies keep their captured specification. [Migration](/cli/instance/migrate) captures moved direct Processes and defines compatible same-name adoption. Removing an Instance keeps the definitions. Removing a Project deletes them.
 
 ## Production copies
 

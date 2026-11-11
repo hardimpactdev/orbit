@@ -6,6 +6,7 @@ namespace App\Infrastructure\Processes;
 
 use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\AppDev\SsrEndpoint;
+use App\Domain\Instances\ContainerProcessCommands;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -42,7 +43,7 @@ final readonly class SystemdProcessRenderer
         return '/etc/systemd/system/'.$this->unitName($process);
     }
 
-    public function render(Process $process, ProcessTarget $target, ?ManagedUserAccount $managedAccount = null): string
+    public function render(Process $process, ProcessTarget $target, ?ManagedUserAccount $managedAccount = null, bool $resolveNames = true): string
     {
         $runtimeConfig = $this->runtimeConfig($process);
         $mountPaths = RequiredMountPaths::parse($runtimeConfig['required_mount_paths'] ?? []);
@@ -51,6 +52,9 @@ final readonly class SystemdProcessRenderer
             throw new InvalidArgumentException('A Process user must name a non-root account for a Node systemd Process without a preset.');
         }
         $command = $this->stringList($runtimeConfig['command'] ?? null);
+        if ($resolveNames && $target->container !== null && $target->instance !== null && ! $target->instance->placedOnAppProd()) {
+            $command = app(ContainerProcessCommands::class)->resolve($command, $target->instance->project->php_version, "Process [{$process->id}:{$process->name}]");
+        }
         $environmentFile = $process->isVpDev() && $target->container === null ? $target->environmentFile : ($runtimeConfig['environment_file'] ?? null);
 
         if (
