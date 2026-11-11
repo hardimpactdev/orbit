@@ -841,12 +841,16 @@ describe('the compatible Project directory', function (): void {
         expect(array_column($rows, 'slug'))->toBe(['alpha', 'zulu']);
     })->with(['default' => '', 'full directory' => '?include_unavailable=1']);
 
-    it('rejects unknown Project list query fields', function (string $query): void {
-        threadDefault($this->beast, 'ready');
+    it('ignores unknown Project list query fields and keeps the default set', function (): void {
+        $ready = threadDefault($this->beast, 'ready');
+        threadDefault($this->beast, 'not-ready', seeded: false);
+        $default = threadCall($this->phone, 'GET', 'projects')->assertOk()->json('data');
 
-        threadCall($this->phone, 'GET', 'projects?'.$query)
-            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
-    })->with(['unexpected=1', 'include_unavailable=0&unexpected=1', 'include_unavailable=1&unexpected=1']);
+        $rows = threadCall($this->phone, 'GET', 'projects?_=123&page=1')->assertOk()->json('data');
+
+        expect($rows)->toBe($default)
+            ->and(array_column($rows, 'id'))->toBe([$ready->project_id]);
+    });
 
     it('defaults to the pre-directory ready set and keeps the full directory opt-in', function (): void {
         $ready = threadDefault($this->beast, 'ready');

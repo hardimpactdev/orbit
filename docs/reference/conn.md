@@ -183,9 +183,9 @@ Conn starts a thread in an Orbit Project in a new clone of the Project's default
 
 `GET /projects` (`conn-project-list`) defaults to the compatible answer for installed Conn clients: Projects with a reachable, active container default and a seed snapshot. Installed clients treat every returned Project as startable, so unavailable Projects require an explicit opt-in.
 
-`include_unavailable=1` or `include_unavailable=true` returns all reachable Projects, using the same scope as `project:list`. A caller with Gateway access can see all Projects. Other callers can see each Project with any Instance on a Node they reach. Both forms are ordered by Project slug.
+`include_unavailable=1` or `include_unavailable=true` returns all reachable Projects, using the same scope as `project:list`. A caller with Gateway access can see all Projects. Other callers can see each Project with any Instance on a Node they reach. Both forms return rows in ascending slug order; slugs which compare equal have no defined relative order.
 
-The optional `include_unavailable` query accepts only `1`, `true`, `0` or `false`; absence means false. Any other value or query field fails with `validation.failed` (422). Only `include_unavailable` is allowed. False preserves the pre-directory membership rule, which checks readiness and access rather than the later technical checks. A returned Project can therefore have `cloneable: false` for a technical refusal that also applied before the directory changed.
+The optional `include_unavailable` query accepts only `1`, `true`, `0` or `false`; absence means false. Any other value for `include_unavailable` fails with `validation.failed` (422). Unknown query fields are ignored. False preserves the pre-directory membership rule, which checks readiness and access rather than the later technical checks. A returned Project can therefore have `cloneable: false` for a technical refusal that also applied before the directory changed.
 
 Each entry keeps its Project fields and adds `instance_domain_suffix`, `checks`, `cloneable` and `cloneable_reason`. The default's `node_id` and `node_name` are null when there is no default or the caller cannot reach its Node. A hidden default also has a null suffix.
 
