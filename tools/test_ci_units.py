@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
 units = module_from_spec(spec_from_loader(loader.name, loader))
 loader.exec_module(units)
-BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, unit_ceiling_seconds=180, slice_seconds=60, pr_shards=6, default_cost=30)
+BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, pr_shards=6, default_cost=30)
 
 
 def fixture(file, cost=30, inputs=(), **options):
@@ -343,7 +343,7 @@ class WorkflowTest(unittest.TestCase):
     def test_required_accepts_skipped_only_with_empty_shards_and_preserves_job_selection_rules(self):
         # Exercise Required's actual inline rule before its unchanged build-selection checks.
         source = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:\n', 1)[1]
-        self.assertIn('changes, fixtures]', source)
+        self.assertIn('changes, swamp, fixtures]', source)
         code = textwrap.dedent(source.split("          python3 - <<'PYTHON'\n", 1)[1].split('          selected =', 1)[0])
         for shards in ([], [{'name': '01', 'units': ['a']} ]):
             for result in ('success', 'skipped', 'failure', 'cancelled'):
@@ -356,7 +356,7 @@ class WorkflowTest(unittest.TestCase):
                     else:
                         with self.assertRaisesRegex(SystemExit, 'Required fixtures failed'):
                             exec(code, {})
-        self.assertIn("expected = (set(needs) - {'changes'}) | {'swamp', 'proof-run'}", source)
+        self.assertIn("expected = (set(needs) - {'changes'}) | {'proof-run'}", source)
 
 
 if __name__ == '__main__':

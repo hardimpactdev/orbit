@@ -62,8 +62,10 @@ def configuration(path=TABLE):
         config = tomllib.load(source)
     budget = config['budget']
     if any(type(budget[key]) is not int or budget[key] <= 0 for key in
-           ('shard_seconds', 'shard_workers', 'shard_deadline_seconds', 'unit_ceiling_seconds', 'slice_seconds', 'pr_shards', 'default_cost')):
+           ('shard_seconds', 'shard_workers', 'shard_deadline_seconds', 'shard_ceiling_seconds', 'unit_ceiling_seconds', 'slice_seconds', 'pr_shards', 'default_cost')):
         raise ValueError('Fixture budgets must be positive integers')
+    if budget['shard_deadline_seconds'] >= budget['shard_ceiling_seconds']:
+        raise ValueError('shard_deadline_seconds must be below shard_ceiling_seconds')
     if budget['slice_seconds'] > budget['shard_seconds']:
         raise ValueError('slice_seconds exceeds shard_seconds')
     fixtures = {}
