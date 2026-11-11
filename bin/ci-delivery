@@ -86,12 +86,15 @@ class GitHub:
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise ValueError('CI evidence API budget exceeded')
-        argv = ['gh', 'api', '--paginate', '--slurp', f'repos/{self.repository}/{path}']
+        argv = ['gh', 'api', f'repos/{self.repository}/{path}']
         if data is not None:
             argv += ['--method', 'PATCH' if '/comments/' in path else 'POST', '--input', '-']
-        return json.loads(subprocess.check_output(
+        else:
+            argv += ['--paginate', '--slurp']
+        result = json.loads(subprocess.check_output(
             argv, input=json.dumps(data).encode() if data is not None else None,
             timeout=min(20, remaining)))
+        return [result] if data is not None else result
 
     def one(self, path):
         pages = self.request(path)

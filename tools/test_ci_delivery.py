@@ -245,6 +245,27 @@ class FixtureReportTest(unittest.TestCase):
                     delivery.main()
             self.assertIn('CI report failed:', summary.read_text())
 
+    def test_comment_writes_use_nonpaginated_post_and_patch(self):
+        for path, method in (('issues/12/comments', 'POST'), ('issues/comments/100', 'PATCH')):
+            with self.subTest(method=method), \
+                 patch.object(delivery.subprocess, 'check_output', return_value=b'{"id": 100}') as command:
+                result = delivery.GitHub(REPO).request(path, {'body': 'fixture evidence'})
+                argv = command.call_args.args[0]
+                self.assertNotIn('--paginate', argv)
+                self.assertNotIn('--slurp', argv)
+                self.assertEqual(argv, ['gh', 'api', f'repos/{REPO}/{path}',
+                                        '--method', method, '--input', '-'])
+                self.assertEqual(json.loads(command.call_args.kwargs['input']), {'body': 'fixture evidence'})
+                self.assertLessEqual(command.call_args.kwargs['timeout'], 20)
+                self.assertEqual(result, [{'id': 100}])
+
+    def test_get_requests_keep_paginated_page_shape(self):
+        with patch.object(delivery.subprocess, 'check_output', return_value=b'[[{"id": 1}], [{"id": 2}]]') as command:
+            result = delivery.GitHub(REPO).request('issues/12/comments?per_page=100')
+            self.assertIn('--paginate', command.call_args.args[0])
+            self.assertIn('--slurp', command.call_args.args[0])
+            self.assertEqual(result, [[{'id': 1}], [{'id': 2}]])
+
     def test_api_budget_and_each_request_are_bounded_and_errors_propagate(self):
         with patch.object(delivery.time, 'monotonic', side_effect=[0, 91]):
             github = delivery.GitHub(REPO)
