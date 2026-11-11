@@ -3022,6 +3022,7 @@ describe('migrated development Process definitions', function (): void {
     });
 
     it('adopts a compatible same-name direct Process and keeps its desired state and activation', function (): void {
+        $this->freezeTime();
         $instance = migrateMovedDefault(containerDefaultProject(), containerDefaultNode());
         $process = migrationWorker($instance, desired: 'stopped');
         $process->update(['working_directory' => '/srv/workspace', 'runtime_config' => ['command' => ['/opt/orbit-runtime/current/bin/node', 'worker.js'], 'environment_file' => '/srv/workspace/.env']]);
