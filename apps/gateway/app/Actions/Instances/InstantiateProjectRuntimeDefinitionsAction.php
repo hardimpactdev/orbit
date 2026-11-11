@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Data\Processes\AddProcessData;
+use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessSpecification;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Processes\VpDevPreset;
 use App\Domain\ProjectDefinitions\DefinitionEnvironment;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleErrorCode;
@@ -101,6 +103,7 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
                 $this->captureProcess($instance, $definition, $target, DesiredProcessState::Running);
             }
         }
+        $this->initializeContainerPresetPort($instance);
         $instance->update(['runtime_definitions_captured_at' => now()]);
     }
 
@@ -125,10 +128,19 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
 
                 continue;
             }
-            $attributes = $this->processSpecifications->attributes($this->processData($instance, $definition), $target);
+            $attributes = $this->attributesForDefinition($instance, $definition, $target);
             if (! $this->processSpecifications->matches($record, $attributes)) {
                 $record->forceFill([...$attributes, 'status' => LifecycleStatus::Provisioning])->save();
             }
+        }
+        $this->initializeContainerPresetPort($instance);
+    }
+
+    private function initializeContainerPresetPort(Instance $instance): void
+    {
+        if ($instance->vite_port === null && ! $instance->placedOnAppProd() && $instance->runtime()->exists()
+            && $instance->processes()->where('runtime_config->preset', VpDevPreset::NAME)->exists()) {
+            $instance->update(['vite_port' => VpDevPreset::ContainerPort]);
         }
     }
 
@@ -157,19 +169,20 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
         ProcessTarget $target,
         DesiredProcessState $desired = DesiredProcessState::Stopped,
     ): void {
-        $data = $this->processData($instance, $definition);
-        $attributes = $this->processSpecifications->attributes($data, $target);
+        $attributes = $this->attributesForDefinition($instance, $definition, $target);
 
-        if (Process::query()
-            ->whereIn('owner_type', Instance::morphTypes())
-            ->where('owner_id', $instance->id)
-            ->where('name', $definition->name)
-            ->exists()) {
-            throw new ResourceOperationException(
-                errorCode: 'process.name_taken',
-                message: "Process [{$definition->name}] already exists and cannot be adopted as a definition copy.",
-                status: 409,
-            );
+        $existing = Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)
+            ->where('name', $definition->name)->lockForUpdate()->first();
+        if ($existing !== null) {
+            if ($target->container !== null && ! $instance->placedOnAppProd()
+                && ($existing->source_definition_id === null || $existing->source_definition_id === $definition->id)
+                && $existing->status !== LifecycleStatus::Removing
+                && app(ContainerProcesses::class)->matchesDefinition($existing, $attributes, $instance)) {
+                $existing->update(['source_definition_id' => $definition->id]);
+
+                return;
+            }
+            throw new ResourceOperationException('process.name_taken', "Process [{$definition->name}] already exists with incompatible ownership or intent.", 409);
         }
 
         try {
@@ -236,6 +249,28 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
         }
     }
 
+    /** @return array{runtime: ProcessRuntime, working_directory: ?string, runtime_config: array<string,mixed>, restart_policy: string, keep_alive: bool, restart_on_deploy: bool} */
+    public function attributesForDefinition(Instance $instance, ProcessDefinition $definition, ProcessTarget $target): array
+    {
+        $attributes = $this->processSpecifications->attributes($this->processData($instance, $definition), $target);
+        if ($target->container !== null && ! $instance->placedOnAppProd()) {
+            foreach (['environment_file', 'required_mount_paths', 'preset', 'preset_version'] as $key) {
+                if (array_key_exists($key, $definition->spec)) {
+                    $attributes['runtime_config'][$key] = $definition->spec[$key];
+                }
+            }
+            if (($attributes['runtime_config']['preset'] ?? null) === VpDevPreset::NAME) {
+                if ($definition->spec['command'] !== VpDevPreset::definitionCommand()) {
+                    throw new ResourceOperationException('process.container_command_unsupported', "Process definition [{$definition->name}] has a custom preset command.", 409);
+                }
+                // Capture precedes port allocation. Placement renders this supported template with the destination's port.
+                $attributes['runtime_config']['command'] = VpDevPreset::command();
+            }
+        }
+
+        return $attributes;
+    }
+
     private function processData(
         Instance $instance,
         #[SensitiveParameter]
@@ -275,6 +310,7 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
             restartPolicy: $restartPolicy,
             start: false,
             keepAlive: ($specification['keep_alive'] ?? false) === true,
+            restartOnDeploy: ($specification['restart_on_deploy'] ?? true) === true,
         );
     }
 

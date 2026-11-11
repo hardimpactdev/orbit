@@ -95,10 +95,10 @@ sequenceDiagram
     %%> If it fails:
     %%> - the container stays the Instance; the run fails with `instance.migrate_retire_failed`, and the source or retained checkout stays on the Node
     SW-->>GW: Run succeeded<br/>terminal event
-    Note over GW: Record runtime and Process definitions
+    Note over GW: Record runtime<br/>and Process definitions
     %%> Result:
     %%> - the Instance's workspace is the container's; the runtime runs, a default's row holds its seed commit
-    %%> - the same transaction captures each direct moved Process as a Project development definition and links its existing row; commands use runtime names, and a same-name incompatible definition refuses instead of overwriting
+    %%> - the same transaction captures each direct moved Process as a Project development definition and links its existing row; known commands use runtime names, opaque guest argv stays exact, and a changed same-name incompatible definition refuses instead of overwriting
     %%> - proven cutover captures definitions even if retirement failed; preflight failures and restored checkout outcomes capture nothing
     %%> - a SQLite file moved with the files, so its connection record goes; stored `.env` values follow the new path
     %%> - the Conn layer records a non-default Instance's T3 server from the result

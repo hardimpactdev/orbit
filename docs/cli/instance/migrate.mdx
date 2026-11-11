@@ -6,6 +6,9 @@ covers:
   - swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts
   - swamp/ansible/tasks/instance-migrate-process-ready.yml
   - apps/gateway/app/Domain/Instances/ContainerProcesses.php
+  - apps/gateway/app/Domain/Instances/ContainerProcessCommands.php
+  - apps/gateway/app/Domain/InstanceMigration/MigratedProcessDefinitions.php
+  - apps/gateway/database/migrations/2027_02_06_000000_capture_migrated_process_definitions.php
 ---
 
 ```bash
@@ -125,9 +128,9 @@ Other absolute executable paths must be executable inside the container before d
 
 Each moved Process whose desired state is running must be active with no pending start or restart job. Orbit reads every running Process, waits five seconds once for the whole set, then requires each to remain active with no pending job, the same nonzero main process ID and the same restart count. This settling window catches immediate crashes and restart loops before the Route moves. A Process that fails this check reports `instance.migrate_processes_failed`, names the Process and triggers recovery.
 
-After a proven cutover, Orbit records each direct moved Process as a Project development definition and links the same Process row in the same transaction. New clones inherit those definitions. Later development deployments apply definition edits to linked copies. The definition stores supported runtime commands by name, such as `php8.5`, `vp` or `node`; Orbit resolves the name from the current runtime when it renders the unit. A supported `vp-dev` copy keeps its preset and uses each clone’s assigned port. An incompatible same-name definition refuses instead of being overwritten. Production definitions keep their existing scope.
+After a proven cutover, Orbit records each direct moved Process as a Project development definition and links the same Process row in the same transaction. New clones inherit those definitions. Later development deployments apply definition edits to linked copies. The definition stores supported runtime commands by name, such as `php8.5`, `vp` or `node`; Orbit resolves the name from the current runtime when it renders the unit. A supported `vp-dev` copy keeps its preset and uses each clone’s assigned port. An opaque or unknown command that passed readiness keeps its exact guest argv. An incompatible same-name definition refuses before downtime and is checked again at cutover instead of being overwritten. Production definitions keep their existing scope.
 
-A cutover proven by the move result captures these definitions even if checkout retirement fails afterward. A failed preflight or a move restored to the checkout captures none. A one-time data repair applies the same rule to proven migrated defaults that still have direct Processes.
+A cutover proven by the move result captures these definitions even if checkout retirement fails afterward. A failed preflight or a move restored to the checkout captures none. A one-time data repair captures proven migrated defaults that still have direct Processes. It requires the completed move’s container, seed, Process membership and exact activation content; it refuses unknown commands or changed and conflicting rows by name. The repair is one transaction and is safe to repeat. Rolling back its migration keeps the captured definitions and links, because clones or later edits may already depend on them. A separate schema change removes the redundant uniqueness check on Instance Vite ports; host reservations stay unique. Its rollback restores the check only when there are no repeated nonnull Node and Vite-port pairs. Otherwise rollback reports the duplicate-group count and leaves the schema, rows and ports unchanged.
 
 ## Order
 
@@ -168,6 +171,8 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.migrate_unsupported` | The Instance has a Route beside its own. |
 | `project.source_defaults_incomplete` | A web-serving Project has no recorded PHP version. Run `orbit project:update PROJECT --source-access=github_app` after setting `require.php` in its source. |
 | `operation.kind_unavailable` | A non-default Instance has no Conn layer or no model router. |
+| `process_definition.name_taken` | A same-name definition has incompatible intent or includes production; it is not changed. |
+| `instance.migrate_process_definition_unproven` | The one-time repair cannot prove a named Instance or Process. It changes no selected rows. |
 | `process.target_unsupported` | The Instance has a Docker Process. |
 | `process.container_preset_unsupported` | A named Process has an unknown preset or preset version, or unsupported preset options. |
 | `process.container_command_unsupported` | A named preset Process has a custom command. |

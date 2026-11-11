@@ -3,18 +3,22 @@
 declare(strict_types=1);
 
 use App\Actions\Hibernation\ActivateInstanceRuntimeAction;
+use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceMigrateAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\ReadOperationAction;
+use App\Actions\ProjectDefinitions\ReplaceProcessDefinitionAction;
 use App\Actions\Schedules\CreateScheduleAction;
 use App\Actions\Schedules\RunScheduleAction;
 use App\Actions\Schedules\ShowScheduleLogsAction;
 use App\Data\Instances\InstanceData;
 use App\Data\Operations\OperationData;
 use App\Data\Schedules\AddScheduleData;
+use App\Domain\AppDev\VitePortAllocator;
+use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
@@ -22,6 +26,7 @@ use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
+use App\Domain\InstanceMigration\MigratedProcessDefinitions;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
@@ -55,6 +60,7 @@ use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
+use App\Http\Requests\ProjectDefinitions\ProcessDefinitionRequest;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -73,16 +79,19 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
+use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\Schedule;
 use App\Support\ValidatedData;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Validator;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 uses(LazilyRefreshDatabase::class);
@@ -2944,4 +2953,393 @@ describe('migrated Schedule logs', function (): void {
         'different request' => ['wrong request', 'swamp.terminal_result_unavailable'],
         'different vault key' => ['wrong key', 'schedule.logs_failed'],
     ]);
+});
+
+describe('migrated development Process definitions', function (): void {
+    it('links the same Process only at proven cutover and clones its name-based command', function (string $status, bool $ready): void {
+        $instance = migrateCheckout(containerDefaultProject(ProjectType::NodePackage, '8.5'), containerDefaultNode());
+        $process = migrationWorker($instance);
+        $process->update(['runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', 'queue:work'], 'environment_file' => $instance->checkout_path.'/.env'],
+            'keep_alive' => true, 'restart_on_deploy' => false]);
+        $operation = migrateStart($instance);
+        expect(ProcessDefinition::query()->count())->toBe(0);
+        expect($process->refresh()->source_definition_id)->toBeNull();
+
+        migrateEnd($operation, $status, ['ready' => $ready, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40),
+            ...($ready ? [] : ['failed_step' => 'retire', 'error_code' => 'instance.migrate_retire_failed'])]);
+
+        $definition = ProcessDefinition::query()->sole();
+        expect($definition->environments)->toBe(['development']);
+        expect($definition->spec)->toMatchArray(['command' => ['php8.5', 'artisan', 'queue:work'], 'keep_alive' => true, 'restart_on_deploy' => false]);
+        expect($process->refresh()->source_definition_id)->toBe($definition->id);
+        expect($operation->refresh()->status->value)->toBe($status);
+        $clone = containerCreate($instance->project, $instance->node, 'f67-child');
+        $copy = Process::query()->where('owner_id', $clone->target_id)->sole();
+        expect($copy->source_definition_id)->toBe($definition->id);
+        expect($copy->runtime_config['command'])->toBe(['php8.5', 'artisan', 'queue:work']);
+        expect(containerIntentOf($clone)['processes'][0]['content'])->toContain('"/opt/orbit-runtime/current/php/8.5/bin/php" "artisan" "queue:work"');
+    })->with(['success' => ['succeeded', true], 'retirement failed after readiness' => ['failed', false]]);
+
+    it('keeps opaque argv exactly after proven readiness and captures none after failed readiness', function (array $command, bool $passed): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $process = migrationWorker($instance);
+        $process->update(['runtime_config' => ['command' => $command]]);
+        $operation = migrateStart($instance);
+
+        migrateEnd($operation, $passed ? 'succeeded' : 'failed', $passed
+            ? ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]
+            : ['ready' => false, 'moved' => false, 'restored' => true, 'failed_step' => 'processes', 'error_code' => 'instance.migrate_processes_failed']);
+
+        expect($process->refresh()->source_definition_id !== null)->toBe($passed);
+        expect(ProcessDefinition::query()->count())->toBe($passed ? 1 : 0);
+        if ($passed) {
+            expect(ProcessDefinition::query()->sole()->spec['command'])->toBe($command);
+        }
+    })->with([
+        'opaque env readiness passed' => [['/usr/bin/env', '-S', '/opt/custom/worker --literal'], true],
+        'opaque env readiness failed' => [['/usr/bin/env', '-S', '/opt/custom/worker --literal'], false],
+        'unknown custom executable' => [['/opt/custom/node', 'worker.js'], true],
+        'nested path is not a runtime binary' => [['/opt/orbit-runtime/current/bin/custom/node', 'worker.js'], true],
+    ]);
+
+    it('rolls back definitions links and Process paths together when a later Process conflicts', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $first = migrationWorker($instance, 'first');
+        $last = migrationWorker($instance, 'last');
+        $operation = migrateStart($instance);
+        $production = ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => 'last', 'environments' => ['production'],
+            'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/false']]]);
+        $before = $production->fresh()->getAttributes();
+
+        expect(fn () => migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]))
+            ->toThrow(ResourceOperationException::class);
+
+        expect(ProcessDefinition::query()->count())->toBe(1);
+        expect($production->refresh()->getAttributes())->toBe($before);
+        expect($first->refresh()->source_definition_id)->toBeNull();
+        expect($last->refresh()->source_definition_id)->toBeNull();
+        expect($first->working_directory)->toBe($instance->checkout_path);
+        expect($instance->refresh()->runtime()->firstOrFail()->seed_commit)->toBeNull();
+    });
+
+    it('adopts a compatible same-name direct Process and keeps its desired state and activation', function (): void {
+        $instance = migrateMovedDefault(containerDefaultProject(), containerDefaultNode());
+        $process = migrationWorker($instance, desired: 'stopped');
+        $process->update(['working_directory' => '/srv/workspace', 'runtime_config' => ['command' => ['/opt/orbit-runtime/current/bin/node', 'worker.js'], 'environment_file' => '/srv/workspace/.env']]);
+        $process->refresh();
+        $definition = ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => $process->name, 'environments' => ['development'],
+            'spec' => ['runtime' => 'systemd', 'command' => ['node', 'worker.js'], 'restart_policy' => $process->restart_policy]]);
+        $before = $process->fresh()->getAttributes();
+
+        app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
+
+        expect($process->refresh()->getAttributes())->toBe([...$before, 'source_definition_id' => $definition->id]);
+        expect(Process::query()->where('owner_id', $instance->id)->count())->toBe(1);
+    });
+
+    it('refuses incompatible same-name or foreign-linked Processes without overwriting', function (bool $foreign): void {
+        $instance = migrateMovedDefault(containerDefaultProject(), containerDefaultNode());
+        $process = migrationWorker($instance);
+        $process->refresh();
+        $definition = ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => $process->name, 'environments' => ['development'],
+            'spec' => ['runtime' => 'systemd', 'command' => ['node', 'worker.js'], 'restart_policy' => $process->restart_policy]]);
+        if ($foreign) {
+            $other = Project::query()->create(['name' => 'foreign', 'slug' => 'foreign', 'type' => ProjectType::NodePackage, 'repository_url' => 'https://github.com/nckrtl/foreign.git']);
+            $source = ProcessDefinition::query()->create(['project_id' => $other->id, 'name' => 'worker', 'environments' => ['development'], 'spec' => $definition->spec]);
+            $process->update(['source_definition_id' => $source->id]);
+        }
+        $before = $process->fresh()->getAttributes();
+
+        expect(fn () => app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance))->toThrow(ResourceOperationException::class);
+
+        expect($process->refresh()->getAttributes())->toBe($before);
+        expect($instance->refresh()->runtime_definitions_captured_at)->toBeNull();
+    })->with(['different command' => false, 'foreign definition' => true]);
+
+    it('deploys a product definition edit to the migrated default and its clone', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $process = migrationWorker($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $definition = ProcessDefinition::query()->sole();
+        $cloneOperation = containerCreate($instance->project, $instance->node, 'f67-child');
+        $clone = Instance::query()->findOrFail($cloneOperation->target_id);
+        $copy = Process::query()->where('owner_id', $clone->id)->sole();
+        $request = ProcessDefinitionRequest::create('/', 'PUT', content: json_encode(['name' => $definition->name, 'environments' => ['development'],
+            'spec' => ['runtime' => 'systemd', 'command' => ['node', 'changed-worker.js'], 'restart_policy' => 'on-failure']], JSON_THROW_ON_ERROR));
+        $validator = Validator::make($request->validationData(), $request->rules());
+        foreach ($request->after() as $after) {
+            $validator->after($after);
+        }
+        $validator->validate();
+        $request->setValidator($validator);
+        app(ReplaceProcessDefinitionAction::class)->execute($definition, $request->payload());
+
+        foreach ([$instance->refresh(), $clone] as $target) {
+            app(InstantiateProjectRuntimeDefinitionsAction::class)->refreshForContainer($target);
+            expect(app(ContainerProcesses::class)->units($target)[0]['content'])->toContain('"/opt/orbit-runtime/current/bin/node" "changed-worker.js"');
+        }
+        expect($process->refresh()->id)->toBe($process->id);
+        expect($copy->refresh()->source_definition_id)->toBe($definition->id);
+    });
+
+    it('gives a cloned migrated vp-dev Process its own port and keeps preset and environment intent', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $process = migrationVpDev($instance, surveyed: true);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $definition = ProcessDefinition::query()->sole();
+        $cloneOperation = containerCreate($instance->project, $instance->node, 'f67-child');
+        $clone = Instance::query()->findOrFail($cloneOperation->target_id);
+        $copy = Process::query()->where('owner_id', $clone->id)->sole();
+
+        expect($definition->spec['command'][0])->toBe('vp');
+        expect($copy->isVpDev())->toBeTrue();
+        expect($copy->runtime_config['environment'])->toBe(['CACHE_PATH' => '/srv/workspace/storage/cache', 'QUEUE_TOKEN' => 'migration-process-secret']);
+        expect(containerIntentOf($cloneOperation)['processes'][0]['content'])->toContain('--port='.$clone->vite_port);
+        expect($clone->vite_port)->not->toBe($instance->vite_port);
+    });
+
+    it('repairs proven migrated defaults once and preserves edited definitions on repeat and down', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $process = migrationWorker($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $process->update(['source_definition_id' => null]);
+        ProcessDefinition::query()->delete();
+        $migration = require database_path('migrations/2027_02_06_000000_capture_migrated_process_definitions.php');
+
+        $migration->up();
+        $definition = ProcessDefinition::query()->sole();
+        $definition->update(['spec' => [...$definition->spec, 'command' => ['node', 'edited.js']]]);
+        $before = $definition->fresh()->getAttributes();
+        $migration->up();
+        $migration->down();
+
+        expect(ProcessDefinition::query()->count())->toBe(1);
+        expect($process->refresh()->source_definition_id)->toBe($definition->id);
+        expect($definition->refresh()->getAttributes())->toBe($before);
+    });
+
+    it('refuses an unprovable historical Process by name and rolls back earlier repair rows', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $first = migrationWorker($instance, 'first');
+        $opaque = migrationWorker($instance, 'unprovable-worker');
+        $opaque->update(['runtime_config' => ['command' => ['/usr/bin/env', '-S', '/opt/custom/worker --literal']]]);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        Process::query()->whereIn('id', [$first->id, $opaque->id])->update(['source_definition_id' => null]);
+        ProcessDefinition::query()->delete();
+
+        expect(fn () => app(MigratedProcessDefinitions::class)->repair())->toThrow(function (ResourceOperationException $exception) use ($opaque): void {
+            expect($exception->errorCode)->toBe('instance.migrate_process_definition_unproven');
+            expect($exception->getMessage())->toContain($opaque->name, (string) $opaque->id);
+        });
+
+        expect(ProcessDefinition::query()->count())->toBe(0);
+        expect($first->refresh()->source_definition_id)->toBeNull();
+        expect($opaque->refresh()->source_definition_id)->toBeNull();
+    });
+
+    it('does nothing on a fresh empty repair', function (): void {
+        app(MigratedProcessDefinitions::class)->repair();
+        app(MigratedProcessDefinitions::class)->repair();
+
+        expect(ProcessDefinition::query()->count())->toBe(0);
+    });
+
+    it('accepts runtime command names only in development definition requests', function (array $environments, string $name, bool $accepted): void {
+        $request = ProcessDefinitionRequest::create('/', 'POST', content: json_encode(['name' => 'worker', 'environments' => $environments,
+            'spec' => ['runtime' => 'systemd', 'command' => [$name, 'worker.js']]], JSON_THROW_ON_ERROR));
+        $validator = Validator::make($request->validationData(), $request->rules());
+        foreach ($request->after() as $after) {
+            $validator->after($after);
+        }
+
+        expect($validator->passes())->toBe($accepted);
+    })->with([
+        'development known' => [['development'], 'node', true],
+        'development unknown' => [['development'], 'not-a-runtime-command', false],
+        'production name' => [['production'], 'node', false],
+        'both environments name' => [['development', 'production'], 'node', false],
+        'production absolute' => [['production'], '/usr/bin/node', true],
+    ]);
+    it('accepts an existing compatible development definition without replacing it', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $process = migrationWorker($instance);
+        $process->update(['runtime_config' => ['command' => ['/usr/bin/node', 'worker.js'], 'environment_file' => $instance->checkout_path.'/.env']]);
+        $process->refresh();
+        $definition = ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => $process->name, 'environments' => ['development'],
+            'spec' => ['runtime' => 'systemd', 'command' => ['node', 'worker.js'], 'restart_policy' => $process->restart_policy]]);
+        $before = $definition->fresh()->getAttributes();
+        $operation = migrateStart($instance);
+        expect($process->refresh()->source_definition_id)->toBeNull();
+
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+
+        expect(ProcessDefinition::query()->count())->toBe(1);
+        expect($process->refresh()->source_definition_id)->toBe($definition->id);
+        expect($definition->refresh()->getAttributes())->toBe($before);
+    });
+
+    it('refuses a demonstrated definition collision before reserving a move or stopping a Process', function (array $environments): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $process = migrationWorker($instance);
+        ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => $process->name, 'environments' => $environments,
+            'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/false']]]);
+
+        expect(fn () => migrateStart($instance))->toThrow(ResourceOperationException::class);
+
+        expect($instance->runtime()->exists())->toBeFalse();
+        expect(Operation::query()->where('kind', 'instance.migrate')->exists())->toBeFalse();
+        expect($process->refresh()->source_definition_id)->toBeNull();
+        expect($process->systemd_activation_hash)->toBe('old-host-hash');
+    })->with(['incompatible development' => [['development']], 'production only' => [['production']], 'shared production' => [['development', 'production']]]);
+
+    it('refuses repair of changed or partially proven Processes without partial adoption', function (string $change): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $first = migrationWorker($instance, 'first');
+        $last = migrationWorker($instance, 'last');
+        $operation = migrateStart($instance);
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        Process::query()->whereIn('id', [$first->id, $last->id])->update(['source_definition_id' => null]);
+        ProcessDefinition::query()->delete();
+        match ($change) {
+            'command changed after activation' => $last->update(['runtime_config' => ['command' => ['/usr/bin/env', 'node', 'different.js']]]),
+            'missing activation proof' => $last->forceFill(['systemd_activation_hash' => null])->save(),
+            'production definition collision' => ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => $last->name,
+                'environments' => ['production'], 'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/false']]]),
+        };
+        $definitions = ProcessDefinition::query()->count();
+
+        expect(fn () => app(MigratedProcessDefinitions::class)->repair())->toThrow(ResourceOperationException::class);
+
+        expect(ProcessDefinition::query()->count())->toBe($definitions);
+        expect($first->refresh()->source_definition_id)->toBeNull();
+        expect($last->refresh()->source_definition_id)->toBeNull();
+    })->with(['command changed after activation', 'missing activation proof', 'production definition collision']);
+
+    it('rejects a claimed cutover whose result instead names failed Process readiness', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $process = migrationWorker($instance);
+        $operation = migrateStart($instance);
+
+        expect(fn () => migrateEnd($operation, 'failed', ['ready' => false, 'moved' => true, 'restored' => false,
+            'commit' => str_repeat('d', 40), 'failed_step' => 'processes', 'error_code' => 'instance.migrate_processes_failed']))
+            ->toThrow(ResourceOperationException::class);
+
+        expect(ProcessDefinition::query()->count())->toBe(0);
+        expect($process->refresh()->source_definition_id)->toBeNull();
+        expect($instance->refresh()->checkout_path)->toContain('/home/orbit/apps/');
+    });
+
+    it('leaves production-owned direct Processes outside historical repair', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $process = migrationWorker($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $process->update(['source_definition_id' => null]);
+        ProcessDefinition::query()->delete();
+        $instance->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+        $before = $process->fresh()->getAttributes();
+
+        app(MigratedProcessDefinitions::class)->repair();
+
+        expect(ProcessDefinition::query()->count())->toBe(0);
+        expect($process->refresh()->getAttributes())->toBe($before);
+    });
+
+    it('leaves a non-default container direct Process outside historical repair', function (): void {
+        $default = migrateMovedDefault(containerDefaultProject(), containerDefaultNode());
+        $instance = migrateCheckout($default->project, $default->node, 'feature');
+        $process = migrationWorker($instance);
+        InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'incus_project' => 'orbit-instances',
+            'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.3', 'runtime_version' => 'r', 'agent_version' => 'a',
+            'power_state' => 'running', 'seed_commit' => str_repeat('d', 40)]);
+        $before = $process->fresh()->getAttributes();
+
+        app(MigratedProcessDefinitions::class)->repair();
+
+        expect(ProcessDefinition::query()->count())->toBe(0);
+        expect($process->refresh()->getAttributes())->toBe($before);
+    });
+
+    it('uses fixed 5173 independently in two new preset clones and preserves existing migrated ports', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        migrationVpDev($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        foreach (['f67-a', 'f67-b'] as $name) {
+            $create = containerCreate($instance->project, $instance->node, $name);
+            $clone = Instance::query()->findOrFail($create->target_id);
+            expect($clone->vite_port)->toBe(5173);
+            app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($clone);
+            expect($clone->fresh()->vite_port)->toBe(5173);
+            expect(containerIntentOf($create)['processes'][0]['content'])->toContain('--port=5173');
+        }
+
+        expect($instance->refresh()->vite_port)->toBe(5195);
+        expect(DB::table('vite_port_assignments')->count())->toBe(0);
+    });
+
+    it('refuses a recorded conflict on fixed 5173 without choosing another container port', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        migrationVpDev($instance);
+        $other = migrationWorker($instance, 'recorded-listener');
+        $other->update(['runtime_config' => ['command' => ['/usr/bin/node', 'worker.js', '--port=5173']]]);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+
+        expect(fn () => containerCreate($instance->project, $instance->node, 'f67-conflict'))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('process.container_port_conflict');
+        });
+
+        expect(Instance::query()->where('name', 'f67-conflict')->exists())->toBeFalse();
+        expect($instance->refresh()->vite_port)->toBe(5195);
+    });
+
+    it('refuses schema rollback with duplicate container ports and leaves all schema and data unchanged', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        migrationVpDev($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        foreach (['f67-a', 'f67-b'] as $name) {
+            containerCreate($instance->project, $instance->node, $name);
+        }
+        $rows = DB::table('instances')->orderBy('id')->get()->toArray();
+        $indexes = DB::table('sqlite_master')->where('type', 'index')->orderBy('name')->get()->toArray();
+        $migration = require database_path('migrations/2027_02_06_000001_drop_instance_vite_port_uniqueness.php');
+
+        expect(fn () => $migration->down())->toThrow(RuntimeException::class, '1 duplicate nonnull (node_id, vite_port) group(s)');
+
+        expect(DB::table('instances')->orderBy('id')->get()->toArray())->toEqual($rows);
+        expect(DB::table('sqlite_master')->where('type', 'index')->orderBy('name')->get()->toArray())->toEqual($indexes);
+        expect(DB::table('sqlite_master')->where('name', 'vite_port_assignments_node_id_port_unique')->exists())->toBeTrue();
+        expect(DB::table('sqlite_master')->where('name', 'instances_node_id_vite_port_unique')->exists())->toBeFalse();
+    });
+
+    it('restores the exact Instance unique index on rollback when no duplicate port pairs exist', function (): void {
+        $migration = require database_path('migrations/2027_02_06_000001_drop_instance_vite_port_uniqueness.php');
+
+        $migration->down();
+
+        $index = DB::select("PRAGMA index_info('instances_node_id_vite_port_unique')");
+        expect(array_column($index, 'name'))->toBe(['node_id', 'vite_port']);
+        expect(collect(DB::select("PRAGMA index_list('instances')"))->firstWhere('name', 'instances_node_id_vite_port_unique')->unique)->toBe(1);
+        $migration->up();
+        expect(DB::table('sqlite_master')->where('name', 'instances_node_id_vite_port_unique')->exists())->toBeFalse();
+    });
+
+    it('keeps the unchanged old host allocator working with only assignment-table uniqueness', function (): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        $first = migrateCheckout($project, $node, 'host-a');
+        $second = migrateCheckout($project, $node, 'host-b');
+        $runtime = $this->mock(VitePortRuntime::class);
+        $runtime->shouldReceive('selectPort')->once()->withArgs(fn (Node $target, int $preferred, array $excluded): bool => $target->id === $node->id && $preferred === 5173 && ! in_array(5173, $excluded, true))->andReturn(5173);
+        $runtime->shouldReceive('selectPort')->once()->withArgs(fn (Node $target, int $preferred, array $excluded): bool => $target->id === $node->id && $preferred === 5173 && in_array(5173, $excluded, true))->andReturn(5174);
+
+        expect(app(VitePortAllocator::class)->assign($first))->toBe(5173);
+        expect(app(VitePortAllocator::class)->assign($second))->toBe(5174);
+
+        expect($first->fresh()->vite_port)->toBe(5173);
+        expect($second->fresh()->vite_port)->toBe(5174);
+        expect(DB::table('sqlite_master')->where('name', 'instances_node_id_vite_port_unique')->exists())->toBeFalse();
+        expect(fn () => DB::table('vite_port_assignments')->where('instance_id', $second->id)->update(['port' => 5173]))
+            ->toThrow(UniqueConstraintViolationException::class);
+        expect(DB::table('vite_port_assignments')->where('instance_id', $second->id)->value('port'))->toBe(5174);
+    });
+
 });

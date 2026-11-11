@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\ProjectDefinitions;
 
 use App\Data\ProjectDefinitions\ProjectDefinitionInputData;
+use App\Domain\Instances\ContainerProcessCommands;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\ProjectDefinitions\DefinitionEnvironment;
 use App\Support\ValidatedData;
@@ -132,6 +133,11 @@ final class ProcessDefinitionRequest extends FormRequest
         $executable = data_get($data, 'spec.command.0');
 
         if (is_string($executable) && str_starts_with($executable, '/')) {
+            return;
+        }
+
+        if (($data['environments'] ?? []) === [DefinitionEnvironment::Development->value]
+            && is_string($executable) && app(ContainerProcessCommands::class)->supportsName($executable)) {
             return;
         }
 

@@ -12,13 +12,25 @@ final readonly class VpDevPreset
 
     public const string RestartPolicy = 'on-failure';
 
+    public const int ContainerPort = 5173;
+
     /** @return list<string> */
     public static function command(?int $containerPort = null): array
     {
-        if ($containerPort !== null) {
-            return [InstanceHostIntent::RuntimeFolder.'/current/bin/vp', 'dev', '--host=0.0.0.0', '--port='.$containerPort, '--strictPort', '--base=/__orbit/vite/'];
-        }
+        return $containerPort === null
+            ? self::argv('/usr/local/bin/vp', '127.0.0.1', '$'.'{ORBIT_DEV_SERVER_PORT}')
+            : self::argv(InstanceHostIntent::RuntimeFolder.'/current/bin/vp', '0.0.0.0', (string) $containerPort);
+    }
 
-        return ['/usr/local/bin/vp', 'dev', '--host=127.0.0.1', '--port=${ORBIT_DEV_SERVER_PORT}', '--strictPort', '--base=/__orbit/vite/'];
+    /** @return list<string> */
+    public static function definitionCommand(): array
+    {
+        return self::argv('vp', '0.0.0.0', '$'.'{ORBIT_DEV_SERVER_PORT}');
+    }
+
+    /** @return list<string> */
+    private static function argv(string $executable, string $host, string $port): array
+    {
+        return [$executable, 'dev', '--host='.$host, '--port='.$port, '--strictPort', '--base=/__orbit/vite/'];
     }
 }

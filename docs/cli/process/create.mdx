@@ -2,6 +2,8 @@
 title: "orbit process:create"
 sidebarTitle: "process:create"
 description: "Install one systemd service or Docker container, stopped or started, or record a Project definition."
+covers:
+  - apps/gateway/database/migrations/2027_02_06_000001_drop_instance_vite_port_uniqueness.php
 ---
 
 ```bash
@@ -77,7 +79,7 @@ orbit process:create queue \
 
 A production Process can be installed only after `instance:deploy` selects a release. Starting a Process uses the release selected by `current`; changing `current` does not restart an already running Process.
 
-Development definitions may name a supported runtime executable, such as `php`, `php8.5`, `vp` or `node`. Orbit resolves it when rendering a container Process. The same rule applies to the executable after supported `/usr/bin/env` options and assignments. Production definitions still require an absolute executable.
+Development definitions may name a supported runtime executable, such as `php`, `php8.5`, `vp` or `node`. Orbit resolves it when rendering a container Process. The same rule applies to the executable after supported `/usr/bin/env` options and assignments. Production definitions still require an absolute executable. New container copies of a migrated `vp-dev` definition use port 5173 in their own container. Existing migrated ports stay unchanged. A recorded conflict on that port refuses; Orbit does not choose another port. Startup readiness catches a bind failure from an unmanaged listener.
 
 When a development Instance captures definitions, a compatible direct Process with the same name becomes the definition’s copy. It keeps its ID and desired state. An incompatible Process or one linked to another definition returns `process.name_taken`.
 

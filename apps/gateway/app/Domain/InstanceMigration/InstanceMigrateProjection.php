@@ -179,12 +179,18 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                 || ($moved && (($result['instance_id'] ?? null) !== $instance->id || ! is_string($result['commit'] ?? null)))) {
                 throw new ResourceOperationException('instance.result_invalid', 'The move did not prove its complete terminal result.');
             }
+            if ($moved && (($result['ready'] ?? false) !== true && ($result['failed_step'] ?? null) !== 'retire')) {
+                throw new ResourceOperationException('instance.result_invalid', 'The move did not prove Process readiness before cutover.');
+            }
             $runtime = $instance->runtime()->lockForUpdate()->first();
             if (! $operation->status->terminal() && $runtime?->operation_id === $operation->id) {
                 if ($moved && is_string($result['retained_git_path'] ?? null) && is_string($result['retained_git_at'] ?? null)) {
                     $instance->update(['retained_git_path' => $result['retained_git_path'], 'retained_git_at' => $result['retained_git_at']]);
                 }
                 if ($moved) {
+                    $units = ValidatedData::object($operation->input['container'])['processes'] ?? [];
+                    app(MigratedProcessDefinitions::class)->capture($instance,
+                        ValidatedData::integerList(array_column(is_array($units) ? $units : [], 'id')));
                     app(ContainerProcesses::class)->complete($instance, ValidatedData::object($operation->input['container'])['processes'] ?? [], true, null, migrate: true);
                     $schedules = ValidatedData::object($operation->input['migrate'])['schedules'] ?? [];
                     if (! is_array($schedules) || ! array_is_list($schedules)) {
