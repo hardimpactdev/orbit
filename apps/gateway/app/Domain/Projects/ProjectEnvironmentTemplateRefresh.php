@@ -8,7 +8,6 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
-use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Models\Project;
 use App\Models\ProjectEnvironmentTemplate;
@@ -145,7 +144,7 @@ final readonly class ProjectEnvironmentTemplateRefresh
             $value = $entry->getValue();
             $chars = $value->isDefined() ? $value->get()->getChars() : '';
             $references = $value->isDefined() ? $value->get()->getVars() : [];
-            $reference = in_array(0, $references, true) ? InstanceEnvironmentRenderer::templateReference($chars) : null;
+            $reference = $references === [0] && preg_match('/^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/D', $chars, $match) === 1 ? $match[1] : null;
             $values[$entry->getName()] = ['value' => $chars, 'reference' => $reference];
         }
 

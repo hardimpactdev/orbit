@@ -51,7 +51,7 @@ The application directory contains `composer.json`, `artisan`, development [envi
 
 Registration never infers a nested root from source files. Configure the Project's root, or send an explicit Instance root override. An Instance can serve more directories of its checkout or release through [Routes with a web root](/reference/routes#serve-several-web-roots). Each one derives its application directory with the same rule and gets its own PHP-FPM pool and `APP_URL`.
 
-The Project's environment template comes from the application directory's `.env.example`. Create preserves literal values and resolves the allowed template references against the new Instance's own values; see [template rendering](/reference/environment-variables#parent-environment-steps).
+The Project's environment template comes from the application directory's `.env.example`. Development create preserves captured live whole-value references for the application's dotenv; see [template rendering](/reference/environment-variables#parent-environment-steps).
 
 ## Setup and teardown steps
 

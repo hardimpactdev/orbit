@@ -27,13 +27,10 @@ final readonly class DevelopmentCreateEnvironment
      */
     public function admit(Instance $instance, Project $project, ?DatabaseConnection $database = null, ?Instance $source = null): array
     {
-        $template = $capturedReferences = [];
+        $template = [];
         foreach ($project->environmentTemplate()->first()->entries ?? [] as $entry) {
             if (! $entry['removed']) {
                 $template[$entry['key']] = $entry['value'];
-                if (isset($entry['reference'])) {
-                    $capturedReferences[$entry['key']] = $entry['reference'];
-                }
             }
         }
         $stored = $this->store->values($instance);
@@ -56,7 +53,6 @@ final readonly class DevelopmentCreateEnvironment
         if ($project->is_laravel === true && ($values['APP_KEY'] ?? '') === '') {
             $values['APP_KEY'] = LaravelApplicationKey::generate();
         }
-        $values = $this->renderer->resolveTemplateReferences($values, array_intersect_assoc(array_diff_key($template, $stored), $values), $capturedReferences);
         $this->store->seedForCreate($instance, $values);
         $keys = array_keys($values);
         sort($keys, SORT_STRING);
@@ -69,7 +65,20 @@ final readonly class DevelopmentCreateEnvironment
     {
         $instance->loadMissing(['node', 'project']);
 
-        return $this->renderer->render($this->context($instance), $this->store->values($instance));
+        return $this->renderer->render($this->context($instance), $this->store->values($instance), $this->capturedReferences($instance));
+    }
+
+    /** @return array<string, string> Provenance is used only while creating the initial development files. */
+    private function capturedReferences(Instance $instance): array
+    {
+        $references = [];
+        foreach ($instance->project->environmentTemplate()->first()->entries ?? [] as $entry) {
+            if (! $entry['removed'] && isset($entry['reference'])) {
+                $references[$entry['key']] = $entry['reference'];
+            }
+        }
+
+        return $references;
     }
 
     private function context(Instance $instance): InstanceEnvironmentContext
@@ -87,7 +96,7 @@ final readonly class DevelopmentCreateEnvironment
         $instance->loadMissing(['node', 'project']);
         $plan = app(InstanceTestEnvironment::class)->plan($instance->id, $this->store->values($instance));
 
-        return $plan === null ? null : $this->renderer->render($this->context($instance), $plan->values);
+        return $plan === null ? null : $this->renderer->render($this->context($instance), $plan->values, $this->capturedReferences($instance));
     }
 
     /** The domain of the Instance's own Route, which the create reserved before admission. */

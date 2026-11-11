@@ -58,7 +58,7 @@ final readonly class SystemdProcessRenderer
         if ($resolveNames && $target->container !== null && $target->instance !== null && ! $target->instance->placedOnAppProd()) {
             $command = app(ContainerProcessCommands::class)->resolve($command, $target->instance->project->php_version, "Process [{$process->id}:{$process->name}]");
         }
-        $environmentFile = $process->isVpDev() && $target->container === null ? $target->environmentFile : ($runtimeConfig['environment_file'] ?? null);
+        $environmentFile = $process->isVpDev() ? null : ($runtimeConfig['environment_file'] ?? null);
 
         if (
             $command === []

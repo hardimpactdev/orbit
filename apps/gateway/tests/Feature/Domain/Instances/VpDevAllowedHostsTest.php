@@ -6,6 +6,7 @@ use App\Domain\InstanceMigration\MigratedProcessDefinitions;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\VpDevPreset;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Activity;
 use App\Models\Instance;
@@ -159,12 +160,12 @@ describe('the vp-dev unit host allowance', function (): void {
         expect(allowedHostsUnit($process))->toContain("Environment=__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=clone.tool.test\n");
     });
 
-    it('records a repeatable historical skip for actual pre-change vp-dev unit bytes without weakening the activation proof', function (bool $alreadyRedeployed): void {
+    it('records a repeatable historical skip for actual pre-change vp-dev unit bytes without weakening the activation proof', function (bool $alreadyRedeployed, string $fixture): void {
         [$instance, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'default', 5195, true);
         $commit = str_repeat('d', 40);
         $instance->runtime()->firstOrFail()->update(['seed_commit' => $commit]);
-        // Captured with main's renderer at 1720d2e6, not synthesized by deleting lines from the current unit.
-        $legacy = file_get_contents(base_path('tests/Fixtures/vp-dev-before-allowed-hosts.service')) ?: throw new LogicException('Missing historical unit fixture.');
+        // Captured with the main renderers at 1720d2e6 and 9767ab2f; never synthesized from current units.
+        $legacy = file_get_contents(base_path('tests/Fixtures/'.$fixture)) ?: throw new LogicException('Missing historical unit fixture.');
         $legacy = str_replace('X-Orbit-Process-ID=41', 'X-Orbit-Process-ID='.$process->id, $legacy);
         $unit = ['id' => $process->id, 'name' => app(SystemdProcessRenderer::class)->unitName($process),
             'content' => $legacy, 'environment' => null, 'desired' => 'running'];
@@ -187,6 +188,59 @@ describe('the vp-dev unit host allowance', function (): void {
             ? "Process [{$process->id}:{$process->name}] is not proven by the migrated default's activation."
             : "Process [{$process->id}:{$process->name}] current unit content differs from the admitted unit.");
         expect($operation->refresh()->input)->toBe(['container' => ['processes' => [$unit]]]);
-    })->with(['original activation' => false, 'activated by a later deployment' => true]);
+    })->with(['original activation' => false, 'activated by a later deployment' => true])
+        ->with(['vp-dev-before-allowed-hosts.service', 'vp-dev-before-native-dotenv.service']);
 
+});
+
+it('lets Vite load application dotenv and retains Orbit and private Process settings', function (bool $container): void {
+    [, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'default', 5195, $container);
+    $process->update(['runtime_config' => [...$process->runtime_config, 'environment_file' => '/srv/workspace/.env',
+        'environment' => ['PRIVATE_SETTING' => 'synthetic-value']]]);
+
+    $unit = allowedHostsUnit($process);
+    expect($unit)->not->toContain('EnvironmentFile=-/srv/workspace/.env');
+    expect($unit)->toContain('Environment=ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite',
+        'Environment=ORBIT_DEV_SERVER_HOST=default.tool.test', 'Environment=ORBIT_DEV_SERVER_PATH=/__orbit/vite',
+        'Environment=ORBIT_DEV_SERVER_PORT=5195', 'EnvironmentFile=/etc/orbit/processes/'.$process->id.'/');
+    expect($unit)->toContain('Environment=NODE_USE_SYSTEM_CA=1');
+    if (! $container) {
+        expect($unit)->toContain('EnvironmentFile='.SystemdProcessRenderer::viteEnvironmentPath($process->owner_id));
+    }
+})->with(['host checkout' => false, 'container' => true]);
+
+it('changes only the application EnvironmentFile line of the admitted pre-change container unit', function (): void {
+    [$instance, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'default', 5195, true);
+    $legacy = file_get_contents(base_path('tests/Fixtures/vp-dev-before-native-dotenv.service'));
+    $legacy = str_replace('X-Orbit-Process-ID=41', 'X-Orbit-Process-ID='.$process->id, $legacy);
+
+    expect(app(ContainerProcesses::class)->unit($instance, $process, migrate: true)['content'])
+        ->toBe(str_replace("EnvironmentFile=-/srv/workspace/.env\n", '', $legacy));
+});
+
+it('refuses pre-release unit admission before materializing migration execution inputs', function (): void {
+    [$instance, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'default', 5195, true);
+    $legacy = file_get_contents(base_path('tests/Fixtures/vp-dev-before-native-dotenv.service'));
+    $legacy = str_replace('X-Orbit-Process-ID=41', 'X-Orbit-Process-ID='.$process->id, $legacy);
+    $admitted = [['id' => $process->id, 'name' => app(SystemdProcessRenderer::class)->unitName($process),
+        'content' => $legacy, 'environment' => null, 'desired' => 'running']];
+    $process->forceFill(['systemd_activation_hash' => hash('sha256', $legacy)])->save();
+
+    expect(fn () => app(ContainerProcesses::class)->environments($instance, $admitted, migrate: true))
+        ->toThrow(ResourceOperationException::class, 'The container Processes changed after admission.');
+    expect($process->refresh()->systemd_activation_hash)->toBe(hash('sha256', $legacy));
+    expect($process->systemd_activation_pending)->toBeFalse();
+});
+
+it('records the admitted old unit activation when a submitted migration straddles the release', function (): void {
+    [$instance, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'default', 5195, true);
+    $legacy = file_get_contents(base_path('tests/Fixtures/vp-dev-before-native-dotenv.service'));
+    $legacy = str_replace('X-Orbit-Process-ID=41', 'X-Orbit-Process-ID='.$process->id, $legacy);
+    $admitted = [['id' => $process->id, 'name' => app(SystemdProcessRenderer::class)->unitName($process),
+        'content' => $legacy, 'environment' => null, 'desired' => 'running']];
+
+    app(ContainerProcesses::class)->complete($instance, $admitted, succeeded: true, errorCode: null, migrate: true);
+
+    expect($process->refresh()->systemd_activation_hash)->toBe(hash('sha256', $legacy));
+    expect($process->systemd_activation_pending)->toBeFalse();
 });
