@@ -70,6 +70,7 @@ use App\Infrastructure\Swamp\SwampReadBudget;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\Operations\StartAdmittedSwampRun;
+use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
@@ -84,9 +85,11 @@ use App\Models\Route;
 use App\Models\Schedule;
 use App\Support\ValidatedData;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
@@ -3253,7 +3256,7 @@ describe('migrated development Process definitions', function (): void {
         expect($definition->refresh()->getAttributes())->toBe($before);
     });
 
-    it('refuses an unprovable historical Process by name and rolls back earlier repair rows', function (): void {
+    it('records an unprovable historical Process and captures proven rows across Instances', function (): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
         $first = migrationWorker($instance, 'first');
         $opaque = migrationWorker($instance, 'unprovable-worker');
@@ -3262,14 +3265,258 @@ describe('migrated development Process definitions', function (): void {
         Process::query()->whereIn('id', [$first->id, $opaque->id])->update(['source_definition_id' => null]);
         ProcessDefinition::query()->delete();
 
-        expect(fn () => app(MigratedProcessDefinitions::class)->repair())->toThrow(function (ResourceOperationException $exception) use ($opaque): void {
-            expect($exception->errorCode)->toBe('instance.migrate_process_definition_unproven');
-            expect($exception->getMessage())->toContain($opaque->name, (string) $opaque->id);
-        });
+        $otherProject = $instance->project->replicate(['code']);
+        $otherProject->fill(['name' => 'other', 'slug' => 'other', 'repository_url' => 'https://github.com/nckrtl/other.git'])->save();
+        $other = migrateCheckout($otherProject, $instance->node);
+        $otherProcess = migrationWorker($other);
+        migrateEnd(migrateStart($other), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('e', 40)]);
+        $otherProcess->update(['source_definition_id' => null]);
+        ProcessDefinition::query()->where('project_id', $other->project_id)->delete();
+        $migration = require database_path('migrations/2027_02_06_000000_capture_migrated_process_definitions.php');
+
+        $migration->up();
+        $migration->up();
+
+        expect(ProcessDefinition::query()->count())->toBe(2);
+        expect($first->refresh()->source_definition_id)->not->toBeNull();
+        expect($otherProcess->refresh()->source_definition_id)->not->toBeNull();
+        expect($opaque->refresh()->source_definition_id)->toBeNull();
+        $finding = Activity::query()->where('command', 'instance:migrate:repair')->sole();
+        expect($finding->properties->toArray())->toBe([
+            'instance_id' => $instance->id, 'process_id' => $opaque->id, 'process_name' => $opaque->name,
+            'reason' => "Process [{$opaque->id}:{$opaque->name}] has no provable runtime command for historical capture.",
+        ]);
+        $instance->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+        $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip])->getJson("/api/v1/activities/{$finding->id}")->assertOk()
+            ->assertJsonPath('data.properties.process_id', $opaque->id)
+            ->assertJsonPath('data.properties.reason', $finding->properties['reason']);
+    });
+
+    it('records every unprovable historical row without capturing any', function (bool $settled): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $first = migrationWorker($instance, 'first');
+        $last = migrationWorker($instance, 'last');
+        $operation = migrateStart($instance);
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        Process::query()->whereIn('id', [$first->id, $last->id])->update(['source_definition_id' => null]);
+        ProcessDefinition::query()->delete();
+        if ($settled) {
+            Process::query()->whereIn('id', [$first->id, $last->id])->update(['systemd_activation_hash' => null]);
+        } else {
+            $operation->refresh()->update(['result' => [...$operation->result, 'restored' => true]]);
+        }
+        $migration = require database_path('migrations/2027_02_06_000000_capture_migrated_process_definitions.php');
+
+        $migration->up();
+        $migration->up();
 
         expect(ProcessDefinition::query()->count())->toBe(0);
         expect($first->refresh()->source_definition_id)->toBeNull();
-        expect($opaque->refresh()->source_definition_id)->toBeNull();
+        expect($last->refresh()->source_definition_id)->toBeNull();
+        $findings = Activity::query()->where('command', 'instance:migrate:repair')->orderBy('id')->get();
+        expect($findings)->toHaveCount(2);
+        foreach ([$first, $last] as $index => $process) {
+            expect($findings[$index]->properties->toArray())->toBe([
+                'instance_id' => $instance->id, 'process_id' => $process->id, 'process_name' => $process->name,
+                'reason' => $settled
+                    ? "Process [{$process->id}:{$process->name}] is not proven by the migrated default's activation."
+                    : "Instance [{$instance->id}:{$instance->name}] has no proven settled migration for its direct Processes.",
+            ]);
+        }
+    })->with(['missing activation' => [true], 'unsettled move' => [false]]);
+
+    it('captures a directly created migrated vp-dev using the runtime seed when Instance seed fields are null', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $process = migrationVpDev($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $process->update(['source_definition_id' => null]);
+        ProcessDefinition::query()->delete();
+        expect($instance->refresh()->seed_path)->toBeNull();
+        expect($instance->seed_commit)->toBeNull();
+        expect($instance->runtime->seed_commit)->toBe(str_repeat('d', 40));
+
+        app(MigratedProcessDefinitions::class)->repair();
+
+        $definition = ProcessDefinition::query()->sole();
+        expect($process->refresh()->source_definition_id)->toBe($definition->id);
+        expect($definition->environments)->toBe(['development']);
+        expect($definition->spec['preset'])->toBe('vp-dev');
+        expect(Activity::query()->where('command', 'instance:migrate:repair')->count())->toBe(0);
+    });
+
+    it('records every migrated direct Process when the runtime seed commit is missing', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $first = migrationWorker($instance, 'first');
+        $last = migrationWorker($instance, 'last');
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        Process::query()->whereIn('id', [$first->id, $last->id])->update(['source_definition_id' => null]);
+        ProcessDefinition::query()->delete();
+        $instance->runtime()->update(['seed_commit' => null]);
+        $migration = require database_path('migrations/2027_02_06_000000_capture_migrated_process_definitions.php');
+
+        $migration->up();
+        $migration->up();
+
+        expect(ProcessDefinition::query()->count())->toBe(0);
+        expect($first->refresh()->source_definition_id)->toBeNull();
+        expect($last->refresh()->source_definition_id)->toBeNull();
+        $findings = Activity::query()->where('command', 'instance:migrate:repair')->orderBy('id')->get();
+        expect($findings)->toHaveCount(2);
+        foreach ([$first, $last] as $index => $process) {
+            expect($findings[$index]->properties->toArray())->toBe([
+                'instance_id' => $instance->id, 'process_id' => $process->id, 'process_name' => $process->name,
+                'reason' => "Instance [{$instance->id}:{$instance->name}] runtime has no seed commit to prove its migrated Processes.",
+            ]);
+        }
+    });
+
+    it('isolates malformed historical Process data from proven siblings and earlier findings', function (string $damage, string $exception): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $good = migrationWorker($instance, 'good');
+        $earlier = migrationWorker($instance, 'earlier-skip');
+        $bad = migrationWorker($instance, 'bad');
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        Process::query()->whereIn('id', [$good->id, $earlier->id, $bad->id])->update(['source_definition_id' => null]);
+        ProcessDefinition::query()->delete();
+        $earlier->forceFill(['systemd_activation_hash' => null])->save();
+        match ($damage) {
+            'missing command' => $bad->update(['runtime_config' => []]),
+            'definition command' => ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => $bad->name,
+                'environments' => ['development'], 'spec' => ['runtime' => 'systemd', 'command' => [123], 'environment' => ['TOKEN' => 'private-definition-value']]]),
+            'scalar config' => DB::table('processes')->where('id', $bad->id)->update(['runtime_config' => json_encode('private-runtime-value')]),
+        };
+        $before = $bad->fresh()->getRawOriginal();
+        $definitions = ProcessDefinition::query()->count();
+
+        app(MigratedProcessDefinitions::class)->repair();
+        app(MigratedProcessDefinitions::class)->repair();
+
+        expect($good->refresh()->source_definition_id)->not->toBeNull();
+        expect($bad->fresh()->getRawOriginal())->toBe($before);
+        expect(ProcessDefinition::query()->count())->toBe($definitions + 1);
+        $findings = Activity::query()->where('command', 'instance:migrate:repair')->orderBy('id')->get();
+        expect($findings)->toHaveCount(2);
+        expect($findings[0]->properties['process_id'])->toBe($earlier->id);
+        expect($findings[1]->properties['process_id'])->toBe($bad->id);
+        expect($findings[1]->properties['reason'])->toBe($exception.': Stored data could not be proved.');
+        expect($findings->toJson())->not->toContain('private-definition-value', 'private-runtime-value', 'ExecStart');
+    })->with([
+        'missing command' => ['missing command', ErrorException::class],
+        'malformed definition command' => ['definition command', RuntimeException::class],
+        'scalar runtime config' => ['scalar config', TypeError::class],
+    ]);
+
+    it('records malformed Instance proof data and still captures another migrated Instance', function (string $damage, string $reason): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $first = migrationWorker($instance, 'first');
+        $last = migrationWorker($instance, 'last');
+        $operation = migrateStart($instance);
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        Process::query()->whereIn('id', [$first->id, $last->id])->update(['source_definition_id' => null]);
+        ProcessDefinition::query()->delete();
+        $otherProject = $instance->project->replicate(['code']);
+        $otherProject->fill(['name' => 'other', 'slug' => 'other', 'repository_url' => 'https://github.com/nckrtl/other.git'])->save();
+        $other = migrateCheckout($otherProject, containerDefaultNode('other', '10.44.0.8'));
+        $good = migrationWorker($other);
+        migrateEnd(migrateStart($other), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('e', 40)]);
+        $good->update(['source_definition_id' => null]);
+        ProcessDefinition::query()->where('project_id', $other->project_id)->delete();
+        match ($damage) {
+            'role cast' => DB::table('node_roles')->insert(['node_id' => $instance->node_id, 'role' => 'retired-private-role', 'status' => 'active']),
+            'operation input' => DB::table('operations')->where('id', $operation->id)->update(['input' => json_encode(['container' => 'private-input-value'])]),
+            'operation result' => DB::table('operations')->where('id', $operation->id)->update(['result' => json_encode('private-result-value')]),
+        };
+
+        app(MigratedProcessDefinitions::class)->repair();
+        app(MigratedProcessDefinitions::class)->repair();
+
+        expect($good->refresh()->source_definition_id)->not->toBeNull();
+        expect($first->refresh()->source_definition_id)->toBeNull();
+        expect($last->refresh()->source_definition_id)->toBeNull();
+        expect(ProcessDefinition::query()->count())->toBe(1);
+        $findings = Activity::query()->where('command', 'instance:migrate:repair')->orderBy('id')->get();
+        expect($findings)->toHaveCount(2);
+        foreach ([$first, $last] as $index => $process) {
+            expect($findings[$index]->properties->toArray())->toBe([
+                'instance_id' => $instance->id, 'process_id' => $process->id, 'process_name' => $process->name,
+                'reason' => str_replace('{instance}', (string) $instance->id, $reason),
+            ]);
+        }
+        expect($findings->toJson())->not->toContain('retired-private-role', 'private-input-value', 'private-result-value');
+    })->with([
+        'invalid Node role' => ['role cast', ValueError::class.': Stored data could not be proved.'],
+        'malformed operation input' => ['operation input', InvalidArgumentException::class.': Stored data could not be proved.'],
+        'malformed operation result' => ['operation result', 'Instance [{instance}:default] has no proven settled migration for its direct Processes.'],
+    ]);
+
+    it('rolls back a historical capture that fails after writing its definition and link', function (bool $constraint): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $good = migrationWorker($instance, 'good');
+        $bad = migrationWorker($instance, 'bad');
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        Process::query()->whereIn('id', [$good->id, $bad->id])->update(['source_definition_id' => null]);
+        ProcessDefinition::query()->delete();
+        $before = $bad->fresh()->getRawOriginal();
+        Event::listen('eloquent.updated: '.Process::class, static function (Process $process) use ($bad, $constraint): void {
+            if ($process->id === $bad->id && $process->source_definition_id !== null) {
+                if ($constraint) {
+                    $definition = DB::table('process_definitions')->where('id', $process->source_definition_id)->first();
+                    DB::table('process_definitions')->insert((array) $definition);
+                }
+                throw new RuntimeException('private-observer-value');
+            }
+        });
+        try {
+            app(MigratedProcessDefinitions::class)->repair();
+        } finally {
+            Event::forget('eloquent.updated: '.Process::class);
+        }
+
+        expect($good->refresh()->source_definition_id)->not->toBeNull();
+        expect($bad->fresh()->getRawOriginal())->toBe($before);
+        expect(ProcessDefinition::query()->count())->toBe(1);
+        expect(ProcessDefinition::query()->where('name', $bad->name)->exists())->toBeFalse();
+        $finding = Activity::query()->where('command', 'instance:migrate:repair')->sole();
+        expect($finding->properties['process_id'])->toBe($bad->id);
+        expect($finding->properties['reason'])->toBe(($constraint ? UniqueConstraintViolationException::class : RuntimeException::class).': Stored data could not be proved.');
+    })->with(['observer failure' => [false], 'data constraint failure' => [true]]);
+
+    it('updates the same historical finding when its skipped Process changes', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $process = migrationWorker($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $activation = $process->refresh()->systemd_activation_hash;
+        $process->forceFill(['source_definition_id' => null, 'systemd_activation_hash' => null])->save();
+        ProcessDefinition::query()->delete();
+        app(MigratedProcessDefinitions::class)->repair();
+        $finding = Activity::query()->where('command', 'instance:migrate:repair')->sole();
+        $process->forceFill(['systemd_activation_hash' => $activation, 'runtime_config' => ['command' => ['/usr/bin/node', 'changed.js']]])->save();
+
+        app(MigratedProcessDefinitions::class)->repair();
+
+        expect(ProcessDefinition::query()->count())->toBe(0);
+        expect($process->refresh()->source_definition_id)->toBeNull();
+        expect(Activity::query()->where('command', 'instance:migrate:repair')->sole()->id)->toBe($finding->id);
+        expect($finding->refresh()->properties['reason'])->toBe("Process [{$process->id}:{$process->name}] current unit content differs from the admitted unit.");
+    });
+
+    it('surfaces a database infrastructure failure instead of reporting a skipped row', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $process = migrationWorker($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $process->update(['source_definition_id' => null]);
+        ProcessDefinition::query()->delete();
+
+        DB::statement('PRAGMA query_only = ON');
+        try {
+            expect(fn () => app(MigratedProcessDefinitions::class)->repair())->toThrow(QueryException::class);
+        } finally {
+            DB::statement('PRAGMA query_only = OFF');
+        }
+
+        expect(ProcessDefinition::query()->count())->toBe(0);
+        expect($process->refresh()->source_definition_id)->toBeNull();
+        expect(Activity::query()->where('command', 'instance:migrate:repair')->count())->toBe(0);
     });
 
     it('does nothing on a fresh empty repair', function (): void {
@@ -3327,9 +3574,9 @@ describe('migrated development Process definitions', function (): void {
         expect($process->systemd_activation_hash)->toBe('old-host-hash');
     })->with(['incompatible development' => [['development']], 'production only' => [['production']], 'shared production' => [['development', 'production']]]);
 
-    it('refuses repair of changed or partially proven Processes without partial adoption', function (string $change): void {
+    it('records a changed or conflicting historical Process and captures its proven sibling', function (string $change): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
-        $first = migrationWorker($instance, 'first');
+        $first = migrationVpDev($instance);
         $last = migrationWorker($instance, 'last');
         $operation = migrateStart($instance);
         migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
@@ -3337,18 +3584,29 @@ describe('migrated development Process definitions', function (): void {
         ProcessDefinition::query()->delete();
         match ($change) {
             'command changed after activation' => $last->update(['runtime_config' => ['command' => ['/usr/bin/env', 'node', 'different.js']]]),
+            'malformed command' => $last->update(['runtime_config' => ['command' => [123]]]),
+            'unavailable PHP' => $last->update(['runtime_config' => ['command' => ['/usr/bin/php99.9', 'worker.php']]]),
             'missing activation proof' => $last->forceFill(['systemd_activation_hash' => null])->save(),
             'production definition collision' => ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => $last->name,
                 'environments' => ['production'], 'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/false']]]),
         };
         $definitions = ProcessDefinition::query()->count();
 
-        expect(fn () => app(MigratedProcessDefinitions::class)->repair())->toThrow(ResourceOperationException::class);
+        app(MigratedProcessDefinitions::class)->repair();
 
-        expect(ProcessDefinition::query()->count())->toBe($definitions);
-        expect($first->refresh()->source_definition_id)->toBeNull();
+        expect(ProcessDefinition::query()->count())->toBe($definitions + 1);
+        expect($first->refresh()->source_definition_id)->not->toBeNull();
         expect($last->refresh()->source_definition_id)->toBeNull();
-    })->with(['command changed after activation', 'missing activation proof', 'production definition collision']);
+        $finding = Activity::query()->where('command', 'instance:migrate:repair')->sole();
+        expect($finding->properties['process_id'])->toBe($last->id);
+        expect($finding->properties['reason'])->toContain(match ($change) {
+            'production definition collision' => 'conflicts with Project',
+            'command changed after activation' => 'current unit content differs from the admitted unit.',
+            'malformed command' => InvalidArgumentException::class.': Stored data could not be proved.',
+            'unavailable PHP' => 'the container runtime does not ship',
+            default => "is not proven by the migrated default's activation",
+        });
+    })->with(['command changed after activation', 'missing activation proof', 'production definition collision', 'malformed command', 'unavailable PHP']);
 
     it('rejects a claimed cutover whose result instead names failed Process readiness', function (): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
