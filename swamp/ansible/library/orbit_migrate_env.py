@@ -242,8 +242,6 @@ def connection(values, key):
             reason = 'an explicit mail port is required because the app configuration may override its default; '
     elif standard in ('REDIS', 'MEMCACHED'):
         selected = standard.lower() in selectors
-        if standard == 'REDIS':
-            selected = selected or values.get(stem + '_CLIENT') in ('phpredis', 'predis')
         if not selected:
             return False, None, ''
         default = 6379 if standard == 'REDIS' else 11211

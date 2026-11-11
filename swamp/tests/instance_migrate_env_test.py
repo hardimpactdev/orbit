@@ -125,6 +125,28 @@ class InstanceMigrateEnvTest(unittest.TestCase):
                 self.assertEqual(self.inspect(selector + '\n' + declarations), [])
 
 
+    def test_current_stock_laravel_environment_passes_without_attached_targets(self):
+        stock = Path(__file__).parent / 'fixtures/laravel-stock.env.example'
+        self.assertEqual(self.inspect(stock.read_text()), [])
+
+    def test_real53_unused_redis_client_and_endpoint_declarations_do_not_select_redis(self):
+        text = ('CACHE_STORE=database\nSESSION_DRIVER=database\nQUEUE_CONNECTION=database\n'
+                'BROADCAST_CONNECTION=log\nMAIL_MAILER=log\nDB_CONNECTION=sqlite\n'
+                'REDIS_CLIENT=phpredis\nREDIS_HOST=127.0.0.1\nREDIS_PORT=6379\nREDIS_PASSWORD=\n')
+        self.assertEqual(self.inspect(text), [])
+        selected = text.replace('CACHE_STORE=database', 'CACHE_STORE=redis')
+        self.assertIn('REDIS_HOST=127.0.0.1:6379', self.inspect(selected)[0])
+        self.assertEqual(self.inspect(selected, [{'host': '127.0.0.1', 'port': 6379}]), [])
+        self.assertEqual(len(self.inspect(selected, [{'host': '127.0.0.1', 'port': 6380}])), 1)
+
+    def test_client_libraries_and_endpoint_settings_alone_never_select_services(self):
+        for client in ('phpredis', 'predis'):
+            with self.subTest(client=client):
+                text = (f'REDIS_CLIENT={client}\nREDIS_HOST=127.0.0.1\nREDIS_PORT=6379\n'
+                        'REDIS_PASSWORD=private-password\nREDIS_URL=redis://private-password@localhost:6379\n'
+                        'MEMCACHED_HOST=127.0.0.1\nMEMCACHED_PORT=11211\nMEMCACHED_PASSWORD=private-password\n')
+                self.assertEqual(self.inspect(text), [])
+
     def test_primary_cache_selector_wins_over_an_unselected_legacy_alias(self):
         declarations = 'REDIS_HOST=127.0.0.1\n'
         self.assertEqual(self.inspect('CACHE_STORE=file\nCACHE_DRIVER=redis\n' + declarations), [])
@@ -163,9 +185,9 @@ class InstanceMigrateEnvTest(unittest.TestCase):
 
     def test_named_env_redis_selectors_keep_the_endpoint_check(self):
         declarations = 'REDIS_HOST=127.0.0.1\n'
-        for selector in ('CACHE_STORE=redis', 'SESSION_DRIVER=redis', 'QUEUE_CONNECTION=redis',
+        for selector in ('CACHE_STORE=redis', 'CACHE_DRIVER=redis', 'SESSION_DRIVER=redis', 'QUEUE_CONNECTION=redis',
                          'BROADCAST_CONNECTION=redis', 'BROADCAST_DRIVER=redis',
-                         'DB_CONNECTION=redis', 'REDIS_CLIENT=phpredis', 'REDIS_CLIENT=predis'):
+                         'DB_CONNECTION=redis'):
             with self.subTest(selector=selector):
                 text = selector + '\n' + declarations
                 found = self.inspect(text)
