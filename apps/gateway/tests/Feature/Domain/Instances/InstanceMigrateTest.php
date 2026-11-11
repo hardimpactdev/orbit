@@ -67,7 +67,6 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
-use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -899,7 +898,7 @@ it('starts the run with the container, the checkout and the model key in the vau
     expect($run['execution_secrets'])->toBe(['process_environments' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-processes-'.$operation->id], 'model_environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-model-'.$operation->id]])
         ->and($put['value'])->toContain("ORBIT_MODEL_KEY=placeholder-model-key\n")
         ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
-        ->and(array_keys($run['intent']))->toBe(['instance_id', 'instance_name', 'ssh_execution', 'restore_only', 'restore_quiesced', 'migration_operation_id', 'restore_claim_owner', 'container', 'migrate', 'route_mutations'])
+        ->and(array_keys($run['intent']))->toBe(['instance_id', 'instance_name', 'ssh_execution', 'container', 'migrate', 'route_mutations'])
         ->and($run['intent']['route_mutations'])->toBeNull()
         ->and(app(DirectOperation::class)->definition('instance.migrate')['workflow'])->toBe('operation-instance-migrate');
 });
@@ -1410,7 +1409,9 @@ it('projects the native restored end state across each post-quiesce exit', funct
             ->and($instance->runtime()->exists())->toBeFalse()
             ->and($worker->refresh()->systemd_activation_hash)->toBe('old-host-hash')
             ->and(app(ProcessTargetResolver::class)->forProcess($worker)->container)->toBeNull();
-        expect(OperationData::summary($projected)->steps)->toBeEmpty();
+        $steps = OperationData::summary($projected)->steps;
+        expect(array_map(static fn ($step) => $step->name, $steps))->toBe(['quiesce', 'container-processes', 'restore', 'finish'])
+            ->and($steps[2]->status)->toBe('succeeded')->and($steps[2]->finished_at)->toBe($finished);
     } finally {
         app(SwampConnection::class)->release();
     }
@@ -1498,7 +1499,9 @@ it('review late restored history must preserve a newer migrate reservation', fun
             ->and($instance->runtime()->firstOrFail()->operation_id)->toBe($retry->id)
             ->and($worker->refresh()->systemd_activation_hash)->toBe('old-host-hash')
             ->and($instance->runtime()->firstOrFail()->seed_commit)->toBeNull();
-        expect(OperationData::summary($projected)->steps)->toBeEmpty();
+        $steps = OperationData::summary($projected)->steps;
+        expect(array_map(static fn ($step) => $step->name, $steps))->toBe(['quiesce', 'container-processes', 'restore', 'finish'])
+            ->and($steps[2]->status)->toBe('succeeded')->and($steps[2]->finished_at)->toBe($finished);
     } finally {
         app(SwampConnection::class)->release();
     }
@@ -1591,7 +1594,6 @@ it('backfills the owner of an existing migrate runtime from the latest admission
 
     expect($instance->runtime()->firstOrFail()->operation_id)->toBe($operation->id);
 });
-
 
 it('adversarial late moved migration does not hold a write transaction during the vault read', function (bool $expireBeforeRead, string $nativeStatus): void {
     $node = containerDefaultNode();

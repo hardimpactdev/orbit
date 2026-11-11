@@ -169,6 +169,14 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                 }
             }
 
+            if (is_array($data['native_run'] ?? null)) {
+                $progress = ValidatedData::object($operation->state['native_progress'] ?? []);
+                $operation->update(['state' => [...($operation->state ?? []), 'native_progress' => [
+                    'run' => $data['run_id'], 'seq' => $progress['seq'] ?? 0,
+                    'steps' => $this->steps($data['native_run']), 'active' => [],
+                ]]]);
+            }
+
             return $this->direct->project($operation, $data, $result);
         });
     }
@@ -192,7 +200,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         return is_array($timeout) && ($timeout['cancel_requested_before_deadline'] ?? $restore['cancel_requested'] ?? false) !== true;
     }
 
-    /** Native steps guide an interrupted migrate's recovery; they do not rewrite shared progress history.
+    /** Native steps describe only this migrate receipt, including when its progress events were lost.
      * @param  array<string,mixed>  $run
      * @return list<array<string,mixed>>
      */
@@ -203,7 +211,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
             foreach (is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
                 if (is_array($step) && is_string($job['name'] ?? null) && is_string($step['name'] ?? null)) {
                     $steps[] = ['job' => $job['name'], 'name' => $step['name'], 'status' => $step['status'] ?? 'unknown',
-                        'started_at' => $step['startedAt'] ?? null];
+                        'started_at' => $step['startedAt'] ?? null, 'finished_at' => $step['completedAt'] ?? null];
                 }
             }
         }
