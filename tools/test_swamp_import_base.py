@@ -75,7 +75,7 @@ class ImportBaseTest(unittest.TestCase):
                     ['python3', loader.path, '--base', without_marker, '--swamp-base'],
                     cwd=root, timeout=60))
                 self.assertEqual(without_marker, result['swamp_base_ref'])
-                # Ordinary job scopes work with a shallow checkout; only the full-history shape scope resolves history.
+                # Selection requires common ancestry, as supplied by the full-history plan job.
                 shallow = root / 'shallow'
                 git('clone', '--depth=1', root.as_uri(), str(shallow))
                 subprocess.run(['git', '-C', str(shallow), 'fetch', '--depth=1', 'origin', orbit],
@@ -83,6 +83,11 @@ class ImportBaseTest(unittest.TestCase):
                 missing = subprocess.run(['git', '-C', str(shallow), 'cat-file', '-e', source],
                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
                 self.assertNotEqual(0, missing.returncode)
+                incomplete = subprocess.run(['python3', loader.path, '--base', orbit], cwd=shallow,
+                                            capture_output=True, timeout=60)
+                self.assertNotEqual(0, incomplete.returncode)
+                subprocess.run(['git', '-C', str(shallow), 'fetch', '--unshallow', 'origin'],
+                               check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
                 result = json.loads(subprocess.check_output(['python3', loader.path, '--base', orbit],
                                                             cwd=shallow, timeout=60))
                 self.assertTrue(result['jobs']['swamp'])
