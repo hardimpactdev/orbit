@@ -11,12 +11,20 @@ describe('the generated reachable Conn Project directory', function (): void {
         expect($operation['operationId'])->toBe('conn-project-list')
             ->and($data['items']['$ref'])->toBe('#/components/schemas/ConnProject');
         $properties = $spec['components']['schemas']['ConnProject']['properties'];
-        expect(array_keys($properties))->toBe(['id', 'slug', 'name', 'node_id', 'node_name', 'instance_domain_suffix', 'cloneable', 'cloneable_reason'])
+        expect(array_keys($properties))->toBe(['id', 'slug', 'name', 'node_id', 'node_name', 'instance_domain_suffix', 'cloneable', 'cloneable_reason', 'checks'])
             ->and($properties['node_id']['type'])->toBe(['integer', 'null'])
             ->and($properties['node_name']['type'])->toBe(['string', 'null'])
             ->and($properties['instance_domain_suffix']['type'])->toBe(['string', 'null'])
             ->and($properties['cloneable']['type'])->toBe('boolean')
-            ->and($properties['cloneable_reason']['type'])->toBe(['string', 'null']);
+            ->and($properties['cloneable_reason']['type'])->toBe(['string', 'null'])
+            ->and($properties['checks']['type'])->toBe('array')
+            ->and($properties['checks']['items']['$ref'])->toBe('#/components/schemas/ConnProjectCheck');
+        $check = $spec['components']['schemas']['ConnProjectCheck']['properties'];
+        expect($check['status']['enum'])->toBe(['pass', 'fail', 'not_checked'])
+            ->and($check['label']['type'])->toBe('string')
+            ->and($check['key'])->toBe(['type' => 'string'])
+            ->and($check['code']['type'])->toBe('string')
+            ->and($check['message']['type'])->toBe('string');
     });
 
     it('describes the wider scope and the cloneability limit on the MCP read', function (): void {

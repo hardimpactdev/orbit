@@ -14,6 +14,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class ConnProjectData extends Data
 {
+    /** @param list<ConnProjectCheckData> $checks */
     public function __construct(
         public int $id,
         public string $slug,
@@ -23,9 +24,11 @@ final class ConnProjectData extends Data
         public ?string $instanceDomainSuffix,
         public bool $cloneable,
         public ?string $cloneableReason,
+        public array $checks,
     ) {}
 
-    public static function fromProject(Project $project, ?Instance $default, ?string $suffix, ?string $reason): self
+    /** @param list<ConnProjectCheckData> $checks */
+    public static function fromProject(Project $project, ?Instance $default, ?string $suffix, ?string $reason, array $checks): self
     {
         return new self(
             id: $project->id,
@@ -36,6 +39,7 @@ final class ConnProjectData extends Data
             instanceDomainSuffix: $suffix,
             cloneable: $reason === null,
             cloneableReason: $reason,
+            checks: $checks,
         );
     }
 }

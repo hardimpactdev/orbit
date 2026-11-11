@@ -23,7 +23,7 @@ final class CreateConnInstanceRequest extends FormRequest
 {
     private ?Instance $default = null;
 
-    /** Node access to the default's Node is checked before validation, so a caller without it learns nothing about the Project. */
+    /** The ordered Project start checks run before validating the proposed name. */
     public function authorize(ConnThreadProjects $projects): bool
     {
         $caller = $this->user();

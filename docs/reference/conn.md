@@ -183,9 +183,33 @@ Conn starts a thread in an Orbit Project in a new clone of the Project's default
 
 `GET /projects` (`conn-project-list`) lists the same reachable Projects as `project:list`, ordered by name and ID. A caller with Gateway access sees all Projects. Other callers see each Project with any Instance on a Node they can reach.
 
-Each entry keeps its Project fields and adds `instance_domain_suffix`, `cloneable` and `cloneable_reason`. The default's `node_id` and `node_name` are null when there is no default or the caller cannot reach its Node. A hidden default also has a null suffix.
+Each entry keeps its Project fields and adds `instance_domain_suffix`, `checks`, `cloneable` and `cloneable_reason`. The default's `node_id` and `node_name` are null when there is no default or the caller cannot reach its Node. A hidden default also has a null suffix.
 
-`cloneable` uses the same read-only admission check as Conn create and the name check. It requires a reachable, active container default with a seed snapshot, valid Project source defaults, supported development placement and PHP, and the clone's runtime contributions and model route. A refusal sets `cloneable: false` and `cloneable_reason` to the existing create error code. Conn can grey out that entry.
+`cloneable` uses the same read-only admission check as Conn create and the name check. It requires a reachable, active container default with a seed snapshot, valid Project source defaults, supported development placement and PHP, and the clone's runtime contributions and model route.
+
+Each check returns a stable `key`, a short `label`, and `status`: `pass`, `fail` or `not_checked`. Only a failure includes `code` and `message`. The message says what to fix in Orbit. Checks stop at the first failure; later checks are `not_checked`. `cloneable` is true only when all checks pass. `cloneable_reason` is null or the first failure's code. An unavailable Project stays selectable so Conn can show its checks. Check again re-reads this list. Each read uses the current recorded migration, seed, Node and TLD state; eligibility is not cached.
+
+The keys below are a stable contract, in this order. New keys may be appended. Clients must tolerate unknown keys. Labels are display text; clients identify checks by key.
+
+| Key | Check | Failure code |
+| --- | --- | --- |
+| `default_instance` | Default Instance exists | `instance.default_missing` |
+| `container` | Default runs in a container | `instance.default_missing` |
+| `active` | Default is active | `instance.default_missing` |
+| `seed_snapshot` | Default has a seed snapshot | `instance.default_missing` |
+| `node_access` | Caller can reach the default's Node | `node_access.required` |
+| `source_access` | Supported repository access | `operation.kind_unavailable` |
+| `source_defaults` | Valid repository, default branch and root | `project.source_defaults_incomplete` |
+| `production_placement` | No active app-prod role | `instance.candidate_required` |
+| `node_active_linux` | Node is active and runs Linux | `instance.node_inactive` |
+| `app_dev_role` | Active app-dev role | `instance.node_not_app_dev` |
+| `source_profile` | Source metadata is valid | The recorded `source_profile_error` |
+| `php_readiness` | Supported Project PHP | `project.source_defaults_incomplete` or `instance.host_unavailable` |
+| `runtime_contributions` | Conn can record the clone's server | `operation.kind_unavailable` |
+| `model_route` | Model router and guard are ready | `operation.kind_unavailable`, `ai_router.disabled` or `ai_router.guard_missing` |
+| `native_create` | Node is not a live task VM | `instance.task_vm_node` |
+
+The first four checks share one error code and give different fixes: create the default, migrate it into a container, finish its create, or deploy its seed snapshot. These readiness checks precede Node access for both create and the name check. If readiness and access both fail, they answer `instance.default_missing` (409). The Project name remains visible in the list, but a hidden default's Node fields and suffix stay null. Check messages and refusals contain no Node names or IDs.
 
 `cloneable` does not cover host bridge and shared-folder readiness; create is the guard. It promises no capacity or later success. A read-only readiness method on `InstanceContainer` can join this check after the pending container changes land.
 
@@ -221,7 +245,7 @@ The check creates no records, including Activity rows. A later create can still 
 
 - It admits `instance.create` on the default's Node, as `instance:create PROJECT NODE NAME` does.
 - It answers the Operation (202). Its `target_id` is the new Instance.
-- The caller needs node access to the default's Node. That is checked first, so a caller without it gets only `node_access.required` (403).
+- The caller needs node access to the default's Node. After the four readiness checks pass, missing access answers `node_access.required` (403).
 - The same name again resumes the caller's own clone, as `instance:create` resumes a failed create.
 - A name that another device's create holds fails with `instance.name_taken` (409).
 - A name that resolves to `default` fails with `validation.failed` (422).
@@ -274,7 +298,7 @@ The objects:
   "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"},
   "settings": {"profile_id": 1, "version": 3, "settings": {"workspaces": []}, "sections": {"workspaces": {"version": 1, "updated_at": "2026-10-08T10:00:00+00:00", "updated_by": "phone"}}, "updated_at": "2026-10-08T10:00:00+00:00"},
   "environment": {"environment_id": "env-beast", "label": "beast", "url": "http://10.44.0.30:3773", "server_version": "0.9.1", "registered_by": "beast", "registered_at": "2026-10-08T09:00:00+00:00", "admin_session_expires_at": "2026-11-07T09:00:00+00:00", "status": "registered", "instance_id": null, "power_state": null, "project_id": null, "project_name": null, "project_slug": null, "instance_name": null, "node_name": null, "instance_url": null},
-  "project": {"id": 3, "slug": "mealou", "name": "Mealou", "node_id": 7, "node_name": "beast", "instance_domain_suffix": ".mealou.test", "cloneable": true, "cloneable_reason": null},
+  "project": {"id": 3, "slug": "mealou", "name": "Mealou", "node_id": 7, "node_name": "beast", "instance_domain_suffix": ".mealou.test", "cloneable": true, "cloneable_reason": null, "checks": [{"key": "default_instance", "label": "Default Instance", "status": "pass"}, {"key": "container", "label": "Runs in a container", "status": "pass"}, {"key": "active", "label": "Active", "status": "pass"}, {"key": "seed_snapshot", "label": "Seed snapshot", "status": "pass"}, {"key": "node_access", "label": "Node access", "status": "pass"}, {"key": "source_access", "label": "Source access", "status": "pass"}, {"key": "source_defaults", "label": "Source defaults", "status": "pass"}, {"key": "production_placement", "label": "Development placement", "status": "pass"}, {"key": "node_active_linux", "label": "Active Linux Node", "status": "pass"}, {"key": "app_dev_role", "label": "App-dev role", "status": "pass"}, {"key": "source_profile", "label": "Source metadata", "status": "pass"}, {"key": "php_readiness", "label": "PHP readiness", "status": "pass"}, {"key": "runtime_contributions", "label": "Conn runtime", "status": "pass"}, {"key": "model_route", "label": "Model router", "status": "pass"}, {"key": "native_create", "label": "Create support", "status": "pass"}]},
   "pairing": {"id": 7, "environment_id": "env-beast", "node_id": 4, "node_name": "phone", "client_label": "phone via Orbit k3j9x0qa", "issued_at": "2026-10-08T10:00:00+00:00", "expires_at": "2026-10-08T10:05:00+00:00", "revoked_at": null}
 }
 ```
