@@ -31,6 +31,10 @@ import json, os, sys
 with open(os.environ['FIXTURE_LOG'], 'a') as log:
     log.write(json.dumps({'sudo': sys.argv[1:]}) + '\\n')
 assert sys.argv[1] == '-n'
+# Record production budgets above, but scale only the mock's guard deadlines.
+# The real 10s+20s stall bound was measured separately; ordinary CI stays fast.
+if sys.argv[2:4] == ['python3', '-']:
+    sys.argv[4] = {'10': '1', '20': '2'}[sys.argv[4]]
 os.execvp(sys.argv[2], sys.argv[2:])
 ''')
         self.command('apt-get', '''
@@ -44,7 +48,7 @@ with open(os.environ['FIXTURE_LOG'], 'a') as log:
                          'source': source.read_text()}) + '\\n')
 mode = os.environ.get('FIXTURE_' + mirror.upper(), 'ok')
 if mode == 'install-hang' and operation == 'update':
-    time.sleep(1)
+    time.sleep(0.1)
 if mode == 'hang' or (mode == 'install-hang' and operation == 'install'):
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     time.sleep(60)
@@ -154,8 +158,9 @@ if operation == 'install' and mode != 'no-tools':
                          [('primary', 'update'), ('fallback', 'update')])
         deadlines = [c['sudo'][:4] for c in self.calls if c.get('sudo', [None, None])[1] == 'python3']
         self.assertEqual(deadlines, [['-n', 'python3', '-', '10'], ['-n', 'python3', '-', '20']])
-        self.assertLess(self.elapsed, 33)
-        print(f'both mirrors stalled, real process guard: {self.elapsed:.3f}s (30s budget plus process overhead)')
+        self.assertGreaterEqual(self.elapsed, 3)
+        self.assertLess(self.elapsed, 6)
+        print(f'both mirrors stalled, real process guard: {self.elapsed:.3f}s (scaled 3s test budget plus process overhead)')
 
     def test_stalled_primary_still_reaches_a_working_fallback(self):
         for mode in ('hang', 'install-hang'):
@@ -170,7 +175,8 @@ if operation == 'install' and mode != 'no-tools':
                 self.assertEqual([(c['mirror'], c['operation']) for c in self.apt],
                                  primary + [('fallback', 'update'), ('fallback', 'install')])
                 # The delayed update and stalled install share the same primary budget.
-                self.assertLess(self.elapsed, 12)
+                self.assertGreaterEqual(self.elapsed, 1)
+                self.assertLess(self.elapsed, 4)
                 print(f'primary {mode}, mocked fallback: {self.elapsed:.3f}s')
 
     def test_workflow_keeps_both_kernel_cases_and_pi_acl_tests(self):
