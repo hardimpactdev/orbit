@@ -42,7 +42,7 @@ CREDENTIALS_MISSING = 78
 BASES = ('origin/main', 'main')
 
 ANSIBLE_TESTS = ('tests/ansible_artifact_test.py', 'tests/ansible_inputs_test.py', 'tests/ansible_firewall_test.py', 'tests/ansible_model_forwarder_test.py',
-                 'tests/ansible_instance_egress_test.py', 'tests/ansible_instance_migrate_links_test.py',
+                 'tests/ansible_instance_egress_test.py', 'tests/ansible_instance_bridge_test.py', 'tests/ansible_instance_migrate_links_test.py',
                  'tests/ansible_container_host_system_test.py',
                  'tests/ansible_node_add_test.py', 'tests/ansible_shape_gate_tools_test.py', 'tests/ansible_task_vm_role_test.py',
                  'tests/ansible_task_vm_incus_test.py',
@@ -114,7 +114,7 @@ def plan(base, reports, cache, collections):
     # Start the long fixture groups alongside lint, rather than at the queue's tail.
     steps += [deno_step(arguments) for arguments in deno_files[:len(INSTANCE_HOST_TEST_GROUPS)]]
     steps += [Step('shape', test, ['python3', '-I', test], env=ansible_env, parallel=True) for test in ANSIBLE_TESTS]
-    steps.append(Step('shape', 'ruff', ['ruff', 'check', 'ansible/build_vars.py', 'ansible/instance_migrate_links.py', 'ansible/library/orbit_artifact.py', 'ansible/library/orbit_migrate_env.py', 'tests/_support/fixture_supervisor.py',
+    steps.append(Step('shape', 'ruff', ['ruff', 'check', 'ansible/build_vars.py', 'ansible/instance_bridge.py', 'ansible/instance_migrate_links.py', 'ansible/library/orbit_artifact.py', 'ansible/library/orbit_migrate_env.py', 'tests/_support/fixture_supervisor.py',
                                         *ANSIBLE_TESTS], parallel=True))
     steps += [deno_step(arguments) for arguments in (*DENO_UNIT_TESTS, *deno_files[len(INSTANCE_HOST_TEST_GROUPS):])]
     steps += [
