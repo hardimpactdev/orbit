@@ -155,9 +155,31 @@ def inventory_changes(base, head):
     return sorted(file for file in before.keys() | after.keys() if before.get(file) != after.get(file))
 
 
-def plan(paths, budget, fixtures, defaults, inventory_changed=()):
+def registry_changes(base, head):
+    """Scope table edits to fixture entries; shared execution policy affects all."""
+    def read(revision):
+        path = '.github/ci/checks.toml'
+        # Match changed_inputs: revisions belong to the caller's repository.
+        present = subprocess.check_output(['git', 'ls-tree', '--name-only', revision, '--', path],
+                                          text=True, timeout=60).strip()
+        if not present:
+            return {}
+        return tomllib.loads(subprocess.check_output(
+            ['git', 'show', f'{revision}:{path}'], text=True, timeout=60))
+    before, after = read(base), read(head)
+    old = {entry['file']: entry for entry in before.get('fixture', [])}
+    new = {entry['file']: entry for entry in after.get('fixture', [])}
+    # Order determines admission when a selected set exceeds capacity. Additions
+    # and removals alone do not reorder the surviving files.
+    reordered = [file for file in old if file in new] != [file for file in new if file in old]
+    shared = reordered or any(before.get(key) != after.get(key) for key in ('budget', 'fixtures'))
+    changed = sorted(file for file in old.keys() | new.keys() if old.get(file) != new.get(file))
+    return changed, shared
+
+
+def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_changed=(), shared_registry=False):
     selected, unmapped = {}, []
-    all_fixtures = any(path in ('.github/ci/checks.toml', 'bin/ci-units', PRELOAD) for path in paths)
+    all_fixtures = shared_registry or any(path in ('bin/ci-units', PRELOAD) for path in paths)
     for path in paths:
         matched = False
         for file, fixture in fixtures.items():
@@ -171,7 +193,7 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=()):
             unmapped.append(path)
             for file in defaults:
                 selected.setdefault(file, (-1, 0, 0))
-    for file in inventory_changed:
+    for file in (*inventory_changed, *registry_changed):
         if file in fixtures:
             selected[file] = (2, len(file), 0)
     if all_fixtures:
@@ -525,7 +547,8 @@ def main():
         return run(units, budget, fixtures, args.times)
     base, paths = selection.changed_inputs(gate.resolve_base(args.base), args.head)
     inventory_changed = inventory_changes(base, args.head) if 'tools/tests/ci-fixture-cases.json' in paths else []
-    result = plan(paths, budget, fixtures, defaults, inventory_changed)
+    registry_changed, shared_registry = registry_changes(base, args.head) if '.github/ci/checks.toml' in paths else ([], False)
+    result = plan(paths, budget, fixtures, defaults, inventory_changed, registry_changed, shared_registry)
     if args.plan_json:
         costs = {name: cost for f in fixtures.values() for name, cost in units_for(f, budget)}
         selected = [unit for shard in result['shards'] for unit in shard['units']]
