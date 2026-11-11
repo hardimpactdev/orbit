@@ -8,25 +8,31 @@ use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Releases\ReleaseAlertStep;
 use App\Domain\Releases\ReleaseAlertWebhook;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\ReconcileSwampOperations;
+use App\Jobs\Operations\SendOperationOverdueAlert;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Sleep;
+use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 
 uses(LazilyRefreshDatabase::class);
 
-function overdueReportingOperation(bool $bound = true): Operation
+function overdueReportingOperation(bool $bound = true, int $target = 42): Operation
 {
     $node = Node::withoutEvents(fn (): Node => Node::query()->firstOrCreate(['name' => 'gateway'], ['status' => 'active', 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']));
     $node->roles()->firstOrCreate(['role' => 'gateway'], ['status' => 'active']);
 
-    return Operation::query()->create(['kind' => 'tasks.script', 'target_type' => 'task_group', 'target_id' => 42, 'node_id' => $node->id,
+    return Operation::query()->create(['kind' => 'tasks.script', 'target_type' => 'task_group', 'target_id' => $target, 'node_id' => $node->id,
         'input' => ['run_budget_seconds' => 900], 'status' => OperationStatus::Running, 'attempts' => $bound ? 1 : 0,
-        'sequence' => 1, 'lock_key' => 'task_group:42', 'started_at' => now(), 'current_step' => 'work',
+        'sequence' => 1, 'lock_key' => 'task_group:'.$target, 'started_at' => now(), 'current_step' => 'work',
         'state' => $bound ? ['swamp_run_id' => 'ea55ab37-bcbe-4459-81dc-cbb397e7d870'] : []]);
 }
 
@@ -50,8 +56,11 @@ it('reports overdue only when the unchanged run-budget cancellation fires', func
         ->and($current->state['native_timeout'])->toMatchArray(['budget_seconds' => 900, 'deadline' => '2026-11-11T10:15:00.000000Z'])
         ->and($current->state['overdue_since'] ?? null)->toBe('2026-11-11T10:15:00.000000Z')
         ->and($current->sequence)->toBe(3);
-    expect(Activity::query()->where('command', 'operation:overdue-alert')->sole()->status)->toBe('succeeded');
+    expect(Activity::query()->where('command', 'operation:overdue-alert')->count())->toBe(0);
     Queue::assertPushed(ReconcileSwampOperations::class, 1);
+    Queue::assertPushedOn('tasks', SendOperationOverdueAlert::class);
+    app()->call([Queue::pushed(SendOperationOverdueAlert::class)->sole(), 'handle']);
+    expect(Activity::query()->where('command', 'operation:overdue-alert')->sole()->status)->toBe('succeeded');
 });
 
 it('does not mark or alert before the existing cancellation deadline', function (): void {
@@ -77,12 +86,111 @@ it('does not repeat the alert on a stale object or a later read after webhook fa
     $operation = overdueReportingOperation();
     $this->travel(16)->minutes();
     app(ExpireOperationAction::class)->execute($operation);
+    app()->call([Queue::pushed(SendOperationOverdueAlert::class)->sole(), 'handle']);
 
     app(ExpireOperationAction::class)->execute($operation);
     app(ExpireOperationAction::class)->execute($operation->refresh());
 
     expect(Activity::query()->where('command', 'operation:overdue-alert')->sole()->error_code)->toBe('operation.alert_webhook_failed');
     expect($operation->refresh()->sequence)->toBe(3);
+    Queue::assertPushed(SendOperationOverdueAlert::class, 1);
+});
+
+it('queues delivery only after commit and discards it on rollback', function (): void {
+    $this->freezeTime();
+    $operation = overdueReportingOperation();
+    $this->travel(16)->minutes();
+    $webhook = Mockery::mock(ReleaseAlertWebhook::class);
+    $webhook->shouldReceive('send')->once()->andReturn(ReleaseAlertStep::done());
+    app()->instance(ReleaseAlertWebhook::class, $webhook);
+
+    DB::beginTransaction();
+    app(ExpireOperationAction::class)->execute($operation);
+    expect(DB::table('jobs')->where('queue', 'tasks')->count())->toBe(0);
+    DB::rollBack();
+    expect($operation->refresh()->state)->not->toHaveKey('overdue_since');
+    expect(DB::table('jobs')->where('queue', 'tasks')->count())->toBe(0);
+
+    app(ExpireOperationAction::class)->execute($operation);
+
+    expect(DB::table('jobs')->where('queue', 'tasks')->count())->toBe(1);
+    expect(Activity::query()->where('command', 'operation:overdue-alert')->count())->toBe(0);
+    $job = Queue::connection('gateway')->pop('tasks');
+    expect($job)->not->toBeNull()->and($job->payload()['maxTries'])->toBe(1);
+    $job->fire();
+    expect(Activity::query()->where('command', 'operation:overdue-alert')->sole()->status)->toBe('succeeded');
+    expect(DB::table('jobs')->where('queue', 'tasks')->count())->toBe(0);
+});
+
+it('forwards all cancellations before sixteen slow webhook deliveries', function (): void {
+    $this->freezeTime();
+    Sleep::fake();
+    Queue::fake();
+    $webhook = Mockery::mock(ReleaseAlertWebhook::class);
+    $webhook->shouldReceive('send')->times(16)->andReturnUsing(function (): ReleaseAlertStep {
+        Sleep::for(10)->seconds();
+
+        return ReleaseAlertStep::failed('unreachable');
+    });
+    app()->instance(ReleaseAlertWebhook::class, $webhook);
+    $runs = [];
+    foreach (range(1, 16) as $target) {
+        $operation = overdueReportingOperation(target: $target);
+        $run = (string) Str::uuid();
+        $operation->update(['state' => ['swamp_run_id' => $run]]);
+        $runs[$run] = ['id' => $run, 'workflowName' => 'operation-task-script', 'status' => 'running',
+            'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.script'],
+            'startedAt' => now()->toISOString(), 'completedAt' => null, 'jobs' => []];
+    }
+    $this->travel(16)->minutes();
+
+    $message = [];
+    $connected = false;
+    $forwarded = 0;
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect')->andReturnUsing(function () use (&$connected): void {
+        $connected = true;
+    });
+    $socket->shouldReceive('close')->andReturnUsing(function () use (&$connected): void {
+        $connected = false;
+    });
+    $socket->shouldReceive('isConnected')->andReturnUsing(function () use (&$connected): bool {
+        return $connected;
+    });
+    $socket->shouldReceive('send')->andReturnUsing(function (array $frame) use (&$message): void {
+        $message = $frame;
+    });
+    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$message, &$forwarded, $runs): array {
+        if ($message['type'] === 'workflow.cancel') {
+            $forwarded++;
+
+            return [['id' => $message['id'], 'type' => 'workflow.cancel', 'payload' => ['data' => [
+                'runId' => $message['payload']['runId'], 'status' => 'cancellation_requested']]]];
+        }
+
+        return [['id' => $message['id'], 'type' => 'workflow.history.get',
+            'payload' => ['data' => $runs[$message['payload']['workflowIdOrName']]]]];
+    });
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'run-token', 'swamp.read_token' => 'read-token', 'swamp.address' => '10.44.0.15', 'swamp.ca_path' => __FILE__]);
+    try {
+        app()->call([new ReconcileSwampOperations, 'handle']);
+
+        expect($forwarded)->toBe(16);
+        expect(Operation::query()->whereNotNull('state->native_cancel_confirmed_at')->count())->toBe(16);
+        Sleep::assertNeverSlept();
+        Queue::assertPushed(SendOperationOverdueAlert::class, 16);
+        Queue::assertPushed(ReconcileSwampOperations::class);
+        foreach (Queue::pushed(SendOperationOverdueAlert::class) as $job) {
+            expect($job->connection)->toBe('gateway')->and($job->queue)->toBe('tasks');
+            app()->call([$job, 'handle']);
+        }
+        Sleep::assertSleptTimes(16);
+        expect(Activity::query()->where('error_code', 'operation.alert_webhook_failed')->count())->toBe(16);
+    } finally {
+        app(SwampConnection::class)->release();
+        Sleep::fake(false);
+    }
 });
 
 it('keeps admission timeout behavior without an execution overdue alert', function (): void {

@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Domain\Releases\ReleaseAlertWebhook;
+use App\Jobs\Operations\SendOperationOverdueAlert;
 use App\Models\Activity;
 use App\Models\Operation;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
-/** Reports the existing timeout once, after its state and cancellation request commit. */
+/** Schedules the existing timeout alert once; a separate worker delivers it. */
 final readonly class OperationOverdueAlerts
 {
     public function __construct(private ReleaseAlertWebhook $webhook) {}
@@ -23,11 +23,11 @@ final readonly class OperationOverdueAlerts
             'overdue_since' => $since, 'run_budget_seconds' => $budget,
             'occurred_at' => now()->toISOString(), 'request_id' => (string) Str::uuid(),
             'text' => sprintf('Operation %d (%s) exceeded its run budget.', $operation->id, $operation->kind)];
-        DB::afterCommit(fn () => $this->send($payload));
+        SendOperationOverdueAlert::dispatch($payload)->afterCommit();
     }
 
     /** @param array<string,mixed> $payload */
-    private function send(array $payload): void
+    public function send(array $payload): void
     {
         $activity = null;
         try {
