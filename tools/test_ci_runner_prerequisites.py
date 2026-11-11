@@ -41,7 +41,7 @@ os.execvp(sys.argv[2], sys.argv[2:])
 import json, os, pathlib, signal, sys, time
 args = sys.argv[1:]
 source = pathlib.Path(next(a.split('=', 1)[1] for a in args if a.startswith('Dir::Etc::sourcelist=')))
-mirror = 'fallback' if 'https://archive.ubuntu.com/' in source.read_text() else 'primary'
+mirror = 'fallback' if 'https://mirrors.edge.kernel.org/' in source.read_text() else 'primary'
 operation = 'install' if 'install' in args else 'update'
 with open(os.environ['FIXTURE_LOG'], 'a') as log:
     log.write(json.dumps({'mirror': mirror, 'operation': operation, 'args': args,
@@ -133,7 +133,8 @@ if operation == 'install' and mode != 'no-tools':
                 self.assertEqual(primary, ['update', 'install'] if mode == 'install-fail' else ['update'])
                 self.assertEqual([(c['mirror'], c['operation']) for c in self.apt][-2:],
                                  [('fallback', 'update'), ('fallback', 'install')])
-                self.assertIn('https://archive.ubuntu.com/ubuntu', self.apt[-1]['source'])
+                self.assertIn('https://mirrors.edge.kernel.org/ubuntu', self.apt[-1]['source'])
+                self.assertIn('[signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg]', self.apt[-1]['source'])
                 # Partial primary indexes cannot satisfy fallback's update or install.
                 lists = [next(a for a in c['args'] if a.startswith('Dir::State::lists=')) for c in self.apt]
                 self.assertNotEqual(lists[0], lists[-1])

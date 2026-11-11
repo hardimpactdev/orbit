@@ -25,9 +25,9 @@ scratch=$(mktemp -d -t orbit-ci-apt.XXXXXXXX)
 trap 'sudo -n rm -rf -- "$scratch"' EXIT
 chmod 755 "$scratch"
 
-for mirror in azure.archive.ubuntu.com archive.ubuntu.com; do
+for mirror in azure.archive.ubuntu.com mirrors.edge.kernel.org; do
     budget=10
-    if [[ "$mirror" == archive.ubuntu.com ]]; then budget=20; fi
+    if [[ "$mirror" == mirrors.edge.kernel.org ]]; then budget=20; fi
     attempt="$scratch/$mirror"
     mkdir -m 755 "$attempt" "$attempt/lists"
     # Both callers use ubuntu-26.04. Only the base main index is needed for these packages.
