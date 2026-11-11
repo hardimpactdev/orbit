@@ -183,6 +183,19 @@ Conn starts a thread in an Orbit Project in a new clone of the Project's default
 
 `GET /projects` lists the Projects a thread can start in. Each one has a `default` Instance that runs in a container, is active and has a seed snapshot. That default runs on a Node the caller has node access to, and the entry names that Node.
 
+`GET /projects/{id}/instances/check?name=fix-login-k3j9` checks a proposed clone name without reserving it. It uses the same Project access and ready-default requirements as create. The MCP tool is `conn-instance-name-check`.
+
+- It answers 200 with `{name, available, reason, domain}`. An available name has `reason: null`.
+- `invalid` means the name is not a lowercase DNS label of 1–63 characters, with no leading or trailing hyphen. An empty string is invalid.
+- `default` means the name is `default` or the Project's default-branch alias.
+- `taken` means any Instance of the Project holds the name, on any Node and in any state, including the caller's own Instance.
+- `domain` previews `<name>.<project-slug>.<effective-tld>`. The default's placement selects the active Cluster TLD before the Node TLD.
+
+The domain is null for an invalid name, a non-web Project, or no usable domain.
+- Missing or non-string `name`, or an unknown query field, fails with `validation.failed` (422). Access is checked before the name.
+
+The check creates no records, including Activity rows. A later create can still refuse with `instance.name_taken`; create keeps its same-caller resume rule.
+
 `POST /projects/{id}/instances` with `{"name"}` creates the thread's clone:
 
 - It admits `instance.create` on the default's Node, as `instance:create PROJECT NODE NAME` does.
@@ -220,6 +233,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `PUT /profiles/{id}/settings` | `{"version": 3, "settings": {"workspaces": [...]}}`; any of `workspaces`, `appearance`, `devices` | settings |
 | `PATCH /profiles/{id}/settings` | `{"sections": {"appearance": {"version": 2, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}` | settings |
 | `GET /projects` | — | list of project |
+| `GET /projects/{id}/instances/check` | `name` query string | name, available, reason, domain |
 | `POST /projects/{id}/instances` | `{"name": "fix-login-k3j9"}` | Operation (202) |
 | `GET /environments` | — | list of environment |
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |

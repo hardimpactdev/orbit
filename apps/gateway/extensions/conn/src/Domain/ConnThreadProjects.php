@@ -22,7 +22,7 @@ use Illuminate\Support\Collection;
  */
 final readonly class ConnThreadProjects
 {
-    public function __construct(private NodeAccessAuthorizer $access) {}
+    public function __construct(private NodeAccessAuthorizer $access, private ConnInstanceNames $names) {}
 
     /** @return Collection<int, Instance> the ready defaults the caller reaches, by Project slug */
     public function defaults(Node $caller): Collection
@@ -62,7 +62,7 @@ final readonly class ConnThreadProjects
      */
     public function assertNameFree(Node $caller, Project $project, string $name): void
     {
-        $existing = Instance::query()->where('project_id', $project->id)->where('name', $name)->value('id');
+        $existing = $this->names->occupied($project, $name);
         if ($existing !== null && ! Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')
             ->where('target_id', $existing)->where('triggered_by', 'node:'.$caller->id)->exists()) {
             throw new ResourceOperationException('instance.name_taken', "Project [{$project->slug}] already has an Instance named [{$name}].", 409);

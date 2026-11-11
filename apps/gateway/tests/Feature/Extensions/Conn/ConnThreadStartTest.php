@@ -2,19 +2,23 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\TaskVms\TaskVmModelRoute;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
@@ -228,5 +232,160 @@ describe('the server list', function (): void {
             ->and($data['env-beast'])->toMatchArray(['instance_id' => null, 'power_state' => null,
                 'project_id' => null, 'project_name' => null, 'project_slug' => null,
                 'instance_name' => null, 'node_name' => null, 'instance_url' => null]);
+    });
+});
+
+describe('the Instance name check', function (): void {
+    it('answers an available name without writing any row or contacting a server', function (string $name): void {
+        $default = threadDefault($this->beast, 'tool');
+        $writes = [];
+        DB::listen(function (QueryExecuted $query) use (&$writes): void {
+            if (preg_match('/\A\s*(insert|update|delete|replace)\b/i', $query->sql) === 1) {
+                $writes[] = $query->sql;
+            }
+        });
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?".http_build_query(['name' => $name]))
+            ->assertOk()->assertJsonPath('data', ['name' => $name, 'available' => true, 'reason' => null, 'domain' => null]);
+
+        expect($writes)->toBe([]);
+        Http::assertNothingSent();
+    })->with(['single character' => 'a', 'digit' => '0', 'hyphen inside' => 'fix-login', '63 characters' => str_repeat('a', 63)]);
+
+    it('treats every Instance in the Project as taken across Nodes and states', function (InstanceState $state): void {
+        $default = threadDefault($this->beast, 'tool');
+        Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $this->mini->id, 'name' => 'occupied', 'checkout_path' => '/srv/occupied', 'status' => $state]);
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=occupied")
+            ->assertOk()->assertJsonPath('data.available', false)->assertJsonPath('data.reason', 'taken');
+    })->with([InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::SourceResolved, InstanceState::Active]);
+
+    it('keeps the name taken while its Instance is being removed', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        $create = threadCreate($this->phone, $default->project, 'occupied');
+        $create->forceFill(['status' => 'succeeded', 'finished_at' => now()])->save();
+        $instance = Instance::query()->findOrFail($create->target_id);
+        $instance->update(['status' => InstanceState::Active, 'starting_commit' => str_repeat('c', 40), 'branch' => 'occupied']);
+        app(StartInstanceDestroyAction::class)->execute($instance, true);
+        expect($instance->fresh()->status)->toBe(InstanceState::Removing);
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=occupied")
+            ->assertOk()->assertJsonPath('data.available', false)->assertJsonPath('data.reason', 'taken');
+    });
+
+    it('treats a pending create as taken even for the caller who can resume it', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        threadCreate($this->phone, $default->project, 'occupied');
+        $default->project->update(['type' => ProjectType::LaravelApp]);
+        $this->beast->update(['tld' => 'test']);
+        $laptop = threadNode('laptop', '10.44.0.78');
+        $laptop->accessibleNodes()->attach($this->beast->id);
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=occupied")
+            ->assertOk()->assertJsonPath('data.reason', 'taken')->assertJsonPath('data.available', false)
+            ->assertJsonPath('data.domain', 'occupied.tool.test');
+        threadCall($laptop, 'GET', "projects/{$default->project_id}/instances/check?name=occupied")
+            ->assertOk()->assertJsonPath('data.reason', 'taken')->assertJsonPath('data.available', false)
+            ->assertJsonPath('data.domain', 'occupied.tool.test');
+    });
+
+    it('keeps names in other Projects available', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        $other = threadDefault($this->mini, 'other');
+        Instance::query()->create(['project_id' => $other->project_id, 'node_id' => $this->mini->id, 'name' => 'free', 'checkout_path' => '/srv/free', 'status' => InstanceState::Active]);
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=free")
+            ->assertOk()->assertJsonPath('data.available', true)->assertJsonPath('data.reason', null);
+    });
+
+    it('answers default for the reserved name and the Project default-branch alias', function (string $name): void {
+        $default = threadDefault($this->beast, 'tool');
+        $default->project->update(['default_branch' => 'trunk']);
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name={$name}")
+            ->assertOk()->assertJsonPath('data.available', false)->assertJsonPath('data.reason', 'default');
+    })->with(['default', 'trunk']);
+
+    it('answers invalid for each name format failure', function (string $name): void {
+        $default = threadDefault($this->beast, 'tool');
+        $default->project->update(['type' => ProjectType::LaravelApp]);
+        $this->beast->update(['tld' => 'test']);
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?".http_build_query(['name' => $name]))
+            ->assertOk()->assertJsonPath('data', ['name' => $name, 'available' => false, 'reason' => 'invalid', 'domain' => null]);
+    })->with(['empty' => '', 'uppercase' => 'Fix', 'leading hyphen' => '-fix', 'trailing hyphen' => 'fix-',
+        'underscore' => 'fix_login', 'dot' => 'fix.login', 'space' => 'fix login', 'padded' => ' fix ',
+        'newline' => "fix\n", 'non-ASCII' => 'café', '64 characters' => str_repeat('a', 64)]);
+
+    it('previews the Node TLD without creating a Route', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        $default->project->update(['type' => ProjectType::LaravelApp]);
+        $this->beast->update(['tld' => 'node.test']);
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=fix")
+            ->assertOk()->assertJsonPath('data.domain', 'fix.tool.node.test');
+
+        $this->assertDatabaseCount('routes', 0);
+    });
+
+    it('previews the active Cluster TLD before the Node TLD', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        $default->project->update(['type' => ProjectType::SymfonyApp]);
+        $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'cluster.test', 'state' => 'active']);
+        $this->beast->update(['cluster_id' => $cluster->id, 'tld' => 'node.test']);
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=fix")
+            ->assertOk()->assertJsonPath('data.domain', 'fix.tool.cluster.test');
+
+        $this->assertDatabaseCount('routes', 0);
+    });
+
+    it('answers a null domain without a usable TLD', function (?string $tld): void {
+        $default = threadDefault($this->beast, 'tool');
+        $default->project->update(['type' => ProjectType::LaravelApp]);
+        $this->beast->update(['tld' => $tld]);
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=fix")
+            ->assertOk()->assertJsonPath('data.domain', null)->assertJsonPath('data.available', true);
+    })->with([null]);
+
+    it('returns 403 before reading names or readiness on an inaccessible Project', function (string $query, bool $seeded): void {
+        $default = threadDefault($this->mini, 'hidden', seeded: $seeded);
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check{$query}")
+            ->assertForbidden()->assertJsonPath('error.code', 'node_access.required')->assertJsonMissingPath('data');
+    })->with([['?name=default', true], ['?name=free', false], ['', true]]);
+
+    it('keeps the existing ready-default Project scope', function (): void {
+        $default = threadDefault($this->beast, 'tool', seeded: false);
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=free")
+            ->assertConflict()->assertJsonPath('error.code', 'instance.default_missing');
+    });
+
+    it('returns 404 for an unknown Project as create does', function (): void {
+        threadCall($this->phone, 'GET', 'projects/999999/instances/check?name=free')->assertNotFound();
+    });
+
+    it('returns 403 when the caller has no node access', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+
+        threadCall($this->mini, 'GET', "projects/{$default->project_id}/instances/check?name=free")
+            ->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
+    });
+
+    it('returns 422 only for a malformed query', function (string $query): void {
+        $default = threadDefault($this->beast, 'tool');
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check{$query}")
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    })->with(['missing' => '', 'array' => '?name[]=fix', 'unknown field' => '?name=fix&node_id=1']);
+
+    it('keeps the handle registered while Conn is disabled', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        app(ExtensionStore::class)->set('conn', false);
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=free")
+            ->assertJsonPath('error.code', 'extension.disabled');
     });
 });
