@@ -9,6 +9,7 @@ fetches the commit and chooses the cases itself. The runner acts as an enrolled 
 import json
 import os
 import re
+import runpy
 import shutil
 import signal
 import subprocess
@@ -80,8 +81,8 @@ def evaluate(code, output):
 COMMAND = re.compile(r'[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+')
 
 
-def report(code, output, sha, key):
-    """Record the final proof verdict and a receipt. Every nonpassing outcome fails the job."""
+def report(code, output, sha, key, allow_trust_skip=False):
+    """Record verdicts; only an explicit no-case trust refusal may skip same-repository CI."""
     try:
         document = json.loads(output)
     except ValueError:
@@ -93,6 +94,14 @@ def report(code, output, sha, key):
                        and all(isinstance(command, str) and COMMAND.fullmatch(command) for command in commands))
     passed, lines = evaluate(code, output)
     outcome = 'passed' if passed else ('interrupted' if result.get('outcome') == 'interrupted' else 'failed')
+    holders = (document, document.get('data'), document.get('operation')) if isinstance(document, dict) else ()
+    status = next((holder.get('status') for holder in holders if isinstance(holder, dict) and holder.get('result') is result), None)
+    # ProofRunIntent refuses trust before selection or execution. Require its exact failed/no-case shape.
+    # Signal exits, timeouts, interrupted results and any case evidence must remain failures.
+    if (allow_trust_skip and code == 1 and status == 'failed' and error.get('code') == 'proof.commit_untrusted'
+            and result.get('outcome') == 'failed' and result.get('cases') == []):
+        outcome = 'skipped'
+        lines.append('Proof skipped at admission after trust was lost. No proof passed.')
     operation_id = None
     if isinstance(document, dict):
         for holder in (document, document.get('data'), document.get('operation')):
@@ -116,7 +125,7 @@ def run(sha, key, orbit):
     except subprocess.TimeoutExpired:
         child.send_signal(signal.SIGINT)
         output, _ = child.communicate()
-        return 1, output
+        return 124, output
     return child.returncode, output
 
 
@@ -124,12 +133,25 @@ def main():
     sha = os.environ.get('PROOF_SHA', '')
     if not SHA.fullmatch(sha):
         sys.exit('PROOF_SHA must be the full lowercase commit SHA of the pull request head.')
-    orbit = shutil.which('orbit')
-    if orbit is None:
-        sys.exit('The orbit CLI is not on the runner PATH. The runner must be an enrolled Node.')
     key = f"ci-proof.{os.environ.get('GITHUB_RUN_ID', 'local')}.{os.environ.get('GITHUB_RUN_ATTEMPT', '1')}"
-    code, output = run(sha, key, orbit)
-    outcome, lines, receipt = report(code, output, sha, key)
+    check_eligibility = os.environ.get('PROOF_CHECK_ELIGIBILITY') == 'true'
+    # Re-read after the self-hosted runner queue. Errors fail, rather than becoming an ineligible result.
+    allowed = True
+    if check_eligibility:
+        preflight = runpy.run_path(str(Path(__file__).with_name('ci-proof-eligibility')))
+        allowed = preflight['eligible'](preflight['GitHub'](os.environ['GITHUB_REPOSITORY']), sha)
+    if not allowed:
+        code = 0
+        outcome, lines, receipt = report(1, '{}', sha, key)
+        outcome = receipt['outcome'] = 'skipped'
+        receipt['error_code'] = 'ci.proof_ineligible'
+        lines = ['Proof skipped before requesting admission: commit is no longer eligible. No case ran and no proof passed.']
+    else:
+        orbit = shutil.which('orbit')
+        if orbit is None:
+            sys.exit('The orbit CLI is not on the runner PATH. The runner must be an enrolled Node.')
+        code, output = run(sha, key, orbit)
+        outcome, lines, receipt = report(code, output, sha, key, allow_trust_skip=check_eligibility)
     text = '\n'.join([f"## Proof run of `{sha[:12]}`: {outcome}", '', *lines, ''])
     print(text)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
@@ -140,7 +162,7 @@ def main():
             outputs.write(f'outcome={outcome}\n')
     if os.environ.get('PROOF_RECEIPT'):
         Path(os.environ['PROOF_RECEIPT']).write_text(json.dumps(receipt, indent=2) + '\n')
-    sys.exit(0 if outcome == 'passed' else code or 1)
+    sys.exit(0 if outcome in ('passed', 'skipped') else code or 1)
 
 
 if __name__ == '__main__':

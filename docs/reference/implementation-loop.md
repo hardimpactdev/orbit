@@ -3,7 +3,7 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,test,ci-build-plan,ci-units,ci-delivery,ci-cache-ref,ci-runner-prerequisites,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
+  - bin/{review-check,test,ci-build-plan,ci-units,ci-delivery,ci-proof-eligibility,ci-proof-run,ci-cache-ref,ci-runner-prerequisites,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy,swamp-shape-python,swamp_shape_host_tools}.py,swamp/bin/{check-swamp-shape,gate-test-support}.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - "{tools/check_budget.py,swamp/tests/_support/slice.ts}"
   - "{apps/*,packages/php-sdk}/rector.php"
@@ -62,7 +62,7 @@ Pull requests and main pushes run the fast Swamp control checks. Selected shape 
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and on the three-hour schedule, run the Operation Deno tests, enforce static Swamp-shape controls and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Run the case runner unit tests and lint the proof programs with `ruff` |
 | CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. The blocking switches decide whether it gates Required checks; see [the proof run job](#the-proof-run-job) |
-| Required checks | On PRs, require selected builds, static checks, Pest suites and fixture shards, including fixture capacity. Swamp contains static controls; proof follows the blocking switches. Only explicitly untouched jobs may skip |
+| Required checks | On PRs, require selected builds, static checks, Pest suites and fixture shards, including capacity. Proof follows the blocking switches. Untouched jobs and metadata-ineligible proofs may skip |
 | Main delivery checks | On main, require the same selected fast jobs, independently of duplicate fixture shards and Main full set |
 | Main fixture report | After selected main fixtures finish, report failure, cancellation or capacity to the CI summary and the causal merged PR; never gate delivery |
 
@@ -166,7 +166,13 @@ The CLI release starts after Required checks on main. Measure that chain separat
 
 ### The proof run job
 
-`proof-run` in `.github/workflows/ci.yml` runs when a pull request's changed paths select commands. It gates `Required checks` only when both [blocking switches](#ci-budget) permit it. It passes only the full head SHA and an idempotency key to Orbit. A new push cancels the previous proof. A fork needs the trusted base-branch workflow, a maintainer's approval of the head and the `run-proofs` label; fork code never runs on the managed runner. That workflow publishes `Orbit outside proof` on the exact head. When proof is blocking, Required checks reads its latest trusted status and fails if it is missing, pending or failed. After the outside proof succeeds, rerun the failed Required job.
+`proof-run` in `.github/workflows/ci.yml` runs when changed paths select commands in a pull request from this repository and a hosted metadata preflight finds the exact commit eligible. Eligibility follows the Gateway trust rule: a current repository branch head, or the head of an open pull request with `run-proofs` and a writer's latest decisive approval of that exact commit. Comments do not revoke approval; change requests and dismissals do. The preflight reads GitHub metadata within 20 seconds. It skips the managed-runner job when ineligible. API errors fail the preflight. Unselected proofs do no eligibility work. The preflight adds no dependency to Required checks.
+
+Proof gates `Required checks` only when both [blocking switches](#ci-budget) permit it. While blocking, Required checks accepts a skipped proof only with a successful preflight's explicit ineligible marker; missing evidence, API failure and unexpected skips fail closed. It does not wait for intentionally skipped proofs to run.
+
+A new push cancels the previous proof. The runner rechecks eligibility immediately before calling Orbit. Lost eligibility produces a `skipped` outcome, never a passing proof. An explicit `proof.commit_untrusted` admission refusal with a failed result and an empty cases list also produces `skipped`. Executed cases, interrupted execution and all other failures retain their existing failure semantics. GitHub cannot change a running job to skipped: these runtime skips exit successfully but say `skipped` in the step output, receipt and summary. Blocking Required checks permits this explicit skip policy too.
+
+A fork keeps its separate trusted base-branch workflow, a maintainer's approval of the head and the `run-proofs` label; fork code never runs on the managed runner. That workflow publishes `Orbit outside proof` on the exact head. When proof is blocking, Required checks reads its latest trusted status and fails if it is missing, pending or failed. After the outside proof succeeds, rerun the failed Required job.
 
 CI proofs join one FIFO admission queue. Its front takes every free usable CI place up to its number of batches. Orbit balances whole batches by measured case time, runs them on fresh VMs, merges the verdicts and deletes the VMs. Capacity waits within a two-hour admission budget and then fails clearly. See [proof:run](/cli/proof/run).
 

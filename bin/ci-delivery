@@ -25,6 +25,7 @@ def validate(needs):
     needs['proof-run'] = {'result': 'skipped'}
     # Bound the API wait by the existing longest explicit job budget (CI proof: 195 minutes).
     deadline = time.monotonic() + 195 * 60
+    eligibility_deadline = time.monotonic() + 60
     while pending:
         pages = json.loads(subprocess.check_output([
             'timeout', '60', 'gh', 'api', '--paginate', '--slurp',
@@ -37,11 +38,31 @@ def validate(needs):
             previous = latest.get(name)
             if previous is None or (job['run_attempt'], job['id']) > (previous['run_attempt'], previous['id']):
                 latest[name] = job
+        eligibility = latest.get('CI proof eligibility')
+        proof = latest.get('CI proof')
+        if eligibility and eligibility['status'] == 'completed' and eligibility['conclusion'] != 'success':
+            sys.exit(f"Proof eligibility failed: {eligibility['conclusion']}")
+        if proof and proof['status'] == 'completed' and proof['conclusion'] == 'skipped':
+            # A selected proof may skip only with explicit, successful metadata evidence.
+            if eligibility and eligibility['status'] == 'completed':
+                if eligibility['run_attempt'] != proof['run_attempt']:
+                    sys.exit('Selected proof skipped without eligibility evidence from the same attempt')
+                if not any(step.get('name') == 'Skip ineligible proof' and step.get('conclusion') == 'success'
+                           for step in eligibility.get('steps', [])):
+                    sys.exit('Selected proof skipped without ineligible metadata evidence')
+                selected['proof-run'] = False
+                pending.pop('CI proof', None)
         for name, job in latest.items():
             if name not in pending or job['status'] != 'completed':
                 continue
             component = pending.pop(name)
             result = job['conclusion']
+            if result == 'skipped' and component == 'proof-run' and eligibility is None:
+                # The API may list a skipped dependent before its eligibility job. Bound this evidence wait.
+                if time.monotonic() >= eligibility_deadline:
+                    sys.exit('Missing proof eligibility evidence')
+                pending[name] = component
+                continue
             if result != 'success' and not (not selected[component] and result == 'skipped'):
                 sys.exit(f'Required job failed: {name}: {result}')
             needs[component]['result'] = 'success'
