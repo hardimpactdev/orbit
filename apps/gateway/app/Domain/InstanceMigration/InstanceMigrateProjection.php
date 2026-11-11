@@ -64,7 +64,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         ], 'execution_secrets' => [
             ...($publication === null ? [] : ValidatedData::object($publication['execution_secrets'])),
             'process_environments' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-migrate-processes-'.$operation->id,
-                app(ContainerProcesses::class)->environments($instance, $container['processes'] ?? [])),
+                app(ContainerProcesses::class)->environments($instance, $container['processes'] ?? [], migrate: true)),
             'model_environment' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-migrate-model-'.$operation->id, $model),
         ]];
     }
@@ -181,7 +181,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                     $instance->update(['retained_git_path' => $result['retained_git_path'], 'retained_git_at' => $result['retained_git_at']]);
                 }
                 if ($moved) {
-                    app(ContainerProcesses::class)->complete($instance, ValidatedData::object($operation->input['container'])['processes'] ?? [], true, null);
+                    app(ContainerProcesses::class)->complete($instance, ValidatedData::object($operation->input['container'])['processes'] ?? [], true, null, migrate: true);
                     $this->moved($instance, ValidatedData::object($operation->input['migrate']), ValidatedData::integerList($operation->input['sqlite_connection_ids'] ?? []));
                     // A default's clones start at the seed snapshot the run took of its commit.
                     $runtime->update(['power_state' => InstanceRuntimePowerState::Running,

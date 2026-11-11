@@ -989,7 +989,7 @@ describe('Processes moving into the container', function (): void {
             ->and($worker->refresh()->runtime_config)->toBe($config)
             ->and($worker->systemd_activation_hash)->toBe('old-host-hash');
         // The vault re-renders the same translated public unit, while the host Process is still unchanged.
-        expect(app(ContainerProcesses::class)->environments($instance->fresh(), $operation->input['container']['processes']))->toContain('migration-process-secret');
+        expect(app(ContainerProcesses::class)->environments($instance->fresh(), $operation->input['container']['processes'], migrate: true))->toContain('migration-process-secret');
 
         migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
         expect($worker->refresh()->runtime_config['command'])->toBe($mapped);
@@ -1051,8 +1051,8 @@ describe('Processes moving into the container', function (): void {
         DB::enableQueryLog();
         try {
             $result = match ($render) {
-                'units' => $processes->units($instance),
-                'environments' => $processes->environments($instance, $operation->input['container']['processes']),
+                'units' => $processes->units($instance, migrate: true),
+                'environments' => $processes->environments($instance, $operation->input['container']['processes'], migrate: true),
                 'source' => $processes->source($instance),
             };
             $reads = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'from "processes"'));

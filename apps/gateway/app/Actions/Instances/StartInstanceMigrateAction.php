@@ -90,6 +90,7 @@ final readonly class StartInstanceMigrateAction
             $branch = $instance->branch ?? ValidatedData::string($instance->project->default_branch);
             // The Node's mirror fetches the branch from the checkout itself: commits that were never pushed come along, and it needs no token.
             $container = [...$this->containers->intent($instance, $runtime, $databases['servers'][0] ?? null, $branch, $route === null ? null : 'https://'.$route->domain),
+                'processes' => app(ContainerProcesses::class)->units($instance, migrate: true),
                 'repository' => $instance->checkout_path, 'protocols' => ['file'], 'steps' => []];
             $reach = array_map($this->endpoint(...), $databases['servers']);
             $publication = $route === null || $before === null ? null : $this->routes->capture($instance, $route, $runtime, $before);

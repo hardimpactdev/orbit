@@ -33,21 +33,21 @@ final readonly class ContainerProcesses
      *
      * @return list<array{id:int,name:string,content:string,environment:?string,desired:string}>
      */
-    public function units(Instance $instance): array
+    public function units(Instance $instance, bool $migrate = false): array
     {
-        return $this->render($instance, $this->records([$instance->id]));
+        return $this->render($instance, $this->records([$instance->id]), $migrate);
     }
 
     /**
      * @param  Collection<int, Process>  $records
      * @return list<array{id:int,name:string,content:string,environment:?string,desired:string}>
      */
-    private function render(Instance $instance, Collection $records): array
+    private function render(Instance $instance, Collection $records, bool $migrate): array
     {
         $port = $this->vitePort($instance, $records);
         $units = [];
         foreach ($records as $process) {
-            $process = $this->placed($process, $instance, $port);
+            $process = $this->placed($process, $instance, $port, $migrate);
             $target = $this->targets->forInspection($process);
             if ($target->container === null || $process->runtime !== ProcessRuntime::Systemd) {
                 throw new ResourceOperationException('process.target_unsupported', "Process [{$process->id}:{$process->name}] must use systemd in an Instance container.", 409);
@@ -64,16 +64,16 @@ final readonly class ContainerProcesses
      * The vault copy's content: each admitted environment file and its values, but only while the records still render the admitted
      * units, so a value changed after admission never lands under an older unit.
      */
-    public function environments(Instance $instance, mixed $admitted): string
+    public function environments(Instance $instance, mixed $admitted, bool $migrate = false): string
     {
         $records = $this->records([$instance->id]);
-        if ($admitted !== $this->render($instance, $records)) {
+        if ($admitted !== $this->render($instance, $records, $migrate)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The container Processes changed after admission.', 403);
         }
         $port = $this->vitePort($instance, $records);
         $files = [];
         foreach ($records as $process) {
-            $process = $this->placed($process, $instance, $port);
+            $process = $this->placed($process, $instance, $port, $migrate);
             $target = $this->targets->forInspection($process);
             if ($this->hasEnvironment($process, $target)) {
                 $files[$this->systemd->environmentPath($process, $target)] = $this->systemd->environmentContent($process, $target);
@@ -87,7 +87,7 @@ final readonly class ContainerProcesses
      * Records the run's outcome on the admitted Processes: a passed run installed and started every one; a failed run leaves the
      * Processes it had not installed failed and the running ones as they were.
      */
-    public function complete(Instance $instance, mixed $admitted, bool $succeeded, ?string $errorCode): void
+    public function complete(Instance $instance, mixed $admitted, bool $succeeded, ?string $errorCode, bool $migrate = false): void
     {
         $port = $succeeded ? $this->vitePort($instance) : null;
         foreach (is_array($admitted) ? $admitted : [] as $raw) {
@@ -98,7 +98,7 @@ final readonly class ContainerProcesses
                 continue;
             }
             if ($succeeded) {
-                $placed = $this->placed($process, $instance, $port);
+                $placed = $this->placed($process, $instance, $port, $migrate);
                 $process->forceFill(['working_directory' => $placed->working_directory, 'runtime_config' => $placed->runtime_config,
                     'status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null,
                     'systemd_activation_hash' => hash('sha256', ValidatedData::string($unit['content'])), 'systemd_activation_pending' => false])->save();
@@ -109,7 +109,7 @@ final readonly class ContainerProcesses
     }
 
     /** Render a copy at its container placement; migration saves these paths only after cutover succeeds. */
-    private function placed(Process $process, Instance $instance, ?int $port): Process
+    private function placed(Process $process, Instance $instance, ?int $port, bool $migrate = false): Process
     {
         $placed = clone $process;
         $checkout = rtrim($instance->checkout_path, '/');
@@ -118,7 +118,7 @@ final readonly class ContainerProcesses
             $this->assertPreset($process, $instance, $port);
             $config['command'] = VpDevPreset::command($port);
             $config['environment_file'] ??= InstanceContainer::application($instance).'/.env';
-        } elseif ($instance->checkout_path !== InstanceContainer::workspaceOnNode($instance)) {
+        } elseif ($migrate) {
             $config['command'] = $this->migrateCommand($process, $instance);
         }
         array_walk_recursive($config, static function (mixed &$value) use ($checkout): void {
@@ -257,7 +257,7 @@ final readonly class ContainerProcesses
         $port = $this->vitePort($instance, $records);
         $units = [];
         foreach ($records as $process) {
-            $placed = $this->placed($process, $instance, $port);
+            $placed = $this->placed($process, $instance, $port, migrate: true);
             $command = ValidatedData::stringList($placed->runtime_config['command']);
             $executables = [$command[0]];
             if ($command[0] === '/usr/bin/env') {
