@@ -87,7 +87,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   );
   Deno.chmodSync(`${folder}/bin/incus`, 0o755);
   Deno.copyFileSync(new URL("instance_migrate_links.py", root), `${folder}/instance_migrate_links.py`);
-  for (const name of ["instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-link-result.yml"]) {
+  for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-link-result.yml"]) {
     const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => transform(structuredClone(task)));
     Deno.writeTextFileSync(`${folder}/tasks/${name}`, stringify(tasks));
   }
@@ -1340,7 +1340,7 @@ for (const phase of ["quiesce", "workspace", "files", "processes", "seed"]) {
         assert(restored.ok, restored.output);
         assertEquals(host(), before);
         assertEquals(f.state().containers, {});
-        assertEquals(f.state()["network-acls"], []);
+        assertEquals(f.state()["network-acls"], [{ name: "orbitinst0-egress", egress: [], ingress: [] }]);
         assertEquals(f.ufw(), []);
         assert(!exists(f.container.mirror));
         assert(exists(f.migrate.awake.path));
@@ -1371,7 +1371,7 @@ Deno.test({
       assert(restored.ok, restored.output);
       assertEquals(host(), before);
       assertEquals(f.state().containers, {});
-      assertEquals(f.state()["network-acls"], []);
+      assertEquals(f.state()["network-acls"], [{ name: "orbitinst0-egress", egress: [], ingress: [] }]);
       assertEquals(f.ufw(), []);
       assert(!exists(f.container.mirror));
       assert(exists(f.migrate.awake.path));

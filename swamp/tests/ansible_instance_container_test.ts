@@ -73,7 +73,7 @@ function fixture() {
     Deno.readTextFileSync(new URL("tasks/instance-container-phase.yml", root)),
   ) as Task[]).map((task) => transform(structuredClone(task)));
   Deno.writeTextFileSync(`${folder}/tasks/instance-container-phase.yml`, stringify(tasks));
-  for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml"]) {
+  for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
   Deno.mkdirSync(`${folder}/run`);

@@ -261,14 +261,11 @@
           container.name ~ container_php_ini_path] }}
         stdin: "{{ container_php_ini_content }}"
         stdin_add_newline: false
-      register: container_php_ini_write
+      notify: Restart the running Orbit units after changed PHP settings
       changed_when: true
-    # A running FrankenPHP or PHP Process read the old settings at its start. `try-restart` leaves a stopped unit stopped, and the
-    # pattern matches no unit before a container's first units exist.
-    - name: Restart the running Orbit units after changed PHP settings
-      when: container_php_ini_write is changed
-      ansible.builtin.command: { argv: "{{ as_root + ['timeout', '5', 'systemctl', 'try-restart', '--no-block', 'orbit-*.service'] }}" }
-      changed_when: true
+    # Finish the restart dispatch before any readiness check later in the phase.
+    - name: Finish applying changed PHP settings
+      ansible.builtin.meta: flush_handlers
 
 - name: Stop the container
   tags: [stop]

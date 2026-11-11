@@ -6,10 +6,10 @@ namespace App\Domain\Operations;
 
 use App\Domain\Tasks\TaskVmAdmission;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Closure;
 use LogicException;
-use App\Support\ValidatedData;
 use Symfony\Component\Yaml\Yaml;
 
 /** Explicit execution budgets, measured history and a separate admission deadline. */
@@ -113,6 +113,7 @@ final class OperationRunBudgets
                 $task = ValidatedData::object($step['task'] ?? null);
                 if (($task['type'] ?? null) === 'workflow') {
                     $seconds += self::workflowSeconds(ValidatedData::string($task['workflowIdOrName'] ?? null), $directory, [...$parents, $workflow]);
+
                     continue;
                 }
                 $inputs = ValidatedData::object($task['inputs'] ?? []);
@@ -126,6 +127,7 @@ final class OperationRunBudgets
                 $seconds += $bound;
             }
         }
+
         return $seconds;
     }
 

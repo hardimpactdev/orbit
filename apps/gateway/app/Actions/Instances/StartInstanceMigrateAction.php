@@ -76,7 +76,7 @@ final readonly class StartInstanceMigrateAction
             $this->assertCheckout($instance, $instance->node);
 
             return $this->operations->execute(InstanceMigration::Kind, 'instance', $instance->id, $previous->node_id,
-                [...$input, 'restore_operation_id' => $previous->id, 'restore_quiesced' => ($previous->result['quiesced'] ?? false) === true], $caller, $requestId);
+                [...$input, 'had_runtime_reservation' => true, 'restore_operation_id' => $input['restore_operation_id'] ?? $previous->id, 'restore_quiesced' => ($previous->result['quiesced'] ?? false) === true], $caller, $requestId);
         });
     }
 
