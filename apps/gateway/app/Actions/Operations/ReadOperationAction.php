@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Operations;
 
+use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
@@ -21,6 +22,9 @@ final readonly class ReadOperationAction
 
     public function execute(Operation $operation): Operation
     {
+        if (InstanceMigrateProjection::unsettled($operation)) {
+            return app(InstanceMigrateProjection::class)->settle($operation);
+        }
         $runId = $operation->state['swamp_run_id'] ?? null;
         $definition = $this->direct->definition($operation->kind);
         $deadline = OperationRunBudgets::deadline($operation);

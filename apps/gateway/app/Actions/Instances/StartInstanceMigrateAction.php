@@ -7,6 +7,7 @@ namespace App\Actions\Instances;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
 use App\Domain\Instances\ContainerNodes;
@@ -52,6 +53,12 @@ final readonly class StartInstanceMigrateAction
     {
         if (($replay = $this->idempotency->replay(InstanceMigration::Kind)) !== null) {
             return $replay;
+        }
+
+        $previous = Operation::query()->where('kind', InstanceMigration::Kind)->where('target_type', 'instance')
+            ->where('target_id', $instance->id)->latest('id')->first();
+        if ($previous !== null) {
+            app(InstanceMigrateProjection::class)->settle($previous);
         }
 
         return $this->admit($instance, $caller, $requestId);

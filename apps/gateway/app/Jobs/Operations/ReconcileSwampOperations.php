@@ -6,8 +6,6 @@ namespace App\Jobs\Operations;
 
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Gateway\GatewayQueue;
-use App\Domain\InstanceMigration\InstanceMigrateProjection;
-use App\Domain\InstanceMigration\InstanceMigrateReconciliation;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationRunBudgets;
@@ -56,13 +54,6 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
     public function handle(SwampCommandStep $step, ExpireOperationAction $expire, CancelSwampRun $cancel, OperationStore $store): void
     {
         $kinds = array_keys(app(DirectOperation::class)->definitions());
-        if (in_array('instance.migrate', $kinds, true)) {
-            OperationRunBudgets::duringTick(fn () => app(InstanceMigrateReconciliation::class)->run(
-                fn (Operation $operation): Operation => $this->reconcile($operation, $step, $expire),
-                fn (Operation $operation) => $this->forwardCancel($operation, $cancel, $store),
-            ));
-            $kinds = array_values(array_diff($kinds, ['instance.migrate']));
-        }
         if ($kinds === []) {
             return;
         }
@@ -146,7 +137,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         }
         if (! isset($operation->state['swamp_run_id'])) {
             $operation = $expire->execute($operation)->refresh();
-            if ($operation->error_code === 'swamp.start_uncertain' || ExpireOperationAction::awaitsSettlement($operation) || InstanceMigrateProjection::unsettled($operation)) {
+            if ($operation->error_code === 'swamp.start_uncertain' || ExpireOperationAction::awaitsSettlement($operation)) {
                 $step->recoverUnbound($operation);
                 $operation->refresh();
             }

@@ -114,7 +114,7 @@ A fire of a Schedule's own workflow is recorded as a task when its run ends, not
 
 ### Reconciler
 
-Migrate alone continues native terminal recovery after its deadline hold or confirmed cancellation ends. Its current reads and cancellation forwarding precede lost-run recovery; bounded slices, persisted rotation and capped backoff keep lost migrations from monopolizing that recovery. Its own projector applies the [migrate late-settlement rules](/reference/operations#native-run-budgets).
+Migrate alone can settle a late native finish when its Operation is shown or its Instance is admitted for migration again. These reads run before the projector's write transaction. They add no recovery work to the shared reconciler; see the [migrate late-settlement rules](/reference/operations#native-run-budgets).
 
 `ReconcileSwampOperations` is the one place that settles an Operation with its Swamp run. The scheduler runs it every minute, and the event observer asks for a pass when it sees a run end. Polling stays: the datastore is format 2, which has no commit feed. The same pass frees the Nodes of a Route write that ended without a release and starts the Route writes that wait for them ([One Route write per Node](/reference/operations#one-route-write-per-node)).
 

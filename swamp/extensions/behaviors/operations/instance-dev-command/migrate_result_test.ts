@@ -142,17 +142,15 @@ Deno.test("symlink refusals keep every path and target and the preflight flag in
     assertEquals([late.error_code, late.error_message, late.preflight_refused], [failure.error_code, error_message, undefined]);
 });
 
-for (const stopped of ["failed", "cancelled", "interrupted"]) {
-    for (const phase of ["quiesce", "workspace", "files", "processes", "seed", "route"] as const) {
-        Deno.test(`${stopped} at ${phase} after quiesce records the restored host end state`, () => {
-            const phases = { ...moved, [phase]: stopped, retire: "skipped", restore: "succeeded" };
-            const receipt = result(defaultIntent, phases, workspace, null, null);
-            assertEquals(receipt.moved, false);
-            assertEquals(receipt.restored, true);
-            assertEquals(receipt.ready, false);
-            assertEquals(receipt.failed_step, phase);
-            assertEquals(receipt.error_code, `instance.migrate_${phase}_failed`);
-        });
-    }
+for (const status of ["pending", "unknown"]) {
+    Deno.test(`retirement ${status} does not claim the container moved`, () => {
+        const phases = { ...moved, processes: "failed", seed: "skipped", route: "skipped", retire: status, restore: "succeeded" };
+        const receipt = result(defaultIntent, phases, workspace, null, null);
+        assertEquals([receipt.moved, receipt.restored, receipt.ready], [false, true, false]);
+    });
+    Deno.test(`Route restoration ${status} does not prove the checkout restored`, () => {
+        const phases = { ...moved, route: "failed", retire: "skipped", restore_route: status, restore: "succeeded" };
+        const receipt = result(defaultIntent, phases, workspace, null, null);
+        assertEquals([receipt.moved, receipt.restored, receipt.ready], [false, false, false]);
+    });
 }
-

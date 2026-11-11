@@ -133,7 +133,7 @@ The [reconciler](/reference/swamp-command-steps#reconciler) projects an expired 
 
 A run can beat its expiry. For example, Swamp's start reply arrives after the 600-second admission budget, so the Operation expires unbound, and the run then ends within its kind's budget. When the exact native terminal finished before the bound deadline, the shared reader reopens the Operation and projects that terminal normally. The `timed_out` mark and its cancel request go, and the records reach their real end state. A terminal at or after the deadline keeps the timeout.
 
-`instance.migrate` has a 5,100-second run budget and its own late settlement. After expiry or confirmed cancellation, Orbit keeps reading its bound native run until it proves a terminal finish or proves that no run started. The native finish decides `moved`, `restored` and `ready`.
+`instance.migrate` has a 5,100-second run budget and its own late settlement. After expiry or confirmed cancellation, showing that Operation or admitting the Instance for migration again reads its late native finish. These reads add no work to the shared reconciler. The native finish decides `moved`, `restored` and `ready`.
 
 A deadline-triggered abort remains `failed` with `operation.timed_out`; a user abort remains `cancelled`. An independent phase failure keeps its own code. Orbit chooses the cause from native history and the locked expiry audit. A late success remains a success. Runtime changes apply only while that migrate Operation still owns the Instance's reservation. Private vault reads precede the write transaction. If a migrate already settled with a stale reservation, a new migrate must take ownership. Other kinds keep the expiry behavior above.
 

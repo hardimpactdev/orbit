@@ -6,7 +6,6 @@ namespace App\Infrastructure\Swamp;
 
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
-use App\Domain\InstanceMigration\InstanceMigrateReadDeadline;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationChildProjection;
 use App\Domain\Operations\OperationResultFields;
@@ -726,9 +725,6 @@ final readonly class SwampCommandStep
         if (! is_string($token) || $token === '' || ! is_string($address) || $address === '' || ! is_string($ca) || $ca === '') {
             throw $this->unavailable();
         }
-        if (InstanceMigrateReadDeadline::remaining(30) <= 0) {
-            throw new SwampTerminalReadUnavailable;
-        }
         $endpoint = new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token);
         $connection = app(SwampConnection::class);
         // A connection kept from an earlier job may have been closed by serve while idle. Then the first use fails on a dead
@@ -751,15 +747,12 @@ final readonly class SwampCommandStep
      */
     private function exchange(SwampConnection $connection, WebSocketEndpoint $endpoint, string $type, array $arguments): array
     {
-        if (InstanceMigrateReadDeadline::remaining(30) <= 0) {
-            throw new SwampTerminalReadUnavailable;
-        }
         $id = bin2hex(random_bytes(16));
         try {
-            $socket = $connection->socket($endpoint, InstanceMigrateReadDeadline::remaining(15), $this->socket);
+            $socket = $connection->socket($endpoint, 15, $this->socket);
             $socket->send(['type' => $type, 'id' => $id, 'payload' => $arguments]);
-            $deadline = microtime(true) + InstanceMigrateReadDeadline::remaining(30);
-            while ($socket->isConnected() && ($remaining = InstanceMigrateReadDeadline::remaining($deadline - microtime(true))) > 0) {
+            $deadline = microtime(true) + 30;
+            while ($socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
                 foreach ($socket->receive(min(1.0, $remaining)) as $message) {
                     if (($message['id'] ?? null) !== $id) {
                         continue;

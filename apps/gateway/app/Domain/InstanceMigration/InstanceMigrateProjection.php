@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\InstanceMigration;
 
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
@@ -66,6 +67,32 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                 app(ContainerProcesses::class)->environments($instance, $container['processes'] ?? [])),
             'model_environment' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-migrate-model-'.$operation->id, $model),
         ]];
+    }
+
+    /** Read a late migrate finish only when its Operation is shown or its Instance is admitted again. */
+    public function settle(Operation $operation): Operation
+    {
+        $operation = app(ExpireOperationAction::class)->execute($operation);
+        if (! self::unsettled($operation)) {
+            return $operation;
+        }
+        $step = app(SwampCommandStep::class);
+        try {
+            if (! isset($operation->state['swamp_run_id'])) {
+                $step->recoverUnbound($operation);
+                $operation->refresh();
+            }
+            $run = $operation->state['swamp_run_id'] ?? null;
+            if (! is_string($run)) {
+                return $operation;
+            }
+            $selector = $this->direct->definition($operation->kind)['terminal_result']
+                ?? throw new \LogicException('Migrate requires a native terminal result.');
+
+            return $step->projectTerminal($operation, ['id' => $run], $selector, atDeadline: true);
+        } catch (ResourceOperationException) {
+            return $operation->refresh();
+        }
     }
 
     public function apply(Operation $operation, array $data): Operation

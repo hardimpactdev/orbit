@@ -218,7 +218,7 @@ Deno.test({
       const repaired = f.run("processes");
       assert(repaired.ok, repaired.output);
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/orbit/frankenphp.Caddyfile`), f.container.web_config.content);
-      assert(f.state().systemctl.slice(before).some((call: string[]) => call.join(" ") === "restart -- orbit-frankenphp.service"));
+      assert(f.state().systemctl.slice(before).some((call: string[]) => call.join(" ") === "restart --no-block -- orbit-frankenphp.service"));
       const unchanged = f.run("processes");
       assert(unchanged.ok, unchanged.output);
       assertEquals(unchanged.changed, 0, unchanged.output);
