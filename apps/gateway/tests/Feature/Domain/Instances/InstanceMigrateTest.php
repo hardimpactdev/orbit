@@ -23,8 +23,8 @@ use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceAttachedTargets;
 use App\Domain\Instances\InstanceContainer;
-use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceEgress;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
@@ -574,6 +574,11 @@ describe('the databases of a move', function (): void {
             ->and(array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port']], $shownTargets))
             ->toBe($operation->input['migrate']['databases'])
             ->and($operation->input['migrate']['environment']['targets'])->toBe($operation->input['migrate']['databases'])
+            ->and($container['bridge_endpoints'])->toBe([
+                ['host' => '10.44.0.7', 'port' => 5432, 'docker' => true],
+                ['host' => '10.44.0.7', 'port' => 6379, 'docker' => true],
+                ['host' => '10.44.0.3', 'port' => 5434, 'docker' => false],
+            ])
             // No second database: the Instance keeps the one it has.
             ->and(DatabaseConnection::query()->where('owner_instance_id', $default->id)->pluck('id')->all())->toEqualCanonicalizing([$valkey->id, $database->id, $catalog->id]);
     });
@@ -582,7 +587,9 @@ describe('the databases of a move', function (): void {
         $node = containerDefaultNode();
         $node->update(['lan_ip' => '192.168.50.7', 'tld' => 'private.test']);
         $default = migrateCheckout(containerDefaultProject(), $node);
-        $database = migrateServerDatabase($default, migrateDatabaseServer($node, 'catalog', DatabaseDriver::Mysql, 3308), 'FOOD_CATALOG_DB');
+        $server = migrateDatabaseServer($node, 'catalog', DatabaseDriver::Mysql, 3308);
+        $database = migrateServerDatabase($default, $server, 'FOOD_CATALOG_DB');
+        migrateServerDatabase($default, $server, 'ANALYTICS');
         $default->databaseConnectionTargets()->update(['network' => 'lan']);
 
         $operation = migrateStart($default);
@@ -592,7 +599,7 @@ describe('the databases of a move', function (): void {
             'node_addresses' => ['10.44.0.7', '192.168.50.7', '10.44.0.7'],
             'proxy_policy' => ['private_v4' => InstanceEgress::PrivateV4, 'private_domains' => ['orbit', 'private.test']],
         ]);
-        expect($operation->input['migrate']['environment']['targets'])->toBe($operation->input['migrate']['databases'])
+        expect($operation->input['migrate']['databases'])->toBe([['host' => '10.44.0.7', 'port' => 3308], ['host' => '10.44.0.7', 'port' => 3308]])
             ->and($operation->input['container']['acl_rules']['egress'])->toBe([['action' => 'allow', 'destination' => '10.44.0.7/32',
                 'protocol' => 'tcp', 'destination_port' => '3308', 'state' => 'enabled']])
             ->and($operation->input['container']['firewall'][0]['to_ip'])->toBe('10.44.0.7');

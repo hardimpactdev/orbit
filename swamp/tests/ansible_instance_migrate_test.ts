@@ -1359,6 +1359,26 @@ for (const phase of ["quiesce", "workspace", "files", "processes", "seed"]) {
 }
 
 
+Deno.test("the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step", () => {
+  const tasks = parse(Deno.readTextFileSync(new URL("tasks/instance-migrate-phase.yml", root))) as Task[];
+  const names = [
+    "Check checkout links before downtime",
+    "Check copied service endpoints before downtime",
+    "Record that the container preflight passed",
+    "Prepare the move's container",
+    "Check the way to each database server",
+    "Record that quiesce began",
+    "Stop the old Process units before copying",
+    "Remove the awake marker",
+  ];
+  const positions = names.map((name) => tasks.findIndex((task) => task.name === name));
+  assert(positions.every((position) => position >= 0), "all preflight and downtime steps must remain present");
+  assertEquals(positions, [...positions].sort((left, right) => left - right));
+  const guard = tasks[positions[1]];
+  assertEquals(guard.when, "phase in ['container', 'quiesce']");
+  assertEquals((guard["ansible.builtin.include_tasks"] as Task).file, "instance-migrate-env-check.yml");
+});
+
 Deno.test({
   name: "an unsafe copied app service refuses before downtime and restore changes nothing",
   ignore: !hasAnsible,
@@ -1377,9 +1397,11 @@ Deno.test({
       f.migrate.processes.push({ name: "writer.service", path: sourceUnit, environment_directory: `${f.folder}/source-env`, desired: "running" });
       Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify({ "writer.service": { state: "running", enabled: true } }));
       const before = Deno.readTextFileSync(`${f.folder}/host-processes.json`);
+      f.migrate.databases = [{ host: "127.0.0.1", port: 1 }];
       f.write();
+      const stateBefore = f.state();
 
-      const refused = f.run("quiesce");
+      const refused = f.run("container");
 
       assert(!refused.ok, refused.output);
       assertEquals(f.result().error_code, "instance.migrate_env_service_unreachable");
@@ -1391,17 +1413,26 @@ Deno.test({
       assert(!output.includes("private-mail-password"));
       assert(exists(f.migrate.awake.path));
       assertEquals(Deno.readTextFileSync(`${f.folder}/host-processes.json`), before);
-      assertEquals(f.state(), {});
+      assertEquals(f.state(), stateBefore);
+      assert(!exists(`${f.folder}/calls`), "an environment refusal must precede every container command and reach probe");
+      assert(!exists(`${f.folder}/run/quiesced`));
       const restore = f.run("restore");
       assert(restore.ok, restore.output);
       assert(exists(f.migrate.awake.path));
       assertEquals(Deno.readTextFileSync(`${f.folder}/host-processes.json`), before);
-      assertEquals(f.state(), {});
+      assertEquals(f.state(), stateBefore);
+      assert(!exists(`${f.folder}/calls`), "an environment refusal must precede every container command and reach probe");
+      assert(!exists(`${f.folder}/run/quiesced`));
 
       f.migrate.environment.targets.push({ host: "127.0.0.1", port: 3308 }, { host: "10.6.0.7", port: 1025 });
+      f.migrate.databases = [];
       f.write();
-      const allowed = f.run("quiesce");
+      const allowed = f.run("container");
       assert(allowed.ok, allowed.output);
+      assert(exists(f.migrate.awake.path));
+      assert(!exists(`${f.folder}/run/quiesced`));
+      const quiesce = f.run("quiesce");
+      assert(quiesce.ok, quiesce.output);
       assert(!exists(f.migrate.awake.path));
     } finally {
       f.cleanup();
@@ -1422,9 +1453,11 @@ Deno.test({
       f.migrate.processes.push({ name: "writer.service", path: sourceUnit, environment_directory: `${f.folder}/source-env`, desired: "running" });
       Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify({ "writer.service": { state: "running", enabled: true } }));
       const before = Deno.readTextFileSync(`${f.folder}/host-processes.json`);
+      f.migrate.databases = [{ host: "127.0.0.1", port: 1 }];
       f.write();
+      const stateBefore = f.state();
 
-      const refused = f.run("quiesce");
+      const refused = f.run("container");
 
       assert(!refused.ok, refused.output);
       assertEquals(f.result().error_code, "instance.migrate_env_service_unreachable");
@@ -1432,12 +1465,16 @@ Deno.test({
       assert(f.result().error_message.includes(".env: cannot read .env safely."));
       assert(exists(f.migrate.awake.path));
       assertEquals(Deno.readTextFileSync(`${f.folder}/host-processes.json`), before);
-      assertEquals(f.state(), {});
+      assertEquals(f.state(), stateBefore);
+      assert(!exists(`${f.folder}/calls`), "an environment refusal must precede every container command and reach probe");
+      assert(!exists(`${f.folder}/run/quiesced`));
       const restore = f.run("restore");
       assert(restore.ok, restore.output);
       assert(exists(f.migrate.awake.path));
       assertEquals(Deno.readTextFileSync(`${f.folder}/host-processes.json`), before);
-      assertEquals(f.state(), {});
+      assertEquals(f.state(), stateBefore);
+      assert(!exists(`${f.folder}/calls`), "an environment refusal must precede every container command and reach probe");
+      assert(!exists(`${f.folder}/run/quiesced`));
     } finally {
       f.cleanup();
     }

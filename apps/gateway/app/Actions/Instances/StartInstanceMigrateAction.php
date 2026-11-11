@@ -35,6 +35,7 @@ use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use LogicException;
 
 /**
  * Admits the move of one checkout Instance into a container on its Node (docs/cli/instance/migrate.mmd) and records its whole
@@ -92,9 +93,16 @@ final readonly class StartInstanceMigrateAction
             // The Node's mirror fetches the branch from the checkout itself: commits that were never pushed come along, and it needs no token.
             $container = [...$this->containers->intent($instance, $runtime, $databases['servers'][0] ?? null, $branch, $route === null ? null : 'https://'.$route->domain),
                 'repository' => $instance->checkout_path, 'protocols' => ['file'], 'steps' => []];
-            /** @var list<array{host: string, port: int, docker: bool}> $endpoints */
             $endpoints = $container['bridge_endpoints'];
-            $reach = array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port']], $endpoints);
+            if (! is_array($endpoints)) {
+                throw new LogicException('The container access plan must expose its endpoints.');
+            }
+            $environmentTargets = array_map(static function (mixed $value): array {
+                $target = ValidatedData::object($value);
+
+                return ['host' => ValidatedData::string($target['host']), 'port' => ValidatedData::integer($target['port'])];
+            }, array_values($endpoints));
+            $reach = array_map($this->endpoint(...), $databases['servers']);
             $publication = $route === null || $before === null ? null : $this->routes->capture($instance, $route, $runtime, $before);
 
             $operation = $this->operations->execute(InstanceMigration::Kind, 'instance', $instance->id, $node->id, [
@@ -108,7 +116,7 @@ final readonly class StartInstanceMigrateAction
                     'application' => ApplicationDirectory::resolve($instance->checkout_path, $instance->root ?? $instance->project->root),
                     'awake' => ['directory' => RuntimeHibernation::MarkerDirectory, 'path' => RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id))],
                     'environment' => [
-                        'targets' => $reach,
+                        'targets' => $environmentTargets,
                         'node_addresses' => array_values(array_filter([$node->wireguard_ip, $node->lan_ip, $node->public_ssh_host])),
                         'proxy_policy' => ['private_v4' => InstanceEgress::PrivateV4, 'private_domains' => app(PeerDnsPolicy::class)->domains()],
                     ],
@@ -219,6 +227,12 @@ final readonly class StartInstanceMigrateAction
         }
 
         return ['servers' => array_values($servers), 'sqlite' => array_values(array_unique($sqlite))];
+    }
+
+    /** @return array{host: string, port: int} */
+    private function endpoint(DatabaseConnection $connection): array
+    {
+        return ['host' => ValidatedData::string($connection->host), 'port' => ValidatedData::integer($connection->port)];
     }
 
     /**
