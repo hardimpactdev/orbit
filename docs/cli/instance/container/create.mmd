@@ -66,7 +66,7 @@ sequenceDiagram
     %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type
     %%> - writes `/etc/orbit/instance`, owned by root and readable by all
     %%> What it does:
-    %%> - rewrites FrankenPHP's unit for the clone's own bridge address and restarts it as `orbit`
+    %%> - writes the shared FrankenPHP Caddyfile and unit, then restarts it as `orbit`; only the Node's bridge peer with `X-Forwarded-Proto: https` sets PHP's HTTPS scheme, port and resolved client IP
     SW->>C: Start T3<br/>native clone-t3
     %%> What it does:
     %%> - T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`
