@@ -38,7 +38,7 @@ sequenceDiagram
   %%> - the checkout stays the Instance's runtime until the Route has moved; the Route's Node is held for the run
   %%> - the Instance takes no deployment and no wake while the run lasts
   %%> - a non-default Instance's placeholder model key goes to the vault
-  %%> - the whole-run budget sums the declared workflow step timeouts, including Route children, restore and cleanup, plus admission and settlement margin
+  %%> - the whole-run budget is an explicit 5,100 seconds; a lower-bound test guards the declared step timeouts, including Route children, restore and cleanup
   GW->>SW: Start run, full intent<br/>operation-instance-migrate
   GW-->>CLI: 202 Accepted<br/>task ID
   alt restore only

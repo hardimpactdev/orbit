@@ -129,7 +129,7 @@ An unbound admission with attempts `0` has a separate 600-second budget, matchin
 
 The [reconciler](/reference/swamp-command-steps#reconciler) records an expired budget as `failed` with `error_code: operation.timed_out` and requests cancellation. This is provisional until Orbit reads the exact native terminal. The final receipt projects the native result and step history, including restoration, even when the deadline passed or cancellation was confirmed. The native phase error replaces `operation.timed_out`; a run with no readable end keeps the timeout. Target holds remain until that terminal is projected or the stale-hold limit expires.
 
-`instance.migrate` derives its whole-run budget from the shipped workflow declarations, including restore and cleanup, with a fixed margin for admission and settlement. A declared timeout increase increases the budget. Other kinds retain their existing fixed, captured or learned budgets.
+`instance.migrate` has a provisional explicit budget of 5,100 seconds. The 3,900-second basis used by `node.converge` is below the migrate path’s explicitly declared timeouts: 4,240 seconds, rounded up to 4,500, plus 600 seconds for admission and settlement. A test guards this lower bound, including Route children, restore and cleanup. It does not bound undeclared metadata steps or dynamic repetitions. The pinned Swamp has no workflow execution timeout; the native finish settles the Operation even after its Gateway deadline.
 
 The terminal step receipt comes from native history, including nested runs, even when no streamed progress events arrived. This also replaces provisional step states recorded at a deadline.
 
