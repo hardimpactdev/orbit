@@ -175,7 +175,8 @@ final readonly class InstanceContainer
         $application = self::application($instance);
         $gateway = Ipv4Subnet::from(ValidatedData::string($instance->node->instance_bridge))->usableRange()[0];
         $environment = InstanceImage::environment($gateway);
-        $access = $this->databaseAccesses($instance, $runtime, $database);
+        $mail = app(DevelopmentMail::class)->forInstance($instance);
+        $access = $this->targetAccesses($instance, $runtime, $database, $mail);
         $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url);
         $vitePort = app(ContainerProcesses::class)->vitePort($instance);
 
@@ -192,7 +193,9 @@ final readonly class InstanceContainer
             // FrankenPHP, a clone's T3 clients reach T3, and the container reach each attached target.
             'acl_rules' => ['description' => 'Orbit Instance '.$instance->id,
                 'egress' => array_map(static fn (array $target): array => ['action' => 'allow', 'destination' => $target['host'].'/32', 'protocol' => 'tcp',
-                    'destination_port' => (string) $target['port'], 'state' => 'enabled'], $access),
+                    'destination_port' => (string) $target['port'], 'state' => 'enabled',
+                    ...($mail !== null && $target['host'] === $mail['host'] && $target['port'] === $mail['port']
+                        ? ['description' => 'Orbit development SMTP'] : [])], $access),
                 'ingress' => [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
                     'destination_port' => (string) self::WebPort, 'state' => 'enabled'],
                     ...($vitePort === null ? [] : [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
@@ -211,6 +214,8 @@ final readonly class InstanceContainer
             // the egress proxy (docs/reference/development-containers.md#egress-and-dns).
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.self::path($project),
                 ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment)],
+            'mail' => $mail,
+            'mail_units' => $mail === null ? [] : app(DevelopmentMail::class)->units($mail),
             'units' => $this->units($instance, $runtime, $application, $vitePort),
             'web_config' => $this->webConfig($instance, $runtime),
             // `php` on every PATH in the container is the Project's static build, so `composer` runs for `agent` and `orbit` alike.
@@ -308,6 +313,20 @@ final readonly class InstanceContainer
         ];
     }
 
+    /** Attached targets and the Node's development SMTP publication share one endpoint policy.
+     * @param  array{host:string,port:int,docker:bool}|null  $mail
+     * @return list<array{host:string,port:int,docker:bool,rule?:array<string,string>}>
+     */
+    private function targetAccesses(Instance $instance, InstanceRuntime $runtime, ?DatabaseConnection $primary, ?array $mail): array
+    {
+        $targets = $this->databaseAccesses($instance, $runtime, $primary);
+        if ($mail !== null && ! in_array($mail, array_map(static fn (array $target): array => array_intersect_key($target, $mail), $targets), true)) {
+            $targets[] = $mail;
+        }
+
+        return $targets;
+    }
+
     /**
      * All attached server targets, regardless of driver or prefix. The primary create database may not have its target yet.
      * SQLite stays in the workspace. A repeated attachment of the same endpoint needs only one network path.
@@ -341,7 +360,7 @@ final readonly class InstanceContainer
     {
         $endpoints = [];
         foreach (InstanceRuntime::query()->where('node_id', $node->id)->with('instance')->orderBy('id')->get() as $runtime) {
-            foreach ($this->databaseAccesses($runtime->instance, $runtime, null) as $access) {
+            foreach ($this->targetAccesses($runtime->instance, $runtime, null, app(DevelopmentMail::class)->forInstance($runtime->instance)) as $access) {
                 $endpoints[$access['host'].':'.$access['port']] = ['host' => $access['host'], 'port' => $access['port'], 'docker' => $access['docker']];
             }
         }

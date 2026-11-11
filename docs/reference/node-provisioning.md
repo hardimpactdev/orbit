@@ -976,3 +976,5 @@ Proof preparation installs the tested checkout's frozen observer pin on every ne
 The `ai-router-model-forwarder.yml` playbook, including its numeric packet-counter checks, is documented in [AI router](/reference/ai-router#container-model-forwarder).
 
 The container playbook preserves agent settings outside Orbit's managed JSON keys and Git workspace trust, and applies the [per-Instance limits](/reference/development-containers#inside-a-container). It writes the shared [container PHP settings](/reference/php-runtime#container-php): the memory limit and PHP Data Bridge.
+
+Development container [mail setup](/reference/development-containers#development-mail) runs in the Instance lifecycle. It installs the bridge helper and admits the SMTP endpoint additively; a Gateway release does not need a Node converge before those Instance Operations can apply mail. The shared NIC allowance remains limited to its existing proxies.

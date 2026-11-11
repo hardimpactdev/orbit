@@ -705,7 +705,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_destroy_test.ts": {
-    "source_sha256": "7da6c81025d6a5728b0b1a86472f7bb85184f728d074f7355b7d887210ce045f",
+    "source_sha256": "d74b5054cae1fcaac7483f6bc5ebda3eab279caecf1fb98f545609f80338a7ac",
     "cases": [
       "migrated container cleanup keeps retained Git while removing its container, volume, ACL, rules and mirror; a retry changes nothing"
     ]
@@ -1344,7 +1344,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "5cb5b29a109909bd1b488ece49777f737be3790729fe32e7b3b6393230bee92f",
+    "source_sha256": "d1469ab0a4a711a101474e11ee034214c659d7ec19a620c1e2c99a455a50f161",
     "cases": [
       "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
       "test_clone_uses_the_admitted_common_acl_name",
@@ -1849,6 +1849,15 @@
       "destroy refuses present unit files and boot links before and after reset",
       "destroy resets only the admitted unit and rereads after the reset settles",
       "Docker removal keeps its native absence check and never resets systemd"
+    ]
+  },
+  "swamp/tests/ansible_instance_mail_test.py": {
+    "source_sha256": "501cc9d034c0354463ff230fcc5bac02e935496a8a16dad267edcd22570dd89b",
+    "cases": [
+      "test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes",
+      "test_failed_unit_write_keeps_network_path_and_a_retry_completes_it",
+      "test_foreign_listener_or_unit_skips_both_ports_without_mutation",
+      "test_stopped_missing_binary_or_path_failure_never_changes_guest"
     ]
   }
 }

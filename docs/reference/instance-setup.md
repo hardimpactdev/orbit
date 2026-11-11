@@ -328,3 +328,5 @@ Create-time setup runs as the managed user, before an agent uses the Instance. A
 ### Gateway-owned baseline delivery
 
 CI artifacts are repository data. The Gateway already owns the GitHub App, so it downloads and validates the files before Node delivery. Personal tokens on disposable machines were rejected because they duplicate credentials and complicate revocation. A fixed setup identifier keeps the existing ordered step contract and prevents Projects from selecting arbitrary artifact URLs or granting a Node App access. Both instance setup and task baseline setup interpret it before any shell execution.
+
+On a container Node with the main Mailpit, create and development clone apply the [mail phase](/reference/development-containers#development-mail) before preparing the workspace. It admits the SMTP path and enables two loopback listeners, without a Node converge.

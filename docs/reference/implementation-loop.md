@@ -100,6 +100,8 @@ The checks table also defines CLI Pest inputs. Required checks requires the job 
 
 The Swamp gate production-lints the observer preparation play. Its fixture tests install the candidate pin on all three nested Nodes and reject checksum and download failures. Gateway tests require new presence versions and host facts after a controlled restart. Runner tests require preparation before every batch and direct case, including old workflow calls without setup, and give preparation and batch setup separate bounded budgets.
 
+The mail phase fixture exercises two IPv4 socket proxies, exact own-ACL admission, additive Docker DNAT persistence and refresh, foreign-resource skips, unchanged repeats, and retry after a failed unit write. It preserves a workspace canary and permits no guest PHP or application Process restart.
+
 The gate also runs the real Ansible readiness tasks against sockets, checking that the Instance proxy and model forwarder observe their exact listeners without opening host TCP connections. Private dpkg databases prove that installed Incus packages stay untouched with or without a hold, while removed packages are installed.
 
 The Swamp gate rejects a new behavior name that carries a run id. A task workflow names its local and data steps by the address of the task VM, as [Behavior names](/reference/tasks#behavior-names) says.

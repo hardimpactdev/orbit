@@ -270,3 +270,19 @@ Deno.test("readiness records only timestamps from the T3 checks and the Route TL
     assertEquals(JSON.stringify(result).includes("never copy"), false);
     assertEquals(JSON.parse(createResult(intent, { ...phases, t3_observation: "broken" }).stdout).readiness.t3_answers_at, null);
 });
+
+Deno.test("container mail skips retain their reason and a failed or missing phase cannot report a ready create", () => {
+    const container = {launch: "succeeded", workspace: phases.checkout, deploy: [], processes: "succeeded", seed: "succeeded"};
+    const admitted = {...intent, setup_steps: [], route: null, container: {mail: {host: "10.253.0.1", port: 1025}}};
+    for (const marker of ["applied", "unchanged", "skipped:mail_port_in_use", "skipped:mail_unit_conflict"]) {
+        const result = JSON.parse(createResult(admitted, {...phases, container: {...container,
+            mail: {status: "succeeded", outputs: {stdout: 'TASK [Report the public mail outcome]\nok: [node] => {"msg": "orbit-mail=' + marker + '"}'}}}}).stdout);
+        assertEquals(result.ready, true);
+        assertEquals(result.mail, {status: marker.split(":")[0], ...(marker.includes(":") ? {reason: marker.split(":")[1]} : {}), ports: [1025, 2525]});
+    }
+    for (const mail of [null, {status: "failed"}, {status: "succeeded", outputs: {stdout: "missing outcome"}}]) {
+        const result = JSON.parse(createResult(admitted, {...phases, container: {...container, mail}}).stdout);
+        assertEquals(result.ready, false);
+        assertEquals(result.failed_step, "mail");
+    }
+});

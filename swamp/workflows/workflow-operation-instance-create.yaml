@@ -1,6 +1,6 @@
 id: c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a
 name: operation-instance-create
-description: 'Development Instance create: checkout/default Ansible phases, or five direct clone phases in an isolated job. Route, certificate and DNS publish in a separate job; native progress records each phase.'
+description: 'Development Instance create: checkout/default Ansible phases, or direct clone phases and one reusable mail phase in an isolated job. Route, certificate and DNS publish in a separate job; native progress records each phase.'
 vaults: [orbit-control-inputs]
 queueTimeout: 10
 labels: {role: swamp}
@@ -91,10 +91,30 @@ jobs:
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ORBIT_GIT_CREDENTIAL: '${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.execution_secrets.git_credential.key) }}'
-      - name: workspace
+      - name: mail
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: container, condition: {type: succeeded}}]
+        guard: '${{ (inputs.intent.already_active || inputs.intent.container == null) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "ic-mail-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags mail "$ORBIT_ANSIBLE/instance-container.yml"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
+              ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+      - name: workspace
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: mail, condition: {type: succeeded}}]
         guard: '${{ (inputs.intent.already_active || inputs.intent.container == null) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
@@ -497,10 +517,30 @@ jobs:
             argv: '${{ ["timeout", "600"] + (inputs.intent.server_database == null || inputs.intent.server_database.fill == null ? [] : inputs.intent.server_database.fill) }}'
             stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.server_database == null ? inputs.execution_secrets.environment.key : inputs.execution_secrets.server_database_create.key) }}'
             timeoutSec: 610
+      - name: clone-mail
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: clone-container, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "ic-clone-mail-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags mail "$ORBIT_ANSIBLE/instance-container.yml"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
+              ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
       - name: clone-workspace
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: clone-container, condition: {type: succeeded}}, {step: clone-database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
+        dependsOn: [{step: clone-mail, condition: {type: succeeded}}, {step: clone-database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
         guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
@@ -700,7 +740,7 @@ jobs:
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
             route: '${{ (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-route" in steps ? steps["clone-route"].status : "skipped") : ("route" in steps ? steps.route.status : "skipped")) }}'
             certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ((inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route-csr-" : "route-csr-") + string(i)) in steps ? steps[(inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route-csr-" : "route-csr-") + string(i)].status : "skipped") }}'
-            container: '${{ inputs.intent.container == null ? dyn(null) : {"launch": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-container" in steps ? steps["clone-container"].status : "skipped") : ("container" in steps ? steps.container.status : "skipped")), "workspace": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-workspace" in steps ? steps["clone-workspace"] : null) : ("workspace" in steps ? steps.workspace : null)), "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-workspace" in steps ? steps["clone-workspace"].status : "skipped") : ("container-processes" in steps ? steps["container-processes"].status : "skipped")), "seed": "seed" in steps ? steps.seed.status : "skipped", "agent": "clone-agent" in steps ? steps["clone-agent"].status : "skipped", "t3": "clone-t3" in steps ? steps["clone-t3"].status
+            container: '${{ inputs.intent.container == null ? dyn(null) : {"mail": (inputs.intent.container.clone != null ? ("clone-mail" in steps ? steps["clone-mail"] : null) : ("mail" in steps ? steps.mail : null)), "launch": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-container" in steps ? steps["clone-container"].status : "skipped") : ("container" in steps ? steps.container.status : "skipped")), "workspace": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-workspace" in steps ? steps["clone-workspace"] : null) : ("workspace" in steps ? steps.workspace : null)), "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-workspace" in steps ? steps["clone-workspace"].status : "skipped") : ("container-processes" in steps ? steps["container-processes"].status : "skipped")), "seed": "seed" in steps ? steps.seed.status : "skipped", "agent": "clone-agent" in steps ? steps["clone-agent"].status : "skipped", "t3": "clone-t3" in steps ? steps["clone-t3"].status
               : "skipped", "register": "clone-sessions" in steps && steps["clone-sessions"].status == "failed" ? "failed" : ("clone-session-copy" in steps && steps["clone-session-copy"].status == "failed" ? "failed" : ("clone-register" in steps ? steps["clone-register"].status : "skipped")), "server": "clone-register" in steps && steps["clone-register"].status == "succeeded" ? steps["clone-register"].outputs.stdout : null} }}'
             t3_observation: '${{ "clone-t3" in steps && steps["clone-t3"].status == "succeeded" ? steps["clone-t3"].outputs.stdout : "" }}'
             sessions_observation: '${{ "clone-sessions" in steps && steps["clone-sessions"].status == "succeeded" ? steps["clone-sessions"].outputs.stdout : "" }}'

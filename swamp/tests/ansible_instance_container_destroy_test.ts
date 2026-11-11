@@ -73,6 +73,10 @@ Deno.test({
                 `${folder}/ufw`,
                 "[ 1] 3800 ALLOW IN # orbit:instance-7-t3\n[ 2] 3801 ALLOW IN # orbit:instance-8-t3\n",
             );
+            const smtp = {action: "allow", destination: "10.253.0.1/32", protocol: "tcp", destination_port: "1025", state: "enabled"};
+            const sharedMail = JSON.stringify({host: "10.253.0.1", port: 1025, docker: true, translated: {host: "172.17.0.2", port: 1025}});
+            Deno.mkdirSync(`${folder}/bridge/endpoints`, {recursive: true});
+            Deno.writeTextFileSync(`${folder}/bridge/endpoints/mailpit.json`, sharedMail);
             Deno.writeTextFileSync(
                 `${folder}/state.json`,
                 JSON.stringify({
@@ -84,8 +88,8 @@ Deno.test({
                         },
                         "instance-8": { status: "Running" },
                     },
-                    "network-acls": [{name: "orbitinst0-egress", egress: [{action: "allow", source: "10.253.0.0/24", destination: "10.44.0.7/32", protocol: "tcp", destination_port: "3306", state: "enabled"}]}, { name: "instance-7" }, {
-                        name: "instance-8",
+                    "network-acls": [{name: "orbitinst0-egress", egress: [{action: "allow", source: "10.253.0.0/24", destination: "10.44.0.7/32", protocol: "tcp", destination_port: "3306", state: "enabled"}, {action: "allow", source: "10.253.0.0/24", destination: "172.17.0.2/32", protocol: "tcp", destination_port: "1025", state: "enabled"}]}, { name: "instance-7", egress: [smtp] }, {
+                        name: "instance-8", egress: [smtp],
                     }],
                 }),
             );
@@ -148,7 +152,10 @@ Deno.test({
                 Deno.readTextFileSync(`${folder}/state.json`),
             );
             assertEquals(Object.keys(state.containers), ["instance-8"]);
-            assertEquals(state["network-acls"].filter((acl: {name: string}) => acl.name !== "orbitinst0-egress"), [{ name: "instance-8" }]);
+            assertEquals(state["network-acls"].filter((acl: {name: string}) => acl.name !== "orbitinst0-egress"), [{ name: "instance-8", egress: [smtp] }]);
+            assert(!state["network-acls"].some((acl: {name: string}) => acl.name === "instance-7"));
+            assertEquals(state["network-acls"].find((acl: {name: string}) => acl.name === "orbitinst0-egress").egress[1].destination, "172.17.0.2/32");
+            assertEquals(Deno.readTextFileSync(`${folder}/bridge/endpoints/mailpit.json`), sharedMail);
             // A concurrent destroy never withdraws another Instance's bridge endpoint. Host reconcile owns removal.
             assertEquals(state["network-acls"].find((acl: {name: string}) => acl.name === "orbitinst0-egress").egress[0].destination, "10.44.0.7/32");
             assertEquals(

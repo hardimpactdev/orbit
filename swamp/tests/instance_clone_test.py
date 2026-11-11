@@ -56,6 +56,8 @@ class CloneTest(unittest.TestCase):
                 if argv[:2] == ["incus", "query"]:
                     if "snapshots?" in argv[2]:
                         output = json.dumps([{"name": "seed"}])
+                    elif "sockets.target.wants" in argv[2]:
+                        output = json.dumps(["orbit-mail-1025.socket", "orbit-mail-2525.socket", "project.socket"])
                     elif "network-acls?" in argv[2] or "files?" in argv[2]:
                         output = "[]"
                     else:
@@ -111,6 +113,11 @@ class CloneTest(unittest.TestCase):
         self.assertEqual(nic["security.acls.default.ingress.action"], "reject")
         start = ["incus", "--project", "orbit-instances", "start", "instance-7"]
         self.assertIn(start, calls)
+        deleted = next(call for call in calls if 'delete' in call and '--force' in call)
+        self.assertIn('instance-7/etc/systemd/system/sockets.target.wants/orbit-mail-1025.socket', deleted)
+        self.assertIn('instance-7/etc/systemd/system/sockets.target.wants/orbit-mail-2525.socket', deleted)
+        self.assertNotIn('instance-7/etc/systemd/system/sockets.target.wants/project.socket', deleted)
+        self.assertLess(calls.index(deleted), calls.index(start))
         check = next(i for i, call in enumerate(calls) if call[:2] == ["python3", "-c"])
         self.assertLess(check, calls.index(start))
 
