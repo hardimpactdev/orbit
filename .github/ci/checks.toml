@@ -2305,12 +2305,12 @@ inputs = [
   "swamp/**/*.mdx",
   "swamp/**/*.mmd",
   "bin/docs-*",
-  "bin/check-flows*",
+  "bin/check-*",
   "swamp/workflows/**",
   ".github/workflows/docs-site.yml",
   "!bin/docs-openapi",
 ]
-cost = 40
+cost = 70 # Hosted estimate: previous 40s plus about 28s of local test/setup work.
 ceiling = 120
 
 [check.api-reference]

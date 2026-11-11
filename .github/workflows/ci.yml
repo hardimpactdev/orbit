@@ -347,12 +347,26 @@ jobs:
       - uses: ./.github/actions/php
         with:
           coverage: none
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
       - name: Install Docs dependencies
-        run: composer install --working-dir=apps/docs --no-interaction --prefer-dist --no-dev
+        run: composer install --working-dir=apps/docs --no-interaction --prefer-dist
+      - name: Prepare generated contracts for Docs tests
+        run: |
+          composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-dev --no-scripts
+          bun install --cwd apps/web --frozen-lockfile --filter @orbit/api-types
+          bin/build-api
+          bun run --cwd apps/web types
       - name: Build and check the documentation index
         run: |
           composer docs-build
           composer docs-lint
+      - name: Run the complete Docs Pest suite
+        working-directory: apps/docs
+        env:
+          ORBIT_CHECK_PROCESSES: '2'
+        run: composer test -- --fail-on-empty-test-suite
       - name: Check flow charts
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}

@@ -24,6 +24,17 @@ function docsMergeCommit(string $root, string $message): void
 
 function docsMergeIndex(string $root): void
 {
+    // Keep each fixture's generated navigation aligned with its current pages.
+    $pages = collect(new Filesystem()->allFiles($root.'/docs'))
+        ->filter(fn (SplFileInfo $file): bool => in_array($file->getExtension(), ['md', 'mdx'], true))
+        ->map(fn (SplFileInfo $file): string => preg_replace('/\.(md|mdx)$/', '', substr($file->getPathname(), strlen($root.'/docs/'))))
+        ->reject(fn (string $page): bool => $page === 'README')
+        ->values()->all();
+    file_put_contents($root.'/docs/navigation/fixture.json', json_encode(['navigation' => [
+        ['tab' => 'Guides', 'group' => 'Fixture', 'order' => 1, 'pages' => $pages],
+    ]], JSON_THROW_ON_ERROR));
+    new Process(['python3', base_path('../../bin/docs-navigation'), '--root', $root])->mustRun();
+
     $previous = [
         'librarian.path' => config('librarian.path'),
         'orbit-docs.index_path' => config('orbit-docs.index_path'),
@@ -68,7 +79,7 @@ function withDocsMergeFixture(Closure $test): void
         mkdir($root.'/docs/navigation');
         file_put_contents($root.'/.gitignore', "/docs/docs.json\n/docs/generated/context.json\n");
         file_put_contents($root.'/docs/decisions/overview.mdx', "# Decisions\n\n## Records\n\nOrbit records decisions.\n\n## Retired decisions\n\n| Record | Decision | Now in |\n| --- | --- | --- |\n");
-        file_put_contents($root.'/docs/site.json', '{"navigation":{"tabs":[]},"redirects":[]}');
+        file_put_contents($root.'/docs/site.json', '{"navigation":{"tabs":[{"tab":"Guides","groups":[]}]},"redirects":[]}');
         file_put_contents($root.'/apps/docs/config/adr-legacy-allowlist.php', '<?php return [];');
         file_put_contents($root.'/apps/docs/config/adr-retired-slugs.php', '<?php return [];');
         docsMergeGit($root, ['init', '-q', '-b', 'main']);
@@ -84,7 +95,7 @@ function withDocsMergeFixture(Closure $test): void
         // The base adds retirement metadata after the PR has forked.
         file_put_contents($root.'/docs/decisions/overview.mdx', file_get_contents($root.'/docs/decisions/overview.mdx')."| 0197 | Check documentation | [Guide](/README) |\n");
         file_put_contents($root.'/apps/docs/config/adr-retired-slugs.php', "<?php return ['0197' => ['0197-check-documentation']];");
-        file_put_contents($root.'/docs/site.json', '{"navigation":{"tabs":[]},"redirects":[{"source":"/decisions/0197-check-documentation","destination":"/README"}]}');
+        file_put_contents($root.'/docs/site.json', '{"navigation":{"tabs":[{"tab":"Guides","groups":[]}]},"redirects":[{"source":"/decisions/0197-check-documentation","destination":"/README"}]}');
         docsMergeIndex($root);
         docsMergeCommit($root, 'retire 0197 on base');
         docsMergeGit($root, ['checkout', '-q', 'pr']);

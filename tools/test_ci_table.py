@@ -36,6 +36,11 @@ class CheckTableTest(unittest.TestCase):
             self.assertLessEqual(set(root['default']), set(checks))
             self.assertLess(len(root['default']), len(plan.JOBS))
 
+    def test_docs_contract_selection_accounts_for_tests_without_raising_the_ceiling(self):
+        docs = self.table['check']['docs']
+        self.assertTrue({'apps/docs/**', 'docs/**', 'bin/check-*'} <= set(docs['inputs']))
+        self.assertEqual((70, 120), (docs['cost'], docs['ceiling']))
+
     def test_every_input_that_names_one_file_names_a_tracked_file(self):
         inputs = [self.table['all-checks'], self.table['ignored'],
                   *self.table['check'].values(), *self.table['roots'].values()]

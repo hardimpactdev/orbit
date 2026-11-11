@@ -22,7 +22,7 @@ it('lints documentation without imposing Librarian core page templates', functio
         file_put_contents($root.'/docs/decisions/overview.mdx', "# Decisions\n\n## Records\n\n| Record | Decision | Status |\n| --- | --- | --- |\n\n## Retired decisions\n\n| Record | Decision | Now in |\n| --- | --- | --- |\n");
         file_put_contents($root.'/docs/docs.json', json_encode(['navigation' => ['tabs' => [
             ['tab' => 'Guides', 'groups' => [
-                ['group' => 'Overview', 'pages' => ['mission', 'architecture', 'tech-stack', 'concepts']],
+                ['group' => 'Overview', 'pages' => ['mission', 'architecture', 'tech-stack', 'concepts', 'decisions/overview']],
             ]],
         ]], 'redirects' => []], JSON_THROW_ON_ERROR));
         foreach (['adr-legacy-allowlist', 'adr-retired-slugs', 'docs-covers-ratchet'] as $config) {
