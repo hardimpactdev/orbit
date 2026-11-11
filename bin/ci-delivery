@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""Shared fast gate, exact main CI delivery evidence, and independent fixture reports."""
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+
+
+def validate(needs):
+    selected = json.loads(needs['changes']['outputs']['jobs'])
+    selected['proof-run'] = os.environ['PROOF_REQUIRED'] == 'true'
+    selected['gateway-release'] = needs['changes']['outputs']['gateway_release'] == 'true'
+    expected = (set(needs) - {'changes'}) | {'proof-run'}
+    if set(selected) != expected or any(type(value) is not bool for value in selected.values()):
+        sys.exit('Incomplete build selections')
+    slow_blocking = os.environ['SLOW_CHECKS_BLOCKING'] == 'true'
+    proof_blocking = slow_blocking and os.environ['PROOF_BLOCKING'] == 'true'
+    pending = {}
+    if proof_blocking and selected['proof-run'] and os.environ['FORK_PROOF'] != 'true':
+        pending['CI proof'] = 'proof-run'
+    needs['proof-run'] = {'result': 'skipped'}
+    # Bound the API wait by the existing longest explicit job budget (CI proof: 195 minutes).
+    deadline = time.monotonic() + 195 * 60
+    while pending:
+        pages = json.loads(subprocess.check_output([
+            'timeout', '60', 'gh', 'api', '--paginate', '--slurp',
+            f"repos/{os.environ['GH_REPO']}/actions/runs/{os.environ['CI_RUN_ID']}/jobs?filter=all&per_page=100",
+        ], timeout=65))
+        # A rerun of this gate alone must retain successful jobs from earlier attempts.
+        latest = {}
+        for job in (job for page in pages for job in page['jobs']):
+            name = job['name']
+            previous = latest.get(name)
+            if previous is None or (job['run_attempt'], job['id']) > (previous['run_attempt'], previous['id']):
+                latest[name] = job
+        for name, job in latest.items():
+            if name not in pending or job['status'] != 'completed':
+                continue
+            component = pending.pop(name)
+            result = job['conclusion']
+            if result != 'success' and not (not selected[component] and result == 'skipped'):
+                sys.exit(f'Required job failed: {name}: {result}')
+            needs[component]['result'] = 'success'
+        if pending:
+            if time.monotonic() >= deadline:
+                sys.exit(f'Timed out waiting for required jobs: {list(pending)}')
+            print(f'Waiting for required jobs: {list(pending)}', flush=True)
+            time.sleep(15)
+    if proof_blocking and selected['proof-run'] and os.environ['FORK_PROOF'] == 'true':
+        pages = json.loads(subprocess.check_output([
+            'timeout', '60', 'gh', 'api', '--paginate', '--slurp',
+            f"repos/{os.environ['GH_REPO']}/commits/{os.environ['PROOF_SHA']}/statuses?per_page=100",
+        ], timeout=65))
+        status = next((status for page in pages for status in page
+                       if status['context'] == 'Orbit outside proof'
+                       and status.get('creator', {}).get('login') == 'github-actions[bot]'
+                       and (status.get('target_url') or '').startswith(os.environ['PROOF_RUN_URL_PREFIX'])), None)
+        if status is None or status['state'] != 'success':
+            sys.exit('The outside proof has not passed on this head. Approve and run it, then rerun Required checks.')
+        needs['proof-run']['result'] = 'success'
+    if not proof_blocking:
+        selected['proof-run'] = False
+        needs['proof-run']['result'] = 'skipped'
+    failed = {job: needs[job]['result'] for job, touched in selected.items()
+              if needs[job]['result'] != 'success' and not (not touched and needs[job]['result'] == 'skipped')}
+    if failed:
+        sys.exit(f'Builds or static checks failed: {failed}')
+
+
+WORKFLOW = '.github/workflows/ci.yml'
+DELIVERY = 'Main delivery checks'
+REPORT = 'Main fixture report'
+
+
+class GitHub:
+    """Bound all report or verification API work together, including pagination."""
+    def __init__(self, repository):
+        self.repository = repository
+        self.deadline = time.monotonic() + 90
+
+    def request(self, path, data=None):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError('CI evidence API budget exceeded')
+        argv = ['gh', 'api', '--paginate', '--slurp', f'repos/{self.repository}/{path}']
+        if data is not None:
+            argv += ['--method', 'PATCH' if '/comments/' in path else 'POST', '--input', '-']
+        return json.loads(subprocess.check_output(
+            argv, input=json.dumps(data).encode() if data is not None else None,
+            timeout=min(20, remaining)))
+
+    def one(self, path):
+        pages = self.request(path)
+        if len(pages) != 1:
+            raise ValueError('Expected one GitHub evidence record')
+        return pages[0]
+
+    def jobs(self, run_id):
+        return latest_jobs([job for page in self.request(
+            f'actions/runs/{run_id}/jobs?filter=all&per_page=100') for job in page['jobs']])
+
+
+def latest_jobs(jobs):
+    latest = {}
+    for job in jobs:
+        previous = latest.get(job['name'])
+        if previous is None or (job['run_attempt'], job['id']) > (previous['run_attempt'], previous['id']):
+            latest[job['name']] = job
+    return latest
+
+
+def trusted_run(run, repository, sha, workflow_id):
+    return (run.get('head_sha') == sha and run.get('head_branch') == 'main'
+            and run.get('event') in ('push', 'workflow_dispatch')
+            and run.get('repository', {}).get('full_name') == repository
+            and run.get('head_repository', {}).get('full_name') == repository
+            and run.get('workflow_id') == workflow_id and run.get('path') == WORKFLOW)
+
+
+def delivery_evidence(github, sha, source_run_id=None):
+    workflow = github.one('actions/workflows/ci.yml')
+    if workflow.get('path') != WORKFLOW:
+        raise ValueError('CI workflow identity is invalid')
+    source = None
+    if source_run_id:
+        if not re.fullmatch('[0-9]+', source_run_id):
+            raise ValueError('Invalid source CI run ID')
+        source = github.one(f'actions/runs/{source_run_id}')
+        if not trusted_run(source, github.repository, sha, workflow['id']):
+            raise ValueError('Delivery evidence is not this repository\'s main CI on the exact SHA')
+    # A newer pending or failed run supersedes an older success. Never search for any green imitation.
+    runs = [run for page in github.request(
+        f'actions/workflows/ci.yml/runs?branch=main&head_sha={sha}&per_page=100')
+        for run in page['workflow_runs']
+        if trusted_run(run, github.repository, sha, workflow['id'])]
+    if not runs:
+        raise ValueError('No trusted main CI run exists for this exact SHA')
+    run = max(runs, key=lambda row: row['id'])
+    if source is not None and source['id'] != run['id']:
+        raise ValueError('Source CI run was superseded by a newer main run on this SHA')
+    jobs = github.jobs(run['id'])
+    job = jobs.get(DELIVERY)
+    if not job or job.get('head_sha') != sha or job.get('status') != 'completed' or job.get('conclusion') != 'success':
+        raise ValueError('Main delivery checks must complete successfully on this exact SHA; old Required checks cannot substitute')
+    return run, jobs
+
+
+def release_summary(run, jobs):
+    report = jobs.get(REPORT)
+    state = 'pending' if report is None else report.get('conclusion') or report['status']
+    link = report['html_url'] if report else run['html_url']
+    return (f"## Main delivery evidence\n\nCommit: `{run['head_sha']}`\n\n"
+            f"[Source CI]({run['html_url']}) · [{REPORT}: {state}]({link})\n\n"
+            'Duplicate main fixtures and Main full set report independently. Their pending or red results do not gate delivery.\n')
+
+
+def causal_prs(pages, repository, sha):
+    return sorted({pr['number'] for page in pages for pr in page
+                   if pr.get('merged_at') and pr.get('merge_commit_sha') == sha
+                   and pr.get('base', {}).get('ref') == 'main'
+                   and pr.get('base', {}).get('repo', {}).get('full_name') == repository})
+
+
+def fixture_summary(needs, sha, run_url, jobs, prs):
+    changes = needs['changes']
+    selected = changes['result'] == 'success'
+    outputs = changes.get('outputs', {})
+    shards = json.loads(outputs.get('fixture_shards') or '[]')
+    capacity = json.loads(outputs.get('fixture_capacity') or '[]')
+    outcome = needs['fixtures']['result']
+    passed = selected and not capacity and (outcome == 'success' or (not shards and outcome == 'skipped'))
+    report = jobs.get(REPORT)
+    report_url = report['html_url'] if report else run_url
+    body = (f'<!-- orbit-main-fixtures:{sha} -->\n## Main fixtures: {"success" if passed else "failure"}\n\n'
+            f'Tested main SHA: `{sha}`\n\n[Source CI]({run_url}) · [Fixture report]({report_url})\n\n'
+            f'Input selection: {changes["result"]}; fixture matrix: {outcome}; selected shards: {len(shards)}.\n\n'
+            f'Capacity errors: `{json.dumps(capacity)}`\n\n'
+            'This result is independent of main delivery. PR Required checks remains strict.\n\n')
+    if prs:
+        body += 'Causal merged PR' + ('s' if len(prs) > 1 else '') + ': ' + ', '.join(f'#{n}' for n in prs) + '. Attribution uses the exact merge SHA.\n\n'
+    else:
+        body += 'No merged PR in this repository has this exact main merge SHA; no PR comment is written.\n\n'
+    fixture_jobs = [job for name, job in jobs.items() if name.startswith('Fixtures (')]
+    if fixture_jobs:
+        body += '\n'.join(f'- [{job["name"]}]({job["html_url"]}): {job.get("conclusion") or job["status"]}'
+                          for job in fixture_jobs) + '\n'
+    else:
+        body += 'No fixture job URLs are available; inspect the source CI run.\n'
+    return body, passed
+
+
+def write_summary(body):
+    with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as summary:
+        summary.write(body + '\n')
+
+
+def report(github):
+    if (os.environ.get('GITHUB_REF') != 'refs/heads/main'
+            or os.environ.get('GITHUB_EVENT_NAME') not in ('push', 'workflow_dispatch')):
+        raise ValueError('Fixture reports run only in main CI')
+    sha = os.environ['GITHUB_SHA']
+    run_id = os.environ['GITHUB_RUN_ID']
+    prs = causal_prs(github.request(f'commits/{sha}/pulls?per_page=100'), github.repository, sha)
+    body, passed = fixture_summary(json.loads(os.environ['NEEDS']), sha,
+                                  f'https://github.com/{github.repository}/actions/runs/{run_id}',
+                                  github.jobs(run_id), prs)
+    # Always keep local evidence, including a later comment-write failure.
+    write_summary(body)
+    marker = f'<!-- orbit-main-fixtures:{sha} -->'
+    for number in prs:
+        comments = [comment for page in github.request(f'issues/{number}/comments?per_page=100') for comment in page
+                    if marker in comment.get('body', '')
+                    and comment.get('user', {}).get('login') == 'github-actions[bot]']
+        path = f'issues/comments/{comments[-1]["id"]}' if comments else f'issues/{number}/comments'
+        github.request(path, {'body': body})
+    if not passed:
+        raise ValueError('Main fixtures failed, were cancelled, or exceeded capacity; see the report above')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=['verify', 'report'])
+    parser.add_argument('--sha')
+    args = parser.parse_args()
+    github = GitHub(os.environ['GITHUB_REPOSITORY'])
+    try:
+        if args.command == 'verify':
+            if not args.sha or not re.fullmatch('[0-9a-f]{40}', args.sha):
+                raise ValueError('Pass a full commit SHA')
+            run, jobs = delivery_evidence(github, args.sha, os.environ.get('SOURCE_RUN_ID'))
+            write_summary(release_summary(run, jobs))
+        else:
+            report(github)
+    except (ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        write_summary(f'CI {args.command} failed: {error}')
+        sys.exit(str(error))
+
+
+if __name__ == '__main__':
+    main()

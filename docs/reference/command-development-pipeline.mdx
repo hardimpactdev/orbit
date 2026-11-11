@@ -80,7 +80,7 @@ The checkout is already mounted when the containers boot, but the restored datab
 
 ## 5. Automatic Swamp release
 
-**Built.** When automatic releases are enabled and unpaused, the Gateway checks every five minutes for the newest green commit on `main` and starts one Swamp run: build, snapshot and migrate, check the migration, wait for active Operations, and load Swamp. The loaded activation child drains Horizon, switches the release and checks health and version. Horizon starts again after the activation paths, including failures. A green commit has `Required checks` and `Gateway release inputs` green in its CI run on `main`. There is no merge queue, so a red `main` commit is never released; `main` is fixed forward. A failed check switches back.
+**Built.** When automatic releases are enabled and unpaused, the Gateway checks every five minutes for the newest green commit on `main` and starts one Swamp run: build, snapshot and migrate, check the migration, wait for active Operations, and load Swamp. The loaded activation child drains Horizon, switches the release and checks health and version. Horizon starts again after the activation paths, including failures. A delivery-ready commit has `Main delivery checks`, its main `Required checks` result and `Gateway release inputs` green in its CI run on `main`. Duplicate main fixture failures remain visible and do not block delivery; [delivery dependencies](/reference/implementation-loop#ci) lists the gates. There is no merge queue. A failed check switches back.
 
 <div className="flow-at" data-chart="reference/pipeline/5-automatic-release"></div>
 

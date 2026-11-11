@@ -106,3 +106,5 @@ A family that defers work behind an Operation settles it atomically at the first
 Classify a no-start failure at the submission boundary, including execution-copy preparation, instead of enumerating error codes in a projection. Terminal settlement must fail any deferred work when its target was deleted, including when its resource record was also deleted; guard destructive admission with the existing lifecycle rule before side effects and under the target lock.
 
 Fixture calibration binds to source and registered case names, including loop-generated cases. Include startup in each slice cost, distinguish a completed case from a censored unit, and report whole-file capacity failures instead of packing new cases into old slices.
+
+A release gate that excludes after-merge fixtures must verify the exact SHA, main event and CI workflow through Actions run and job records. The workflow may finish red. Give skipped PR and main gates distinct names when a reader counts every check with the required name.

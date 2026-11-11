@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       commit:
-        description: Full SHA of a main commit whose Required checks passed.
+        description: Full SHA of a main commit whose Main delivery checks passed.
         required: true
         type: string
 
@@ -28,7 +28,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (
         github.event_name == 'workflow_run' &&
         contains(fromJSON('["push", "workflow_dispatch"]'), github.event.workflow_run.event) &&
-        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main' &&
         github.event.workflow_run.head_repository.full_name == github.repository
       )
     runs-on: ubuntu-26.04
@@ -69,23 +69,12 @@ jobs:
             echo "tag=${tag}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Require green Required checks on the commit
+      - name: Require exact main CI delivery evidence and link fixture report
         env:
           GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
           COMMIT: ${{ steps.release.outputs.commit }}
-        run: |
-          set -euo pipefail
-          latest="$(gh api --paginate "repos/${REPOSITORY}/commits/${COMMIT}/check-runs?check_name=Required%20checks&filter=all&per_page=100" \
-            --jq '.check_runs[] | select(.head_sha == env.COMMIT) | [.id, .status, (.conclusion // "none")] | @tsv' \
-            | sort -n | tail -n 1)"
-          [ -n "$latest" ] || { echo "::error::No Required checks run exists for ${COMMIT}."; exit 1; }
-          read -r _ status conclusion <<< "$latest"
-          if [ "$status" != completed ] || [ "$conclusion" != success ]; then
-            echo "::error::Required checks for ${COMMIT} is ${status}/${conclusion}, not completed/success."
-            exit 1
-          fi
-          echo "Required checks passed on ${COMMIT}"
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: python3 bin/ci-delivery verify --sha "$COMMIT"
 
       # A release carries an agent delivery when the agent source changed since the previous release, so a change
       # that was not itself released still ships in the next release. The Gateway keeps installing its pin until a

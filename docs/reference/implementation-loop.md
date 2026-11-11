@@ -3,7 +3,7 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,test,ci-build-plan,ci-units,ci-cache-ref,ci-runner-prerequisites,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
+  - bin/{review-check,test,ci-build-plan,ci-units,ci-delivery,ci-cache-ref,ci-runner-prerequisites,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy,swamp-shape-python,swamp_shape_host_tools}.py,swamp/bin/{check-swamp-shape,gate-test-support}.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - "{tools/check_budget.py,swamp/tests/_support/slice.ts}"
   - "{apps/*,packages/php-sdk}/rector.php"
@@ -62,7 +62,21 @@ Pull requests and main pushes run the fast Swamp control checks. Selected shape 
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and on the three-hour schedule, run the Operation Deno tests, enforce static Swamp-shape controls and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Run the case runner unit tests and lint the proof programs with `ruff` |
 | CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. The blocking switches decide whether it gates Required checks; see [the proof run job](#the-proof-run-job) |
-| Required checks | Require selected builds, static checks, Pest suites and fixture shards. Swamp contains static controls; proof follows the blocking switches. Only explicitly untouched jobs may skip |
+| Required checks | On PRs, require selected builds, static checks, Pest suites and fixture shards, including fixture capacity. Swamp contains static controls; proof follows the blocking switches. Only explicitly untouched jobs may skip |
+| Main delivery checks | On main, require the same selected fast jobs, independently of duplicate fixture shards and Main full set |
+| Main fixture report | After selected main fixtures finish, report failure, cancellation or capacity to the CI summary and the causal merged PR; never gate delivery |
+
+`Main delivery checks` depends exactly on `php`, `gateway-static`, `gateway-tests`, `cli`, `cli-static`, `cli-tests`, `sdk-static`, `e2e-static`, `docs`, `api-reference`, `web`, `pi`, `agent`, `proof`, `gateway-release`, `changes` and `swamp`. These are the existing builds, Pest suites, static checks, contracts and other fast checks. It adds no test or build. `Start the CLI release` depends on this result.
+
+The release resolver verifies a successful delivery job on the exact SHA in this repository's `ci.yml` main push or manual run; it accepts neither a PR check with the same name nor a commit status. The run may still be running or finish red because fixtures failed. Old commits without this result cannot be backfilled.
+
+Gateway automatic releases retain the `Required checks` name: on main, `main-required` verifies the exact SHA and main CI run before forwarding a successful `Main delivery checks` result. Its summary links the source CI and fixture report. It has no fixture dependency. Skipped gates have distinct names in each event, so a skipped PR gate cannot invalidate the main result. The Gateway also requires `Gateway release inputs`, preserving its current reader and rollout guards.
+
+`Resolve release` gates `Build CLI`, `Build Linux agent` and `Build macOS agent`; `Publish release` requires the resolver and those builds. Version, main ancestry, tags, provenance and publication guards still apply. Neither fixture shards nor the independent Main full set receiver belongs to these dependencies.
+
+`Main fixture report` runs only for main pushes and manual main runs, after `changes` and `fixtures`. The job has two minutes for API reads and comment writes. It reports the exact tested SHA, source run, fixture job URLs, matrix outcome and capacity errors. Only merged PRs into this repository's main whose merge SHA equals the tested SHA receive a comment. A main push containing several merges reports only the PR for its tested head; a direct push has no causal PR comment. The comment is updated on reruns.
+
+Missing attribution is explicit in the CI summary; API errors fail the report job. A failed fixture or capacity result also leaves the report job red after writing its evidence. The release summary links the source CI and this report, including pending fixtures, without waiting for either. Main full set is unchanged.
 
 The Gateway Pest job installs Gateway and CLI dev Composer dependencies and regenerates both autoloaders with `composer install --no-scripts`. It then runs `bin/build-api` so tests read the current OpenAPI and MCP contracts; these generated outputs are not cached. NodeMetrics runs the CLI's PHP consent fixture. Separate vendor caches use each project's manifest and lockfile, PHP 8.5, the runner OS and SDK Composer metadata; they never restore the runtime-only Gateway cache.
 
