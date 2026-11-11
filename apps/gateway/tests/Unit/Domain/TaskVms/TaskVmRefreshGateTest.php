@@ -76,7 +76,8 @@ it('makes the base VM of a new host once, from the stock image and a blank seed,
     expect($start['tags'])->toBe(['base-start'])
         // A rebuild (`--from-stock`) deletes the base VM and its seed first; a refresh skips it.
         ->and(array_keys($steps->all()))->toBe(['Delete the base VM and its seed for a rebuild', 'Read the base VM', 'Make the base VM', 'Attach the seed', 'Read the snapshot rule of the project', 'Let the project keep snapshots',
-            'Skip the firmware boot menu wait', 'Start the base VM', 'Wait for its guest agent', 'Wait for the first boot', 'Give the base VM the Club key'])
+            'Skip the firmware boot menu wait', 'Start the base VM', 'Wait for its guest agent', 'Wait for the first boot', 'Read the base VM authorized keys', 'Require base VM authorized keys',
+            'Fingerprint the admitted bootstrap key', 'Fingerprint the base VM authorized keys', 'Check the base VM bootstrap fingerprint', 'Give the base VM the Club key'])
         ->and($steps['Delete the base VM and its seed for a rebuild']['when'])->toBe('host.rebuild | default(false) or host.current is none')
         ->and($steps['Make the base VM']['when'])->toBe('base_read.stdout | from_json | length == 0')
         ->and(array_keys($make->all()))->toBe(['Remove the seed a failed creation left', 'Create the blank seed volume', 'Create the base VM'])
