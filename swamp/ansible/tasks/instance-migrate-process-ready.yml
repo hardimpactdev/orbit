@@ -1,13 +1,17 @@
 ---
-# Migration alone must catch a worker that starts and immediately exits before the Route can move. Five seconds spans an
-# immediate exec failure and its restart, without extending readiness on deploy, create, inspection or direct process actions.
-- name: Require the moved Process to stay running
+# Migration alone must catch workers that start and immediately exit before the Route can move. One five-second window covers
+# every moved Process together, keeping the existing 120-second phase budget independent of the number of settling workers.
+- name: Require the moved Processes to stay running
+  when: moved_process_names | length > 0
+  vars:
+    moved_process_names: "{{ container.processes | selectattr('desired', 'equalto', 'running') | map(attribute='name') | list }}"
   block:
-    - name: Wait for the moved Process to finish starting
+    - name: Wait for the moved Processes to finish starting
       ansible.builtin.command:
         argv: >-
           {{ as_root + ['timeout', '5', 'systemctl', 'show', '--property=ActiveState', '--property=Job',
-              '--property=MainPID', '--property=NRestarts', '--', moved_process.name] }}
+              '--property=MainPID', '--property=NRestarts', '--', item] }}
+      loop: "{{ moved_process_names }}"
       register: moved_process_ready
       changed_when: false
       until: >-
@@ -18,29 +22,41 @@
       retries: 10
       delay: 1
 
-    - name: Let the moved Process settle before cutover
+    - name: Let all moved Processes settle before cutover
       ansible.builtin.pause:
         seconds: 5
 
-    - name: Read the moved Process after settling
+    - name: Read the moved Processes after settling
       ansible.builtin.command:
         argv: >-
           {{ as_root + ['timeout', '5', 'systemctl', 'show', '--property=ActiveState', '--property=Job',
-              '--property=MainPID', '--property=NRestarts', '--', moved_process.name] }}
+              '--property=MainPID', '--property=NRestarts', '--', item] }}
+      loop: "{{ moved_process_names }}"
       register: moved_process_settled
       changed_when: false
+      failed_when: false
 
-    - name: Require the same running Process without a restart or pending job
+    - name: Require the same running Processes without a restart or pending job
       ansible.builtin.assert:
-        that: moved_process_settled.stdout_lines | sort == moved_process_ready.stdout_lines | sort
+        that:
+          - moved_process_settled.results[process_index].rc == 0
+          - moved_process_settled.results[process_index].stdout_lines | sort == moved_process_ready.results[process_index].stdout_lines | sort
         fail_msg: instance.migrate_processes_failed
         quiet: true
+      loop: "{{ moved_process_names }}"
+      loop_control: { index_var: process_index }
   rescue:
-    - name: Name the Process that could not stay running
+    - name: Name the Processes that could not stay running
+      vars:
+        failed_processes: >-
+          {{ ansible_failed_result.results | default([]) | selectattr('failed', 'defined') | selectattr('failed')
+             | map(attribute='item') | list }}
       ansible.builtin.set_fact:
         migrate_process_failure:
           error_code: instance.migrate_processes_failed
-          error_message: "Process {{ moved_process.name }} did not stay active with the same MainPID and NRestarts and no pending job for 5 seconds."
+          error_message: >-
+            Processes {{ failed_processes | default(moved_process_names, true) | join(', ') }} did not stay active
+            with the same MainPID and NRestarts and no pending job for 5 seconds.
     - name: Fail before migration cutover
       ansible.builtin.fail:
         msg: instance.migrate_processes_failed

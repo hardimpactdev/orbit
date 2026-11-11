@@ -32,6 +32,7 @@ sequenceDiagram
   %%> Result:
   %%> - the runtime reservation records its owning Operation; late receipts cannot change a newer owner
   %%> - the whole-run budget is 5,100 seconds; a lower-bound test includes declared child, restoration and cleanup timeouts
+  %%> - maps only known host command locations, preserving opaque env/shell strings, and records each Process/from/to translation in the terminal receipt
   %%> - the runtime record is reserved: the next bridge address and, for a non-default Instance, the lowest free T3 port
   %%> - the checkout stays the Instance's runtime until the Route has moved; the Route's Node is held for the run
   %%> - the Instance takes no deployment and no wake while the run lasts
@@ -46,7 +47,7 @@ sequenceDiagram
   %%> - deletes a container that an earlier failed move left, then creates and starts the new container through the shared container phase; discard leaves shared bridge endpoint rules for host reconciliation
   %%> - each attached target gets an exact TCP allow in both the bridge and NIC ACLs; both keep default reject. Endpoint adds reread on ETag conflict, at most five attempts with a one-second delay
   %%> - probes every attached target from inside the container before downtime, else `instance.database_unreachable`
-  %%> - checks mapped Process executables inside the container, then repeats before quiesce; an unavailable path reports `instance.migrate_process_binary_unavailable` naming the Process and path, leaving the checkout serving
+  %%> - checks mapped Process executables inside the container, then repeats before quiesce; unavailable paths report `instance.migrate_process_binary_unavailable` naming every Process and path, leaving the checkout serving
   %%> - fetches the branch from the checkout into the Node's mirror, including commits never pushed
   SW->>N: Check and stop<br/>Ansible · tags quiesce
   %%> What it does:
@@ -64,7 +65,7 @@ sequenceDiagram
   %%> - checks the exact copied tree inside the container, maps old-checkout targets into the workspace and rewrites absolute internal links there; broken or external links fail with the same code before any Process starts, relative links keep their targets, and source links never change
   %%> - a non-default Instance gets the proxy device that publishes its T3 port
   SW->>C: Start the container<br/>Processes · T3 · seed
-  %%> - container units use `network.target` and nonblocking starts; each moved desired-running Process must be active with no pending job, then stay active after 5 seconds with the same positive MainPID and NRestarts; failure names the Process with `instance.migrate_processes_failed` and restores before cutover
+  %%> - container units use `network.target` and nonblocking starts; reads all moved desired-running Processes active with no pending job, waits 5 seconds once for the whole set, then requires each still active with the same positive MainPID and NRestarts; failure names the Process with `instance.migrate_processes_failed` and restores before cutover
   %%> What it does:
   %%> - starts FrankenPHP and the Instance's existing Processes as `orbit`, with the same ids and desired states; their environment files come through the vault
   %%> - writes the shared FrankenPHP Caddyfile and unit; only the Node's bridge peer with `X-Forwarded-Proto: https` sets PHP's HTTPS scheme, port and resolved client IP; other requests keep native values

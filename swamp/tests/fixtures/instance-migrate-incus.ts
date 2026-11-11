@@ -43,6 +43,8 @@ if (args[0] === "exec" && args.includes("test") && args.includes("-x")) {
 if (args.includes("systemctl") && args.includes("show") && args.includes("--property=MainPID")) {
   const state = JSON.parse(Deno.readTextFileSync(file));
   const unit = args.at(-1)!;
+  state.movedReadinessSamples ??= [];
+  state.movedReadinessSamples.push({unit, at: Date.now()});
   const sample = state.movedReadiness;
   const selected = sample?.unit === unit;
   if (selected) sample.reads.push(Date.now());

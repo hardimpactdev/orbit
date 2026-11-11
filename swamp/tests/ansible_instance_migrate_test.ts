@@ -222,8 +222,8 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     },
     run(phase: string, rawContainer = false, runId = folder.slice(folder.lastIndexOf("/") + 1)) {
       const playbook = !rawContainer && ["container", "quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
-      const done = new Deno.Command("ansible-playbook", {
-        args: ["-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
+      const done = new Deno.Command(phase === "processes" ? "timeout" : "ansible-playbook", {
+        args: [...(phase === "processes" ? ["120", "ansible-playbook"] : []), "-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
           "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/${playbook}`],
         env: {
           HOST_FIXTURE: folder,
@@ -1425,9 +1425,9 @@ Deno.test({
   },
 });
 
-for (const removedAfterPrepare of [false, true]) {
+for (const [removedAfterPrepare, customPath] of [[false, "/opt/custom/tool"], [false, "/opt/custom/vp"], [true, null]] as const) {
   Deno.test({
-    name: `an unavailable moved Process executable refuses ${removedAfterPrepare ? "quiesce" : "container preparation"} before stopping any host writer`,
+    name: `an unavailable moved Process executable ${customPath ?? "removed runtime"} refuses ${removedAfterPrepare ? "quiesce" : "container preparation"} before stopping any host writer`,
     ignore: !hasAnsible,
     fn() {
       const f = fixture();
@@ -1435,7 +1435,7 @@ for (const removedAfterPrepare of [false, true]) {
         const host = migrationProcesses(f, "running");
         const before = host();
         const process = f.migrate.processes[0];
-        const path = removedAfterPrepare ? process.executables[0] : "/opt/custom/tool";
+        const path = customPath ?? process.executables[0];
         if (removedAfterPrepare) {
           const prepared = f.run("container");
           assert(prepared.ok, prepared.output);
@@ -1465,3 +1465,70 @@ for (const removedAfterPrepare of [false, true]) {
     },
   });
 }
+
+Deno.test({
+  name: "the binary preflight names every unavailable Process and executable in one refusal",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const host = migrationProcesses(f, "running");
+      const before = host();
+      const first = f.migrate.processes[0];
+      const second = f.migrate.processes[1];
+      first.executables = ["/opt/custom/tool"];
+      second.executables = ["/opt/custom/vp"];
+      f.write();
+      const state = f.state();
+      state.unavailableExecutables = [first.executables[0], second.executables[0]];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const refused = f.run("container");
+      assert(!refused.ok, refused.output);
+      const receipt = f.result();
+      assertEquals(receipt.error_code, "instance.migrate_process_binary_unavailable");
+      for (const process of [first, second]) {
+        assert(receipt.error_message.includes(process.name), JSON.stringify(receipt));
+        assert(receipt.error_message.includes(process.executables[0]), JSON.stringify(receipt));
+      }
+      assertEquals(host(), before);
+      assert(exists(f.migrate.awake.path));
+      assert(!exists(`${f.folder}/run/quiesced`));
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "24 moved workers share one five-second settle window inside the 120-second process phase budget",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      migrationProcesses(f, "stopped");
+      const host = JSON.parse(Deno.readTextFileSync(`${f.folder}/host-processes.json`));
+      for (let id = 73; id < 96; id++) {
+        const name = `orbit-process-${id}-worker.service`;
+        const directory = `${f.folder}/host/${id}`;
+        Deno.mkdirSync(directory, {recursive: true});
+        const path = `${directory}/${name}`;
+        Deno.writeTextFileSync(path, "old unit\n");
+        f.migrate.processes.push({name, path, environment_directory: directory, desired: "running", executables: ["/bin/sleep"]});
+        f.container.processes.push({id, name, content: "[Service]\nUser=orbit\nExecStart=/bin/sleep infinity\n", environment: null, desired: "running"});
+        host[name] = {state: "started", enabled: true};
+      }
+      Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify(host));
+      f.write();
+      f.build();
+      const started = Date.now();
+      const passed = f.run("processes");
+      assert(passed.ok, passed.output);
+      assert(Date.now() - started < 120000, "the production process phase budget is fixed at 120 seconds");
+      assertEquals(passed.output.match(/Pausing for 5 seconds/g)?.length, 1, passed.output);
+      const samples = f.state().movedReadinessSamples as {unit: string; at: number}[];
+      const workers = f.container.processes.filter((process) => process.desired === "running");
+      assertEquals(workers.length, 24);
+      assertEquals(samples.length, 48);
+      assert(samples[24].at - samples[23].at >= 5000, "all initial samples precede the single settling window");
+      for (const worker of workers) assertEquals(samples.filter((sample) => sample.unit === worker.name).length, 2);
+    } finally { f.cleanup(); }
+  },
+});

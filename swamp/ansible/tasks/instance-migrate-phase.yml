@@ -117,11 +117,13 @@
       failed_when: false
     - name: Name an unavailable Process executable
       when: migrate_binaries.results | default([]) | rejectattr('rc', 'equalto', 0) | list | length > 0
-      vars:
-        unavailable: "{{ migrate_binaries.results | rejectattr('rc', 'equalto', 0) | first }}"
       ansible.builtin.set_fact:
         migrate_refusal_code: instance.migrate_process_binary_unavailable
-        migrate_refusal_message: "Process {{ unavailable.item.0.name }} executable [{{ unavailable.item.1 }}] is unavailable in the container."
+        migrate_refusal_message: >-
+          {{ (migrate_refusal_message | default('')) ~ ('\n' if migrate_refusal_message is defined else '')
+             ~ 'Process ' ~ unavailable.item.0.name ~ ' executable [' ~ unavailable.item.1 ~ '] is unavailable in the container.' }}
+      loop: "{{ migrate_binaries.results | rejectattr('rc', 'equalto', 0) | list }}"
+      loop_control: { loop_var: unavailable, label: "{{ unavailable.item.0.name }}: {{ unavailable.item.1 }}" }
     - name: Refuse an unavailable Process executable
       ansible.builtin.assert:
         that: migrate_binaries.results | default([]) | rejectattr('rc', 'equalto', 0) | list | length == 0

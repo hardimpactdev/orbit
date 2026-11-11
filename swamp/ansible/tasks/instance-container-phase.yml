@@ -689,10 +689,6 @@
   ansible.builtin.include_tasks:
     file: instance-migrate-process-ready.yml
     apply: { tags: [processes] }
-  loop: "{{ container.processes | default([]) | selectattr('desired', 'equalto', 'running') | list }}"
-  loop_control:
-    loop_var: moved_process
-    label: "{{ moved_process.name }}"
 
 # The agent's side of a clone: the placeholder model key, the Claude Code and Codex settings, the note links, and the instance file,
 # whose presence starts T3. Whole files are compared by digest; JSON settings merge only Orbit's keys, preserving runtime state.

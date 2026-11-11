@@ -974,7 +974,7 @@ function migrationVpDev(Instance $instance, string $desired = 'running', bool $s
 }
 
 describe('Processes moving into the container', function (): void {
-    it('maps a host command name only in the projected migration copy', function (array $command, array $mapped): void {
+    it('maps a host command name only in the projected migration copy', function (array $command, array $mapped, ?array $expectedExecutables = null): void {
         $instance = migrateCheckout(containerDefaultProject(ProjectType::LaravelApp, '8.5'), containerDefaultNode());
         $worker = migrationWorker($instance);
         $config = $worker->runtime_config;
@@ -982,7 +982,7 @@ describe('Processes moving into the container', function (): void {
         $worker->update(['runtime_config' => $config]);
         $operation = migrateStart($instance);
         $unit = $operation->input['container']['processes'][0];
-        $executables = $mapped[0] === '/usr/bin/env' ? array_slice($mapped, 0, 2) : [$mapped[0]];
+        $executables = $expectedExecutables ?? ($mapped[0] === '/usr/bin/env' ? array_slice($mapped, 0, 2) : [$mapped[0]]);
 
         expect($unit['content'])->toContain('"'.implode('" "', $mapped).'"')
             ->and($operation->input['migrate']['processes'][0]['executables'])->toBe($executables)
@@ -996,16 +996,23 @@ describe('Processes moving into the container', function (): void {
     })->with([
         'versioned PHP' => [['/usr/bin/php8.5', 'artisan', 'queue:work'], ['/opt/orbit-runtime/current/php/8.5/bin/php', 'artisan', 'queue:work']],
         'project PHP' => [['/usr/bin/php', 'artisan', 'queue:work'], ['/opt/orbit-runtime/current/php/8.5/bin/php', 'artisan', 'queue:work']],
-        'PHP at another host path' => [['/opt/host/php8.5', 'artisan'], ['/opt/orbit-runtime/current/php/8.5/bin/php', 'artisan']],
         'Vite plus' => [['/home/x/.vite-plus/bin/vp', 'dev'], ['/opt/orbit-runtime/current/bin/vp', 'dev']],
         'env Vite plus' => [['/usr/bin/env', '/home/x/.vite-plus/bin/vp', 'dev'], ['/usr/bin/env', '/opt/orbit-runtime/current/bin/vp', 'dev']],
-        'env Node' => [['/usr/bin/env', 'node', 'worker.js'], ['/usr/bin/env', '/opt/orbit-runtime/current/bin/node', 'worker.js']],
+        'env Node through PATH' => [['/usr/bin/env', 'node', 'worker.js'], ['/usr/bin/env', 'node', 'worker.js'], ['/usr/bin/env']],
         'npm' => [['/usr/bin/npm', 'run', 'start'], ['/opt/orbit-runtime/current/bin/npm', 'run', 'start']],
         'npx' => [['/usr/bin/npx', 'vite'], ['/opt/orbit-runtime/current/bin/npx', 'vite']],
-        'bun' => [['/home/x/.bun/bin/bun', 'run', 'start'], ['/opt/orbit-runtime/current/bin/bun', 'run', 'start']],
+        'bun' => [['/usr/local/bin/bun', 'run', 'start'], ['/opt/orbit-runtime/current/bin/bun', 'run', 'start']],
         'composer' => [['/usr/local/bin/composer', 'run', 'worker'], ['/opt/orbit-runtime/current/bin/composer', 'run', 'worker']],
-        'deno' => [['/home/x/.deno/bin/deno', 'run', 'worker.ts'], ['/opt/orbit-runtime/current/bin/deno', 'run', 'worker.ts']],
+        'deno' => [['/usr/local/bin/deno', 'run', 'worker.ts'], ['/opt/orbit-runtime/current/bin/deno', 'run', 'worker.ts']],
         'ripgrep' => [['/usr/bin/rg', 'needle'], ['/opt/orbit-runtime/current/bin/rg', 'needle']],
+        'Vite Node runtime' => [['/home/x/.vite-plus/js_runtime/node/24/bin/node', 'worker.js'], ['/opt/orbit-runtime/current/bin/node', 'worker.js']],
+        'env assignment' => [['/usr/bin/env', 'VAR=1', '/usr/bin/php8.5', 'artisan'], ['/usr/bin/env', 'VAR=1', '/opt/orbit-runtime/current/php/8.5/bin/php', 'artisan'], ['/usr/bin/env', '/opt/orbit-runtime/current/php/8.5/bin/php']],
+        'env unset' => [['/usr/bin/env', '-u', 'FOO', '/usr/bin/php8.5', 'artisan'], ['/usr/bin/env', '-u', 'FOO', '/opt/orbit-runtime/current/php/8.5/bin/php', 'artisan'], ['/usr/bin/env', '/opt/orbit-runtime/current/php/8.5/bin/php']],
+        'env long unset' => [['/usr/bin/env', '--unset=FOO', '/usr/bin/php8.5', 'artisan'], ['/usr/bin/env', '--unset=FOO', '/opt/orbit-runtime/current/php/8.5/bin/php', 'artisan'], ['/usr/bin/env', '/opt/orbit-runtime/current/php/8.5/bin/php']],
+        'env ignore and option end' => [['/usr/bin/env', '-i', '--', 'VAR=1', '/usr/bin/php8.5', 'artisan'], ['/usr/bin/env', '-i', '--', 'VAR=1', '/opt/orbit-runtime/current/php/8.5/bin/php', 'artisan'], ['/usr/bin/env', '/opt/orbit-runtime/current/php/8.5/bin/php']],
+        'env split string stays opaque' => [['/usr/bin/env', '-S', '/usr/bin/php8.5 artisan queue:work'], ['/usr/bin/env', '-S', '/usr/bin/php8.5 artisan queue:work'], ['/usr/bin/env']],
+        'env long split string stays opaque' => [['/usr/bin/env', '--split-string=/usr/bin/php8.5 artisan'], ['/usr/bin/env', '--split-string=/usr/bin/php8.5 artisan'], ['/usr/bin/env']],
+        'unknown env option stays opaque' => [['/usr/bin/env', '--chdir=/host', '/usr/bin/php8.5', 'artisan'], ['/usr/bin/env', '--chdir=/host', '/usr/bin/php8.5', 'artisan'], ['/usr/bin/env']],
     ]);
 
     it('refuses a Process PHP version absent from the runtime before any migration starts', function (array $command): void {
@@ -1028,6 +1035,48 @@ describe('Processes moving into the container', function (): void {
         'direct' => [['/usr/bin/php8.4', 'artisan']],
         'env wrapper' => [['/usr/bin/env', '/usr/bin/php8.4', 'artisan']],
     ]);
+
+    it('reports every unavailable Process PHP binary in one admission refusal', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(ProjectType::LaravelApp, '8.5'), containerDefaultNode());
+        foreach (['worker-a' => '/usr/bin/php8.4', 'worker-b' => '/usr/local/bin/php9.1'] as $name => $path) {
+            $worker = migrationWorker($instance, $name);
+            $worker->update(['runtime_config' => ['command' => [$path, 'artisan']]]);
+        }
+        try {
+            migrateStart($instance);
+            $this->fail('Unavailable PHP versions were admitted.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe('instance.migrate_process_binary_unavailable');
+            expect($exception->getMessage())->toContain('worker-a', '/usr/bin/php8.4', 'worker-b', '/usr/local/bin/php9.1');
+        }
+        expect($instance->runtime()->exists())->toBeFalse();
+    });
+
+    it('preserves a custom executable with a runtime command basename for the container preflight', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $worker = migrationWorker($instance);
+        $worker->update(['runtime_config' => ['command' => ['/opt/custom/vp', 'dev']]]);
+        $operation = migrateStart($instance);
+        expect($operation->input['container']['processes'][0]['content'])->toContain('"/opt/custom/vp" "dev"')
+            ->and($operation->input['migrate']['processes'][0]['executables'])->toBe(['/opt/custom/vp'])
+            ->and($operation->input['migrate']['processes'][0]['translations'])->toBe([]);
+    });
+
+    it('records each projected Process executable translation and retains it in the operation receipt', function (): void {
+        $instance = migrateCheckout(containerDefaultProject(ProjectType::LaravelApp, '8.5'), containerDefaultNode());
+        $php = migrationWorker($instance, 'php-worker');
+        $php->update(['runtime_config' => ['command' => ['/usr/bin/env', 'VAR=1', '/usr/bin/php8.5', 'artisan']]]);
+        $vite = migrationWorker($instance, 'vite-worker');
+        $vite->update(['runtime_config' => ['command' => ['/home/x/.vite-plus/bin/vp', 'dev']]]);
+        $operation = migrateStart($instance);
+        $translations = array_merge(...array_column($operation->input['migrate']['processes'], 'translations'));
+        expect($translations)->toBe([
+            ['process_id' => $php->id, 'process_name' => 'php-worker', 'from' => '/usr/bin/php8.5', 'to' => '/opt/orbit-runtime/current/php/8.5/bin/php'],
+            ['process_id' => $vite->id, 'process_name' => 'vite-worker', 'from' => '/home/x/.vite-plus/bin/vp', 'to' => '/opt/orbit-runtime/current/bin/vp'],
+        ]);
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40), 'process_translations' => $translations]);
+        expect($operation->refresh()->result['process_translations'])->toBe($translations);
+    });
 
     it('sends an unknown absolute executable to the pre-quiesce container check without changing it', function (): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
