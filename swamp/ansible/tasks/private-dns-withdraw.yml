@@ -19,7 +19,7 @@
   register: private_dns_owned_units
 - name: Stop and disable recorded local DNS units
   when: item.stat.exists
-  ansible.builtin.systemd: { name: "{{ item.item }}", state: stopped, enabled: false }
+  ansible.builtin.systemd: { name: "{{ item.item }}", state: stopped, enabled: false, daemon_reload: true }
   loop: "{{ private_dns_owned_units.results }}"
   loop_control: { label: "{{ item.item }}" }
 - name: Remove recorded local DNS units and catalog

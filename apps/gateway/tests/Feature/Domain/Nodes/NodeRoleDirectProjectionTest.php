@@ -109,16 +109,17 @@ it('marks a role failed when its first add or a non-active convergence fails', f
     'recorded Ubuntu requirement' => ['Require supported Ubuntu', 'converge:Require supported Ubuntu', 'role.os_unsupported'],
 ]);
 
-it('records local Gateway DNS ownership at the successful machine phase even if later publication fails', function (): void {
+it('retains the admission claim when the Gateway machine phase fails after DNS installation', function (): void {
     $node = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.45.0.1', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit']));
     $assignment = $node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
     $operation = Operation::query()->create(['kind' => 'node.role_converge', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id, 'status' => 'running',
         'input' => ['_role' => ['assignment_id' => $assignment->id, 'role' => 'gateway', 'created' => false, 'certificates' => ['leaves' => [], 'withdrawals' => []]],
             'native_role' => ['runtime' => ['gateway_dns' => ['listener' => []]], 'publications' => [], 'artifact_digests' => []]], 'state' => ['swamp_run_id' => 'dns-role-run']]);
 
+    app(GatewayPrivateDnsState::class)->claim($node->id, ['gateway_dns' => ['listener' => []]]);
     app(NodeRoleDirectProjection::class)->apply($operation, ['run_id' => 'dns-role-run', 'status' => 'failed',
         'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['steps' => ['Apply the role on the Node' => ['status' => 'succeeded'], 'Check the role' => ['status' => 'failed']], 'summary' => ['failed_steps' => ['Check the role']]]]);
+        'result' => ['steps' => ['Apply the role on the Node' => ['status' => 'failed'], 'Check the role' => ['status' => 'skipped']], 'summary' => ['failed_steps' => ['Check the role']]]]);
 
     expect(app(GatewayPrivateDnsState::class)->owned($node->id))->toBeTrue();
 });

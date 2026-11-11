@@ -78,8 +78,14 @@ const intent = {
       path: "/home/orbit/orbit",
       state: "/var/lib/orbit-checkout-state",
       units: [
-        unit("nested-gateway", "home-orbit-orbit-apps-gateway-.env.mount"),
-        unit("nested-app-dev", "home-orbit-orbit-apps-gateway-.env.mount"),
+        unit(
+          "nested-gateway",
+          "home-orbit-orbit-apps-gateway-.env.mount",
+        ),
+        unit(
+          "nested-app-dev",
+          "home-orbit-orbit-apps-gateway-.env.mount",
+        ),
       ],
       binds: {
         gateway: ["home-orbit-orbit-apps-gateway-.env.mount"],
@@ -125,7 +131,10 @@ function run(
       [role, name],
     ) => [name, layout[role as keyof typeof layout].address]),
   );
-  Deno.writeTextFileSync(`${folder}/addresses.json`, JSON.stringify(addresses));
+  Deno.writeTextFileSync(
+    `${folder}/addresses.json`,
+    JSON.stringify(addresses),
+  );
   // Each call is one log line; a created container shows in the next listing; an Orbit command admits the next Operation.
   Deno.writeTextFileSync(
     `${bin}/incus`,
@@ -185,7 +194,10 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
         tools: {
           swamp: {
             artifacts: {
-              amd64: { url: "https://swamp/x", sha256: "b".repeat(64) },
+              amd64: {
+                url: "https://swamp/x",
+                sha256: "b".repeat(64),
+              },
             },
           },
         },
@@ -232,7 +244,11 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
   if (stockRoles) {
     // Run sandboxed copies only where the fixture needs local files; all other fleet tasks stay the production source.
     for (const task of play[0].tasks) {
-      if (task["ansible.builtin.import_tasks"]?.endsWith("task-vm-fleet.yml")) {
+      if (
+        task["ansible.builtin.import_tasks"]?.endsWith(
+          "task-vm-fleet.yml",
+        )
+      ) {
         task["ansible.builtin.import_tasks"] =
           `${folder}/tasks/task-vm-fleet.yml`;
       }
@@ -367,7 +383,10 @@ Deno.test({
     let at = 0;
     for (const step of steps) {
       const found = find(log, step, at);
-      assert(found >= 0, `${step} after call ${at} in:\n${log.join("\n")}`);
+      assert(
+        found >= 0,
+        `${step} after call ${at} in:\n${log.join("\n")}`,
+      );
       at = found + 1;
     }
     // The bootstrap input: what the Gateway sent, and what the run adds: the Swamp pin, the machine with its pinned key, the release.
@@ -409,7 +428,9 @@ Deno.test({
     const { log, output } = run(["nested-gateway"], true, true);
     const writes = log.filter((call) => !reads.test(call));
     assertEquals(writes[0], "incus delete --force nested-gateway", output);
-    assert(find(log, "init images:ubuntu/resolute/cloud nested-gateway") > 0);
+    assert(
+      find(log, "init images:ubuntu/resolute/cloud nested-gateway") > 0,
+    );
   },
 });
 
@@ -499,7 +520,8 @@ Deno.test({
       ["succeeded", "succeeded", "succeeded", "succeeded", "succeeded"],
       Object.entries(result.roleOutputs).map(([id, output]) =>
         `Nested Operation ${id}:\n${output}`
-      ).join("\n"),
+      )
+        .join("\n"),
     );
     assertStringIncludes(
       result.roleOutputs[1],
@@ -543,7 +565,8 @@ Deno.test({
     assertEquals(result.samePid, true);
     assertEquals(
       result.calls.filter((call) =>
-        call.name === "orbit-private-dns.service" && call.state === "restarted"
+        call.name === "orbit-private-dns.service" &&
+        call.state === "restarted"
       ).length,
       1,
     );
@@ -553,7 +576,10 @@ Deno.test({
       ),
       false,
     );
-    assertStringIncludes(result.second, "TASK [Read Gateway resolver policy]");
+    assertStringIncludes(
+      result.second,
+      "TASK [Read Gateway resolver policy]",
+    );
     assertStringIncludes(result.second, "skipping: [localhost]");
   },
 });
@@ -602,7 +628,8 @@ Deno.test({
     assertEquals(result.retained, []);
     assertEquals(result.running, false);
     const route = result.calls.findIndex((call) =>
-      call.name === "orbit-gateway-dns.service" && call.state === "started"
+      call.name === "orbit-gateway-dns.service" &&
+      call.state === "started"
     );
     const stop = result.calls.findIndex((call) =>
       call.name === "orbit-private-dns.socket" && call.state === "stopped"
@@ -640,6 +667,33 @@ Deno.test({
     assertEquals(result.status, "failed", result.output);
     assertEquals(result.running, true);
     assertEquals(result.retained.length, 4);
-    assertEquals(result.calls.some((call) => call.state === "stopped"), false);
+    assertEquals(
+      result.calls.some((call) => call.state === "stopped"),
+      false,
+    );
   },
 });
+
+for (const installation of ["later-failure", "not-started"]) {
+  Deno.test({
+    name: `conservative DNS ownership can withdraw after ${installation}`,
+    ignore: !hasAnsible,
+    async fn() {
+      const result = await withdrawGatewayDns(false, installation);
+      if (installation === "later-failure") {
+        assertEquals(result.firstStatus, "failed", result.first);
+        assertStringIncludes(result.first, "fixture.php_fpm_invalid");
+        assertStringIncludes(
+          result.first,
+          "Prove the local Gateway DNS answer before routing",
+        );
+        assertEquals(result.installed, true);
+      } else {
+        assertEquals(result.installed, false);
+      }
+      assertEquals(result.status, "succeeded", result.output);
+      assertEquals(result.retained, []);
+      assertEquals(result.running, false);
+    },
+  });
+}

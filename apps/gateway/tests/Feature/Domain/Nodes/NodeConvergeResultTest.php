@@ -143,6 +143,7 @@ it('withdraws recorded Gateway DNS ownership after a separate VPN joins and leav
     $local = $dns->capture($this->node);
     expect($local)->toHaveKey('listener');
     expect($state->owned($this->node->id))->toBeFalse();
+    $state->claim($this->node->id, ['gateway_dns' => $local]);
     $input = $this->operation->input;
     $input['_converge']['intent']['roles'] = [['runtime' => ['gateway_dns' => $local]]];
     $this->operation->update(['input' => $input]);
@@ -172,7 +173,7 @@ it('withdraws recorded Gateway DNS ownership after a separate VPN joins and leav
 
 it('retains recorded Gateway DNS ownership when the withdrawal phase fails', function (): void {
     $state = app(GatewayPrivateDnsState::class);
-    $state->record($this->node->id, ['gateway_dns' => ['listener' => []]]);
+    $state->claim($this->node->id, ['gateway_dns' => ['listener' => []]]);
     $input = $this->operation->input;
     $input['_converge']['intent']['roles'] = [['runtime' => ['gateway_dns' => ['withdraw' => []]]]];
     $this->operation->update(['input' => $input]);

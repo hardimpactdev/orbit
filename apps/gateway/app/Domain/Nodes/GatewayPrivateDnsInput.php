@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
@@ -18,9 +17,7 @@ final readonly class GatewayPrivateDnsInput
     public function requiresLocalListener(Node $gateway): bool
     {
         return Node::query()->whereKeyNot($gateway->id)
-            ->whereIn('status', [LifecycleStatus::Active, LifecycleStatus::Provisioning])
-            ->whereHas('roles', static fn ($roles) => $roles->where('role', RoleName::Vpn)
-                ->whereIn('status', [LifecycleStatus::Active, LifecycleStatus::Provisioning]))
+            ->whereHas('roles', static fn ($roles) => $roles->where('role', RoleName::Vpn))
             ->doesntExist();
     }
 

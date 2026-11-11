@@ -8,7 +8,7 @@ use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 
-/** Durable ownership confirmed by the role's machine phase, independent of fleet topology. */
+/** Admission claims resources that are owned or may be owned before any machine work can start. */
 final readonly class GatewayPrivateDnsState
 {
     private const string Key = 'gateway.private_dns_owned';
@@ -21,15 +21,24 @@ final readonly class GatewayPrivateDnsState
     }
 
     /** @param array<string,mixed> $runtime */
+    public function claim(int $nodeId, array $runtime): void
+    {
+        $dns = $runtime['gateway_dns'] ?? null;
+        if (is_array($dns) && isset($dns['listener'])) {
+            $this->settings->put(new SettingScope(SettingScopeType::Node, $nodeId), self::Key, 'true');
+        }
+    }
+
+    /** Only confirmed withdrawal releases the conservative admission claim.
+     * @param  array<string,mixed>  $runtime
+     */
     public function record(int $nodeId, array $runtime): void
     {
         $dns = $runtime['gateway_dns'] ?? null;
         if (! is_array($dns)) {
             return;
         }
-        if (isset($dns['listener'])) {
-            $this->settings->put(new SettingScope(SettingScopeType::Node, $nodeId), self::Key, 'true');
-        } elseif (isset($dns['withdraw'])) {
+        if (isset($dns['withdraw'])) {
             $this->forget($nodeId);
         }
     }

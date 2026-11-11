@@ -6,15 +6,18 @@ namespace App\Actions\Nodes;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Nodes\GatewayPrivateDnsState;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeConvergeScope;
 use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\NodeNetworkReservation;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 /** Admission and immutable intent only. Every new attempt runs every phase. */
 final readonly class StartNodeConvergeAction
@@ -44,7 +47,10 @@ final readonly class StartNodeConvergeAction
                     app(InstanceHostIntent::class)->prepare($node);
                 }
                 $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $hub);
-                // Dispatch is deferred until this reservation transaction commits.
+                foreach (RouteExecutionProof::objects(ValidatedData::object($snapshot['intent'])['roles']) as $plan) {
+                    app(GatewayPrivateDnsState::class)->claim($node->id, ValidatedData::object($plan['runtime']));
+                }
+                // Dispatch is deferred until this reservation transaction and its ownership claims commit.
                 $operation->input = [...$operation->input, '_converge' => [
                     ...$snapshot, 'network' => ['hub_id' => $hub?->id],
                 ]];

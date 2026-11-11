@@ -2,14 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\ReleaseHistory;
+use App\Domain\Nodes\GatewayPrivateDnsInput;
+use App\Domain\Nodes\GatewayPrivateDnsState;
+use App\Domain\Nodes\NativeNodeRoleRemovalInput;
+use App\Domain\Nodes\NodeConvergeProjection;
 use App\Domain\Nodes\NodeConvergeScope;
 use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\NodeNetworkReservation;
+use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeUpdatePolicy;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
@@ -231,3 +237,49 @@ it('allocates a build-list app-dev Node\'s Instance bridge in the admission, bef
     'every role' => [[], '10.253.0.0/24'],
     'the base only' => [['base' => true], null],
 ]);
+
+it('claims local DNS before dispatch and retains cleanup after a later machine failure or crash', function (bool $direct, bool $crash): void {
+    Node::withoutEvents(fn () => $this->control->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned',
+        'ssh_host_fingerprint' => 'SHA256:pinned', 'agent_secret_hash' => hash('sha256', 'private-control-secret')])->save());
+    $state = app(GatewayPrivateDnsState::class);
+    expect($state->owned($this->control->id))->toBeFalse();
+    $operation = $direct
+        ? app(AdmitNodeRoleOperationAction::class)->add($this->control, RoleName::Gateway, converge: true)
+        : app(StartNodeConvergeAction::class)->execute($this->control, roles: ['gateway']);
+    // No machine job has run. The durable claim covers an interrupted or partially installed listener.
+    expect($state->owned($this->control->id))->toBeTrue()
+        ->and(array_column($this->frames, 'type'))->not->toContain('workflow.run');
+    $runtime = $direct ? $operation->input['native_role']['runtime'] : $operation->input['_converge']['intent']['roles'][0]['runtime'];
+    expect($runtime['gateway_dns'])->toHaveKey('listener');
+    if (! $crash) {
+        $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'dns-machine-failed']]);
+        if ($direct) {
+            app(NodeRoleDirectProjection::class)->apply($operation, ['run_id' => 'dns-machine-failed', 'status' => 'failed', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+                'error_code' => 'operation.native_failed', 'error_message' => 'PHP-FPM validation failed after DNS installation.',
+                'result' => ['steps' => ['Apply the role on the Node' => ['status' => 'failed']],
+                    'summary' => ['failed_steps' => ['Apply the role on the Node']]]]);
+        } else {
+            $phases = [];
+            foreach (['input', 'agent', 'software', 'roles', 'tools', 'network', 'check'] as $index => $name) {
+                $phases[] = ['name' => $name, 'status' => $index < 3 ? 'succeeded' : ($index === 3 ? 'failed' : 'skipped'), 'changed' => 0, 'elapsed_seconds' => 0];
+            }
+            app(NodeConvergeProjection::class)->apply($operation, ['run_id' => 'dns-machine-failed', 'status' => 'failed', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+                'result' => ['outcome' => 'failed', 'phases' => $phases, 'changed' => 0, 'elapsed_seconds' => 0, 'tools' => [],
+                    'cleanup_complete' => true, 'failed_phase' => 'roles', 'error_code' => 'operation.native_failed']]);
+        }
+        expect($operation->refresh()->status)->toBe(OperationStatus::Failed);
+    }
+    expect($state->owned($this->control->id))->toBeTrue();
+    $this->node->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+    $withdraw = app(GatewayPrivateDnsInput::class)->capture($this->control);
+    expect($withdraw)->toHaveKey('withdraw')->not->toHaveKey('listener')
+        ->and($withdraw['withdraw']['resolver_address'])->toBe($this->node->wireguard_ip);
+    // Removal also works before any successful withdrawal or terminal receipt arrives.
+    $assignment = $this->control->roles()->where('role', RoleName::Gateway)->firstOrFail();
+    $assignment->update(['status' => 'removing']);
+    $removal = app(NativeNodeRoleRemovalInput::class);
+    $plan = $removal->capture($this->control, $assignment, $removal->publications($this->control, RoleName::Gateway));
+    expect(array_column(array_column($plan['stop_units'], 'input'), 'unit'))->toContain('orbit-private-dns.socket', 'orbit-private-dns.service');
+    expect(array_column($plan['files'], 'path'))->toContain('/etc/systemd/system/orbit-private-dns.socket', '/etc/systemd/system/orbit-private-dns.service');
+})->with(['Node converge' => [false], 'role converge' => [true]])
+    ->with(['later machine failure' => [false], 'process crash without receipt' => [true]]);

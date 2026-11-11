@@ -25,7 +25,8 @@ function sandbox(task: Task, folder: string): Task {
     }
   }
   if (
-    task["ansible.builtin.systemd"] || task["ansible.builtin.systemd_service"]
+    task["ansible.builtin.systemd"] ||
+    task["ansible.builtin.systemd_service"]
   ) {
     task.stock_systemd = task["ansible.builtin.systemd"] ??
       task["ansible.builtin.systemd_service"];
@@ -34,10 +35,16 @@ function sandbox(task: Task, folder: string): Task {
   }
   // Only the paths that the real task file writes or reads are redirected. The admitted payload is redirected separately.
   return JSON.parse(
-    JSON.stringify(task).replaceAll("/etc/systemd/system", `${folder}/units`)
+    JSON.stringify(task).replaceAll(
+      "/etc/systemd/system",
+      `${folder}/units`,
+    )
       .replaceAll("/var/lib/orbit/private-dns", `${folder}/private-dns`)
       .replaceAll("/sys/class/net/orbit", `${folder}/orbit-interface`)
-      .replaceAll("/etc/wireguard/orbit.dns-link", `${folder}/peer-dns-link`)
+      .replaceAll(
+        "/etc/wireguard/orbit.dns-link",
+        `${folder}/peer-dns-link`,
+      )
       .replaceAll("/etc/wireguard", `${folder}/wireguard`),
   );
 }
@@ -176,9 +183,16 @@ export function cleanupStockRoles(folder: string) {
   } catch { /* The fixture may fail before starting its listener. */ }
 }
 
-async function operation(folder: string, id: number, check = false) {
+async function operation(
+  folder: string,
+  id: number,
+  check = false,
+  failAfterDns = false,
+) {
   const recipe = JSON.parse(
-    Deno.readTextFileSync(`${gateway}/resources/machine-software/recipe.json`),
+    Deno.readTextFileSync(
+      `${gateway}/resources/machine-software/recipe.json`,
+    ),
   );
   const roles = id === 4
     ? ["app-dev"]
@@ -189,7 +203,10 @@ async function operation(folder: string, id: number, check = false) {
     cli: null,
     selected_roles: roles,
     tools: [],
-    agent: { url: "https://fixtures.invalid/agent", sha256: "a".repeat(64) },
+    agent: {
+      url: "https://fixtures.invalid/agent",
+      sha256: "a".repeat(64),
+    },
   };
   const vars = {
     intent,
@@ -224,7 +241,9 @@ async function operation(folder: string, id: number, check = false) {
       },
     });
   } else if (id === 2) {
-    const dns = JSON.parse(Deno.readTextFileSync(`${folder}/dns-runtime.json`));
+    const dns = JSON.parse(
+      Deno.readTextFileSync(`${folder}/dns-runtime.json`),
+    );
     Object.assign(vars, {
       rt: { gateway_dns: dns },
       intent: { ...intent, runtime: { gateway_dns: dns } },
@@ -301,6 +320,12 @@ async function operation(folder: string, id: number, check = false) {
       },
     }];
   }
+  if (failAfterDns) {
+    tasks.push({
+      name: "Simulate later machine task failure after DNS is proved",
+      "ansible.builtin.fail": { msg: "fixture.php_fpm_invalid" },
+    });
+  }
   Deno.writeTextFileSync(
     `${folder}/role-${id}.json`,
     JSON.stringify([{
@@ -364,7 +389,8 @@ export async function existingGatewayDns(check = false) {
       second: Deno.readTextFileSync(`${folder}/role-2.output`),
       secondStatus: Deno.readTextFileSync(`${folder}/role-2.status`),
       samePid: pid === Deno.readTextFileSync(`${folder}/listener.pid`),
-      calls: Deno.readTextFileSync(`${folder}/systemd.jsonl`).trim().split("\n")
+      calls: Deno.readTextFileSync(`${folder}/systemd.jsonl`).trim()
+        .split("\n")
         .map((line) => JSON.parse(line)),
     };
   } finally {
@@ -412,7 +438,8 @@ export async function productionGatewayDns() {
       dnsDirectory: exists(`${folder}/private-dns`),
       listener: exists(`${folder}/units/orbit-private-dns.service`),
       socket: exists(`${folder}/units/orbit-private-dns.socket`),
-      calls: Deno.readTextFileSync(`${folder}/systemd.jsonl`).trim().split("\n")
+      calls: Deno.readTextFileSync(`${folder}/systemd.jsonl`).trim()
+        .split("\n")
         .map((line) => JSON.parse(line)),
     };
   } finally {
@@ -421,13 +448,31 @@ export async function productionGatewayDns() {
   }
 }
 
-export async function withdrawGatewayDns(staleLocalResolver = false) {
+export async function withdrawGatewayDns(
+  staleLocalResolver = false,
+  installation = "installed",
+) {
   const folder = Deno.makeTempDirSync();
   try {
     Deno.mkdirSync(`${folder}/bin`);
     prepareStockRoles(folder);
-    await operation(folder, 2);
-    const first = Deno.readTextFileSync(`${folder}/role-2.output`);
+    if (installation !== "not-started") {
+      await operation(folder, 2, false, installation === "later-failure");
+    }
+    const first = installation === "not-started"
+      ? ""
+      : Deno.readTextFileSync(`${folder}/role-2.output`);
+    const firstStatus = installation === "not-started"
+      ? "not-started"
+      : Deno.readTextFileSync(`${folder}/role-2.status`);
+    const installed = (() => {
+      try {
+        Deno.statSync(`${folder}/listener.pid`);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
     const runtime = JSON.parse(
       Deno.readTextFileSync(`${folder}/dns-runtime.json`),
     );
@@ -461,11 +506,14 @@ export async function withdrawGatewayDns(staleLocalResolver = false) {
     };
     return {
       first,
+      firstStatus,
+      installed,
       status: Deno.readTextFileSync(`${folder}/role-2.status`),
       output: Deno.readTextFileSync(`${folder}/role-2.output`),
       retained: runtime.withdraw.files.filter(exists),
       running: exists(`${folder}/listener.pid`),
-      calls: Deno.readTextFileSync(`${folder}/systemd.jsonl`).trim().split("\n")
+      calls: Deno.readTextFileSync(`${folder}/systemd.jsonl`).trim()
+        .split("\n")
         .map((line) => JSON.parse(line)),
     };
   } finally {
