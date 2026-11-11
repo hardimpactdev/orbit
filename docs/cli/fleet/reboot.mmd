@@ -27,7 +27,8 @@ sequenceDiagram
   loop each Node, one at a time
     SW->>N: Drain the Node<br/>drain phase
     %%> Why:
-    %%> - SSH exit 255: eight attempts, 10 s each, with Ansible backoff (0, 1, 3, 7, 15, 30, 30 s); at most 166 s before overhead
+    %%> - only the initial safe boot-state reads retry SSH exit 255: eight attempts, 10 s each, with Ansible backoff (0, 1, 3, 7, 15, 30, 30 s); at most 166 s before overhead
+    %%> - drain, stops and reboot use zero SSH retries; a disconnect after execution never replays the command
     %%> - a held Node that cannot be read fails and halts the pass, as any other Node does
     %%> - after a failed Node: `skipped`; outside the window: `deferred`; no `/var/run/reboot-required`: `not_due`
     %%> - a due held Node records boot ID, kernel and due time, then `deferred` (`operator_hold`); without a due reboot it stays `not_due`
@@ -53,16 +54,18 @@ sequenceDiagram
     %%> Why:
     %%> - always on the controller, including after UNREACHABLE bypasses Ansible rescue
     %%> - private JSON callback reports supply `failed` / `fleet.node_unreachable` and bounded redacted SSH diagnostic text
-    %%> - a started phase without a terminal report or Node outcome is `failed` / `fleet.reboot_cut`; only unvisited Nodes use `not_reached`
+    %%> - a started phase without a terminal report or Node outcome is `failed` / `fleet.reboot_cut`; `not_reached` needs an earlier recorded halt
   end
   alt every Node rebooted, scheduled, not due, deferred or skipped
     SW-->>GW: Run succeeded<br/>each Node's outcome
     %%> Result:
     %%> - every Node result shows `reboot_hold` as admitted; held task hosts keep taking work
     %%> - the Gateway records parked task VMs; a Node due for more than 3 days raises `reboot_overdue`
-  else a Node fails
+  else a Node fails or has unknown outcome
     SW--xGW: Run failed<br/>NODE · error_code
     %%> Why stop:
+    %%> - without a Node report, the Gateway records `unknown` / `run_interrupted`, fails the pass and alerts once
+    %%> - missing records before a recorded halt stay unknown; only Nodes after that halt may be `not_reached`
     %%> - later Nodes record `skipped` / `halted` without SSH; the next pass starts again there
     Note over GW: Alert once<br/>reboot_halted
   end

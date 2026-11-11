@@ -694,11 +694,15 @@ A task host with an open task Operation on one of its task VMs stays in the pass
 
 ### One Node of the pass
 
-The child `fleet-reboot-node` runs three Ansible phases of `swamp/ansible/operation-fleet-reboot.yml` from Node 209. Each phase reads and extends the Node's record in the pass's run folder. Once the record has an outcome, the later phases change nothing. The drain writes an initial record on the controller before its first SSH attempt, so even a cut leaves evidence of the visit.
+The child `fleet-reboot-node` runs three Ansible phases of `swamp/ansible/operation-fleet-reboot.yml` from Node 209. Each phase reads and extends the Node's record in the pass's run folder. Once the record has an outcome, the later phases change nothing. The drain writes an initial record on the controller before its first SSH attempt, so collection can retain evidence of the visit if the run reaches its report step. The run folder is not durable Gateway evidence.
 
-Each phase keeps its Ansible JSON callback report private. Before the child ends, `Record the Node` reads those reports on the controller, including after an unreachable target bypasses Ansible rescue. It records a started phase without a terminal report or Node outcome as `failed` with `fleet.reboot_cut`; `not_reached` is only for Nodes never visited after a halt or a cut run.
+Each phase keeps its Ansible JSON callback report private. Before the child ends, `Record the Node` reads those reports on the controller, including after an unreachable target bypasses Ansible rescue. When collection runs, it records a started phase without a terminal report or Node outcome as `failed` with `fleet.reboot_cut`.
 
-SSH connection failures (exit 255) get seven retries after the first attempt, with a 10-second connect timeout and one OpenSSH connection attempt per try. Ansible supplies the pauses: 0, 1, 3, 7, 15, 30 and 30 seconds. Eight timed-out attempts take at most 166 seconds before process overhead. This covers a two-minute uplink outage, stays within the existing 2,400-second drain phase and leaves room for the 900-second drain and six 75-second guest stops. The phase timeouts remain the hard bounds. The window check runs after the read, so connection retries cannot make a Node start draining after the window's cutoff. No failed machine action is retried by this policy.
+If the root run ends before reporting any Node records, the Gateway cannot tell which Nodes were attempted: every Node records `unknown` with `run_interrupted`. Missing records without an earlier recorded halt also stay unknown. A pass with unknown Nodes fails with `fleet.reboot_interrupted` and raises `reboot_halted` once. Only missing Nodes after a recorded halt use `skipped` with `not_reached`.
+
+Only the initial boot-state reads before any Node change retry SSH connection failures (exit 255). They get seven retries after the first attempt, with a 10-second connect timeout and one OpenSSH connection attempt per try. Ansible supplies the pauses: 0, 1, 3, 7, 15, 30 and 30 seconds. Eight timed-out attempts take at most 166 seconds per SSH invocation before process overhead. This covers a two-minute uplink outage, stays within the existing 2,400-second drain phase and leaves room for the 900-second drain and six 75-second guest stops. The phase timeouts remain the hard bounds. The window check runs after the read, so connection retries cannot make a Node start draining after the window's cutoff.
+
+The drain, guest and runner stops, recovery and reboot use zero SSH retries. A disconnect after a command started can therefore fail the phase, but cannot replay that command through the SSH retry plugin.
 
 The `drain` phase decides first whether the Node goes on:
 
@@ -771,7 +775,7 @@ A reboot of the control path or of Node 209 can cut a Swamp run after the drain 
 
 ### What is reported
 
-The Operation result lists each Node in pass order with its outcome: `rebooted`, `scheduled`, `not_due`, `deferred` with `operator_hold`, `window`, `tasks_busy` or `ci_busy`, `skipped` with `halted` or `not_reached`, or `failed`. It also holds the kernel before and after, since when the reboot was due, the parked task guests, any newly failed units, the stopped CI runners with their freeze times, and the CI runs it re-ran.
+The Operation result lists each Node in pass order with its outcome: `rebooted`, `scheduled`, `not_due`, `deferred` with `operator_hold`, `window`, `tasks_busy` or `ci_busy`, `skipped` with `halted` or `not_reached`, or `failed`. A missing Node record without a recorded halt is `unknown` with `run_interrupted`; when the root reports no Nodes, every Node has that outcome. It also holds the kernel before and after, since when the reboot was due, the parked task guests, any newly failed units, the stopped CI runners with their freeze times, and the CI runs it re-ran.
 
 Doctor reports `node.reboot_due` when the newest pass that read a Node found it due more than 3 days ago and did not reboot it. A record without a due time, such as `halted`, does not count; Doctor looks at the pass before it. A reboot hold does not suppress this warning or alert: the owner still needs to see overdue fixes. When a pass ends with such a Node, the Gateway raises [`reboot_overdue`](#release-alerts) once.
 
