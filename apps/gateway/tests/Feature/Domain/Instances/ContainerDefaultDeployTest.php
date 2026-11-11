@@ -34,6 +34,7 @@ use App\Models\Operation;
 use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\ProjectDevelopmentDeployStep;
+use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -679,3 +680,22 @@ it('retains admission-wide PHP facts after deployment failure or cancellation wh
     expect($cloneIntent['clone']['seed_commit'])->toBe($seed);
     expect($cloneIntent['php'])->toBe('/opt/orbit-runtime/current/php/8.5/bin/php');
 })->with(['failed', 'cancelled']);
+
+it('refuses a real pending routed container projection with 409 before recording a deployment', function (): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $instance->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5']);
+    $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+        'provenance' => 'explicit', 'publication' => 'private', 'domain' => 'default.tool.test', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => 'active']);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(
+        deploySourceRead(str_repeat('a', 40), '{"require":{"php":"^8.5","laravel/framework":"^13.0"}}', true));
+
+    expect(fn () => app(StartInstanceDeployAction::class)->execute($instance, 'manual', null))
+        ->toThrow(fn (ResourceOperationException $error) => expect([$error->errorCode, $error->status])->toBe(['deployment.projection_pending', 409]));
+
+    $this->assertDatabaseHas('instances', ['id' => $instance->id, 'development_projection_pending' => true]);
+    expect(Operation::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
+});

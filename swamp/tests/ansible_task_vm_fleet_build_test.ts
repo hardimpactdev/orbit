@@ -9,6 +9,7 @@ import {
   cleanupStockRoles,
   existingGatewayDns,
   freshGatewayDnsCheck,
+  missingGatewayDnsTool,
   prepareStockRoles,
   productionGatewayDns,
   stockBaseTasks,
@@ -123,6 +124,14 @@ function run(
   const bin = `${folder}/bin`;
   Deno.mkdirSync(bin);
   Deno.mkdirSync(`${folder}/home/.ssh`, { recursive: true });
+  // A warm VM already has its SSH user's client config from the tools phase.
+  if (initialised) {
+    Deno.mkdirSync(`${folder}/home/.config/incus`, { recursive: true });
+    Deno.writeTextFileSync(
+      `${folder}/home/.config/incus/config.yml`,
+      "default-remote: local\n",
+    );
+  }
   Deno.mkdirSync(`${folder}/stamps`);
   if (joined) Deno.writeTextFileSync(`${folder}/stamps/operator`, "d");
   Deno.writeTextFileSync(`${folder}/containers`, present.join("\n"));
@@ -146,6 +155,7 @@ if [ -n "$STOCK_ROLES" ] && [ "$1" = --project ]; then
     }" "$@"
 fi
 case "$*" in
+  "list --project default --format csv") mkdir -p "$HOME/.config/incus"; printf 'default-remote: local\\n' > "$HOME/.config/incus/config.yml" ;;
   "storage list --format csv") [ -n "$INITIALISED" ] && printf 'default,dir\\ntopology-seed,btrfs\\n' ;;
   "network list --format csv") [ -n "$INITIALISED" ] && printf 'oe-nested,bridge\\n' ;;
   "admin init --preseed") cat > "${folder}/preseed" ;;
@@ -552,6 +562,21 @@ Deno.test({
     );
   },
 });
+
+for (const check of [false, true]) {
+  Deno.test({
+    name: `local Gateway DNS fails with a named error before activation when dig is missing${check ? " in check mode" : ""}`,
+    ignore: !hasAnsible,
+    async fn() {
+      const result = await missingGatewayDnsTool(check);
+      assertEquals(result.status, "failed", result.output);
+      assertStringIncludes(result.output, "gateway.private_dns_tool_missing");
+      assertStringIncludes(result.output, "dig is required");
+      assertEquals(result.units, []);
+      assertEquals(result.output.includes("FAILED - RETRYING"), false);
+    },
+  });
+}
 
 Deno.test({
   name:

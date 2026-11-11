@@ -186,6 +186,10 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                     // A default's clones start at the seed snapshot the run took of its commit.
                     $runtime->update(['power_state' => InstanceRuntimePowerState::Running,
                         ...($server === null ? ['seed_commit' => ValidatedData::string($result['commit'])] : [])]);
+                    if ($data['status'] === 'succeeded') {
+                        // This run published the container's Route inline; no later route.update receipt is needed.
+                        $instance->update(['development_projection_pending' => false]);
+                    }
                     if ($server !== null) {
                         app(InstanceLifecycleContributions::class)->projectCreate($instance, $server);
                     }

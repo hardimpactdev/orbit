@@ -98,3 +98,5 @@ Gateway releases admit refresh jobs only after verification and the new Horizon 
 For an attachment read, reuse the operation's ordered inventory and eager-load its identity graph. Project public fields explicitly, and compare query counts with one attachment and several on distinct Nodes.
 
 A Node hold orders publication runs but cannot make an earlier whole-file capture current. Refresh a waiting create's publication after it gains the hold, before dispatch, and preserve its admitted resource and certificate identities. Commit accepted catalog state and release the hold in the same transaction. A writer whose hold starts after its run needs a separate design: promotion cannot change frozen run inputs.
+
+An inline Route publication must complete its Instance projection mark in the same terminal transaction as the seed. A later policy receipt cannot prove a create or migration that publishes no separate Route update.

@@ -1,0 +1,405 @@
+# CI check inputs. Includes are ORed; any !exclude wins, regardless of order.
+# ** crosses directories; * and ? stay within one name (selection_regex).
+# Costs are pull_request median wall seconds from ci-speed.md (2026-11-11).
+# swamp and swamp-shape use the current static control median, not retired fixtures.
+# Ceilings are declarations for the next workflow migration; this PR changes no timeout.
+
+[all-checks]
+# Changes to the check machinery run each check job once, without an agent delivery.
+inputs = [".github/workflows/ci.yml", ".github/actions/**", ".github/ci/checks.toml", "bin/ci-build-plan"]
+
+[ignored]
+# These paths have intentionally paused checks, prose skips, or always-run plan tests.
+inputs = ["tools/test_ci_*", "tools/test_swamp_import_base*", "tools/test_frozen_agent_commands*", "apps/desktop/**", "apps/agent/**/*.md", "apps/agent/**/*.mdx", "apps/pi-server/**/*.md", "apps/pi-server/**/*.mdx"]
+
+[check.php]
+inputs = [
+  "**/*.php",
+  "**/*composer.json",
+  "**/*composer.lock",
+  "apps/gateway/resources/agent/**",
+  "bin/check-frozen-agent-commands",
+  "!swamp/**",
+  "!.agents/**",
+  "!.codex/**",
+  "!.githooks/**",
+]
+cost = 24
+ceiling = 120
+
+[check.gateway-static]
+inputs = [
+  "apps/gateway/**",
+  "tools/phpstan/**",
+]
+cost = 51
+ceiling = 120
+
+[check.gateway-tests]
+inputs = [
+  "apps/gateway/**",
+  "apps/cli/**",
+  "packages/php-sdk/**",
+  "swamp/workflows/**",
+  "swamp/ansible/**",
+  "swamp/proof/**",
+  "swamp/config/**",
+  "swamp/extensions/behaviors/operations/**",
+  "swamp/extensions/behaviors/_lib/**",
+  "swamp/deno.*",
+  "swamp/.swamp.yaml",
+  "tools/swamp-proof-guest/ansible-recaps.php",
+  "docs/site.json",
+  "docs/navigation/**/*.json",
+  "docs/cli/**/*.mmd",
+  "bin/build-api",
+  "bin/docs-openapi",
+  "bin/mcp-tools",
+  "bin/docs-navigation",
+  "!swamp/**/*.md",
+  "!swamp/**/*.mdx",
+  "!swamp/**/*.mmd",
+]
+cost = 92
+ceiling = 240
+
+[check.cli]
+inputs = [
+  "apps/cli/**",
+  "packages/php-sdk/**",
+  "bin/orbit-build-cli-binary",
+  "bin/orbit-version",
+  "bin/orbit-cli-release-version",
+  "bin/orbit-cli-release-assets",
+  ".github/workflows/orbit-cli-binary.yml",
+  ".github/workflows/orbit-cli-release.yml",
+  "!apps/gateway/tests/**",
+  "!apps/cli/tests/**",
+  "!packages/php-sdk/tests/**",
+]
+cost = 37
+ceiling = 120
+
+[check.cli-static]
+inputs = [
+  "apps/cli/**",
+  "packages/php-sdk/**",
+  "tools/phpstan/**",
+]
+cost = 29
+ceiling = 120
+
+[check.cli-tests]
+inputs = [
+  "apps/cli/**",
+  "packages/php-sdk/**",
+  "docs/cli/**/*.mdx",
+  ".codex/config.toml",
+  "docs/reference/cli-command-vocabulary.md",
+  "apps/gateway/routes/api/**/*.php",
+  "apps/agent/scripts/source-commit",
+  "bin/orbit-build-cli-binary",
+  "bin/orbit-version",
+  "bin/orbit-cli-release-version",
+  "bin/orbit-cli-release-assets",
+]
+cost = 142
+ceiling = 240
+
+[check.sdk-static]
+inputs = [
+  "packages/php-sdk/**",
+  "tools/phpstan/**",
+]
+cost = 16
+ceiling = 120
+
+[check.e2e-static]
+inputs = [
+  "apps/e2e/**",
+  "tools/phpstan/**",
+]
+cost = 11
+ceiling = 120
+
+[check.docs]
+inputs = [
+  "docs/**",
+  "apps/docs/**",
+  ".agents/**",
+  ".codex/**",
+  ".githooks/**",
+  "*.md",
+  "*.mdx",
+  "*.mmd",
+  ".github/**/*.md",
+  ".github/**/*.mdx",
+  ".github/**/*.mmd",
+  "bin/**/*.md",
+  "bin/**/*.mdx",
+  "bin/**/*.mmd",
+  "tools/**/*.md",
+  "tools/**/*.mdx",
+  "tools/**/*.mmd",
+  "scripts/**/*.md",
+  "scripts/**/*.mdx",
+  "scripts/**/*.mmd",
+  "swamp/**/*.md",
+  "swamp/**/*.mdx",
+  "swamp/**/*.mmd",
+  "bin/docs-*",
+  "bin/check-flows*",
+  "swamp/workflows/**",
+  ".github/workflows/docs-site.yml",
+  "!bin/docs-openapi",
+]
+cost = 40
+ceiling = 120
+
+[check.api-reference]
+inputs = [
+  "apps/gateway/**",
+  "apps/cli/**",
+  "packages/php-sdk/**",
+  "bin/build-api",
+  "bin/docs-openapi",
+  "bin/mcp-tools",
+  "bin/docs-navigation",
+  "bin/api-fixtures",
+  "bin/check-operation-kinds",
+  "docs/cli/**/*.mmd",
+  "docs/cli/flows-pending.txt",
+  "apps/web/tools/api-types/**",
+  "apps/web/fixtures/**",
+  "swamp/config/gateway-workflow-grants.json",
+  ".github/workflows/docs-site.yml",
+  "!apps/gateway/tests/**",
+  "!apps/cli/tests/**",
+  "!packages/php-sdk/tests/**",
+]
+cost = 31
+ceiling = 120
+
+[check.web]
+inputs = [
+  ".node-version",
+  "apps/gateway/**",
+  "apps/cli/**",
+  "packages/php-sdk/**",
+  "bin/build-api",
+  "bin/docs-openapi",
+  "bin/mcp-tools",
+  "bin/docs-navigation",
+  "bin/api-fixtures",
+  "bin/check-operation-kinds",
+  "apps/web/**",
+  "!apps/gateway/tests/**",
+  "!apps/cli/tests/**",
+  "!packages/php-sdk/tests/**",
+]
+cost = 38
+ceiling = 120
+
+[check.pi]
+inputs = [
+  ".node-version",
+  "apps/pi-server/**",
+  "!apps/pi-server/**/*.md",
+  "!apps/pi-server/**/*.mdx",
+]
+cost = 11
+ceiling = 120
+
+[check.agent]
+inputs = [
+  ".node-version",
+  "apps/agent/**",
+  "apps/gateway/extensions/*/agent/**",
+  "!**/*.md",
+  "!**/*.mdx",
+]
+cost = 11
+ceiling = 240
+
+[check.swamp]
+inputs = [
+]
+# Aggregate of the three Swamp checks; no independent path rules.
+cost = 117
+ceiling = 120
+
+[check.proof]
+inputs = [
+  "swamp/proof/**",
+  "bin/ci-proof-run",
+  "tools/swamp-proof-guest/**",
+  ".github/workflows/proof-outside.yml",
+  "!swamp/**/*.md",
+  "!swamp/**/*.mdx",
+  "!swamp/**/*.mmd",
+  "!tools/swamp-proof-guest/**/*.md",
+  "!tools/swamp-proof-guest/**/*.mdx",
+  "!tools/swamp-proof-guest/**/*.mmd",
+]
+cost = 12
+ceiling = 120
+
+[check.swamp-shape]
+inputs = [
+  "swamp/**",
+  "apps/gateway/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php",
+  "apps/gateway/app/Support/ValidatedData.php",
+  "apps/gateway/bin/render-swamp-grants",
+  "apps/gateway/app/Domain/Tasks/direct-operations.php",
+  "apps/gateway/resources/agent/**",
+  "bin/swamp-shape-gate",
+  "bin/check-frozen-agent-commands",
+  ".github/workflows/swamp-shape.yml",
+  "apps/gateway/app/**/*.ts",
+  "apps/gateway/app/**/*.js",
+  "apps/gateway/app/**/*.py",
+  "apps/gateway/app/**/*.yaml",
+  "apps/gateway/app/**/*.yml",
+  "apps/gateway/extensions/**/*.ts",
+  "apps/gateway/extensions/**/*.js",
+  "apps/gateway/extensions/**/*.py",
+  "apps/gateway/extensions/**/*.yaml",
+  "apps/gateway/extensions/**/*.yml",
+  "!swamp/**/*.md",
+  "!swamp/**/*.mdx",
+  "!swamp/**/*.mmd",
+]
+cost = 117
+ceiling = 120
+
+[check.swamp-validate]
+inputs = [
+  "swamp/workflows/**",
+  "swamp/extensions/**",
+  "swamp/models/**",
+  "swamp/config/**",
+  "swamp/bin/validate-swamp-workflows*",
+  "swamp/bin/check-grant-patterns*",
+  "swamp/bin/lint-workflow-placement*",
+  "swamp/tests/node_add_bootstrap_test.ts",
+  "swamp/*",
+  "apps/gateway/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php",
+  "apps/gateway/app/Support/ValidatedData.php",
+  "apps/gateway/bin/render-swamp-grants",
+  "bin/swamp-shape-gate",
+  ".github/workflows/swamp-shape.yml",
+  "!swamp/config/swamp-shape*",
+  "!swamp/**/*.md",
+  "!swamp/**/*.mdx",
+  "!swamp/**/*.mmd",
+]
+cost = 38
+ceiling = 120
+
+[check.swamp-tests]
+inputs = [
+  "swamp/workflows/**",
+  "swamp/extensions/**",
+  "swamp/models/**",
+  "swamp/ansible/**",
+  "swamp/scripts/**",
+  "swamp/tests/**",
+  "swamp/config/**",
+  "swamp/bin/check-swamp-shape*",
+  "swamp/bin/gate-test-support*",
+  "swamp/bin/check-grant-patterns*",
+  "swamp/bin/bounded-phase-scripts.ts*",
+  "swamp/bin/workflow-placement.ts*",
+  "swamp/bin/swamp-shape-relocations.ts*",
+  "swamp/*",
+  "apps/gateway/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php",
+  "apps/gateway/app/Support/ValidatedData.php",
+  "apps/gateway/bin/render-swamp-grants",
+  "apps/gateway/app/Domain/Tasks/direct-operations.php",
+  "apps/gateway/resources/agent/**",
+  ".github/workflows/swamp-shape.yml",
+  "!swamp/**/*.md",
+  "!swamp/**/*.mdx",
+  "!swamp/**/*.mmd",
+]
+cost = 29
+ceiling = 120
+
+# A default applies only when no check (or intentional skip) claims the path; the plan summary names the path.
+# Tooling roots have no static check of their own, so their default is empty: no job runs for a file that no check reads.
+# The desktop checks are paused. Unknown roots fail instead of selecting everything.
+[roots."apps/agent"]
+inputs = ["apps/agent/**"]
+default = ["agent"]
+
+[roots."apps/cli"]
+inputs = ["apps/cli/**"]
+default = ["cli-static"]
+
+[roots."apps/desktop"]
+inputs = ["apps/desktop/**"]
+default = []
+
+[roots."apps/docs"]
+inputs = ["apps/docs/**"]
+default = ["docs"]
+
+[roots."apps/e2e"]
+inputs = ["apps/e2e/**"]
+default = ["e2e-static"]
+
+[roots."apps/gateway"]
+inputs = ["apps/gateway/**"]
+default = ["gateway-static"]
+
+[roots."apps/pi-server"]
+inputs = ["apps/pi-server/**"]
+default = ["pi"]
+
+[roots."apps/web"]
+inputs = ["apps/web/**"]
+default = ["web"]
+
+[roots."packages/php-sdk"]
+inputs = ["packages/php-sdk/**"]
+default = ["sdk-static", "cli-static"]
+
+[roots."docs"]
+inputs = ["docs/**"]
+default = ["docs"]
+
+[roots.".github"]
+inputs = [".github/**"]
+default = []
+
+[roots."bin"]
+inputs = ["bin/**"]
+default = []
+
+[roots."tools"]
+inputs = ["tools/**"]
+default = []
+
+[roots."scripts"]
+inputs = ["scripts/**"]
+default = []
+
+[roots.".agents"]
+inputs = [".agents/**"]
+default = ["docs"]
+
+[roots.".codex"]
+inputs = [".codex/**"]
+default = ["docs"]
+
+[roots.".githooks"]
+inputs = [".githooks/**"]
+default = ["docs"]
+
+[roots."swamp"]
+inputs = ["swamp/**"]
+default = ["swamp-shape"]
+
+[roots."."]
+inputs = [".editorconfig", ".gitattributes", ".gitignore", ".node-version", "composer.json", "composer.lock", "vet.json", "LICENSE", "*.md", "*.mdx", "*.mmd"]
+default = []
