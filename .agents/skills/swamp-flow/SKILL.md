@@ -80,3 +80,5 @@ After a landed behavior change, replace the affected rule in `docs/swamp/porting
 
 
 Optional client publication must leave observer SSH intent and terminal checks intact. A partial fleet admission retains the publication retry for waiting clients; a Node that gains a client caller treats a previously absent client version as drift.
+
+Migrate reads private material before its transaction, then checks the runtime reservation owner under the Instance lock and records domain state and receipt together. Verify cancellation with pinned history: an aborted command can be `failed` with exit `-1`, while a real phase failure keeps its own code.

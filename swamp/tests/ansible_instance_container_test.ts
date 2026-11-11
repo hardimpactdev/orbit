@@ -73,7 +73,7 @@ function fixture() {
     Deno.readTextFileSync(new URL("tasks/instance-container-phase.yml", root)),
   ) as Task[]).map((task) => transform(structuredClone(task)));
   Deno.writeTextFileSync(`${folder}/tasks/instance-container-phase.yml`, stringify(tasks));
-  for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml"]) {
+  for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
   Deno.mkdirSync(`${folder}/run`);
@@ -201,7 +201,7 @@ Deno.test({
       assertEquals(state.files["/srv/workspace/.env"], { uid: "1000", gid: "2760", mode: "0640" });
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/.env`), "APP_KEY=base64:secret\n");
       assertEquals(state.containers["instance-7"].snapshots, [`seed-${head}`]);
-      assert(state.systemctl.some((call: string[]) => call.join(" ") === "enable --now -- orbit-frankenphp.service"));
+      assert(state.systemctl.some((call: string[]) => call.join(" ") === "enable --now --no-block -- orbit-frankenphp.service"));
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/orbit/frankenphp.Caddyfile`), f.container.web_config.content);
       // No bundle, credential or .env stays behind on the Node or in the container.
       assertEquals([...Deno.readDirSync(`${f.folder}/containers/instance-7/tmp`)], []);
@@ -218,7 +218,7 @@ Deno.test({
       const repaired = f.run("processes");
       assert(repaired.ok, repaired.output);
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/orbit/frankenphp.Caddyfile`), f.container.web_config.content);
-      assert(f.state().systemctl.slice(before).some((call: string[]) => call.join(" ") === "restart -- orbit-frankenphp.service"));
+      assert(f.state().systemctl.slice(before).some((call: string[]) => call.join(" ") === "restart --no-block -- orbit-frankenphp.service"));
       const unchanged = f.run("processes");
       assert(unchanged.ok, unchanged.output);
       assertEquals(unchanged.changed, 0, unchanged.output);
@@ -396,7 +396,7 @@ Deno.test({
       assertEquals(Deno.readTextFileSync(`${clone}/home/agent/.config/orbit/model.env`), "ORBIT_MODEL_KEY=placeholder\n");
       assertEquals(state.files["/home/agent/.config/orbit/model.env"], { uid: "2750", gid: "2750", mode: "0600" });
       assertEquals(Deno.readLinkSync(`${clone}/home/agent/.claude/CLAUDE.md`), "/opt/orbit-agent/current/notes/web-app.md");
-      assert(state.systemctl.some((call: string[]) => call.join(" ") === "restart -- orbit-frankenphp.service"));
+      assert(state.systemctl.some((call: string[]) => call.join(" ") === "restart --no-block -- orbit-frankenphp.service"));
       assertEquals(state.projects, ["/srv/workspace"]);
       // The reply with both sessions waits in the run folder, 0600; no session reaches the run's output.
       const reply = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/t3.json`));
@@ -543,7 +543,7 @@ const paused = {
 };
 const environments = JSON.stringify({ "/etc/orbit/processes/41/abc.env": "# Orbit Process 41\nQUEUE=\"high\"\n" });
 const restarts = (state: { systemctl?: string[][] }) =>
-  (state.systemctl ?? []).filter((call) => call[0] === "restart").map((call) => call.slice(2));
+  (state.systemctl ?? []).filter((call) => call[0] === "restart").map((call) => call.slice(call.indexOf("--") + 1));
 
 Deno.test({
   name: "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing",
@@ -565,7 +565,7 @@ Deno.test({
       assert(!result.output.includes("QUEUE"), result.output);
       // A Process whose desired state is stopped is installed, not started.
       const enabled = f.state().systemctl.find((call: string[]) => call[0] === "enable" && call[1] === "--now");
-      assertEquals(enabled, ["enable", "--now", "--", "orbit-frankenphp.service", worker.name]);
+      assertEquals(enabled, ["enable", "--now", "--no-block", "--", "orbit-frankenphp.service", worker.name]);
       // The seed stops and starts the running ones only.
       assert(f.run("seed").ok);
       assert(f.state().systemctl.some((call: string[]) => call.join(" ") === `stop -- orbit-frankenphp.service ${worker.name}`));
@@ -637,17 +637,24 @@ Deno.test({
       }
       const calls = () => f.state().systemctl.map((call: string[]) => call.join(" "));
 
+      const checksBeforeStop = calls().length;
       const stop = f.run("process", { ORBIT_PROCESS_ACTION: "stop" });
       assert(stop.ok, stop.output);
       assert(calls().includes(`disable --now -- ${worker.name}`));
       assertEquals(f.result(), { state: "inactive", output: "" });
+      assertEquals(calls().slice(checksBeforeStop).filter((call: string) => call.startsWith("show ")).length, 0);
 
+      const checksBeforeStart = calls().filter((call: string) => call === `show --property=ActiveState --property=Job -- ${worker.name}`).length;
       assert(f.run("process", { ORBIT_PROCESS_ACTION: "start" }).ok);
-      assert(calls().includes(`enable --now -- ${worker.name}`));
+      assert(calls().includes(`enable --now --no-block -- ${worker.name}`));
       assertEquals(f.result(), { state: "active", output: "" });
+      assert(calls().filter((call: string) => call === `show --property=ActiveState --property=Job -- ${worker.name}`).length > checksBeforeStart);
 
+      const checksBeforeRestart = calls().length;
       assert(f.run("process", { ORBIT_PROCESS_ACTION: "restart" }).ok);
-      assert(calls().join("\n").includes(`enable -- ${worker.name}\nrestart -- ${worker.name}`));
+      assert(calls().join("\n").includes(`enable -- ${worker.name}\nrestart --no-block -- ${worker.name}`));
+
+      assert(calls().slice(checksBeforeRestart).includes(`show --property=ActiveState --property=Job -- ${worker.name}`));
 
       const state = f.state();
       state.journal = { [worker.name]: ["2026-11-10T08:00:00+00:00 worker[7]: first", "2026-11-10T08:00:01+00:00 worker[7]: second"] };
@@ -716,7 +723,7 @@ Deno.test({
       assertEquals(units, [own.name]);
       assertEquals([...Deno.readDirSync(`${clone}/etc/orbit/processes`)].map((entry) => entry.name), ["51"]);
       const calls = f.state().systemctl.map((call: string[]) => call.join(" "));
-      assert(calls.includes(`enable --now -- orbit-frankenphp.service ${own.name}`), calls.join("\n"));
+      assert(calls.includes(`enable --now --no-block -- orbit-frankenphp.service ${own.name}`), calls.join("\n"));
       // The `processes` phase still removes a unit and folder the Instance does not own, such as one that came back with a copy.
       Deno.writeTextFileSync(`${clone}/etc/systemd/system/${worker.name}`, worker.content);
       Deno.mkdirSync(`${clone}/etc/orbit/processes/41`);
@@ -945,7 +952,7 @@ Deno.test({
       assert(repaired.ok, repaired.output);
       assertEquals(setting("memory_limit"), "1G");
       assertEquals(setting("auto_prepend_file"), bridge);
-      assertEquals(tryRestarts().slice(before), ["try-restart orbit-*.service"]);
+      assertEquals(tryRestarts().slice(before), ["try-restart --no-block orbit-*.service"]);
       const again = f.run("start");
       assert(again.ok, again.output);
       assertEquals(again.changed, 0, again.output);
@@ -1056,5 +1063,109 @@ Deno.test({
       assertEquals(f.state().containers["instance-8"].status, "Stopped");
       assert(f.state().containers["instance-8"].devices.includes("eth1,network=orbitinst0"));
     } finally {f.cleanup();}
+  },
+});
+
+Deno.test({
+  name: "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.processes = [worker, paused];
+      f.write();
+      for (const phase of ["container", "workspace"]) assert(f.run(phase).ok);
+      const done = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: environments });
+      assert(done.ok, done.output);
+      const calls: string[][] = f.state().systemctl;
+      for (const call of calls.filter((call) => call[0] === "restart" || (call[0] === "enable" && call.includes("--now")))) {
+        assert(call.includes("--no-block"), JSON.stringify(call));
+      }
+      assertEquals(calls.filter((call) => call[0] === "show").map((call) => call.at(-1)), ["orbit-frankenphp.service", worker.name]);
+      // A unit whose job never settles must fail this phase, even though it remains active.
+      const state = f.state();
+      state.systemctl = [];
+      state.queued = { [worker.name]: 100 };
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const blocked = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: environments });
+      assert(!blocked.ok, blocked.output);
+      const reads = f.state().systemctl.filter((call: string[]) => call[0] === "show" && call.at(-1) === worker.name);
+      assert(reads.length > 1 && reads.length <= 11, JSON.stringify(reads));
+      assert(f.state().queued[worker.name] > 0, "Readiness must stop waiting before the queued job finishes.");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.processes = [worker, paused];
+      f.write();
+      for (const phase of ["container", "workspace", "processes"]) {
+        const done = f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments });
+        assert(done.ok, done.output);
+      }
+      const settings = `${f.folder}/containers/instance-7/etc/orbit/php/conf.d/99-orbit-runtime.ini`;
+      Deno.writeTextFileSync(settings, "memory_limit = 128M\n");
+      const state = f.state();
+      state.systemctl = [];
+      // A unit remains active while its restart job is queued. Checking is-active alone would finish too soon.
+      state.queued = { [worker.name]: 2 };
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const start = f.run("start");
+      assert(start.ok, start.output);
+      const writes = start.output.indexOf("Write the changed container PHP settings");
+      const restart = start.output.indexOf("Restart the running Orbit units after changed PHP settings");
+      const ready = start.output.indexOf("Wait for each running unit");
+      assert(writes >= 0 && writes < restart && restart < ready, start.output);
+      assert(Deno.readTextFileSync(settings).includes("auto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php"));
+      assertEquals(f.state().queued[worker.name], 0);
+      assertEquals(f.state().systemctl.filter((call: string[]) => call[0] === "show" && call.at(-1) === worker.name).length, 3);
+      const processes = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: environments });
+      assert(processes.ok, processes.output);
+      const calls: string[][] = f.state().systemctl;
+      const tryRestart = calls.findIndex((call) => call[0] === "try-restart");
+      const enable = calls.findIndex((call) => call[0] === "enable" && call.includes("--now"));
+      assert(tryRestart >= 0 && tryRestart < enable, JSON.stringify(calls));
+      assert(calls[tryRestart].includes("--no-block"));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a thirty-second Process stop succeeds and inspection keeps its existing unbounded state read",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.processes = [worker];
+      f.write();
+      for (const phase of ["container", "workspace", "processes"]) {
+        const done = f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments });
+        assert(done.ok, done.output);
+      }
+      const state = f.state();
+      state.slowStopSeconds = 30;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const stopped = f.run("process", { ORBIT_PROCESS_ACTION: "stop" });
+      assert(stopped.ok, stopped.output);
+      assertEquals(f.result(), { state: "inactive", output: "" });
+      assertEquals(f.state().slowStopCompleted, true);
+      const inspecting = f.state();
+      inspecting.inspectionSeconds = 6;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(inspecting));
+      const inspected = f.run("process", { ORBIT_PROCESS_ACTION: "status" });
+      assert(inspected.ok, inspected.output);
+      assertEquals(f.result(), { state: "inactive", output: "" });
+    } finally {
+      f.cleanup();
+    }
   },
 });

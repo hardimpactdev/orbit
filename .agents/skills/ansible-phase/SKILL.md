@@ -149,3 +149,5 @@ When resolving symlinks, retain directory requirements from raw targets ending i
 FrankenPHP's `trusted_proxies` does not translate native PHP CGI variables. Match the real Node peer and forwarded HTTPS before setting scheme, port or client IP. Share one rendered Caddyfile between the Ansible Processes phase and the native clone guest, and test configuration drift without unit drift in both writers.
 
 Native speed paths must use the same effective-NIC start gate as the Ansible phase. Carry the common NIC ACL name in Gateway intent for every writer; a network union ACL must never be attached to a NIC.
+
+A container Process must not pull in `network-online.target`: wait-online can remain pending inside an Incus guest while its network already serves. Keep the host renderer's network policy separate. Start container units with systemd's `--no-block`, then use bounded per-unit readiness reads inside the phase timeout; a timeout must not strand a synchronous unit-start command.

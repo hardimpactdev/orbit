@@ -1,0 +1,125 @@
+{
+  "id": "012ac29e-f280-4c0c-ac2c-14b57d133c45",
+  "workflowName": "migrate-native-faults",
+  "status": "failed",
+  "startedAt": "2026-11-11T02:50:47.928Z",
+  "completedAt": "2026-11-11T02:50:48.384Z",
+  "jobs": [
+    {
+      "name": "migrate",
+      "steps": [
+        {
+          "name": "input",
+          "status": "succeeded",
+          "startedAt": "2026-11-11T02:50:47.934Z",
+          "completedAt": "2026-11-11T02:50:47.979Z"
+        },
+        {
+          "name": "container",
+          "status": "succeeded",
+          "startedAt": "2026-11-11T02:50:47.982Z",
+          "completedAt": "2026-11-11T02:50:48.007Z"
+        },
+        {
+          "name": "quiesce",
+          "status": "succeeded",
+          "startedAt": "2026-11-11T02:50:48.010Z",
+          "completedAt": "2026-11-11T02:50:48.032Z"
+        },
+        {
+          "name": "workspace",
+          "status": "succeeded",
+          "startedAt": "2026-11-11T02:50:48.034Z",
+          "completedAt": "2026-11-11T02:50:48.054Z"
+        },
+        {
+          "name": "files",
+          "status": "succeeded",
+          "startedAt": "2026-11-11T02:50:48.070Z",
+          "completedAt": "2026-11-11T02:50:48.093Z"
+        },
+        {
+          "name": "agent",
+          "status": "skipped",
+          "completedAt": "2026-11-11T02:50:48.097Z"
+        },
+        {
+          "name": "container-processes",
+          "status": "failed",
+          "error": "Command exited with code 124",
+          "startedAt": "2026-11-11T02:50:48.101Z",
+          "completedAt": "2026-11-11T02:50:48.230Z"
+        },
+        {
+          "name": "seed",
+          "status": "skipped",
+          "completedAt": "2026-11-11T02:50:48.236Z"
+        },
+        {
+          "name": "t3",
+          "status": "skipped",
+          "completedAt": "2026-11-11T02:50:48.236Z"
+        },
+        {
+          "name": "t3-sessions",
+          "status": "skipped",
+          "completedAt": "2026-11-11T02:50:48.243Z"
+        },
+        {
+          "name": "t3-register",
+          "status": "skipped",
+          "completedAt": "2026-11-11T02:50:48.247Z"
+        },
+        {
+          "name": "route",
+          "status": "skipped",
+          "completedAt": "2026-11-11T02:50:48.250Z"
+        },
+        {
+          "name": "retire",
+          "status": "skipped",
+          "completedAt": "2026-11-11T02:50:48.254Z"
+        },
+        {
+          "name": "restore-check",
+          "status": "succeeded",
+          "startedAt": "2026-11-11T02:50:48.258Z",
+          "completedAt": "2026-11-11T02:50:48.279Z"
+        },
+        {
+          "name": "restore-route",
+          "status": "skipped",
+          "completedAt": "2026-11-11T02:50:48.284Z"
+        },
+        {
+          "name": "restore",
+          "status": "succeeded",
+          "startedAt": "2026-11-11T02:50:48.288Z",
+          "completedAt": "2026-11-11T02:50:48.308Z"
+        },
+        {
+          "name": "finish",
+          "status": "succeeded",
+          "startedAt": "2026-11-11T02:50:48.312Z",
+          "completedAt": "2026-11-11T02:50:48.337Z",
+          "outputs": {
+            "stdout": "{\"instance_id\":1,\"ready\":false,\"moved\":false,\"restored\":true,\"commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"failed_step\":\"processes\",\"error_code\":\"instance.migrate_processes_failed\"}"
+          }
+        },
+        {
+          "name": "accepted",
+          "status": "failed",
+          "error": "The move of the Instance into a container did not complete.",
+          "startedAt": "2026-11-11T02:50:48.342Z",
+          "completedAt": "2026-11-11T02:50:48.342Z"
+        },
+        {
+          "name": "cleanup",
+          "status": "succeeded",
+          "startedAt": "2026-11-11T02:50:48.342Z",
+          "completedAt": "2026-11-11T02:50:48.373Z"
+        }
+      ]
+    }
+  ]
+}

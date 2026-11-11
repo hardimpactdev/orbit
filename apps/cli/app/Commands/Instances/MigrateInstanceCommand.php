@@ -32,7 +32,7 @@ final class MigrateInstanceCommand extends GatewayCommand
     protected $help = <<<'HELP'
 Migrate moves one development checkout Instance into an Instance container on its Node: its branch, its changed, untracked and ignored files, and its Route. Its database stays where it is.
 
-A Project's default Instance moves first. A move that fails leaves the checkout Instance serving as before.
+A Project's default Instance moves first. A failure before cutover leaves the checkout Instance serving if restoration succeeds. After cutover, check moved/restored in the Operation result.
 
 The command is temporary: it goes when the last checkout Instance has moved. --json disables prompts and requires --force.
 HELP;

@@ -87,7 +87,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   );
   Deno.chmodSync(`${folder}/bin/incus`, 0o755);
   Deno.copyFileSync(new URL("instance_migrate_links.py", root), `${folder}/instance_migrate_links.py`);
-  for (const name of ["instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-link-result.yml"]) {
+  for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-link-result.yml"]) {
     const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => transform(structuredClone(task)));
     Deno.writeTextFileSync(`${folder}/tasks/${name}`, stringify(tasks));
   }
@@ -214,7 +214,13 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
       return `${root}/${[...Deno.readDirSync(root)].find((entry) => entry.isDirectory)!.name}`;
     },
     write,
-    run(phase: string, rawContainer = false) {
+    fault(phase: string) {
+      const file = `${folder}/tasks/${["quiesce", "files"].includes(phase) ? "instance-migrate" : "instance-container"}-phase.yml`;
+      const tasks = parse(Deno.readTextFileSync(file)) as Task[];
+      tasks.push({ name: "Force a failure after the phase effects", tags: ["always"], when: `phase == '${phase}'`, "ansible.builtin.fail": { msg: "forced migration failure" } });
+      Deno.writeTextFileSync(file, stringify(tasks));
+    },
+    run(phase: string, rawContainer = false, runId = folder.slice(folder.lastIndexOf("/") + 1)) {
       const playbook = !rawContainer && ["container", "quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
       const done = new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
@@ -227,7 +233,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
           ANSIBLE_HOME: `${folder}/ansible`,
           ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
           ORBIT_RUN: `${folder}/run`,
-          ORBIT_RUN_ID: folder.slice(folder.lastIndexOf("/") + 1),
+          ORBIT_RUN_ID: runId,
           // As in the workflow of a move, the container phases get no token and no .env from the Gateway.
           GIT_CONFIG_NOSYSTEM: "1",
           HOME: `${folder}/home`,
@@ -1309,3 +1315,40 @@ for (const mappings of [0, 2]) {
     },
   });
 }
+
+// Run the real phase before forcing its exit. Restoration must unwind effects that already happened, not merely a no-op failure.
+for (const phase of ["quiesce", "workspace", "files", "processes", "seed"]) {
+  Deno.test({
+    name: `a forced ${phase} failure after quiesce restores host ownership and removes every container reservation effect`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        const host = migrationProcesses(f, "running");
+        const before = host();
+        const head = git(f.checkout, "rev-parse", "HEAD");
+        for (const prior of ["container", "quiesce", "workspace", "files", "processes"]) {
+          if (prior === phase) break;
+          const done = f.run(prior);
+          assert(done.ok, done.output);
+        }
+        f.fault(phase);
+        const failed = f.run(phase);
+        assert(!failed.ok, failed.output);
+        assert(failed.output.includes("forced migration failure"), failed.output);
+        const restored = f.run("restore");
+        assert(restored.ok, restored.output);
+        assertEquals(host(), before);
+        assertEquals(f.state().containers, {});
+        assertEquals(f.state()["network-acls"], [{ name: "orbitinst0-egress", egress: [], ingress: [] }]);
+        assertEquals(f.ufw(), []);
+        assert(!exists(f.container.mirror));
+        assert(exists(f.migrate.awake.path));
+        assertEquals(git(f.checkout, "rev-parse", "HEAD"), head);
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
+}
+

@@ -261,14 +261,11 @@
           container.name ~ container_php_ini_path] }}
         stdin: "{{ container_php_ini_content }}"
         stdin_add_newline: false
-      register: container_php_ini_write
+      notify: Restart the running Orbit units after changed PHP settings
       changed_when: true
-    # A running FrankenPHP or PHP Process read the old settings at its start. `try-restart` leaves a stopped unit stopped, and the
-    # pattern matches no unit before a container's first units exist.
-    - name: Restart the running Orbit units after changed PHP settings
-      when: container_php_ini_write is changed
-      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'try-restart', 'orbit-*.service'] }}" }
-      changed_when: true
+    # Finish the restart dispatch before any readiness check later in the phase.
+    - name: Finish applying changed PHP settings
+      ansible.builtin.meta: flush_handlers
 
 - name: Stop the container
   tags: [stop]
@@ -656,7 +653,7 @@
       changed_when: true
     - name: Enable and start the units
       when: units | length > 0
-      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'enable', '--now', '--'] + units }}" }
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'enable', '--now', '--no-block', '--'] + units }}" }
       changed_when: false
     # A changed unit restarts. A deployment's new seed then stops and starts every running unit on the new commit.
     - name: Restart the changed units
@@ -667,8 +664,21 @@
              | map(attribute='item.item.name') | select('in', units) | list }}
         config_unit_names: "{{ ['orbit-frankenphp.service'] if web_config_written.changed | default(false) else [] }}"
       ansible.builtin.command:
-        argv: "{{ as_root + ['systemctl', 'restart', '--'] + ((changed_unit_names + config_unit_names) | unique | list) }}"
+        argv: "{{ as_root + ['systemctl', 'restart', '--no-block', '--'] + ((changed_unit_names + config_unit_names) | unique | list) }}"
       changed_when: true
+# PHP settings and any try-restart job above precede this check. Job= must be empty as well as ActiveState=active: a queued
+# restart can still report active before systemd stops the former process. Each read and the phase itself have their own bound.
+- name: Wait for each running unit
+  tags: [processes, start]
+  when: phase in ['processes', 'start']
+  ansible.builtin.command:
+    argv: "{{ as_root + ['timeout', '5', 'systemctl', 'show', '--property=ActiveState', '--property=Job', '--', item] }}"
+  loop: "{{ units }}"
+  register: unit_ready
+  changed_when: false
+  until: unit_ready.rc == 0 and 'ActiveState=active' in unit_ready.stdout_lines and 'Job=' in unit_ready.stdout_lines
+  retries: 10
+  delay: 1
 
 # The agent's side of a clone: the placeholder model key, the Claude Code and Codex settings, the note links, and the instance file,
 # whose presence starts T3. Whole files are compared by digest; JSON settings merge only Orbit's keys, preserving runtime state.

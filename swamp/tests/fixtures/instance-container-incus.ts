@@ -198,6 +198,8 @@ if (family === "list") {
   let command = args.slice(args.indexOf("--") + 1);
   const user = command[0] === "runuser" ? command[command.indexOf("-u") + 1] : "root";
   if (command[0] === "runuser") command = command.slice(command.indexOf("--") + 1);
+  const commandTimeout = command[0] === "timeout" ? Number(command[1]) : null;
+  if (command[0] === "timeout") command = command.slice(2);
   if (command[0] === "systemctl") {
     state.systemctl ??= [];
     state.systemctl.push(command.slice(1));
@@ -220,8 +222,36 @@ if (family === "list") {
     } else if (command[1] === "stop" || (command[1] === "disable" && command[2] === "--now")) {
       state.inactive = [...new Set([...state.inactive, ...units])];
     }
+    if (command[1] === "disable" && command.includes("--now")) {
+      const seconds = state.slowStopSeconds ?? 0;
+      if (seconds > 0) {
+        if (command.includes("--no-block")) {
+          state.stopDue = Date.now() + seconds * 1000;
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, Math.min(seconds, commandTimeout ?? seconds) * 1000));
+          if (commandTimeout !== null && seconds > commandTimeout) Deno.exit(124);
+          state.slowStopCompleted = true;
+        }
+      }
+    }
     save();
+    if (command[1] === "show") {
+      const unit = command.at(-1)!;
+      const queued = state.stopDue && Date.now() < state.stopDue ? 1 : (state.queued?.[unit] ?? 0);
+      if (queued > 0) {
+        if (state.queued?.[unit]) state.queued[unit] = queued - 1;
+        save();
+      }
+      console.log(`ActiveState=${(state.inactive ?? []).includes(unit) ? "inactive" : "active"}`);
+      console.log(queued > 0 ? "Job=123" : "Job=");
+      Deno.exit(0);
+    }
     if (command[1] === "is-active") {
+      const seconds = state.inspectionSeconds ?? 0;
+      if (seconds > 0) {
+        await new Promise((resolve) => setTimeout(resolve, Math.min(seconds, commandTimeout ?? seconds) * 1000));
+        if (commandTimeout !== null && seconds > commandTimeout) Deno.exit(124);
+      }
       const inactive = command.slice(3).filter((unit) => (state.inactive ?? []).includes(unit));
       for (const unit of command.slice(3)) console.log(inactive.includes(unit) ? "inactive" : "active");
       Deno.exit(inactive.length > 0 ? 3 : 0);
