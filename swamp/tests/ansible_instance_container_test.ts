@@ -635,17 +635,28 @@ Deno.test({
       }
       const calls = () => f.state().systemctl.map((call: string[]) => call.join(" "));
 
+      const stateBeforeStop = f.state();
+      stateBeforeStop.queued = { [worker.name]: 2 };
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(stateBeforeStop));
+      const checksBeforeStop = calls().length;
       const stop = f.run("process", { ORBIT_PROCESS_ACTION: "stop" });
       assert(stop.ok, stop.output);
-      assert(calls().includes(`disable --now -- ${worker.name}`));
+      assert(calls().includes(`disable --now --no-block -- ${worker.name}`));
       assertEquals(f.result(), { state: "inactive", output: "" });
+      assertEquals(calls().slice(checksBeforeStop).filter((call: string) => call === `show --property=ActiveState --property=Job -- ${worker.name}`).length, 3);
+      assertEquals(f.state().queued[worker.name], 0);
 
+      const checksBeforeStart = calls().filter((call: string) => call === `show --property=ActiveState --property=Job -- ${worker.name}`).length;
       assert(f.run("process", { ORBIT_PROCESS_ACTION: "start" }).ok);
-      assert(calls().includes(`enable --now -- ${worker.name}`));
+      assert(calls().includes(`enable --now --no-block -- ${worker.name}`));
       assertEquals(f.result(), { state: "active", output: "" });
+      assert(calls().filter((call: string) => call === `show --property=ActiveState --property=Job -- ${worker.name}`).length > checksBeforeStart);
 
+      const checksBeforeRestart = calls().length;
       assert(f.run("process", { ORBIT_PROCESS_ACTION: "restart" }).ok);
-      assert(calls().join("\n").includes(`enable -- ${worker.name}\nrestart -- ${worker.name}`));
+      assert(calls().join("\n").includes(`enable -- ${worker.name}\nrestart --no-block -- ${worker.name}`));
+
+      assert(calls().slice(checksBeforeRestart).includes(`show --property=ActiveState --property=Job -- ${worker.name}`));
 
       const state = f.state();
       state.journal = { [worker.name]: ["2026-11-10T08:00:00+00:00 worker[7]: first", "2026-11-10T08:00:01+00:00 worker[7]: second"] };

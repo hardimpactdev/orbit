@@ -196,7 +196,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     identity_file: "/dev/null",
     target: { host: "127.0.0.1", user: "orbit", port: 22, host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] },
   };
-  const write = (extra: Record<string, unknown> = {}) => Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ ssh_execution, container, migrate, migration_operation_id: id, restore_operation_id: 2000, ...extra }));
+  const write = (extra: Record<string, unknown> = {}) => Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ ssh_execution, container, migrate, migration_operation_id: id, restore_claim_owner: `restore:${id}`, ...extra }));
   write();
   Deno.writeTextFileSync(migrate.awake.path, "");
   const rootfs = `${folder}/containers/instance-${id}`;
@@ -219,7 +219,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
       tasks.push({ name: "Force a failure after the phase effects", tags: ["always"], when: `phase == '${phase}'`, "ansible.builtin.fail": { msg: "forced migration failure" } });
       Deno.writeTextFileSync(file, stringify(tasks));
     },
-    run(phase: string, rawContainer = false) {
+    run(phase: string, rawContainer = false, runId = folder.slice(folder.lastIndexOf("/") + 1)) {
       const playbook = !rawContainer && ["container", "quiesce", "files", "retire", "restore-check", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
       const done = new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
@@ -232,7 +232,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
           ANSIBLE_HOME: `${folder}/ansible`,
           ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
           ORBIT_RUN: `${folder}/run`,
-          ORBIT_RUN_ID: folder.slice(folder.lastIndexOf("/") + 1),
+          ORBIT_RUN_ID: runId,
           // As in the workflow of a move, the container phases get no token and no .env from the Gateway.
           GIT_CONFIG_NOSYSTEM: "1",
           HOME: `${folder}/home`,
@@ -1417,10 +1417,10 @@ Deno.test({
       f.write({ restore_only: true, restore_quiesced: true });
       const checked = f.run("restore-check");
       assert(checked.ok, checked.output);
-      // Crash after the claim, before any restore effect: the same owner continues without a new claim.
+      // Crash after the claim, before effects: a new restore run keeps the original recovery owner.
       const path = `${f.container.mirror}.migrate-${f.container.instance_id}.claim`;
       const claim = Deno.readTextFileSync(path);
-      const again = f.run("restore-check");
+      const again = f.run("restore-check", false, "second-restore-run");
       assert(again.ok, again.output);
       assertEquals(Deno.readTextFileSync(path), claim);
       f.write();

@@ -483,7 +483,9 @@ The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/c
 - **Route.** Orbit points the Route at FrankenPHP in the container.
 - **Retirement.** Orbit moves the whole old checkout to retention and records its path and time. It deletes no Git metadata. The default's checkout stays until its last worktree has moved.
 
-Restore and retirement take the same atomic ownership claim for the original move on the Node. Restore claims after its ownership check and before restoring the Route or removing the container; retirement claims before its checkpoint or checkout changes. A losing side refuses, and a rerun by the same owner keeps its claim. The claim survives mirror cleanup, so native resume of the original move cannot retire a restored checkout. Interrupted roots are terminal and cannot be cancelled on the pinned runtime.
+Restore and retirement take the same atomic ownership claim for the original move on the Node. Restore claims after its ownership check and before restoring the Route or removing the container; retirement claims before its checkpoint or checkout changes. A losing side refuses. Every restore of the same interrupted move uses one stable recovery identity, so a newly admitted restore continues after a lost restore worker. Retirement keeps the original run identity and remains fenced.
+
+The claim survives mirror cleanup, so native resume of the original move cannot retire a restored checkout. Interrupted roots are terminal and cannot be cancelled on the pinned runtime.
 
 A failed move leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) has the steps.
 
@@ -519,7 +521,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | SQLite | The file moves with the files. The Gateway drops the connection record of a SQLite file inside the checkout |
 | Route | The same Route, domain and certificate. One publication replaces the checkout's site and PHP-FPM pool with the container's site |
 
-The runtime reservation belongs to its admitting Operation. A late receipt cannot change a newer owner.
+The runtime reservation belongs to its admitting Operation. A late receipt cannot change a newer owner. Settlement reads private material before taking the Instance lock, then checks ownership and records the runtime and receipt atomically. An already-settled stale runtime is not repaired: inspections keep selecting it until a new migrate reuses and owns that reservation.
 
 | Part | What Orbit does |
 | --- | --- |
