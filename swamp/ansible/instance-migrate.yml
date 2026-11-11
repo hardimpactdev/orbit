@@ -30,7 +30,7 @@
   hosts: migrate_node
   gather_facts: false
   become: true
-  tags: [container, quiesce, files, retire, restore-check, restore]
+  tags: [container, quiesce, files, retire, restore]
   vars:
     intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
     container: "{{ intent.container }}"
@@ -39,7 +39,7 @@
     phase: "{{ ansible_run_tags | first }}"
     migrate_quiesced: >-
       {{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/quiesced', errors='ignore')
-         | default('', true) | trim == 'true' or (intent.restore_quiesced | default(false) | bool) }}
+         | default('', true) | trim == 'true' }}
   tasks:
     - name: Run the phase
       block:
@@ -65,7 +65,7 @@
         # The code of a refusal is the fail_msg of its assert; anything else is the phase's own failure. A failed restore keeps
         # the code of the phase that failed before it.
         - name: Write the failure
-          when: phase != 'restore' or (intent.restore_only | default(false) | bool)
+          when: phase != 'restore'
           ansible.builtin.copy:
             content: >-
               {{ ({'error_code': migrate_refusal_code, 'error_message': migrate_refusal_message,
@@ -88,9 +88,7 @@
         # Once the Route has moved, the container serves even if retirement refuses or fails. A failed restore keeps its old
         # failure behavior; a refused preflight ends the host before any restore action.
         - name: Let the Route serve again
-          when: >-
-            (phase == 'retire' and (migrate_claim.rc | default(0)) == 0) or
-            (phase == 'restore' and migrate_quiesced | bool and ansible_failed_result is not defined)
+          when: phase == 'retire' or (phase == 'restore' and migrate_quiesced | bool and ansible_failed_result is not defined)
           block:
             - name: Make the marker folder
               ansible.builtin.file: { path: "{{ migrate.awake.directory }}", state: directory, owner: root, group: caddy, mode: "0755" }

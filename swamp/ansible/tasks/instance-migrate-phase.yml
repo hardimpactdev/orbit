@@ -4,7 +4,7 @@
 # A refused preflight changed nothing. Do not discard an earlier failed move's resources or rewrite its awake marker.
 - name: Leave the Node unchanged after a refused preflight
   when: >-
-    phase in ['restore-check', 'restore'] and
+    phase == 'restore' and
     (lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/result.json', errors='ignore')
      | default('{}', true) | from_json).get('preflight_refused', false)
   ansible.builtin.meta: end_host
@@ -22,29 +22,6 @@
     # Beside the mirror, on the Node's disk and readable by root only; the container's copy sits beside the workspace.
     node_archive: "{{ container.mirror | dirname }}/migrate-{{ container.instance_id }}-{{ run_id }}"
     container_archive: "/srv/.orbit-migrate-{{ run_id }}"
-
-# A new restore-only run has no old run folder. Prove retirement never started before deleting a possibly serving container.
-- name: Check restore ownership before any change
-  when: phase == 'restore-check' or (phase == 'restore' and (intent.restore_only | default(false) | bool))
-  block:
-    - name: Read the retirement checkpoint
-      ansible.builtin.stat: { path: "{{ container.mirror }}/orbit-migrate-retirement-started" }
-      register: restore_retirement
-    - name: Read the host checkout
-      ansible.builtin.stat: { path: "{{ migrate.checkout }}" }
-      register: restore_checkout
-    - name: Refuse restoration after retirement began
-      ansible.builtin.assert:
-        that: not restore_retirement.stat.exists and restore_checkout.stat.isdir | default(false)
-        fail_msg: instance.migrate_restore_unsafe
-        quiet: true
-
-# The read-only restore checks above precede this permanent, atomic choice. Both phases use the same rule.
-- name: Fence restore against native retirement resume
-  when: phase == 'retire' or (phase in ['restore-check', 'restore'] and (intent.restore_only | default(false) | bool))
-  ansible.builtin.include_tasks:
-    file: instance-migrate-claim.yml
-    apply: { tags: [always] }
 
 # Check every planned retirement before any Node change, and again before any checkout in the batch goes.
 - name: Check all planned retirements
@@ -161,14 +138,6 @@
     enabled: "{{ item.item.desired == 'running' }}"
   loop: "{{ source_process_files.results | default([]) }}"
   loop_control: { label: "{{ item.item.name }}" }
-
-- name: Record that retirement began
-  when: phase == 'retire'
-  ansible.builtin.copy:
-    content: "true"
-    dest: "{{ container.mirror }}/orbit-migrate-retirement-started"
-    mode: "0600"
-    force: false
 
 # The container already serves at retire, even if checkout removal later refuses. Retire only this Instance's disabled units.
 - name: Remove the old Process units and environment folders

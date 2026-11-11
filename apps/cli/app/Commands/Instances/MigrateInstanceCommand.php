@@ -21,7 +21,6 @@ final class MigrateInstanceCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'instance:migrate
         {instance : Numeric Instance ID}
-        {--restore : Restore an interrupted move without repeating it}
         {--force : Confirm the downtime and the retention of the old checkout}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
@@ -40,10 +39,6 @@ HELP;
 
     protected function writeOperationResult(OperationResponse $operation): void
     {
-        $recovery = $operation->result['recovery_command'] ?? null;
-        if (is_string($recovery)) {
-            $this->writeHumanMessage($recovery);
-        }
         $message = $operation->result['error_message'] ?? null;
         if (in_array($operation->errorCode, ['instance.migrate_retirement_blocked', 'instance.migrate_unpushed_commits', 'instance.migrate_stashes_present', 'instance.migrate_symlink_unsupported'], true) && is_string($message)) {
             $this->writeHumanMessage($message);
@@ -60,7 +55,6 @@ HELP;
             return self::FAILURE;
         }
 
-        $restore = $this->option('restore') === true;
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
@@ -71,8 +65,7 @@ HELP;
             $instance = $this->sendWithProgress($connector, new ShowInstanceRequest($instanceId), InstanceResponse::class,
                 ['Resolve Instance', 'Loading Instance', 'Loaded Instance']);
             if (! $instance instanceof InstanceResponse || ! $this->confirmAction(
-                $restore ? "Restore the checkout of Instance [{$instance->name}] (#{$instance->id}) after its interrupted move?"
-                    : "Move Instance [{$instance->name}] (#{$instance->id}) into a container with downtime and retention of its old checkout?",
+                "Move Instance [{$instance->name}] (#{$instance->id}) into a container with downtime and retention of its old checkout?",
                 'Instance move cancelled.',
                 option: 'force',
                 requiredCode: 'instance.confirmation_required',
@@ -87,11 +80,11 @@ HELP;
             return self::FAILURE;
         }
         $operation = $this->send($connector, new MigrateInstanceRequest(
-            instanceId: $instanceId, idempotencyKey: $this->stringOption('idempotency-key'), restore: $restore ? true : null,
+            instanceId: $instanceId, idempotencyKey: $this->stringOption('idempotency-key'),
         ), OperationResponse::class);
 
         return $operation instanceof OperationResponse
-            ? $this->followOperation($connector, $profile, $operation, $restore ? 'Restore Instance' : 'Move Instance', $restore ? 'Instance restore' : 'Instance move')
+            ? $this->followOperation($connector, $profile, $operation, 'Move Instance', 'Instance move')
             : self::FAILURE;
     }
 }

@@ -52,31 +52,12 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         $instance = Instance::query()->findOrFail($operation->target_id);
         $container = ValidatedData::object($input['container']);
         $publication = ($input['route_publication'] ?? null) === null ? null : ValidatedData::object($input['route_publication']);
-        $restoring = isset($input['restore_operation_id']);
-        if ($restoring) {
-            $restoreOperationId = ValidatedData::integer($input['restore_operation_id']);
-
-            return ['intent' => [
-                'instance_id' => $instance->id, 'instance_name' => $instance->name, 'ssh_execution' => $input['ssh_execution'],
-                'container' => $container, 'migrate' => $input['migrate'], 'restore_only' => true,
-                'restore_quiesced' => $input['restore_quiesced'],
-                'migration_operation_id' => $restoreOperationId, 'restore_claim_owner' => 'restore:'.$restoreOperationId,
-                'route_mutations' => $publication === null ? null : $publication['route_mutations'],
-            ], 'execution_secrets' => [
-                ...($publication === null ? [] : ValidatedData::object($publication['execution_secrets'])),
-                // Swamp evaluates skipped-step inputs too. Reuse the interrupted run's existing execution copies, with no new put.
-                'process_environments' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-processes-'.$restoreOperationId],
-                'model_environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-model-'.$restoreOperationId],
-            ]];
-        }
         // Swamp evaluates the agent step's inputs for a default too, so every run has the copy; only an Instance with T3 holds a key.
         $model = ($container['clone'] ?? null) === null ? "# The default Instance runs no agent.\n"
             : app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(TaskVmModelRoute::class)->key());
 
         return ['intent' => [
             'instance_id' => $instance->id, 'instance_name' => $instance->name, 'ssh_execution' => $input['ssh_execution'],
-            'restore_only' => false, 'restore_quiesced' => false,
-            'migration_operation_id' => $operation->id, 'restore_claim_owner' => 'restore:'.$operation->id,
             'container' => $container, 'migrate' => ValidatedData::object($input['migrate']),
             'route_mutations' => $publication === null ? null : ValidatedData::object($publication['route_mutations']),
         ], 'execution_secrets' => [
@@ -101,8 +82,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                 && $step['name'] === $name && ($step['started_at'] !== null || ! in_array($step['status'], ['skipped', 'pending'], true)));
             $unsafe = $began('retire');
             $result = [...$result, 'ready' => false, 'moved' => null, 'restored' => null, 'native_finish_missing' => true,
-                'quiesced' => $began('quiesce') || ($operation->input['restore_quiesced'] ?? false) === true, 'retirement_started' => $unsafe,
-                ...($unsafe ? [] : ['recovery_command' => 'orbit instance:migrate '.$operation->target_id.' --restore --force'])];
+                'quiesced' => $began('quiesce'), 'retirement_started' => $unsafe];
         }
         // From the removal of the checkout on, the container is the Instance, whatever the removal itself did.
         $moved = ($result['moved'] ?? false) === true;
@@ -164,7 +144,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
             }
             $instance = Instance::query()->lockForUpdate()->findOrFail($operation->target_id);
             if (($data['status'] === 'succeeded' && (($result['ready'] ?? false) !== true
-                    || (! $moved && ! (isset($operation->input['restore_operation_id']) && ($result['restored'] ?? false) === true))))
+                    || ! $moved))
                 || ($moved && (($result['instance_id'] ?? null) !== $instance->id || ! is_string($result['commit'] ?? null)))) {
                 throw new ResourceOperationException('instance.result_invalid', 'The move did not prove its complete terminal result.');
             }
