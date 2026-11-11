@@ -501,7 +501,7 @@ it('renders an explicit empty list and preserves the empty machine collection', 
 function cluster_cli_router_operation_mock(string $requestClass, bool $confirmed = false): MockClient
 {
     $operation = ['id' => 42, 'kind' => $confirmed ? 'cluster.router_unset' : 'cluster.router_set',
-        'target_type' => 'cluster', 'target_id' => 3, 'input' => [], 'status' => 'succeeded', 'sequence' => 3,
+        'target_type' => 'cluster_router', 'target_id' => 3, 'input' => [], 'status' => 'succeeded', 'sequence' => 3,
         'result' => ['ready' => true, 'selected' => true, 'cleanup_complete' => true]];
 
     return MockClient::global([

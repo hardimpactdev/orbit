@@ -87,7 +87,7 @@ function node_firewall_consent_case(string $family, bool $purge = false, bool $o
             'reads' => 0,
             'mutation' => RemoveFirewallRuleRequest::class,
             'mutation_body' => ['port' => '8080', 'protocol' => 'tcp'],
-            'replies' => [node_firewall_reply(RemoveFirewallRuleRequest::class, $operation),
+            'replies' => [node_firewall_reply(RemoveFirewallRuleRequest::class, $operation, 202),
                 ['class' => ShowRealtimeRequest::class, 'status' => 503, 'body' => ['error' => ['code' => 'realtime.unavailable', 'message' => 'Realtime unavailable.']]],
                 node_firewall_reply(ShowOperationRequest::class, $operation)],
         ],
