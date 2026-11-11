@@ -6,6 +6,7 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\Projects\CaptureProjectSourceFactsAction;
+use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
@@ -67,6 +68,7 @@ final readonly class StartInstanceDeployAction
                 return $existing;
             }
             $this->intent->assertDevelopment($instance);
+            InstanceMigration::assertSettled($instance);
             $configuration = $this->sourceConfiguration($instance);
             $project = $instance->project;
             $read = app(CaptureProjectSourceFactsAction::class)->read($project->repository_url, $project->source_access,

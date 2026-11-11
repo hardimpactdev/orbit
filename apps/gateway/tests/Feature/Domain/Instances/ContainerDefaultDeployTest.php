@@ -399,6 +399,71 @@ it('refuses a web container without PHP at the deployed commit and preserves its
     Queue::assertNothingPushed();
 });
 
+it('refuses an unsettled move before reading deploy source', function (string $entry, string $status): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $instance->project->update(['php_version' => '8.4']);
+    $move = Operation::query()->create(['kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => $instance->id,
+        'node_id' => $instance->node_id, 'status' => $status, 'input' => [], 'result' => ['moved' => false]]);
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $this->mock(ProjectSourceReader::class)->shouldNotReceive('read');
+    $commit = str_repeat('a', 40);
+    $refusal = null;
+
+    try {
+        $action = app(StartInstanceDeployAction::class);
+        match ($entry) {
+            'manual' => $action->execute($instance, 'manual', null),
+            'pinned' => $action->pinned($instance, 'manual', null, $commit),
+            'automatic' => $action->automatic($instance, $instance->node, null, $commit),
+        };
+    } catch (ResourceOperationException $exception) {
+        $refusal = $exception->errorCode;
+        expect($exception->status)->toBe(409);
+    }
+
+    expect($refusal)->toBe('instance.lifecycle_busy');
+    expect($instance->project->refresh())->php_version->toBe('8.4')->source_facts_captured_at->toBeNull();
+    expect($instance->project->environmentTemplate()->exists())->toBeFalse();
+    expect(Operation::query()->where('kind', 'instance.deploy')->exists())->toBeFalse();
+    expect($move->refresh()->status->value)->toBe($status);
+    Queue::assertNothingPushed();
+})->with(['manual', 'pinned', 'automatic'])->with(['running', 'failed']);
+
+it('rechecks the move during admission if it started while deploy source was read', function (string $entry): void {
+    Queue::fake();
+    $instance = deployDefault(container: true);
+    $instance->project->update(['php_version' => '8.4']);
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $commit = str_repeat('a', 40);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturnUsing(static function () use ($instance, $commit): array {
+        Operation::query()->create(['kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => $instance->id,
+            'node_id' => $instance->node_id, 'status' => OperationStatus::Running, 'input' => []]);
+
+        return deploySourceRead($commit, '{"require":{"php":"^8.5"}}');
+    });
+    $refusal = null;
+
+    try {
+        $action = app(StartInstanceDeployAction::class);
+        match ($entry) {
+            'manual' => $action->execute($instance, 'manual', null),
+            'pinned' => $action->pinned($instance, 'manual', null, $commit),
+            'automatic' => $action->automatic($instance, $instance->node, null, $commit),
+        };
+    } catch (ResourceOperationException $exception) {
+        $refusal = $exception->errorCode;
+        expect($exception->status)->toBe(409);
+    }
+
+    expect($refusal)->toBe('instance.lifecycle_busy');
+    expect($instance->project->refresh())->php_version->toBe('8.4')->source_facts_captured_at->toBeNull();
+    expect($instance->project->environmentTemplate()->exists())->toBeFalse();
+    expect(Operation::query()->where('kind', 'instance.deploy')->exists())->toBeFalse();
+    expect(Operation::query()->where('kind', 'instance.migrate')->count())->toBe(1);
+    Queue::assertNothingPushed();
+})->with(['manual', 'pinned', 'automatic']);
+
 it('reads deploy source before opening either admission transaction', function (bool $automatic): void {
     Queue::fake();
     $instance = deployDefault(container: true);
