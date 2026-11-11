@@ -35,7 +35,8 @@ final class AdmitFleetRollout implements ShouldBeUnique, ShouldQueue
 
     public function handle(FleetRolloutPlanAction $plan, AdmitFleetRolloutAction $admit): void
     {
-        if ($plan->execute()['status'] === 'waiting') {
+        $selection = $plan->execute();
+        if ($selection['status'] === 'waiting') {
             $this->release(60);
 
             return;
@@ -54,6 +55,10 @@ final class AdmitFleetRollout implements ShouldBeUnique, ShouldQueue
             }
             // No Node needs a visit, or the rollout is off: the next release or window asks again.
             Log::info('No fleet rollout was admitted.', ['error_code' => $refusal->errorCode]);
+        }
+        if ($selection['waiting_for_cli'] ?? false) {
+            // A partial rollout must retain the release-publication retry for its CI callers.
+            $this->release(60);
         }
     }
 }

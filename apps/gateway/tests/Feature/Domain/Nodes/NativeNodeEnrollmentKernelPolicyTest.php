@@ -79,5 +79,6 @@ it('gives a new Linux Node the kernel policy that node:converge applies', functi
 
     expect($intent['kernel'])->toBe(['files' => [['path' => '/etc/modprobe.d/orbit-no-sctp.conf', 'content' => "install sctp /bin/false\n"]],
         'sysctl' => [['name' => 'net.ipv4.ip_nonlocal_bind', 'value' => '1', 'file' => '/etc/sysctl.d/60-orbit-nonlocal-bind.conf']]])
-        ->and($intent['updates'])->toBe(NodeUpdatePolicy::for($node));
+        ->and($intent['updates'])->toBe(NodeUpdatePolicy::for($node))
+        ->and($intent['cli'])->toBeNull();
 });

@@ -551,7 +551,7 @@ The Gateway admits one `fleet.rollout` Operation for the [Nodes that need a visi
 - when it records a release `verified`
 - every day at 03:05 Europe/Amsterdam, when the [window](#rollout-set-and-order) of the other Nodes opens
 
-Both queue the same admission job. The daily schedule only queues it. The job waits a minute at a time while the commit has no CLI release yet, or while a rollout runs. CI publishes the CLI release minutes after the release goes live. A plan with no Node to visit admits nothing.
+Both queue the same admission job. The daily schedule only queues it. The job waits a minute at a time while a rollout runs. Nodes with [CLI intent](/reference/node-provisioning#orbit-cli) wait for its release; other Nodes can roll out independently. After admitting those Nodes, the job keeps its one-minute retry for waiting CI callers. CI publishes the CLI release minutes after the release goes live. A plan with no Node to visit admits nothing.
 
 An operator starts a pass with `orbit fleet:rollout` (`POST /api/v1/fleet/rollout`). Without Node IDs, the Gateway picks the Nodes. The Swamp `fleet-maintenance` schedule that admitted a pass each minute was deleted on 2026-11-06.
 
@@ -570,9 +570,8 @@ The rollout visits a Node when all of these hold:
 - the Gateway manages it over SSH: it has a WireGuard address and a pinned SSH host key;
 - it holds at least one active role other than `gateway`;
 - it is not the Gateway's own machine: it holds no `gateway` role and is not the serving host;
-- its `/usr/local/bin/orbit` is not a CLI that Orbit did not install.
 
-Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Releases leave its agent unchanged; its CLI is the release's own `apps/cli`. A [CLI convergence](/cli/fleet#how-it-works) names why it leaves a Node out: `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, or `roleless`.
+Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Releases leave its agent unchanged; its CLI is the release's own `apps/cli`. A [CLI convergence](/cli/fleet#how-it-works) names why it leaves a Node out: `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `cli_not_required`.
 
 A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) owns, on an Incus host. The rollout leaves out the Node of every task VM that is not `destroyed`, with the reason `sandbox`. The Gateway creates a task VM for one task group and destroys it when the group ends. Provisioning links its Node to the task VM before any convergence, so the Node never gets the Orbit CLI.
 
@@ -601,13 +600,13 @@ Admission resolves the desired state of the commit the Gateway serves: the CLI r
 
 A Gateway in the release layout rolls out only a commit whose release record is `verified`. A pass during a release, before the record exists, does nothing (`release_unverified`). When the configured layout cannot be read, or its link names no complete release, the pass rolls out nothing (`release_layout_unreadable`). An in-place Gateway, whose current path is a checkout, has no release records, and its running commit is the desired state. A Gateway version that is not a commit, such as `dev`, rolls out nothing.
 
-The Gateway can release before CI publishes that commit's CLI: admission verifies the commit's pinned agent delivery. The rollout waits until the CLI release exists (`waiting`).
+The Gateway can release before CI publishes that commit's CLI: admission verifies the commit's pinned agent delivery. Only Nodes with CLI intent wait until the CLI release exists. Other Nodes remain eligible for observer rollout.
 
-When the commit's release is still missing after 30 minutes, the desired state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit with the same CLI code. When the commit's own release appears later, a Node's recorded CLI version differs from the desired one, so the next pass visits it again.
+When the commit's release is still missing after 30 minutes, the desired state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit with the same CLI code. When the commit's own release appears later, the next pass revisits a Node that requires the CLI if its recorded version differs from the desired one.
 
 ### One Node
 
-Each Node runs the `fleet-release-node` child, and every step runs on Node 209 over SSH with the Node's stored host keys. Its `gate` step checks that every earlier Node succeeded, that the task is not cancelled, and that the Node's window is open. The `cli` step runs the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child. A newer release or a commit build stays in place.
+Each Node runs the `fleet-release-node` child, and every step runs on Node 209 over SSH with the Node's stored host keys. Its `gate` step checks that every earlier Node succeeded, that the task is not cancelled, and that the Node's window is open. For a Node with CLI intent, the `cli` step runs the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child. Other Nodes skip it and publish their observer without a CLI gate. A newer CLI release or a commit build stays in place.
 
 A rollout then publishes the observer with official resources. `@swamp/cfgmgmt/fetch` writes the pinned agent to `/usr/local/bin/orbit-agent` only when its SHA-256 differs. One SSH read prints the running service's binary digest. The agent restarts only when the file changed or the running digest differs from the pin. The same read then checks that the pinned digest runs on an active unit. A failed fetch records `agent.download_failed`, a failed restart `agent.restart_failed`, and a failed check `agent.observer_unhealthy`. The rollout never reads the agent secret or changes observer configuration.
 
@@ -635,7 +634,7 @@ The Gateway's plan reads the newest result of each Node in the terminal `fleet.r
 | --- | --- |
 | No result for this commit | It was not visited yet, or it joined the rollout set since |
 | `deferred`, `failed`, `cancelled` or `skipped` | Its last visit did not converge it |
-| `converged` or `unchanged`, but drifted | Its observer reports another version, or its recorded CLI version differs from the desired release |
+| `converged` or `unchanged`, but drifted | Its observer reports another version, or its required CLI is missing or differs from the desired release |
 
 A Node waits at least 5 minutes after its last visit ended. While a failed or cancelled Node waits, the plan names no Node after it. So a Node that was offline is converged by the first pass after it returns, inside its window.
 

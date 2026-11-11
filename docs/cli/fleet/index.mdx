@@ -11,7 +11,7 @@ After each verified Gateway release, Swamp brings the managed workload Nodes to 
 
 ## How it works
 
-The rollout publishes the CLI and the Node agent on each Node in turn. Each Node runs the `fleet-release-node` child, which runs the shared `node-cli-install` child from Node 209. A rollout then publishes the pinned Node agent from Node 209 with official resources.
+The rollout publishes the Node agent on each Node in turn. Each Node runs the `fleet-release-node` child. Only [CLI-eligible Nodes](/reference/node-provisioning#orbit-cli) first run the shared `node-cli-install` child. Other Nodes publish the pinned Node agent without a CLI release or install gate.
 
 <div className="flow-at" data-chart="fleet/rollout"></div>
 

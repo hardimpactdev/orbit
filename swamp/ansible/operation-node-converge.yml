@@ -47,6 +47,12 @@
           - intent.agent.url is string
           - intent.agent.sha256 is match('^[0-9a-f]{64}$')
           - secrets.agent_verifier is match('^[0-9a-f]{64}$')
+        quiet: true
+      tags: [input]
+    - name: Require the recorded CLI pin only for a CLI caller
+      when: intent.cli != None
+      ansible.builtin.assert:
+        that:
           - intent.cli.skip_reason == None
           - intent.cli.plan_error == None
           - intent.cli.release.url is string
@@ -128,6 +134,7 @@
       changed_when: false
       tags: [check]
     - name: Check the recorded CLI artifact
+      when: intent.cli != None
       tags: [check]
       block:
         - name: Read the selected CLI checksum
@@ -137,6 +144,11 @@
           ansible.builtin.assert:
             that: cli_check.stat.checksum | default('') == intent.cli.release.sha256
             quiet: true
+    - name: Check the retired CLI files without changing the Node
+      when: intent.cli == None
+      ansible.builtin.import_tasks: tasks/node-converge-cli-absent.yml
+      vars: { cli_remove: false }
+      tags: [check]
     - name: Check the selected software without writes
       ansible.builtin.include_tasks:
         file: tasks/node-converge-software-check.yml

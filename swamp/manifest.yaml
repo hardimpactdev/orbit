@@ -21,6 +21,7 @@ additionalFiles:
   - ansible/operation-node-role-add.yml
   - ansible/operation-node-converge.yml
   - ansible/tasks/node-role-runtime.yml
+  - ansible/tasks/node-converge-cli-absent.yml
   - ansible/tasks/node-converge-base.yml
   - ansible/tasks/node-kernel-policy.yml
   - ansible/tasks/node-update-policy.yml

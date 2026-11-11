@@ -20,16 +20,23 @@ final readonly class CliConvergePlan
 {
     public function __construct(private DesiredFleetState $desired, private FleetRolloutMembership $membership) {}
 
+    /** Host CI proof runners invoke the packaged CLI; other managed workloads have no caller. */
+    public static function required(Node $node): bool
+    {
+        return $node->roles()->where('role', RoleName::CiRunner)
+            ->where('status', '!=', LifecycleStatus::Removing)->exists();
+    }
+
     public function exclusion(Node $node): ?string
     {
         $node->load('roles');
         $reason = $this->membership->exclusion($node);
         if ($reason === null) {
-            return null;
+            return self::required($node) ? null : 'cli_not_required';
         }
         if ($reason === 'roleless' && $node->roles()->where('role', '!=', RoleName::Gateway->value)
             ->where('status', '!=', LifecycleStatus::Removing->value)->exists()) {
-            return null;
+            return self::required($node) ? null : 'cli_not_required';
         }
 
         return $reason;
@@ -44,11 +51,11 @@ final readonly class CliConvergePlan
     /**
      * An individually admitted Node is not limited to the automatic fleet rollout set.
      *
-     * @return CliInput
+     * @return CliInput|null
      */
-    public function nodeInput(Node $node): array
+    public function nodeInput(Node $node): ?array
     {
-        return $this->capture($node, null);
+        return self::required($node) ? $this->capture($node, null) : null;
     }
 
     /** @return CliInput */
@@ -87,11 +94,11 @@ final readonly class CliConvergePlan
      *
      * @return array{user:string,release:?array{version:?string,url:string,sha256:string},profile:string,skip_reason:?string,plan_error:?string,ssh:?array<string,mixed>}
      */
-    public function fleetInput(Node $node): array
+    public function fleetInput(Node $node, bool $observer = false): array
     {
         $input = $this->input($node);
 
-        return [...$input, 'ssh' => $input['skip_reason'] === null && $input['plan_error'] === null
+        return [...$input, 'ssh' => ($observer || ($input['skip_reason'] === null && $input['plan_error'] === null))
             ? app(SwampSshExecutionInput::class)->forNode($node) : null];
     }
 }

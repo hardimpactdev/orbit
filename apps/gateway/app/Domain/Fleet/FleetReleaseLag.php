@@ -97,7 +97,8 @@ final readonly class FleetReleaseLag
         $reported = $this->versions->get($node->id)['version'] ?? null;
 
         return ($reported !== null && $reported !== $this->delivery->reportedVersion($node))
-            || ($visit['cli_version'] !== null && $state->cli->isAvailable() && $visit['cli_version'] !== $state->cli->version)
+            || (CliConvergePlan::required($node) && ($visit['cli_version'] === null
+                || ($state->cli->isAvailable() && $visit['cli_version'] !== $state->cli->version)))
             ? 'drifted' : null;
     }
 
