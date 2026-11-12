@@ -42,6 +42,8 @@ sequenceDiagram
   %%> - installs the Project's new and changed development Process definitions as `orbit-*` units, with their environment files from the vault
   %%> - restarts a changed unit and removes a former environment file
   SW->>N: Take the seed snapshot<br/>Ansible · tags seed
+  %%> - prepares a Node/Vite default’s private Node store as orbit before the existing snapshot stop/start boundary; this conversion itself never restarts a Process
+  %%> - a converted store requires a new seed even at the same commit, so clones inherit it; older seeds remain slower but correct until the explicit deploy refreshes them
   %%> What it does:
   %%> - stops the default's Processes for a moment, snapshots the container and starts them again, so clones copy no half-written file
   %%> - deletes older seed snapshots that no clone uses

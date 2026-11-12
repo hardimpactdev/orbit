@@ -167,7 +167,8 @@ if (family === "list") {
   const [, verb, name, snapshot] = args;
   const container = state.containers[name];
   if (verb === "create") {
-    if (container.snapshots.includes(snapshot)) fail("Snapshot already exists");
+    if (container.snapshots.includes(snapshot) && !args.includes("--reuse")) fail("Snapshot already exists");
+    container.snapshots = container.snapshots.filter((s: string) => s !== snapshot);
     container.snapshots.push(snapshot);
   } else {
     container.snapshots = container.snapshots.filter((s: string) => s !== snapshot);
@@ -262,9 +263,15 @@ if (family === "list") {
     }
     Deno.exit(0);
   }
-  if (command[0] === "python3" && command[1] === "/usr/local/libexec/orbit-instance-node-runtime.py") {
+  if (command[0] === "python3" && (command[1] === "/usr/local/libexec/orbit-instance-node-runtime.py" || command.includes("seed-prepare") || command.includes("seed-complete"))) {
     // Runtime conversion and Vite+ behavior have their own real helper/fake-vp fixture.
-    console.log(JSON.stringify({status: "unchanged", versions: ["24.22.1"], pins: []}));
+    const converted = command.includes("seed-prepare") && state.node_seed_convert === true;
+    state.node_seed_calls = [...(state.node_seed_calls ?? []), command];
+    state.node_seed_convert = false;
+    if (converted) state.node_seed_pending = true;
+    if (command.includes("seed-complete")) state.node_seed_pending = false;
+    save();
+    console.log(JSON.stringify({status: converted ? "converted" : "unchanged", versions: ["24.22.1"], pins: [], seed_refresh_required: state.node_seed_pending === true}));
     Deno.exit(0);
   }
   if (command[0] === "journalctl") {

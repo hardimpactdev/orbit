@@ -498,30 +498,10 @@ jobs:
             argv: '${{ ["timeout", "600"] + (inputs.intent.server_database == null || inputs.intent.server_database.fill == null ? [] : inputs.intent.server_database.fill) }}'
             stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.server_database == null ? inputs.execution_secrets.environment.key : inputs.execution_secrets.server_database_create.key) }}'
             timeoutSec: 610
-      - name: clone-node-store
-        labels: {role: swamp}
-        writes: true
-        dependsOn: [{step: clone-container, condition: {type: succeeded}}]
-        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
-        task:
-          type: behavior
-          behaviorType: command/shell
-          behaviorName: '${{ "ic-clone-node-store-" + string(inputs.node_id) }}'
-          methodName: execute
-          inputs:
-            run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags node-store "$ORBIT_ANSIBLE/instance-container.yml"
-            env:
-              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
-              ORBIT_RUN_ID: '${{ run.id }}'
-              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
-              ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
-              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
-              ANSIBLE_FORCE_COLOR: '0'
-              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
       - name: clone-workspace
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: clone-node-store, condition: {type: succeeded}}, {step: clone-database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
+        dependsOn: [{step: clone-container, condition: {type: succeeded}}, {step: clone-database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
         guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior

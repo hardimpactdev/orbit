@@ -117,9 +117,10 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "e6b555d91970fe14226bc78383c19e87cdf76ae47fae432325740cacdbef0dc4",
+    "source_sha256": "91629da1b85c04707d33538c7f2e30c3ad8908731c140b8268870aa4bc5693e4",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
+      "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
       "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
       "a start points php at the Project's PHP version, and removes the link of a Project without PHP",
       "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -1351,7 +1352,7 @@
     ]
   },
   "swamp/tests/instance_clone_guest_test.py": {
-    "source_sha256": "7966a609b3b563b1184fc5d1582ce87c167cf4d11e34de31ed14786b11c30a33",
+    "source_sha256": "9b728ffbdc1418099924c930302d57368c222ba285c713975cd67e7995443207",
     "cases": [
       "test_sessions_check_only_loopback_t3_and_reject_http_and_scope_failures",
       "test_workspace_forwards_one_json_vault_value_without_printing_secrets",
@@ -1915,7 +1916,7 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_test.py": {
-    "source_sha256": "8d463986f73bba118e9f87ad0eeac78f701f260024041f9a877ffb0a41fa82d6",
+    "source_sha256": "3b77b20a21a1e39f6b2febf78e29bd28d3f94e715be9cdd4a9b8f8fe901c3eb0",
     "cases": [
       "test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes",
       "test_new_admission_metadata_and_incus_empty_fields_are_unchanged",
@@ -2062,7 +2063,7 @@
     ]
   },
   "swamp/tests/instance_node_runtime_test.py": {
-    "source_sha256": "aacf9890475b52a1297c0074dda0f86ae67b7e858a4d7f8a3e3a5b18c37e53ad",
+    "source_sha256": "989b8c8d5db8e56b27c08efa3691947ac7255f740b1dcd318655b1836bff6227",
     "cases": [
       "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat",
       "test_recipe_copy_survives_current_flip_and_shared_pruning_and_seed_keeps_download",
@@ -2074,6 +2075,10 @@
       "test_download_failures_keep_specific_safe_reasons",
       "test_shasums_download_failures_are_transport_errors_not_verification_errors",
       "test_non_vite_projects_do_not_resolve_or_download_unused_pins",
+      "test_empty_clone_prepares_store_for_a_later_process_with_an_uncached_pin",
+      "test_clone_fetch_shares_sixty_seconds_across_resolution_and_install",
+      "test_opaque_process_commands_still_prepare_a_writable_clone_store",
+      "test_seed_refresh_pending_survives_conversion_until_snapshot_completion",
       "test_deploy_fetch_refuses_legacy_store_even_with_a_helper",
       "test_nested_ignored_pin_refuses_even_when_a_parent_pin_is_selected",
       "test_production_phase_removes_read_only_source_mount_after_failure_without_downtime"
