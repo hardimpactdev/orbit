@@ -2918,4 +2918,4 @@ inputs = ["swamp/ansible/instance_node_services.py", "swamp/ansible/instance-con
 [[fixture]]
 file = "swamp/tests/instance_restore_test.py"
 cost = 15
-inputs = ["swamp/ansible/instance/restore-source.py", "swamp/ansible/instance-restore.yml", "swamp/workflows/workflow-operation-instance-restore.yaml", "apps/gateway/app/Domain/DatabaseServers/InstanceRestoreFence.php", "swamp/proof/runner/restore_fixture.py", "tools/swamp-proof-guest/instance-removal.php", "swamp/proof/instance/restore.cases.yaml"]
+inputs = ["swamp/ansible/instance/restore-source.py", "swamp/ansible/instance-restore.yml", "swamp/workflows/workflow-operation-instance-restore.yaml", "swamp/workflows/workflow-route-withdraw.yaml", "swamp/workflows/workflow-route-withdraw-node.yaml", "swamp/workflows/workflow-route-create-site.yaml", "apps/gateway/app/Domain/DatabaseServers/InstanceRestoreFence.php", "swamp/proof/runner/restore_fixture.py", "tools/swamp-proof-guest/instance-removal.php", "swamp/proof/instance/restore.cases.yaml"]

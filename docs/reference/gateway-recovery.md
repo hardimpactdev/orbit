@@ -928,4 +928,4 @@ Development [`instance:mail:update`](/cli/instance/mail-update) also holds the r
 
 The release idle guard includes `instance.node_service_detach`: wait for its bounded network/proxy withdrawal before replacing Gateway execution code. Its record remains until the scoped withdrawal succeeds, so a failed Operation can be retried.
 
-The release idle guard also waits for `instance.restore`, because restoration publishes a Route before its final record transaction.
+The release idle guard also waits for `instance.restore`, including failed Operations that still await native settlement, because restoration publishes a Route before its final record transaction.

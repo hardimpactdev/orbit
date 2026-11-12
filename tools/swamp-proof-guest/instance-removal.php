@@ -31,7 +31,7 @@ if ($input['mode'] === 'create') {
     $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'type' => 'node-package',
         'repository_url' => "https://github.com/example/{$slug}.git", 'default_branch' => 'main', 'root' => 'public']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id,
-        'name' => 'fixture', 'status' => 'active', 'checkout_path' => "/home/orbit/apps/{$slug}",
+        'name' => 'fixture', 'status' => 'active', 'provisioning_step' => 'active', 'source_is_laravel' => false, 'checkout_path' => "/home/orbit/apps/{$slug}",
         'root' => 'public', 'source_layout' => 'checkout', 'branch' => 'main', 'starting_commit' => $input['commit']]);
     $result = ['instance' => $instance->id];
 } else {

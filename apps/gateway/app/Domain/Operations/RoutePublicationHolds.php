@@ -73,19 +73,17 @@ final class RoutePublicationHolds
 
     /**
      * Whether a finished write keeps its Nodes. Its run may still be going while the Gateway waits for proof: a timed-out write
-     * keeps them until Swamp confirms the cancel, or for `UnconfirmedMinutes`.
+     * keeps them until Swamp confirms the cancel, or for `UnconfirmedMinutes`. Restore uses the shared target settlement window.
      */
     public static function keepsNodes(Operation $operation): bool
     {
-        if ($operation->kind === 'instance.restore' && $operation->status->terminal()
-            && isset($operation->state['swamp_run_id']) && ($operation->result['restored'] ?? false) !== true
-            && ($operation->result['compensation_complete'] ?? false) !== true) {
-            // Incomplete compensation is retryable, but must never reserve a Node forever.
-            // The minute sweep settles this hold even when the native terminal remains unknown.
-            return $operation->finished_at !== null
-                && $operation->finished_at->isAfter(now()->subMinutes(self::UnconfirmedMinutes));
+        $awaitsSettlement = ExpireOperationAction::awaitsSettlement($operation);
+        if ($operation->kind === 'instance.restore') {
+            // The shared settlement pass records terminal proof, cancellation acknowledgement, or the 60-minute unproven end.
+            // A projected native terminal is already proof of the end, including failed compensation.
+            return $awaitsSettlement && ! isset($operation->state['native_cancel_confirmed_at']);
         }
-        if (ExpireOperationAction::awaitsSettlement($operation)) {
+        if ($awaitsSettlement) {
             return true;
         }
 

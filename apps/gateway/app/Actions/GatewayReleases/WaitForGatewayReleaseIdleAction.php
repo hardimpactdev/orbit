@@ -36,7 +36,11 @@ final readonly class WaitForGatewayReleaseIdleAction
     /** @return list<int> */
     private function blockingIds(): array
     {
-        return ValidatedData::integerList(Operation::query()->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting])
+        return ValidatedData::integerList(Operation::query()->where(function (Builder $query): void {
+            $query->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting])
+                ->orWhere(fn (Builder $ended): Builder => $ended->where('status', OperationStatus::Failed)
+                    ->where('error_code', 'operation.timed_out')->whereNotNull('lock_key'));
+        })
             ->where(function (Builder $query): void {
                 foreach (self::BlockingKindPatterns as $pattern) {
                     $query->orWhere('kind', 'like', $pattern);

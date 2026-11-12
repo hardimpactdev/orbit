@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\CreateDatabaseUserAction;
 use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
+use App\Actions\GatewayReleases\WaitForGatewayReleaseIdleAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceRestoreAction;
 use App\Actions\Operations\CancelOperationAction;
+use App\Actions\Operations\ExpireOperationAction;
 use App\Data\DatabaseConnections\CreateDatabaseUserData;
 use App\Data\DatabaseConnections\CreateServerDatabaseData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\DatabaseCreateProjection;
 use App\Domain\DatabaseServers\DatabaseDestroySafety;
 use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\DatabaseServers\InstanceRestoreFence;
@@ -21,6 +24,7 @@ use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceRestoreProjection;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\RemotePrograms\ProgramResult;
 use App\Domain\RemotePrograms\RemoteProgram;
@@ -31,7 +35,9 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\NativeRunProgress;
+use App\Infrastructure\Swamp\ReadNativeRunFailure;
 use App\Infrastructure\Swamp\StartSwampRun;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
@@ -267,8 +273,13 @@ it('keeps recovery runnable ahead of older waiters when transferring incomplete 
             'withdrawal' => ['ready' => false]],
     ]);
     expect($failed->error_code)->toBe('instance.restore_compensation_failed')
-        ->and(DB::table('route_publication_holds')->where('operation_id', $restore->id)->exists())->toBeTrue();
+        ->and(DB::table('route_publication_holds')->where('operation_id', $restore->id)->exists())->toBeFalse();
     $nodes = RoutePublicationHolds::nodes($restore);
+    // An orphaned hold can remain from before the terminal projection was reconciled.
+    // A retry that inherits it must remain runnable ahead of a waiting writer.
+    foreach ($nodes as $node) {
+        DB::table('route_publication_holds')->insert(['node_id' => $node, 'operation_id' => $restore->id, 'created_at' => now()]);
+    }
     $waiter = Operation::query()->create(['kind' => 'route.create', 'target_type' => 'route', 'target_id' => $this->route->id,
         'node_id' => $this->instance->node_id, 'status' => 'queued', 'sequence' => 1, 'state' => [],
         'input' => ['publications' => array_map(static fn (int $id): array => ['node_id' => $id, 'serves_routes' => true], $nodes)]]);
@@ -472,31 +483,64 @@ it('accepts the production hash-keyed progress map from the real projector', fun
     expect(app(StartInstanceRestoreAction::class)->execute($this->instance)->kind)->toBe('instance.restore');
 });
 
-it('bounds terminal restore publication holds after compensation failure or an unknown timeout', function (string $failure): void {
+it('keeps expired restore writers excluded until native proof or the shared settlement window', function (string $end): void {
+    $this->freezeTime();
+    $run = '90b19a33-7ddc-4f5d-82cf-41be0ac87e49';
     $restore = app(StartInstanceRestoreAction::class)->execute($this->instance);
     $nodes = RoutePublicationHolds::nodes($restore);
-    $restore->update(['status' => 'failed', 'finished_at' => now(), 'error_code' => $failure,
-        'state' => [...$restore->state, 'swamp_run_id' => 'unsettled-restore',
-            ...($failure === 'operation.timed_out' ? ['native_timeout' => ['budget_seconds' => 900]] : [])],
-        'result' => $failure === 'operation.timed_out' ? null : ['restored' => false, 'compensation_complete' => false]]);
+    $restore->update(['status' => 'running', 'attempts' => 1, 'started_at' => now(),
+        'state' => [...$restore->state, 'swamp_run_id' => $run]]);
+    $this->travel(901)->seconds();
+    $expired = app(ExpireOperationAction::class)->execute($restore->fresh());
+    $this->socket->runStatus = 'running';
+    expect($expired->error_code)->toBe('operation.timed_out')
+        ->and(ExpireOperationAction::awaitsSettlement($expired))->toBeTrue()
+        ->and(app(ReadNativeRunFailure::class)->read($expired, 'operation-instance-restore', $run))->toBeNull();
+    $this->travel(16)->minutes();
     $holds = app(RoutePublicationHolds::class);
-    expect(RoutePublicationHolds::keepsNodes($restore))->toBeTrue();
-    $this->travel(14)->minutes();
     expect($holds->sweep())->toBe(0)
-        ->and(DB::table('route_publication_holds')->where('operation_id', $restore->id)->count())->toBe(count($nodes));
-    $this->travel(2)->minutes();
-    expect($holds->sweep())->toBe(count($nodes))
-        ->and(RoutePublicationHolds::keepsNodes($restore->fresh()))->toBeFalse();
-    $this->travel(48)->hours();
-    expect($holds->sweep())->toBe(0)
-        ->and(DB::table('route_publication_holds')->where('operation_id', $restore->id)->exists())->toBeFalse()
-        ->and($this->instance->fresh()->status)->toBe(InstanceState::Removing)
-        ->and($this->removal->fresh()->status)->toBe(InstanceRemovalStatus::Failed);
+        ->and(DB::table('route_publication_holds')->where('operation_id', $expired->id)->count())->toBe(count($nodes));
     $writer = Operation::query()->create(['kind' => 'route.create', 'target_type' => 'route', 'target_id' => $this->route->id,
         'node_id' => $this->instance->node_id, 'status' => 'queued', 'sequence' => 1, 'state' => [],
         'input' => ['publications' => array_map(static fn (int $id): array => ['node_id' => $id, 'serves_routes' => true], $nodes)]]);
-    expect($holds->admit($writer))->toBeTrue();
-})->with(['instance.restore_compensation_failed', 'operation.timed_out']);
+    expect($holds->admit($writer))->toBeFalse()
+        ->and($writer->fresh()->status->value)->toBe('waiting')
+        ->and($holds->promote())->toBe([]);
+    $idle = app(WaitForGatewayReleaseIdleAction::class);
+    $blockers = new ReflectionMethod($idle, 'blockingIds');
+    expect($blockers->invoke($idle))->toContain($expired->id);
+
+    if ($end === 'terminal') {
+        $this->socket->runStatus = 'failed';
+        app(SwampCommandStep::class)->projectTerminal($expired, ['id' => $run], ['job' => 'restore', 'step' => 'Republish the Route', 'native' => true]);
+        expect($expired->fresh()->state['native_timeout']['native_terminal_status'])->toBe('failed');
+    } else {
+        $end === 'late_window' ? $this->travel(48)->hours() : $this->travel(ExpireOperationAction::HoldMinutes - 16 + 1)->minutes();
+        expect(app(ExpireOperationAction::class)->releaseStaleHolds())->toBe(1)
+            ->and($expired->fresh()->state['native_timeout']['native_terminal_status'])->toBe('unproven');
+    }
+    expect(DB::table('route_publication_holds')->where('operation_id', $expired->id)->exists())->toBeFalse()
+        ->and($blockers->invoke($idle))->not->toContain($expired->id)
+        ->and($this->instance->fresh()->status)->toBe(InstanceState::Removing)
+        ->and($this->removal->fresh()->status)->toBe(InstanceRemovalStatus::Failed);
+    expect(array_map(static fn (Operation $operation): int => $operation->id, $holds->promote()))->toBe([$writer->id]);
+    app(OperationStore::class)->change($writer, ['status' => 'succeeded', 'finished_at' => now()]);
+    $this->travel(48)->hours();
+    expect($holds->sweep())->toBe(0)
+        ->and(DB::table('route_publication_holds')->where('operation_id', $expired->id)->exists())->toBeFalse();
+})->with(['terminal', 'window', 'late_window']);
+
+it('releases a restore publication hold on authenticated cancellation acknowledgement', function (): void {
+    $restore = app(StartInstanceRestoreAction::class)->execute($this->instance);
+    $restore->update(['status' => 'running', 'attempts' => 1, 'started_at' => now()->subSeconds(901),
+        'state' => [...$restore->state, 'swamp_run_id' => '90b19a33-7ddc-4f5d-82cf-41be0ac87e49']]);
+    $expired = app(ExpireOperationAction::class)->execute($restore->fresh());
+    expect(DB::table('route_publication_holds')->where('operation_id', $expired->id)->exists())->toBeTrue();
+    app(OperationStore::class)->change($expired, ['state' => [...$expired->state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+    expect(DB::table('route_publication_holds')->where('operation_id', $expired->id)->exists())->toBeFalse()
+        ->and($this->instance->fresh()->status)->toBe(InstanceState::Removing)
+        ->and($this->removal->fresh()->status)->toBe(InstanceRemovalStatus::Failed);
+});
 
 it('serializes destroy retries against queued running and waiting restore roots', function (string $status): void {
     $restore = app(StartInstanceRestoreAction::class)->execute($this->instance);
@@ -643,4 +687,31 @@ it('renders destroy fence restoration with boolean keywords instead of PostgreSQ
     expect($statements['restore'])
         ->toContain("format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', d.datname, CASE WHEN j.allow_connections THEN 'true' ELSE 'false' END)")
         ->not->toContain("format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', d.datname, j.allow_connections)");
+});
+
+it('completes database creation and attachment for the proof fixture prepared Instance facts', function (): void {
+    $source = file_get_contents(base_path('../../tools/swamp-proof-guest/instance-removal.php'));
+    preg_match("/'provisioning_step'\s*=>\s*'([^']+)'/", $source, $step);
+    preg_match("/'source_is_laravel'\s*=>\s*(true|false)/", $source, $profile);
+    $instance = Instance::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->instance->node_id,
+        'name' => 'proof-ready', 'checkout_path' => '/home/orbit/apps/proof-ready', 'root' => 'public',
+        'status' => 'active', 'source_layout' => 'checkout', 'branch' => 'main',
+        'provisioning_step' => $step[1] ?? null, 'source_is_laravel' => isset($profile[1]) ? $profile[1] === 'true' : null]);
+    $server = DatabaseServer::query()->create(['slug' => 'proof-postgres', 'driver' => 'pgsql',
+        'node_id' => $instance->node_id, 'tag' => '18', 'port' => 5432, 'root_password' => 'fixture-secret', 'status' => 'active']);
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $server->node_id,
+        'name' => 'proof-postgres', 'runtime' => 'docker', 'status' => 'active', 'runtime_config' => ['image' => 'postgres:18']]);
+    $server->update(['process_id' => $process->id]);
+    $operation = app(CreateServerDatabaseAction::class)->execute(new CreateServerDatabaseData('proof-database', $server->slug, $instance->id, testProcesses: 2), null);
+    $connection = DatabaseConnection::query()->findOrFail($operation->input['connection_id']);
+    $operation->update(['status' => 'running', 'state' => [...$operation->state, 'swamp_run_id' => 'proof-database-run']]);
+    $completed = app(DatabaseCreateProjection::class)->apply($operation, [
+        'run_id' => 'proof-database-run', 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
+        'result' => ['steps' => [
+            'Create owner and databases' => ['exit_code' => 0, 'stdout' => ''],
+            'Check the owner login' => ['exit_code' => 0, 'stdout' => $connection->username],
+        ]],
+    ]);
+    expect($completed->status->value)->toBe('succeeded')
+        ->and(DB::table('database_connection_targets')->where('instance_id', $instance->id)->where('database_connection_id', $connection->id)->exists())->toBeTrue();
 });

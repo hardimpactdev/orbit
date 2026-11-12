@@ -23,7 +23,9 @@ There is no force flag or recovery option. Orbit admits only a failed removal wh
 
 Orbit first restores the admission values saved by the failed database fence. It accepts a database still closed by that fence or already reopened, and removes only the matching journal rows. The same Route, targets and domain serve again. Only the awake marker is restored; the cold marker stays absent and serving creates the access log. Orbit reports the Instance and Route active only after publication and its check pass.
 
-A failure, including cancellation at a native step boundary, keeps the Instance removing and the removal failed. Orbit withdraws partial publication before releasing its publication holds. A failed withdrawal is reported as incomplete recovery. Its publication holds expire after 15 minutes; a stopped retry can inherit them sooner. Run `instance:restore` again to retry. A repeat after success checks the restoration receipt and current records, then succeeds with `instance.already_restored`. A later `instance:destroy` captures a new removal identity and inventory.
+A failure, including cancellation at a native step boundary, keeps the Instance removing and the removal failed. Orbit withdraws partial publication before releasing its publication holds. A failed withdrawal is reported as incomplete recovery. A timed-out Operation retains its holds until its work ends or cancellation is acknowledged. After the shared 60-minute settlement window, Orbit records an unproven end and frees the holds.
+
+Run `instance:restore` again to retry. A repeat after success checks the restoration receipt and current records, then succeeds with `instance.already_restored`. A later `instance:destroy` captures a new removal identity and inventory.
 
 ## How it works
 

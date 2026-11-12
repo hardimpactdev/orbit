@@ -2160,7 +2160,7 @@
     ]
   },
   "swamp/tests/instance_restore_test.py": {
-    "source_sha256": "f7073235235466e063724ba9ce8da267e5cc3e738601ec54061e7a3aeff09701",
+    "source_sha256": "e1a0cb481760c554a7449cdfce2ec9eefe9cef3c34f9914edf155df89e04ec67",
     "cases": [
       "test_intact_source_read_preserves_checkout_and_reports_marker_baseline",
       "test_source_deletion_refuses_without_creating_anything",
@@ -2169,6 +2169,7 @@
       "test_removed_container_refuses_before_reading_checkout",
       "test_restore_fixture_makes_the_checkout_writable_before_git_initialization",
       "test_restore_proof_has_a_runnable_isolated_slot_fixture_and_three_cli_stages",
+      "test_restore_withdrawal_uses_the_publication_mutex_and_preserves_other_withdrawal_names",
       "test_admin_read_uses_stdin_and_never_returns_private_client_output",
       "test_publication_failure_compensation_removes_only_new_awake_markers_and_repeats"
     ]

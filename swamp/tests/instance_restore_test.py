@@ -123,6 +123,35 @@ class InstanceRestoreTest(unittest.TestCase):
         commands = [step.args["run"][0] for step in spec.case_steps(case) if step.name == "cli"]
         self.assertEqual(commands, ["instance:restore", "instance:restore", "instance:destroy"])
 
+    def test_restore_withdrawal_uses_the_publication_mutex_and_preserves_other_withdrawal_names(self):
+        def step(file, name):
+            workflow = yaml.safe_load((ROOT / "swamp/workflows" / file).read_text())
+            return next(item for job in workflow["jobs"] for item in job["steps"] if item["name"] == name)["task"]
+
+        root = step("workflow-operation-instance-restore.yaml", "Withdraw partial publication")
+        child = step("workflow-route-withdraw.yaml", "withdraw_node")
+        withdraw = step("workflow-route-withdraw-node.yaml", "apply")
+        publish = step("workflow-route-create-site.yaml", "site")
+        self.assertEqual(withdraw["behaviorType"], publish["behaviorType"])
+        expressions = {"root": root["inputs"]["kind"], "child": child["inputs"]["kind"],
+                       "withdraw": withdraw["behaviorName"], "publish": publish["behaviorName"]}
+        script = """
+import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
+const environment = new Environment({ unlistedVariablesAreDyn: true });
+const expressions = JSON.parse(Deno.args[0]);
+const evaluate = (expression, inputs) => environment.evaluate(expression.slice(3, -2).trim(), { inputs });
+const names = ["instance.restore", "instance.destroy", "route.create"].map(kind => {
+    kind = evaluate(expressions.child, { kind: evaluate(expressions.root, { kind }) });
+    return evaluate(expressions.withdraw, { kind, intent: { publication: { node_id: 7n } } });
+});
+console.log(JSON.stringify({ names, site: evaluate(expressions.publish, { node_id: 7n }) }));
+"""
+        result = subprocess.run(["deno", "eval", "--quiet", script, json.dumps(expressions)],
+                                check=True, capture_output=True, text=True, timeout=20)
+        names = json.loads(result.stdout)
+        self.assertEqual(names["site"], "route-site-7")
+        self.assertEqual(names["names"], [names["site"], "route-withdraw-apply-7", "route-withdraw-apply-7"])
+
     def test_admin_read_uses_stdin_and_never_returns_private_client_output(self):
         facts = {"databases": [{"name": "fixture", "oid": 42, "owner": "fixture", "allow": True}],
                  "users": [{"name": "fixture", "oid": 43}]}

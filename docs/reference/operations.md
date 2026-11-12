@@ -427,7 +427,9 @@ A Route write holds the Nodes that serve its site, from admission to its termina
 
 Task provision and cancel, `instance.register` and the Cluster Router writes hold the same Nodes for one step only. The run calls `operation:direct:route-hold` before its Route-publish step and `operation:direct:route-release` after it. The hold of such a step has a lease of 5 minutes, which the minute pass frees when it ends, and the terminal status of the Operation frees it too.
 
-The hold is the `route_publication_holds` table, with one row per Node. A finished write frees its Nodes and queues `PromoteRouteWrites`, which moves the waiting writes that fit to `queued`, oldest first, and starts them. The minute pass of `ReconcileSwampOperations` frees the Nodes of a write that ended without a release. A waiting write has no deadline; its budget starts when it starts. A timed-out write keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes.
+The hold is the `route_publication_holds` table, with one row per Node. A finished write frees its Nodes and queues `PromoteRouteWrites`, which moves the waiting writes that fit to `queued`, oldest first, and starts them. The minute pass of `ReconcileSwampOperations` frees the Nodes of a write that ended without a release. A waiting write has no deadline; its budget starts when it starts.
+
+A timed-out write keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes. Restore uses the existing 60-minute target settlement window instead; an unproven end is recorded before its holds are freed.
 
 At promotion, a waiting `instance.create`, `instance.clone` or `route.create` re-captures its Caddy publication from the current site catalog before its run starts; other kinds keep their existing publication behavior.
 

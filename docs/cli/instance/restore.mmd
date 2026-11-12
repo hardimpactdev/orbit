@@ -39,7 +39,7 @@ sequenceDiagram
     %%> Captures:
     %%> - this removal's own verified journal rows, Route and targets
     %%> - keep the Instance removing and the removal failed/live
-    %%> - retain incomplete compensation holds for at most 15 minutes after the terminal result; a stopped retry inherits them and runs before overlapping waiters
+    %%> - keep holds until native terminal proof or cancellation acknowledgement; the shared 60-minute settlement window records an unproven end before release
     GW-->>CLI: 202 Accepted
     %%> Result:
     %%> - follow the instance.restore Operation
@@ -71,7 +71,7 @@ sequenceDiagram
       %%> - remove only a newly written awake marker
       SW->>N: Withdraw partial<br/>publication
       %%> What it does:
-      %%> - withdraw a partial site and DNS before releasing publication holds
+      %%> - withdraw a partial site and DNS under the same per-Node route-site mutex as publication
       %%> - preserve checkout, databases and completed fence settlement
       SW--xGW: Run failed
       %%> Result:
