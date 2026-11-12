@@ -369,10 +369,37 @@ jobs:
   - name: clone
     dependsOn: [{job: input, condition: {type: succeeded}}]
     steps:
-      - name: clone-container
+      - name: clone-input
         labels: {role: swamp}
         writes: true
         dependsOn: []
+        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
+          methodName: exec
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["timeout", "20"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_stage_argv : []) + ["stage"] }}'
+            stdin: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_payload : "" }}'
+            timeoutSec: 30
+          globalArgs:
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.ssh_execution.target.user }}
+              port: ${{ inputs.intent.ssh_execution.target.port }}
+              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.ssh_execution.target.host }}
+      - name: clone-container
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: clone-input, condition: {type: succeeded}}]
         guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
@@ -760,7 +787,7 @@ jobs:
           inputs:
             hosts: name:target
             sudo: true
-            argv: '${{ ["timeout", "20"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["cleanup"] }}'
+            argv: '${{ ["timeout", "20", "rm", "-rf", "--", "/tmp/orbit-clone-" + string(inputs.intent.instance_id) + "-" + run.id] }}'
             stdin: ''
             timeoutSec: 30
       - name: accepted
