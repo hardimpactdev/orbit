@@ -4,6 +4,9 @@
 # the Pest, Deno and Ansible fixture tests cover the move, and the live check on a build-list Node proves it.
 # Retirement fixture coverage (ansible_instance_migrate_test.ts): dirty tracked/staged/deleted/renamed files refuse before
 # downtime; all untracked files pass, copy into the container and report the count of untracked files that Git does not ignore (selected nested repository leaves included, no paths/content).
+# Empty untracked/ignored directories, including nested trees and storage/app/public mode 3775, are carried with their modes.
+# Copy prediction and the final symlink guard share their resolver; missing or excluded targets refuse before quiesce.
+# The directory scan excludes .git metadata and tracked submodule contents; selected nested-repository archives stay unchanged.
 # Late ignored and non-ignored files do not refuse the move and remain in the retained checkout; submodule changes still refuse.
 # Counts include archived untracked leaves inside nested repositories; directories do not count.
 # Owner dependencies and registered descendants of any retiring checkout refuse and name their paths.
@@ -55,7 +58,7 @@ uncovered:
   "code:process.container_command_unsupported": "Pest covers custom commands beside the preset, including the bypass regression before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
   "code:process.container_path_unsupported": "Pest covers external cwd, environment files and absolute environment values, including traversal before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
   "code:process.container_port_conflict": "Pest covers missing/reserved ports, duplicate presets and recorded Process port conflicts before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
-  "code:instance.migrate_symlink_unsupported": "The proof fleet lacks the Instance pool/image. Python and Ansible fixtures cover absolute in-checkout rewrites, exact relative-link preservation, dependency package links, unchanged installed package contents, non-UTF-8 names and targets, and named external/broken-link refusals before downtime and after archive-time changes without changing the source."
+  "code:instance.migrate_symlink_unsupported": "The proof fleet lacks the Instance pool/image. Python and Ansible fixtures cover absolute in-checkout rewrites, exact relative-link preservation, dependency package links, unchanged installed package contents, non-UTF-8 names and targets, and named external/broken/excluded-target refusals before downtime and after archive-time changes without changing the source."
   "code:instance.migrate_retirement_blocked": "The proof fleet lacks the Instance pool/image. Ansible fixtures cover dirty tracked files, owner dependencies (including same-batch worktrees), linked identity checks, bounded named errors, and blockers added after preflight. Live proof uses owned clean fixtures and separate blocker fixtures when the pool is available."
 
   "code:instance.migrate_unpushed_commits": "Real-Git fixtures cover only the linked checkout's own branch/detached HEAD, every owner branch, counts against all local remote-tracking refs, and source preservation. Live proof needs the Instance pool/image."

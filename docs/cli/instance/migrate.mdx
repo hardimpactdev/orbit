@@ -48,7 +48,7 @@ The attached targets in [instance:show](/cli/instance/show) are the connections 
 | Part | What Orbit does |
 | --- | --- |
 | Branch | The checkout's current branch. Orbit fetches it from the checkout on the Node; a retained checkout can carry commits that were never pushed |
-| Files | Every file that differs from the commit, every untracked file and every ignored file, such as `vendor`, `node_modules`, `storage` and `.env` |
+| Files | Changed, untracked and ignored files, plus missing directories, including empty ignored trees. Added directories keep their modes, including setgid and sticky bits |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace` |
 | Symlinks | Absolute links into the checkout become relative workspace links. Relative links within the checkout stay as they are. See the [symlink rule](/reference/development-containers#migration-symlinks) |
 | Database on a Database server | It stays where it is. The container gets its own way to the port of each server the Instance uses. Orbit checks every target from inside before stopping the checkout |
@@ -60,6 +60,10 @@ The attached targets in [instance:show](/cli/instance/show) are the connections 
 Untracked files enter the default's seed snapshot and every clone made from it, as ignored dependencies and build output already do. A later branch that tracks one of those paths can refuse checkout in a clone or deploy. A credentials file someone forgot to ignore travels into the seed like `.env` does.
 
 The Operation result reports `untracked_files_copied` after a successful file-copy phase: the count of copied untracked files that Git does not ignore, selected by `git ls-files --others --exclude-standard -z` at archive time. A selected nested repository contributes its archived leaf files. Directories do not count; symlinks count once. Ignored files are still copied. Human output says how many were copied. This adds no file paths or contents to the result.
+
+Empty directories are copied when the Git checkout and file archive would not create them. This includes nested ignored directories and empty link targets such as `storage/app/public`. Their exact modes are restored after the shared file-mode rule; ownership uses the same `orbit` user and `work` group as the file copy.
+
+The directory scan skips `.git` metadata, does not follow directory symlinks, and does not enter tracked submodules. The existing file archive still handles selected nested repositories as before. Dependencies such as `vendor` and `node_modules` remain in the copy scope.
 
 A file created or changed in the old checkout after the copy stays in the retained checkout, as ignored files do today; migration quiesces its Processes before the copy, and retention keeps everything.
 
@@ -313,7 +317,7 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.host_unavailable` | The Node has no Instance bridge, the bridge is full, no T3 port is free, or the runtime folder lacks the Project's PHP build. |
 | `instance.migrate_env_service_unreachable` | A selected environment file has an unsupported service endpoint or a value the check cannot determine safely. Endpoint errors name the offending keys and safe host:port; syntax errors name only the file and line. Both include recovery actions. The checkout keeps serving. |
 | `instance.migrate_branch_changed` | The checkout is not on the branch that Orbit records. Check out that branch, or record the new one with [`instance:rename`](/cli/instance/rename). |
-| `instance.migrate_symlink_unsupported` | A checkout link is broken or points outside the checkout. The error names every path, target and reason. The preflight refusal leaves the checkout serving. The same check on the copied workspace fails the move and restores the checkout if a link changed during copying. |
+| `instance.migrate_symlink_unsupported` | A checkout link would be broken or unsupported in the copied workspace, or points outside the checkout. The error names every path, target and reason. The preflight refusal leaves the checkout serving. The same check on the copied workspace fails the move and restores the checkout if a link changed during copying. |
 | `instance.migrate_retirement_blocked` | A checkout contains a registered descendant, is an owner with other worktrees, has changed Git identity, or has tracked or submodule changes. The error names up to 20 paths per list and each total count. Before downtime the checkout keeps serving; at the final check the container keeps serving and the checkout stays. |
 | `instance.migrate_unpushed_commits` | A linked checkout's own HEAD, or an owner's local branches or detached HEAD, has commits unreachable from every local remote-tracking ref. The error names each branch or detached HEAD and its commit count. The source stays untouched. |
 | `instance.migrate_stashes_present` | An owner scheduled for retirement has stashes. The error names the count; linked checkouts leave shared stashes with the owner. |
