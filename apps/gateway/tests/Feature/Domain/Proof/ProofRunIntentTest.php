@@ -715,6 +715,38 @@ it('selects every case when the runner selection is unavailable', function (): v
         ->and($proof->error_code)->toBe('proof.execution_disabled');
 });
 
+it('honors validated empty execution coverage alongside another selected command', function (string $artifact, bool $all): void {
+    config(['proof.execution' => false]);
+    $source = proofSource();
+    $migrateFile = 'swamp/proof/instance/migrate.cases.yaml';
+    $source->list .= "swamp/ansible/instance-migrate.yml instance:migrate\n";
+    $source->files = [new ProofChangedFile('swamp/ansible/instance-migrate.yml', 'modified'),
+        new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+    $source->paths[] = $migrateFile;
+    $source->selection = ['version' => 1, 'base' => str_repeat('a', 40), 'head' => $artifact === 'stale' ? str_repeat('f', 40) : PROOF_SHA,
+        'files' => [
+            ['command' => 'instance:migrate', 'file' => $migrateFile, 'only' => [], 'reasons' => []],
+            ['command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml', 'only' => ['allow'], 'reasons' => ['allow' => 'command code changed']],
+        ]];
+    if ($artifact === 'missing') {
+        $source->selection = null;
+    }
+    proofWorld($source);
+    $proof = proofAdmitted(all: $all);
+
+    expect($proof->error_code)->toBe('proof.execution_disabled')->and($proof->input['runs'])->toBe([]);
+    if ($artifact === 'valid' && ! $all) {
+        expect($proof->input['cases'])->toBe([
+            ['command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml', 'only' => ['allow'], 'reasons' => ['allow' => 'command code changed']],
+        ]);
+    } else {
+        expect(array_column($proof->input['cases'], 'command'))->toContain('firewall:allow', 'instance:migrate');
+        foreach ($proof->input['cases'] as $case) {
+            expect($case)->not->toHaveKey('only');
+        }
+    }
+})->with([['valid', false], ['stale', false], ['missing', false], ['valid', true]]);
+
 /**
  * A CI proof of the batches `one`, `two` and `three`, each one case of 3,000 measured seconds, on one host with two CI places and a base;
  * `$busy` of them are taken. Returns the admitted proof.
