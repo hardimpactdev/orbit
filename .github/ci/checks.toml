@@ -2669,3 +2669,36 @@ inputs = [
 "mail failure is an advisory warning and cannot fail or restore a completed migration" = 1
 "migration retains each exact-line outcome and the named path conflict without values" = 1
 "missing or malformed successful mail receipts become advisory warnings" = 1
+
+[[fixture]]
+file = "swamp/tests/instance_destroy_git_test.py"
+cost = 15
+slices = false
+inputs = [
+  "swamp/ansible/instance/destroy-git.py",
+  "swamp/ansible/instance-checkout-destroy.yml",
+  "swamp/workflows/workflow-operation-instance-destroy.yaml",
+]
+[fixture.case_costs]
+"test_owner_refuses_for_both_force_values_and_lying_layout_records" = 1
+"test_dependent_removal_unregisters_only_it_and_preserves_owner_git_and_work" = 1
+"test_unowned_worktree_blocks_with_its_path" = 1
+"test_standalone_checkout_and_absent_repeat_are_removed" = 1
+"test_unreadable_git_and_failed_unregister_never_fall_back_to_rm" = 1
+"test_real_ansible_phase_refuses_owner_removes_dependent_then_owner" = 7
+"test_moved_worktree_is_found_from_recorded_path_at_admission_and_removal" = 1
+"test_deleted_prunable_registration_is_nonblocking" = 1
+"test_checkout_contents_are_never_walked_during_inspection" = 1
+
+[[fixture]]
+file = "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts"
+cost = 3
+inputs = [
+  "swamp/ansible/instance/destroy-git.py",
+  "swamp/ansible/instance-checkout-destroy.yml",
+  "swamp/workflows/workflow-operation-instance-destroy.yaml",
+]
+[fixture.case_costs]
+"the files Orbit renders do not count as unpushed work, at any depth" = 1
+"any other change is still work that is not pushed" = 1
+"every destroy Ansible step enables failed task stderr" = 1

@@ -1931,5 +1931,27 @@
       "migration retains each exact-line outcome and the named path conflict without values",
       "missing or malformed successful mail receipts become advisory warnings"
     ]
+  },
+  "swamp/tests/instance_destroy_git_test.py": {
+    "source_sha256": "6b1f3fe00bf47319e43adffe3548bc2a65b3966d3ddd259758fe9c2aea999fac",
+    "cases": [
+      "test_owner_refuses_for_both_force_values_and_lying_layout_records",
+      "test_dependent_removal_unregisters_only_it_and_preserves_owner_git_and_work",
+      "test_unowned_worktree_blocks_with_its_path",
+      "test_standalone_checkout_and_absent_repeat_are_removed",
+      "test_unreadable_git_and_failed_unregister_never_fall_back_to_rm",
+      "test_moved_worktree_is_found_from_recorded_path_at_admission_and_removal",
+      "test_deleted_prunable_registration_is_nonblocking",
+      "test_checkout_contents_are_never_walked_during_inspection",
+      "test_real_ansible_phase_refuses_owner_removes_dependent_then_owner"
+    ]
+  },
+  "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts": {
+    "source_sha256": "432c00148c29ef9792162658cf8696e50e8e0692be4ec76f28e5394b29a506fa",
+    "cases": [
+      "the files Orbit renders do not count as unpushed work, at any depth",
+      "any other change is still work that is not pushed",
+      "every destroy Ansible step enables failed task stderr"
+    ]
   }
 }
