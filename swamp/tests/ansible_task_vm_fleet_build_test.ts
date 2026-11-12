@@ -547,6 +547,7 @@ Deno.test({
       "incus network list --format csv",
       "incus list --format json",
       "incus exec nested-gateway -- env ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg ANSIBLE_STDOUT_CALLBACK=default ANSIBLE_NOCOLOR=1 ANSIBLE_DISPLAY_FAILED_STDERR=true /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e @/opt/orbit/bootstrap/control.yml --tags grants /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml",
+      "incus exec nested-gateway -- sha256sum /home/orbit/orbit/swamp/grants/orbit-gateway.yaml /home/orbit/orbit/swamp/grants/orbit-serve.yaml",
     ]);
     assertStringIncludes(output, "changed=0");
   },

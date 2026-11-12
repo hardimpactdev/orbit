@@ -796,7 +796,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_gateway_swamp_grants_test.py"
-cost = 40
+cost = 65 # 40.628s locally, including reload and partial-snapshot recovery; no ceiling change.
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",

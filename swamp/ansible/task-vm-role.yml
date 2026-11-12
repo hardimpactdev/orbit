@@ -105,7 +105,16 @@
       tags: [fleet]
       when: >-
         not (intent.direct | default(false)) and
-        (fleet_new | length > 0 or "code" not in checkout_current or converge_due.operator or converge_due.tokens or fleet_grants.changed)
+        (fleet_new | length > 0 or "code" not in checkout_current or converge_due.operator or converge_due.tokens or fleet_grants.changed or
+         fleet_grants_snapshot_digest != (converge_stamps['grants-snapshot'] | default('')))
       ansible.builtin.command: { argv: [timeout, "180", incus, snapshot, create, --reuse, "{{ item }}", base] }
       loop: "{{ intent.fleet.guests.values() | list }}"
+      register: fleet_snapshots
       changed_when: true
+    - name: Record the snapshotted grants
+      tags: [fleet]
+      when: fleet_snapshots is succeeded and fleet_snapshots is not skipped
+      ansible.builtin.copy:
+        dest: "{{ fleet_grants_snapshot_stamp }}"
+        content: "{{ fleet_grants_snapshot_digest }}"
+        mode: "0644"

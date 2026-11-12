@@ -84,7 +84,8 @@ class GatewaySwampGrantsTest(unittest.TestCase):
                                              'condition': 'key.matches("^node-converge-operation-[1-9][0-9]*-agent-verifier$")'}]}) + '\n'
             grant = repository / 'grants/orbit-gateway.yaml'
             grant.write_text(stale)
-            (folder / 'plan.json').write_text(json.dumps({'grants': {'grants/orbit-gateway.yaml': current}}))
+            (repository / 'grants/orbit-serve.yaml').write_text(stale)
+            (folder / 'plan.json').write_text(json.dumps({'grants': {'grants/orbit-gateway.yaml': current, 'grants/orbit-serve.yaml': stale}}))
             (folder / 'bin/php').write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$FIXTURE/render.log"\ncat "$FIXTURE/plan.json"\n')
             (folder / 'bin/swamp').write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$FIXTURE/reload.log"\ncat "$FIXTURE/reload.json"\n')
             (folder / 'bin/ansible-galaxy').write_text(
@@ -110,16 +111,17 @@ class GatewaySwampGrantsTest(unittest.TestCase):
             (folder / 'play.yml').write_text(json.dumps(play))
             # Run through the complete product fleet reconcile and its refresh snapshot decision. Only the Incus boundary is fake;
             # the nested grants play uses real Ansible file changes and returns its real recap to the outer phase.
+            (folder / 'stamps').mkdir()
             guests = {'gateway': 'nested-gateway', 'app-dev': 'nested-app-dev', 'app-prod': 'nested-app-prod'}
             fleet = [{'hosts': 'localhost', 'gather_facts': False,
                       'vars': {'intent': {'fleet': {'guests': guests}, 'direct': False},
-                               'converge_stamps': {'operator': 'current'}, 'converge_due': {'operator': False, 'tokens': False},
+                               'converge_stamps': {'operator': 'current'}, 'converge_stamps_dir': str(folder / 'stamps'), 'converge_due': {'operator': False, 'tokens': False},
                                'checkout_current': ['code', 'agent', 'migrations']},
                       'tasks': [{'ansible.builtin.import_tasks': str(ANSIBLE / 'tasks/task-vm-fleet.yml')},
-                                yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())[1]['tasks'][0]]}]
+                                *yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())[1]['tasks']]}]
             (folder / 'fleet.yml').write_text(json.dumps(fleet))
             (folder / 'bin/incus').write_text('#!' + sys.executable + '\n' + r"""
-import json, os, subprocess, sys
+import hashlib, json, os, subprocess, sys
 from pathlib import Path
 folder = Path(os.environ['FIXTURE'])
 args = sys.argv[1:]
@@ -130,7 +132,13 @@ elif args[:2] == ['exec', 'nested-gateway'] and '--tags' in args and args[args.i
     result = subprocess.run([os.environ['FIXTURE_ANSIBLE'], '-i', 'localhost,', '-c', 'local', '-e', 'ansible_become=false',
                              '-e', 'ansible_python_interpreter=' + sys.executable, str(folder / 'play.yml')], check=False)
     sys.exit(result.returncode)
+elif args[:4] == ['exec', 'nested-gateway', '--', 'sha256sum']:
+    for name in args[4:]:
+        path = folder / 'swamp/grants' / Path(name).name
+        print(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + name)
 elif args[:3] == ['snapshot', 'create', '--reuse'] and args[-1] == 'base':
+    if (folder / 'fail-snapshot').exists() and args[-2] == 'nested-app-dev':
+        sys.exit(2)
     with (folder / 'snapshots.log').open('a') as log:
         log.write(args[-2] + '\n')
 else:
@@ -141,6 +149,10 @@ else:
                    'ANSIBLE_STDOUT_CALLBACK': 'default', 'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg')}
 
             def run(success):
+                stamp = folder / 'stamps/grants-snapshot'
+                if stamp.exists():
+                    fleet[0]['vars']['converge_stamps']['grants-snapshot'] = stamp.read_text()
+                (folder / 'fleet.yml').write_text(json.dumps(fleet))
                 (folder / 'reload.json').write_text(json.dumps({'success': success}))
                 return subprocess.run([COMMAND, '-i', 'localhost,', '-c', 'local', '-e', 'ansible_become=false',
                                        '-e', 'ansible_python_interpreter=' + sys.executable, str(folder / 'fleet.yml')],
@@ -155,6 +167,7 @@ else:
             self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
             # Even though the failed reload left the desired files on disk, serve must receive the retry.
             self.assertEqual(len((folder / 'reload.log').read_text().splitlines()), 2)
+            self.assertEqual((folder / 'snapshots.log').read_text().splitlines(), list(guests.values()))
             current_run = run(True)
             self.assertEqual(current_run.returncode, 0, current_run.stdout + current_run.stderr)
             self.assertIn('changed=0', current_run.stdout)
@@ -166,11 +179,32 @@ else:
             self.assertTrue(all('--checkout=' + str(repository) in line for line in (folder / 'render.log').read_text().splitlines()))
             self.assertEqual(len((folder / 'collections.log').read_text().splitlines()), 4)
             # Gateway code, migration and token stamps were current. The grants-only repair must still update every base snapshot.
-            self.assertEqual((folder / 'snapshots.log').read_text().splitlines(), list(guests.values()))
+            self.assertEqual((folder / 'snapshots.log').read_text().splitlines(), list(guests.values()) * 2)
             current_run = run(True)
             self.assertEqual(current_run.returncode, 0, current_run.stdout + current_run.stderr)
             self.assertIn('changed=0', current_run.stdout)
-            self.assertEqual((folder / 'snapshots.log').read_text().splitlines(), list(guests.values()))
+            self.assertEqual((folder / 'snapshots.log').read_text().splitlines(), list(guests.values()) * 2)
+
+            # A partial snapshot failure must not commit the new grants digest.
+            stamp = folder / 'stamps/grants-snapshot'
+            previous_digest = stamp.read_text()
+            newer = current.replace('write', 'read-secret')
+            (folder / 'plan.json').write_text(json.dumps({'grants': {'grants/orbit-gateway.yaml': newer,
+                                                                  'grants/orbit-serve.yaml': stale}}))
+            (folder / 'fail-snapshot').touch()
+            failed_snapshot = run(True)
+            self.assertNotEqual(failed_snapshot.returncode, 0, failed_snapshot.stdout + failed_snapshot.stderr)
+            self.assertEqual(stamp.read_text(), previous_digest)
+            (folder / 'fail-snapshot').unlink()
+            before = (folder / 'snapshots.log').read_text().splitlines()
+            retried = run(True)
+            self.assertEqual(retried.returncode, 0, retried.stdout + retried.stderr)
+            self.assertEqual((folder / 'snapshots.log').read_text().splitlines(), before + list(guests.values()))
+            self.assertNotEqual(stamp.read_text(), previous_digest)
+            unchanged = run(True)
+            self.assertEqual(unchanged.returncode, 0, unchanged.stdout + unchanged.stderr)
+            self.assertIn('changed=0', unchanged.stdout)
+            self.assertEqual((folder / 'snapshots.log').read_text().splitlines(), before + list(guests.values()))
 
     def test_the_grants_tag_uses_the_candidate_renderer_not_the_saved_plan_grants(self):
         plays = yaml.safe_load((ANSIBLE / 'gateway-bootstrap.yml').read_text())
@@ -180,9 +214,15 @@ else:
         reconcile = next(step for step in apply if step['name'] == 'Reconcile the Swamp grants')
         self.assertEqual(reconcile['task']['inputs']['argv'][-3:], ['--tags', 'grants', '/home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml'])
         self.assertEqual(reconcile['dependsOn'][0]['step'], 'Place the agent delivery')
-        for name in ('Re-mint the Swamp tokens', 'Migrate'):
-            self.assertIn({'step': 'Reconcile the Swamp grants', 'condition': {'type': 'succeeded'}},
-                          next(step for step in apply if step['name'] == name)['dependsOn'])
+        renewal = next(step for step in apply if step['name'] == 'Re-mint the Swamp tokens')
+        self.assertEqual(renewal['guard'], '${{ !(has(inputs.remint) && inputs.remint) }}')
+        self.assertEqual(renewal['dependsOn'], [{'step': 'Place the agent delivery', 'condition': {'type': 'succeeded'}}])
+        self.assertEqual(reconcile['dependsOn'], [
+            {'step': 'Place the agent delivery', 'condition': {'type': 'succeeded'}},
+            {'step': 'Re-mint the Swamp tokens', 'condition': {'type': 'or', 'conditions': [{'type': 'succeeded'}, {'type': 'skipped'}]}},
+        ])
+        self.assertEqual(next(step for step in apply if step['name'] == 'Migrate')['dependsOn'],
+                         [{'step': 'Reconcile the Swamp grants', 'condition': {'type': 'succeeded'}}])
         collections = next(play for play in plays if 'collections' in play.get('tags', []))
         self.assertEqual(collections['tasks'][0]['ansible.builtin.import_tasks'], 'tasks/gateway-ansible-collections.yml')
 

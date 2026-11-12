@@ -53,7 +53,6 @@
   ansible.builtin.import_tasks: task-vm-fleet-tokens.yml
   when: converge_due.tokens or fleet_new | length > 0
 
-
 # Guest-local grants mask the checkout. Reconcile even when no code or token stamp is due, and propagate real file changes to snapshots.
 - name: Reconcile the nested Swamp grants
   ansible.builtin.command:
@@ -63,6 +62,18 @@
            --tags, grants, /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml]
   register: fleet_grants
   changed_when: fleet_grants.stdout is search('changed=[1-9][0-9]*')
+
+# Compare with the last completed snapshot set, not this run's copy result: a failed reload already replaced the files.
+- name: Read the reconciled grants digest
+  ansible.builtin.command:
+    argv: [timeout, "30", incus, exec, "{{ fleet_guests.gateway }}", --, sha256sum,
+           /home/orbit/orbit/swamp/grants/orbit-gateway.yaml, /home/orbit/orbit/swamp/grants/orbit-serve.yaml]
+  register: fleet_grants_digest
+  changed_when: false
+- name: Keep the grants snapshot identity across plays
+  ansible.builtin.set_fact:
+    fleet_grants_snapshot_digest: "{{ fleet_grants_digest.stdout | hash('sha256') }}"
+    fleet_grants_snapshot_stamp: "{{ converge_stamps_dir }}/grants-snapshot"
 
 # The code of the nested Gateway (`apps/gateway` of the commit): a restart of the long-running services when it changed, and the agent
 # delivery manifest only when the agent build it pins changed. A commit that changes neither restarts and places nothing.
