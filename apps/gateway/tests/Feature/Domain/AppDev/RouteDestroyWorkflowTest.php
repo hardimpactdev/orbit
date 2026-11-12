@@ -127,6 +127,17 @@ it('keeps DNS when publication refuses and records the incomplete withdrawal tru
     expect($route->refresh()->status)->toBe(RouteStatus::Retiring)
         ->and($route->sites_published)->toBeTrue()->and($route->failed_step)->toBe('Withdraw site, remove cert')
         ->and($route->error_code)->toBe('route.withdraw_failed');
+
+    [$retry, $retryInputs] = destroyAdmission($route);
+    $completed = destroyExpressions($retryInputs);
+    expect($completed['status'])->toBe('succeeded')
+        ->and($completed['siteRemoved'])->toBeTrue()->and($completed['dnsRemoved'])->toBeTrue();
+    app(NativeRouteRemovalProjection::class)->apply($retry, [
+        'run_id' => 'fixture-run', 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['steps' => $completed['steps']],
+    ]);
+    expect(Route::query()->find($route->id))->toBeNull();
+
 });
 
 it('marks confirmed site removal unpublished if the final DNS step fails', function (): void {
