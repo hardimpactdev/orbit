@@ -1863,7 +1863,7 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_line_test.py": {
-    "source_sha256": "9e8c6100f7941afe3d02192a83119383b296d85a808ddfd32229d86efb97debe",
+    "source_sha256": "ee711ee4ccb0b5a5ce880e48e2018f08bc8dcde2bfe24c675e346c3f8a47a5e6",
     "cases": [
       "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte",
       "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved",
@@ -1872,7 +1872,35 @@
       "test_real_ansible_step_refreshes_only_changed_file_and_skips_conflict",
       "test_failed_transfer_preserves_file_and_returns_only_a_code",
       "test_interruption_after_staging_cleans_the_fixed_name_even_with_stopped_guest",
-      "test_next_run_removes_a_leftover_before_even_inspecting_a_stopped_guest"
+      "test_next_run_removes_a_leftover_before_even_inspecting_a_stopped_guest",
+      "test_migrate_orders_advisory_mail_after_copy_and_before_application_start"
+    ]
+  },
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
+    "source_sha256": "f602698186286c7529edf421ac5dfdcff5fe0337dfd7e33cd461bb81b9a29ff3",
+    "cases": [
+      "a default that moved reports its commit and no T3 server",
+      "a non-default Instance that moved reports its T3 server, and needs its registration",
+      "a move that failed and restored names the failed phase with its own refusal, and says restored",
+      "a Route that did not move fails the move, and a failed restore is not restored",
+      "a failed removal after the Route moved keeps the Instance moved, and is no restore",
+      "an Instance without a Route needs no Route step, and a first phase that never ran is the failure",
+      "the code a phase wrote is read from the run folder",
+      "instance.migrate_retirement_blocked keeps the public message and preflight marker before and after cutover",
+      "instance.migrate_unpushed_commits keeps the public message and preflight marker before and after cutover",
+      "instance.migrate_stashes_present keeps the public message and preflight marker before and after cutover",
+      "instance.migrate_env_service_unreachable keeps the public message and preflight marker before and after cutover",
+      "retained Git is recorded after success and after a later retirement failure",
+      "the migration prepares and probes the container before quiesce and builds the workspace after it",
+      "symlink refusals keep every path and target and the preflight flag in the public receipt",
+      "retirement pending does not claim the container moved",
+      "Route restoration pending does not prove the checkout restored",
+      "retirement unknown does not claim the container moved",
+      "Route restoration unknown does not prove the checkout restored",
+      "a moved worker readiness failure keeps its Process name and restored outcome before cutover",
+      "the receipt lists every projected Process command translation on success and restoration",
+      "mail failure is an advisory warning and cannot fail or restore a completed migration",
+      "migration retains each exact-line outcome and the named path conflict without values"
     ]
   }
 }

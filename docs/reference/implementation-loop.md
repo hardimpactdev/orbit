@@ -701,3 +701,5 @@ The shared installer inspects runner-writable JavaScript executables as `runner`
 Native Vault CLI fixtures serialize each read and write of their shared backend state. A failed command must preserve another command's completed writes and deletes.
 
 The development mail-line fixture runs unprivileged. It executes the shipped byte rule against temporary files through a fake Incus boundary. Its inventory and named case costs change together, using `bin/ci-units collect --file` after each fixture edit.
+
+The migration mail fixture also checks the phase order: copy first, bounded mail attempt second, application starts last. A failed attempt retains the copied file and produces a warning receipt.

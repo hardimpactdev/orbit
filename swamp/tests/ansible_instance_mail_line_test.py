@@ -149,7 +149,7 @@ os.execv('/usr/bin/chown', ['chown', *sys.argv[1:]])
         self.assertNotEqual(after.st_ino, before.st_ino)
         self.assertEqual(list(self.root.glob('.env.*')), [])
 
-    def ansible(self, path_status='applied', php=True, failure=False, probe_preserved=False):
+    def ansible(self, path_status='applied', php=True, failure=False, probe_preserved=False, migrate=False):
         import yaml
         tasks = self.root / 'tasks'
         tasks.mkdir(exist_ok=True)
@@ -164,7 +164,7 @@ os.execv('/usr/bin/chown', ['chown', *sys.argv[1:]])
                            'mail_refresh': {'php': '/fixture/php' if php else None, 'application': '/fixture/app',
                                             'units': ['orbit-frankenphp.service', 'orbit-process-42.service', 'orbit-process-stopped.service']},
                            'as_root': ['incus', 'exec', 'fixture', '--'], 'as_orbit': ['incus', 'exec', 'fixture', '--']}
-        wrapper['vars']['intent'] = {}
+        wrapper['vars']['intent'] = {'migrate': {}} if migrate else {}
         if probe_preserved:
             wrapper['post_tasks'] = [
                 {'name': 'Probe the real preserved-line rule independently of the skipped path',
@@ -180,17 +180,20 @@ os.execv('/usr/bin/chown', ['chown', *sys.argv[1:]])
         result = subprocess.run([executable, '-i', 'fixture_host,', '--tags', 'mail', str(play)], env=self.env, capture_output=True, check=False)
         self.assertEqual(result.returncode == 0, not failure, result.stdout.decode() + result.stderr.decode())
         self.assertNotIn(b'MAIL_PASSWORD=', result.stdout + result.stderr)
-        return json.loads((self.root / 'result.json').read_text())
+        return json.loads((self.root / ('mail-result.json' if migrate else 'result.json')).read_text())
 
     def test_real_ansible_step_refreshes_only_changed_file_and_skips_conflict(self):
         before = b'MAIL_MAILER=log\nMAIL_PASSWORD=fixture-canary\n'
-        self.envfile.write_bytes(before)
+        source = self.root / 'copied-source'
+        source.write_bytes(before)
+        self.envfile.write_bytes(b'MAIL_MAILER=ses\n')
+        shutil.copyfile(source, self.envfile)
         (self.root / 'app').mkdir()
         (self.root / 'app/artisan').touch()
         php = self.root / 'php'
         php.write_text('#!/bin/sh\nprintf called >> "' + str(self.root / 'config-clear') + '"\nexit 1\n')
         php.chmod(0o755)
-        self.assertEqual(self.ansible()['mailer'], {'status': 'changed', 'lines': [1]})
+        self.assertEqual(self.ansible(migrate=True)['mailer'], {'status': 'changed', 'lines': [1]})
         self.assertTrue((self.root / 'config-clear').exists())
         self.assertEqual(json.loads(self.calls.read_text()), ['orbit-frankenphp.service', 'orbit-process-42.service'])
         self.assertEqual(self.ansible('unchanged')['mailer'], {'status': 'already_smtp'})
@@ -251,6 +254,16 @@ os.execv('/usr/bin/chown', ['chown', *sys.argv[1:]])
         (self.root / 'stopped').unlink()
         self.assertEqual(self.run_rule()['status'], 'changed')
         self.assertEqual(list(self.root.glob('.env.*')), [])
+
+    def test_migrate_orders_advisory_mail_after_copy_and_before_application_start(self):
+        import yaml
+        workflow = yaml.safe_load((ROOT / 'swamp/workflows/workflow-operation-instance-migrate.yaml').read_text())
+        steps = {step['name']: step for step in workflow['jobs'][0]['steps']}
+        mail = steps['Apply development mail']
+        self.assertTrue(mail['allowFailure'])
+        self.assertEqual(mail['dependsOn'], [{'step': 'files', 'condition': {'type': 'succeeded'}}])
+        for name in ['agent', 'container-processes']:
+            self.assertIn({'step': 'Apply development mail', 'condition': {'type': 'always'}}, steps[name]['dependsOn'])
 
 
 if __name__ == '__main__':
