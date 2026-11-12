@@ -680,7 +680,7 @@ describe('the reachable Project directory', function (): void {
             ->assertOk()->assertJsonPath('data.available', false)->assertJsonPath('data.reason', 'invalid');
     });
 
-    it('enforces the complete domain length while keeping the free name available', function (int $lastLabelLength, bool $valid): void {
+    it('refuses an uncreatable domain in the name check and both create admissions before any Operation', function (int $lastLabelLength, bool $valid): void {
         $default = threadDefault($this->beast, 'tool');
         $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5']);
         $tld = str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', $lastLabelLength);
@@ -689,18 +689,30 @@ describe('the reachable Project directory', function (): void {
         $domain = $name.'.tool.'.$tld;
 
         threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name={$name}")
-            ->assertOk()->assertJsonPath('data.available', true)->assertJsonPath('data.reason', null)
+            ->assertOk()->assertJsonPath('data.available', $valid)->assertJsonPath('data.reason', $valid ? null : 'domain_invalid')
             ->assertJsonPath('data.domain', $valid ? $domain : null);
         expect(strlen($domain))->toBe($valid ? 253 : 254);
+        if (! $valid) {
+            $operations = Operation::query()->count();
+            $instances = Instance::query()->count();
+            threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => $name])
+                ->assertUnprocessable()->assertJsonPath('error.code', 'route.domain_invalid');
+            $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+                ->postJson('/api/v1/instances', ['project_id' => $default->project_id, 'node_id' => $this->beast->id, 'name' => $name])
+                ->assertUnprocessable()->assertJsonPath('error.code', 'route.domain_invalid');
+            expect(containerRefusal(fn () => containerCreate($default->project, $this->beast, $name)))->toBe('route.domain_invalid')
+                ->and(Operation::query()->count())->toBe($operations)
+                ->and(Instance::query()->count())->toBe($instances);
+        }
     })->with(['253 characters' => [56, true], '254 characters' => [57, false]]);
 
-    it('rejects a domain label over 63 characters while keeping the free name available', function (): void {
+    it('refuses a generated domain label over 63 characters', function (): void {
         $default = threadDefault($this->beast, 'tool');
         $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5', 'slug' => str_repeat('p', 64)]);
         $this->beast->update(['tld' => 'test']);
 
         threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=free")
-            ->assertOk()->assertJsonPath('data.available', true)->assertJsonPath('data.domain', null);
+            ->assertOk()->assertJsonPath('data.available', false)->assertJsonPath('data.reason', 'domain_invalid')->assertJsonPath('data.domain', null);
     });
 });
 

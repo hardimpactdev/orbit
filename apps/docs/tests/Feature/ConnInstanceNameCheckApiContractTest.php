@@ -16,7 +16,7 @@ describe('the generated Conn Instance name check contract', function (): void {
         $properties = $spec['components']['schemas']['ConnInstanceNameCheck']['properties'];
         expect(array_keys($properties))->toBe(['name', 'available', 'reason', 'domain'])
             ->and($properties['available']['type'])->toBe('boolean')
-            ->and($properties['reason']['enum'])->toBe(['taken', 'invalid', 'default', null])
+            ->and($properties['reason']['enum'])->toBe(['taken', 'invalid', 'default', 'domain_invalid', null])
             ->and($properties['domain']['type'])->toBe(['string', 'null']);
     });
 

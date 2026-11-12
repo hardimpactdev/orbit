@@ -3,15 +3,13 @@ title: "Routes"
 description: "What a Route records, how Orbit projects its private traffic path through a Node or Router, and which later changes it coordinates or refuses."
 covers:
   - apps/gateway/app/{Domain,Actions,Infrastructure,Data}/Routes/**
-  - apps/gateway/app/Infrastructure/Certificates/GatewayLeafCertificateSigner.php
-  - swamp/workflows/workflow-{route-certificate-publish,node-role-certificate-publish}.yaml
   - apps/gateway/app/Http/{Controllers/Api/RoutesController.php,Requests/Routes/**}
   - apps/gateway/{app/Models/{Route,RouteTarget,RouteCustomProxy}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/gateway/app/Infrastructure/AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock,RemoteAppDevCertificateManager,RemoteAppDevRouteFirewallManager}.php
+  - apps/gateway/app/Infrastructure/{AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock,RemoteAppDevCertificateManager,RemoteAppDevRouteFirewallManager},Certificates/GatewayLeafCertificateSigner}.php
   - apps/gateway/app/{Domain/AppDev/{DevelopmentServerEndpoint,PrivateDnsAnswerExpiry}.php,Infrastructure/Clusters/NativeClusterRouterOperationLock.php}
   - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentRouteProjector,NativeDevelopmentSourceAccess}.php
   - apps/gateway/{app/Domain/Instances/DevelopmentSourceAccess.php,database/migrations/*_instance_path_proxies_table.php}
-  - swamp/{ansible/route-create-site.yml,ansible/library/orbit_route_site.py,workflows/workflow-{operation-route-create,route-create-site,route-create-csr}.yaml}
+  - swamp/{ansible/route-create-site.yml,ansible/library/orbit_route_site.py,workflows/workflow-{operation-route-create,route-create-site,route-create-csr,route-certificate-publish,node-role-certificate-publish}.yaml}
 ---
 
 # Routes

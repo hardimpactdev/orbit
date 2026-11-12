@@ -42,7 +42,7 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: '${{ ["timeout", "30", "sh", "-eu", "-c", "install -d -o root -g caddy -m 0750 -- \"$1\" && openssl req -new -newkey rsa:2048 -nodes -keyout \"$1/key.pem\" -subj \"/CN=$2\" && chown root:caddy -- \"$1/key.pem\" && chmod 0640 -- \"$1/key.pem\"", "sh", inputs.intent.leaves[inputs.leaf].directory, inputs.intent.leaves[inputs.leaf].domain] }}'
+        argv: '${{ ["timeout", "30", "sh", "-eu", "-c", "install -d -o root -g caddy -m 0750 -- \"$1\" && openssl req -quiet -new -newkey rsa:2048 -nodes -keyout \"$1/key.pem\" -subj \"/CN=Orbit\" -addext \"subjectAltName=DNS:$2\" && chown root:caddy -- \"$1/key.pem\" && chmod 0640 -- \"$1/key.pem\"", "sh", inputs.intent.leaves[inputs.leaf].directory, inputs.intent.leaves[inputs.leaf].domain] }}'
         timeoutSec: 40
     # With an Operation named: 209 has the CSR signed by the Gateway (the one call that route-create-sign makes), beside the key.
   - name: 'sign'
