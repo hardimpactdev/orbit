@@ -132,6 +132,9 @@ sequenceDiagram
     %%> When:
     %%> - a command exits non-zero, a Process or the site does not come up, or the budget ends
     SW->>N: Withdraw the Route<br/>child route-withdraw
+    %%> Caddy publication:
+    %%> - on the Node, wait at most 5 s for the publish lock; compare the composed-from SHA-256 with the live file, then validate, rename and reload under that lock
+    %%> - a changed base refuses with `caddy.composed_from_live_mismatch`; a busy lock refuses with `caddy.publish_busy`; the live Caddyfile stays unchanged and the normal failure path runs
     %%> What it does:
     %%> - takes back what the run published, as the reverse of the publication that the Gateway captured at admission: the Caddy site, the PHP pool, the private DNS records and the certificate folders
     %%> - the catalog's Router answers (`overrides`, a list per requesting Node) name a Route only while the captured fleet has a site for it, as the host records do, so the name of the withdrawn Route leaves with its records in this same step and no stale answer stays

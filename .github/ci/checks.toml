@@ -2853,6 +2853,8 @@ file = "swamp/tests/caddy_candidate_test.py"
 cost = 28
 slices = false
 inputs = [
+  "swamp/ansible/library/orbit_caddy_publish.py",
+  "swamp/ansible/module_utils/orbit_caddy_publish.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/library/orbit_route_site.py",
   "swamp/ansible/tasks/caddy-publish.yml",
@@ -2888,13 +2890,13 @@ file = "swamp/tests/ansible_instance_route_withdraw_test.ts"
 cost = 12
 slices = false
 inputs = [
+  "swamp/ansible/library/orbit_caddy_publish.py",
+  "swamp/ansible/module_utils/orbit_caddy_publish.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/route-withdraw.yml",
   "swamp/ansible/tasks/caddy-publish.yml",
   "swamp/workflows/workflow-operation-instance-destroy.yaml",
 ]
-[fixture.case_costs]
-"pending Route withdrawal removes partial publication and CSR residue or accepts an absent site with real Ansible" = 12
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_migrate_source_test.ts"
@@ -2913,3 +2915,7 @@ inputs = [
 file = "swamp/tests/instance_node_service_access_test.py"
 cost = 20
 inputs = ["swamp/ansible/instance_node_services.py", "swamp/ansible/instance-container-destroy.yml", "swamp/ansible/tasks/instance-migrate-discard.yml", "swamp/tests/fixtures/instance-container-incus.ts"]
+
+[[fixture]]
+file = "swamp/tests/caddy_publish_test.py"
+inputs = ["swamp/ansible/library/orbit_caddy_publish.py", "swamp/ansible/module_utils/orbit_caddy_publish.py"]

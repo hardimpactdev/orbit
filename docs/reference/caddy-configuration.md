@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Console/Commands/CaddyBuildCommand.php
   - apps/gateway/app/Infrastructure/Nodes/Roles/CaddyRoleFailure.php
   - apps/gateway/app/Domain/Nodes/CaddyRelease.php
-  - swamp/ansible/{route-create-site.yml,route-withdraw.yml,library/orbit_route_site.py}
+  - swamp/ansible/{route-create-site.yml,route-withdraw.yml,library/orbit_route_site.py,library/orbit_caddy_publish.py,module_utils/orbit_caddy_publish.py}
   - swamp/ansible/tasks/{caddy-publish,gateway-swamp}.yml
   - swamp/workflows/workflow-{operation-route-caddy,operation-route-caddy-delta,route-create-ingress}.yaml
   - swamp/proof/spike/shape-live
@@ -23,6 +23,8 @@ Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy.
 The manual `orbit:caddy-build` command submits `route.caddy_converge`. Gateway releases do not converge Caddy sites; [node converge](/cli/node/converge) publishes the Gateway Node's sites as for any Node.
 
 Publication first writes a candidate beside `/etc/caddy/Caddyfile`, with the live file's owner and restricted mode, before content is written. Caddy validates that candidate as the `caddy` user. Keeping both files in the same directory gives relative imports the same base. Only successful validation permits renaming that same candidate inode over the live file, then reload. No owner or mode repair happens on the live path after publication. Route TLS probes still follow reload.
+
+Withdrawal also checks its composed-from checksum and holds a Node lock through validation, rename and reload. See [coordinate publication](/reference/routes#coordinate-publication) for its refusal codes, lock bounds and the writers covered by this guard.
 
 ### Failed publication
 

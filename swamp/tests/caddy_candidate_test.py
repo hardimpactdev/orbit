@@ -1,6 +1,7 @@
 """Unprivileged invalid/valid candidate proof for every changed Caddy writer."""
 
 import grp
+import hashlib
 import json
 import os
 import pwd
@@ -263,6 +264,27 @@ class CaddyCandidateTest(unittest.TestCase):
         self.assertEqual(
             publish["ansible.builtin.command"]["argv"][:3], ["mv", "-Tf", "--"]
         )
+        is_guarded = "orbit_caddy_publish" in task
+        if is_guarded:
+            library = self.folder / "library"
+            library.mkdir()
+            utils = self.folder / "module_utils"
+            utils.mkdir()
+            module = (ROOT / "swamp/ansible/library/orbit_caddy_publish.py").read_text()
+            module = module.replace('gid=grp.getgrnam("caddy").gr_gid',
+                                    "gid=" + str(self.publish_group))
+            (library / "orbit_caddy_publish.py").write_text(module)
+            code = (ROOT / "swamp/ansible/module_utils/orbit_caddy_publish.py").read_text()
+            code = code.replace('live=Path("/etc/caddy/Caddyfile")',
+                                "live=Path(" + repr(str(self.live)) + ")")
+            code = code.replace("uid=0, gid=0", "uid=" + str(os.getuid()) + ", gid=0")
+            code = code.replace("os.replace(candidate, live)", "os.replace(candidate, live)\n"
+                                "                if (live.parent.parent.parent / 'interrupt-after-rename').exists():\n"
+                                "                    import json\n"
+                                "                    current = live.stat()\n"
+                                "                    (live.parent.parent.parent / 'published.json').write_text(json.dumps([current.st_ino, current.st_uid, current.st_gid, current.st_mode & 0o777]))\n"
+                                "                    raise OSError('fixture interruption after rename')")
+            (utils / "orbit_caddy_publish.py").write_text(code)
         is_site = "orbit_route_site" in task
         if is_site:
             library = self.folder / "library"
@@ -308,6 +330,8 @@ class CaddyCandidateTest(unittest.TestCase):
             "ANSIBLE_LOCAL_TEMP": str(self.folder / "local"),
             "ANSIBLE_REMOTE_TEMP": str(self.folder / "remote"),
             "ANSIBLE_NOCOLOR": "1",
+            "ANSIBLE_LIBRARY": str(self.folder / "library"),
+            "ANSIBLE_MODULE_UTILS": str(self.folder / "module_utils"),
         }
         for invalid in [False] if interrupt else [True, False]:
             with self.subTest(invalid=invalid):
@@ -320,7 +344,8 @@ class CaddyCandidateTest(unittest.TestCase):
                     "nodes": {"9": {"account": pwd.getpwuid(os.getuid()).pw_name}},
                     "caddy": [{"node_id": 9, "content": value}],
                 }
-                play["vars"]["plan"] = {"caddy": {"content": value}}
+                play["vars"]["plan"] = {"caddy": {"content": value},
+                                         "expect": {str(self.live): hashlib.sha256(self.old).hexdigest()}}
                 play["vars"]["front_certificate"] = {
                     "stdout": json.dumps(
                         {

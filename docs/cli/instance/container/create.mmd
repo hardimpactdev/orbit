@@ -111,6 +111,9 @@ sequenceDiagram
   else a step fails or the budget ends
     C--xSW: exit ≠ 0 or timeout
     SW->>N: Attempt Route withdrawal<br/>child route-withdraw
+    %%> Caddy publication:
+    %%> - on the Node, wait at most 5 s for the publish lock; compare the composed-from SHA-256 with the live file, then validate, rename and reload under that lock
+    %%> - a changed base refuses with `caddy.composed_from_live_mismatch`; a busy lock refuses with `caddy.publish_busy`; the live Caddyfile stays unchanged and the normal failure path runs
     %%> When:
     %%> - only when the run published it
     SW->>N: Attempt container stop<br/>incus stop
