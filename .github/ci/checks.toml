@@ -2710,3 +2710,37 @@ inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts"
 "container mail skips retain their reason and missing mail observations stay advisory" = 1
 "default and clone finish workspace T3 and registration despite bounded mail failure" = 1
 "a Node without the main Mailpit gets no mail warning or failure" = 1
+
+[[fixture]]
+file = "swamp/tests/instance_destroy_git_test.py"
+cost = 18
+slices = false
+inputs = [
+  "swamp/ansible/instance/destroy-git.py",
+  "swamp/workflows/workflow-operation-instance-destroy.yaml",
+]
+[fixture.case_costs]
+"test_confirmed_registered_and_moved_dependents_are_found_even_with_force" = 1
+"test_existing_owner_registration_refuses_without_reading_candidate_git" = 1
+"test_prunable_gone_registration_and_independent_checkouts_do_not_block" = 1
+"test_broken_gitdir_and_commondir_into_target_are_confirmed" = 1
+"test_unreadable_candidate_shapes_are_named_unknown_and_never_veto" = 1
+"test_unreadable_parent_in_mixed_inventory_warns_including_the_moved_worktree_limit" = 1
+"test_candidate_timeouts_share_one_allowance_and_warn" = 4
+"test_malformed_rows_cannot_poison_other_candidates_and_diagnostics_are_bounded" = 1
+"test_target_directory_marker_resolve_and_git_failures_keep_path_and_cause" = 4
+"test_alternates_dependency_and_symlinked_candidate_are_confirmed" = 1
+"test_inspect_never_walks_checkout_contents_or_accepts_a_remove_action" = 1
+"test_workflow_and_source_removal_are_identical_to_the_pre_reland_main" = 1
+
+[[fixture]]
+file = "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts"
+cost = 3
+inputs = [
+  "swamp/ansible/instance/destroy-git.py",
+  "swamp/workflows/workflow-operation-instance-destroy.yaml",
+]
+[fixture.case_costs]
+"the files Orbit renders do not count as unpushed work, at any depth" = 1
+"any other change is still work that is not pushed" = 1
+"every destroy Ansible step enables failed task stderr" = 1

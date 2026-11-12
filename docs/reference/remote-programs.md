@@ -11,9 +11,17 @@ covers:
 
 Node management runs through [named Rust agent commands](/reference/node-agent#commands). The program runner remains only to recover ownership of Tasks workspaces, which is outside this port. Tasks workspace scripts and their operation journal also remain unchanged. New Node behavior must not use this runner.
 
+One narrow exception reads Git dependencies of a host checkout Instance at destroy admission. This read must refuse with HTTP 409 before any removal side effect, including the Schedule trigger withdrawal that admission performs. `InstanceDestroyWorktrees::assertAvailable` accepts only the resolved Instance; it builds fixed Python/Git argv from the Instance’s stored checkout path.
+
+The read is read-only, has a ten-second outer timeout and three seconds per Git invocation. It reads only the owner’s Git registry and each recorded checkout’s Git common directory, without traversing checkout contents, and runs as the Node’s existing SSH account with its existing identity and pins. It adds no identity or capability. Containers, reserved sources, missing checkout paths and inactive Nodes skip it.
+
+An unreachable Node or outer SSH timeout refuses with `instance.host_unavailable`; a Git error in the target refuses with `instance.remove_refused`. Other checkout failures use bounded, non-blocking pointer reads inside the same call, without a tree scan or retry. Only confirmed dependents use `instance.worktree_dependents`. The check is admission only; an admitted retry or workflow dispatch never repeats it after removal has started.
+
+The follow-up moves this check and Schedule withdrawal together into Swamp. This fix keeps the synchronous refusal small instead of moving that lifecycle boundary. No other new caller is allowed by this exception.
+
 ## Program files
 
-No Gateway code calls a catalogued program now: the workspace owner check left with the workspace lease. The runner and its header format remain for the Services-only Operation primitive.
+Destroy admission calls the catalogued `instance.destroy-git` program under the narrow exception above. The workspace owner check left with the workspace lease. The runner and its header format remain for the Services-only Operation primitive.
 
 `RemoteProgramCatalog` reads the program header and prepends `lib/program.py`. The header declares the program name, libraries, outcomes, and 30-second timeout. The assembled source and its JSON input travel through `SshProgramRunner` over the Node's pinned SSH connection.
 

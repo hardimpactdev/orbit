@@ -879,7 +879,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'node:list' => [[], ['json' => false]],
         'node:metrics' => [['node'], ['json' => false]],
         'node:remove' => [['node'], ['force' => false, 'offline' => false, 'idempotency-key' => null, 'json' => false]],
-        'node:update' => [['node'], ['name' => null, 'platform' => null, 'reboot-hold' => null, 'lan-ip' => null, 'apps-path' => null, 'task-vms' => null, 'idempotency-key' => null, 'json' => false]],
+        'node:update' => [['node'], ['name' => null, 'platform' => null, 'reboot-hold' => null, 'image-refresh-hold' => false, 'no-image-refresh-hold' => false, 'lan-ip' => null, 'apps-path' => null, 'task-vms' => null, 'idempotency-key' => null, 'json' => false]],
         'node:wireguard-key' => [['node', 'public-key'], ['json' => false]],
         'operation:cancel' => [['operation'], ['json' => false]],
         'operation:list' => [[], ['status' => null, 'kind' => null, 'instance' => null, 'limit' => null, 'cursor' => null, 'json' => false]],

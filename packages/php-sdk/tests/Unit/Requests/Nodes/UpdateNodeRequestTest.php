@@ -134,3 +134,13 @@ it('transports explicit reboot holds and clearing while omitting an unspecified 
         expect($node->rebootHold)->toBe($hold)->and($node->toArray()['reboot_hold'])->toBe($hold);
     }
 });
+
+it('transports explicit image refresh holds and omits an unspecified hold', function (): void {
+    expect((new UpdateNodeRequest(nodeId: 12))->body()->all())->toBe([]);
+    foreach ([true, false] as $hold) {
+        $request = new UpdateNodeRequest(nodeId: 12, imageRefreshHold: $hold);
+        expect($request->body()->all())->toBe(['image_refresh_hold' => $hold]);
+        $node = NodeResponse::fromGatewayData(['id' => 12, 'image_refresh_hold' => $hold], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+        expect($node->imageRefreshHold)->toBe($hold)->and($node->toArray()['image_refresh_hold'])->toBe($hold);
+    }
+});
