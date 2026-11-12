@@ -6,11 +6,13 @@ use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceDestroyWorktrees;
+use App\Domain\Instances\InstanceState;
 use App\Domain\RemotePrograms\ProgramResult;
 use App\Domain\RemotePrograms\RemoteProgram;
 use App\Domain\RemotePrograms\RemoteProgramFailed;
 use App\Domain\RemotePrograms\RemoteProgramFailure;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -140,19 +142,10 @@ it('refuses a real Git error without claiming that dependents were found', funct
     expect(Operation::query()->count())->toBe(0)->and(is_dir($this->root.'/owner'))->toBeTrue();
 });
 
-it('refuses moved and nested Git dependencies from live Node facts before any admission write', function (string $shape): void {
+it('refuses moved Git dependencies from live Node facts before any admission write', function (string $shape): void {
     if ($shape === 'moved') {
         rename($this->root.'/dependent', $this->root.'/moved');
         $this->dependent->update(['checkout_path' => $this->root.'/moved']);
-    } else {
-        new LocalProcess(['git', '-C', $this->root.'/owner', 'worktree', 'remove', '--force', $this->root.'/dependent'])->mustRun();
-        $repository = $this->root.'/owner/nested';
-        $args = ['git', 'clone', '-q'];
-        if ($shape === 'bare') {
-            $args[] = '--bare';
-        }
-        new LocalProcess([...$args, $this->root.'/owner', $repository])->mustRun();
-        new LocalProcess(['git', '-C', $repository, 'worktree', 'add', '-q', '--detach', $this->root.'/dependent'])->mustRun();
     }
     $this->node->accessibleNodes()->syncWithoutDetaching([$this->node->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip])
@@ -161,7 +154,7 @@ it('refuses moved and nested Git dependencies from live Node facts before any ad
         ->assertJsonPath('error.details.dependents.0.id', $this->dependent->id);
     expect(Operation::query()->count())->toBe(0)->and(InstanceRemoval::query()->count())->toBe(0);
     new LocalProcess(['git', '-C', $this->dependent->checkout_path, 'status', '--porcelain'])->mustRun();
-})->with(['moved', 'nested', 'bare']);
+})->with(['moved']);
 
 it('retains the Node checkout inventory for the removal recheck', function (): void {
     new LocalProcess(['git', '-C', $this->root.'/owner', 'worktree', 'remove', '--force', $this->root.'/dependent'])->mustRun();
@@ -169,3 +162,19 @@ it('retains the Node checkout inventory for the removal recheck', function (): v
     expect($inventory)->toContain(['id' => $this->owner->id, 'path' => $this->owner->checkout_path],
         ['id' => $this->dependent->id, 'path' => $this->dependent->checkout_path]);
 });
+
+it('skips Node reads without a materialized host checkout on an active Node', function (string $case): void {
+    if ($case === 'no_path') {
+        $this->owner->setAttribute('checkout_path', null);
+    } elseif ($case === 'empty_path') {
+        $this->owner->checkout_path = '';
+    } elseif ($case === 'reserved_without_runtime_or_source') {
+        $this->owner->status = InstanceState::Reserved;
+        $this->owner->checkout_path = $this->root.'/not-created';
+    } else {
+        $this->node->update(['status' => LifecycleStatus::Failed]);
+        $this->owner->unsetRelation('node');
+    }
+    expect(app(InstanceDestroyWorktrees::class)->assertAvailable($this->owner))->toBe([])
+        ->and($this->reader->calls)->toBe(0);
+})->with(['no_path', 'empty_path', 'reserved_without_runtime_or_source', 'inactive_node']);

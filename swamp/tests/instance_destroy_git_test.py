@@ -107,47 +107,24 @@ class DestroyGitTest(unittest.TestCase):
             self.assertTrue(self.snapshot(self.owner, True) == before)
             self.assertEqual(self.git(moved, 'rev-parse', 'HEAD'), self.git(self.owner, 'rev-parse', 'HEAD'))
 
-    def test_nested_and_bare_repositories_with_outside_worktrees_block_deletion(self):
-        for shape in ['nested', 'bare']:
-            with self.subTest(shape=shape):
-                repository = self.owner / ('vendor/nested' if shape == 'nested' else 'node_modules/bare.git')
-                repository.parent.mkdir(parents=True, exist_ok=True)
-                if shape == 'nested':
-                    self.git(self.root, 'clone', '-q', str(self.owner), str(repository))
-                else:
-                    self.git(self.root, 'clone', '-q', '--bare', str(self.owner), str(repository))
-                dependent = self.root / shape
-                self.git(repository, 'worktree', 'add', '-q', '--detach', str(dependent))
-                before = self.snapshot(self.owner, True)
-                for inventory in [[], [{'id': 69, 'path': str(dependent)}]]:
-                    for action in ['inspect', 'remove']:
-                        result = self.run_helper(self.owner, action, inventory, force=True)
-                        self.assertEqual(result['outcome'], 'inspected' if action == 'inspect' else 'refused')
-                        self.assertIn({'path': str(dependent), 'instance_ids': [69] if inventory else []}, result['data']['dependents'])
-                        self.assertTrue(self.snapshot(self.owner, True) == before)
-                        self.git(dependent, 'status', '--porcelain')
-                self.git(repository, 'worktree', 'remove', '--force', str(dependent))
-                shutil.rmtree(repository)
-        # A bare removal root itself also owns Git data, despite having no .git child.
-        bare = self.root / 'bare-root.git'
-        self.git(self.root, 'clone', '-q', '--bare', str(self.owner), str(bare))
-        self.git(bare, 'worktree', 'add', '-q', '--detach', str(self.linked))
-        self.assertEqual(self.run_helper(bare)['data']['error_code'], 'instance.worktree_dependents')
-        self.git(self.linked, 'status', '--porcelain')
-
-    def test_deleted_prunable_registration_is_nonblocking_but_scan_bounds_fail_closed(self):
+    def test_deleted_prunable_registration_is_nonblocking(self):
         self.add_worktree()
         shutil.rmtree(self.linked)
         self.assertEqual(self.run_helper(self.owner, 'inspect')['data']['dependents'], [])
         self.assertEqual(self.run_helper(self.owner)['outcome'], 'removed')
-        self.owner.mkdir()
-        current = self.owner
-        for _ in range(130):
-            current = current / 'd'
-            current.mkdir()
-        result = self.run_helper(self.owner)
-        self.assertEqual(result, {'outcome': 'refused', 'data': {'error_code': 'instance.remove_refused'}})
-        self.assertTrue(current.is_dir())
+
+    def test_checkout_contents_are_never_walked_during_inspection(self):
+        dependency = self.owner / 'node_modules'
+        dependency.mkdir()
+        (dependency / 'irrelevant').write_bytes(b'fixture')
+        dependency.chmod(0)
+        try:
+            self.assertEqual(self.run_helper(self.owner, 'inspect'),
+                             {'outcome': 'inspected', 'data': {'dependents': []}})
+            self.add_worktree()
+            self.assertEqual(self.run_helper(self.owner)['data']['error_code'], 'instance.worktree_dependents')
+        finally:
+            dependency.chmod(0o700)
 
     def test_real_ansible_phase_refuses_owner_removes_dependent_then_owner(self):
         import yaml

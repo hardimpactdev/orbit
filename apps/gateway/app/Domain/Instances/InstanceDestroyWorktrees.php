@@ -7,6 +7,7 @@ namespace App\Domain\Instances;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\RemotePrograms\RemoteProgramFailed;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
@@ -22,7 +23,9 @@ final readonly class InstanceDestroyWorktrees
     /** @return list<array{id:int,path:string}> */
     public function assertAvailable(Instance $instance): array
     {
-        if ($instance->runtime()->exists()) {
+        if ($instance->runtime()->exists() || $instance->checkout_path === ''
+            || $instance->getAttribute('checkout_path') === null || $instance->status === InstanceState::Reserved
+            || $instance->node->status !== LifecycleStatus::Active) {
             return [];
         }
         $instances = Instance::query()->where('node_id', $instance->node_id)->whereDoesntHave('runtime')

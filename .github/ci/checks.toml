@@ -2671,7 +2671,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_destroy_git_test.py"
-cost = 17
+cost = 15
 slices = false
 inputs = [
   "swamp/ansible/instance/destroy-git.py",
@@ -2686,8 +2686,8 @@ inputs = [
 "test_unreadable_git_and_failed_unregister_never_fall_back_to_rm" = 1
 "test_real_ansible_phase_refuses_owner_removes_dependent_then_owner" = 7
 "test_moved_worktree_is_found_from_recorded_path_at_admission_and_removal" = 1
-"test_nested_and_bare_repositories_with_outside_worktrees_block_deletion" = 3
-"test_deleted_prunable_registration_is_nonblocking_but_scan_bounds_fail_closed" = 1
+"test_deleted_prunable_registration_is_nonblocking" = 1
+"test_checkout_contents_are_never_walked_during_inspection" = 1
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts"

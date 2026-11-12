@@ -1933,7 +1933,7 @@
     ]
   },
   "swamp/tests/instance_destroy_git_test.py": {
-    "source_sha256": "23524a4007094676101dc64000517d779696ce0e1bbfe3214dd9607fb941ba6c",
+    "source_sha256": "6b1f3fe00bf47319e43adffe3548bc2a65b3966d3ddd259758fe9c2aea999fac",
     "cases": [
       "test_owner_refuses_for_both_force_values_and_lying_layout_records",
       "test_dependent_removal_unregisters_only_it_and_preserves_owner_git_and_work",
@@ -1941,8 +1941,8 @@
       "test_standalone_checkout_and_absent_repeat_are_removed",
       "test_unreadable_git_and_failed_unregister_never_fall_back_to_rm",
       "test_moved_worktree_is_found_from_recorded_path_at_admission_and_removal",
-      "test_nested_and_bare_repositories_with_outside_worktrees_block_deletion",
-      "test_deleted_prunable_registration_is_nonblocking_but_scan_bounds_fail_closed",
+      "test_deleted_prunable_registration_is_nonblocking",
+      "test_checkout_contents_are_never_walked_during_inspection",
       "test_real_ansible_phase_refuses_owner_removes_dependent_then_owner"
     ]
   },

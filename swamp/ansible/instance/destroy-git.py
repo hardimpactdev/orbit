@@ -8,16 +8,15 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 
-def git(path, *args, deadline=None):
+def git(path, *args):
     environment = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
     result = subprocess.run(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
                              '-C', str(path), *args], capture_output=True, check=True,
                             env={**environment, 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null',
-                                 'GIT_TERMINAL_PROMPT': '0', 'GIT_OPTIONAL_LOCKS': '0'}, timeout=min(3, remaining(deadline)) if deadline is not None else 3)
+                                 'GIT_TERMINAL_PROMPT': '0', 'GIT_OPTIONAL_LOCKS': '0'}, timeout=3)
     return result.stdout
 
 
@@ -33,59 +32,23 @@ def inside(path, root):
     return path == root or root in path.parents
 
 
-def remaining(deadline):
-    seconds = deadline - time.monotonic()
-    if seconds <= 0:
-        raise ValueError
-    return seconds
-
-
-def directories(root, deadline):
-    # Walk every directory, including dependency folders; never follow symlinks that rmtree would unlink.
-    pending = [(root, 0)]
-    entries = 0
-    while pending:
-        remaining(deadline)
-        directory, depth = pending.pop()
-        if depth > 128:
-            raise ValueError
-        yield directory
-        with os.scandir(directory) as children:
-            for child in children:
-                remaining(deadline)
-                entries += 1
-                if entries > 100_000:
-                    raise ValueError
-                if child.is_dir(follow_symlinks=False):
-                    pending.append((Path(child.path), depth + 1))
-
-
-def repository(path, deadline):
-    common = Path(os.fsdecode(git(path, 'rev-parse', '--path-format=absolute', '--git-common-dir', deadline=deadline)).rstrip('\n')).resolve(strict=True)
-    own = Path(os.fsdecode(git(path, 'rev-parse', '--absolute-git-dir', deadline=deadline)).rstrip('\n')).resolve(strict=True)
-    return common, own
-
-
-def bare(path):
-    return (path / 'HEAD').is_file() and (path / 'objects').is_dir() and (path / 'refs').is_dir()
-
-
-def inspect(path, instances, deadline):
+def inspect(path, instances):
     path = Path(path)
     if not path.is_absolute() or str(path) == '/' or path.is_symlink():
         raise ValueError
     if not present(path):
         return [], None
     path = path.resolve(strict=True)
-    common = own_gitdir = None
-    repositories = set()
-    if present(path / '.git') or bare(path):
-        common, own_gitdir = repository(path, deadline)
-        repositories.add(common)
+    if not present(path / '.git'):
+        return [], None
+    facts = git(path, 'rev-parse', '--path-format=absolute', '--git-common-dir', '--absolute-git-dir').splitlines()
+    if len(facts) != 2:
+        raise ValueError
+    common, own_gitdir = [Path(os.fsdecode(value)).resolve(strict=True) for value in facts]
+    repository_paths = {path: common}
     # A moved worktree's .git still points at the owner, even when its registry path is stale.
     candidates = {}
     for row in instances:
-        remaining(deadline)
         candidate = Path(row['path'])
         if not candidate.is_absolute():
             raise ValueError
@@ -97,27 +60,23 @@ def inspect(path, instances, deadline):
     def read_candidate(candidate):
         if inside(candidate, path) or not present(candidate):
             return
-        if not present(candidate / '.git') and not bare(candidate):
+        if not present(candidate / '.git'):
             return
-        candidate_common, directory = repository(candidate, deadline)
-        if inside(candidate_common, path) or inside(directory, path):
+        if candidate not in repository_paths:
+            repository_paths[candidate] = Path(os.fsdecode(git(candidate, 'rev-parse', '--path-format=absolute', '--git-common-dir')).rstrip('\n')).resolve(strict=True)
+        if inside(repository_paths[candidate], path):
             dependents[candidate] = {'path': str(candidate), 'instance_ids': candidates.get(candidate, [])}
 
     for candidate in candidates:
         read_candidate(candidate)
-    # Nested .git directories and bare repositories can own outside worktrees too.
-    for directory in directories(path, deadline):
-        if directory.name == '.git' or bare(directory):
-            repositories.add(directory)
-    for directory in sorted(repositories):
-        records = git(directory, 'worktree', 'list', '--porcelain', '-z', deadline=deadline).split(b'\0\0')
-        for record in records:
-            field = next((line[9:] for line in record.split(b'\0') if line.startswith(b'worktree ')), None)
-            if field is None:
-                continue
-            candidate = Path(os.fsdecode(field))
-            if present(candidate):
-                read_candidate(candidate.resolve(strict=True))
+    records = git(path, 'worktree', 'list', '--porcelain', '-z').split(b'\0\0')
+    for record in records:
+        field = next((line[9:] for line in record.split(b'\0') if line.startswith(b'worktree ')), None)
+        if field is None:
+            continue
+        candidate = Path(os.fsdecode(field))
+        if present(candidate):
+            read_candidate(candidate.resolve(strict=True))
     return list(dependents.values()), common if own_gitdir != common else None
 
 
@@ -127,9 +86,7 @@ def run(payload):
     action = payload['action']
     if action not in ['inspect', 'remove'] or not isinstance(paths, list) or not paths:
         raise ValueError
-    deadline = time.monotonic() + 6
-    inspected = [(path, *inspect(path, instances, deadline)) for path in paths]
-    remaining(deadline)
+    inspected = [(path, *inspect(path, instances)) for path in paths]
     dependents = [dependent for _, dependencies, _ in inspected for dependent in dependencies]
     if action == 'inspect':
         return {'outcome': 'inspected', 'data': {'dependents': dependents}}

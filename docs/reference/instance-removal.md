@@ -12,7 +12,7 @@ covers:
 
 # Instance removal
 
-`instance:destroy` admits one Operation and one native Swamp run. Before any removal side effect or Operation write, host checkout admission uses the existing SSH remote-program reader to inspect live Git dependencies. It refuses unreadable Git and never relies on `source_layout`. Containers skip this read.
+`instance:destroy` admits one Operation and one native Swamp run. Before any removal side effect or Operation write, host checkout admission uses the existing SSH remote-program reader to inspect live Git dependencies. It refuses unreadable Git and never relies on `source_layout`. It reads only a host checkout with a nonempty stored path, a non-reserved source state and an active Node; containers skip it. A reserved source that was never created needs no read. An active checkout’s disk state can be known only on its Node; a missing path returns no dependencies.
 
 The Gateway then records the selected Instance, owned resources and desired removal state. All effects run from control Node209 through official SSH with its approved identity and the targets' full stored host pins. The Gateway projects the admitted records after the bound native terminal result; workflow steps do not read intent or send phase callbacks to the Gateway. The PHP provisioner, source-removal executor, phase checkpoint methods and callback runner are deleted. Shared source classification and native source inspection remain pure inputs to the native workflows.
 
@@ -22,7 +22,7 @@ orbit instance:destroy <instance> [--yes] [--force] [--json]
 
 The CLI requires consent. `--yes` confirms without a prompt and is required for JSON or noninteractive calls. `--force` permits dirty or unpublished development source; it never permits another checkout, owner or Node. The API returns HTTP 202. Follow the Operation to its terminal status. Reusing an idempotency key recovers the same admission after a lost reply or target deletion.
 
-`instance.worktree_dependents` refuses with HTTP 409 when another live worktree keeps Git data inside the target checkout, including with `--force`. It reports visible dependent Instances across every Project on the Node, an `other_dependents` count and `unowned_paths`. No Schedule, Route or Operation is changed by this refusal. The check reads recorded checkout paths to find renamed dependents and scans all Git directories in the removal subtree, including nested and bare repositories. Deleted registrations with no surviving recorded checkout do not block removal. A scan that reaches its time, depth or entry limit refuses closed with `instance.remove_refused`.
+`instance.worktree_dependents` refuses with HTTP 409 when another live worktree keeps Git data inside the target checkout, including with `--force`. It reports visible dependent Instances across every Project on the Node, an `other_dependents` count and `unowned_paths`. No Schedule, Route or Operation is changed by this refusal. The check reads recorded checkout paths to find renamed dependents. Deleted registrations with no surviving recorded checkout do not block removal. It does not walk the checkout tree; dependency folders and their size do not affect the read.
 
 A running migration or an unsettled migration runtime refuses removal with `instance.lifecycle_busy`, including forced removal. Orbit checks migration ownership before cleanup and again under the Instance admission lock.
 
@@ -42,7 +42,7 @@ The checks run as one `sha256sum` command and the certificate folders go in one 
 
 It runs the Project teardown commands, passed as run inputs, one command per step as the managed account. It removes owned SQLite files with the file behavior and drops owned databases and users on each Database server through the `operation-database-destroy` workflow that `database:destroy` uses. Source removal rechecks live dependencies before deleting any checkout. It removes a linked worktree through `git worktree remove --force` using its actual common Git directory, removing only its registration. There is no rm fallback on Git failure. A standalone checkout is removed as before, then the run checks that every checkout is gone. The Gateway deletes owned records only after native success.
 
-No lock excludes external Git writers between the final inspection and deletion.
+Known limit: the check does not protect Git data of a nested or bare repository inside the checkout when an outside worktree depends on it. A separate follow-up will define that protection; no subtree scan runs here. No lock excludes external Git writers between the final inspection and deletion. Transfer retirement has its own repair in PR #3451.
 
 Three cases skip work:
 
