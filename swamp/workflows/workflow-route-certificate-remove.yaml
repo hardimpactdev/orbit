@@ -14,11 +14,12 @@ inputs:
     intent:
       type: object
       properties:
-        control_node_id: {type: integer, const: 209}
+        # Optional metadata: execution is placed by role and uses the captured connection.
+        control_node_id: {type: integer, minimum: 1}
         connection: {type: object}
         host_keys: {type: array, items: {type: string}, minItems: 1}
         leaf: {type: object}
-      required: [leaf, control_node_id, connection, host_keys]
+      required: [leaf, connection, host_keys]
       additionalProperties: false
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, parent_run_id, restoring, intent, execution_secrets]

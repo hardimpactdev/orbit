@@ -29,6 +29,7 @@ sequenceDiagram
   %%> - `.env` is rendered from the Project's env template; it, the placeholder model key and a repository read token go to the vault
   %%> - the clone workspace reads one private JSON vault value with `.env` and the Process environment files; SSH stdin takes the whole value
   %%> - a task is recorded with the full intent and `container.clone`
+  %%> - a retained create retry records the Project's current development Processes in this admission transaction; changed definitions update their records, removed definitions remove theirs
   Note over GW: Commit, push copies<br/>queue start · answer 202
   GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start run from queue<br/>operation-instance-create
@@ -125,6 +126,7 @@ sequenceDiagram
     %%> Cleanup:
     %%> - remove the private clone folder after success or failure, even if staging or the first launch failed
     SW--xGW: Run failed<br/>failed step, error_code
+    %%> - an inactive Project Process adds recovery.retry.requires=project_process_definition; fix or remove its definition before retry
     Note over GW: Record the failure
     %%> Retry:
     %%> - run the same command again; it resumes on the same container and database

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
+use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
@@ -22,6 +23,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\Projects\ProjectEnvironmentTemplateRefresh;
+use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
@@ -912,3 +914,152 @@ it('omits terminal recovery when the create no longer owns a retained Instance',
         ->and($operation->result)->toBe($result)
         ->and(Instance::query()->find($instance->id)?->status)->toBe($state);
 })->with($recoveryInvalidTargets);
+
+it('rederives retained create Processes at retry admission from current definitions', function (bool $clone, string $change): void {
+    $node = containerDefaultNode();
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
+    $definition = ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'inactive-fixture', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/bin/false'], 'environment' => ['RETRY_VALUE' => 'before']]]);
+    $projection = app(DevelopmentInstanceCreateProjection::class);
+    if ($clone) {
+        $seed = containerCreate($project, $node);
+        $seed->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'seed-run']])->save();
+        $projection->apply($seed, ['status' => 'succeeded', 'run_id' => 'seed-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+            'result' => ['ready' => true, 'instance_id' => $seed->target_id, 'commit' => str_repeat('c', 40)]]);
+    }
+    $name = $clone ? 'retry-process' : 'default';
+    $first = containerCreate($project, $node, $name);
+    $instance = Instance::query()->findOrFail($first->target_id);
+    $runtimeId = $instance->runtime()->sole()->id;
+    $process = $instance->processes()->sole();
+    $first->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']])->save();
+    $projection->apply($first, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'instance.container_process_inactive',
+        'result' => ['ready' => false, 'instance_id' => $instance->id, 'commit' => str_repeat('c', 40), 'failed_step' => $clone ? 'register' : 'processes',
+            'process_failure' => ['process_id' => $process->id, 'unit' => 'orbit-process-'.$process->id.'-inactive-fixture.service', 'active_state' => 'failed']]]);
+    expect($instance->fresh()->status)->toBe(InstanceState::SourceResolved);
+    if ($change === 'fixed') {
+        $definition->update(['spec' => ['runtime' => 'systemd', 'command' => ['/bin/sleep', '3600'], 'environment' => ['RETRY_VALUE' => 'after']]]);
+    } elseif ($change === 'removed') {
+        $definition->delete();
+    } elseif ($change === 'production-only') {
+        $definition->update(['environments' => ['production']]);
+    }
+    $retry = containerCreate($project, $node, $name);
+    expect($retry->target_id)->toBe($first->target_id)
+        ->and($retry->input['route_id'])->toBe($first->input['route_id'])
+        ->and($instance->runtime()->sole()->id)->toBe($runtimeId);
+    $vault = vaultReadingSocket(['nckrtl-instance-t3-model-register-session-gateway-1-token' => 'gateway-session-value']);
+    $run = $projection->input($retry);
+    $units = $run['intent']['container']['processes'];
+    if (in_array($change, ['removed', 'production-only'], true)) {
+        expect($instance->processes()->count())->toBe(0)->and($units)->toBe([])
+            ->and(Process::query()->find($process->id))->toBeNull();
+    } else {
+        $current = $instance->processes()->sole();
+        $command = $change === 'fixed' ? '/bin/sleep' : '/bin/false';
+        $value = $change === 'fixed' ? 'after' : 'before';
+        $workspace = json_decode(collect($vault->puts)->firstWhere('key', 'instance-create-processes-'.$retry->id)['value'], true, 512, JSON_THROW_ON_ERROR);
+        expect($current->id)->toBe($process->id)
+            ->and($current->runtime_config['command'][0])->toBe($command)
+            ->and($current->desired_state->value)->toBe('running')
+            ->and($units[0]['content'])->toContain($command)
+            ->and(Dotenv::parse(($clone ? $workspace['processes'] : $workspace)[$units[0]['environment']])['RETRY_VALUE'])->toBe($value);
+        if ($change === 'fixed') {
+            expect($units[0]['environment'])->not->toBe(containerIntentOf($first)['processes'][0]['environment']);
+        }
+    }
+    // Unchanged intent still cannot pass readiness; a valid receipt covers the repaired set.
+    if ($change === 'unchanged') {
+        return;
+    }
+    $retry->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']])->save();
+    $receipt = cloneSucceeded($retry);
+    if (! $clone) {
+        unset($receipt['result']['t3']);
+    }
+    $projection->apply($retry, $receipt);
+    expect($retry->fresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and($instance->fresh()->status)->toBe(InstanceState::Active)
+        ->and(Route::query()->findOrFail($retry->input['route_id'])->status->value)->toBe('active');
+})->with([true, false])->with(['fixed', 'removed', 'production-only', 'unchanged']);
+
+it('marks retry as needing a definition change only for an admitted Project Process failure', function (string $failure): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    $definition = ProcessDefinition::query()->create(['project_id' => $default->project_id, 'name' => 'worker', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/bin/false']]]);
+    $operation = containerCreate($default->project, $node, 'feature');
+    $process = Process::query()->where('owner_id', $operation->target_id)->sole();
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']])->save();
+    $facts = match ($failure) {
+        'project', 'cancelled' => ['process_id' => $process->id],
+        'foreign' => ['process_id' => $process->id + 1000],
+        default => [],
+    };
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, ['status' => $failure === 'cancelled' ? 'cancelled' : 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'error_code' => $failure === 'cancelled' ? null : ($failure === 'infrastructure' ? 'instance.create_clone_failed' : 'instance.container_process_inactive'),
+        'result' => ['instance_id' => $operation->target_id, 'failed_step' => 'register', 'process_failure' => $facts, 'error_code' => 'instance.container_process_inactive']]);
+    $retry = $operation->fresh()->result['recovery']['retry'];
+    if ($failure === 'project') {
+        expect($retry['requires'] ?? null)->toBe('project_process_definition');
+    } else {
+        expect($retry)->not->toHaveKey('requires');
+    }
+})->with(['project', 'builtin', 'foreign', 'infrastructure', 'cancelled']);
+
+it('rolls back a refused retry Process set and admits new definitions on a reserved retry', function (): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    $old = ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'old', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/bin/false']]]);
+    $first = containerCreate($project, $node);
+    $instance = Instance::query()->findOrFail($first->target_id);
+    $original = $instance->processes()->sole();
+    app(CancelOperationAction::class)->execute($first);
+    $old->delete();
+    $new = ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'new', 'environments' => ['development'],
+        'spec' => ['runtime' => 'docker', 'image' => 'example/worker', 'command' => []]]);
+    expect(containerRefusal(fn () => containerCreate($project, $node)))->toBe('process.target_unsupported')
+        ->and($instance->processes()->sole()->id)->toBe($original->id)
+        ->and($instance->fresh()->status)->toBe(InstanceState::Reserved)
+        ->and(Operation::query()->where('target_id', $instance->id)->where('kind', 'instance.create')->count())->toBe(1);
+    $new->update(['spec' => ['runtime' => 'systemd', 'command' => ['/bin/sleep', '3600']]]);
+    $retry = containerCreate($project, $node);
+    expect($retry->target_id)->toBe($instance->id)
+        ->and($instance->processes()->sole()->source_definition_id)->toBe($new->id)
+        ->and(Process::query()->find($original->id))->toBeNull()
+        ->and(containerIntentOf($retry)['processes'][0]['content'])->toContain('/bin/sleep');
+});
+
+it('preserves an active container Process after definition removal on create and deploy', function (): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    $definition = ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'worker', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/bin/sleep', '3600']]]);
+    $projection = app(DevelopmentInstanceCreateProjection::class);
+    $first = containerCreate($project, $node);
+    $first->update(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']]);
+    $receipt = ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
+        'result' => ['ready' => true, 'instance_id' => $first->target_id, 'commit' => str_repeat('c', 40)]];
+    $projection->apply($first, $receipt);
+    $instance = Instance::query()->findOrFail($first->target_id);
+    $before = $instance->processes()->sole()->getAttributes();
+    $definition->delete();
+    $repeat = containerCreate($project, $node);
+    expect($repeat->target_id)->toBe($instance->id)
+        ->and($instance->processes()->sole()->getAttributes())->toBe($before);
+    $repeat->update(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']]);
+    $projection->apply($repeat, $receipt);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn([
+        'head' => str_repeat('c', 40), 'files' => [
+            '.env.example' => ['mode' => '100644', 'object' => str_repeat('d', 40), 'content' => "APP_NAME=tool\n"],
+            'composer.json' => null, 'artisan' => null,
+        ],
+    ]);
+    $deployment = app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
+    expect($deployment->kind)->toBe('instance.deploy')
+        ->and($instance->processes()->sole()->getAttributes())->toBe($before);
+});

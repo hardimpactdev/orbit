@@ -48,7 +48,8 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 $result['mail_keys_set'] = ValidatedData::stringList($operation->input['mail_keys_set'] ?? []);
             }
             if ($container !== null && in_array($data['status'], ['failed', 'cancelled'], true)) {
-                $recovery = $this->recovery($operation, ValidatedData::object($container));
+                $recovery = $this->recovery($operation, ValidatedData::object($container), $data['status'] === 'failed'
+                    ? [...$result, 'error_code' => $data['error_code'] ?? $result['error_code'] ?? null] : []);
                 if ($recovery === null) {
                     return $this->direct->project($operation, $data, $result);
                 }
@@ -111,9 +112,10 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
      * The reservation is intentional; name the existing recovery paths without claiming physical cleanup.
      *
      * @param  array<string, mixed>  $container
+     * @param  array<string, mixed>  $result
      * @return array<string, mixed>|null
      */
-    public function recovery(Operation $operation, array $container): ?array
+    public function recovery(Operation $operation, array $container, array $result = []): ?array
     {
         $input = $operation->input;
         $retained = Instance::query()->whereKey($operation->target_id)->where('id', $input['instance_id'])
@@ -124,6 +126,10 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             return null;
         }
         $clone = ($container['clone'] ?? null) !== null;
+        $failure = is_array($result['process_failure'] ?? null) ? $result['process_failure'] : [];
+        $requiresDefinition = ($result['error_code'] ?? null) === 'instance.container_process_inactive'
+            && is_int($failure['process_id'] ?? null)
+            && in_array($failure['process_id'], array_column(is_array($container['processes'] ?? null) ? $container['processes'] : [], 'id'), true);
 
         return [
             'state' => 'retained_for_retry',
@@ -131,6 +137,7 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 'command' => 'instance:create',
                 'project_id' => $input['project_id'], 'node_id' => $input['node_id'], 'name' => $input['name'],
                 'reuse_original_options' => true, 'new_idempotency_key' => true,
+                ...($requiresDefinition ? ['requires' => 'project_process_definition'] : []),
             ],
             'destroy' => [
                 'command' => 'instance:destroy', 'instance_id' => $operation->target_id,

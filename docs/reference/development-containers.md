@@ -625,7 +625,9 @@ A deployment first records the Project's new definitions and changes the records
 
 One-shot log reads keep each complete journal line in time order and drop a final line cut by the byte limit.
 
-Repeating a failed create with the same Project, Node and name reuses its container and Route. Use a new idempotency key and keep the same root, branch and domain inputs. It runs the create phases again, including the Project's development deploy steps; activation and the seed commit are recorded only after the final receipt succeeds.
+Repeating a failed create with the same Project, Node and name reuses its container and Route. Use a new idempotency key and keep the same root, branch and domain inputs.
+
+At admission, the retry records the Project's current development Process definitions in the same transaction. It keeps each surviving definition's Process id, updates changed definitions, and removes Processes whose definitions were removed or exclude development. The create run replaces their units and environment files. Fix or remove a failing definition before retry. It runs the create phases again, including the Project's development deploy steps; activation and the seed commit are recorded only after the final receipt succeeds.
 
 `process:create`, `process:update` and `process:destroy` refuse a container Instance's Process with `operation.kind_unavailable`: the Project's definitions and a deployment change them.
 
@@ -665,6 +667,8 @@ Clones are built for the Nodes of the [build list](#the-build-list).
 A failed or cancelled create keeps its reservation, runtime, and any container, workspace, owned databases, test databases and role until the owner acts. A refused retry removes none of them. After work starts, Orbit attempts to stop the container and withdraw the Route. Compensation can fail; its step then stays failed. Shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live.
 
 Its Operation reports `recovery.state=retained_for_retry` and names `instance:create` with the same Project, Node, name and options, using a new idempotency key. It also names `instance:destroy INSTANCE --yes --force`. A failed or cancelled default create reports the same retry path and marks destroy unavailable; container-default removal is not built. The PostgreSQL template copy runs again on a resume, so a resume starts from the default's data again. A resume also issues new T3 sessions; the ones of the failed run stay valid in T3 until a later renewal cleans them.
+
+When an admitted Project Process fails with `instance.container_process_inactive`, `recovery.retry.requires=project_process_definition` tells clients that the definition needs a change first. Built-in unit failures and other failures keep the plain retry shape.
 
 A deployment of the default can replace the admitted seed before the copy. The copy then refuses with `instance.default_seed_moved`, and the same command takes the new seed. A clone already copied does not need its seed: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them.
 

@@ -48,7 +48,7 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: '${{ ["timeout", "30", "openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", "/var/lib/orbit/role-certificates/" + inputs.leaf.scope + "/" + inputs.leaf.version + "/key.pem", "-subj", "/CN=" + inputs.leaf.domain] }}'
+        argv: '${{ ["timeout", "30", "openssl", "req", "-quiet", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", "/var/lib/orbit/role-certificates/" + inputs.leaf.scope + "/" + inputs.leaf.version + "/key.pem", "-subj", "/CN=Orbit", "-addext", "subjectAltName=DNS:" + inputs.leaf.domain] }}'
         timeoutSec: 40
     # The one step that calls the Gateway, from 209.
   - name: 'Sign the CSR'

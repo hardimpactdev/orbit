@@ -196,9 +196,13 @@ final readonly class NativeRouteCreatePlan
             }
         }
 
+        foreach (RouteExecutionProof::objects($forward['cleanup']) as $leaf) {
+            $touched[ValidatedData::integer($leaf['node_id'])] = true;
+        }
+
         foreach (Node::query()->whereKey(array_keys($touched))->get() as $node) {
             $connection = app(NativeCaddyPublicationInput::class)->connectionForNode($node);
-            $nodes[(string) $node->id] = ['host' => $connection['connection']['nodeHost'], 'user' => $connection['connection']['nodeUser'],
+            $nodes[(string) $node->id] = ['control_node_id' => $connection['control_node_id'], 'host' => $connection['connection']['nodeHost'], 'user' => $connection['connection']['nodeUser'],
                 'port' => $connection['connection']['nodePort'], 'identity_file' => $connection['connection']['nodeIdentityFile'], 'host_keys' => $connection['host_keys'],
                 'account' => app(RouteRenderContext::class)->user($node)];
         }

@@ -26,6 +26,7 @@ sequenceDiagram
   %%> Result:
   %%> - the default Instance is reserved with its runtime record and Route; it gets no T3 port
   %%> - `.env` is rendered from the Project's env template; a repository read token goes to the vault
+  %%> - a retained create retry records the Project's current development Processes in this admission transaction; changed definitions update their records, removed definitions remove theirs
   Note over GW: Commit, push copies<br/>queue start · answer 202
   GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start run from queue<br/>operation-instance-create
@@ -80,6 +81,7 @@ sequenceDiagram
     %%> - a refused retry removes none of them; stop and Route withdrawal are attempted; failed compensation leaves its step failed
     %%> - shared service endpoint records and rules may remain until endpoint lifecycle work is live
     %%> - failed and cancelled creates, including cancellation before work starts, report retained_for_retry and the same create command with a new idempotency key; default destroy stays unavailable
+    %%> - an inactive Project Process adds recovery.retry.requires=project_process_definition; fix or remove its definition before retry
     Note over GW: Record the failure
   end
   loop every 2 s until terminal

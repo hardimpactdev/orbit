@@ -385,7 +385,7 @@ The Gateway prepares the runtime, certificates, Caddy sites, and firewall rules 
 
 ### Certificate request forms
 
-The live Node workflows still put the domain in the common name. Development Instance create therefore has a 64-character domain limit, checked before an Operation starts with `route.domain_invalid`. DNS labels remain limited to 63 characters, and a full DNS name to 253. The signer accepts longer DNS names in the new request form so the accepting Gateway can release before the producers change.
+The Node workflows use the fixed short common name `Orbit` with exactly one DNS SAN equal to the admitted domain. Instance create and the name check keep their 64-character domain limit while this producer release becomes the rollback target. The domain rule and existing responses are unchanged.
 
 The Gateway accepts two CSR forms: common name equal to the admitted domain, with either no SAN or exactly that DNS SAN; or the fixed short common name `Orbit` with exactly one DNS SAN equal to the admitted domain. It always signs the admitted domain into the leaf SAN. Caddy, TLS probes and certificate reuse check SAN, so existing leaves remain valid.
 
@@ -712,6 +712,8 @@ Instance removal deletes a Route whose last target it removes, before it finaliz
 | Cluster Router | Refused while the Cluster owns a Route. |
 
 ## Coordinate publication
+
+Each Route plan captures the control Node resolved from the Swamp role with its Node connections, including connections needed only for certificate cleanup. Certificate retirement omits this unused metadata from its child call, so older plans need no new key. The child accepts the field as an optional integer for other callers; placement uses the Swamp role and the captured SSH connection.
 
 The Gateway's Route publication hold orders writers during normal work. The Node guard is a second layer for writers that use it. Withdrawal waits at most 5 seconds for an exclusive lock on `/etc/caddy/.orbit-publish.lock`. Under that lock, it compares the composed-from SHA-256 with the live Caddyfile, validates a restricted candidate, renames that exact inode and reloads Caddy.
 
