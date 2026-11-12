@@ -175,3 +175,5 @@ Stage endpoint ownership outside the active inventory. Commit a record only afte
 Confirm revocation incrementally too: a later failed ACL removal must not leave a successfully removed endpoint eligible for refresh. Remove its obsolete records under the held lock, preserve shared/newer admissions, and keep incomplete-reconciliation health until a full reconciliation succeeds. Prove partial removal followed by ordinary refresh and a crash after the first confirmed removal.
 
 Use the landed bridge policy’s exact `state_file` helper for every destructive record operation. Supply a semantic state kind and endpoint identity instead of a caller-built destination path. Confirm ownership changes by direct calls under the writer lock; do not pass mutation helpers as callbacks.
+
+A refreshed fleet snapshot must follow terminal success of each nested Node base converge. A current checkout or grant digest does not prove current OS policy. Reuse the real base-scoped command, stop at the first failed Node, and keep direct task starts outside this refresh work.

@@ -2212,5 +2212,14 @@
       "test_holder_death_closes_the_descriptor_and_releases_the_lock",
       "test_invalid_lock_or_checksum_refuses_without_touching_live_file"
     ]
+  },
+  "swamp/tests/ansible_task_vm_fleet_base_test.py": {
+    "source_sha256": "4d72851c690f324e20553d5324a11a48d4f83da03c88289aa5efc36900bd353a",
+    "cases": [
+      "test_refresh_converges_all_nodes_in_order_before_all_snapshots_even_when_code_is_current",
+      "test_failed_node_stops_later_nodes_and_all_snapshots",
+      "test_direct_task_start_does_not_converge_or_snapshot",
+      "test_incomplete_fleet_fails_before_convergence"
+    ]
   }
 }

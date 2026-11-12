@@ -221,6 +221,8 @@ The full shape group runs the gate, Python analyzer, frozen-base policy and vali
 
 The bridge writer fixture executes the shipped Ansible task against a temporary ACL boundary. It checks immediate busy refusal, partial withdrawal followed by refresh, failure health and successful recovery. Its fixture input map includes the shipped task and fake curl boundary. It performs no live Incus operation.
 
+The fleet base-convergence fixture runs the product Ansible tasks with fake CLI and Incus boundaries. It checks ordered base scope, first-failure stopping, snapshot gating and direct-start exclusion. Live refresh time and OS repair require a separate disposable-fleet measurement.
+
 The task VM Incus tests require the SSH user's client config before parallel fleet work and preserve it on a second converge with zero changes.
 
 The gate also validates Instance task arguments against the real pinned Ansible module specifications, because fixture modules cannot reject arguments on the real modules' behalf.

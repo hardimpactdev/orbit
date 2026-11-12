@@ -795,6 +795,23 @@ inputs = [
 ]
 
 [[fixture]]
+file = "swamp/tests/ansible_task_vm_fleet_base_test.py"
+cost = 10 # 3.716s locally through real Ansible; Incus and the CLI boundary are faked.
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/task-vm-role.yml",
+  "swamp/ansible/tasks/task-vm-fleet-base.yml",
+  "swamp/ansible/tasks/task-vm-fleet-base-node.yml",
+  "apps/cli/app/Commands/Nodes/ConvergeNodeCommand.php",
+  "apps/cli/app/Commands/Nodes/ListNodesCommand.php",
+  "apps/cli/app/Commands/Concerns/FollowsOperations.php",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]
+
+[[fixture]]
 file = "swamp/tests/ansible_gateway_swamp_grants_test.py"
 cost = 65 # 40.628s locally, including reload and partial-snapshot recovery; no ceiling change.
 inputs = [
