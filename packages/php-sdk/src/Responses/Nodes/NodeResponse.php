@@ -41,6 +41,7 @@ final readonly class NodeResponse
         public ?string $clusterName = null,
         public array $assignments = [],
         public bool $rebootHold = false,
+        public bool $imageRefreshHold = false,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -53,6 +54,7 @@ final readonly class NodeResponse
         return new self(
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
             rebootHold: ($data['reboot_hold'] ?? false) === true,
+            imageRefreshHold: ($data['image_refresh_hold'] ?? false) === true,
             clusterId: is_int($data['cluster_id'] ?? null) ? $data['cluster_id'] : null,
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
@@ -105,6 +107,7 @@ final readonly class NodeResponse
             'wireguard_ip' => $this->wireguardIp,
             'lan_ip' => $this->lanIp,
             'reboot_hold' => $this->rebootHold,
+            'image_refresh_hold' => $this->imageRefreshHold,
             'wireguard_public_key' => $this->wireguardPublicKey,
             'dns_server_override' => $this->dnsServerOverride,
             'ssh_host_fingerprint' => $this->sshHostFingerprint,

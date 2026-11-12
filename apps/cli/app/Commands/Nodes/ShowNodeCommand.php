@@ -83,6 +83,7 @@ final class ShowNodeCommand extends NodeCommand
             'WireGuard' => $node->wireguardIp,
             'LAN' => $node->lanIp,
             'Reboot hold' => $node->rebootHold ? 'yes' : 'no',
+            'Image refresh hold' => $node->imageRefreshHold ? 'yes' : 'no',
             'WireGuard public key' => $node->wireguardPublicKey,
             'DNS server override' => $node->dnsServerOverride,
             'TLD' => NodeOutput::tld($node->tld),

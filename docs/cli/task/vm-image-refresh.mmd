@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (agreed with Nick, 2026-11-07): each task VM host keeps one stopped base VM, `shark-base`, that never gets an identity. Its ZFS snapshot is the base a task start copies; there is no Incus image and no publish. In every Gateway release, and daily, the base VM converges and a new snapshot becomes the base, so a task start's converge stays near a no-op.
+  %% Target design: each task VM host keeps one stopped base VM, `shark-base`, that never gets an identity. Its ZFS snapshot is the base a task start copies; there is no Incus image and no publish. In every Gateway release, and daily, the base VM converges and a new snapshot becomes the base, so a task start's converge stays near a no-op.
   %% status: draft
   %% command: none · in every Gateway release, and daily
   %% kind: task_vm.image_refresh
@@ -22,6 +22,13 @@ sequenceDiagram
   %%> - a CI-only host permits its own refresh proof, pinned to that host; Sabre refresh proves on Sabre and never spills onto another host
   %%> - one run per host, all hosts in parallel; the run never holds the release, and a host that refuses is skipped until the next trigger
   %%> - a host with a refresh open keeps it, and the newest commit waits behind it: one pending commit per host, the newest wins, and the run that ends admits it
+  alt host has an image refresh hold
+    Note over GW: Skip held host<br/>skipped:operator_hold
+    %%> Result:
+    %%> - release command output and the daily admission log name the host; no Operation is created or queued
+    %%> - a direct operator refresh, including --from-stock, refuses with task_vm.image_refresh_held
+    %%> - the host keeps serving its last promoted snapshot; an admitted refresh is unchanged
+  else host has no hold
   GW->>SW: Start run, full intent<br/>operation-task-vm-image-refresh
   SW->>H: Prepare the host<br/>shared Ansible phase
   %%> What it does:
@@ -80,4 +87,5 @@ sequenceDiagram
     %%> On failure:
     %%> - the base VM is stopped and rolled back to the recorded snapshot, and a new snapshot is removed; task starts keep the recorded one
     %%> - the place of the proof is `failed` until the host sweep releases it; the sweep keeps only the place of an open refresh, so a queued refresh that waits for a CI place does not keep the failed places
+  end
   end

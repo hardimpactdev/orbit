@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/{Actions/Nodes/UpdateNodeAction,Domain/Nodes/UpdateNodeResult,Domain/Nodes/NodeSettingsOperationCompletion,Domain/Nodes/NodeSettingsProjection,Providers/TaskVmServiceProvider}.php
   - apps/gateway/app/Infrastructure/Nodes/AgentNodeStorageRootPreparer.php
   - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData}.php
-  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_05_000000_add_reboot_hold_to_nodes_table}.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_05_000000_add_reboot_hold_to_nodes_table,2027_02_06_000000_add_image_refresh_hold_to_nodes_table}.php
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeRequest.php
   - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeCommand}.php
   - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Responses/Nodes/TaskVmsSettings,Requests/Nodes/UpdateNodeRequest}.php
@@ -43,6 +43,8 @@ Execution requires Linux for apps preparation and for firewall withdrawal. Other
 State-only patches, such as task-host capacity changes, stay synchronous in the Gateway. Node enrollment keeps its synchronous storage preparation until its parent Operation cutover. A settings completion changes only the requested members and preserves other updates made while it was queued.
 
 The same `node:update` path stores the boolean `reboot_hold` column at once, apart from the typed `settings` object. See [fleet reboot holds](/reference/gateway-recovery#fleet-reboot) for their scope, admission time and overdue alerts.
+
+The boolean `image_refresh_hold` column uses the same record-only path. Set it with `orbit node:update NODE --image-refresh-hold`; clear it with `--no-image-refresh-hold`. API and MCP requests use the strict boolean `image_refresh_hold` member. See [task VM image refresh holds](/reference/compute-drivers#refresh-the-base-snapshot) for their scope.
 
 ## Set the apps root
 
