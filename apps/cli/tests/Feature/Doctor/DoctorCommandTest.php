@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Data\GatewayProfile;
+use App\Domain\Doctor\FactDoctor;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
@@ -774,7 +775,7 @@ it('prints bridge endpoint warning counts and sampled pairs for the node family 
     // Use the Gateway's formatter so a real twenty-sample summary crosses the SDK boundary.
     require_once base_path('../gateway/app/Domain/Doctor/FactDoctor.php');
     $samples = array_map(static fn (int $port): string => '10.253.0.1:'.$port, range(13310, 13329));
-    $warning = \App\Domain\Doctor\FactDoctor::bridgeWarningSummary(200, $samples);
+    $warning = FactDoctor::bridgeWarningSummary(200, $samples);
     $mock = doctor_cli_mock(doctor_cli_report(
         healthy: true,
         nodes: [doctor_cli_node('bridge-host', [doctor_cli_family('node', 'healthy', 4, [

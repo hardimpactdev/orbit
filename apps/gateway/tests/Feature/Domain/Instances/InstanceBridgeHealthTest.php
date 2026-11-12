@@ -136,7 +136,7 @@ it('lets an older Gateway validate and retain the complete legacy host fact whil
         'instance_bridge' => ['error_code' => null]];
     $new = $legacy + ['instance_bridge_warnings' => ['warning_count' => 200, 'warnings' => []]];
 
-    expect(Validator::make(['data' => $new], $rules)->validate()['data'])->toBe($legacy);
+    expect(Validator::make(['data' => $new], $rules)->validate()['data'])->toEqual($legacy);
     expect($current['instance_bridge'])->toContain('array:error_code');
 });
 

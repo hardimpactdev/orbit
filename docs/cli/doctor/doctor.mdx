@@ -37,7 +37,7 @@ A check whose fact has not arrived yet, or cannot be read, gives one unverifiabl
 
 | `firewall` | Rule lifecycle, UFW active state, and missing or extra lines by port, protocol and source. |
 
-Instance bridge endpoint warnings name the unresolved count and at most four sampled host:port pairs, followed by the number of remaining endpoints. They use the informational kind and do not make the Node unhealthy. Scheduled collection retains this warning, and gateway:status shows it. They disappear when the agent reports no warnings.
+This Gateway release accepts bridge warnings; agent emission ships separately. When reported, Instance bridge endpoint warnings name the unresolved count and at most four sampled host:port pairs, followed by the number of remaining endpoints. They use the informational kind and do not make the Node unhealthy. Scheduled collection retains this warning, and gateway:status shows it. They disappear when the agent reports no warnings.
 
 A stopped, non-keep-alive development Process desired running is healthy only when the agent reports its awake marker absent. An agent before 0.10.0 reports no markers, so that check is unverifiable there, and so is a Process unit it does not list. This inspection takes no timed samples and does not infer a restart rate.
 
