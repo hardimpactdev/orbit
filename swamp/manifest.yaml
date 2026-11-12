@@ -77,6 +77,8 @@ additionalFiles:
   - ansible/route-withdraw.yml
   - ansible/instance-migrate.yml
   - ansible/instance_migrate_links.py
+  - ansible/instance_node_runtime.py
+  - ansible/tasks/instance-node-runtime.yml
   - ansible/tasks/instance-migrate-link-result.yml
   - ansible/tasks/instance-migrate-process-ready.yml
   - ansible/schedule-logs.yml

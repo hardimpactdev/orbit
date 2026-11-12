@@ -258,6 +258,11 @@ if (family === "list") {
     }
     Deno.exit(0);
   }
+  if (command[0] === "python3" && command[1] === "/usr/local/libexec/orbit-instance-node-runtime.py") {
+    // Runtime conversion and Vite+ behavior have their own real helper/fake-vp fixture.
+    console.log(JSON.stringify({status: "unchanged", versions: ["24.22.1"], pins: []}));
+    Deno.exit(0);
+  }
   if (command[0] === "journalctl") {
     const unit = command[command.indexOf("--unit") + 1];
     for (const line of (state.journal?.[unit] ?? []).slice().reverse()) console.log(line);

@@ -21,13 +21,15 @@ default = ["swamp/tests/ansible_inputs_test.py"]
 file = "swamp/tests/ansible_instance_migrate_test.ts"
 after_merge = true
 reason = "92 retained cases need 6350 declared seconds including startup: 12 hosted shards, above the six-shard PR limit (runs 43010311414 and 43013527963; 23 case costs remain estimates). All migration cases run after merge until their work is reduced or selection is narrowed."
-cost = 5798
+cost = 6398
 # 159.019s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (120s); these are estimates, not completed measurements.
 slices = 92
 inputs = [
+  "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance-container.yml",
@@ -48,6 +50,11 @@ inputs = [
 ]
 
 [fixture.case_costs]
+"stock selector preflight: wrong Redis port" = 120
+"stock selector preflight: stock Laravel" = 120
+"stock selector preflight: selected Redis" = 120
+"stock selector preflight: real53" = 120
+"stock selector preflight: attached Redis" = 120
   "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links" = 62 # completed, run 43002948719
   "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources" = 8 # completed, run 43002948719
   "broken symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources" = 6 # completed, run 43005032403
@@ -151,6 +158,8 @@ after_merge_cases = ["a clone copies the seed, takes its own address, ACL, firew
 # Unmeasured cases use the observed maximum (141s); these are estimates, not completed measurements.
 slices = 23
 inputs = [
+  "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance-container.yml",
@@ -1562,6 +1571,8 @@ inputs = [
 file = "swamp/tests/instance_clone_guest_test.py"
 cost = 30
 inputs = [
+  "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
@@ -2639,12 +2650,15 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts"
-cost = 23
+cost = 24
 inputs = [
+  "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/tasks/instance-node-runtime.yml",
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
   "swamp/workflows/workflow-operation-instance-migrate.yaml",
 ]
 [fixture.case_costs]
+"Node preparation fails before quiesce with its pin reason and restores only the new container" = 1
 "a default that moved reports its commit and no T3 server" = 1
 "a non-default Instance that moved reports its T3 server, and needs its registration" = 1
 "a move that failed and restored names the failed phase with its own refusal, and says restored" = 1
@@ -2668,3 +2682,15 @@ inputs = [
 "mail failure is an advisory warning and cannot fail or restore a completed migration" = 1
 "migration retains each exact-line outcome and the named path conflict without values" = 1
 "missing or malformed successful mail receipts become advisory warnings" = 1
+
+[[fixture]]
+file = "swamp/tests/instance_node_runtime_test.py"
+cost = 10
+inputs = ["swamp/ansible/instance_node_runtime.py", "swamp/ansible/tasks/instance-node-runtime.yml", "swamp/workflows/workflow-operation-instance-migrate.yaml"]
+[fixture.case_costs]
+"test_conversion_keeps_running_executable_and_is_unchanged_on_repeat" = 1
+"test_recipe_upgrade_and_seed_copy_keep_downloaded_versions_after_shared_pruning" = 1
+"test_vite_alone_resolves_and_fetches_once_as_the_app_user" = 1
+"test_recipe_pin_and_unpinned_projects_need_no_install" = 1
+"test_download_integrity_and_timeout_failures_name_the_pin" = 1
+"test_production_phase_removes_read_only_source_mount_after_failure_without_downtime" = 5

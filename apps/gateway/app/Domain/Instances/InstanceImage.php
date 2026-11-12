@@ -126,7 +126,12 @@ final readonly class InstanceImage
             install -d -o agent -g work -m 2770 {$vite}
             setfacl -m g:work:rwX -m d:u::rwX,d:g::rwX,d:g:work:rwX,d:o::--- {$vite}
             install -d -o agent -g work -m 2770 {$vite}/cache
-            for part in bin js_runtime node_modules recipe config.json; do
+            install -d -o agent -g work -m 2770 {$vite}/js_runtime {$vite}/js_runtime/node
+            cp -a --reflink=auto --no-preserve=ownership {$sharedVite}/js_runtime/. {$vite}/js_runtime/
+            chown -R agent:work {$vite}/js_runtime
+            chmod -R g+rwX {$vite}/js_runtime
+            find {$vite}/js_runtime -type d -exec chmod 2770 {} +
+            for part in bin node_modules recipe config.json; do
                 ln -s {$sharedVite}/\$part {$vite}/\$part
             done
             echo 'proc /proc proc defaults,hidepid=invisible 0 0' >> /etc/fstab

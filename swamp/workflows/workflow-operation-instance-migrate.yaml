@@ -59,11 +59,26 @@ jobs:
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+      # Resolve and fetch Project Node pins in the new private store while the checkout still serves.
+      - name: node-runtime
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: container, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-node-runtime-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 150 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags node-runtime "$ORBIT_ANSIBLE/instance-container.yml"
+            env:
+              <<: *phase
+              ORBIT_PROCESS_ENVIRONMENTS: '${{ vault.get(inputs.execution_secrets.process_environments.vault, inputs.execution_secrets.process_environments.key) }}'
       # Only after every target probe passed, stop the host writers and remove the awake marker.
       - name: quiesce
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: container, condition: {type: succeeded}}]
+        dependsOn: [{step: node-runtime, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: command/shell
@@ -272,6 +287,7 @@ jobs:
           - {step: input, condition: {type: succeeded}}
           - {step: quiesce, condition: {type: always}}
           - {step: container, condition: {type: always}}
+          - {step: node-runtime, condition: {type: always}}
           - {step: workspace, condition: {type: always}}
           - {step: files, condition: {type: always}}
           - {step: Apply development mail, condition: {type: always}}
@@ -310,7 +326,7 @@ jobs:
             intent: '${{ inputs.intent }}'
             folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
             workspace: '${{ "workspace" in steps ? steps.workspace : null }}'
-            phases: '${{ {"mail": "Apply development mail" in steps ? steps["Apply development mail"].status : "skipped", "quiesce": "quiesce" in steps ? steps.quiesce.status : "skipped", "container": "container" in steps ? steps.container.status : "skipped", "workspace": "workspace" in steps ? steps.workspace.status : "skipped", "files": "files" in steps ? steps.files.status : "skipped", "agent": "agent" in steps ? steps.agent.status : "skipped", "processes": "container-processes" in steps ? steps["container-processes"].status : "skipped", "seed": "seed" in steps ? steps.seed.status : "skipped", "t3": "t3" in steps ? steps.t3.status : "skipped", "register": "t3-sessions" in steps && steps["t3-sessions"].status == "failed" ? "failed" : ("t3-register" in steps ? steps["t3-register"].status : "skipped"), "route": !("route" in steps) || steps.route.status == "skipped" ? "skipped" : (steps.route.status == "succeeded" && steps.route.outputs.result.ready ? "succeeded" : "failed"), "retire": "retire" in steps ? steps.retire.status : "skipped", "restore_route": !("restore-route" in steps) || steps["restore-route"].status == "skipped" ? "skipped" : (steps["restore-route"].status == "succeeded" && steps["restore-route"].outputs.result.ready ? "succeeded" : "failed"), "restore": "restore" in steps ? steps.restore.status : "skipped"} }}'
+            phases: '${{ {"node": "node-runtime" in steps ? steps["node-runtime"].status : "skipped", "mail": "Apply development mail" in steps ? steps["Apply development mail"].status : "skipped", "quiesce": "quiesce" in steps ? steps.quiesce.status : "skipped", "container": "container" in steps ? steps.container.status : "skipped", "workspace": "workspace" in steps ? steps.workspace.status : "skipped", "files": "files" in steps ? steps.files.status : "skipped", "agent": "agent" in steps ? steps.agent.status : "skipped", "processes": "container-processes" in steps ? steps["container-processes"].status : "skipped", "seed": "seed" in steps ? steps.seed.status : "skipped", "t3": "t3" in steps ? steps.t3.status : "skipped", "register": "t3-sessions" in steps && steps["t3-sessions"].status == "failed" ? "failed" : ("t3-register" in steps ? steps["t3-register"].status : "skipped"), "route": !("route" in steps) || steps.route.status == "skipped" ? "skipped" : (steps.route.status == "succeeded" && steps.route.outputs.result.ready ? "succeeded" : "failed"), "retire": "retire" in steps ? steps.retire.status : "skipped", "restore_route": !("restore-route" in steps) || steps["restore-route"].status == "skipped" ? "skipped" : (steps["restore-route"].status == "succeeded" && steps["restore-route"].outputs.result.ready ? "succeeded" : "failed"), "restore": "restore" in steps ? steps.restore.status : "skipped"} }}'
             server: '${{ "t3-register" in steps && steps["t3-register"].status == "succeeded" ? steps["t3-register"].outputs.stdout : null }}'
       - name: accepted
         labels: {role: swamp}

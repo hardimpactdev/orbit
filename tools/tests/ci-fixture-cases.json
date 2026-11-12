@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "2ea2e73956abfe51b7f6cfece2adee83f5a788085f53e01bbad703db0a82c2bf",
+    "source_sha256": "2686c0f4fb51e854d580ba81e885c8d05fdd3bfe5ae844ad6a0a765d81b59083",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -94,11 +94,16 @@
       "24 moved workers share one five-second settle window inside the 120-second process phase budget",
       "the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step",
       "an unsafe copied app service refuses before downtime and restore changes nothing",
-      "an unreadable copied environment refuses before downtime and restore preserves the source"
+      "an unreadable copied environment refuses before downtime and restore preserves the source",
+      "stock selector preflight: stock Laravel",
+      "stock selector preflight: real53",
+      "stock selector preflight: selected Redis",
+      "stock selector preflight: attached Redis",
+      "stock selector preflight: wrong Redis port"
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "f0787511d26abd6a0356b3ebe4c4bdb54aafd0fc4ea526eaedb5305beeb60045",
+    "source_sha256": "316830599bc1e9d5e7c6417fb23fa3c19f8d55e8d8d313091e71d1b2bc598695",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
@@ -1329,7 +1334,7 @@
     ]
   },
   "swamp/tests/instance_clone_guest_test.py": {
-    "source_sha256": "5aecb8d8f4b0f05021ade52dc9c3f5157d5fc0a2af560a2829be74b56c7ecca3",
+    "source_sha256": "7966a609b3b563b1184fc5d1582ce87c167cf4d11e34de31ed14786b11c30a33",
     "cases": [
       "test_sessions_check_only_loopback_t3_and_reject_http_and_scope_failures",
       "test_workspace_forwards_one_json_vault_value_without_printing_secrets",
@@ -1905,7 +1910,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "f05d13d13a39e49f96d7264df8f04bb4d9cbaac94334045aeb147d45378c539c",
+    "source_sha256": "071fe4dd765b27ba0f77565a170b6d32e5eeb50b94cc4c08aa89e50232a932cf",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -1929,7 +1934,19 @@
       "the receipt lists every projected Process command translation on success and restoration",
       "mail failure is an advisory warning and cannot fail or restore a completed migration",
       "migration retains each exact-line outcome and the named path conflict without values",
-      "missing or malformed successful mail receipts become advisory warnings"
+      "missing or malformed successful mail receipts become advisory warnings",
+      "Node preparation fails before quiesce with its pin reason and restores only the new container"
+    ]
+  },
+  "swamp/tests/instance_node_runtime_test.py": {
+    "source_sha256": "5ecdd774ee27b55e8635e06ce60fa5bd230b72832c83e79375e07b87601d215a",
+    "cases": [
+      "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat",
+      "test_recipe_upgrade_and_seed_copy_keep_downloaded_versions_after_shared_pruning",
+      "test_vite_alone_resolves_and_fetches_once_as_the_app_user",
+      "test_recipe_pin_and_unpinned_projects_need_no_install",
+      "test_download_integrity_and_timeout_failures_name_the_pin",
+      "test_production_phase_removes_read_only_source_mount_after_failure_without_downtime"
     ]
   }
 }

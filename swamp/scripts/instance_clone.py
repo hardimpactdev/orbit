@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 # Mirrored by the guest emitter; the clone tests keep the two sets in sync.
-GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "systemctl", "t3")
+GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 
 
 

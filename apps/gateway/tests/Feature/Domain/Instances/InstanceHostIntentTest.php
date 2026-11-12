@@ -263,7 +263,8 @@ describe('the Instance image', function (): void {
             "install -d -o agent -g work -m 2770 {$home}\n",
             "d:g:work:rwX,d:o::--- {$home}\n",
             "install -d -o agent -g work -m 2770 {$home}/cache\n",
-            'for part in bin js_runtime node_modules recipe config.json; do',
+            "install -d -o agent -g work -m 2770 {$home}/js_runtime {$home}/js_runtime/node\n",
+            'for part in bin node_modules recipe config.json; do',
             'ln -s /opt/orbit-runtime/current/vite-plus-home/$part '.$home.'/$part',
         );
     });

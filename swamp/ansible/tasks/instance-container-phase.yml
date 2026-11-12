@@ -30,6 +30,16 @@
       {{ (container.units + (container.processes | default([]) | selectattr('desired', 'equalto', 'running') | list))
          | map(attribute='name') | list }}
 
+# Private runtime preparation is also the narrow per-Instance conversion entry.
+- name: Prepare the Instance's private Node store
+  tags: [node-store, node-runtime]
+  when: phase in ['node-store', 'node-runtime']
+  ansible.builtin.include_tasks:
+    file: tasks/instance-node-runtime.yml
+    apply: {tags: [always]}
+  vars:
+    node_fetch: "{{ phase == 'node-runtime' }}"
+
 # A dedicated phase also serves the one-Instance refresh without visiting workspace or Process tasks.
 - name: Apply development mail
   tags: [mail]
@@ -599,6 +609,15 @@
       loop_control: { label: "{{ item.item.name }}" }
       no_log: true
       changed_when: true
+
+- name: Fetch Node versions before starting application Processes
+  tags: [processes]
+  when: phase == 'processes'
+  ansible.builtin.include_tasks:
+    file: tasks/instance-node-runtime.yml
+    apply: {tags: [processes]}
+  vars:
+    node_fetch: true
 
 # A changed value is a new file; the old one goes, so no former value stays in the container.
 - name: Remove the Processes' former environment files

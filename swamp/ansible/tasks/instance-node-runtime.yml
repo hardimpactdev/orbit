@@ -1,0 +1,62 @@
+---
+# Only this named container changes. The serving checkout is mounted read-only for pre-quiesce resolution.
+- name: Read the installed Node-store helper
+  ansible.builtin.command:
+    argv: "{{ as_root + ['cat', '/usr/local/libexec/orbit-instance-node-runtime.py'] }}"
+  register: node_helper
+  changed_when: false
+  failed_when: node_helper.rc not in [0, 1]
+
+- name: Install the Node-store helper when changed
+  when: node_helper.rc != 0 or node_helper.stdout != lookup('ansible.builtin.file', playbook_dir ~ '/instance_node_runtime.py')
+  ansible.builtin.command:
+    argv: >-
+      {{ incus_project + ['file', 'push', '--create-dirs', '--uid', '0', '--gid', '0', '--mode', '0755',
+          '-', container.name ~ '/usr/local/libexec/orbit-instance-node-runtime.py'] }}
+    stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_node_runtime.py') }}"
+    stdin_add_newline: false
+  changed_when: true
+
+- name: Prepare the private store and requested Node versions
+  block:
+    - name: Mount the serving source read-only for Node resolution
+      when: intent.migrate is defined and phase == 'node-runtime'
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['config', 'device', 'add', container.name, 'orbit-node-source', 'disk',
+              'source=' ~ intent.migrate.checkout, 'path=' ~ container.workspace, 'readonly=true', 'shift=true'] }}
+      register: node_source_mount
+      changed_when: true
+
+    - name: Prepare Node as the app user without starting any Process
+      ansible.builtin.command:
+        argv: >-
+          {{ as_root + ['python3', '/usr/local/libexec/orbit-instance-node-runtime.py',
+              'fetch' if node_fetch | default(false) else 'prepare', container | to_json] }}
+        stdin: "{{ lookup('ansible.builtin.env', 'ORBIT_PROCESS_ENVIRONMENTS') | default('{}', true) }}"
+        stdin_add_newline: false
+      no_log: true
+      register: node_runtime
+      changed_when: node_runtime.rc == 0 and (node_runtime.stdout | from_json).status == 'converted'
+      failed_when: false
+
+    - name: Retain the Node failure reason
+      when: node_runtime.rc != 0
+      ansible.builtin.set_fact:
+        node_runtime_failure: "{{ node_runtime.stdout | from_json }}"
+
+    - name: Require the requested Node runtime before any Process starts
+      ansible.builtin.assert:
+        that: node_runtime.rc == 0
+        fail_msg: instance.node_runtime_prepare_failed
+        quiet: true
+
+    - name: Retain the public store result
+      ansible.builtin.set_fact:
+        node_runtime_result: "{{ node_runtime.stdout | from_json }}"
+  always:
+    - name: Unmount the serving source after Node resolution
+      when: node_source_mount is defined and node_source_mount.rc | default(1) == 0
+      ansible.builtin.command:
+        argv: "{{ incus_project + ['config', 'device', 'remove', container.name, 'orbit-node-source'] }}"
+      changed_when: true

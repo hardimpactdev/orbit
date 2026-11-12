@@ -11,7 +11,7 @@ import time
 from contextlib import closing
 
 # Mirrored by the Node boundary; the clone tests keep the two sets in sync.
-GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "systemctl", "t3")
+GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 
 
 def phase_main(phase, raw):
@@ -21,7 +21,7 @@ def phase_main(phase, raw):
     root = pathlib.Path
     private = sys.stdin.read()
 
-    def run(argv, check=True, agent=False, orbit=False):
+    def run(argv, check=True, agent=False, orbit=False, timeout=40):
         command = argv
         if agent or orbit:
             argv = ["runuser", "-u", "agent" if agent else "orbit", "--"] + argv
@@ -35,7 +35,7 @@ def phase_main(phase, raw):
                 HOME="/home/agent" if agent else "/home/orbit" if orbit else "/root",
             ),
             cwd=ws if orbit else "/home/agent" if agent else "/",
-            timeout=40,
+            timeout=timeout,
         )
         if check and r.returncode:
             raise subprocess.CalledProcessError(r.returncode, command)
@@ -158,6 +158,9 @@ def phase_main(phase, raw):
         if web_config is not None:
             write(web_config["path"], web_config["content"])
         web_config_changed = len(changes) > before_web_config
+        node = run(["python3", "/usr/local/libexec/orbit-instance-node-runtime.py", "fetch", json.dumps(c)], timeout=100)
+        if json.loads(node.stdout)["status"] == "converted":
+            changes.append("node-runtime")
         desired = c["units"] + c["processes"]
         changed_units = []
         for unit in desired:
