@@ -11,6 +11,12 @@ covers:
 
 Node management runs through [named Rust agent commands](/reference/node-agent#commands). The program runner remains only to recover ownership of Tasks workspaces, which is outside this port. Tasks workspace scripts and their operation journal also remain unchanged. New Node behavior must not use this runner.
 
+One narrow exception reads the linked-worktree list of a host checkout Instance at destroy admission. This read must refuse with HTTP 409 before any removal side effect, including the Schedule trigger withdrawal that admission performs. `InstanceDestroyWorktrees::assertAvailable` accepts only the resolved Instance; it builds fixed Python/Git argv from the Instance’s stored checkout path.
+
+The read is read-only, has a ten-second outer timeout and three seconds per Git invocation, and runs as the Node’s existing SSH account with its existing identity and pins. It adds no identity or capability. Containers skip it. An unreachable Node or timeout refuses with `instance.host_unavailable`; a Git error refuses with `instance.remove_refused`. Only confirmed dependents use `instance.worktree_dependents`.
+
+The follow-up moves this check and Schedule withdrawal together into Swamp. This fix keeps the synchronous refusal small instead of moving that lifecycle boundary. No other new caller is allowed by this exception.
+
 ## Program files
 
 No Gateway code calls a catalogued program now: the workspace owner check left with the workspace lease. The runner and its header format remain for the Services-only Operation primitive.

@@ -28,7 +28,11 @@ In a terminal, an omitted Instance is chosen from an interactive list. The CLI t
 
 The command removes the Instance with its Route, Processes, Schedules and runtime. A development removal runs the teardown steps first and deletes the checkout. A production removal deletes its user, home, application data and source state after runtime cleanup. See [Instance removal](/reference/instance-removal).
 
-Normal removal refuses dirty source, a `HEAD` that no origin branch or tag contains, and a checkout with registered linked worktrees. `--force` waives only the source refusals: those three, the check that needs GitHub CLI source access, and a failed fetch of the origin.
+Normal removal refuses dirty source and a `HEAD` that no origin branch or tag contains. `--force` waives dirty or unpublished source, the check that needs GitHub CLI source access, and a failed fetch of the origin.
+
+Before removing Schedules or recording an Operation, Orbit reads Git on the Node through the existing SSH reader. A checkout that owns Git data used by another live worktree refuses with HTTP 409 `instance.worktree_dependents`, including with `--force`. Details contain visible dependent Instances (`id`, `name`, `project_id`), `other_dependents` and `unowned_paths`. Node access controls visibility across Projects. Recorded `source_layout` does not decide the check. An unreadable repository refuses closed; containers skip it.
+
+Destroying a linked worktree uses its actual common Git directory to remove the tree and its registration. Git failure stops removal; Orbit never falls back to deleting that tree with `rm -rf`. The owner and other worktrees remain intact. Source removal repeats the dependency check before deleting anything.
 
 <Warning>
 Production removal deletes the production account, source state, and whole home, including `releases/`, `.env`, shared data, and `database.sqlite`. Back up any application data you need before removal. Only the local PHP-FPM tuning stays.
@@ -59,6 +63,8 @@ The [container destroy chart](https://github.com/hardimpactdev/orbit/blob/main/d
 | `input.cancelled` | You declined, pressed Ctrl-C, or the input ended. |
 | `instance.remove_refused` | The Instance is not active, its environment or its Route cannot be removed, it has no removable Route, its source layout is not removable, the source has dirty or unpublished work or linked worktrees and `--force` is absent, or removing the source failed. |
 | `instance.container_destroy_force_required` | A non-default container Instance, cloned or migrated, requires `--force` until guarded removal is built. |
+| `instance.host_unavailable` | The Node could not be read for safe checkout removal; details distinguish unreachable, timeout or missing result. Nothing is removed. |
+| `instance.worktree_dependents` | This checkout owns Git data used by another live worktree. HTTP 409 before admission; `--force` does not override it. |
 | `instance.checkout_path_unsafe` | The checkout path is not safe to delete. |
 | `instance.clone_in_progress` | The Instance is the candidate of an incomplete clone. |
 | `instance.removal_conflict` | The Instance belongs to a different removal request, or `--force` was added or dropped on a rerun against the rules above. |

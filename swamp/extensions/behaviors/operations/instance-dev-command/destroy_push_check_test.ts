@@ -79,7 +79,7 @@ Deno.test("every destroy Ansible step enables failed task stderr", () => {
     const steps = workflow.jobs.flatMap((job) => job.steps).filter((step) =>
         step.task.inputs.run?.includes("ansible-playbook")
     );
-    assertEquals(steps.length, 1);
+    assertEquals(steps.length, 2);
     for (const step of steps) {
         assertEquals(step.task.inputs.env?.ANSIBLE_DISPLAY_FAILED_STDERR, "1", step.name);
     }

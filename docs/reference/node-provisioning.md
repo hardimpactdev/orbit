@@ -984,3 +984,5 @@ Development container [mail setup](/reference/development-containers#development
 Development mail repair uses the Node’s existing Python prerequisite through fixed Incus argv. The container needs only its stock shell and coreutils for atomic replacement. It needs no Project PHP runtime or new image digest; see [development mail](/reference/development-containers#development-mail).
 
 Container migration reuses this [development mail phase](/reference/development-containers#development-mail) after copying the workspace. It requires no Node converge.
+
+Checkout destroy admission has one [read-only SSH exception](/reference/remote-programs#remote-programs) for live Git dependencies, before Schedule withdrawal. It uses the existing Node account and identity with a short timeout. Containers skip that read; source removal rechecks through the shared Ansible helper.

@@ -1,0 +1,47 @@
+---
+- name: Address the checkout Node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: checkout_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Remove only the admitted checkout
+  hosts: checkout_node
+  gather_facts: false
+  tags: [remove]
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+  tasks:
+    - name: Check Git dependencies and remove the source
+      ansible.builtin.command:
+        argv: [python3, -c, "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance/destroy-git.py') }}"]
+        stdin: "{{ {'action': 'remove', 'paths': intent.source_paths} | to_json }}"
+        expand_argument_vars: false
+      register: source_removal
+      changed_when: (source_removal.stdout | from_json).outcome == 'removed'
+    - name: Retain only the public source receipt
+      ansible.builtin.copy:
+        content: "{{ source_removal.stdout }}"
+        dest: "{{ run }}/source-result.json"
+        mode: '0600'
+      delegate_to: localhost
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      changed_when: false
+    - name: Require safe source removal
+      ansible.builtin.assert:
+        that: (source_removal.stdout | from_json).outcome == 'removed'
+        fail_msg: "{{ (source_removal.stdout | from_json).data.error_code | default('instance.remove_refused') }}"
+        quiet: true

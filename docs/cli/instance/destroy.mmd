@@ -30,7 +30,7 @@ sequenceDiagram
   %%> - without `--yes`, the CLI asks first; the default is No
   %%> - without a terminal, or with `--json`, `--yes` is required
   %%> With `--force`:
-  %%> - also deletes dirty or unpublished source, and a checkout with its linked worktrees
+  %%> - also deletes dirty or unpublished source; never deletes Git data needed by another worktree
   %%> - it never waives the source identity checks, and it is not consent
   %%> - migration ownership still applies: a running migration or an unsettled reserved runtime refuses with `instance.lifecycle_busy`, before cleanup and again under the Instance admission lock
   Note over CLI: Confirm removal
@@ -41,8 +41,16 @@ sequenceDiagram
     Note over GW: Skip pushed-source checks
     %%> What it changes:
     %%> - skips token minting and the git credential and pushed-work steps below
-    %%> - permits dirty or unpublished source and linked worktrees, after source identity checks
+    %%> - permits dirty or unpublished source after source identity and worktree dependency checks
     %%> - supplies no removal consent; the prompt or `--yes` is still required
+  end
+  opt host checkout Instance
+    GW->>N: Read worktrees<br/>Git · SSH
+    %%> Why first:
+    %%> - before Schedule removal or any Operation write; inspect Git on the Node, never trust source_layout
+    %%> On refusal:
+    %%> - HTTP 409 instance.worktree_dependents reports visible dependent Instances, a count of others, and unowned paths; --force never overrides it
+    %%> - unreadable Git refuses closed; a container skips this read
   end
   Note over GW: Validate, capture the set<br/>Instance 42 · task #5132
   %%> Requirements:
@@ -98,12 +106,10 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  opt container clone
-    Note over SW: Prepare container removal
-    %%> What it does:
-    %%> - writes the saved intent and playbook assets to the run folder
-    %%> - container defaults refuse; clones require --force and skip source checks and Project teardown
-  end
+  Note over SW: Prepare container removal
+  %%> Why:
+  %%> - both source and container phases need the saved intent and playbook assets
+  %%> - container defaults refuse; clones require --force and skip source checks and Project teardown
   SW->>N: Write the git credential<br/>@swamp/cfgmgmt/file · 0600
   %%> What it does:
   %%> - writes the vault token as a 0600 credential file, so the token never enters argv
@@ -180,10 +186,14 @@ sequenceDiagram
   %%> - the awake and cold markers and the Caddy access log outlive the Instance otherwise
   SW->>N: Remove the source<br/>@swamp/ssh exec · worktree, rm
   %%> What it does:
-  %%> - `git worktree remove --force` per linked worktree, then `rm -rf` of the checkout
+  %%> - recheck live Git dependencies, then remove a dependent with `git worktree remove --force` through its actual common Git directory; never fall back to rm on Git failure
+  %%> - an owner with dependents refuses; a standalone checkout is removed as before
   %%> - the paths come from the Gateway's records; a rerun converges
   %%> Runs as:
   %%> - the Node's own user, not root
+  Note over SW: Read source removal
+  %%> On failure:
+  %%> - retain the fixed code and dependency details from the recheck
   SW->>N: Check it is gone<br/>@swamp/cfgmgmt check absent
   %%> What it does:
   %%> - the `check` of the directory, file, systemd and `docker_container` behaviors with `ensure: absent`: checkout, units and containers are gone
