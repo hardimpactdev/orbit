@@ -336,3 +336,5 @@ The existing clone workspace phase prepares its [private Node store](/reference/
 The independent Route publication job reuses create’s admitted Route input and shipped assets. Its site child reads the parent file while keeping its own temporary files; parent cleanup waits for publication to settle. Certificate validation, Caddy reload and TLS proof retain their order.
 
 An attached [Node service target](/reference/processes-and-schedules#node-service-target-records) must pass its probe before application work. A failed create keeps the target’s public reason, unit states and elapsed time in the Operation result.
+
+An inactive required Process during clone registration returns `instance.container_process_inactive` with its unit and [public exit facts](/reference/development-containers). This code reaches the Operation without private command output.

@@ -82,6 +82,7 @@ sequenceDiagram
     SW->>C: Register the T3 server<br/>native clone-register
     %%> What it does:
     %%> - see container/t3-register.mmd: the sessions go to the vault, and the step checks the environment id and scopes
+    %%> - an inactive required unit refuses with `instance.container_process_inactive`; copy its structured public refusal even when sessions failed, skip registration, and retain the unit states in the Operation
   and independent Route job · no depth link
     opt web-serving Project
       SW->>N: Make, sign Route key<br/>child route-create-csr

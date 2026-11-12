@@ -979,6 +979,8 @@ The `swamp` role installs a pinned Ansible environment under `/opt/orbit/ansible
 
 The shared phase for [Node service targets](/reference/processes-and-schedules#node-service-target-records) waits up to three seconds to probe each target and retains public failure classes.
 
+Container registration checks its required units with the shared guest helper and retains [public exit facts](/reference/development-containers) on failure.
+
 The development create playbook has no builder: it reads the intent file by lookup, pins the admitted host keys in the run folder and addresses the Node itself, and it takes its secrets from the environment of the phase. Separate guarded steps write vault values to mode `0600` files. The builder consumes and removes those files. A completed-run cleanup removes the folder after success or failure. No credential enters the run inputs or command arguments.
 
 For a web-serving Project, its `checkout` phase also gives Caddy its access to the checkout and sets `APP_URL` in the `.env`, before the setup commands write into the tree. The Route playbook `route-create-site.yml` then skips both on that Node, and removes its own run folder as its last task, so a success needs no cleanup step. It updates the trust store only when it wrote a new Orbit root.
