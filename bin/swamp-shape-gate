@@ -50,7 +50,7 @@ ANSIBLE_TESTS = ('tests/ansible_artifact_test.py', 'tests/ansible_inputs_test.py
                  'tests/ansible_task_vm_fleet_wait_test.py', 'tests/ansible_task_vm_host_egress_test.py',
                  'tests/ansible_hub_prune_test.py', 'tests/ansible_task_vm_idle_save_test.py', 'tests/ansible_task_vm_checkout_test.py',
                  'tests/ansible_wireguard_hub_lan_test.py', 'tests/ansible_hub_converge_peers_test.py', 'tests/ansible_static_php_test.py',
-                 'tests/instance_migrate_env_test.py', 'tests/instance_migrate_dotenv_test.py',
+                 'tests/instance_migrate_env_test.py', 'tests/instance_migrate_node_test.py', 'tests/instance_migrate_dotenv_test.py',
                  'tests/ansible_instance_module_args_test.py', 'tests/ansible_command_output_test.py')
 DENO_UNIT_TESTS = (
     ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/check-swamp-shape_test.ts'),

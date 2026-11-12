@@ -4,6 +4,7 @@ sidebarTitle: "instance:migrate"
 description: "Move a development checkout Instance into an Instance container. A temporary command: it goes when the last checkout Instance has moved."
 covers:
   - swamp/ansible/library/orbit_migrate_env.py
+  - swamp/ansible/library/orbit_migrate_node.py
   - swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts
   - swamp/ansible/tasks/instance-migrate-process-ready.yml
   - apps/gateway/app/Domain/Instances/ContainerProcesses.php
@@ -183,6 +184,7 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `process.container_port_conflict` | A named preset Process has no valid assigned port, shares it with a recorded Process or reserved container service, or duplicates another preset. |
 | `instance.database_clone_unsupported` | The Instance's database server has no IPv4 address and port that a container can reach. |
 | `instance.host_unavailable` | The Node has no Instance bridge, the bridge is full, no T3 port is free, or the runtime folder lacks the Project's PHP build. |
+| `instance.migrate_node_version_unavailable` | A Node pin is unavailable or cannot be resolved offline in the read-only runtime. The result names the pin and available versions. The checkout keeps serving. |
 | `instance.migrate_env_service_unreachable` | A copied `.env` has an unsupported service endpoint or a value the check cannot determine safely. Endpoint errors name the offending keys and safe host:port; syntax errors name only the file and line. Both include recovery actions. The checkout keeps serving. |
 | `instance.migrate_branch_changed` | The checkout is not on the branch that Orbit records. Check out that branch, or record the new one with [`instance:rename`](/cli/instance/rename). |
 | `instance.migrate_symlink_unsupported` | A checkout link is broken or points outside the checkout. The error names every path, target and reason. The preflight refusal leaves the checkout serving. The same check on the copied workspace fails the move and restores the checkout if a link changed during copying. |

@@ -29,3 +29,23 @@
     that: migrate_env_check.refusals | length == 0
     fail_msg: "{{ migrate_refusal_message | default('instance.migrate_env_service_unreachable') }}"
     quiet: true
+
+- name: Check Node pins against the container's shared Vite+ home
+  orbit_migrate_node:
+    checkout: "{{ migrate.checkout }}"
+    application: "{{ migrate.application | default(migrate.checkout) }}"
+    processes: "{{ container.processes | default([]) }}"
+  register: migrate_node_check
+
+- name: Explain an unavailable Node pin
+  when: migrate_node_check.refusal is not none
+  ansible.builtin.set_fact:
+    migrate_refusal_code: instance.migrate_node_version_unavailable
+    migrate_refusal_message: "{{ migrate_node_check.refusal.message }}"
+    migrate_refusal_details: "{{ migrate_node_check.refusal.details }}"
+
+- name: Refuse an unavailable Node pin before stopping anything
+  ansible.builtin.assert:
+    that: migrate_node_check.refusal is none
+    fail_msg: "{{ migrate_refusal_message | default('instance.migrate_node_version_unavailable') }}"
+    quiet: true

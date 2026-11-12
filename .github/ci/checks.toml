@@ -21,13 +21,14 @@ default = ["swamp/tests/ansible_inputs_test.py"]
 file = "swamp/tests/ansible_instance_migrate_test.ts"
 after_merge = true
 reason = "92 retained cases need 6350 declared seconds including startup: 12 hosted shards, above the six-shard PR limit (runs 43010311414 and 43013527963; 23 case costs remain estimates). All migration cases run after merge until their work is reduced or selection is narrowed."
-cost = 5798
+cost = 6406
 # 159.019s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (120s); these are estimates, not completed measurements.
 slices = 92
 inputs = [
+  "swamp/ansible/library/orbit_migrate_node.py",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance-container.yml",
@@ -48,6 +49,12 @@ inputs = [
 ]
 
 [fixture.case_costs]
+"stock selector preflight: attached Redis" = 120 # conservative estimate for previously unregistered existing case
+"stock selector preflight: real53" = 120 # conservative estimate for previously unregistered existing case
+"stock selector preflight: selected Redis" = 120 # conservative estimate for previously unregistered existing case
+"stock selector preflight: stock Laravel" = 120 # conservative estimate for previously unregistered existing case
+"stock selector preflight: wrong Redis port" = 120 # conservative estimate for previously unregistered existing case
+"an unavailable Node pin refuses preflight without touching the checkout or stopping writers" = 8
   "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links" = 62 # completed, run 43002948719
   "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources" = 8 # completed, run 43002948719
   "broken symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources" = 6 # completed, run 43005032403
@@ -2639,12 +2646,14 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts"
-cost = 23
+cost = 24
 inputs = [
+  "swamp/ansible/library/orbit_migrate_node.py",
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
   "swamp/workflows/workflow-operation-instance-migrate.yaml",
 ]
 [fixture.case_costs]
+"Node pin refusal keeps structured details through the terminal receipt" = 1
 "a default that moved reports its commit and no T3 server" = 1
 "a non-default Instance that moved reports its T3 server, and needs its registration" = 1
 "a move that failed and restored names the failed phase with its own refusal, and says restored" = 1
@@ -2668,3 +2677,15 @@ inputs = [
 "mail failure is an advisory warning and cannot fail or restore a completed migration" = 1
 "migration retains each exact-line outcome and the named path conflict without values" = 1
 "missing or malformed successful mail receipts become advisory warnings" = 1
+
+[[fixture]]
+file = "swamp/tests/instance_migrate_node_test.py"
+cost = 6
+inputs = ["swamp/ansible/library/orbit_migrate_node.py"]
+[fixture.case_costs]
+"test_unavailable_nvmrc_has_named_fields_and_does_not_change_checkout" = 1
+"test_exact_pins_and_no_pin_pass" = 1
+"test_partial_ranges_and_aliases_fail_closed" = 1
+"test_vite_source_precedence_and_closest_directory" = 1
+"test_process_working_directory_cannot_hide_a_pin_and_other_managers_are_ignored" = 1
+"test_only_executable_versions_in_the_selected_home_are_available" = 1

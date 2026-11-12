@@ -73,6 +73,7 @@
                   if migrate_refusal_message is defined else {'error_code': ansible_failed_result.msg
                   if (ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z0-9_]+$'))
                   else 'instance.migrate_' ~ phase ~ '_failed'})
+                  | combine({'details': migrate_refusal_details} if migrate_refusal_details is defined else {})
                   | combine({'preflight_refused': true} if phase == 'container' and not (migrate_preflight_passed | default(false)) else {}) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"

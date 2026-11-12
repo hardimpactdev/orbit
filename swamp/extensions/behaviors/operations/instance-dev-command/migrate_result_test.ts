@@ -222,3 +222,20 @@ Deno.test("missing or malformed successful mail receipts become advisory warning
         assertEquals(result(defaultIntent, {...moved, mail: "skipped"}, workspace, null, null).warnings, undefined);
     } finally { await Deno.remove(folder, {recursive: true}); }
 });
+
+Deno.test("Node pin refusal keeps structured details through the terminal receipt", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const details = {pin_source: ".nvmrc", pinned: "22", available: ["24.22.1"]};
+        await Deno.writeTextFile(`${folder}/result.json`, JSON.stringify({
+            error_code: "instance.migrate_node_version_unavailable", error_message: "Node 22 is unavailable",
+            preflight_refused: true, details,
+        }));
+        const phases = {...moved, container: "failed", quiesce: "skipped", workspace: "skipped", files: "skipped",
+            processes: "skipped", seed: "skipped", route: "skipped", retire: "skipped", restore: "succeeded"};
+        const receipt = result(defaultIntent, phases, null, null, await writtenFailure(folder));
+        assertEquals(receipt.details, details);
+        assertEquals([receipt.error_code, receipt.preflight_refused, receipt.moved],
+            ["instance.migrate_node_version_unavailable", true, false]);
+    } finally { await Deno.remove(folder, {recursive: true}); }
+});

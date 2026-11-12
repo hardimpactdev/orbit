@@ -35,6 +35,7 @@ type WrittenFailure = Partial<z.infer<typeof MailReceipt>> & {
     error_code?: string;
     error_message?: string;
     preflight_refused?: boolean;
+    details?: {pin_source: string; pinned: string; available: string[]};
     retained_git_path?: string;
     retained_git_at?: string;
 };
@@ -103,6 +104,7 @@ export function migrateResult(
         ...(commit ? { commit } : {}),
         ...(moved && written?.retained_git_path && written?.retained_git_at ? { retained_git_path: written.retained_git_path, retained_git_at: written.retained_git_at } : {}),
         ...(moved && server ? { t3: JSON.parse(server) } : {}),
+        ...(refusal !== null && written?.details ? {details: written.details} : {}),
         ...(refusal !== null && written?.error_message ? { error_message: written.error_message } : {}),
         ...(failed ? { failed_step: failed[0], error_code: refusal ?? "instance.migrate_" + failed[0] + "_failed" } : {}),
     };
@@ -115,7 +117,8 @@ export async function writtenFailure(folder: string): Promise<WrittenFailure | n
     let retained: WrittenFailure = {};
     try {
         const value = JSON.parse(await Deno.readTextFile(`${folder}/result.json`));
-        const parsed = z.object({ error_code: z.string().regex(CODE), error_message: z.string().optional(), preflight_refused: z.boolean().optional() }).safeParse(value);
+        const parsed = z.object({ error_code: z.string().regex(CODE), error_message: z.string().optional(), preflight_refused: z.boolean().optional(),
+            details: z.object({pin_source: z.string(), pinned: z.string(), available: z.array(z.string())}).optional() }).safeParse(value);
         if (parsed.success) failure = parsed.data;
     } catch { /* A phase can fail before it writes a result. */ }
     try {

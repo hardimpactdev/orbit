@@ -116,6 +116,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   }
   Deno.mkdirSync(`${folder}/library`);
   Deno.copyFileSync(new URL("fixtures/instance-migrate-systemd.py", import.meta.url), `${folder}/library/orbit_migrate_systemd.py`);
+  Deno.copyFileSync(new URL("library/orbit_migrate_node.py", root), `${folder}/library/orbit_migrate_node.py`);
   Deno.copyFileSync(new URL("library/orbit_migrate_env.py", root), `${folder}/library/orbit_migrate_env.py`);
   Deno.writeTextFileSync(`${folder}/host-processes.json`, "{}");
   Deno.writeTextFileSync(`${folder}/process-environments.json`, "{}");
@@ -2094,3 +2095,35 @@ for (const scenario of ["stock Laravel", "real53", "selected Redis", "attached R
     },
   });
 }
+
+Deno.test({
+  name: "an unavailable Node pin refuses preflight without touching the checkout or stopping writers",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      Deno.writeTextFileSync(`${f.checkout}/.nvmrc`, "22\n");
+      git(f.checkout, "add", ".nvmrc");
+      git(f.checkout, "commit", "--quiet", "-m", "pin Node");
+      git(f.checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
+      const before = git(f.checkout, "status", "--porcelain");
+      const refused = f.run("container");
+      assert(!refused.ok, refused.output);
+      const receipt = f.result();
+      assertEquals(receipt.error_code, "instance.migrate_node_version_unavailable");
+      assertEquals(receipt.preflight_refused, true);
+      assertEquals(receipt.details.pin_source, ".nvmrc");
+      assertEquals(receipt.details.pinned, "22");
+      assert(Array.isArray(receipt.details.available));
+      assertEquals(git(f.checkout, "status", "--porcelain"), before);
+      assertEquals(Deno.readTextFileSync(`${f.checkout}/.nvmrc`), "22\n");
+      assert(exists(f.migrate.awake.path));
+      assert(!exists(`${f.folder}/run/quiesced`));
+      assert(!exists(`${f.folder}/calls`));
+      const restore = f.run("restore");
+      assert(restore.ok, restore.output);
+      assert(!exists(`${f.folder}/calls`));
+      assert(exists(f.migrate.awake.path));
+    } finally { f.cleanup(); }
+  },
+});

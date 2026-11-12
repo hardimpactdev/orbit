@@ -18,6 +18,7 @@ additionalFiles:
   - ansible/library/orbit_schedule_journal.py
   - ansible/library/orbit_static_php.py
   - ansible/library/orbit_migrate_env.py
+  - ansible/library/orbit_migrate_node.py
   - ansible/tasks/artifact-fetch.yml
   - ansible/transport-exit-codes.json
   - ansible/operation-node-role-add.yml

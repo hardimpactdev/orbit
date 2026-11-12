@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "2ea2e73956abfe51b7f6cfece2adee83f5a788085f53e01bbad703db0a82c2bf",
+    "source_sha256": "5fd5383393fda3ac2a8bcf7391fb7a3848fad5ec9732ccbf7f5a051e82d5a6d1",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -94,7 +94,13 @@
       "24 moved workers share one five-second settle window inside the 120-second process phase budget",
       "the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step",
       "an unsafe copied app service refuses before downtime and restore changes nothing",
-      "an unreadable copied environment refuses before downtime and restore preserves the source"
+      "an unreadable copied environment refuses before downtime and restore preserves the source",
+      "stock selector preflight: stock Laravel",
+      "stock selector preflight: real53",
+      "stock selector preflight: selected Redis",
+      "stock selector preflight: attached Redis",
+      "stock selector preflight: wrong Redis port",
+      "an unavailable Node pin refuses preflight without touching the checkout or stopping writers"
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
@@ -1905,7 +1911,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "f05d13d13a39e49f96d7264df8f04bb4d9cbaac94334045aeb147d45378c539c",
+    "source_sha256": "186f9d5bfc97ea916a6a271fd946651a5f51a368bda8c4359958422c06d3e88b",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -1929,7 +1935,19 @@
       "the receipt lists every projected Process command translation on success and restoration",
       "mail failure is an advisory warning and cannot fail or restore a completed migration",
       "migration retains each exact-line outcome and the named path conflict without values",
-      "missing or malformed successful mail receipts become advisory warnings"
+      "missing or malformed successful mail receipts become advisory warnings",
+      "Node pin refusal keeps structured details through the terminal receipt"
+    ]
+  },
+  "swamp/tests/instance_migrate_node_test.py": {
+    "source_sha256": "8cfd15c68577f956bcdbdb677bc7f239ae286f340fb53cb95552889eb3710b81",
+    "cases": [
+      "test_unavailable_nvmrc_has_named_fields_and_does_not_change_checkout",
+      "test_exact_pins_and_no_pin_pass",
+      "test_partial_ranges_and_aliases_fail_closed",
+      "test_vite_source_precedence_and_closest_directory",
+      "test_process_working_directory_cannot_hide_a_pin_and_other_managers_are_ignored",
+      "test_only_executable_versions_in_the_selected_home_are_available"
     ]
   }
 }
