@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Bounded GitHub metadata preflight; ProofCommitTrust remains the admission authority."""
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime
+from urllib.parse import quote
+
+BUDGET = 20
+MAX_REQUESTS = 40
+
+
+class GitHub:
+    def __init__(self, repository):
+        if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
+            raise ValueError('Invalid proof repository')
+        self.repository = repository
+        self.deadline = time.monotonic() + BUDGET
+        self.requests = 0
+
+    def get(self, path, missing_permission=False):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0 or self.requests >= MAX_REQUESTS:
+            raise ValueError('Proof eligibility API budget exceeded')
+        self.requests += 1
+        # No retries or automatic pagination: the whole preflight shares one deadline.
+        try:
+            return json.loads(subprocess.check_output(
+                ['gh', 'api', f'repos/{self.repository}/{path}'], timeout=min(5, remaining)))
+        except subprocess.CalledProcessError as error:
+            # Gateway treats a missing collaborator as unable to write, not as a GitHub outage.
+            if missing_permission:
+                failure = json.loads(error.output)
+                if isinstance(failure, dict) and failure.get('status') == '404':
+                    return {'permission': 'none'}
+            raise
+
+    def rows(self, path):
+        rows = []
+        for page in range(1, 11):
+            batch = self.get(f'{path}?per_page=100&page={page}')
+            if not isinstance(batch, list) or any(not isinstance(row, dict) for row in batch):
+                raise ValueError('Malformed GitHub eligibility list')
+            rows.extend(batch)
+            if len(batch) < 100:
+                return rows
+        # A full last page cannot prove that a later review has not revoked approval.
+        raise ValueError('Proof eligibility pagination limit exceeded')
+
+
+def eligible(github, sha):
+    if not re.fullmatch(r'[0-9a-f]{40}', sha):
+        raise ValueError('PROOF_SHA must be the full lowercase commit SHA')
+    branches = github.rows(f'commits/{sha}/branches-where-head')
+    for branch in branches:
+        if not isinstance(branch.get('name'), str) or not isinstance(branch.get('commit'), dict):
+            raise ValueError('Malformed GitHub branch')
+        if branch['commit'].get('sha') == sha:
+            return True
+    for pr in github.rows(f'commits/{sha}/pulls'):
+        if pr['state'] not in ('open', 'closed'):
+            raise ValueError('Malformed GitHub pull request state')
+        if pr['state'] != 'open' or pr['head']['sha'] != sha or not any(label['name'] == 'run-proofs' for label in pr['labels']):
+            continue
+        number = pr['number']
+        if type(number) is not int or number <= 0:
+            raise ValueError('Invalid pull request number')
+        latest = {}
+        for review in github.rows(f'pulls/{number}/reviews'):
+            if review['state'] not in ('APPROVED', 'CHANGES_REQUESTED', 'DISMISSED', 'COMMENTED', 'PENDING'):
+                raise ValueError('Malformed GitHub review state')
+            if review['state'] not in ('APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'):
+                continue
+            login = review['user']['login']
+            if not isinstance(login, str) or not login or type(review['id']) is not int:
+                raise ValueError('Malformed GitHub review')
+            order = (int(datetime.fromisoformat(review['submitted_at'].replace('Z', '+00:00')).timestamp())
+                     if review['submitted_at'] else 0, review['id'])
+            if login not in latest or order > latest[login][0]:
+                latest[login] = (order, review)
+        for login, (_, review) in latest.items():
+            if review['state'] != 'APPROVED' or review['commit_id'] != sha:
+                continue
+            permission = github.get(f'collaborators/{quote(login, safe="")}/permission', missing_permission=True)
+            if permission['permission'] in ('admin', 'write') or permission.get('role_name') in ('admin', 'maintain', 'write'):
+                return True
+    return False
+
+
+def main():
+    try:
+        allowed = eligible(GitHub(os.environ['GITHUB_REPOSITORY']), os.environ['PROOF_SHA'])
+    except (ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError) as error:
+        sys.exit(f'Proof eligibility could not be checked: {error}')
+    outcome = 'eligible' if allowed else 'skipped'
+    text = f'Proof eligibility: {outcome}. ' + ('Gateway admission still checks trust.' if allowed else 'No current branch head or approved labelled open pull request; no proof requested.') + '\n'
+    print(text)
+    if os.environ.get('GITHUB_OUTPUT'):
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write(f'eligible={str(allowed).lower()}\n')
+    if os.environ.get('GITHUB_STEP_SUMMARY'):
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+            summary.write(text)
+
+
+if __name__ == '__main__':
+    main()

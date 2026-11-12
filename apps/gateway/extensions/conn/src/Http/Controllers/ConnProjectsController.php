@@ -20,15 +20,16 @@ use Orbit\Extensions\Conn\Data\ConnProjectData;
 use Orbit\Extensions\Conn\Domain\ConnThreadProjects;
 use Orbit\Extensions\Conn\Http\Requests\CheckConnInstanceNameRequest;
 use Orbit\Extensions\Conn\Http\Requests\CreateConnInstanceRequest;
+use Orbit\Extensions\Conn\Http\Requests\ListConnProjectsRequest;
 
 /** Threads in an Orbit Project (/reference/conn#threads-in-an-orbit-project): the Projects a device reaches, and the clone a thread starts in. */
 #[RequiresNodeAccess(ServingNode::Collection)]
 final class ConnProjectsController extends Controller
 {
-    public function index(Request $request, ConnThreadProjects $projects): JsonResponse
+    public function index(ListConnProjectsRequest $request, ConnThreadProjects $projects): JsonResponse
     {
         return response()->json([
-            'data' => $projects->all($this->caller($request))
+            'data' => $projects->all($this->caller($request), $request->includeUnavailable())
                 ->map(static fn (ConnProjectData $project): array => $project->toArray())
                 ->all(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],

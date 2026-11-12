@@ -463,6 +463,7 @@ jobs:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_RUN_ID: ${{ run.id }}
           ORBIT_ANSIBLE: ${{ steps["Prepare container removal"].outputs.assets }}
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
           ANSIBLE_SSH_ARGS: ${{ "-o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts -o StrictHostKeyChecking=yes" }}
     guard: ${{ !("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) || steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps &&
       steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
