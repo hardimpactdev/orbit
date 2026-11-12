@@ -23,6 +23,8 @@ Instance JSON includes nullable `seed_path` and `seed_commit`. On `default`, the
 
 `instance:create`, `instance:register` and `instance:transfer` accept any active `app-dev` Node that the request names; a Project keeps no list of Nodes it may not use.
 
+`instance:migrate` reports `untracked_files_copied` in its Operation result and the copied count in human output, including ignored files. See [migration](/cli/instance/migrate) for the seed and later checkout consequences.
+
 Human transfer and destroy results identify checkouts that could not be checked; `--json` retains each structured warning.
 
 Every command accepts `--json`. Machine output never supplies consent. Human list commands use tables, with labeled records when the terminal is too narrow; detail commands show a tree and slow requests show progress.

@@ -2,8 +2,11 @@
 # These cases run on the proof fleet as it is. The cases that move an Instance need a proof Node with the Instance pool and the
 # container image, which the proof fleet does not build yet (docs/solutions/development-container-runtime.md, PR 4). Until then
 # the Pest, Deno and Ansible fixture tests cover the move, and the live check on a build-list Node proves it.
-# Retirement fixture coverage (ansible_instance_migrate_test.ts): dirty tracked/staged/deleted/renamed files and non-ignored
-# untracked files refuse before downtime; ignored files pass; linked and detached worktrees refuse and name their paths.
+# Retirement fixture coverage (ansible_instance_migrate_test.ts): dirty tracked/staged/deleted/renamed files refuse before
+# downtime; all untracked files pass, copy into the container and report their count (including ignored files and nested repository leaves, no paths/content).
+# Late ignored and non-ignored files do not refuse the move and remain in the retained checkout; submodule changes still refuse.
+# Counts include archived untracked leaves inside nested repositories; directories do not count.
+# Linked and detached worktrees refuse and name their paths.
 # Target probes run in the container phase before quiesce; an unreachable SQL or Redis target leaves the awake marker,
 # checkout and host Process states untouched. Restore deletes the failed container and its exact target rules only.
 # Process fixtures stop and disable host units before copying, install private Process environments in the container,
@@ -41,7 +44,7 @@ uncovered:
   "code:process.container_path_unsupported": "Pest covers external cwd, environment files and absolute environment values, including traversal before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
   "code:process.container_port_conflict": "Pest covers missing/reserved ports, duplicate presets and recorded Process port conflicts before runtime reservation; the proof fleet lacks the Instance pool/image for migration cases."
   "code:instance.migrate_symlink_unsupported": "The proof fleet lacks the Instance pool/image. Python and Ansible fixtures cover absolute in-checkout rewrites, exact relative-link preservation, dependency package links, unchanged installed package contents, non-UTF-8 names and targets, and named external/broken-link refusals before downtime and after archive-time changes without changing the source."
-  "code:instance.migrate_retirement_blocked": "The proof fleet lacks the Instance pool/image. Ansible fixtures cover dirty tracked and non-ignored untracked files, linked/detached and same-batch worktrees, bounded named errors, and blockers added after preflight. Live proof uses owned clean fixtures and separate blocker fixtures when the pool is available."
+  "code:instance.migrate_retirement_blocked": "The proof fleet lacks the Instance pool/image. Ansible fixtures cover dirty tracked files, linked/detached and same-batch worktrees, bounded named errors, and blockers added after preflight. Live proof uses owned clean fixtures and separate blocker fixtures when the pool is available."
 
   "code:instance.migrate_unpushed_commits": "Ansible fixtures cover every local branch and a detached HEAD, counts against all local remote-tracking refs, and source preservation. Live proof needs the Instance pool/image."
   "code:instance.migrate_stashes_present": "Ansible fixtures cover multiple stash entries, their count and source preservation. Live proof needs the Instance pool/image."

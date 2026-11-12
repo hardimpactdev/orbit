@@ -72,7 +72,7 @@ class DeliveryGateTest(unittest.TestCase):
                     self.run_gate(needs)
 
     def test_only_explicit_false_permits_skips_and_selections_are_complete_booleans(self):
-        for job in ('cli', 'gateway-tests', 'cli-tests', 'gateway-static', 'api-reference'):
+        for job in ('cli', 'gateway-tests', 'cli-tests', 'sdk-tests', 'gateway-static', 'api-reference'):
             for value in (False, None, 'false', 0):
                 needs = needs_for()
                 needs[job]['result'] = 'skipped'

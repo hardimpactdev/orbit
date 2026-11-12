@@ -38,6 +38,7 @@ type WrittenFailure = Partial<z.infer<typeof MailReceipt>> & {
     preflight_refused?: boolean;
     retained_git_path?: string;
     retained_git_at?: string;
+    untracked_files_copied?: number;
 };
 type Phases = z.infer<typeof MigratePhases>;
 
@@ -102,6 +103,7 @@ export function migrateResult(
         ...(translations.length ? { process_translations: translations } : {}),
         ...(failed?.[0] === "container" && refusal !== null && written?.preflight_refused === true ? { preflight_refused: true } : {}),
         ...(commit ? { commit } : {}),
+        ...(phases.files === "succeeded" && written?.untracked_files_copied !== undefined ? { untracked_files_copied: written.untracked_files_copied } : {}),
         ...(moved && written?.retained_git_path && written?.retained_git_at ? { retained_git_path: written.retained_git_path, retained_git_at: written.retained_git_at } : {}),
         ...(moved && server ? { t3: JSON.parse(server) } : {}),
         ...(refusal !== null && written?.error_message ? { error_message: written.error_message } : {}),
@@ -110,7 +112,7 @@ export function migrateResult(
     return { ready: failed === undefined, stdout: JSON.stringify(result) };
 }
 
-/** Read the public phase failure and the separate retention receipt, which survives a later retirement failure. */
+/** Read the public phase failure and separate retention, mail and copied-file receipts. */
 export async function writtenFailure(folder: string): Promise<WrittenFailure | null> {
     let failure: WrittenFailure = {};
     let retained: WrittenFailure = {};
@@ -129,6 +131,12 @@ export async function writtenFailure(folder: string): Promise<WrittenFailure | n
         const parsed = MailReceipt.safeParse(JSON.parse(await Deno.readTextFile(`${folder}/mail-result.json`)));
         if (parsed.success) mail = parsed.data;
     } catch { /* A bounded mail failure is named by its phase status, without failing migration. */ }
-    const result = { ...failure, ...retained, ...mail };
+    let files: Pick<WrittenFailure, "untracked_files_copied"> = {};
+    try {
+        const parsed = z.object({ untracked_files_copied: z.number().int().nonnegative() }).safeParse(
+            JSON.parse(await Deno.readTextFile(`${folder}/untracked-files.json`)));
+        if (parsed.success) files = parsed.data;
+    } catch { /* No complete copy receipt. */ }
+    const result = { ...failure, ...retained, ...mail, ...files };
     return Object.keys(result).length > 0 ? result : null;
 }

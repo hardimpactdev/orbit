@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "2ea2e73956abfe51b7f6cfece2adee83f5a788085f53e01bbad703db0a82c2bf",
+    "source_sha256": "eaea621b747d1fe1463bb9465326941f7f9d988308e12d38ebe92bad51361ab6",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -11,6 +11,9 @@
       "the exact archive tree handles relative link changes after preflight and preserves rollback",
       "the exact archive tree handles outside link changes after preflight and preserves rollback",
       "the exact archive tree handles broken link changes after preflight and preserves rollback",
+      "untracked non-ignored files and nested repository leaves migrate with an exact archived file count",
+      "late ignored and non-ignored files do not refuse a move and remain in the retained checkout",
+      "untracked files inside a tracked submodule retain the named retirement refusal even when Git config ignores it",
       "a retained default copies its unpushed commit and changed, staged, untracked, deleted and ignored files",
       "a linked checkout refuses retirement even when the default is in the same retirement batch",
       "a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact",
@@ -19,7 +22,7 @@
       "a checkout on another branch than the recorded one is refused before anything changes",
       "a database server that the container cannot reach refuses the move, and the copy leaves nothing behind",
       "a database server that listens is reached from the container",
-      "preflight names linked and detached worktrees and every tracked or untracked change before any Node change",
+      "preflight names linked and detached worktrees and every tracked change before any Node change",
       "retirement error lists stop at 20 entries with total counts",
       "retirement rechecks changes created after preflight and leaves the container and source intact",
       "retirement rechecks worktree created after preflight and leaves the container and source intact",
@@ -94,7 +97,12 @@
       "24 moved workers share one five-second settle window inside the 120-second process phase budget",
       "the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step",
       "an unsafe copied app service refuses before downtime and restore changes nothing",
-      "an unreadable copied environment refuses before downtime and restore preserves the source"
+      "an unreadable copied environment refuses before downtime and restore preserves the source",
+      "stock selector preflight: stock Laravel",
+      "stock selector preflight: real53",
+      "stock selector preflight: selected Redis",
+      "stock selector preflight: attached Redis",
+      "stock selector preflight: wrong Redis port"
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
@@ -1903,7 +1911,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "e0cea7c4856c72351dd3c4d77e5076f76f5ac6ddc37a3aa3e6f3e4d0a3a7eb45",
+    "source_sha256": "ccdee12065c4cc149312ad2c0ceb472f9fba037567b1f357fe3fc171a54f6a1f",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -1927,7 +1935,9 @@
       "the receipt lists every projected Process command translation on success and restoration",
       "mail failure is an advisory warning and cannot fail or restore a completed migration",
       "migration retains each exact-line outcome and the named path conflict without values",
-      "missing or malformed successful mail receipts become advisory warnings"
+      "missing or malformed successful mail receipts become advisory warnings",
+      "the copied untracked count includes zero, excludes paths and survives later failure",
+      "invalid or incomplete copied-file receipts do not claim a count"
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {
@@ -1974,6 +1984,21 @@
       "the files Orbit renders do not count as unpushed work, at any depth",
       "any other change is still work that is not pushed",
       "every destroy Ansible step enables failed task stderr"
+    ]
+  },
+  "swamp/tests/ansible_route_site_test.py": {
+    "source_sha256": "9ebdb0ecbc366af2030d46d6f17c87b19f54424ff98c2d1be5340c74a47c68ee",
+    "cases": [
+      "test_certificate_links_account_copy_modes_and_literal_caddy_text",
+      "test_existing_file_mode_drift_clears_unwanted_special_bits",
+      "test_same_content_destination_symlinks_are_replaced_without_touching_targets",
+      "test_failed_validation_keeps_candidate_but_never_reloads_or_marks_awake",
+      "test_retry_after_reload_failure_completes_without_rewriting_public_files",
+      "test_php_only_publication_needs_no_caddy_group",
+      "test_production_workspace_app_url_links_and_php_tasks_are_unchanged",
+      "test_csr_action_owns_folder_and_key_before_public_request_returns",
+      "test_real_production_phase_keeps_access_app_url_php_links_and_reload",
+      "test_reused_input_is_read_only_and_child_cleanup_keeps_its_own_folder"
     ]
   }
 }

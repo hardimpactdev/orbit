@@ -248,7 +248,9 @@
     - name: List the files to copy and the files the checkout deleted
       ansible.builtin.shell:
         cmd: >-
-          { {{ git }} diff --name-only -z --diff-filter=d HEAD && {{ git }} ls-files -z --others; } > "$ORBIT_LIST"
+          {{ git }} diff --name-only -z --diff-filter=d HEAD > "$ORBIT_LIST"
+          && {{ git }} ls-files -z --others > "$ORBIT_UNTRACKED"
+          && cat "$ORBIT_UNTRACKED" >> "$ORBIT_LIST"
           && {{ git }} diff --name-only -z --diff-filter=D HEAD > "$ORBIT_DELETED"
           && tar -C "$ORBIT_CHECKOUT" --null --files-from "$ORBIT_LIST" -cf "$ORBIT_ARCHIVE"
         executable: /bin/sh
@@ -256,10 +258,18 @@
         git: "{{ checkout_git | map('quote') | join(' ') }}"
       environment:
         ORBIT_LIST: "{{ node_archive }}.list"
+        ORBIT_UNTRACKED: "{{ node_archive }}.untracked"
         ORBIT_DELETED: "{{ node_archive }}.deleted"
         ORBIT_ARCHIVE: "{{ node_archive }}.tar"
         ORBIT_CHECKOUT: "{{ migrate.checkout }}"
       changed_when: true
+    - name: Count archived untracked leaves
+      ansible.builtin.command:
+        argv: [python3, '-', "{{ node_archive }}.tar", "{{ node_archive }}.untracked"]
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_files.py') }}"
+      register: migrate_untracked_count
+      changed_when: false
+      no_log: true
     - name: Push the archive and the deleted files into the container
       ansible.builtin.command:
         argv: >-
@@ -294,11 +304,25 @@
   always:
     - name: Remove the archive on the Node
       ansible.builtin.file: { path: "{{ node_archive }}{{ item }}", state: absent }
-      loop: [".tar", ".list", ".deleted"]
+      loop: [".tar", ".list", ".untracked", ".deleted"]
     - name: Remove the archive in the container
       ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_archive ~ '.tar', container_archive ~ '.deleted'] }}" }
       changed_when: false
       failed_when: false
+
+- name: Record the copied untracked file count for the terminal result
+  when: phase == 'files'
+  no_log: true
+  ansible.builtin.copy:
+    content: "{{ migrate_untracked_count.stdout }}"
+    dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/untracked-files.json"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
 # `.env` came as it was. A path in it that points into the checkout, such as a SQLite file's, points into the workspace now.
 - name: Point .env at the workspace
