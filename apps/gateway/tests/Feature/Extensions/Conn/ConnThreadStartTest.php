@@ -1245,7 +1245,8 @@ function threadLegacySnapshot(mixed $value, ?string $key = null): mixed
     return $value;
 }
 
-it('matches the main a38e037e no-branch intent steps result and resume snapshot byte for byte', function (): void {
+// Frozen from main a38e037e; accepted delta: clone-mail progress folds into clone-container.
+it('matches the installed-client no-branch intent steps result and resume snapshot byte for byte', function (): void {
     $this->freezeTime();
     $default = threadDefault($this->beast, 'tool');
     $operation = threadCreate($this->phone, $default->project, 'fix-login');
@@ -1267,11 +1268,11 @@ it('matches the main a38e037e no-branch intent steps result and resume snapshot 
     }
     $snapshot = json_encode(['input' => $initial, 'clone_steps' => $steps, 'failed_result' => $failedResult,
         'resume' => threadLegacySnapshot($resume->input)], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
-    $path = __DIR__.'/../../../Fixtures/conn-create-no-branch-a38e037e.json';
+    $path = __DIR__.'/../../../Fixtures/conn-create-no-branch-folded-mail.json';
     expect($snapshot)->toBe(file_get_contents($path));
 });
 
-it('adds explicit branch fields to a successful clone receipt without replacing existing fields', function (?array $branch): void {
+it('adds explicit branch fields to a successful clone receipt without replacing existing fields', function (?array $branch, bool $mailFailure = false): void {
     $default = threadDefault($this->beast, 'tool');
     if ($branch !== null) {
         threadBranchRemote();
@@ -1300,6 +1301,10 @@ it('adds explicit branch fields to a successful clone receipt without replacing 
         'environment_id' => 'env-branch', 'server_version' => '0.1.7', 'expires_at' => '2026-12-10T10:00:00.000Z',
         'gateway_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-gateway-1-token'],
         'swamp_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-swamp-1-token']]];
+    if ($mailFailure) {
+        $native['mail'] = ['status' => 'failed', 'reason' => 'instance.mail_update_failed', 'ports' => [1025, 2525]];
+        $native['warnings'] = [['code' => 'instance.mail_update_failed', 'step' => 'mail']];
+    }
     app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
         'status' => 'succeeded', 'run_id' => 'success-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => $native]);
     $additions = $branch === null ? [] : ['branch' => $branch['mode'] === 'new' ? 'fix-login' : 'feature/login',
@@ -1307,7 +1312,7 @@ it('adds explicit branch fields to a successful clone receipt without replacing 
     expect($operation->refresh()->result)->toBe([...$native, ...$additions, 'mail_keys_set' => []]);
     threadCall($this->phone, 'GET', "operations/{$operation->id}")->assertOk()->assertJsonPath('data.status', 'succeeded');
 })->with([
-    'legacy' => [null], 'new' => [['mode' => 'new', 'from' => 'release']], 'existing' => [['mode' => 'existing', 'name' => 'feature/login']],
+    'legacy' => [null], 'legacy mail warning' => [null, true], 'new' => [['mode' => 'new', 'from' => 'release']], 'existing' => [['mode' => 'existing', 'name' => 'feature/login']],
 ]);
 
 it('preserves core creates that intentionally put two Instances on one branch', function (): void {
