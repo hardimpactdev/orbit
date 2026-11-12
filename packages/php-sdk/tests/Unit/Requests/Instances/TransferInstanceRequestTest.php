@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Orbit\Sdk\Responses\Instances\InstanceTransferProgressResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -14,7 +17,12 @@ use Saloon\Http\Faking\MockResponse;
 describe(TransferInstanceRequest::class, function (): void {
     it('posts the exact transfer request and maps destination placement and transfer progress', function (): void {
         $mock = new MockClient([
-            TransferInstanceRequest::class => MockResponse::make(transfer_instance_envelope(), 201),
+            TransferInstanceRequest::class => MockResponse::make([
+                'data' => ['id' => 901, 'kind' => 'instance.transfer', 'target_type' => 'instance',
+                    'target_id' => 11, 'status' => 'queued', 'sequence' => 1, 'steps' => []],
+                'meta' => ['request_id' => transfer_instance_request_id()],
+            ], 202),
+            ShowInstanceRequest::class => MockResponse::make(transfer_instance_envelope()),
         ]);
         $connector = transfer_instance_connector($mock);
         $request = new TransferInstanceRequest(
@@ -24,8 +32,23 @@ describe(TransferInstanceRequest::class, function (): void {
             sqliteSourcePath: '/srv/source/database.sqlite',
         );
 
-        $response = $connector->send($request)->dto();
+        $operation = $connector->send($request)->dto();
         $pending = $mock->getLastPendingRequest();
+
+        expect($operation)->toBeInstanceOf(OperationResponse::class)
+            ->and($operation->id)->toBe(901)
+            ->and($operation->kind)->toBe('instance.transfer')
+            ->and($operation->targetType)->toBe('instance')
+            ->and($operation->targetId)->toBe(11)
+            ->and($operation->status)->toBe('queued')
+            ->and($operation->terminal())->toBeFalse()
+            ->and($operation->requestId)->toBe(transfer_instance_request_id());
+
+        $read = new ShowInstanceRequest($operation->targetId);
+        $response = $connector->send($read)->dto();
+        expect($read->getMethod())->toBe(Method::GET)
+            ->and($read->resolveEndpoint())->toBe('/api/v1/instances/11')
+            ->and($read)->not->toBeInstanceOf(HasBody::class);
 
         expect($request->getMethod())
             ->toBe(Method::POST)
