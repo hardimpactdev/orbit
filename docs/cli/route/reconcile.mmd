@@ -54,7 +54,7 @@ sequenceDiagram
     %%> How the Gateway knows the cutover:
     %%> - it derives it from the failed step, as for `route:update`; a step up to the DNS move is before it
     %%> Result before the cutover:
-    %%> - the old Routes stay authoritative and the replacements are `failed`; the Gateway restores the Laravel URLs and private DNS; a failed Caddy validation leaves the candidate file and stops the reload
+    %%> - the old Routes stay authoritative and the replacements are `failed`; the Gateway restores the Laravel URLs and private DNS; a failed Caddy validation leaves the live file unchanged, removes the candidate and skips reload
     %%> Result after the cutover:
     %%> - a failure in the DNS grace or the withdrawal leaves the new placement authoritative and the old one retiring; a rerun finishes
     %%> On the Nodes:

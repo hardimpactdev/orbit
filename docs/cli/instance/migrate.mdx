@@ -53,7 +53,7 @@ The attached targets in [instance:show](/cli/instance/show) are the connections 
 
 Untracked files enter the default's seed snapshot and every clone made from it, as ignored dependencies and build output already do. A later branch that tracks one of those paths can refuse checkout in a clone or deploy. A credentials file someone forgot to ignore travels into the seed like `.env` does.
 
-The Operation result reports `untracked_files_copied` after a successful file-copy phase: the count of archived untracked leaf entries, including ignored files, files inside nested repositories (including their `.git` data), and symlinks. Directories do not count; symlinks count once. Human output says how many were copied. This adds no file paths or contents to the result.
+The Operation result reports `untracked_files_copied` after a successful file-copy phase: the count of copied untracked files that Git does not ignore, selected by `git ls-files --others --exclude-standard -z` at archive time. A selected nested repository contributes its archived leaf files. Directories do not count; symlinks count once. Ignored files are still copied. Human output says how many were copied. This adds no file paths or contents to the result.
 
 A file created or changed in the old checkout after the copy stays in the retained checkout, as ignored files do today; migration quiesces its Processes before the copy, and retention keeps everything.
 

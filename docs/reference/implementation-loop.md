@@ -723,7 +723,7 @@ Clone branch fixtures use unprivileged local Git repositories and run without an
 
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise.
 
-Migration fixtures check that untracked files survive copying and retirement, while tracked changes, stashes, unpushed commits and other worktrees retain their refusal codes. Batch phase plays in one Ansible invocation to keep each fixture within three playbook launches; update registered case names and costs together.
+Migration fixtures check that untracked files survive copying and retirement, that the count includes only untracked files that Git does not ignore, and that tracked changes, stashes, unpushed commits and other worktrees retain their refusal codes. Batch phase plays in one Ansible invocation to keep each fixture within three playbook launches; update registered case names and costs together.
 
 The mail fixture executes the production prefix whitelist, the reviewed bare-CR and comment-grouping regressions, and a realistic thirty-line file. It preserves `lines` beside `guard_line` and uses three Ansible launches. Gateway tests compare every admitted shape with installed phpdotenv; Swamp fixtures need no PHP or Composer installation.
 
@@ -732,3 +732,5 @@ The Route site fixture runs unprivileged. It checks the shipped file converger a
 The destroy guard is admission only. Tests pin the workflow to its pre-guard main bytes and prove retry/dispatch does not recheck Git after dismantling begins. Candidate pointer failures retain named warnings; target failures and confirmed dependents refuse before record or trigger changes.
 
 The container Schedule fixture checks timer installation and advisory activation with three Ansible launches. It executes the journal module directly for byte and transport limits. Its declared cost includes startup; inventory and case costs change together.
+
+The Caddy candidate fixtures execute each changed writer with invalid and valid candidates. They keep every path and stand-in under a private temporary directory, run Ansible without facts or privilege, preserve relative-import directories and prove invalid input leaves live bytes unchanged with no reload.

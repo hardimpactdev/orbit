@@ -275,18 +275,17 @@
   loop_control: { label: "{{ item.name }}" }
   notify: Reload Caddy
 - name: Write the front
-  ansible.builtin.copy:
-    dest: /etc/caddy/Caddyfile
-    content: |
+  ansible.builtin.import_tasks: caddy-publish.yml
+  vars:
+    caddy_content: |
       # Managed by Orbit: the front of the Swamp control plane until the Gateway publishes it as a Route.
       swamp.orbit:443 {
         tls {{ (front_certificate.stdout | from_json).directory }}/cert.pem {{ (front_certificate.stdout | from_json).directory }}/key.pem
         reverse_proxy 127.0.0.1:9418
       }
-    owner: root
-    group: root
-    mode: "0644"
-  notify: Reload Caddy
+    caddy_group: root
+    caddy_mode: "0644"
+    caddy_notify: [Reload Caddy]
 - name: Apply the handlers before the start
   ansible.builtin.meta: flush_handlers
 - name: Start serve
