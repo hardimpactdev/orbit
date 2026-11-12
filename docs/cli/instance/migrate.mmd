@@ -57,6 +57,7 @@ sequenceDiagram
   %%> - deletes a container that an earlier failed move left, then creates and starts the new container through the shared container phase; discard leaves shared bridge endpoint rules for host reconciliation
   %%> - each attached target gets an exact TCP allow in both the bridge and NIC ACLs; both keep default reject. Endpoint adds reread on ETag conflict, at most five attempts with a one-second delay
   %%> - probes every attached target from inside the container before downtime, else `instance.database_unreachable`
+  %%> - attached Node services wait up to three seconds per target, polling every 50 ms; `instance.node_service_unreachable` names the last reason, both unit states and elapsed time (see the Node service targets reference)
   %%> - checks mapped Process executables inside the container, then repeats before quiesce; unavailable paths report `instance.migrate_process_binary_unavailable` naming every Process and path, leaving the checkout serving
   %%> - fetches the branch from the checkout into the Node's mirror, including commits never pushed
   SW->>C: Prepare Node runtimes<br/>Ansible · tags node-runtime
