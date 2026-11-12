@@ -284,13 +284,25 @@ A remote target created after the Node's final head read cannot be detected by c
 
 Checkout stays inside `clone-workspace`. No setup or deploy command runs again after checkout. Dependencies and build come from the default's seed, and may need an install or build for the selected code.
 
-Conn follows that Operation with `GET /operations/{id}`. Conn Operation show also shows an `instance.create` that the caller started, here or with `instance:create`. Conn Operation cancel does not cancel it.
+Conn follows that Operation with `GET /operations/{id}`. Conn Operation show also shows an `instance.create` or `instance.destroy` that the caller started, here or with the core Instance API. Conn Operation cancel does not cancel it.
 
 Operation show returns the same recorded `steps` as core Operation show, in recorded order: `name`, `job`, `status`, `started_at` and `finished_at`. Steps contain no command output, secrets or environment values. Both endpoints accept `after_sequence` but currently return all recorded steps.
 
 Conn maps these stable container-clone step names to stage detail, in this order: `clone-container`, `clone-workspace`, `clone-t3`, `clone-register`. Other steps can occur between them. Renaming or removing any of these four names is a breaking change for Conn.
 
 A server of an Instance names its `instance_id` and the container's `power_state`, `running` or `stopped`. Other servers have `null` for both. Conn shows a `stopped` server as asleep.
+
+## Remove an Instance
+
+`POST /instances/{id}/destroy` requires an `Idempotency-Key` and `{"acknowledge_unsaved": true|false}`. The caller needs access to the Instance's Node. Only non-default container Instances can be removed here. A default refuses with `instance.default_protected` (409); a host checkout refuses with `instance.not_container` (409). These checks do not change the CLI's destroy rules.
+
+Container Git observations are not available yet. Without acknowledgement, Orbit always refuses with `instance.unsaved_work` (409) and `{"uncommitted": null, "unpushed": null, "state": "unknown"}` in error details. Orbit never probes the container in this request. A refusal leaves Schedules, Routes, databases, pairings, environments and Operations unchanged.
+
+With acknowledgement, Orbit admits the existing `instance.destroy` engine with force enabled and answers its Operation with HTTP 202. Existing lifecycle, Route and database blockers keep their codes and messages. Schedule removal runs only after admission commits, before the native run starts. Follow the Operation on `GET /operations/{id}`; `succeeded`, `failed`, `cancelled` and `interrupted` are terminal.
+
+The same caller, key, Instance ID and body return the same Operation with HTTP 202, even after the Instance was deleted. Reusing the key with a changed body refuses with `operation.idempotency_conflict` (409). A missing Instance without that receipt keeps the normal 404.
+
+On success, the container, its volume and snapshots, T3 history, Instance-owned database records, pairings and environment entry are deleted. The Route is withdrawn and deleted. Only owned databases are dropped; an owned database attached elsewhere refuses with its existing code, and shared or foreign databases stay. A migrated Instance's retired Git folder stays on the Node, and the Operation result retains `retained_git_path` and `retained_git_at`. See [Instance removal](/reference/instance-removal) for the engine's full cleanup and retry rules.
 
 ## Pairing and revocation
 
@@ -316,6 +328,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `GET /projects` | — | list of project |
 | `GET /projects/{id}/instances/check` | `name` query string | name, available, reason, domain |
 | `POST /projects/{id}/instances` | `{"name": "fix-login-k3j9"}` | Operation (202) |
+| `POST /instances/{id}/destroy` | `{"acknowledge_unsaved": true}` and `Idempotency-Key` | Operation (202) |
 | `GET /environments` | — | list of environment |
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |
 | `GET /environments/{environment_id}/pairings` | — | list of pairing, newest first |

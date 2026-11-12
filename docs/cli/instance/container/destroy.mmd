@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container non-default cleanup, ADR 0250 PR 6. Default destruction and guarded clone removal follow separately.
+  %% Non-default container cleanup. Conn admission precedes this forced engine; CLI admission keeps its existing rules.
   %% status: draft
   %% command: instance:destroy
   %% kind: instance.destroy
@@ -14,7 +14,15 @@ sequenceDiagram
   participant N as app-dev Node<br/>reached over ssh
   CLI->>GW: instance:destroy<br/>INSTANCE --yes --force
   %% path: main
-  %%> Requirements:
+  %%> Conn admission:
+  %%> - POST /api/v1/conn/instances/ID/destroy requires an Idempotency-Key and acknowledge_unsaved as a JSON boolean
+  %%> - the caller needs access to the Instance's Node; a missing Instance is 404
+  %%> - a default answers 409 instance.default_protected; a host checkout answers 409 instance.not_container
+  %%> - without acknowledgement, answer 409 instance.unsaved_work with unknown state and null counts; no container Git observations exist yet
+  %%> - these refusals change no Schedule, Route, database, pairing, environment or Operation, and never probe the container
+  %%> - acknowledged removal uses this same engine with force=true; all existing engine blockers keep their codes
+  %%> - the same key and request returns the same Operation with 202, including after Instance deletion; a changed request is an idempotency conflict
+  %%> CLI requirements:
   %%> - Node access to the Instance's Node and no other lifecycle Operation holds the Instance
   %%> - this slice supports a non-default container Instance, cloned or migrated; the Instance named `default` remains unavailable
   %%> - `--force` is required until guarded removal is built; no work or turn check runs
@@ -31,6 +39,7 @@ sequenceDiagram
     Note over GW: Capture removal intent<br/>mark removing
     %%> Result:
     %%> - capture the clone's container identity, Route, Processes and owned databases
+    %%> - finish admission before Schedule removal; after commit, dispatch removes Schedules before starting the run
     %%> - keep its runtime row, address and T3 port reserved until terminal success
     %%> - Conn refuses new pairings while the Instance is removing
     GW->>SW: Start run, full intent<br/>operation-instance-destroy
