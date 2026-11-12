@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Actions\DatabaseConnections\PrepareOwnedDatabaseDestructionAction;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
@@ -22,7 +21,6 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
-use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Route;
 use App\Models\Schedule;
@@ -53,13 +51,9 @@ final readonly class DirectInstanceDestroyIntent
      */
     private function recordIntent(array $input): array
     {
-        app(ContainerInstanceDestroy::class)->assertAvailable(Instance::query()->lockForUpdate()->findOrFail(ValidatedData::integer($input['instance_id'])), $input['force'] === true);
+        app(ContainerInstanceDestroy::class)->assertAvailable(InstanceLifecycleInput::lock(ValidatedData::integer($input['instance_id'])), $input['force'] === true);
         $members = InstanceLifecycleInput::members($input);
-        if (Operation::query()->whereIn('kind', ['instance.destroy'])
-            ->where('target_type', 'instance')->whereIn('target_id', array_column($members, 'instance_id'))
-            ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
-            throw new ResourceOperationException('operation.target_busy', 'A removal root already owns this Instance.', 409);
-        }
+        InstanceLifecycleInput::assertIdle(ValidatedData::integerList(array_column($members, 'instance_id')));
         $stored = InstanceRemoval::query()->whereKey(ValidatedData::string($input['removal_id']))->first();
         if ($stored?->native_intent !== null) {
             return $this->replay($stored, $input);

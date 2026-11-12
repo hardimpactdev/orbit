@@ -65,6 +65,12 @@ final readonly class InstanceRestoreProjection implements DirectOperationProject
                 'route_id' => $operation->input['route_id']];
             if (! $success) {
                 $result['compensation_complete'] = $compensated;
+                if ($settlementFailed) {
+                    $result['details'] = ['reason' => 'fence_settlement_failed', 'databases' => array_merge(...array_map(
+                        static fn (array $server): array => array_column(RouteExecutionProof::objects($server['databases']), 'name'),
+                        RouteExecutionProof::objects($operation->input['servers']),
+                    ))];
+                }
                 $data['status'] = 'failed';
                 $data['error_code'] = $settlementFailure ?? ($compensated ? 'instance.restore_publication_failed' : 'instance.restore_compensation_failed');
             } else {

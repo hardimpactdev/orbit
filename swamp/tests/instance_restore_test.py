@@ -45,7 +45,7 @@ class InstanceRestoreTest(unittest.TestCase):
         return subprocess.run(["git", *args], check=True, capture_output=True, text=True, timeout=5)
 
     def read(self, member=None):
-        return self.program["source"]({"members": [member or self.member], "container": None})
+        return self.program["source"]({"members": [member or self.member], "container": None, "sqlite": []})
 
     def test_intact_source_read_preserves_checkout_and_reports_marker_baseline(self):
         marker = Path(self.member["awake_path"])
@@ -70,8 +70,22 @@ class InstanceRestoreTest(unittest.TestCase):
                 self.assertEqual(self.read(member)["data"]["reason"], "source_changed")
         self.assertEqual((self.checkout / "public/index").read_text(), "surviving source")
 
+    def test_every_planned_sqlite_file_must_survive_the_same_bounded_read(self):
+        first = self.checkout / "first.sqlite"
+        second = self.checkout / "second.sqlite"
+        first.write_bytes(b"surviving data")
+        second.write_bytes(b"other surviving data")
+        request = {"members": [self.member], "container": None, "sqlite": [
+            {"checkout": str(self.checkout), "path": str(path)} for path in (first, second)]}
+        self.assertEqual(self.program["source"](request)["outcome"], "intact")
+        second.unlink()
+        self.assertEqual(self.program["source"](request), {
+            "outcome": "refused", "data": {"reason": "sqlite_removed", "path": str(second)}})
+        self.assertEqual(first.read_bytes(), b"surviving data")
+        self.assertFalse(second.exists())
+
     def test_removed_container_refuses_before_reading_checkout(self):
-        request = {"members": [self.member], "container": {"project": "fixture", "name": "fixture"}}
+        request = {"members": [self.member], "container": {"project": "fixture", "name": "fixture"}, "sqlite": []}
         with patch.object(self.program["subprocess"], "run", return_value=subprocess.CompletedProcess([], 1)) as call:
             self.assertEqual(self.program["source"](request)["data"]["reason"], "container_removed")
             self.assertEqual(call.call_count, 1)

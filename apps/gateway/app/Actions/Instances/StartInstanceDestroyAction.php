@@ -63,14 +63,18 @@ final readonly class StartInstanceDestroyAction
         app(ContainerInstanceDestroy::class)->assertAvailable($instance, $force);
         $admission = $instance->status === InstanceState::Removing ? [] : app(InstanceDestroyWorktrees::class)->assertAvailable($instance);
         $snapshot = [...$this->snapshot($instance, $force), ...$admission];
+        InstanceLifecycleInput::assertIdle([$instance->id]);
         // A native Schedule fires from its own workflow on serve, not from the Node; it stops before the Instance goes.
         $members = array_column(is_array($snapshot['members'] ?? null) ? $snapshot['members'] : [], 'instance_id');
-        app(NativeSchedules::class)->removeForInstances($members === [] ? [$instance->id] : ValidatedData::integerList($members));
+        $memberIds = $members === [] ? [$instance->id] : ValidatedData::integerList($members);
 
-        return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId, $kind): Operation {
+        return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId, $kind, $memberIds): Operation {
             if (($replay = $this->idempotency->replay($kind)) !== null) {
                 return $replay;
             }
+            InstanceLifecycleInput::lock($instance->id);
+            InstanceLifecycleInput::assertIdle($memberIds);
+            app(NativeSchedules::class)->removeForInstances($memberIds);
             $input = app(DirectInstanceDestroyIntent::class)->record($snapshot);
             $input['run_budget_seconds'] = $this->budget($input);
 

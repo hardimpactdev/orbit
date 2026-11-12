@@ -80,7 +80,10 @@ final class RoutePublicationHolds
         if ($operation->kind === 'instance.restore' && $operation->status->terminal()
             && isset($operation->state['swamp_run_id']) && ($operation->result['restored'] ?? false) !== true
             && ($operation->result['compensation_complete'] ?? false) !== true) {
-            return true;
+            // Incomplete compensation is retryable, but must never reserve a Node forever.
+            // The minute sweep settles this hold even when the native terminal remains unknown.
+            return $operation->finished_at !== null
+                && $operation->finished_at->isAfter(now()->subMinutes(self::UnconfirmedMinutes));
         }
         if (ExpireOperationAction::awaitsSettlement($operation)) {
             return true;
@@ -136,7 +139,16 @@ final class RoutePublicationHolds
             $prior = Operation::query()->where('kind', 'instance.restore')->where('id', '<', $operation->id)
                 ->where('target_type', 'instance')->where('target_id', $operation->target_id)
                 ->where('input->removal_id', $operation->input['removal_id'])->whereIn('status', OperationStatus::terminalValues())->pluck('id');
-            DB::table('route_publication_holds')->whereIn('operation_id', $prior)->update(['operation_id' => $operation->id]);
+            $transferred = DB::table('route_publication_holds')->whereIn('operation_id', $prior)->update(['operation_id' => $operation->id]);
+            if ($transferred > 0) {
+                // Recovery already owns the Nodes that older waiters need. It must run, not wait behind them.
+                $nodes = self::nodes($operation);
+                if (DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereIn('node_id', $nodes)->count() !== count($nodes)) {
+                    throw new ResourceOperationException('operation.target_busy', 'Recovery requires its complete publication hold set.', 409);
+                }
+
+                return true;
+            }
         }
         // A kind that holds per step takes no Node at admission: its run calls for the hold around its Route-publish step.
         $nodes = self::applies($operation->kind) ? self::nodes($operation) : [];

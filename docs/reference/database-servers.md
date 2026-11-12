@@ -458,4 +458,4 @@ A first Valkey adoption refused before mutation releases only its reserved Datab
 
 A server recorded with `default_open=null` by an earlier release has unknown default access. ACL generation refuses that state until the operator verifies access.
 
-[Instance restore](/reference/instance-removal#restore-a-failed-removal) verifies every planned PostgreSQL database and user through the administrator catalog before it settles only the captured matching fence rows. It changes no database admission value.
+[Instance restore](/reference/instance-removal#restore-a-failed-removal) verifies every planned PostgreSQL database and user through the administrator catalog before it settles only the captured matching fence rows. In one transaction it restores journaled admission values and deletes the exact matching rows. A concurrent restore excludes creation only for its captured database and user names; unrelated names on the server remain available. Restore refuses an earlier create that owns captured names with `instance.restore_busy`.

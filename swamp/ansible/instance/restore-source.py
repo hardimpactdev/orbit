@@ -10,8 +10,8 @@ import sys
 from pathlib import Path
 
 
-def refuse(reason):
-    return {"outcome": "refused", "data": {"reason": reason}}
+def refuse(reason, **details):
+    return {"outcome": "refused", "data": {"reason": reason, **details}}
 
 
 def git(path, *arguments):
@@ -42,6 +42,17 @@ def source(request):
              "--project", container["project"]], capture_output=True, timeout=6, check=False)
         if result.returncode:
             return refuse("container_removed")
+    sqlite = request["sqlite"]
+    if len(sqlite) > 256:
+        return refuse("evidence_missing")
+    checkouts = {member["path"] for member in members}
+    for row in sqlite:
+        path = Path(row["path"])
+        checkout = Path(row["checkout"])
+        if str(checkout) not in checkouts or not path.resolve().is_relative_to(checkout.resolve()):
+            return refuse("evidence_missing")
+        if not path.is_file():
+            return refuse("sqlite_removed", path=str(path))
     awake = []
     for member in members:
         checkout = Path(member["path"])

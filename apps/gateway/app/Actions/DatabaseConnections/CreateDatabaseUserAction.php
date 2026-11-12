@@ -16,6 +16,7 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Adds or updates a SQL login and replaces its grants. Replication users get reader grants.
@@ -34,6 +35,17 @@ final readonly class CreateDatabaseUserAction
         CreateDatabaseUserData $data,
         string $createdBy,
     ): Operation {
+        return DB::transaction(function () use ($connection, $data, $createdBy): Operation {
+            if ($connection->database_server_id !== null) {
+                DatabaseServer::query()->whereKey($connection->database_server_id)->lockForUpdate()->firstOrFail();
+            }
+
+            return $this->record($connection, $data, $createdBy);
+        });
+    }
+
+    private function record(DatabaseConnection $connection, CreateDatabaseUserData $data, string $createdBy): Operation
+    {
         $server = $connection->server;
 
         if ($data->replication && ($connection->driver !== DatabaseDriver::Pgsql || ($server instanceof DatabaseServer && $server->driver !== DatabaseDriver::Pgsql))) {
@@ -60,7 +72,7 @@ final readonly class CreateDatabaseUserAction
             throw new ResourceOperationException('validation.failed', 'A PostgreSQL password must contain printable ASCII characters.', 422);
         }
 
-        app(DatabaseDestroySafety::class)->assertAcceptsCreates($server);
+        app(DatabaseDestroySafety::class)->assertAcceptsCreates($server, [$connection->database], [$data->username]);
 
         $ownsConnection = DatabaseConnection::query()
             ->where('database_server_id', $server->id)

@@ -869,4 +869,4 @@ Native Cluster Router admission captures Caddy recipe candidates through the sam
 
 Site rendering uses only live Instance removal members. Abandoned history does not retain the unavailable site from a previous removal.
 
-[Instance restore](/reference/instance-removal#restore-a-failed-removal) republishes the same Route through Route creation's certificate, site, TLS and DNS phases. Failed publication is withdrawn before its publication holds are released.
+[Instance restore](/reference/instance-removal#restore-a-failed-removal) republishes the same Route through Route creation's certificate, site, TLS and DNS phases. Failed publication is withdrawn before its publication holds are released. Incomplete restore compensation keeps the holds for at most 15 minutes after its terminal result. A stopped retry inherits the complete hold set and runs ahead of overlapping waiters.

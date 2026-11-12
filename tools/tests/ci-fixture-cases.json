@@ -2134,11 +2134,12 @@
     ]
   },
   "swamp/tests/instance_restore_test.py": {
-    "source_sha256": "442f11cbc42b152c26871fb210c300227b6a654983d56de00503793c2051f2ae",
+    "source_sha256": "f7073235235466e063724ba9ce8da267e5cc3e738601ec54061e7a3aeff09701",
     "cases": [
       "test_intact_source_read_preserves_checkout_and_reports_marker_baseline",
       "test_source_deletion_refuses_without_creating_anything",
       "test_changed_branch_origin_commit_or_workspace_refuses",
+      "test_every_planned_sqlite_file_must_survive_the_same_bounded_read",
       "test_removed_container_refuses_before_reading_checkout",
       "test_restore_fixture_makes_the_checkout_writable_before_git_initialization",
       "test_restore_proof_has_a_runnable_isolated_slot_fixture_and_three_cli_stages",

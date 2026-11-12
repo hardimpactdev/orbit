@@ -22,6 +22,7 @@ use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Instance;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -65,6 +66,9 @@ final readonly class CreateServerDatabaseAction
             app(DatabaseDestroySafety::class)->assertAcceptsCreates($server);
             app(SwampSshExecutionInput::class)->forNode($server->node);
             if (($retry = $this->retries->prepare($data)) !== null) {
+                $connection = DatabaseConnection::query()->findOrFail(ValidatedData::integer($retry->input['connection_id']));
+                app(DatabaseDestroySafety::class)->assertAcceptsCreates($server, $this->databaseNames($connection), [ValidatedData::string($connection->username)]);
+
                 return $retry;
             }
             if ($data->testProcesses !== null && ($server->driver === DatabaseDriver::Redis || $data->instanceId === null)) {
@@ -152,19 +156,29 @@ final readonly class CreateServerDatabaseAction
     private function record(DatabaseServer $server, DatabaseConnection $connection, bool $repair, ?Instance $instance, ?CreateServerDatabaseData $redis): PreparedDatabaseOperation
     {
         $test = $connection->test_database;
-        $processes = $connection->test_processes;
         $safe = ['repair' => $repair, 'driver' => $server->driver->value, 'username' => $connection->username,
-            'databases' => $redis !== null ? [] : [$connection->database, ...($test === null ? [] : ($processes === null ? [$test] : $this->postgresTests->names($test, $processes)))],
+            'databases' => $redis !== null ? [] : $this->databaseNames($connection),
             'test_prefix' => $server->driver === DatabaseDriver::Mysql ? $test : null, 'locale' => $connection->locale,
             'host' => $server->node->wireguard_ip, 'port' => $server->port,
             'container' => app(DockerProcessRenderer::class)->containerName($server->process ?? throw new ResourceOperationException('database.server_command_failed', 'The server has no Process.', 502)),
             'index' => $redis?->database, 'patterns' => $redis->patterns ?? [], 'allow' => $redis->allow ?? []];
+
+        app(DatabaseDestroySafety::class)->assertAcceptsCreates($server, $safe['databases'], [ValidatedData::string($connection->username)]);
 
         return $this->operations->prepare('database.create', 'database_server', $server->id, $server->node_id,
             ['connection_id' => $connection->id, 'server_id' => $server->id, 'driver' => $server->driver->value],
             ['database-apply' => ['name' => 'database.create', 'input' => [...$safe,
                 'payload' => ['password' => $connection->password, 'salt' => base64_encode(random_bytes(16))]], 'protected' => ['payload'], 'redactions' => [$connection->password]]],
             ['created_connection' => $connection->id, 'attach_instance' => $instance?->id]);
+    }
+
+    /** @return list<string> */
+    private function databaseNames(DatabaseConnection $connection): array
+    {
+        $test = $connection->test_database;
+
+        return [$connection->database ?? '', ...($test === null ? [] : ($connection->test_processes === null
+            ? [$test] : $this->postgresTests->names($test, $connection->test_processes)))];
     }
 
     private function server(string $slug): DatabaseServer

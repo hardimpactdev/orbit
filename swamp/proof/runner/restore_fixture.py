@@ -100,7 +100,11 @@ def execute(run, args):
                 'instance': instance, 'slug': slug, 'removal': failed['removal'],
                 }.items()})
             run.names[alias + '.before'] = before
-            run.names[alias + '.catalog'] = catalog(run, node, container, failed['plan'])
+            captured = catalog(run, node, container, failed['plan'])
+            # The failed fence can leave admission closed. Restore must reopen it without changing identity.
+            for database_row in captured['databases']:
+                database_row['allow'] = True
+            run.names[alias + '.catalog'] = captured
             return []
         slug = run.names[alias + '.slug']
         current = guest(run, 'inspect', slug)
@@ -119,6 +123,11 @@ def execute(run, args):
             failures.append('restore did not preserve abandoned history and active records')
         if catalog(run, node, current['container'], current['plan']) != run.names[alias + '.catalog']:
             failures.append('restore changed the captured database or user identities')
+        names = ','.join("'" + name.replace("'", "''") + "'" for name in current['plan']['databases'])
+        if sql(run, node, current['container'],
+               "SELECT count(*) FROM orbit_admin.database_removal_fences "
+               f"WHERE datname IN ({names});\n") != '0':
+            failures.append('restore left journal rows for its planned databases')
         if sql(run, node, current['container'], "SELECT count(*) FROM pg_replication_slots WHERE slot_name='restore_proof' AND active;\n") != '1':
             failures.append('replication slot did not stay active')
         address = run.fleet.nodes[node]['bridge']

@@ -21,7 +21,7 @@ sequenceDiagram
   %%> - lock the Instance, removal, databases and Route publication
   %%> - the latest live removal failed and all its native runs conclusively stopped
   %%> - no queued, running or waiting lifecycle, Process or Schedule work
-  %%> - one bounded source read proves checkout, workspace and Git identity
+  %%> - one bounded source read proves checkout, workspace, Git identity and every planned SQLite file
   %%> - an admin catalog read proves every planned database, user and ownership
   alt already restored
     %% path: already-restored
@@ -39,14 +39,14 @@ sequenceDiagram
     %%> Captures:
     %%> - this removal's own verified journal rows, Route and targets
     %%> - keep the Instance removing and the removal failed/live
-    %%> - keep publication holds until terminal compensation settles
+    %%> - retain incomplete compensation holds for at most 15 minutes after the terminal result; a stopped retry inherits them and runs before overlapping waiters
     GW-->>CLI: 202 Accepted
     %%> Result:
     %%> - follow the instance.restore Operation
     SW->>N: Settle database fences<br/>Ansible · settle
     %%> What it does:
-    %%> - delete only captured matching name, OID and allow-connections rows; already absent succeeds
-    %%> - refuse identity or admission drift; no ALTER and no schema-wide delete
+    %%> - restore admission from the captured journal, then delete only matching name, OID and allow-connections rows in one transaction
+    %%> - recheck database and owner identities under catalog locks; refuse journal or admission drift with database names; absent rows succeed only when admission is already restored
     SW->>N: Republish the Route<br/>operation-route-create
     %%> What it does:
     %%> - reuse the CSR, sign, site, TLS and DNS children with the same Route, targets and domain

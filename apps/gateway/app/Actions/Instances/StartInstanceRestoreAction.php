@@ -8,6 +8,7 @@ use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\DatabaseServers\InstanceRestoreFence;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Instances\InstanceLifecycleInput;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationIdempotency;
@@ -47,9 +48,7 @@ final readonly class StartInstanceRestoreAction
         }
 
         return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
-            $instance = Instance::query()->lockForUpdate()->findOrFail($instance->id);
-            // SQLite's admission mutex must be held across external evidence and publication capture too.
-            DB::table('instances')->where('id', $instance->id)->update(['updated_at' => $instance->getRawOriginal('updated_at')]);
+            $instance = InstanceLifecycleInput::lock($instance->id);
             if ($instance->status === InstanceState::Active) {
                 return $this->alreadyRestored($instance, $caller, $requestId);
             }
@@ -109,7 +108,7 @@ final readonly class StartInstanceRestoreAction
             }
             $relatedProcesses = Process::query()->whereIn('owner_type', Instance::morphTypes())->whereIn('owner_id', $ids)->pluck('id')->all();
             $relatedSchedules = Schedule::query()->whereIn('target_type', Instance::morphTypes())->whereIn('target_id', $ids)->pluck('id')->all();
-            $this->idle($ids, ValidatedData::integerList($relatedProcesses), ValidatedData::integerList($relatedSchedules));
+            InstanceLifecycleInput::assertIdle($ids, ValidatedData::integerList($relatedProcesses), ValidatedData::integerList($relatedSchedules), 'instance.restore_busy');
             $this->stopped($removal, $processIds, $saved);
             $database = ValidatedData::object($detail['database'] ?? []);
             $connectionIds = ValidatedData::integerList($database['connection_ids'] ?? []);
@@ -156,7 +155,8 @@ final readonly class StartInstanceRestoreAction
                         'repository_identity' => $row->repository_identity, 'branch' => $row->branch,
                         'commit' => $row->source_commit ?: $row->starting_commit,
                         'awake_path' => RuntimeHibernation::awakePath(RuntimeHibernation::key($row->instance_id)),
-                    ])->all(), 'container' => $saved['container_destroy'] ?? null]);
+                    ])->all(), 'container' => $saved['container_destroy'] ?? null,
+                    'sqlite' => RouteExecutionProof::objects($database['sqlite'] ?? [])]);
             } catch (RemoteProgramFailed) {
                 self::refuse('evidence_missing', 'The bounded source survivor read could not finish.');
             }
@@ -166,9 +166,10 @@ final readonly class StartInstanceRestoreAction
                     'container_removed' => 'The planned Instance container is gone.',
                     'source_removed' => 'The planned checkout is gone.',
                     'source_changed' => 'The checkout, required workspace, branch, commit or Git origin no longer matches.',
+                    'sqlite_removed' => 'A planned SQLite file is gone: '.ValidatedData::string($source->data['path'] ?? ''),
                     default => 'The bounded source survivor evidence is incomplete.',
                 };
-                self::refuse($reason, $message);
+                self::refuse($reason, $message, $reason === 'sqlite_removed' ? ['path' => $source->data['path'] ?? null] : []);
             }
             $firstAttempt = Operation::query()->where('kind', 'instance.restore')->where('input->removal_id', $removal->id)->oldest('id')->first();
             $servers = app(InstanceRestoreFence::class)->capture($database, RouteExecutionProof::objects($firstAttempt?->input['servers'] ?? []));
@@ -203,22 +204,6 @@ final readonly class StartInstanceRestoreAction
             return $this->operations->execute('instance.restore', 'instance', $instance->id, $instance->node_id,
                 $input, $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
         });
-    }
-
-    /** @param list<int> $ids
-     * @param  list<int>  $processes
-     * @param  list<int>  $schedules
-     */
-    private function idle(array $ids, array $processes, array $schedules): void
-    {
-        if (Operation::query()->whereNotIn('status', OperationStatus::terminalValues())
-            ->where(function ($query) use ($ids, $processes, $schedules): void {
-                $query->where(fn ($row) => $row->where('target_type', 'instance')->whereIn('target_id', $ids))
-                    ->orWhere(fn ($row) => $row->where('target_type', 'process')->whereIn('target_id', $processes))
-                    ->orWhere(fn ($row) => $row->where('target_type', 'schedule')->whereIn('target_id', $schedules));
-            })->exists()) {
-            self::refuse('busy', 'Lifecycle, Process or Schedule work is still queued, running or waiting.');
-        }
     }
 
     /** @param list<int> $processIds
@@ -264,7 +249,7 @@ final readonly class StartInstanceRestoreAction
             }
             foreach (['Delete the container' => 'container_removed', 'Remove the source' => 'source_removed',
                 'Stop, remove Processes' => 'processes_removed', 'Run teardown steps' => 'teardown_ran', 'Remove SQLite files' => 'sqlite_removed'] as $label => $reason) {
-                $matches = array_values(array_filter(RouteExecutionProof::objects($steps), static fn (array $row): bool => is_string($row['name'] ?? null)
+                $matches = array_values(array_filter(RouteExecutionProof::objects(array_values($steps)), static fn (array $row): bool => is_string($row['name'] ?? null)
                     && ($row['name'] === $label || str_starts_with($row['name'], $label.'-'))));
                 if (array_any($matches, static fn (array $row): bool => ($row['status'] ?? null) !== 'skipped')) {
                     self::refuse($reason, "Removal already ran {$label}; publication cannot reverse it.");
@@ -300,7 +285,8 @@ final readonly class StartInstanceRestoreAction
                 'skipped' => 'instance.already_restored'], $caller, $requestId, OperationStore::lockKey('instance', $instance->id));
     }
 
-    public static function refuse(string $reason, string $message): never
+    /** @param array<string,mixed> $details */
+    public static function refuse(string $reason, string $message, array $details = []): never
     {
         $group = match ($reason) {
             'not_failed', 'run_unsettled', 'source_changed' => 'state_invalid',
@@ -309,6 +295,6 @@ final readonly class StartInstanceRestoreAction
             'busy' => 'busy',
             default => 'database_changed',
         };
-        throw new ResourceOperationException('instance.restore_'.$group, $message, 409, details: ['reason' => $reason]);
+        throw new ResourceOperationException('instance.restore_'.$group, $message, 409, details: ['reason' => $reason, ...$details]);
     }
 }

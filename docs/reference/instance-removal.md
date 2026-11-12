@@ -3,7 +3,7 @@ title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, and how to retry an interrupted removal."
 covers:
   - apps/gateway/app/Actions/{Instances/{ProjectDirectInstanceDestroyAction,StartInstanceDestroyAction},DatabaseConnections/PrepareOwnedDatabaseDestructionAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,InstanceDestroyWorktrees.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,Removal/**}
+  - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,InstanceDestroyWorktrees.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,InstanceLifecycleInput.php,Removal/**}
   - apps/gateway/app/{Http/Requests/Instances/RemoveInstanceRequest,Models/InstanceRemoval,Models/InstanceRemovalMember}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
@@ -102,11 +102,15 @@ Existing removing, failed and completed records keep their meaning. The restore 
 
 ## Restore a failed removal
 
-[`instance:restore`](/cli/instance/restore) abandons an intact failed development removal. It admits only a removing Instance with a failed live removal, conclusive stopped-run evidence, no queued/running/waiting lifecycle or related Process/Schedule work, matching checkout/workspace/Git identity, and the whole planned database/user set with its ownership intact. Missing members, Route targets or source, removed containers, Processes, Schedule triggers or SQLite, and executed teardown refuse; publication cannot reverse them.
+[`instance:restore`](/cli/instance/restore) abandons an intact failed development removal. It admits only a removing Instance with a failed live removal, conclusive stopped-run evidence, no queued/running/waiting lifecycle or related Process/Schedule work, matching checkout/workspace/Git identity and every planned SQLite file, and the whole planned database/user set with its ownership intact. Missing members, Route targets or source, removed containers, Processes, Schedule triggers or SQLite, and executed teardown refuse; publication cannot reverse them.
 
 ### Admission and publication
 
-Admission holds the Instance, removal, database ownership and Route publication locks. When all checks pass, restore captures only this removal's verified database fence rows, identified by name, OID and allow-connections value. Settlement deletes those matching rows only; already absent is success. Identity or admission drift refuses, and the main database must already admit connections. Restore issues no ALTER and never clears the whole journal.
+One lifecycle admission rule prevents destroy and restore from overlapping. A destroy or its retry refuses queued, running or waiting Instance work with `operation.target_busy`; restore reports `instance.restore_busy` for the same conflict and for related Process or Schedule work.
+
+Admission holds the Instance, removal, database ownership and Route publication locks. When all checks pass, restore captures only this removal's verified database fence rows, identified by name, OID and allow-connections value. Under catalog locks, one transaction verifies the database and owner identities, restores each journaled admission value with ALTER DATABASE, then deletes only the matching rows.
+
+A database closed by the failed fence and one already reopened are both accepted when the captured journal permits them. Absent rows succeed only when admission already matches the captured destination. Identity, journal or admission drift refuses and names the databases in details. Restore never clears the whole journal.
 
 Restore republishes the same Route, targets and domain through Route creation's certificate, site, TLS and DNS phases. Its site phase writes only the awake marker. The cold marker stays absent; serving recreates the access log. The Instance and Route stay removing and retiring until publication and its check finish.
 
@@ -114,4 +118,4 @@ Restore republishes the same Route, targets and domain through Route creation's 
 
 One final Gateway transaction sets each member's `abandoned_at`, sets the removal to terminal `abandoned` with current/failed step and error cleared, and sets Instance and Route active with the Route published. History and existing checkpoints remain; `row_deleted_at` stays null. A live member has neither `row_deleted_at` nor `abandoned_at`; destroy admission, Instance JSON and site rendering share that scope. A later destroy captures a fresh removal identity and inventory. The old destroy Operation keeps its failure.
 
-Failure keeps the removal failed and live and the Instance removing. Compensation removes a newly written awake marker and withdraws partial site/DNS publication before the publication holds are released. It preserves the checkout, databases and completed fence settlement. Compensation failure remains explicit and retryable. A fresh restore attempt repeats safely; after success, the same restored state returns `instance.already_restored` from the verified receipt.
+Failure keeps the removal failed and live and the Instance removing. Compensation removes a newly written awake marker and withdraws partial site/DNS publication before the publication holds are released. It preserves the checkout, databases and completed fence settlement. Compensation failure remains explicit and retryable. Its publication holds expire 15 minutes after the terminal result, even when native completion is unknown; the minute sweep frees them. A stopped retry inherits the complete retained hold set and runs before overlapping waiters, which prevents a recovery deadlock. A fresh restore attempt repeats safely; after success, the same restored state returns `instance.already_restored` from the verified receipt.
