@@ -2563,6 +2563,8 @@ default = []
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_mail_test.py"
+after_merge = true
+reason = "over the 180 s ceiling, follow-up"
 cost = 120
 # Per-case estimates; real Ansible executes only against fake Incus and Docker boundaries.
 slices = false
