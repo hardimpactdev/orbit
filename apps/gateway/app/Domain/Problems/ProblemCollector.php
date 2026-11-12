@@ -26,6 +26,9 @@ use Throwable;
  */
 final readonly class ProblemCollector
 {
+    /** Five-minute windows remembered per episode: one day. */
+    private const int CountedBlocks = 288;
+
     public function __construct(
         private ProblemEvidence $evidence,
         private ProblemSuppression $suppression,
@@ -331,7 +334,8 @@ final readonly class ProblemCollector
         }
 
         $evidence = $row->evidence;
-        if (isset($evidence['auto_closed'])) {
+        // A Doctor row is never filed again, so a recurrence keeps the link to its closed group.
+        if (isset($evidence['auto_closed']) && $source !== ProblemSource::Doctor) {
             $row->task_group_id = null;
             unset($evidence['generated_group_hash'], $evidence['auto_closed']);
         }
@@ -355,7 +359,7 @@ final readonly class ProblemCollector
         $block = intdiv($seenAt->getTimestamp(), 300);
 
         if (! in_array($block, $blocks, true)) {
-            $blocks[] = $block;
+            $blocks = array_slice([...$blocks, $block], -self::CountedBlocks);
             $occurrences++;
             $times[] = $seenAt->format('Y-m-d\TH:i:s.u\Z');
             $counts[] = 1;
@@ -419,8 +423,9 @@ final readonly class ProblemCollector
     }
 
     /**
-     * The display sample keeps the newest 20 windows. counted_blocks keeps every window in the episode,
+     * The display sample keeps the newest 20 windows. counted_blocks keeps the newest day of windows,
      * including one the sample has dropped, so a late signal in that block is not counted again.
+     * The bound stops a finding that a schedule sees every five minutes from growing its row without end.
      *
      * @param  array<string, mixed>  $evidence
      * @param  list<string>  $times

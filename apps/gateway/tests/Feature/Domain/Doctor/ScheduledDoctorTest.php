@@ -195,6 +195,47 @@ it('leaves an already linked Doctor group and its subtasks unchanged', function 
         ->and($subtask->fresh()->getAttributes())->toBe($subtask->getAttributes())->and($doctor->fresh()->task_group_id)->toBe($group->id);
 })->with([false, true]);
 
+it('leaves a Doctor row linked to an ended group unmuted with its history', function (TaskGroupStatus $status): void {
+    app(TaskExtensionState::class)->enable();
+    $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Ended', 'brief' => 'Ended brief', 'status' => $status]);
+    // A row as the collection writes it today: its windows are counted, so no legacy settlement applies.
+    $doctor = scheduledDoctorProblem(scheduledDoctorNode(), 'process.state_mismatch', '1', '2026-11-01T00:00:00Z',
+        ['observation_counts' => [1, 1], 'counted_blocks' => [5926176, 5926464]]);
+    $doctor->update(['task_group_id' => $group->id]);
+    $before = $doctor->fresh()->getAttributes();
+    $this->artisan('problems:file')->assertSuccessful();
+    expect($doctor->fresh()->getAttributes())->toBe($before);
+})->with([TaskGroupStatus::Cancelled, TaskGroupStatus::Completed]);
+
+it('keeps the group link of an auto-closed Doctor finding that recurs', function (): void {
+    $node = scheduledDoctorNode();
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+    app(RunDoctorAction::class)->scheduled();
+    $row = ProblemFingerprint::query()->where('source', ProblemSource::Doctor)->where('evidence->doctor_code', 'node.instance_bridge_unhealthy')->sole();
+    $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Closed', 'brief' => 'Closed brief', 'status' => TaskGroupStatus::Cancelled]);
+    $row->update(['task_group_id' => $group->id, 'evidence' => [...$row->evidence, 'auto_closed' => true]]);
+    $this->travel(5)->minutes();
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+    app(RunDoctorAction::class)->scheduled();
+    expect($row->fresh()->task_group_id)->toBe($group->id);
+});
+
+it('bounds the windows one finding remembers when the schedule sees it for longer than a day', function (): void {
+    $node = scheduledDoctorNode();
+    $start = new DateTimeImmutable('2026-11-12T12:00:00Z');
+    for ($run = 0; $run < 300; $run++) {
+        // An exact clock per run: one run per five-minute window, however long the loop takes.
+        $this->travelTo($start->modify('+'.($run * 5).' minutes'));
+        scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+        app(RunDoctorAction::class)->scheduled();
+    }
+    $row = ProblemFingerprint::query()->where('source', ProblemSource::Doctor)->where('evidence->doctor_code', 'node.instance_bridge_unhealthy')->sole();
+    expect($row->occurrences)->toBe(300)->and($row->evidence['counted_blocks'])->toHaveCount(288)
+        ->and($row->evidence['observation_times'])->toHaveCount(20);
+});
+
 it('shows three open groups with both first-seen bounds, a single resource and newest-first sorting only to peers', function (): void {
     $beast = scheduledDoctorNode();
     $shark = scheduledDoctorNode('shark', 8);
