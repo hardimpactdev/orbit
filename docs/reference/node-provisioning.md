@@ -34,6 +34,8 @@ Migration checks remote source access before quiesce using the Node's existing G
 
 Clone creation stages its release's helpers once in a private folder for the run. Later phases run the launcher by path, keeping scripts and intent off the SSH command. Cleanup removes the folder even when staging or the first clone phase fails.
 
+The Instance bridge refresh replaces recorded Docker addresses and removes their obsolete exact allows. Its existing timer runs 15 seconds after each completed refresh; [endpoint policy](/reference/development-containers#network) defines crash recovery and the records that still need host convergence.
+
 Each argument of an Ansible command must parse as a string. One shared test reads every literal `argv` list. It fails on a YAML mapping, a number or a boolean.
 
 Container Process journal and state reads use this Node’s existing SSH account and Incus access, under the [transport exception](/reference/node-agent#commands). They add no account, group membership or sudo rule. The Node already requires `python3` for the container host’s effective-NIC gate and bridge reader.

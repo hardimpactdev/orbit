@@ -3,7 +3,7 @@
 
 One nonblocking attempt only; a busy writer refuses without applying intent.
 Every writer holds the same lock while reading and replacing records and ACL rules.
-The refresh only adds rules. Reconciliation removes endpoint rules or intent.
+Refresh replaces recorded Docker translations. Reconciliation removes endpoint intent.
 """
 import argparse
 import fcntl
@@ -90,7 +90,7 @@ def same_endpoint(row, rule):
     return all(row.get(key) == value for key, value in rule.items() if key != 'description')
 
 
-def plan(current, endpoints, cidr, baseline, capture=None):
+def plan(current, endpoints, cidr, baseline, capture=None, obsolete=None):
     desired = {'egress': [endpoint_rule(host, port, cidr, stamp) for (host, port), stamp in sorted(endpoints.items())], 'ingress': []}
     for direction in desired:
         desired[direction] += baseline.get(direction, [])
@@ -102,11 +102,13 @@ def plan(current, endpoints, cidr, baseline, capture=None):
             if not any((owned_endpoint(row, cidr) and same_endpoint(row, rule) and rule_admission(row) >= stamp)
                        if stamp is not None else all(row.get(key) == value for key, value in rule.items()) for row in existing):
                 changes.append(('add', direction, rule))
-    if capture is not None:
-        for raw in current.get('egress', []):
-            if (owned_endpoint(raw, cidr) and rule_admission(raw) < capture
-                    and not any(same_endpoint(raw, rule) for rule in desired['egress'])):
-                changes.append(('remove', 'egress', raw))
+    for raw in current.get('egress', []):
+        if (owned_endpoint(raw, cidr)
+                and not any(same_endpoint(raw, rule) for rule in desired['egress'])
+                and ((capture is not None and rule_admission(raw) < capture)
+                     or any(rule_admission(raw) == rule_admission(old) and same_endpoint(raw, old)
+                            for old in obsolete or []))):
+            changes.append(('remove', 'egress', raw))
     return changes
 
 
@@ -140,7 +142,7 @@ def api(name, value=None, etag=None, deadline=None):
     return response['metadata'], tags[0] if tags else None
 
 
-def write_rules(name, resolved, config, reconcile, deadline=None, root=None, staged=None, retiring=None):
+def write_rules(name, resolved, config, reconcile, deadline=None, root=None, staged=None, retiring=None, obsolete=None):
     capture = config['admitted_at'] if reconcile else None
     # Reserve one existing curl request for readback before releasing the writer lock.
     work_deadline = None if deadline is None else deadline - CURL_TIMEOUT_SECONDS
@@ -150,10 +152,10 @@ def write_rules(name, resolved, config, reconcile, deadline=None, root=None, sta
         current, _ = api(name, deadline=work_deadline)
         if root is not None:
             changed += confirm_records(root, current, staged, retiring, resolved, config)
-        changes = plan(current, resolved, config['cidr'], config.get('baseline', {}), capture)
+        changes = plan(current, resolved, config['cidr'], config.get('baseline', {}), capture, obsolete)
         for action, direction, rule in changes:
             current, etag = api(name, deadline=work_deadline)
-            if (action, direction, rule) not in plan(current, resolved, config['cidr'], config.get('baseline', {}), capture):
+            if (action, direction, rule) not in plan(current, resolved, config['cidr'], config.get('baseline', {}), capture, obsolete):
                 continue
             updated = {key: current.get(key, {} if key == 'config' else [] if key in ['egress', 'ingress'] else '')
                        for key in ['description', 'config', 'egress', 'ingress']}
@@ -179,7 +181,7 @@ def write_rules(name, resolved, config, reconcile, deadline=None, root=None, sta
             raise PolicyError('instance.bridge_state_unresolved') from read_error
         if root is not None:
             changed += confirm_records(root, current, staged, retiring, resolved, config)
-        if not plan(current, resolved, config['cidr'], config.get('baseline', {}), capture):
+        if not plan(current, resolved, config['cidr'], config.get('baseline', {}), capture, obsolete):
             return changed + int(attempting_put)
         raise
 
@@ -260,7 +262,16 @@ def confirm_records(root, current, staged, retiring, resolved, config):
         wanted = endpoint_rule(target['host'], target['port'], config['cidr'], endpoint['admitted_at'])
         if any(owned_endpoint(rule, config['cidr']) and same_endpoint(rule, wanted)
                and rule_admission(rule) >= endpoint['admitted_at'] for rule in current.get('egress', [])):
-            changed += state_file(root, 'endpoint', endpoint, host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'])
+            confirmed = dict(endpoint)
+            history = [old for old in endpoint.get('translations', [])
+                       if (old['destination'].removesuffix('/32'), int(old['destination_port'])) not in resolved
+                       and any(owned_endpoint(rule, config['cidr']) and same_endpoint(rule, old)
+                               and rule_admission(rule) == rule_admission(old) for rule in current.get('egress', []))]
+            if history:
+                confirmed['translations'] = history
+            else:
+                confirmed.pop('translations', None)
+            changed += state_file(root, 'endpoint', confirmed, host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'])
     for path, endpoint, target in retiring:
         if not path.exists():
             continue
@@ -292,7 +303,7 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
         if incoming is None or (reconcile and stamp >= capture):
             key = (row['host'], row['port'])
             if key not in endpoints or stamp > endpoints[key]['admitted_at']:
-                endpoints[key] = row
+                endpoints[key] = dict(row)
     if incoming is not None:
         for row in incoming['endpoints']:
             key = (row['host'], row['port'])
@@ -329,6 +340,33 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
         endpoint['translated'] = {'host': host, 'port': port}
         resolved[(host, port)] = max(resolved.get((host, port), 0), endpoint['admitted_at'])
     changed = 0
+    obsolete = []
+    if incoming is None:
+        for endpoint in endpoints:
+            if not endpoint['docker']:
+                continue
+            history = []
+            for _, previous in records:
+                if (previous['host'], previous['port']) != (endpoint['host'], endpoint['port']):
+                    continue
+                target = previous['translated']
+                known = [endpoint_rule(target['host'], target['port'], config['cidr'], previous['admitted_at']),
+                         *previous.get('translations', [])]
+                for rule in known:
+                    if rule not in history:
+                        history.append(rule)
+            obsolete.extend(history)
+            target = endpoint['translated']
+            wanted = endpoint_rule(target['host'], target['port'], config['cidr'], endpoint['admitted_at'])
+            previous = recorded[(endpoint['host'], endpoint['port'])]
+            if previous['translated'] != target:
+                if wanted not in history:
+                    history.append(wanted)
+                endpoint['translations'] = history
+                # Persist attempted rules before PUT, while translated still names the
+                # last confirmed address. A crash cannot orphan a successful new allow.
+                changed += state_file(root, 'endpoint', {**previous, 'translations': history},
+                                      host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'])
     # Stage outside the inventory. Only confirmed ACL tuples become refresh input.
     staged = []
     try:
@@ -336,7 +374,7 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
             remaining(deadline)
             state_file(root, 'staged', endpoint, host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'])
             staged.append(endpoint)
-        changed += write_rules(config['network'] + '-egress', resolved, config, reconcile, deadline, root, staged, retiring)
+        changed += write_rules(config['network'] + '-egress', resolved, config, reconcile, deadline, root, staged, retiring, obsolete)
     finally:
         for endpoint in staged:
             state_file(root, 'staged', host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'], remove=True)
