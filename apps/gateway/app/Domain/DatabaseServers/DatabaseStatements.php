@@ -66,7 +66,7 @@ final readonly class DatabaseStatements
                 .implode('', array_map(static fn (string $user): string => "DROP ROLE IF EXISTS \"{$user}\";\n", $users))
                 ."DELETE FROM {$journal} WHERE datname IN ({$names});\n";
             // The journal holds the database OID, so a replacement database with the same name is never changed.
-            $restore = "SELECT format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', d.datname, j.allow_connections) FROM {$journal} j JOIN pg_database d ON d.oid=j.oid WHERE j.datname IN ({$names})\\gexec\n"
+            $restore = "SELECT format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', d.datname, CASE WHEN j.allow_connections THEN 'true' ELSE 'false' END) FROM {$journal} j JOIN pg_database d ON d.oid=j.oid WHERE j.datname IN ({$names})\\gexec\n"
                 ."DELETE FROM {$journal} WHERE datname IN ({$names});\n";
 
             $left = "SELECT datname FROM pg_database WHERE datname IN ({$names}) UNION ALL SELECT rolname FROM pg_roles WHERE rolname IN ({$userList})";
