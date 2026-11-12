@@ -74,7 +74,7 @@ sequenceDiagram
     %%> When:
     %%> - after copying the checkout's `.env`, before application Processes start
     %%> On failure:
-    %%> - record `instance.mail_update_failed` as a warning and continue migration; `instance:mail:update` repairs it later
+    %%> - record `instance.mail_update_failed` for a failed attempt or missing/malformed receipt; application starts, Route cutover and retirement continue, with no rollback for mail; `instance:mail:update` repairs it later
     %%> Result:
     %%> - the shared path status and exact-line result, with line numbers only; conflicts skip the line rule
   end

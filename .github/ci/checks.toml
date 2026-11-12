@@ -1588,7 +1588,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_native_faults_test.ts"
-cost = 30
+cost = 100
 after_merge = true
 reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
 inputs = [
@@ -2609,7 +2609,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts"
-cost = 22
+cost = 23
 inputs = [
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
   "swamp/workflows/workflow-operation-instance-migrate.yaml",
@@ -2637,3 +2637,4 @@ inputs = [
 "the receipt lists every projected Process command translation on success and restoration" = 1
 "mail failure is an advisory warning and cannot fail or restore a completed migration" = 1
 "migration retains each exact-line outcome and the named path conflict without values" = 1
+"missing or malformed successful mail receipts become advisory warnings" = 1

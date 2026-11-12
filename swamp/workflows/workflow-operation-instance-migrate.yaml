@@ -213,7 +213,7 @@ jobs:
           - {step: container-processes, condition: {type: succeeded}}
           - {step: seed, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
           - {step: t3-register, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-        guard: '${{ inputs.intent.route_mutations == null || steps.exists(k, steps[k].status == "failed") }}'
+        guard: '${{ inputs.intent.route_mutations == null || steps.exists(k, k != "Apply development mail" && steps[k].status == "failed") }}'
         allowFailure: true
         task:
           type: workflow
@@ -235,7 +235,7 @@ jobs:
           - {step: seed, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
           - {step: t3-register, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
           - {step: route, condition: {type: always}}
-        guard: '${{ steps.exists(k, steps[k].status == "failed") || (inputs.intent.route_mutations != null && !("route" in steps && steps.route.status == "succeeded" && steps.route.outputs.result.ready)) }}'
+        guard: '${{ steps.exists(k, k != "Apply development mail" && steps[k].status == "failed") || (inputs.intent.route_mutations != null && !("route" in steps && steps.route.status == "succeeded" && steps.route.outputs.result.ready)) }}'
         task:
           type: behavior
           behaviorType: command/shell

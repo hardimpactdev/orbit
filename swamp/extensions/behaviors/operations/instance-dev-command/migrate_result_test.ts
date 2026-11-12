@@ -203,3 +203,22 @@ Deno.test("migration retains each exact-line outcome and the named path conflict
         assertEquals(result(defaultIntent, {...moved, mail: "succeeded"}, workspace, null, await writtenFailure(folder)).mail, mail);
     } finally { await Deno.remove(folder, {recursive: true}); }
 });
+
+Deno.test("missing or malformed successful mail receipts become advisory warnings", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        for (const value of [null, "invalid-json", {}, {mail: {status: "unknown", ports: [1025, 2525]}},
+            {mail: {status: "applied", ports: [1025, 2525]}},
+            {mail: {status: "unchanged", ports: [1025, 2525]}, mailer: {status: "changed"}},
+            {mail: {status: "applied", ports: [1025, 2525]}, mailer: {status: "changed", lines: []}},
+            {mail: {status: "skipped", ports: [1025, 2525]}},
+            {mail: {status: "unchanged", ports: [25, 2525]}, mailer: {status: "already_smtp"}}]) {
+            if (value !== null) await Deno.writeTextFile(`${folder}/mail-result.json`, typeof value === "string" ? value : JSON.stringify(value));
+            const receipt = result(defaultIntent, {...moved, mail: "succeeded"}, workspace, null, await writtenFailure(folder));
+            assertEquals([receipt.ready, receipt.moved, receipt.restored], [true, true, false]);
+            assertEquals(receipt.warnings, [{code: "instance.mail_update_failed", step: "mail"}]);
+            assertEquals([receipt.mail, receipt.mailer, receipt.error_code], [undefined, undefined, undefined]);
+        }
+        assertEquals(result(defaultIntent, {...moved, mail: "skipped"}, workspace, null, null).warnings, undefined);
+    } finally { await Deno.remove(folder, {recursive: true}); }
+});

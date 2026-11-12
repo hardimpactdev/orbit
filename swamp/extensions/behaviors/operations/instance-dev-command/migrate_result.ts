@@ -24,6 +24,12 @@ const MailReceipt = z.object({
         reason: z.enum(["mail_port_in_use", "mail_unit_conflict"]).optional()}),
     mailer: z.object({status: z.enum(["changed", "left_as_written", "not_present", "already_smtp"]),
         lines: z.array(z.number().int().positive()).optional()}).optional(),
+}).refine((receipt) => {
+    if (receipt.mail.status === "skipped") return receipt.mail.reason !== undefined && receipt.mailer === undefined;
+    if (receipt.mail.reason !== undefined || receipt.mailer === undefined) return false;
+    if (receipt.mailer.status === "changed") return receipt.mailer.lines?.length === 1;
+    if (receipt.mailer.status === "left_as_written") return receipt.mailer.lines !== undefined;
+    return receipt.mailer.lines === undefined;
 });
 type WrittenFailure = Partial<z.infer<typeof MailReceipt>> & {
     error_code?: string;
@@ -81,13 +87,16 @@ export function migrateResult(
             !written.error_code?.startsWith("instance.container_")
         ? written.error_code ?? null
         : null;
+    const parsedMail = phases.mail === "succeeded" ? MailReceipt.safeParse(written) : null;
+    const mail = parsedMail?.success ? parsedMail.data : null;
+    const mailWarning = phases.mail !== undefined && phases.mail !== "skipped" && mail === null;
     const result = {
         instance_id: intent.instance_id,
         ready: failed === undefined,
         moved,
         restored: !moved && phases.restore === "succeeded" && ["succeeded", "skipped"].includes(phases.restore_route),
-        ...(phases.mail === "succeeded" && written?.mail ? {mail: written.mail, ...(written.mailer ? {mailer: written.mailer} : {})} : {}),
-        ...(phases.mail !== undefined && !["succeeded", "skipped"].includes(phases.mail)
+        ...(mail ?? {}),
+        ...(mailWarning
             ? {warnings: [{code: "instance.mail_update_failed", step: "mail"}]} : {}),
         ...(translations.length ? { process_translations: translations } : {}),
         ...(failed?.[0] === "container" && refusal !== null && written?.preflight_refused === true ? { preflight_refused: true } : {}),

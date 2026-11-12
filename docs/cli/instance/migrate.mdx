@@ -202,4 +202,4 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `http.404` | The Instance is unknown. |
 | `node_access.required` | The caller has no access grant to the Instance's Node. |
 
-Mail setup runs after the copied `.env` and before application Processes start. It uses the [development mail rule](/reference/development-containers#development-mail). A failure records `instance.mail_update_failed` in `warnings` and leaves an otherwise successful migration complete. Repair it with [`instance:mail:update`](/cli/instance/mail-update).
+Mail setup runs after the copied `.env` and before application Processes start. It uses the [development mail rule](/reference/development-containers#development-mail). A failed attempt or missing or malformed receipt records `instance.mail_update_failed` in `warnings`. Application starts, Route cutover and retirement continue, and mail cannot trigger rollback. Human output shows the mailer outcome and line numbers, the named conflict skip, or the warning and repair command; JSON retains the same result fields. Repair it with [`instance:mail:update`](/cli/instance/mail-update).

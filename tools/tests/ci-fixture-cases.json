@@ -1356,13 +1356,17 @@
     ]
   },
   "swamp/tests/instance_migrate_native_faults_test.ts": {
-    "source_sha256": "a2cdc1b55e3e0d459742a1fc2f366781116d6febba24409d6fc8a8fc4f3c0400",
+    "source_sha256": "845a76e0fdf74b8d811cbdeb9734ee1f7fe844a408cda1411705e1c9fe9081c6",
     "cases": [
       "pinned migrate failure: real native finish proves restoration, including the restore Route child after a lost root",
       "pinned migrate timeout: real native finish proves restoration, including the restore Route child after a lost root",
       "pinned migrate cancel: real native finish proves restoration, including the restore Route child after a lost root",
       "pinned migrate deadline: real native finish proves restoration, including the restore Route child after a lost root",
-      "pinned migrate lost: real native finish proves restoration, including the restore Route child after a lost root"
+      "pinned migrate lost: real native finish proves restoration, including the restore Route child after a lost root",
+      "pinned migrate advisory mail mail-failure (default): cutover and retirement succeed without rollback",
+      "pinned migrate advisory mail mail-failure (clone): cutover and retirement succeed without rollback",
+      "pinned migrate advisory mail mail-invalid (default): cutover and retirement succeed without rollback",
+      "pinned migrate advisory mail mail-invalid (clone): cutover and retirement succeed without rollback"
     ]
   },
   "swamp/tests/maintenance_inspect_test.ts": {
@@ -1877,7 +1881,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "f602698186286c7529edf421ac5dfdcff5fe0337dfd7e33cd461bb81b9a29ff3",
+    "source_sha256": "f05d13d13a39e49f96d7264df8f04bb4d9cbaac94334045aeb147d45378c539c",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -1900,7 +1904,8 @@
       "a moved worker readiness failure keeps its Process name and restored outcome before cutover",
       "the receipt lists every projected Process command translation on success and restoration",
       "mail failure is an advisory warning and cannot fail or restore a completed migration",
-      "migration retains each exact-line outcome and the named path conflict without values"
+      "migration retains each exact-line outcome and the named path conflict without values",
+      "missing or malformed successful mail receipts become advisory warnings"
     ]
   }
 }

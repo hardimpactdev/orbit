@@ -10,7 +10,7 @@ const source = new URL(
 );
 const pin = Swamp.version;
 type RecordValue = Record<string, unknown>;
-type Mode = "failure" | "timeout" | "cancel" | "deadline" | "lost" | "unsafe";
+type Mode = "failure" | "timeout" | "cancel" | "deadline" | "lost" | "unsafe" | "mail-failure" | "mail-invalid";
 const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 const exists = (path: string) => {
     try {
@@ -21,7 +21,7 @@ const exists = (path: string) => {
     }
 };
 
-async function nativeFixture(mode: Mode) {
+async function nativeFixture(mode: Mode, clone = false) {
     const folder = Deno.makeTempDirSync({ prefix: "orbit-ansible-" });
     const call = async (...args: string[]) => {
         const done = await new Deno.Command(binary!, {
@@ -41,9 +41,8 @@ async function nativeFixture(mode: Mode) {
         text(version.stdout).includes(pin),
         "Use the release-pinned Swamp binary for this proof.",
     );
-    assert(
-        (await call("repo", "init", folder, "--tool", "none", "--no-vault")).ok,
-    );
+    const initialized = await call("repo", "init", folder, "--tool", "none", "--no-vault");
+    assert(initialized.ok, initialized.stderr + initialized.stdout);
     const models = `${folder}/extensions/models`;
     Deno.mkdirSync(models, { recursive: true });
     for (const name of ["assets.ts", "migrate_result.ts", "result.ts"]) {
@@ -59,9 +58,9 @@ async function nativeFixture(mode: Mode) {
         `${models}/route-proof.ts`,
         `import { z } from "npm:zod@4.4.3";
 export const behavior = { type: "@fixture/route-proof", version: "2026.11.11.1", resources: { result: { schema: z.object({ready:z.boolean()}), lifetime:"1d", garbageCollection:10 } }, methods: {
-  result: { description: "Return the fixture Route receipt", arguments: z.object({}), async execute(_args: unknown, ctx: {writeResource(spec:string, name:string, value:unknown): Promise<unknown>}) { Deno.writeTextFileSync(${
+  result: { description: "Return the fixture Route receipt", arguments: z.object({phase: z.enum(["route", "restore-route"])}), async execute(args: {phase: string}, ctx: {writeResource(spec:string, name:string, value:unknown): Promise<unknown>}) { Deno.writeTextFileSync(${
             JSON.stringify(folder + "/calls")
-        }, "restore-route-child\\n", {append: true}); const value = {ready: true}; await ctx.writeResource("result", "result", value); return value; } }
+        }, args.phase + "-child\\n", {append: true}); Deno.writeTextFileSync(${JSON.stringify(folder)} + "/" + args.phase, ""); const value = {ready: true}; await ctx.writeResource("result", "result", value); return value; } }
 } };`,
     );
     const route = JSON.parse(
@@ -72,6 +71,7 @@ export const behavior = { type: "@fixture/route-proof", version: "2026.11.11.1",
         stringify({
             id: route.id,
             name: route.name,
+            inputs: {type: "object", properties: {phase: {type: "string"}}, required: ["phase"]},
             jobs: [{
                 name: "route",
                 steps: [{
@@ -81,7 +81,7 @@ export const behavior = { type: "@fixture/route-proof", version: "2026.11.11.1",
                         behaviorType: "@fixture/route-proof",
                         behaviorName: "route-proof",
                         methodName: "result",
-                        inputs: {},
+                        inputs: {phase: "${{ inputs.phase }}"},
                     },
                 }],
             }],
@@ -106,11 +106,11 @@ export const behavior = { type: "@fixture/route-proof", version: "2026.11.11.1",
                     folder;
                 continue;
             }
-            if (name === "restore-route") {
+            if (name === "restore-route" || name === "route") {
                 step.task = {
                     type: "workflow",
                     workflowIdOrName: route.name,
-                    inputs: {},
+                    inputs: {phase: name},
                 };
                 continue;
             }
@@ -119,7 +119,14 @@ export const behavior = { type: "@fixture/route-proof", version: "2026.11.11.1",
             if (name === "workspace") {
                 run += "; printf '%s\\n' 'orbit-commit=" + "a".repeat(40) + "'";
             }
-            if (name === "container-processes") {
+            if (name === "Apply development mail") {
+                run += mode === "mail-failure" ? "; exit 42"
+                    : `; printf '%s' 'invalid-json' > '${folder}/mail-result.json'`;
+            }
+            if (name === "t3-register") {
+                run += `; printf '%s' '{"environment_id":"fixture"}'`;
+            }
+            if (name === "container-processes" && !mode.startsWith("mail-")) {
                 run += mode === "failure"
                     ? "; exit 42"
                     : mode === "timeout"
@@ -129,7 +136,7 @@ export const behavior = { type: "@fixture/route-proof", version: "2026.11.11.1",
             step.task = {
                 type: "behavior",
                 behaviorType: "command/shell",
-                behaviorName: `migrate-fault-${name}`,
+                behaviorName: `migrate-fault-${name.toLowerCase().replaceAll(" ", "-")}`,
                 methodName: "execute",
                 inputs: { run },
             };
@@ -146,7 +153,7 @@ export const behavior = { type: "@fixture/route-proof", version: "2026.11.11.1",
             execution_secrets: {},
             intent: {
                 instance_id: 1,
-                container: { clone: null },
+                container: { clone: clone ? {t3: {}} : null, mail: mode.startsWith("mail-") ? {} : null },
                 route_mutations: {},
             },
         });
@@ -307,4 +314,48 @@ for (
             }
         },
     });
+}
+
+for (const mode of ["mail-failure", "mail-invalid"] as const) {
+    for (const clone of [false, true]) {
+        Deno.test({
+            name: `pinned migrate advisory mail ${mode} (${clone ? "clone" : "default"}): cutover and retirement succeed without rollback`,
+            ignore: !binary,
+            async fn() {
+                const f = await nativeFixture(mode, clone);
+                try {
+                    const child = new Deno.Command(binary!, {
+                        args: ["workflow", "run", f.created.name, "--stdin", "--json"],
+                        cwd: f.folder, env: {SWAMP_NO_INBOX_NOTICE: "1"},
+                        stdin: "piped", stdout: "piped", stderr: "piped",
+                    }).spawn();
+                    const writer = child.stdin.getWriter();
+                    await writer.write(new TextEncoder().encode(f.input()));
+                    await writer.close();
+                    const done = await child.output();
+                    assert(done.success, text(done.stdout) + text(done.stderr));
+                    const history = await f.history();
+                    assertEquals(history.status, "succeeded");
+                    const statuses = Object.fromEntries(history.jobs.flatMap((job: {steps: RecordValue[]}) =>
+                        job.steps.map((step) => [step.name, step.status])));
+                    assertEquals(statuses["Apply development mail"], mode === "mail-failure" ? "failed" : "succeeded");
+                    const mailStep = history.jobs.flatMap((job: {steps: RecordValue[]}) => job.steps)
+                        .find((step: RecordValue) => step.name === "Apply development mail");
+                    assertEquals(mailStep.error, mode === "mail-failure" ? "Command exited with code 42" : undefined);
+                    for (const name of ["container-processes", "route", "retire", "finish", "accepted"]) assertEquals(statuses[name], "succeeded");
+                    assertEquals([statuses.restore, statuses["restore-route"]], ["skipped", "skipped"]);
+                    if (clone) assertEquals(statuses.agent, "succeeded");
+                    assert(exists(`${f.folder}/route`));
+                    assert(exists(`${f.folder}/retire`));
+                    assert(!exists(`${f.folder}/restore`));
+                    const result = await f.receipt();
+                    assertEquals([result.ready, result.moved, result.restored], [true, true, false]);
+                    assertEquals(result.warnings, [{code: "instance.mail_update_failed", step: "mail"}]);
+                    assertEquals([result.mail, result.mailer, result.error_code], [undefined, undefined, undefined]);
+                    const receipts = Deno.env.get("ORBIT_SWAMP_PROOF_RECEIPTS");
+                    if (receipts) Deno.writeTextFileSync(`${receipts}/${mode}-${clone ? "clone" : "default"}.json`, JSON.stringify(history, null, 2) + "\n");
+                } finally { f.cleanup(); }
+            },
+        });
+    }
 }

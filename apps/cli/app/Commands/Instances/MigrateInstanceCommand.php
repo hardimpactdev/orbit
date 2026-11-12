@@ -39,6 +39,19 @@ HELP;
 
     protected function writeOperationResult(OperationResponse $operation): void
     {
+        $mail = $operation->result['mail'] ?? null;
+        $mailer = $operation->result['mailer'] ?? null;
+        if (is_array($mail) && ($mail['status'] ?? null) === 'skipped' && in_array($mail['reason'] ?? null, ['mail_port_in_use', 'mail_unit_conflict'], true)) {
+            $this->writeHumanMessage('Mail setup skipped: '.$mail['reason'].'.');
+        } elseif (is_array($mailer) && in_array($mailer['status'] ?? null, ['changed', 'left_as_written', 'not_present', 'already_smtp'], true)) {
+            $lines = is_array($mailer['lines'] ?? null)
+                ? array_filter($mailer['lines'], static fn (mixed $line): bool => is_int($line) && $line > 0) : [];
+            $this->writeHumanMessage('Mailer: '.$mailer['status'].($lines === [] ? '' : ' (line '.implode(', ', $lines).')').'.');
+        }
+        $warnings = $operation->result['warnings'] ?? null;
+        if (is_array($warnings) && array_any($warnings, static fn (mixed $warning): bool => is_array($warning) && ($warning['code'] ?? null) === 'instance.mail_update_failed')) {
+            $this->writeHumanMessage('Warning: instance.mail_update_failed. Run orbit instance:mail:update '.$operation->targetId.' to repair mail.');
+        }
         $message = $operation->result['error_message'] ?? null;
         if (in_array($operation->errorCode, ['instance.migrate_retirement_blocked', 'instance.migrate_unpushed_commits', 'instance.migrate_stashes_present', 'instance.migrate_symlink_unsupported', 'instance.migrate_env_service_unreachable'], true) && is_string($message)) {
             $this->writeHumanMessage($message);
