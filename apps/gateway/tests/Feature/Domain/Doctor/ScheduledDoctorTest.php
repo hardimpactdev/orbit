@@ -3,7 +3,13 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\RunDoctorAction;
+use App\Data\Doctor\DoctorFamilyReportData;
+use App\Data\Doctor\DoctorIssueData;
+use App\Data\Doctor\DoctorNodeReportData;
+use App\Data\Doctor\DoctorReportData;
 use App\Domain\AgentView\AgentStateView;
+use App\Domain\Doctor\DoctorFamily;
+use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Firewall\FirewallInspectionInput;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\NodeAccessAuthorizer;
@@ -229,6 +235,106 @@ it('keeps the group link of an auto-closed Doctor finding that recurs', function
     expect($row->fresh()->task_group_id)->toBe($group->id);
 });
 
+it('refreshes unchanged findings without moving first seen or losing linked history', function (): void {
+    $node = scheduledDoctorNode();
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+    app(RunDoctorAction::class)->collectDoctor();
+    $row = ProblemFingerprint::query()->where('evidence->doctor_code', 'node.instance_bridge_unhealthy')->sole();
+    $firstSeen = $row->first_seen->toISOString();
+    $this->travel(5)->minutes();
+    $this->view->putSubscriber(true, true, 1);
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+
+    app(RunDoctorAction::class)->collectDoctor();
+
+    $row->refresh();
+    expect($row->first_seen->toISOString())->toBe($firstSeen)
+        ->and($row->last_seen->toISOString())->toBe('2026-11-12T12:05:00.000000Z')
+        ->and($row->evidence['doctor_observed_at'])->toBe('2026-11-12T12:05:00.000000Z')
+        ->and($row->occurrences)->toBe(2)
+        ->and($row->evidence['observation_times'])->toBe(['2026-11-12T12:00:00.000000Z', '2026-11-12T12:05:00.000000Z'])
+        ->and($row->evidence['observation_counts'])->toBe([1, 1]);
+});
+
+it('updates changed Doctor text and retains the group and first seen on open or recurring rows', function (bool $resolved): void {
+    $node = scheduledDoctorNode();
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+    app(RunDoctorAction::class)->collectDoctor();
+    $row = ProblemFingerprint::query()->where('evidence->doctor_code', 'node.instance_bridge_unhealthy')->sole();
+    $firstSeen = $row->first_seen->toISOString();
+    $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Closed', 'brief' => 'Closed brief', 'status' => TaskGroupStatus::Cancelled]);
+    $row->update(['task_group_id' => $group->id, 'evidence' => [...$row->evidence,
+        'auto_closed' => true, ...($resolved ? ['resolved_at' => now()->toISOString(), 'resolution' => 'fresh_doctor_success'] : [])]]);
+    $this->travel(5)->minutes();
+    $issue = DoctorIssueData::fromInternal(DoctorFamily::Node, 'node.instance_bridge_unhealthy', DoctorIssueKind::Drift,
+        $node->id, $node->name, 'New summary', 'New expectation', 'New observation');
+    $report = DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name,
+        [DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, [$issue], [$node->id])])]);
+
+    app(ProblemCollector::class)->recordDoctor($report, now());
+
+    $row->refresh();
+    expect($row->evidence)->toMatchArray(['expected' => 'New expectation', 'observed' => 'New observation', 'summary' => 'New summary',
+        'auto_closed' => true, 'doctor_resource_present' => true, 'doctor_observed_at' => '2026-11-12T12:05:00.000000Z'])
+        ->not->toHaveKeys(['resolved_at', 'resolution'])
+        ->and($row->task_group_id)->toBe($group->id)->and($row->first_seen->toISOString())->toBe($firstSeen)
+        ->and(ProblemFingerprint::query()->where('fingerprint', $row->fingerprint)->count())->toBe(1);
+})->with([false, true]);
+
+it('rolls back the batched refresh and recovery when the collection state cannot be saved', function (): void {
+    $node = scheduledDoctorNode();
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+    app(RunDoctorAction::class)->collectDoctor();
+    $row = ProblemFingerprint::query()->where('evidence->doctor_code', 'node.instance_bridge_unhealthy')->sole();
+    $cleared = scheduledDoctorProblem($node, 'node.disk_low', (string) $node->id, '2026-11-01T00:00:00Z');
+    $cleared->update(['evidence' => [...$cleared->evidence, 'doctor_family' => 'node']]);
+    $before = $row->getAttributes();
+    $state = ProblemCollectorState::query()->sole()->getAttributes();
+    $this->travel(5)->minutes();
+    $this->view->putSubscriber(true, true, 1);
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+    ProblemCollectorState::saving(function (): void {
+        throw new RuntimeException('state write failed');
+    });
+
+    expect(fn () => app(RunDoctorAction::class)->collectDoctor())->toThrow(RuntimeException::class, 'state write failed');
+
+    expect($row->fresh()->getAttributes())->toBe($before)
+        ->and($cleared->fresh()->evidence)->not->toHaveKey('resolved_at')
+        ->and(ProblemCollectorState::query()->sole()->getAttributes())->toBe($state);
+});
+
+it('counts two real firewall issues sharing a fingerprint and replaces that count on the next run', function (): void {
+    $node = scheduledDoctorNode();
+    scheduledDoctorFacts($node);
+    $fact = NodeFact::query()->where('node_id', $node->id)->where('kind', 'ufw')->sole();
+    $data = $fact->data;
+    // Two missing Orbit rules both identify the Node, so their code and resource key are equal.
+    $missing = array_splice($data['rules'], 0, 2);
+    expect($missing)->toHaveCount(2);
+    $fact->update(['data' => $data]);
+
+    $report = app(RunDoctorAction::class)->collectDoctor();
+
+    expect($report->summary['drift'])->toBe(2);
+    $row = ProblemFingerprint::query()->where('evidence->doctor_code', 'firewall.rule_missing')->sole();
+    expect($row->evidence['doctor_issue_count'])->toBe(2)->and($row->occurrences)->toBe(1)
+        ->and($row->evidence['observation_counts'])->toBe([2]);
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])->getJson('/api/v1/gateway/status')->assertOk();
+    expect(collect($response->json('data.doctor.issues'))->firstWhere('code', 'firewall.rule_missing'))
+        ->toMatchArray(['count' => 2, 'resource' => ['type' => 'firewall', 'id' => 'node:'.$node->id]]);
+    $this->travel(5)->minutes();
+    $this->view->putSubscriber(true, true, 1);
+    scheduledDoctorFacts($node);
+    $fact->update(['data' => [...$data, 'rules' => [...$data['rules'], $missing[0]]], 'observed_at' => now(), 'received_at' => now()]);
+
+    expect(app(RunDoctorAction::class)->collectDoctor()->summary['drift'])->toBe(1);
+    expect($row->fresh()->evidence['doctor_issue_count'])->toBe(1);
+    $response = $this->getJson('/api/v1/gateway/status')->assertOk();
+    expect(collect($response->json('data.doctor.issues'))->firstWhere('code', 'firewall.rule_missing')['count'])->toBe(1);
+});
+
 it('evicts the oldest counted arrival while retaining 288 windows', function (): void {
     $node = scheduledDoctorNode();
     $start = new DateTimeImmutable('2026-11-12T12:00:00Z');
@@ -332,17 +438,31 @@ it('counts the database queries for one real collection over 15 Nodes and 80 fai
     $event = scheduledDoctorEvent();
     $queries = [];
     DB::listen(function (QueryExecuted $query) use (&$queries): void {
-        $queries[] = $query->sql;
+        $queries[] = ['sql' => $query->sql, 'transaction' => $query->connection->transactionLevel()];
     });
-    $event->run(app());
-    $count = count($queries);
-    $types = array_count_values(array_map(fn (string $sql): string => strtolower(strtok($sql, ' ')), $queries));
+    $runs = [];
+    foreach (['first', 'steady'] as $run) {
+        $this->view->putSubscriber(true, true, 15);
+        foreach (Node::query()->get() as $node) {
+            scheduledDoctorFacts($node);
+        }
+        $queries = [];
+        $event->run(app());
+        $types = array_count_values(array_map(fn (array $query): string => strtolower(strtok($query['sql'], ' ')), $queries));
+        $writes = count(array_filter($queries, fn (array $query): bool => $query['transaction'] > 1 && preg_match('/^(insert|update|delete) /i', $query['sql']) === 1));
+        $transaction = array_filter($queries, fn (array $query): bool => $query['transaction'] > 1);
+        $transactionTypes = array_count_values(array_map(fn (array $query): string => strtolower(strtok($query['sql'], ' ')), $transaction));
+        $runs[$run] = ['statements' => count($queries), 'kinds' => $types, 'transaction_kinds' => $transactionTypes, 'transaction_writes' => $writes];
+        fwrite(STDOUT, "\nDoctor collection queries (15 Nodes, 80 Process findings, {$run}): ".json_encode($runs[$run], JSON_THROW_ON_ERROR)."\n");
+        $this->travel(5)->minutes();
+    }
     expect(ProblemFingerprint::query()->count())->toBe(80)
         ->and(ProblemFingerprint::query()->where('evidence->doctor_code', 'process.runtime_missing')->count())->toBe(80)
-        ->and(ProblemCollectorState::query()->sole()->observation['doctor_collected_at'])->toBe('2026-11-12T12:00:00.000000Z');
-    fwrite(STDOUT, "\nDoctor collection queries (15 Nodes, 80 Process findings): {$count}\n");
-    fwrite(STDOUT, json_encode($types, JSON_THROW_ON_ERROR)."\n");
-    expect($count)->toBe(441);
+        ->and(ProblemCollectorState::query()->sole()->observation['doctor_collected_at'])->toBe('2026-11-12T12:05:00.000000Z')
+        ->and($runs['steady']['statements'])->toBeLessThanOrEqual(175)
+        ->and($runs['steady']['transaction_writes'])->toBe(2)
+        ->and($runs['steady']['transaction_kinds'])->toBe(['select' => 3, 'update' => 2]);
+
 });
 
 it('records the peer status fixture from the real API with its cached desired fleet state', function (): void {
