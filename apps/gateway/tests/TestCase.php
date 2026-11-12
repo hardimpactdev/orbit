@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\CachedState;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Foundation\Testing\WithCachedConfig;
 use Illuminate\Foundation\Testing\WithCachedRoutes;
+use Tests\Support\FakeRemoteProgramRunner;
 use Tests\Support\TestDatabaseGuard;
 
 abstract class TestCase extends BaseTestCase
@@ -36,6 +38,7 @@ abstract class TestCase extends BaseTestCase
 
         TestDatabaseGuard::register($app);
         $app->make(Kernel::class)->bootstrap();
+        $app->instance(RemoteProgramRunner::class, new FakeRemoteProgramRunner);
         $app['config']->set('swamp.ssh_public_key',
             'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('t', 32)));
 
