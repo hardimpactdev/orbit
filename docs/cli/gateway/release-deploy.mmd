@@ -85,8 +85,10 @@ sequenceDiagram
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the drain relies on the unit's stop policy alone; the rollback script no longer starts a stopped Horizon, because this step does after every end of the run
     AC->>GN: Admit VM refreshes<br/>artisan · verified release
+    %%> Held hosts:
+    %%> - the step output names each held host as `skipped:operator_hold`; no refresh Operation starts for it
     %%> What it does:
-    %%> - only after verification succeeds and Start Horizon finishes, admits one `task_vm.image_refresh` per task VM host with the new release's artisan
+    %%> - only after verification succeeds and Start Horizon finishes, admits one `task_vm.image_refresh` per task VM host without an image refresh hold with the new release's artisan
     %%> - the new Horizon workers consume the queued start jobs; the release waits only for admission, never for refresh completion
     %%> On failure:
     %%> - best effort: admission failure never fails the release
