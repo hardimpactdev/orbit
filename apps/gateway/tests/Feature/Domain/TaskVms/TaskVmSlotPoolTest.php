@@ -1320,7 +1320,8 @@ function slotPoolCiProofWorld(int $places, bool $casesOnly = false): Node
     $source->shouldReceive('caseSelection')->andReturnUsing(static fn (string $base, string $head): array => [
         'version' => 1, 'base' => $base, 'head' => $head, 'files' => [[
             'command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml',
-            'only' => ['a'], 'reasons' => ['a' => 'changed'],
+            'only' => $casesOnly ? ['a'] : ['a', 'b', 'c', 'd'],
+            'reasons' => $casesOnly ? ['a' => 'changed'] : array_fill_keys(['a', 'b', 'c', 'd'], 'command code changed'),
         ]],
     ]);
     $source->shouldReceive('range')->andReturn(new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles($commit, [], true)));
