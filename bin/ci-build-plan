@@ -76,26 +76,41 @@ def proof_run(paths, selection):
 INSTANCE_COMMANDS = ('instance:create', 'instance:clone', 'instance:migrate', 'instance:destroy')
 
 
-def instance_execution_coverage(paths, selection, read):
+def instance_execution_coverage(paths, selection, read, tracked_paths=()):
     """Keep ownership from both sides: deleting a mapping cannot hide an execution change."""
     import sys
     sys.path.insert(0, str(ROOT / 'swamp/proof/runner'))
     from selection import definitions
     import yaml
 
-    owners = {}
+    parsed = []
     for text in (read('base', SELECTION), selection):
         rules = selection_rules(text or '')
         values = [line.strip().split(None, 1)[1].strip() for line in (text or '').splitlines()
                   if line.strip() and not line.strip().startswith('#')]
+        parsed.append(list(zip(rules, values)))
+
+    def commands(path, rules):
+        value = next((value for (regex, _), value in reversed(rules) if regex.fullmatch(path)), '')
+        return set() if value == 'skip' or value.startswith('none:') else set(value.split()) & set(INSTANCE_COMMANDS)
+
+    def execution_path(path):
+        return (path.startswith('swamp/') and not path.startswith(('swamp/proof/', 'swamp/tests/'))
+                and not path.endswith(('.md', '.mdx', '.mmd', '_test.ts', '_test.py')))
+
+    owners, mapping_gaps = {}, {}
+    for rules in parsed:
         for path in paths:
-            if not path.startswith('swamp/') or path.startswith(('swamp/proof/', 'swamp/tests/')) or path.endswith(('.md', '.mdx', '.mmd', '_test.ts', '_test.py')):
+            if not execution_path(path):
                 continue
-            for (regex, _), value in zip(rules, values):
-                if regex.fullmatch(path):
-                    for command in value.split():
-                        if command in INSTANCE_COMMANDS:
-                            owners.setdefault(command, set()).add(path)
+            for command in commands(path, rules):
+                owners.setdefault(command, set()).add(path)
+    if SELECTION in paths:
+        for path in tracked_paths:
+            if execution_path(path):
+                for command in commands(path, parsed[0]) - commands(path, parsed[1]):
+                    owners.setdefault(command, set()).add(path)
+                    mapping_gaps.setdefault(command, []).append(path)
 
     def real_cases(ref, file, command):
         text = read(ref, file)
@@ -123,7 +138,8 @@ def instance_execution_coverage(paths, selection, read):
         before, after = real_cases('base', file, command), real_cases('head', file, command)
         if command in owners or bool(before) != bool(after):
             coverage.append({'command': command, 'file': file, 'paths': sorted(owners.get(command, {file})),
-                             'real_cases': after, 'enforced': bool(before or after)})
+                             'real_cases': after, 'enforced': bool(before or after),
+                             'missing_mappings': sorted(mapping_gaps.get(command, []))})
     return coverage
 
 
@@ -132,7 +148,7 @@ def report_instance_execution_coverage(coverage, selected):
     lines, errors = [], []
     for item in coverage:
         entry = next((entry for entry in (selected or []) if entry['file'] == item['file']), None)
-        covered = entry is not None and any(entry['only'] is None or name in entry['only'] for name in item['real_cases'])
+        covered = not item['missing_mappings'] and entry is not None and any(entry['only'] is None or name in entry['only'] for name in item['real_cases'])
         if covered:
             lines.append(f"{item['command']}: real proof selected for " + ', '.join(item['paths']))
             continue
@@ -350,7 +366,8 @@ def main():
         files = subprocess.check_output(['timeout', '60', 'git', 'ls-tree', '-r', '--name-only', a.head, '--', 'swamp/proof'], text=True).splitlines()
         files = [file for file in files if re.fullmatch(r'swamp/proof/[a-z][a-z0-9_]*/[a-z][a-z0-9_-]*\.cases\.yaml', file)]
         selection = read('head', SELECTION)
-        coverage = instance_execution_coverage(paths, selection, read)
+        tracked_paths = subprocess.check_output(['timeout', '60', 'git', 'ls-tree', '-r', '--name-only', a.head, '--', 'swamp'], text=True).splitlines() if SELECTION in paths else []
+        coverage = instance_execution_coverage(paths, selection, read, tracked_paths)
         result['proof_cases'] = proof_cases(paths, selection, read, files, coverage)
         result['instance_execution_coverage'] = coverage
         report_instance_execution_coverage(coverage, result['proof_cases'])

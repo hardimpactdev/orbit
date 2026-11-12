@@ -336,7 +336,9 @@ final readonly class ProofRunIntent
 
                     return $path !== $candidate['file'] && $path !== $batchPath && $rule?->kind === ProofRuleKind::Commands && in_array($candidate['command'], $rule->commands, true);
                 });
-                $ids = $codeChanged ? null : ProofCaseSelection::select($result, $changes->mergeBase, $commit, $candidate);
+                // The runner also decides code changes, including explicit execution-coverage gaps.
+                // Only an all-cases request or uncertain path inventory overrides its validated result.
+                $ids = $selection->everythingBecause !== null ? null : ProofCaseSelection::select($result, $changes->mergeBase, $commit, $candidate);
                 if ($ids === null) {
                     $selected[] = [...$candidate, 'reasons' => ['*' => $codeChanged ? 'command code changed' : 'selection uncertain']];
                 } elseif ($ids !== []) {

@@ -49,7 +49,7 @@ class InstanceExecutionProofTest(unittest.TestCase):
 
     def assess(self, before=None, after=None, mapping=MAPPING, old_mapping=None, paths=(PATH,)):
         read = self.read(before, after, mapping, old_mapping)
-        coverage = plan.instance_execution_coverage(paths, mapping, read)
+        coverage = plan.instance_execution_coverage(paths, mapping, read, tracked_paths=[PATH])
         selected = plan.proof_cases(paths, mapping, read, [FILE] if after is not None else [], coverage)
         return coverage, selected
 
@@ -109,6 +109,27 @@ class InstanceExecutionProofTest(unittest.TestCase):
         for selected in ([], None, [{'file': FILE, 'only': ['invalid-id']}], [{'file': FILE, 'only': []}]):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(ValueError):
                 plan.report_instance_execution_coverage(coverage, selected)
+
+    def test_mapping_only_removal_is_rejected_before_a_later_execution_edit(self):
+        for mapping in ('** skip\n', MAPPING + f'{PATH} skip\n'):
+            # Step one cannot establish a new base without ownership.
+            coverage, selected = self.assess(before=REAL, after=REAL, mapping=mapping,
+                                             old_mapping=MAPPING, paths=[plan.SELECTION])
+            self.assertEqual(coverage[0]['missing_mappings'], [PATH])
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(ValueError):
+                plan.report_instance_execution_coverage(coverage, selected)
+            # The next execution edit still compares against the last accepted base.
+            coverage, selected = self.assess(before=REAL, after=REAL, mapping=mapping,
+                                             old_mapping=MAPPING, paths=[PATH, plan.SELECTION])
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(ValueError):
+                plan.report_instance_execution_coverage(coverage, selected)
+
+    def test_clone_candidate_has_no_create_ownership(self):
+        mapping = (ROOT / plan.SELECTION).read_text()
+        coverage = plan.instance_execution_coverage(['swamp/workflows/workflow-instance-clone-candidate.yaml'],
+                                                    mapping, self.read(after=REAL, mapping=mapping))
+        self.assertEqual([item['command'] for item in coverage], ['instance:clone'])
+        self.assertFalse(coverage[0]['enforced'])
 
     def test_incident_and_each_lifecycle_entry_warn_today(self):
         mapping = (ROOT / plan.SELECTION).read_text()
