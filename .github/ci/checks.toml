@@ -2685,7 +2685,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_node_runtime_test.py"
-cost = 10
+cost = 15
 inputs = ["swamp/ansible/instance_node_runtime.py", "swamp/ansible/tasks/instance-node-runtime.yml", "swamp/workflows/workflow-operation-instance-migrate.yaml"]
 [fixture.case_costs]
 "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat" = 1
@@ -2694,3 +2694,4 @@ inputs = ["swamp/ansible/instance_node_runtime.py", "swamp/ansible/tasks/instanc
 "test_recipe_pin_and_unpinned_projects_need_no_install" = 1
 "test_download_integrity_and_timeout_failures_name_the_pin" = 1
 "test_production_phase_removes_read_only_source_mount_after_failure_without_downtime" = 5
+"test_existing_update_refuses_missing_mismatched_or_incomplete_shared_runtime_before_mutation" = 5

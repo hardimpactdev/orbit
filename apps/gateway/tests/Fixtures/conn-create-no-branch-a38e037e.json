@@ -284,6 +284,7 @@
         "clone-server-database-check",
         "clone-server-database-fill",
         "clone-mail",
+        "clone-node-store",
         "clone-workspace",
         "clone-agent",
         "clone-t3",

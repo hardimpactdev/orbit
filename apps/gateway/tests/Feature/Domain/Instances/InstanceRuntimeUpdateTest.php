@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\GatewayReleases\WaitForGatewayReleaseIdleAction;
 use App\Domain\InstanceRuntime\InstanceRuntimeUpdate;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStore;
@@ -47,6 +48,10 @@ it('admits a scoped secret-free Operation through the authenticated API', functi
     $input = app(InstanceRuntimeUpdate::class)->input($operation);
     expect($operation->lock_key)->toBe(OperationStore::lockKey('instance', $instance->id))
         ->and($input['intent']['container'])->toBe($operation->input['container'])
+        ->and($input['intent']['runtime_update'])->toBe([
+            'path' => '/opt/orbit-runtime',
+            'version' => app(InstanceHostIntent::class)->for($instance->node)['folders']['runtime']['version'],
+        ])
         ->and($input)->not->toHaveKey('execution_secrets')
         ->and(app(DirectOperation::class)->workflowInputs($operation)['execution_secrets'])->toEqual((object) [])
         ->and($input['intent'])->toHaveKey('ssh_execution');
@@ -64,6 +69,9 @@ it('refuses unsupported or busy placement before starting work', function (strin
     $instance = runtimeUpdateFixture();
     match ($case) {
         'checkout' => $instance->runtime()->delete(),
+        'production' => $instance->node->roles()->update(['role' => RoleName::AppProd]),
+        'no app-dev' => $instance->node->roles()->delete(),
+        'ambiguous roles' => $instance->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']),
         'stopped' => $instance->runtime()->update(['power_state' => 'stopped']),
         'lifecycle' => $instance->update(['status' => 'checkout_prepared']),
         'process' => Operation::query()->create(['kind' => 'process.restart', 'target_type' => 'process',
@@ -77,6 +85,7 @@ it('refuses unsupported or busy placement before starting work', function (strin
     expect(Operation::query()->where('kind', InstanceRuntimeUpdate::Kind)->count())->toBe(0);
 })->with([
     ['checkout', 'operation.kind_unavailable'],
+    ['production', 'instance.host_unavailable'], ['no app-dev', 'instance.host_unavailable'], ['ambiguous roles', 'instance.host_unavailable'],
     ['stopped', 'process.target_inactive'], ['lifecycle', 'instance.lifecycle_busy'], ['process', 'instance.lifecycle_busy'],
     ['instance.deploy', 'operation.target_busy'], ['instance.migrate', 'operation.target_busy'], ['instance.destroy', 'operation.target_busy'],
 ]);

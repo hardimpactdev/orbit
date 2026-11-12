@@ -47,6 +47,9 @@ if 'device' in args:
  if 'add' in args: assert 'readonly=true' in args and 'shift=true' in args
  sys.exit()
 args=args[args.index('--')+1:]
+if args[0]=='readlink':
+ print(os.environ['NODE_SHARED_IDENTITY']);sys.exit()
+if args[0]=='test':sys.exit()
 if args[0]=='cat':
  p=root/'guest/usr/local/libexec/orbit-instance-node-runtime.py'
  if not p.exists():sys.exit(1)
@@ -148,11 +151,59 @@ class NodeRuntimeTest(unittest.TestCase):
             self.fetch()
 
     @unittest.skipUnless(shutil.which('ansible-playbook'), 'pinned Ansible required')
+    def test_existing_update_refuses_missing_mismatched_or_incomplete_shared_runtime_before_mutation(self):
+        import yaml
+        (self.home / 'js_runtime').symlink_to(self.shared / 'js_runtime')
+        (self.root / 'tasks').mkdir()
+        shutil.copy(ROOT / 'swamp/ansible/tasks/instance-node-runtime.yml', self.root / 'tasks')
+        incus = self.root / 'incus'
+        incus.write_text('''#!/usr/bin/python3
+import json,os,sys
+from pathlib import Path
+root=Path(os.environ['NODE_FIXTURE'])
+args=sys.argv[1:]
+with (root/'prerequisite-calls').open('a') as f:f.write(json.dumps(args)+'\\n')
+args=args[args.index('--')+1:]
+if args[0]=='readlink':
+ print(os.environ['NODE_SHARED_IDENTITY']);sys.exit(0 if os.environ['NODE_SHARED_IDENTITY'] else 1)
+if args[0]=='test':sys.exit(int(os.environ['NODE_VP_STATUS']))
+raise RuntimeError('Refusal reached a mutation')
+''')
+        incus.chmod(0o755)
+        expected = str(self.root / 'runtime' / 'expected')
+        play = [{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
+                 'vars': {'ansible_python_interpreter': sys.executable, 'container': self.container,
+                          'intent': {'runtime_update': {'path': str(self.root / 'runtime'), 'version': 'expected'}},
+                          'as_root': [str(incus), 'exec', 'fixture', '--']},
+                 'tasks': [{'block': [{'ansible.builtin.include_tasks': 'tasks/instance-node-runtime.yml'}],
+                            'rescue': [{'ansible.builtin.copy': {
+                                'content': '{{ node_runtime_failure | to_json }}',
+                                'dest': str(self.root / 'failure.json'), 'mode': '0600'}},
+                                       {'ansible.builtin.fail': {'msg': 'refused'}}]}]}]
+        path = self.root / 'play.yml'
+        path.write_text(yaml.safe_dump(play))
+        for identity, vp_status in [('', '1'), (str(self.root / 'runtime/old'), '0'), (expected, '1')]:
+            with self.subTest(identity=identity, vp_status=vp_status):
+                env = {**os.environ, 'NODE_FIXTURE': str(self.root), 'NODE_SHARED_IDENTITY': identity, 'NODE_VP_STATUS': vp_status,
+                       'ANSIBLE_LOCAL_TEMP': str(self.root / 'ansible-local'), 'ANSIBLE_REMOTE_TEMP': str(self.root / 'ansible-remote'),
+                       'ANSIBLE_STDOUT_CALLBACK': 'default', 'ANSIBLE_COLLECTIONS_PATH': str(self.root / 'empty')}
+                done = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(path)], env=env, capture_output=True, text=True, check=False)
+                self.assertNotEqual(done.returncode, 0, done.stdout + done.stderr)
+                failure = json.loads((self.root / 'failure.json').read_text())
+                self.assertEqual(failure['error_code'], 'instance.runtime_prerequisite_failed')
+                self.assertIn('app-dev', failure['error_message'])
+                self.assertTrue((self.home / 'js_runtime').is_symlink())
+                self.assertEqual((self.home / 'js_runtime').resolve(), self.shared / 'js_runtime')
+        calls = [json.loads(line) for line in (self.root / 'prerequisite-calls').read_text().splitlines()]
+        self.assertTrue(all(call[call.index('--') + 1] in ('readlink', 'test') for call in calls))
+
+    @unittest.skipUnless(shutil.which('ansible-playbook'), 'pinned Ansible required')
     def test_production_phase_removes_read_only_source_mount_after_failure_without_downtime(self):
         import yaml
         (self.home / 'js_runtime').symlink_to(self.shared / 'js_runtime')
         script = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
         script = script.replace("Path('/opt/orbit-runtime/current/vite-plus-home')", 'Path(' + repr(str(self.shared)) + ')')
+        script = script.replace("app_user=\'orbit\'", "app_user=" + repr(pwd.getpwuid(os.getuid()).pw_name))
         script = script.replace("VP = '/opt/orbit-runtime/current/bin/vp'", 'VP = ' + repr(str(self.vp)))
         (self.root / 'instance_node_runtime.py').write_text(script)
         (self.root / 'tasks').mkdir()
@@ -163,7 +214,8 @@ class NodeRuntimeTest(unittest.TestCase):
         container = {**self.container, 'project': 'fixture', 'name': 'fixture'}
         play = [{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
                  'vars': {'ansible_python_interpreter': sys.executable, 'container': container,
-                          'intent': {'migrate': {'checkout': str(self.checkout)}},
+                          'intent': {'migrate': {'checkout': str(self.checkout)},
+                                     'runtime_update': {'path': str(self.root / 'runtime'), 'version': 'expected'}},
                           'phase': 'node-runtime', 'node_fetch': True,
                           'as_root': [str(incus), 'exec', '--project', 'fixture', 'fixture', '--'],
                           'incus_project': [str(incus), '--project', 'fixture']},
@@ -171,7 +223,7 @@ class NodeRuntimeTest(unittest.TestCase):
         path = self.root / 'play.yml'
         path.write_text(yaml.safe_dump(play))
         before = (self.checkout / '.nvmrc').read_bytes()
-        env = {**os.environ, 'NODE_FIXTURE': str(self.root), 'FAKE_NODE_FAIL': '1', 'FAKE_NODE_VERSION': '22.23.5',
+        env = {**os.environ, 'NODE_FIXTURE': str(self.root), 'NODE_SHARED_IDENTITY': str(self.root / 'runtime/expected'), 'FAKE_NODE_FAIL': '1', 'FAKE_NODE_VERSION': '22.23.5',
                'ANSIBLE_LOCAL_TEMP': str(self.root / 'ansible-local'), 'ANSIBLE_REMOTE_TEMP': str(self.root / 'ansible-remote'),
                'ANSIBLE_STDOUT_CALLBACK': 'default', 'ANSIBLE_COLLECTIONS_PATH': str(self.root / 'empty')}
         done = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(path)], env=env, capture_output=True, text=True, check=False)

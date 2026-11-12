@@ -6,6 +6,7 @@ namespace App\Domain\InstanceRuntime;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceFolderPlan;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
@@ -15,6 +16,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Instance;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
@@ -36,6 +38,9 @@ final readonly class InstanceRuntimeUpdate implements DirectOperationProjection
             if ($runtime === null) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Runtime update requires a container Instance.', 409);
             }
+            if ($instance->placementEnvironment() !== 'development') {
+                throw new ResourceOperationException('instance.host_unavailable', 'Runtime update requires a development Instance on an app-dev Node.', 409);
+            }
             if ($instance->status !== InstanceState::Active
                 || Operation::query()->where('target_type', 'process')->whereIn('target_id', $instance->processes()->select('id'))
                     ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
@@ -45,8 +50,13 @@ final readonly class InstanceRuntimeUpdate implements DirectOperationProjection
                 throw new ResourceOperationException('process.target_inactive', 'The container is stopped; runtime update does not start it.', 409);
             }
 
+            $folders = app(RecipeImageBuilds::class)->currentRecipe()->instances
+                ?? throw new ResourceOperationException('instance.host_unavailable', 'The recipe holds no shared Instance folders.', 409);
+            $expected = InstanceFolderPlan::for($folders)['runtime'];
+
             return app(StartOperationAction::class)->execute(self::Kind, 'instance', $instance->id, $instance->node_id,
-                ['container' => app(InstanceContainer::class)->intent($instance, $runtime)], $caller, $requestId,
+                ['container' => app(InstanceContainer::class)->intent($instance, $runtime),
+                    'runtime_update' => ['path' => $expected['path'], 'version' => $expected['version']]], $caller, $requestId,
                 lockKey: OperationStore::lockKey('instance', $instance->id));
         });
     }

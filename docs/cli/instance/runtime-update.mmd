@@ -15,17 +15,17 @@ sequenceDiagram
   CLI->>GW: instance:runtime:update ID
   %%> Command:
   %%> - `orbit instance:runtime:update INSTANCE`
-  %%> - syntax: `<instance-id> [--json]`
+  %%> - syntax: `[instance-id] [--json]`; omitted interactive input uses the Instance picker; cancellation starts no Operation
   Note over GW: Admit runtime update
   %%> When:
-  %%> - the named Instance is active, has a running container and has no lifecycle or Process operation in progress; hold its Instance lock
+  %%> - the named Instance is active, has a running development container and has no lifecycle or Process operation in progress; hold its Instance lock
   %%> On failure:
-  %%> - a checkout, stopped container or busy Instance refuses with existing codes and starts no run
+  %%> - a checkout, non-development placement, stopped container or busy Instance refuses with existing codes and starts no run
   GW->>SW: Start run, full intent<br/>operation-instance-runtime-update
   GW-->>CLI: 202 Accepted<br/>Operation ID
   SW->>N: Prepare Node runtimes<br/>Ansible · tags node-runtime
   %%> What it does:
-  %%> - atomically converts the old shared-store link to a private copy; Vite+ resolves each Process working directory and fetches only a missing resolved Node
+  %%> - first requires this release’s shared runtime identity and executable Vite+ before any store change; then atomically converts the old shared-store link to a private copy; Vite+ resolves each Process working directory and fetches only a missing resolved Node
   %%> - the phase is bounded at 150 seconds; resolution and downloads share 90 seconds; no Process is stopped, started or restarted
   alt store changed
     %% path: main
@@ -39,7 +39,7 @@ sequenceDiagram
     %% path: failed
     N--xSW: Node preparation failed
     %%> On failure:
-    %%> - instance.node_runtime_prepare_failed names the pin and reason; completed copies stay; the owner may repeat; Processes remain as they were
+    %%> - instance.runtime_prerequisite_failed keeps the old store on a missing/mismatched shared runtime; instance.node_runtime_prepare_failed names the pin and reason; completed copies stay; the owner may repeat; Processes remain as they were
     SW--xGW: Run failed<br/>error code
   end
   loop until terminal

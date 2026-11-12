@@ -10,7 +10,7 @@ covers:
   - swamp/workflows/workflow-operation-instance-runtime-update.yaml
 ---
 
-Prepare the private Node store of one named, running container Instance. Orbit preserves its downloaded versions, resolves Project pins with Vite+, and fetches a missing resolved version through the Instance proxy.
+Prepare the private Node store of one named, running development container Instance on an app-dev Node. Orbit preserves its downloaded versions, resolves Project pins with Vite+, and fetches a missing resolved version through the Instance proxy.
 
 ## Usage
 
@@ -21,7 +21,7 @@ orbit instance:runtime:update 42 --json
 
 | Argument or option | Meaning |
 | --- | --- |
-| `instance` | Numeric Instance ID. |
+| `instance` | Numeric Instance ID. Omit it in an interactive terminal to select an Instance; cancellation starts no Operation. |
 | `--json` | Use the standard [machine output](/reference/cli-ux#results). |
 
 The result contains `status` (`converted` or `unchanged`), `versions` in the private store, and `pins` with their sources and resolved versions. A repeat with no missing version reports `unchanged`.
@@ -29,6 +29,8 @@ The result contains `status` (`converted` or `unchanged`), `versions` in the pri
 Orbit never stops, starts or restarts a Process for this command. A running Process keeps its MainPID and open executable. After the update succeeds, the owner explicitly restarts a crashed or outdated vp-dev. See [private Node runtimes](/reference/development-containers#private-node-runtimes) for disk cost, seed reuse and upgrades.
 
 ## How it works
+
+Before conversion, Orbit checks that the container sees the shared runtime version expected by this release and an executable Vite+. A mismatch refuses without changing its store; converge the Node’s app-dev role first.
 
 The phase has a 150-second bound; Vite+ resolution and downloads share 90 seconds. It changes only the named container. A failed fetch keeps completed copies and names the pin and reason; repeat the command after correcting the cause.
 
@@ -40,6 +42,9 @@ The phase has a 150-second bound; Vite+ resolution and downloads share 90 second
 | --- | --- |
 | `instance.id_invalid` | The Instance ID is not a positive integer. |
 | `operation.kind_unavailable` | The Instance has no container runtime. |
+| `instance.host_unavailable` | The Instance is not on a development app-dev placement. |
+| `instance.runtime_prerequisite_failed` | The shared runtime is missing, differs from this release, or has no executable Vite+. The store stays unchanged. |
+| `input.cancelled` | Instance selection was cancelled before admission. |
 | `process.target_inactive` | The container is stopped; this command does not start it. |
 | `instance.lifecycle_busy` | The Instance or one of its Processes has unfinished work. |
 | `operation.target_busy` | Another Operation holds the Instance lock. |

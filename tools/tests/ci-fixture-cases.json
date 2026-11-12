@@ -307,7 +307,7 @@
     ]
   },
   "swamp/bin/source_test.ts": {
-    "source_sha256": "0879d78496c83f95a3f53e3d91a0721b5ea6b7d019289f7c98900d9ba677d2aa",
+    "source_sha256": "863db101b68e644d337645ac300ed4ba5c326d90fabc199240573a28432c4e9a",
     "cases": [
       "model IDs are unique",
       "workflow queue bounds have measured per-kind budgets",
@@ -1939,13 +1939,14 @@
     ]
   },
   "swamp/tests/instance_node_runtime_test.py": {
-    "source_sha256": "5ecdd774ee27b55e8635e06ce60fa5bd230b72832c83e79375e07b87601d215a",
+    "source_sha256": "c98ea7daba165dce2cd9dcdb182f040451ff6869a551f6600fc54ce16d2af5c1",
     "cases": [
       "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat",
       "test_recipe_upgrade_and_seed_copy_keep_downloaded_versions_after_shared_pruning",
       "test_vite_alone_resolves_and_fetches_once_as_the_app_user",
       "test_recipe_pin_and_unpinned_projects_need_no_install",
       "test_download_integrity_and_timeout_failures_name_the_pin",
+      "test_existing_update_refuses_missing_mismatched_or_incomplete_shared_runtime_before_mutation",
       "test_production_phase_removes_read_only_source_mount_after_failure_without_downtime"
     ]
   }

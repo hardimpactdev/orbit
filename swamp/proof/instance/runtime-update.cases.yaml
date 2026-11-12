@@ -7,7 +7,7 @@ uncovered:
   main: "The real-helper fixture converts the link with an unchanged running MainPID; Gateway fixtures prove a named Instance and lock."
   repeat: "The helper's second conversion and cached fetch report unchanged; no Process command runs."
   failed: "The production Ansible fixture covers failed verification and timeout with pin diagnostics; Processes remain untouched."
-  refusals: "Gateway fixtures cover non-container, stopped, busy and caller access refusals with no Operation."
+  refusals: "Gateway fixtures cover production/non-app-dev, non-container, stopped, busy and caller access refusals; real Ansible fixtures prove missing/mismatched/incomplete shared-runtime refusals preserve the old link with no Operation."
 cases:
   - id: invalid-id
     batch: fresh-fleet

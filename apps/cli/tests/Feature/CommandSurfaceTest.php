@@ -1086,7 +1086,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'node:wireguard-key' => ['node', 'public-key'],
             'node:update', 'node:converge', 'node:metrics', 'node:show', 'node:role:list' => ['node'],
             'node:role:add' => ['node', 'role'],
-            'instance:node-service:attach', 'instance:node-service:list' => ['instance'],
+            'instance:node-service:attach', 'instance:node-service:list', 'instance:runtime:update' => ['instance'],
             'instance:node-service:detach' => ['instance', 'target'],
             'firewall:allow' => ['port'],
             'proof' => ['orbit-command'],
@@ -1655,9 +1655,10 @@ it('preserves the typed mail Operation receipt and request correlation at the SD
         ->and($request->resolveEndpoint())->toBe('/api/v1/instances/501/mail')->and($request->body()->all())->toBe([]);
 });
 
-it('prepares the Node store without confirmation in JSON and noninteractive human mode', function (bool $json): void {
+it('prepares the Node store without confirmation in JSON and noninteractive human mode', function (bool $json, string $status): void {
+    MockClient::destroyGlobal();
     app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://10.44.0.1', '/unused-ca'));
-    $result = ['status' => 'converted', 'versions' => ['22.23.5', '24.22.1'], 'pins' => [['pin_source' => '.nvmrc', 'pinned' => '22', 'version' => '22.23.5', 'directory' => '/srv/workspace']]];
+    $result = ['status' => $status, 'versions' => ['22.23.5', '24.22.1'], 'pins' => [['pin_source' => '.nvmrc', 'pinned' => '22', 'version' => '22.23.5', 'directory' => '/srv/workspace']]];
     $final = ['id' => 901, 'kind' => 'instance.runtime_update', 'target_type' => 'instance', 'target_id' => 501,
         'status' => 'succeeded', 'sequence' => 2, 'poll_after_seconds' => null, 'result' => $result];
     $mock = MockClient::global([
@@ -1671,10 +1672,45 @@ it('prepares the Node store without confirmation in JSON and noninteractive huma
     if ($json) {
         expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
     } else {
-        expect($output)->toContain('Runtime store: converted. Node: 22.23.5, 24.22.1.');
+        expect($output)->toContain('Runtime store: '.$status.'. Node: 22.23.5, 24.22.1.', 'No Process was restarted.', 'Restart a crashed or outdated vp-dev explicitly.');
     }
     $mock->assertSent(fn ($request): bool => $request instanceof UpdateInstanceRuntimeRequest
         && $request->resolveEndpoint() === '/api/v1/instances/501/runtime' && $request->body()->all() === []
         && is_string($request->headers()->get('Idempotency-Key')));
     MockClient::destroyGlobal();
+})->with([true, false])->with(['converted', 'unchanged']);
+
+it('prints the public pin failure reason in human and JSON results', function (bool $json): void {
+    MockClient::destroyGlobal();
+    app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://10.44.0.1', '/unused-ca'));
+    $result = ['error_code' => 'instance.node_runtime_prepare_failed', 'error_message' => '.nvmrc pins Node 22: Node preparation timed out'];
+    $final = ['id' => 901, 'kind' => 'instance.runtime_update', 'target_type' => 'instance', 'target_id' => 501,
+        'status' => 'failed', 'sequence' => 2, 'poll_after_seconds' => null, 'error_code' => $result['error_code'], 'result' => $result];
+    MockClient::global([
+        UpdateInstanceRuntimeRequest::class => MockResponse::make(['data' => $final], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final]),
+    ]);
+    $exit = Artisan::call('instance:runtime:update', ['instance' => 501, '--json' => $json, '--no-interaction' => true]);
+    $output = trim(Artisan::output());
+    expect($exit)->toBe(1);
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
+    } else {
+        expect($output)->toContain($result['error_message'], $result['error_code'])->not->toContain('Runtime store:');
+    }
+    MockClient::destroyGlobal();
 })->with([true, false]);
+
+it('refuses missing runtime Instance IDs without prompting or admitting in machine and noninteractive modes', function (string $mode): void {
+    MockClient::destroyGlobal();
+    $mock = MockClient::global();
+    expect(Artisan::call('instance:runtime:update', [$mode => true]))->toBe(1);
+    $output = Artisan::output();
+    expect($output)->toContain('instance.id_invalid');
+    if ($mode === '--json') {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('instance.id_invalid');
+    }
+    $mock->assertNothingSent();
+    MockClient::destroyGlobal();
+})->with(['--json', '--no-interaction']);

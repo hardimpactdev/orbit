@@ -1,5 +1,42 @@
 ---
 # Only this named container changes. The serving checkout is mounted read-only for pre-quiesce resolution.
+# The public update refuses before helper installation or any private-store mutation.
+- name: Require the admitted shared runtime before updating an existing Instance
+  when: intent.runtime_update is defined
+  block:
+    - name: Read the mounted shared runtime identity
+      ansible.builtin.command:
+        argv: "{{ as_root + ['readlink', '-e', intent.runtime_update.path ~ '/current'] }}"
+      register: node_shared_identity
+      changed_when: false
+      failed_when: false
+
+    - name: Check the shared Vite+ executable
+      ansible.builtin.command:
+        argv: "{{ as_root + ['test', '-x', intent.runtime_update.path ~ '/current/bin/vp'] }}"
+      register: node_shared_vp
+      changed_when: false
+      failed_when: false
+
+    - name: Retain the shared runtime prerequisite refusal
+      when: >-
+        node_shared_identity.rc != 0
+        or node_shared_identity.stdout != intent.runtime_update.path ~ '/' ~ intent.runtime_update.version
+        or node_shared_vp.rc != 0
+      ansible.builtin.set_fact:
+        node_runtime_failure:
+          error_code: instance.runtime_prerequisite_failed
+          error_message: "The shared runtime is missing or does not match this release. Converge the Node's app-dev role before updating this Instance."
+
+    - name: Require this release's shared runtime and Vite+
+      ansible.builtin.assert:
+        that:
+          - node_shared_identity.rc == 0
+          - node_shared_identity.stdout == intent.runtime_update.path ~ '/' ~ intent.runtime_update.version
+          - node_shared_vp.rc == 0
+        fail_msg: instance.runtime_prerequisite_failed
+        quiet: true
+
 - name: Read the installed Node-store helper
   ansible.builtin.command:
     argv: "{{ as_root + ['cat', '/usr/local/libexec/orbit-instance-node-runtime.py'] }}"
