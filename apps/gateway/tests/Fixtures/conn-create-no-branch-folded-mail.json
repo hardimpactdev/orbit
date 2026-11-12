@@ -295,7 +295,27 @@
         "instance_id": 2,
         "ready": false,
         "failed_step": "clone",
-        "error_code": "instance.create_clone_failed"
+        "error_code": "instance.create_clone_failed",
+        "recovery": {
+            "state": "retained_for_retry",
+            "retry": {
+                "command": "instance:create",
+                "project_id": 1,
+                "node_id": 2,
+                "name": "fix-login",
+                "reuse_original_options": true,
+                "new_idempotency_key": true
+            },
+            "destroy": {
+                "command": "instance:destroy",
+                "instance_id": 2,
+                "available": true,
+                "options": {
+                    "yes": true,
+                    "force": true
+                }
+            }
+        }
     },
     "resume": {
         "instance_id": 2,
