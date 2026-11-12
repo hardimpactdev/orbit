@@ -1,8 +1,11 @@
-"""The exact mailer-line rule. Node Python is an Ansible prerequisite; guests need only sh/coreutils."""
+"""The exact mailer-line rule. Node Python is an Ansible prerequisite; guests use sh/coreutils, acl and stock GNU tar."""
+import hashlib
+import io
 import json
 import signal
 import subprocess
 import sys
+import tarfile
 
 # These are fixed programs, never caller-supplied shell. No file content enters argv or output.
 INSPECT = 'if [ -L "$1" ]; then printf link; elif [ ! -e "$1" ]; then printf absent; elif [ -f "$1" ]; then printf file; else printf other; fi'
@@ -12,16 +15,37 @@ KEY = b'MAIL_MAILER'
 REPLACE = """set -eu
 umask 077
 test ! -L "$1" && test -f "$1"
+# Remove inherited access grants before staging any private bytes.
+: > "$2"
+setfacl -b -- "$2"
+chmod 0600 -- "$2"
 cat > "$2"
-# GNU coreutils is in the stock image. mode also copies POSIX ACLs; explicit xattr makes errors fatal.
 cp --attributes-only --preserve=mode,ownership,timestamps,xattr -- "$1" "$2"
-mv -f -- "$2" "$1"
+acl=$(getfacl --absolute-names -- "$1")
+printf '%s\n' "$acl" | setfacl --set-file=- -- "$2"
 """
 
 
 def apply(prefix, path, remove):
     def command(argv, data=None):
         return subprocess.run(argv, input=data, capture_output=True, check=True).stdout
+
+    def metadata(filename):
+        # getfattr is not in the image. GNU tar is an Ubuntu Essential package and
+        # exports every xattr (including binary values) in PAX headers. Archive bytes
+        # stay in Node memory, never in a file or public output; Node Python is required by Ansible.
+        archive = command(prefix + ['tar', '--format=pax', '--xattrs', '--xattrs-include=*',
+                                    '--numeric-owner', '--atime-preserve=system', '-cf', '-', '--', filename])
+        with tarfile.open(fileobj=io.BytesIO(archive), mode='r:') as snapshot:
+            members = snapshot.getmembers()
+            if len(members) != 1 or not members[0].isreg():
+                raise ValueError
+            member = members[0]
+            attributes = {hashlib.sha256(key.encode('utf-8', 'surrogateescape')).digest():
+                          hashlib.sha256(value.encode('utf-8', 'surrogateescape')).digest()
+                          for key, value in member.pax_headers.items() if key.startswith('SCHILY.xattr.')}
+        acl = command(prefix + ['getfacl', '--absolute-names', '-c', '--', filename])
+        return member.uid, member.gid, member.mode, hashlib.sha256(acl).digest(), attributes
 
     def cleanup():
         result = subprocess.run(remove, capture_output=True, check=False)
@@ -71,6 +95,10 @@ def apply(prefix, path, remove):
             return {'status': 'left_as_written', 'lines': numbers}
         lines[index] = b'MAIL_MAILER=smtp' + line[len(body):]
         command(prefix + ['sh', '-c', REPLACE, 'sh', path, TEMPORARY], b'\n'.join(lines))
+        # Fail closed before rename: no mismatch can replace the original inode.
+        if metadata(path) != metadata(TEMPORARY):
+            raise ValueError
+        command(prefix + ['mv', '-f', '--', TEMPORARY, path])
         return {'status': 'changed', 'lines': numbers}
     finally:
         # This runs on the Node, outside the guest killed by a forced container stop.
@@ -88,7 +116,7 @@ def main():
         project, container = sys.argv[1:]
         result = apply(['incus', '--project', project, 'exec', container, '--'], '/srv/workspace/.env',
                        ['incus', '--project', project, 'file', 'delete', '--force', container + TEMPORARY])
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, tarfile.TarError, subprocess.SubprocessError) as error:
         result = {'error_code': 'env.configuration_invalid'}
         # Never forward arbitrary tool output: a tool can echo input or file contents.
         # Only complete, fixed Incus diagnostics are public; everything else stays private.

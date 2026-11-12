@@ -44,7 +44,7 @@ if 'file' in args and 'delete' in args:
         sys.stderr.write('Error: file does not exist\\n')
         sys.exit(1)
     sys.exit(0)
-actions.append({'action': 'exec', 'stopped': (root / 'stopped').exists()})
+actions.append({'action': 'exec', 'stopped': (root / 'stopped').exists(), 'command': args[args.index('--') + 1]})
 (root / 'file-actions.json').write_text(json.dumps(actions))
 if (root / 'stopped').exists():
     sys.exit(93)
@@ -66,7 +66,7 @@ if args[:2] == ['systemctl', 'try-restart']:
 sys.exit(subprocess.run(args).returncode)
 ''')
         fake.chmod(0o755)
-        # Kill the actual replacement shell at its first command after cat has staged all bytes.
+        # Kill the actual replacement shell at metadata copy, after private bytes were staged.
         copy = self.bin / 'cp'
         copy.write_text('''#!/usr/bin/python3
 import json, os, signal, sys
@@ -81,6 +81,26 @@ if (root / 'interrupt-after-stage').exists():
 os.execv('/usr/bin/cp', ['cp', *sys.argv[1:]])
 ''')
         copy.chmod(0o755)
+        acl_tool = self.bin / 'setfacl'
+        acl_tool.write_text('''#!/usr/bin/python3
+import json, os, subprocess, sys
+from pathlib import Path
+root = Path(os.environ['MAIL_FIXTURE'])
+log = root / 'acl-calls.json'
+calls = json.loads(log.read_text()) if log.exists() else []
+calls.append(sys.argv[1:])
+log.write_text(json.dumps(calls))
+mode = (root / 'acl-fault').read_text() if (root / 'acl-fault').exists() else ''
+if mode == 'fail':
+    assert Path(sys.argv[-1]).read_bytes() == b''
+    sys.exit(1)
+if mode == 'lie': sys.exit(0)
+result = subprocess.run(['/usr/bin/setfacl', *sys.argv[1:]])
+if result.returncode == 0 and mode == 'xattr':
+    os.setxattr(sys.argv[-1], 'user.unwanted-inherited', b'private-fixture')
+sys.exit(result.returncode)
+''')
+        acl_tool.chmod(0o755)
         self.env = {**os.environ, 'PATH': str(self.bin) + ':' + os.environ['PATH'], 'MAIL_FIXTURE': str(self.root),
                     'ANSIBLE_DISPLAY_FAILED_STDERR': '1', 'ANSIBLE_NOCOLOR': '1', 'ANSIBLE_STDOUT_CALLBACK': 'default', 'ANSIBLE_COLLECTIONS_PATH': str(self.root / 'collections'),
                     'ORBIT_RUN': str(self.root)}
@@ -190,35 +210,76 @@ os.execv('/usr/bin/cp', ['cp', *sys.argv[1:]])
 
     def test_atomic_replacement_preserves_distinct_acl_and_user_xattr(self):
         self.envfile.write_bytes(b'MAIL_MAILER=log\n')
-        def assert_copy_issued():
+        def assert_commands_issued():
             self.assertEqual(json.loads((self.root / 'metadata-copy.json').read_text()),
                              ['--attributes-only', '--preserve=mode,ownership,timestamps,xattr', '--',
                               str(self.envfile), str(self.root / '.env.orbit-mail')])
+            self.assertEqual(json.loads((self.root / 'acl-calls.json').read_text())[-2:],
+                             [['-b', '--', str(self.root / '.env.orbit-mail')],
+                              ['--set-file=-', '--', str(self.root / '.env.orbit-mail')]])
         if not shutil.which('setfacl') or not shutil.which('getfacl'):
-            self.assertEqual(self.run_rule()['status'], 'changed')
-            assert_copy_issued()
-            self.skipTest('setfacl/getfacl unavailable; metadata copy command executed and asserted')
-        self.envfile.write_bytes(b'MAIL_MAILER=log\n')
-        # The source ACL differs from the directory default and the initially staged inode.
+            self.assertIn('setfacl -b -- "$2"', SOURCE.read_text())
+            self.assertIn('setfacl --set-file=- -- "$2"', SOURCE.read_text())
+            self.skipTest('acl tools unavailable; mandatory ACL command argv asserted')
+        # First prove the reported hole: source has NO ACL while the directory grants a named user.
         named_uid = os.getuid() + 1
         try:
             subprocess.run(['setfacl', '-m', f'd:u:{named_uid}:r--', str(self.root)], check=True, capture_output=True)
-            subprocess.run(['setfacl', '-m', f'u:{named_uid}:rw-', str(self.envfile)], check=True, capture_output=True)
             os.setxattr(self.envfile, 'user.orbit-mail-fixture', b'nonempty-private-metadata')
+            os.setxattr(self.envfile, 'user.binary-fixture', bytes(range(256)))
         except (OSError, subprocess.CalledProcessError) as error:
             self.assertEqual(self.run_rule()['status'], 'changed')
-            assert_copy_issued()
-            self.skipTest(f'temp filesystem lacks ACL/xattr support: {type(error).__name__}; copy command executed')
+            assert_commands_issued()
+            self.skipTest(f'temp filesystem lacks ACL/xattr support: {type(error).__name__}; commands executed')
         def metadata():
             info = self.envfile.stat()
             acl = subprocess.run(['getfacl', '-cp', str(self.envfile)], check=True, capture_output=True).stdout
             attrs = {key: os.getxattr(self.envfile, key) for key in os.listxattr(self.envfile)}
             return (info.st_uid, info.st_gid, info.st_mode, acl, attrs)
-        before = metadata()
-        self.assertEqual(self.run_rule()['status'], 'changed')
-        assert_copy_issued()
-        self.assertTrue(metadata() == before, 'ACL/xattr/ownership/mode changed after atomic rename')
-        self.assertEqual(list(self.root.glob('.env.*')), [])
+        for named in [False, True]:
+            self.envfile.write_bytes(b'MAIL_MAILER=log\n')
+            subprocess.run(['setfacl', '-b', str(self.envfile)], check=True, capture_output=True)
+            self.envfile.chmod(0o660)
+            if named:
+                subprocess.run(['setfacl', '-m', f'u:{named_uid}:rw-', str(self.envfile)], check=True, capture_output=True)
+            before = metadata()
+            self.assertEqual('system.posix_acl_access' in before[-1], named)
+            (self.root / 'file-actions.json').write_text('[]')
+            self.assertEqual(self.run_rule()['status'], 'changed')
+            assert_commands_issued()
+            programs = [action.get('command') for action in json.loads((self.root / 'file-actions.json').read_text())]
+            self.assertEqual([command for command in programs if command in ['tar', 'getfacl', 'mv']],
+                             ['tar', 'getfacl', 'tar', 'getfacl', 'mv'])
+            self.assertTrue(metadata() == before, 'ACL/xattr/ownership/mode changed after atomic rename')
+            self.assertEqual('system.posix_acl_access' in os.listxattr(self.envfile), named)
+            self.assertTrue(self.envfile.read_bytes() == b'MAIL_MAILER=smtp\n')
+            self.assertEqual(list(self.root.glob('.env.*')), [])
+        # A failing tool, a lying ACL tool, and an extra xattr all fail BEFORE rename.
+        for fault in ['fail', 'lie', 'xattr']:
+            self.envfile.write_bytes(b'MAIL_MAILER=log\nMAIL_PASSWORD=fixture-canary\n')
+            subprocess.run(['setfacl', '-b', str(self.envfile)], check=True, capture_output=True)
+            self.envfile.chmod(0o660)
+            before = metadata()
+            original = self.envfile.read_bytes()
+            inode = self.envfile.stat().st_ino
+            (self.root / 'file-actions.json').write_text('[]')
+            (self.root / 'acl-fault').write_text(fault)
+            result = subprocess.run([sys.executable, '-c', SOURCE.read_text(), 'fixture', 'fixture'],
+                                    env=self.env, capture_output=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(json.loads(result.stdout), {'error_code': 'env.configuration_invalid'})
+            self.assertEqual(result.stderr, b'')
+            self.assertTrue(self.envfile.read_bytes() == original)
+            programs = [action.get('command') for action in json.loads((self.root / 'file-actions.json').read_text())]
+            self.assertNotIn('mv', programs)
+            if fault != 'fail':
+                self.assertEqual([command for command in programs if command in ['tar', 'getfacl']],
+                                 ['tar', 'getfacl', 'tar', 'getfacl'])
+            self.assertTrue(metadata() == before, 'failed verification changed original metadata')
+            self.assertEqual(self.envfile.stat().st_ino, inode)
+            self.assertEqual(list(self.root.glob('.env.*')), [])
+            self.assertEqual(json.loads(self.calls.read_text()), [])
+            (self.root / 'acl-fault').unlink()
 
     def test_workflow_reports_failed_tasks_to_stderr_and_keeps_content_private(self):
         import yaml
