@@ -78,7 +78,8 @@ jobs:
         restoring: false
         execution_secrets: {}
         intent:
-          control_node_id: '${{ inputs.intent.nodes[string(inputs.node_id)].control_node_id }}'
+          # Older captured plans omit this metadata; the child uses role placement and the SSH connection.
+          control_node_id: '${{ "control_node_id" in inputs.intent.nodes[string(inputs.node_id)] ? inputs.intent.nodes[string(inputs.node_id)].control_node_id : null }}'
           leaf: '${{ self.part.leaf }}'
           host_keys: '${{ inputs.intent.nodes[string(inputs.node_id)].host_keys }}'
           connection: {nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}',

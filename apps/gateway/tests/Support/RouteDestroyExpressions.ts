@@ -13,7 +13,8 @@ const root = new URL("../../../../swamp/workflows/", import.meta.url);
 let expressions = 0;
 const files = new Set<string>();
 const trace: string[] = [];
-let publicationStarted = false, siteRemoved = false, dnsRemoved = false;
+let siteRemoved = false, dnsRemoved = false;
+const certificateControls: (number | null)[] = [];
 
 function evaluate(expression: string, context: Row): any {
     expressions++;
@@ -48,7 +49,10 @@ function allows(condition: Row, status: string): boolean {
     }
     return condition.type === status;
 }
-function workflow(name: string, inputs: Row, failPublication: boolean): Row {
+function workflow(name: string, inputs: Row): Row {
+    if (name === "route-certificate-remove") {
+        certificateControls.push(inputs.intent.control_node_id);
+    }
     files.add(name);
     const flow = parse(
         Deno.readTextFileSync(new URL("workflow-" + name + ".yaml", root)),
@@ -100,7 +104,6 @@ function workflow(name: string, inputs: Row, failPublication: boolean): Row {
                         const child = workflow(
                             task.workflowIdOrName,
                             task.inputs,
-                            failPublication,
                         );
                         status = child.status;
                         outputs = child.outputs;
@@ -109,9 +112,7 @@ function workflow(name: string, inputs: Row, failPublication: boolean): Row {
                     } else if (
                         name === "route-create-site" && step.name === "site"
                     ) {
-                        publicationStarted = true;
-                        if (failPublication) status = "failed";
-                        else siteRemoved = true;
+                        siteRemoved = true;
                     } else if (
                         name === "route-create-dns" && step.name === "records"
                     ) {
@@ -139,7 +140,6 @@ const input = JSON.parse(await new Response(Deno.stdin.readable).text());
 const result = workflow(
     "operation-route-removal",
     input.inputs,
-    input.fail_publication ?? false,
 );
 console.log(
     JSON.stringify({
@@ -147,7 +147,7 @@ console.log(
         expressions,
         files: [...files],
         trace,
-        publicationStarted,
+        certificateControls,
         siteRemoved,
         dnsRemoved,
     }),

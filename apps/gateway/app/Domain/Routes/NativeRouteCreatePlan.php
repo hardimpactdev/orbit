@@ -74,7 +74,6 @@ final readonly class NativeRouteCreatePlan
         }
         $route->loadMissing(['cluster.routerAssignment.node', 'cluster.ingressAssignment.node']);
         $forward = ValidatedData::object(ValidatedData::object($lifecycle['route_mutations'])['forward']);
-        $retryRemoval = ($lifecycle['removal'] ?? false) === true && $route->status === RouteStatus::Retiring && $route->failed_step !== null;
         $plan['awake'] = RouteExecutionProof::objects($lifecycle['awake'] ?? []);
         $preparation = ValidatedData::object($lifecycle['preparation']);
         $renders = is_array($lifecycle['renders'] ?? null) ? $lifecycle['renders'] : [];
@@ -127,8 +126,7 @@ final readonly class NativeRouteCreatePlan
             // A domain inside the TLD changes no record: private DNS already answers the whole TLD.
             $dnsArtifacts = ValidatedData::object(ValidatedData::object($lifecycle['route_mutations'])['artifacts'])['dns'] ?? [];
             $artifact = static fn (mixed $index): mixed => is_int($index) && is_array($dnsArtifacts) ? ($dnsArtifacts[$index] ?? null) : null;
-            // A retry after sites left still has to remove DNS that a prior attempt failed to publish.
-            if ($after['dns'] !== null && ($retryRemoval || $artifact($after['dns']) != $artifact($before['dns'])) && is_array($render['dns'])) {
+            if ($after['dns'] !== null && $artifact($after['dns']) != $artifact($before['dns']) && is_array($render['dns'])) {
                 $dns = ValidatedData::object($render['dns']);
                 $plan['dns'][] = ['node_id' => $nodeId, 'records' => $dns['records'], 'catalog' => $dns['catalog']];
                 $touched[$nodeId] = true;

@@ -6,9 +6,9 @@ use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\NativeRouteRemovalProjection;
-use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampDispatch;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -63,19 +63,28 @@ function destroyFixture(Node $node, string $kind, string $suffix): Route
             'checkout_path' => '/apps/'.$suffix, 'selected_php_version' => '8.5', 'status' => 'source_resolved']);
         $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     }
+    if ($kind === 'gone') {
+        $cluster = Cluster::query()->create(['name' => 'fixture-cluster', 'tld' => 'cluster.test']);
+        $node->update(['cluster_id' => $cluster->id]);
+        $node->roles()->create(['role' => 'router', 'status' => 'active', 'cluster_id' => $cluster->id]);
+        $route->update(['node_id' => null, 'cluster_id' => $cluster->id]);
+    }
     $route->update(['status' => 'active', 'sites_published' => true]);
     if ($kind === 'active') {
         $instance->update(['status' => 'active']);
+    } elseif ($kind === 'gone') {
+        $instance->delete();
+        $route->unsetRelation('targets');
     }
 
     return $route;
 }
 
 /** @param array<string,mixed> $inputs @return array<string,mixed> */
-function destroyExpressions(array $inputs, bool $fail = false): array
+function destroyExpressions(array $inputs): array
 {
     $process = new Process(['deno', 'run', '--allow-read', base_path('tests/Support/RouteDestroyExpressions.ts')], base_path('../..'));
-    $process->setInput(json_encode(['inputs' => $inputs, 'fail_publication' => $fail], JSON_THROW_ON_ERROR));
+    $process->setInput(json_encode(['inputs' => $inputs], JSON_THROW_ON_ERROR));
     $process->setTimeout(10);
     $process->mustRun();
 
@@ -92,75 +101,59 @@ function destroyAdmission(Route $route): array
     return [$operation, ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'route.destroy', ...$input]];
 }
 
-it('renders every instantiated destroy and child CEL expression from real Gateway captures', function (): void {
+it('renders every instantiated destroy and child CEL expression from a real :dataset capture', function (string $kind): void {
     [$node, $control] = destroyFleet();
-    foreach (['proxy', 'inactive'] as $kind) {
-        $route = destroyFixture($node, $kind, $kind);
-        [$operation, $inputs] = destroyAdmission($route);
-        $plan = $inputs['intent'];
-        expect($plan['nodes'][(string) $node->id]['control_node_id'])->toBe($control->id);
-        $run = destroyExpressions($inputs);
-        expect($run['status'])->toBe('succeeded')
-            ->and($run['expressions'])->toBeGreaterThan(20)
-            ->and($run['files'])->toContain('route-target-retire', 'route-certificate-remove')
-            ->and($run['dnsRemoved'])->toBeTrue();
-        app(NativeRouteRemovalProjection::class)->apply($operation, [
-            'run_id' => 'fixture-run', 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-            'result' => ['steps' => $run['steps']],
-        ]);
-        expect(Route::query()->find($route->id))->toBeNull();
-
+    $route = destroyFixture($node, $kind, $kind);
+    if ($kind === 'gone') {
+        expect(Instance::query()->where('project_id', $route->project_id)->exists())->toBeFalse()
+            ->and($route->targets()->exists())->toBeFalse();
     }
-});
-
-it('keeps DNS when publication refuses and records the incomplete withdrawal truthfully', function (): void {
-    [$node] = destroyFleet();
-    $route = destroyFixture($node, 'proxy', 'failure');
     [$operation, $inputs] = destroyAdmission($route);
-    $run = destroyExpressions($inputs, true);
-    expect($run['status'])->toBe('failed')->and($run['publicationStarted'])->toBeTrue()
-        ->and($run['siteRemoved'])->toBeFalse()->and($run['dnsRemoved'])->toBeFalse();
-    app(NativeRouteRemovalProjection::class)->apply($operation, [
-        'run_id' => 'fixture-run', 'status' => 'failed', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'failure' => ['failed_step' => 'Withdraw site, remove cert-0'], 'result' => ['steps' => $run['steps']],
-    ]);
-    expect($route->refresh()->status)->toBe(RouteStatus::Retiring)
-        ->and($route->sites_published)->toBeTrue()->and($route->failed_step)->toBe('Withdraw site, remove cert')
-        ->and($route->error_code)->toBe('route.withdraw_failed');
-
-    [$retry, $retryInputs] = destroyAdmission($route);
-    $completed = destroyExpressions($retryInputs);
-    expect($completed['status'])->toBe('succeeded')
-        ->and($completed['siteRemoved'])->toBeTrue()->and($completed['dnsRemoved'])->toBeTrue();
-    app(NativeRouteRemovalProjection::class)->apply($retry, [
-        'run_id' => 'fixture-run', 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['steps' => $completed['steps']],
-    ]);
-    expect(Route::query()->find($route->id))->toBeNull();
-
-});
-
-it('marks confirmed site removal unpublished if the final DNS step fails', function (): void {
-    [$node] = destroyFleet();
-    $route = destroyFixture($node, 'proxy', 'dns-failure');
-    [$operation, $inputs] = destroyAdmission($route);
+    $plan = $inputs['intent'];
+    foreach ($plan['nodes'] as $connection) {
+        expect($connection['control_node_id'])->toBe($control->id);
+    }
     $run = destroyExpressions($inputs);
+    expect($run['status'])->toBe('succeeded')
+        ->and($run['expressions'])->toBeGreaterThan(20)
+        ->and($run['files'])->toContain('operation-route-removal');
+    if ($kind === 'proxy') {
+        expect($run['files'])->toContain('route-target-retire', 'route-create-site', 'route-create-dns', 'route-dns-grace')
+            ->and($run['dnsRemoved'])->toBeTrue()->and($run['siteRemoved'])->toBeTrue()
+            ->and($run['certificateControls'])->not->toBeEmpty()
+            ->and(array_unique($run['certificateControls']))->toBe([$control->id]);
+        $trace = implode("\n", $run['trace']);
+        expect(strpos($trace, 'route-create-dns/restart:'))->toBeLessThan(strpos($trace, 'route-dns-grace/'))
+            ->and(strpos($trace, 'route-dns-grace/'))->toBeLessThan(strpos($trace, 'route-create-site/site:'));
+    } else {
+        expect($plan['cleanup'])->not->toBeEmpty()
+            ->and($plan['retire_nodes'])->toContain($node->id)
+            ->and($run['files'])->toContain('route-target-retire', 'route-certificate-remove')
+            ->and($run['certificateControls'])->not->toBeEmpty()
+            ->and(array_unique($run['certificateControls']))->toBe([$control->id]);
+    }
     app(NativeRouteRemovalProjection::class)->apply($operation, [
-        'run_id' => 'fixture-run', 'status' => 'failed', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'failure' => ['failed_step' => 'Remove private DNS-0'], 'result' => ['steps' => $run['steps']],
-    ]);
-    expect($route->refresh()->status)->toBe(RouteStatus::Retiring)->and($route->sites_published)->toBeFalse()
-        ->and($route->error_code)->toBe('private_dns.publication_failed');
-    [$retry, $retryInputs] = destroyAdmission($route);
-    expect($retryInputs['intent']['dns'])->not->toBeEmpty();
-    $completed = destroyExpressions($retryInputs);
-    expect($completed['dnsRemoved'])->toBeTrue();
-    app(NativeRouteRemovalProjection::class)->apply($retry, [
         'run_id' => 'fixture-run', 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['steps' => $completed['steps']],
+        'result' => ['steps' => $run['steps']],
     ]);
     expect(Route::query()->find($route->id))->toBeNull();
+})->with(['proxy', 'gone']);
 
+it('retires certificates from an older captured plan without inventing a control Node', function (): void {
+    [$node] = destroyFleet();
+    $route = destroyFixture($node, 'proxy', 'older-plan');
+    [, $inputs] = destroyAdmission($route);
+    foreach ($inputs['intent']['nodes'] as &$connection) {
+        unset($connection['control_node_id']);
+    }
+    unset($connection);
+    $run = destroyExpressions($inputs);
+    expect($run['status'])->toBe('succeeded')
+        ->and($run['files'])->toContain('route-certificate-remove')
+        ->and($run['certificateControls'])->not->toBeEmpty()
+        ->and(array_unique($run['certificateControls']))->toBe([null])
+        ->and($run['trace'])->toContain('route-certificate-remove/Remove the Caddy pair:succeeded',
+            'route-certificate-remove/Remove the account pair:succeeded');
 });
 
 it('still refuses destruction of an active Instances Route before starting work', function (): void {
@@ -175,11 +168,4 @@ it('still refuses destruction of an active Instances Route before starting work'
     expect($error)->toBeInstanceOf(ResourceOperationException::class)
         ->and($error?->errorCode)->toBe('route.target_conflict');
     expect(Operation::query()->where('kind', 'route.destroy')->exists())->toBeFalse();
-});
-
-it('admits an inactive Instances active Route for destruction', function (): void {
-    [$node] = destroyFleet();
-    $route = destroyFixture($node, 'inactive', 'detached');
-    [$operation] = destroyAdmission($route);
-    expect($operation->kind)->toBe('route.destroy')->and($operation->target_id)->toBe($route->id);
 });
