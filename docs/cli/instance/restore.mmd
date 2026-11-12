@@ -1,0 +1,81 @@
+sequenceDiagram
+  %% Target design: abandon only an intact failed development Instance removal.
+  %% Tightened: admission evidence, exact fence settlement, shared Route create children, compensation before hold release.
+  %% status: draft
+  %% command: instance:restore
+  %% kind: instance.restore
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as Target Nodes<br/>reached over ssh
+  CLI->>GW: instance:restore INSTANCE
+  %%> Input:
+  %%> - the numeric development Instance ID
+  Note over GW: Lock, inspect survivors
+  %%> Requirements:
+  %%> - lock the Instance, removal, databases and Route publication
+  %%> - the latest live removal failed and all its native runs conclusively stopped
+  %%> - no queued, running or waiting lifecycle, Process or Schedule work
+  %%> - one bounded source read proves checkout, workspace and Git identity
+  %%> - an admin catalog read proves every planned database, user and ownership
+  alt already restored
+    %% path: already-restored
+    GW-->>CLI: instance.already_restored
+    %%> Result:
+    %%> - verify the successful restoration receipt and current active records; return the stable skip
+  else admission refuses
+    %% path: refused
+    GW--xCLI: Named refusal
+    %%> Result:
+    %%> - identify the missing resource, irreversible step or drift; no restore Operation or publication
+  else intact failed removal
+    %% path: main
+    GW->>SW: Start restore run<br/>operation-instance-restore
+    %%> Captures:
+    %%> - this removal's own verified journal rows, Route and targets
+    %%> - keep the Instance removing and the removal failed/live
+    %%> - keep publication holds until terminal compensation settles
+    GW-->>CLI: 202 Accepted
+    %%> Result:
+    %%> - follow the instance.restore Operation
+    SW->>N: Settle database fences<br/>Ansible · settle
+    %%> What it does:
+    %%> - delete only captured matching name, OID and allow-connections rows; already absent succeeds
+    %%> - refuse identity or admission drift; no ALTER and no schema-wide delete
+    SW->>N: Republish the Route<br/>operation-route-create
+    %%> What it does:
+    %%> - reuse the CSR, sign, site, TLS and DNS children with the same Route, targets and domain
+    %%> - the existing site phase writes only the awake marker
+    %%> - TLS publication and its check complete before active records
+    alt publication and check pass
+      %% path: restored
+      SW-->>GW: Run succeeded
+      %%> Result:
+      %%> - project only the bound terminal run
+      Note over GW: Commit restored records
+      %%> Result:
+      %%> - in one transaction: members abandoned_at, removal abandoned with step/error fields cleared, Instance active and Route active/published
+      %%> - preserve removal inventory, deletion receipts and old failed Operations
+      GW-->>CLI: Instance restored
+      %%> Result:
+      %%> - a later destroy captures a fresh identity and inventory
+    else execution fails
+      %% path: failed
+      SW->>N: Compensate publication<br/>Ansible · compensate
+      %%> What it does:
+      %%> - remove only a newly written awake marker
+      SW->>N: Withdraw partial publication<br/>route-withdraw
+      %%> What it does:
+      %%> - withdraw a partial site and DNS before releasing publication holds
+      %%> - preserve checkout, databases and completed fence settlement
+      SW--xGW: Run failed
+      %%> Result:
+      %%> - Instance removing, removal failed/live and restore Operation failed
+      %%> - expose compensation failure; a fresh restore attempt is repeatable
+    end
+  end

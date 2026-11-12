@@ -99,3 +99,19 @@ The schema permits abandonment only from failed removal while its members still 
 Live members have neither `row_deleted_at` nor `abandoned_at`. Destroy admission, the Instance relation, Instance JSON and site rendering use this one rule. A later destroy captures a new removal identity and inventory.
 
 This schema change adds no command or production path that abandons a removal. Existing removing, failed and completed records keep their meaning. The migration preserves existing rows and triggers. It is forward-only: rollback refuses because the previous schema cannot represent abandoned history.
+
+## Restore a failed removal
+
+[`instance:restore`](/cli/instance/restore) abandons an intact failed development removal. It admits only a removing Instance with a failed live removal, conclusive stopped-run evidence, no queued/running/waiting lifecycle or related Process/Schedule work, matching checkout/workspace/Git identity, and the whole planned database/user set with its ownership intact. Missing members, Route targets or source, removed containers, Processes, Schedule triggers or SQLite, and executed teardown refuse; publication cannot reverse them.
+
+### Admission and publication
+
+Admission holds the Instance, removal, database ownership and Route publication locks. When all checks pass, restore captures only this removal's verified database fence rows, identified by name, OID and allow-connections value. Settlement deletes those matching rows only; already absent is success. Identity or admission drift refuses, and the main database must already admit connections. Restore issues no ALTER and never clears the whole journal.
+
+Restore republishes the same Route, targets and domain through Route creation's certificate, site, TLS and DNS phases. Its site phase writes only the awake marker. The cold marker stays absent; serving recreates the access log. The Instance and Route stay removing and retiring until publication and its check finish.
+
+### Recorded outcome
+
+One final Gateway transaction sets each member's `abandoned_at`, sets the removal to terminal `abandoned` with current/failed step and error cleared, and sets Instance and Route active with the Route published. History and existing checkpoints remain; `row_deleted_at` stays null. A live member has neither `row_deleted_at` nor `abandoned_at`; destroy admission, Instance JSON and site rendering share that scope. A later destroy captures a fresh removal identity and inventory. The old destroy Operation keeps its failure.
+
+Failure keeps the removal failed and live and the Instance removing. Compensation removes a newly written awake marker and withdraws partial site/DNS publication before the publication holds are released. It preserves the checkout, databases and completed fence settlement. Compensation failure remains explicit and retryable. A fresh restore attempt repeats safely; after success, the same restored state returns `instance.already_restored` from the verified receipt.

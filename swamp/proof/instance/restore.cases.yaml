@@ -1,0 +1,33 @@
+# The shared runner cannot create failed-removal, PostgreSQL slot or publication-fault fixtures.
+# Outcome budget: success (including new destroy), repeat, refusal matrix and compensated failure.
+command: instance:restore
+chart: instance/restore
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+cases: []
+uncovered:
+  "path:main": "Need an intact failed-removal fixture with a disposable PostgreSQL server and a logical replication slot blocker. Restore through the CLI; assert the same checkout, whole database/user set, Route/targets/domain and awake marker survive, the Route answers, the slot remains active, and Instance/Route become active only after publication proof. Assert abandoned history and unchanged old failed Operation; a later destroy gets a fresh removal identity."
+  "path:already-restored": "Repeat the successful restore with a fresh request key; assert instance.already_restored and no duplicate publication, inventory or state change."
+  "path:refused": "Need saved removal/run evidence and machine fault fixtures for each admission refusal below; assert the named code, no restore Operation and unchanged records/resources."
+  "path:restored": "The intact failed-removal fixture must assert one atomic final transition and SQL trigger/index acceptance, without fabricated deletion receipts."
+  "path:failed": "Inject settlement drift and publication failure, including partial DNS/site and awake writes. Assert compensation precedes publication hold release, unrelated rows/sites stay intact, no checkout/database changes, and a fresh attempt succeeds. Inject withdrawal failure and assert explicit incomplete compensation."
+  "instance.restore_not_failed": "Need a fixture for the instance is not removing with a failed live removal. Assert instance.restore_not_failed, no restore Operation and unchanged records/resources."
+  "instance.restore_run_unsettled": "Need a fixture for a native removal run has not conclusively stopped. Assert instance.restore_run_unsettled, no restore Operation and unchanged records/resources."
+  "instance.restore_busy": "Need a fixture for lifecycle, process or schedule work is queued, running or waiting. Assert instance.restore_busy, no restore Operation and unchanged records/resources."
+  "instance.restore_container_removed": "Need a fixture for the removal deleted the instance container. Assert instance.restore_container_removed, no restore Operation and unchanged records/resources."
+  "instance.restore_member_missing": "Need a fixture for a planned instance member is gone. Assert instance.restore_member_missing, no restore Operation and unchanged records/resources."
+  "instance.restore_route_missing": "Need a fixture for the captured route is gone or its identity changed. Assert instance.restore_route_missing, no restore Operation and unchanged records/resources."
+  "instance.restore_target_missing": "Need a fixture for a captured route target is gone or changed. Assert instance.restore_target_missing, no restore Operation and unchanged records/resources."
+  "instance.restore_source_removed": "Need a fixture for source deletion completed; the checkout is gone. Assert instance.restore_source_removed, no restore Operation and unchanged records/resources."
+  "instance.restore_processes_removed": "Need a fixture for removal already removed a process. Assert instance.restore_processes_removed, no restore Operation and unchanged records/resources."
+  "instance.restore_schedules_removed": "Need a fixture for removal already removed a schedule trigger. Assert instance.restore_schedules_removed, no restore Operation and unchanged records/resources."
+  "instance.restore_sqlite_removed": "Need a fixture for removal already removed an owned sqlite file. Assert instance.restore_sqlite_removed, no restore Operation and unchanged records/resources."
+  "instance.restore_teardown_ran": "Need a fixture for a teardown step ran and cannot be reversed by publication. Assert instance.restore_teardown_ran, no restore Operation and unchanged records/resources."
+  "instance.restore_evidence_missing": "Need a fixture for the saved removal or terminal evidence is incomplete. Assert instance.restore_evidence_missing, no restore Operation and unchanged records/resources."
+  "instance.restore_source_changed": "Need a fixture for the checkout, workspace or git identity no longer matches. Assert instance.restore_source_changed, no restore Operation and unchanged records/resources."
+  "instance.restore_database_missing": "Need a fixture for a database in the complete captured plan is gone. Assert instance.restore_database_missing, no restore Operation and unchanged records/resources."
+  "instance.restore_user_missing": "Need a fixture for a planned database user is gone. Assert instance.restore_user_missing, no restore Operation and unchanged records/resources."
+  "instance.restore_ownership_changed": "Need a fixture for a surviving database or user has different ownership. Assert instance.restore_ownership_changed, no restore Operation and unchanged records/resources."
+  "instance.restore_database_identity_changed": "Need a fixture for a captured database name or oid changed. Assert instance.restore_database_identity_changed, no restore Operation and unchanged records/resources."
+  "instance.restore_database_admission_changed": "Need a fixture for database admission differs from the captured fence value, or the main database is closed. Assert instance.restore_database_admission_changed, no restore Operation and unchanged records/resources."
