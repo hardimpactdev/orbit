@@ -6,6 +6,7 @@ use App\Actions\GatewayReleases\WaitForGatewayReleaseIdleAction;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\Environment\DevelopmentMailUpdate;
+use App\Domain\Instances\Environment\InstanceEnvironmentImporter;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Nodes\RoleName;
@@ -48,14 +49,14 @@ function mailUpdateFixture(): array
     return [$instance, $mailpit];
 }
 
-it('renders log as smtp only in eligible new default and clone files while preserving stored values', function (?string $value, bool $eligible): void {
+it('renders log as smtp only in eligible new default and clone files while preserving stored values', function (?string $value, bool $eligible, string $quote): void {
     [$instance, $mailpit] = mailUpdateFixture();
     if (! $eligible) {
         $mailpit->delete();
     }
     $template = "APP_NAME=Fixture\nAPP_KEY=fixture-key\nDB_HOST=hand-choice\nMAIL_HOST=localhost\nMAIL_PORT=2525\nVITE_APP_NAME=\"\${APP_NAME}\"\n";
     if ($value !== null) {
-        $template .= 'MAIL_MAILER="'.$value.'"'."\n";
+        $template .= 'MAIL_MAILER='.$quote.$value.$quote."\n";
     }
     app(ProjectEnvironmentTemplateRefresh::class)->recordRead($instance->project, str_repeat('a', 40), 'fixture', $template);
     $entries = $instance->project->environmentTemplate()->sole()->entries;
@@ -77,7 +78,7 @@ it('renders log as smtp only in eligible new default and clone files while prese
     } else {
         expect($created)->toContain('MAIL_MAILER="'.($eligible && $value === 'log' ? 'smtp' : $value).'"');
     }
-})->with(['log', 'smtp', 'ses', 'LOG', '', null])->with([true, false]);
+})->with(['log', 'smtp', 'ses', 'LOG', '', null])->with([true, false])->with(['bare' => '', 'double' => '"', 'single' => "'"]);
 
 it('leaves production checkout and no-endpoint rendering alone', function (string $case): void {
     [$instance, $mailpit] = mailUpdateFixture();
@@ -90,15 +91,24 @@ it('leaves production checkout and no-endpoint rendering alone', function (strin
     expect(app(DevelopmentCreateEnvironment::class)->content($instance))->toContain('MAIL_MAILER="log"');
 })->with(['production', 'checkout', 'no endpoint']);
 
-it('uses the stored Instance value before the Project template without rewriting either', function (): void {
+it('uses the stored Instance value before the Project template without rewriting either', function (string $quote): void {
     [$instance] = mailUpdateFixture();
     app(ProjectEnvironmentTemplateRefresh::class)->recordRead($instance->project, str_repeat('a', 40), 'fixture', "MAIL_MAILER=ses\n");
-    app(InstanceEnvironmentStore::class)->seedForCreate($instance, ['MAIL_MAILER' => 'log']);
+    $values = app(InstanceEnvironmentImporter::class)->parse('MAIL_MAILER='.$quote.'log'.$quote."\n");
+    expect($values)->toBe(['MAIL_MAILER' => 'log']);
+    app(InstanceEnvironmentStore::class)->seedForCreate($instance, $values);
     $environment = app(DevelopmentCreateEnvironment::class);
     $environment->admit($instance, $instance->project);
     expect($environment->content($instance))->toContain('MAIL_MAILER="smtp"')
         ->and(app(InstanceEnvironmentStore::class)->values($instance)['MAIL_MAILER'])->toBe('log');
-});
+    $clone = Instance::query()->create(['node_id' => $instance->node_id, 'project_id' => $instance->project_id, 'name' => 'stored-clone',
+        'checkout_path' => '/workspace/stored-clone', 'root' => '.', 'status' => 'active', 'source_is_laravel' => false]);
+    app(InstanceContainer::class)->reserve($clone, $instance->node, $instance);
+    app(InstanceEnvironmentStore::class)->seedForCreate($clone, $values);
+    $environment->admit($clone, $instance->project, source: $instance);
+    expect($environment->content($clone))->toContain('MAIL_MAILER="smtp"')
+        ->and(app(InstanceEnvironmentStore::class)->values($clone)['MAIL_MAILER'])->toBe('log');
+})->with(['bare' => '', 'double' => '"', 'single' => "'"]);
 
 it('admits a scoped secret-free Operation through the authenticated API', function (): void {
     [$instance] = mailUpdateFixture();

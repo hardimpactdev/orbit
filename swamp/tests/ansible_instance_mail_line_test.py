@@ -113,21 +113,22 @@ sys.exit(result.returncode)
         return json.loads(result.stdout)
 
     def test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte(self):
-        for ending in [b'\n', b'\r\n', b'']:
-            before = (b'\xef\xbb\xbf# fixture\r\n\r\nAPP_URL=hand-choice\nDB_HOST=hand-choice\n'
-                      b'VITE_APP_NAME="${APP_NAME}"\nMAIL_PASSWORD="quoted"\nMAIL_MAILER=log' + ending +
-                      (b'# last comment\nODD=last' if ending else b''))
-            result = self.run_rule(before)
-            self.assertEqual(result, {'status': 'changed', 'lines': [7]})
-            self.assertTrue(self.envfile.read_bytes() == before.replace(b'MAIL_MAILER=log', b'MAIL_MAILER=smtp'))
-            stamp = self.envfile.stat().st_mtime_ns
-            self.assertEqual(self.run_rule(), {'status': 'already_smtp'})
-            self.assertEqual(self.envfile.stat().st_mtime_ns, stamp)
+        for quote in [b'', b'"', b"'"]:
+            for ending in [b'\n', b'\r\n', b'']:
+                before = (b'\xef\xbb\xbf# fixture\r\n\r\nAPP_URL=hand-choice\nDB_HOST=hand-choice\n'
+                          b'VITE_APP_NAME="${APP_NAME}"\nMAIL_PASSWORD="quoted"\nMAIL_MAILER=' + quote + b'log' + quote + ending +
+                          (b'# last comment\nODD=last' if ending else b''))
+                result = self.run_rule(before)
+                self.assertEqual(result, {'status': 'changed', 'lines': [7]})
+                self.assertTrue(self.envfile.read_bytes() == before.replace(b'MAIL_MAILER=' + quote + b'log' + quote, b'MAIL_MAILER=' + quote + b'smtp' + quote))
+                stamp = self.envfile.stat().st_mtime_ns
+                self.assertEqual(self.run_rule(), {'status': 'already_smtp'})
+                self.assertEqual(self.envfile.stat().st_mtime_ns, stamp)
 
     def test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved(self):
         cases = [
             (b' MAIL_MAILER=log', [1]), (b'MAIL_MAILER=log ', [1]), (b'export MAIL_MAILER=log', [1]),
-            (b'MAIL_MAILER="log"', [1]), (b"MAIL_MAILER='log'", [1]), (b'MAIL_MAILER=log # comment', [1]),
+            (b"MAIL_MAILER=\"log'", [1]), (b'MAIL_MAILER=\'log"', [1]), (b'MAIL_MAILER=log # comment', [1]),
             (b'MAIL_MAILER=LOG', [1]), (b'MAIL_MAILER = log', [1]), (b'"MAIL_MAILER"=log', [1]),
             (b'MAIL_MAILER=log\nMAIL_MAILER=log', [1, 2]),
             (b'MAIL_MAILER=log\nexport MAIL_MAILER=smtp', [1, 2]),
@@ -146,6 +147,12 @@ sys.exit(result.returncode)
             (b'OTHER=MAIL_MAILER\nMAIL_MAILER=log\n', [1, 2]),
             (b'OTHER=MAIL_MAILER-MAIL_MAILER\n', [1, 1]),
         ]
+        for quote in [b'"', b"'"]:
+            exact = b'MAIL_MAILER=' + quote + b'log' + quote
+            cases.extend([(b' ' + exact, [1]), (exact + b' ', [1]), (b'export ' + exact, [1]),
+                          (exact + b' # comment', [1]), (exact.replace(b'log', b'LOG'), [1]),
+                          (b'OTHER="unclosed\n' + exact, [2]),
+                          (exact + b'\n# MAIL_MAILER mentioned', [1, 2])])
         for before, numbers in cases:
             self.envfile.write_bytes(before)
             stamp = self.envfile.stat().st_mtime_ns
@@ -185,7 +192,7 @@ sys.exit(result.returncode)
     def test_real_incus_missing_delete_contract_and_first_run(self):
         for force in [[], ['--force']]:
             result = subprocess.run(['incus', '--project', 'fixture', 'file', 'delete', *force,
-                                     'fixture/srv/workspace/.env.orbit-mail'], env=self.env, capture_output=True)
+                                     'fixture/srv/workspace/.env.orbit-mail'], env=self.env, capture_output=True, check=False)
             self.assertEqual((result.returncode, result.stdout, result.stderr),
                              (1, b'', b'Error: file does not exist\n'))
         self.assertEqual(self.run_rule(b'MAIL_MAILER=log\n'), {'status': 'changed', 'lines': [1]})
@@ -198,7 +205,7 @@ sys.exit(result.returncode)
                       'Error: file does not exist', 'MAIL_PASSWORD=fixture-canary\n']:
             (self.root / 'delete-error').write_text(error)
             result = subprocess.run([sys.executable, '-c', SOURCE.read_text(), 'fixture', 'fixture'],
-                                    env=self.env, capture_output=True)
+                                    env=self.env, capture_output=True, check=False)
             self.assertEqual(result.returncode, 1)
             public = json.loads(result.stdout)
             self.assertEqual(public['error_code'], 'env.configuration_invalid')
@@ -265,7 +272,7 @@ sys.exit(result.returncode)
             (self.root / 'file-actions.json').write_text('[]')
             (self.root / 'acl-fault').write_text(fault)
             result = subprocess.run([sys.executable, '-c', SOURCE.read_text(), 'fixture', 'fixture'],
-                                    env=self.env, capture_output=True)
+                                    env=self.env, capture_output=True, check=False)
             self.assertEqual(result.returncode, 1)
             self.assertEqual(json.loads(result.stdout), {'error_code': 'env.configuration_invalid'})
             self.assertEqual(result.stderr, b'')
@@ -345,7 +352,7 @@ sys.exit(result.returncode)
         return json.loads((self.root / ('mail-result.json' if migrate else 'result.json')).read_text())
 
     def test_real_ansible_step_refreshes_only_changed_file_and_skips_conflict(self):
-        before = b'MAIL_MAILER=log\nMAIL_PASSWORD=fixture-canary\n'
+        before = b'MAIL_MAILER="log"\nMAIL_PASSWORD=fixture-canary\n'
         self.envfile.write_bytes(before)
         (self.root / 'app').mkdir()
         (self.root / 'app/artisan').touch()
@@ -353,6 +360,7 @@ sys.exit(result.returncode)
         php.write_text('#!/bin/sh\nprintf called >> "' + str(self.root / 'config-clear') + '"\nexit 1\n')
         php.chmod(0o755)
         self.assertEqual(self.ansible(migrate=True)['mailer'], {'status': 'changed', 'lines': [1]})
+        self.assertTrue(self.envfile.read_bytes() == before.replace(b'"log"', b'"smtp"'))
         self.assertTrue((self.root / 'config-clear').exists())
         self.assertEqual(json.loads(self.calls.read_text()), ['orbit-frankenphp.service', 'orbit-process-42.service'])
         self.assertEqual(self.ansible('unchanged')['mailer'], {'status': 'already_smtp'})
@@ -415,6 +423,21 @@ sys.exit(result.returncode)
         self.assertEqual(list(self.root.glob('.env.*')), [])
 
 
+
+    def test_migrate_log_loopback_passes_source_check_then_becomes_smtp(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('guard', ROOT / 'swamp/ansible/library/orbit_migrate_env.py')
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        before = b'MAIL_MAILER="log"\nMAIL_HOST="127.0.0.1"\nMAIL_PORT="1025"\n'
+        self.envfile.write_bytes(before)
+        self.assertEqual(guard.inspect_environment(str(self.root), [], [],
+                         development_mail={'host': '10.253.0.1', 'port': 1025}), [])
+        result = self.ansible(migrate=True)
+        self.assertEqual(result, {'mail': {'status': 'applied', 'ports': [1025, 2525]},
+                                  'mailer': {'status': 'changed', 'lines': [1]}})
+        self.assertTrue(self.envfile.read_bytes() == before.replace(b'"log"', b'"smtp"'))
+
     def test_migrate_orders_advisory_mail_after_copy_and_before_application_start(self):
         import yaml
         workflow = yaml.safe_load((ROOT / 'swamp/workflows/workflow-operation-instance-migrate.yaml').read_text())
@@ -424,6 +447,11 @@ sys.exit(result.returncode)
         self.assertEqual(mail['dependsOn'], [{'step': 'files', 'condition': {'type': 'succeeded'}}])
         for name in ['agent', 'container-processes']:
             self.assertIn({'step': 'Apply development mail', 'condition': {'type': 'always'}}, steps[name]['dependsOn'])
+        for quote in [b'', b'"', b"'"]:
+            copied = b'# copied checkout\nMAIL_MAILER=' + quote + b'log' + quote + b'\n'
+            self.assertEqual(self.run_rule(copied), {'status': 'changed', 'lines': [2]})
+            self.assertTrue(self.envfile.read_bytes() == copied.replace(b'log', b'smtp'))
+
 
 
 if __name__ == '__main__':

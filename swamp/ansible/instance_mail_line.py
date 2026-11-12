@@ -89,11 +89,16 @@ def apply(prefix, path, remove):
                     counts[byte] += 1
             if any(count % 2 for count in counts.values()):
                 return {'status': 'left_as_written', 'lines': numbers}
-        if body == b'MAIL_MAILER=smtp':
+        replacements = {
+            b'MAIL_MAILER=log': b'MAIL_MAILER=smtp',
+            b'MAIL_MAILER="log"': b'MAIL_MAILER="smtp"',
+            b"MAIL_MAILER='log'": b"MAIL_MAILER='smtp'",
+        }
+        if body in replacements.values():
             return {'status': 'already_smtp'}
-        if body != b'MAIL_MAILER=log':
+        if body not in replacements:
             return {'status': 'left_as_written', 'lines': numbers}
-        lines[index] = b'MAIL_MAILER=smtp' + line[len(body):]
+        lines[index] = replacements[body] + line[len(body):]
         command(prefix + ['sh', '-c', REPLACE, 'sh', path, TEMPORARY], b'\n'.join(lines))
         # Fail closed before rename: no mismatch can replace the original inode.
         if metadata(path) != metadata(TEMPORARY):

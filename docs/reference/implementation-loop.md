@@ -709,3 +709,5 @@ The development mail-line fixture runs unprivileged. It executes the shipped byt
 The migration mail fixture also checks the phase order: copy first, bounded mail attempt second, application starts last. A failed attempt retains the copied file and produces a warning receipt.
 
 The destroy dependency fixture uses real Git in private temporary directories. It runs unprivileged, includes three Ansible phase launches, and proves refusal, registration removal and preservation of the owner’s Git data. Inventory and named cost keys are collected together.
+
+When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise.
