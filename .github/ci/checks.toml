@@ -896,7 +896,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_module_args_test.py"
-cost = 4
+cost = 5
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/**",
