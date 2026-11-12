@@ -85,7 +85,7 @@ final readonly class StartInstanceDestroyAction
             throw new ResourceOperationException('operation.kind_unavailable', 'This removal placement has no native destroy DAG.', 503);
         }
         $instance->load($this->removalRelations());
-        $retained = InstanceRemovalMember::query()->where('instance_id', $instance->id)->whereNull('row_deleted_at')->with('removal.members')->first();
+        $retained = InstanceRemovalMember::query()->where('instance_id', $instance->id)->live()->with('removal.members')->first();
         if ($instance->status === InstanceState::Removing) {
             if (! $retained instanceof InstanceRemovalMember || $retained->removal->requested_instance_id !== $instance->id) {
                 $this->conflict($instance);
