@@ -13,6 +13,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\Http;
 
 /* The Nodes, Projects and admitted creates of the container Instance tests, shared by their files. */
 
@@ -34,6 +35,8 @@ function containerDefaultNode(string $name = 'beast', string $ip = '10.44.0.7', 
 
 function containerDefaultProject(ProjectType $type = ProjectType::NodePackage, ?string $php = null): Project
 {
+    Http::fake(['api.github.com/repos/nckrtl/tool' => Http::response(['full_name' => 'nckrtl/tool', 'private' => false])]);
+
     return Project::query()->create(['name' => 'tool', 'slug' => 'tool', 'type' => $type, 'repository_url' => 'https://github.com/nckrtl/tool.git',
         'default_branch' => 'main', 'root' => $type === ProjectType::LaravelApp ? 'public' : '.', 'php_version' => $php, 'is_laravel' => false, 'source_facts_captured_at' => now()]);
 }

@@ -61,6 +61,20 @@ Deno.test("a container default's create and a clone's create read their own keys
   }), []);
 });
 
+Deno.test("migration reads no new source key from an older Gateway input", () => {
+  for (const source of [undefined, { repository: "https://github.com/owner/repo.git", branch: "main" }]) {
+    assertEquals(failures("workflow-operation-instance-migrate.yaml", {
+      node_id: 9,
+      execution_secrets: {
+        process_environments: copy("instance-migrate-processes-1"),
+        model_environment: copy("instance-migrate-model-1"),
+        ...(source === undefined ? {} : { source_credential: copy("instance-migrate-source-1") }),
+      },
+      intent: { migrate: source === undefined ? {} : { source } },
+    }), []);
+  }
+});
+
 Deno.test("a production and a checkout deployment read no key that only a container deployment has", () => {
   for (const variant of ["production", "development"]) {
     assertEquals(failures("workflow-operation-instance-deploy-direct.yaml", {

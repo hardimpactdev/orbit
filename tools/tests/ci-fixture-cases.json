@@ -363,7 +363,7 @@
     ]
   },
   "swamp/extensions/behaviors/automatic-deploy/development_test.ts": {
-    "source_sha256": "966a5126d7f6d0f370047e2232dc817a5ad49365559489609e476df45366af36",
+    "source_sha256": "e6d7e729af53a5e90f7cb9ce70b4a587673553b06cf138c23babbc95fe759e1f",
     "cases": [
       "development policy admits only after Gateway ownership switches",
       "development policy returns only the final checkpoint handle",
@@ -375,6 +375,7 @@
       "interrupted development deploys settle, back off and re-admit the head",
       "interrupted development deploy without evidence backs off once then admits the current head",
       "a definite start failure releases pending intent for the next scheduled admission",
+      "credential failures stay terminal without repeated admissions",
       "an uncertain or executed failure without history retains pending intent",
       "development retries and backoff are owned by Swamp and reset after manual work",
       "pending publication uses the normal Route root before dev deployment",
@@ -1750,10 +1751,11 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "4f3878f305667a7b8a502afbed8689adfc59a00895567ac053f2b7f1afda299b",
+    "source_sha256": "64a4e075f4be9e007e31a3cb649bb8bd6854bb450b3dd3c1b94e5dcdf2a6b9d1",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
+      "migration reads no new source key from an older Gateway input",
       "a production and a checkout deployment read no key that only a container deployment has",
       "a container process:start, stop and restart read no `read` section, which only a migrated Schedule log read has",
       "create finalization evaluates checkout, default and clone receipts with Swamp's CEL types",
@@ -2034,6 +2036,12 @@
       "test_deploy_fetch_refuses_legacy_store_even_with_a_helper",
       "test_nested_ignored_pin_refuses_even_when_a_parent_pin_is_selected",
       "test_production_phase_removes_read_only_source_mount_after_failure_without_downtime"
+    ]
+  },
+  "swamp/tests/ansible_instance_migrate_source_test.ts": {
+    "source_sha256": "586ae924884c2e5ef7a6028d257f3576d434777669068fa37cf7a9d04b298f96",
+    "cases": [
+      "migration source preflight distinguishes failure and timeout before changing the checkout"
     ]
   }
 }

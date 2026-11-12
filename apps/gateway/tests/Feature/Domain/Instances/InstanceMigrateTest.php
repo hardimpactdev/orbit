@@ -1166,7 +1166,7 @@ it('starts the run with the container, the checkout and the model key in the vau
     $run = app(InstanceMigrateProjection::class)->input($operation);
 
     $put = collect($vault->puts)->firstWhere('key', 'instance-migrate-model-'.$operation->id);
-    expect($run['execution_secrets'])->toBe(['process_environments' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-processes-'.$operation->id], 'model_environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-model-'.$operation->id]])
+    expect($run['execution_secrets'])->toBe(['source_credential' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-source-'.$operation->id], 'process_environments' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-processes-'.$operation->id], 'model_environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-model-'.$operation->id]])
         ->and($put['value'])->toContain("ORBIT_MODEL_KEY=placeholder-model-key\n")
         ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
         ->and(array_keys($run['intent']))->toBe(['instance_id', 'instance_name', 'ssh_execution', 'container', 'migrate', 'route_mutations'])
@@ -3978,4 +3978,47 @@ it('removes only the migrated non-default attachment on successful forced Instan
     $this->assertDatabaseHas('instance_node_service_targets', ['id' => $shared, 'instance_id' => $default->id]);
     expect($process->refresh()->getRawOriginal())->toEqual($processBefore);
     expect($default->runtime()->firstOrFail()->getRawOriginal())->toEqual($defaultRuntimeBefore);
+});
+
+it('refuses an unreadable private source before submitting migrate and releases its runtime reservation', function (): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    $project->update(['repository_url' => 'https://github.com/Platform11/servauto-app.git']);
+    $instance = migrateCheckout($project, $node);
+    $before = $instance->fresh()->getAttributes();
+    $migration = migrateStart($instance);
+    $socket = migrateVault();
+    Http::fake(['api.github.com/repos/Platform11/servauto-app' => Http::response([], 404)]);
+
+    expect(containerRefusal(fn () => (new StartAdmittedSwampRun($migration->id))->handle(
+        app(StartSwampRun::class), app(ExpireOperationAction::class),
+    )))->toBe('source.github_app_denied');
+
+    expect($socket->sentTypes)->toBe([])
+        ->and($migration->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($migration->result['error']['message'])->toContain('Platform11/servauto-app')
+        ->and($instance->runtime()->exists())->toBeFalse()
+        ->and($instance->refresh()->getAttributes())->toBe($before);
+});
+
+it('gives migrate the remote branch and deploy credential without changing the local-copy intent', function (): void {
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $migration = migrateStart($instance);
+    $run = app(InstanceMigrateProjection::class)->input($migration);
+    expect($run['intent']['migrate']['source'])->toBe(['repository' => $instance->project->repository_url, 'branch' => 'main'])
+        ->and($run['intent']['container']['repository'])->toBe($instance->checkout_path)
+        ->and($run['execution_secrets']['source_credential'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-source-'.$migration->id])
+        ->and($migration->input['migrate'])->not->toHaveKey('source');
+});
+
+it('refuses gh_cli migration before preparing execution copies because deployment cannot use it', function (): void {
+    $project = containerDefaultProject();
+    $instance = migrateCheckout($project, containerDefaultNode());
+    $migration = migrateStart($instance);
+    $project->update(['source_access' => ProjectSourceAccess::GhCli]);
+    $socket = migrateVault();
+
+    expect(containerRefusal(fn () => app(InstanceMigrateProjection::class)->input($migration)))
+        ->toBe('deployment.source_access_unsupported')
+        ->and($socket->puts)->toBe([]);
 });
