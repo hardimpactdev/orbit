@@ -51,7 +51,8 @@ sequenceDiagram
     %%> On refusal:
     %%> - HTTP 409 instance.worktree_dependents reports visible dependent Instances, a count of others, and unowned paths; --force never overrides it
     %%> - the target’s unreadable Git refuses; an unrelated checkout is classified from bounded Git pointer reads, with named warnings when unknown
-    %%> - unreadable existing pointers that can hide a dependency still refuse; containers skip this read
+    %%> - every unreadable candidate is unknown with a named warning; only target read failures and confirmed dependents refuse
+    %%> - admission only: queue wait and the whole run are outside the check; an admitted retry does not check again
   end
   Note over GW: Validate, capture the set<br/>Instance 42 · task #5132
   %%> Requirements:
@@ -186,14 +187,10 @@ sequenceDiagram
   %%> - the awake and cold markers and the Caddy access log outlive the Instance otherwise
   SW->>N: Remove the source<br/>@swamp/ssh exec · worktree, rm
   %%> What it does:
-  %%> - recheck the owner’s Git registry and recorded checkout paths, then remove a dependent with `git worktree remove --force` through its actual common Git directory; never fall back to rm on Git failure
-  %%> - an owner with dependents refuses; a standalone checkout is removed as before
+  %%> - the original source-removal command runs without a dependency check, using Git for a linked worktree and recursive removal as on main
   %%> - the paths come from the Gateway's records; a rerun converges
   %%> Runs as:
   %%> - the Node's own user, not root
-  Note over SW: Read source removal
-  %%> On failure:
-  %%> - retain the fixed code, named dependencies and unknown-checkout warnings from the recheck
   SW->>N: Check it is gone<br/>@swamp/cfgmgmt check absent
   %%> What it does:
   %%> - the `check` of the directory, file, systemd and `docker_container` behaviors with `ensure: absent`: checkout, units and containers are gone

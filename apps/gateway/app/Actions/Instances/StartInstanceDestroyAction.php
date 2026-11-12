@@ -61,9 +61,8 @@ final readonly class StartInstanceDestroyAction
             throw new ResourceOperationException('operation.kind_unavailable', 'Native publication verification requires anonymous or scoped GitHub App repository access.', 503);
         }
         app(ContainerInstanceDestroy::class)->assertAvailable($instance, $force);
-        $snapshot = $this->snapshot($instance, $force);
-        $snapshot['destroy_previous_status'] ??= $instance->status === InstanceState::Removing ? InstanceState::Active->value : $instance->status->value;
-        $snapshot = [...$snapshot, ...app(InstanceDestroyWorktrees::class)->assertAvailable($instance)];
+        $admission = $instance->status === InstanceState::Removing ? [] : app(InstanceDestroyWorktrees::class)->assertAvailable($instance);
+        $snapshot = [...$this->snapshot($instance, $force), ...$admission];
         // A native Schedule fires from its own workflow on serve, not from the Node; it stops before the Instance goes.
         $members = array_column(is_array($snapshot['members'] ?? null) ? $snapshot['members'] : [], 'instance_id');
         app(NativeSchedules::class)->removeForInstances($members === [] ? [$instance->id] : ValidatedData::integerList($members));
@@ -87,7 +86,7 @@ final readonly class StartInstanceDestroyAction
         }
         $instance->load($this->removalRelations());
         $retained = InstanceRemovalMember::query()->where('instance_id', $instance->id)->whereNull('row_deleted_at')->with('removal.members')->first();
-        if ($instance->status === InstanceState::Removing || ($retained instanceof InstanceRemovalMember && $retained->removal->status === InstanceRemovalStatus::Failed)) {
+        if ($instance->status === InstanceState::Removing) {
             if (! $retained instanceof InstanceRemovalMember || $retained->removal->requested_instance_id !== $instance->id) {
                 $this->conflict($instance);
             }

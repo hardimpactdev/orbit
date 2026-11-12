@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/Actions/{Instances/{ProjectDirectInstanceDestroyAction,StartInstanceDestroyAction},DatabaseConnections/PrepareOwnedDatabaseDestructionAction}.php
   - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,InstanceDestroyWorktrees.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,Removal/**}
   - apps/gateway/app/{Http/Requests/Instances/RemoveInstanceRequest,Models/InstanceRemoval,Models/InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_06_000002_allow_source_refusal_to_restore_instance_status}.php
+  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
   - swamp/{workflows/workflow-operation-instance-destroy.yaml,ansible/instance-container-destroy.yml}
 ---
@@ -26,9 +26,9 @@ The CLI requires consent. `--yes` confirms without a prompt and is required for 
 
 An unreadable recorded checkout elsewhere does not block unrelated removal. After a Git error or its three-second timeout, Orbit reads only bounded regular pointer files, without Git or a tree walk. Absolute and relative `gitdir` and `commondir` pointers into the target prove a dependent. Existing owner registrations for live paths also block without reading Git in those checkouts. A directory with its own Git store is unrelated unless its `objects/info/alternates` points into the target; the same bounded check follows alternates without Git.
 
-Missing checkout paths and missing or malformed pointers proceed with typed `instance.checkout_unknown` warnings naming the path, recorded Instance IDs and cause. A timed-out read of an unrelated own repository, such as a FIFO config, proceeds without warning when its store and absence of alternates prove it unrelated. Pointer files are opened non-blocking, must be regular and are capped at 4 KiB. Symlinks resolve before comparison.
+Missing or unreadable candidate paths, Git errors/timeouts and unreadable or malformed pointers proceed with typed `instance.checkout_unknown` warnings naming the path, recorded Instance IDs and cause. This includes mode-000 markers, FIFOs, symlink loops, unreadable commondir/alternates, oversized pointers and gitdir paths through regular files. Pointer files are opened non-blocking, must be regular and are capped at 4 KiB. Symlinks resolve before comparison.
 
-An existing pointer or alternates file that cannot be read could hide a real dependent, including a moved worktree with a stale owner registration. That exact unknown case still refuses with `instance.remove_refused`, naming the checkout, Instance IDs and `unreadable` or `timed_out` cause. The target’s own Git failure also refuses with its path and cause. Candidate Git reads share one three-second allowance; later candidates use pointer reads once it is spent. No read is retried. Warnings survive in the Operation result and human/JSON CLI output.
+Only a confirmed dependency or a target read failure refuses. The target’s directory, pointer or Git failure names its path and the unreadable or timed_out cause. Candidate Git reads share one three-second allowance; later candidates use pointer reads once it is spent. No read is retried. Admission warnings survive in the Operation result and human/JSON CLI output. The Gateway inventory excludes containers and empty or relative paths; malformed candidate rows are bounded warnings, never a whole-call failure.
 
 A running migration or an unsettled migration runtime refuses removal with `instance.lifecycle_busy`, including forced removal. Orbit checks migration ownership before cleanup and again under the Instance admission lock.
 
@@ -46,9 +46,9 @@ Each Node that serves the Route, answers its private DNS or holds a withdrawn ce
 
 The checks run as one `sha256sum` command and the certificate folders go in one `rm -rf` command, because each remote task costs about 0.4 s. The run then stops and removes each Process through the canonical Process child.
 
-It runs the Project teardown commands, passed as run inputs, one command per step as the managed account. It removes owned SQLite files with the file behavior and drops owned databases and users on each Database server through the `operation-database-destroy` workflow that `database:destroy` uses. Source removal rechecks live dependencies before deleting any checkout. It removes a linked worktree through `git worktree remove --force` using its actual common Git directory, removing only its registration. There is no rm fallback on Git failure. A standalone checkout is removed as before, then the run checks that every checkout is gone. The Gateway deletes owned records only after native success.
+It runs the Project teardown commands, passed as run inputs, one command per step as the managed account. It removes owned SQLite files with the file behavior and drops owned databases and users on each Database server through the `operation-database-destroy` workflow that `database:destroy` uses. Source removal is unchanged from main before the worktree guard: the existing SSH command attempts Git worktree removal for a .git file and falls back to recursive deletion. There is no dependency check or new refusal after admission. The run checks that every checkout is gone; the Gateway deletes owned records only after native success.
 
-Known limit: the check does not protect Git data of a nested or bare repository inside the checkout when an outside worktree depends on it. A separate follow-up will define that protection; no subtree scan runs here. No lock excludes external Git writers between the final inspection and deletion. Transfer retirement has its own repair in PR #3451.
+Known limits: Git data of nested or bare repositories inside the checkout with outside dependents is not scanned. A moved worktree behind an unreadable parent is unknown, so admission proceeds with its warning. No lock excludes external Git writers. A worktree created after admission is not caught: the window includes the queue wait and the entire run until source removal. An admitted retry uses the saved intent. Dispatch never checks dependencies again, even if Git facts changed. Transfer uses the same admission-only boundary in its separate PR #3451.
 
 Three cases skip work:
 
@@ -85,5 +85,3 @@ Admission removes each admitted Schedule's native workflow, and the run removes 
 ## Keep unfinished transfer history
 
 Removing an Instance preserves closed transfer history by clearing its Instance association after native success. An unfinished transfer must be settled by its owning workflow first. The Gateway does not infer cleanup from a missing Instance or start a child removal Operation.
-
-A refused source-removal check restores the Instance’s captured status while retaining its failed removal record and unchanged checkout. The database permits that transition only for a recorded `instance.remove_refused` or `instance.worktree_dependents` failure. A fresh `instance:destroy` with the same flags reuses the saved removal and refreshes the host-only checkout inventory; no manual status repair is needed. Reusing the old idempotency key only returns the failed Operation. Earlier Route or Process cleanup stays completed.

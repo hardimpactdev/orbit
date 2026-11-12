@@ -710,7 +710,7 @@ The development mail-line fixture runs unprivileged. It executes the shipped byt
 
 The migration mail fixture also checks the phase order: copy first, bounded mail attempt second, application starts last. A failed attempt retains the copied file and produces a warning receipt.
 
-The destroy dependency fixture uses real Git in private temporary directories. It runs unprivileged, includes three Ansible phase launches, and proves refusal, registration removal and preservation of the owner’s Git data. It covers moved worktrees and prunable registrations without scanning checkout contents. Gateway tests bind a deterministic remote-program fake by default, so admission cannot reach real SSH; tests of the boundary replace it explicitly. Inventory and named cost keys are collected together.
+The destroy dependency fixture uses real Git in private temporary directories, runs unprivileged and launches no Ansible playbooks. It covers confirmed dependents, moved and prunable worktrees, unreadable candidates, malformed rows and named target failures without scanning checkout contents. Gateway tests bind a deterministic remote-program fake by default and prove an admission refusal leaves serving records untouched. Inventory and named cost keys are collected together.
 
 Clone branch fixtures use unprivileged local Git repositories and run without an Ansible playbook. Their registered case names and conservative costs change together in `tools/tests/ci-fixture-cases.json` and `.github/ci/checks.toml`; collect names with `bin/ci-units collect --file swamp/tests/instance_clone_test.py`.
 
@@ -718,4 +718,4 @@ When a fixture gains cases, collect its registrations with `bin/ci-units collect
 
 The mail fixture executes the production prefix whitelist, the reviewed bare-CR and comment-grouping regressions, and a realistic thirty-line file. It preserves `lines` beside `guard_line` and uses three Ansible launches. Gateway tests compare every admitted shape with installed phpdotenv; Swamp fixtures need no PHP or Composer installation.
 
-The destroy dependency fixture uses real broken Git pointers and FIFO configs to prove bounded fallback reads at admission and removal. Unknown paths retain typed warning diagnostics through the Operation and CLI, while an unreadable pointer that can conceal a dependency still refuses. It retains the three existing Ansible launches.
+The destroy guard is admission only. Tests pin the workflow to its pre-guard main bytes and prove retry/dispatch does not recheck Git after dismantling begins. Candidate pointer failures retain named warnings; target failures and confirmed dependents refuse before record or trigger changes.

@@ -23,7 +23,7 @@ final readonly class InstanceDestroyWorktrees
     /** @return array{checkout_instances:list<array{id:int,path:string}>,checkout_warnings:list<array<string,mixed>>} */
     public function assertAvailable(Instance $instance): array
     {
-        if ($instance->runtime()->exists() || $instance->checkout_path === ''
+        if (! $instance->placedOnAppDev() || $instance->runtime()->exists() || $instance->checkout_path === ''
             || $instance->getAttribute('checkout_path') === null || $instance->status === InstanceState::Reserved
             || $instance->node->status !== LifecycleStatus::Active) {
             return ['checkout_instances' => [], 'checkout_warnings' => []];
@@ -54,7 +54,7 @@ final readonly class InstanceDestroyWorktrees
     public function inventory(Instance $instance): array
     {
         return array_values(Instance::query()->where('node_id', $instance->node_id)->whereDoesntHave('runtime')
-            ->whereNotNull('checkout_path')->orderBy('id')->get()
+            ->whereNotNull('checkout_path')->where('checkout_path', 'like', '/%')->orderBy('id')->get()
             ->reject(static fn (Instance $row): bool => $row->checkout_path === InstanceContainer::workspaceOnNode($row))->map(static fn (Instance $row): array => ['id' => $row->id, 'path' => (string) $row->checkout_path])->all());
     }
 
@@ -68,9 +68,10 @@ final readonly class InstanceDestroyWorktrees
             if (! is_array($item) || ($item['code'] ?? null) !== 'instance.checkout_unknown') {
                 continue;
             }
-            $details = $this->failureDetails($instance, $item);
-            if (isset($details['path'], $details['cause'])) {
-                $warnings[] = ['code' => 'instance.checkout_unknown', 'path' => $details['path'], 'cause' => $details['cause'], 'instance_ids' => $details['instance_ids']];
+            if (is_string($item['path'] ?? null) && strlen($item['path']) <= 4096
+                && in_array($item['cause'] ?? null, ['unreadable', 'timed_out'], true)) {
+                $warnings[] = ['code' => 'instance.checkout_unknown', 'path' => $item['path'], 'cause' => $item['cause'],
+                    'instance_ids' => Instance::query()->where('node_id', $instance->node_id)->whereKey(ValidatedData::integerList($item['instance_ids'] ?? []))->orderBy('id')->limit(50)->pluck('id')->all()];
             }
         }
 

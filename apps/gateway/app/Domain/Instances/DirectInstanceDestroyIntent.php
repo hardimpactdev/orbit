@@ -186,8 +186,7 @@ final readonly class DirectInstanceDestroyIntent
         }
         foreach (InstanceLifecycleInput::members($saved) as $member) {
             $instance = Instance::query()->findOrFail(ValidatedData::integer($member['instance_id']));
-            $previous = is_string($saved['destroy_previous_status'] ?? null) ? $saved['destroy_previous_status'] : InstanceState::Active->value;
-            if (($instance->status !== InstanceState::Removing && ! ($removal->status === InstanceRemovalStatus::Failed && $instance->status->value === $previous)) || $instance->node_id !== $member['node_id']
+            if ($instance->status !== InstanceState::Removing || $instance->node_id !== $member['node_id']
                 || $instance->project_id !== $member['project_id'] || $instance->checkout_path !== $member['checkout_path']) {
                 throw new ResourceOperationException('instance.removal_conflict', 'A saved native removal member changed.', 409);
             }
@@ -196,7 +195,6 @@ final readonly class DirectInstanceDestroyIntent
             $removal->update(['force' => $input['force']]);
         }
         $removal->update(['status' => InstanceRemovalStatus::Removing, 'failed_step' => null, 'error_code' => null]);
-        Instance::query()->whereKey(array_column(InstanceLifecycleInput::members($saved), 'instance_id'))->update(['status' => InstanceState::Removing]);
 
         return [...$saved, 'force' => $input['force']];
     }

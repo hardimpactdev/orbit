@@ -16,11 +16,14 @@ use App\Domain\RemotePrograms\RemoteProgramFailure;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\DatabaseConnection;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Process;
 use App\Models\Project;
+use App\Models\Route;
 use App\Models\Schedule;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -85,6 +88,17 @@ it('refuses before any Operation write across Projects even with force and a lyi
         'desired_timer_state' => 'enabled', 'status' => 'active', 'trigger' => 'swamp',
         'swamp_workflow_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
     ]);
+    $route = Route::query()->create(['kind' => 'app', 'project_id' => $this->owner->project_id, 'node_id' => $this->node->id,
+        'provenance' => 'explicit', 'publication' => 'private', 'domain' => 'owner.fixture.test', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $this->owner->id, 'position' => 0]);
+    $route->update(['status' => 'active', 'sites_published' => true]);
+    $process = Process::query()->create(['owner_type' => 'instance', 'owner_id' => $this->owner->id, 'name' => 'worker',
+        'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/true']], 'desired_state' => 'running', 'status' => 'active']);
+    $database = DatabaseConnection::query()->create(['slug' => 'owner-database', 'driver' => 'mysql', 'host' => '10.44.0.9',
+        'port' => 3306, 'database' => 'owner', 'username' => 'owner', 'password' => 'fixture']);
+    $database->targets()->create(['instance_id' => $this->owner->id, 'prefix' => 'DB', 'network' => 'wireguard']);
+    $records = [$route, $process, $database, $this->owner];
+    $beforeRecords = array_map(fn ($record) => $record->fresh()->getAttributes(), $records);
     $scheduleBefore = $schedule->fresh()->getAttributes();
     $before = Operation::query()->count();
     try {
@@ -96,6 +110,7 @@ it('refuses before any Operation write across Projects even with force and a lyi
                 'other_dependents' => 0, 'unowned_paths' => [], 'dependent_paths' => [$this->dependent->checkout_path]]);
     }
     expect($schedule->fresh()->getAttributes())->toBe($scheduleBefore);
+    expect(array_map(fn ($record) => $record->fresh()->getAttributes(), $records))->toBe($beforeRecords);
     expect(Operation::query()->count())->toBe($before)->and(InstanceRemoval::query()->count())->toBe(0)
         ->and($this->owner->fresh()->status->value)->toBe('active')
         ->and(is_dir($this->root.'/owner/.git'))->toBeTrue()->and(is_file($this->root.'/dependent/.git'))->toBeTrue();
@@ -160,7 +175,7 @@ it('refuses moved Git dependencies from live Node facts before any admission wri
     new LocalProcess(['git', '-C', $this->dependent->checkout_path, 'status', '--porcelain'])->mustRun();
 })->with(['moved']);
 
-it('retains the Node checkout inventory for the removal recheck', function (): void {
+it('retains the Node checkout inventory for admission only', function (): void {
     new LocalProcess(['git', '-C', $this->root.'/owner', 'worktree', 'remove', '--force', $this->root.'/dependent'])->mustRun();
     $inventory = app(InstanceDestroyWorktrees::class)->assertAvailable($this->owner)['checkout_instances'];
     expect($inventory)->toContain(['id' => $this->owner->id, 'path' => $this->owner->checkout_path],
@@ -197,7 +212,7 @@ it('classifies a broken recorded pointer without blocking unrelated admission', 
                 ->and($exception->details['dependent_paths'])->toBe([$this->dependent->checkout_path]);
         }
     } else {
-        expect(app(InstanceDestroyWorktrees::class)->assertAvailable($this->owner)['checkout_warnings'])->toBe([]);
+        expect(app(InstanceDestroyWorktrees::class)->assertAvailable($this->owner)['checkout_warnings'])->toBe([['code' => 'instance.checkout_unknown', 'path' => $this->dependent->checkout_path, 'cause' => 'unreadable', 'instance_ids' => [$this->dependent->id]]]);
     }
     expect(is_dir($this->root.'/owner/.git'))->toBeTrue();
 })->with([true, false]);
@@ -210,49 +225,40 @@ it('retains named unknown warnings from admission through workflow input and the
     expect($operation->input['checkout_warnings'])->toBe([$warning]);
     $projection = app(DevelopmentInstanceDestroyProjection::class);
     $input = $projection->input($operation);
-    expect($input['intent']['checkout_instances'])->toContain(['id' => $this->dependent->id, 'path' => $this->dependent->checkout_path]);
+    expect($input['intent'])->not->toHaveKey('checkout_instances');
     $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'fixture-destroy'], 'finished_at' => null])->save();
     $terminal = ['status' => 'succeeded', 'run_id' => 'fixture-destroy', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['source_removal' => json_encode(['outcome' => 'removed', 'data' => ['warnings' => [$warning]]], JSON_THROW_ON_ERROR)]];
+        'result' => []];
     $projection->apply($operation, $terminal);
     expect($operation->fresh()->result)->toBe(['removed' => true, 'warnings' => [$warning]]);
     $projection->apply($operation->fresh(), $terminal);
     expect($operation->fresh()->result)->toBe(['removed' => true, 'warnings' => [$warning]]);
 });
 
-it('projects a named source refusal with the domain code and the recorded Instance identity', function (): void {
-    new LocalProcess(['git', '-C', $this->root.'/owner', 'worktree', 'remove', '--force', $this->root.'/dependent'])->mustRun();
-    $this->owner->update(['branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
-    $operation = app(StartInstanceDestroyAction::class)->execute($this->owner, true);
-    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'fixture-destroy'], 'finished_at' => null])->save();
-    app(DevelopmentInstanceDestroyProjection::class)->apply($operation,
-        ['status' => 'failed', 'run_id' => 'fixture-destroy', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-            'result' => ['source_removal' => json_encode(['outcome' => 'refused', 'data' => ['error_code' => 'instance.remove_refused',
-                'path' => $this->dependent->checkout_path, 'cause' => 'unreadable']], JSON_THROW_ON_ERROR)]]);
-    expect($operation->fresh()->error_code)->toBe('instance.remove_refused')
-        ->and($operation->fresh()->result['details']['instance_ids'])->toBe([$this->dependent->id])
-        ->and($operation->fresh()->result['error_message'])->toContain($this->dependent->checkout_path, 'Instance #'.$this->dependent->id)
-        ->and(is_dir($this->root.'/owner/.git'))->toBeTrue()
-        ->and($this->owner->fresh()->status->value)->toBe('active');
-});
-
-it('excludes container workspaces at admission and refreshes mixed saved inventories for removal and retries', function (): void {
+it('excludes container empty and relative paths and never rechecks an admitted removal on retry or dispatch', function (): void {
     new LocalProcess(['git', '-C', $this->root.'/owner', 'worktree', 'remove', '--force', $this->root.'/dependent'])->mustRun();
     app(InstanceContainer::class)->reserve($this->dependent, $this->node);
     $this->dependent->update(['checkout_path' => InstanceContainer::workspaceOnNode($this->dependent)]);
     $policy = app(InstanceDestroyWorktrees::class);
-    expect(array_column($policy->assertAvailable($this->owner)['checkout_instances'], 'id'))->not->toContain($this->dependent->id);
+    foreach (['empty' => '', 'relative' => 'relative/path'] as $name => $path) {
+        Instance::query()->create(['project_id' => $this->owner->project_id, 'node_id' => $this->node->id, 'name' => $name,
+            'checkout_path' => $path, 'status' => 'reserved', 'source_layout' => 'checkout', 'root' => '.']);
+    }
+    expect($policy->inventory($this->owner))->toBe([['id' => $this->owner->id, 'path' => $this->owner->checkout_path]]);
     $this->owner->update(['branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
     $operation = app(StartInstanceDestroyAction::class)->execute($this->owner, true);
-    $mixed = [...$operation->input['checkout_instances'], ['id' => $this->dependent->id, 'path' => $this->dependent->checkout_path]];
-    $operation->forceFill(['input' => [...$operation->input, 'checkout_instances' => $mixed]])->save();
+    $calls = $this->reader->calls;
+    new LocalProcess(['git', '-C', $this->root.'/owner', 'worktree', 'add', '-q', '--detach', $this->root.'/late'])->mustRun();
+    $this->reader->failure = RemoteProgramFailure::Unreachable;
     $projection = app(DevelopmentInstanceDestroyProjection::class);
-    expect(array_column($projection->input($operation)['intent']['checkout_instances'], 'id'))->not->toContain($this->dependent->id);
+    expect($projection->input($operation)['intent'])->not->toHaveKey('checkout_instances');
     $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'fixture-destroy'], 'finished_at' => null])->save();
     $projection->apply($operation, ['status' => 'failed', 'run_id' => 'fixture-destroy', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['source_removal' => json_encode(['outcome' => 'refused', 'data' => ['error_code' => 'instance.remove_refused']], JSON_THROW_ON_ERROR)]]);
-    expect($this->owner->fresh()->status->value)->toBe('active');
+        'error_code' => 'operation.native_failed', 'result' => []]);
+    expect($this->owner->fresh()->status->value)->toBe('removing');
     $retry = app(StartInstanceDestroyAction::class)->execute($this->owner->fresh(), true);
-    expect($retry->id)->not->toBe($operation->id)
-        ->and(array_column($projection->input($retry)['intent']['checkout_instances'], 'id'))->not->toContain($this->dependent->id);
+    expect($retry->id)->not->toBe($operation->id)->and($this->reader->calls)->toBe($calls);
+    $retry->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'fixture-retry'], 'finished_at' => null])->save();
+    $projection->apply($retry, ['status' => 'succeeded', 'run_id' => 'fixture-retry', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => []]);
+    expect(Instance::query()->find($this->owner->id))->toBeNull()->and($this->reader->calls)->toBe($calls);
 });
