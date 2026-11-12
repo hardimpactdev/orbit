@@ -2243,5 +2243,17 @@
       "test_holder_death_closes_the_descriptor_and_releases_the_lock",
       "test_invalid_lock_or_checksum_refuses_without_touching_live_file"
     ]
+  },
+  "swamp/extensions/behaviors/operations/routes/update-command/workflow_test.ts": {
+    "source_sha256": "23f3b8aaab23b0d2b547763dccf687e2aa7310c04a9f439addb8fc270e491b52",
+    "cases": [
+      "Route update workflows place every step on the swamp role and keep mutation parents small",
+      "the task-cancel withdrawal keeps certificate cleanup visible per scope and gates LAN retirement",
+      "restore keeps the observed candidate serving, then withdraws it after DNS grace",
+      "Route primitive and shared publication children use one209selector",
+      "a clone publishes its prepared Route beside workspace without waiting for app startup",
+      "equal DNS records and catalog skip both children before dispatch for moves and destruction",
+      "changed DNS records or catalog dispatch only the changed publication stage"
+    ]
   }
 }

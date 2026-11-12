@@ -755,6 +755,8 @@ The container Schedule fixture checks timer installation and advisory activation
 
 Private Node-runtime fixtures use the shipped conversion and fetch helper with a fake Vite+ command; network downloads are tested separately in an owned fixture Instance.
 
+DNS equality fixtures evaluate the workflow's actual `forEach` expressions with the pinned Swamp CEL compiler. They prove an unchanged stage dispatches no child and that a change to either records or catalog still dispatches. Keep control evaluation timings separate from live child workflow timings; release proof measures the end-to-end saving.
+
 The Caddy candidate fixtures execute each changed writer with invalid and valid candidates. They keep every path and stand-in under a private temporary directory, run Ansible without facts or privilege, preserve relative-import directories and prove invalid input leaves live bytes unchanged with no reload.
 
 Node service endpoint fixtures run unprivileged in the existing migrate environment unit. They use temporary guest files and bounded stand-ins for Incus/systemd; one pinned-Ansible run proves the dedicated tag accepts minimal public intent without workspace fields. The helper is measured separately on fixture containers for real networking, source address and idle connection survival.

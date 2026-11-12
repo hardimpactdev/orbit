@@ -1,4 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
+import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
 import { parse } from "jsr:@std/yaml@1.0.12";
 
 type Flow = {
@@ -159,4 +160,52 @@ Deno.test("a clone publishes its prepared Route beside workspace without waiting
 
     const withdraw = create.find((step) => step.name === "withdraw-route")! as Step & { guard: string };
     assert(withdraw.guard.includes('steps["clone-route"].status != "skipped"'));
+});
+
+// The pinned Swamp CEL evaluator evaluates the shipped forEach expressions, not a copied predicate.
+const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true });
+type DnsState = { digest: string; records: string };
+type DnsStages = { before: DnsState | null; prepared: DnsState | null; after: DnsState | null };
+async function dnsChildren(stages: DnsStages, kind = "instance.migrate") {
+    const artifacts: Record<string, DnsState> = {};
+    const refs: Record<string, { dns: string | null }> = {};
+    for (const [name, state] of Object.entries(stages)) {
+        refs[name] = { dns: state === null ? null : name };
+        if (state !== null) artifacts[name] = state;
+    }
+    const input = { inputs: { kind, intent: { route_mutations: {
+        forward: { publications: [{ node_id: 9, ...refs }] }, artifacts: { dns: artifacts },
+    } } } };
+    const forward = await steps("route-mutation-forward");
+    return ["forward_prepare_dns", "forward_dns"].map((name) => {
+        const step = forward.find((step) => step.name === name)!;
+        const expression = (step.forEach as { in: string }).in.slice(3, -2).trim();
+        const selected = cel.evaluate(expression, input) as unknown[];
+        assertEquals(step.task.workflowIdOrName, "route-dns-publish");
+        return selected.length;
+    });
+}
+
+Deno.test("equal DNS records and catalog skip both children before dispatch for moves and destruction", async () => {
+    const same = { records: "host-record=fixture.test,10.44.0.9\n", digest: "same-catalog" };
+    for (const kind of ["instance.migrate", "instance.destroy", "route.update", "route.reconcile"]) {
+        // Distinct artifact references with equal content must be treated as the same publication.
+        assertEquals(await dnsChildren({ before: same, prepared: { ...same }, after: { ...same } }, kind), [0, 0]);
+    }
+    assertEquals(await dnsChildren({ before: null, prepared: null, after: null }), [0, 0]);
+});
+
+Deno.test("changed DNS records or catalog dispatch only the changed publication stage", async () => {
+    const before = { records: "host-record=fixture.test,10.44.0.9\n", digest: "before" };
+    const records = { ...before, records: "host-record=fixture.test,10.44.0.10\n" };
+    const catalog = { ...before, digest: "different-catalog" };
+    for (const changed of [records, catalog]) {
+        for (const kind of ["instance.migrate", "instance.destroy", "route.update", "route.reconcile"]) {
+            assertEquals(await dnsChildren({ before, prepared: changed, after: changed }, kind), [1, 0]);
+            assertEquals(await dnsChildren({ before, prepared: before, after: changed }, kind), [0, 1]);
+            assertEquals(await dnsChildren({ before, prepared: changed, after: before }, kind), [1, 1]);
+        }
+    }
+    assertEquals(await dnsChildren({ before: null, prepared: before, after: before }), [1, 0]);
+    assertEquals(await dnsChildren({ before: null, prepared: null, after: before }), [0, 1]);
 });

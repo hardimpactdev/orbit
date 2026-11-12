@@ -2928,3 +2928,17 @@ inputs = ["swamp/ansible/instance_node_services.py", "swamp/ansible/instance-con
 [[fixture]]
 file = "swamp/tests/caddy_publish_test.py"
 inputs = ["swamp/ansible/library/orbit_caddy_publish.py", "swamp/ansible/module_utils/orbit_caddy_publish.py"]
+
+[[fixture]]
+file = "swamp/extensions/behaviors/operations/routes/update-command/workflow_test.ts"
+cost = 7
+inputs = ["swamp/workflows/**"]
+
+[fixture.case_costs]
+"Route update workflows place every step on the swamp role and keep mutation parents small" = 1
+"the task-cancel withdrawal keeps certificate cleanup visible per scope and gates LAN retirement" = 1
+"restore keeps the observed candidate serving, then withdraws it after DNS grace" = 1
+"Route primitive and shared publication children use one209selector" = 1
+"a clone publishes its prepared Route beside workspace without waiting for app startup" = 1
+"equal DNS records and catalog skip both children before dispatch for moves and destruction" = 1
+"changed DNS records or catalog dispatch only the changed publication stage" = 1
