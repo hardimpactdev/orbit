@@ -11,7 +11,7 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
-  participant N as Instance container<br/>on its owning Node
+  participant N as app-dev Node<br/>Instance container
   CLI->>GW: instance:runtime:update ID
   %%> Command:
   %%> - `orbit instance:runtime:update INSTANCE`
@@ -29,11 +29,11 @@ sequenceDiagram
   %%> - the phase is bounded at 150 seconds; resolution and downloads share 90 seconds; no Process is stopped, started or restarted
   alt store changed
     %% path: main
-    N-->>SW: converted · versions · pins
+    N-->>SW: Converted store<br/>versions · pins
     SW-->>GW: Run succeeded<br/>terminal result
   else already prepared
     %% path: repeat
-    N-->>SW: unchanged · versions · pins
+    N-->>SW: Unchanged store<br/>versions · pins
     SW-->>GW: Run succeeded<br/>terminal result
   else preparation failed
     %% path: failed

@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceMailRequest;
+use Orbit\Sdk\Requests\Instances\UpdateInstanceRuntimeRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
@@ -145,6 +146,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:release:list',
         'instance:rename',
         'instance:rollback',
+        'instance:runtime:update',
         'instance:setup',
         'instance:setup-step:create',
         'instance:setup-step:destroy',
@@ -762,6 +764,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:destroy' => [['instance'], ['yes' => false, 'force' => false, 'idempotency-key' => null, 'json' => false]],
         'instance:list' => [[], ['json' => false]],
         'instance:mail:update' => [['instance'], ['json' => false]],
+        'instance:runtime:update' => [['instance'], ['json' => false]],
         'instance:logs' => [['instance'], ['lines' => '100', 'follow' => false, 'json' => false]],
         'instance:migrate' => [['instance'], ['force' => false, 'idempotency-key' => null, 'json' => false]],
         'instance:node-service:attach' => [['instance'], ['process' => null, 'protocol' => 'tcp', 'port' => null, 'host-env-key' => null, 'port-env-key' => null, 'json' => false]],
@@ -1303,6 +1306,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:destroy' => [['instance' => '1'], ...$profileMissing],
         'instance:list' => [[], ...$profileMissing],
         'instance:mail:update' => [['instance' => '1'], ...$profileMissing],
+        'instance:runtime:update' => [['instance' => '1'], ...$profileMissing],
         'instance:logs' => [['instance' => '1'], ...$profileMissing],
         'instance:migrate' => [['instance' => '1', '--force' => true], ...$profileMissing],
         'instance:node-service:attach' => [['instance' => '1', '--process' => '1', '--port' => '1025', '--host-env-key' => 'MAIL_HOST', '--port-env-key' => 'MAIL_PORT'], ...$profileMissing],
@@ -1650,3 +1654,27 @@ it('preserves the typed mail Operation receipt and request correlation at the SD
         ->and($mock->getLastPendingRequest()?->headers()->get('Idempotency-Key'))->toBe('mail-repair-proof')
         ->and($request->resolveEndpoint())->toBe('/api/v1/instances/501/mail')->and($request->body()->all())->toBe([]);
 });
+
+it('prepares the Node store without confirmation in JSON and noninteractive human mode', function (bool $json): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://10.44.0.1', '/unused-ca'));
+    $result = ['status' => 'converted', 'versions' => ['22.23.5', '24.22.1'], 'pins' => [['pin_source' => '.nvmrc', 'pinned' => '22', 'version' => '22.23.5', 'directory' => '/srv/workspace']]];
+    $final = ['id' => 901, 'kind' => 'instance.runtime_update', 'target_type' => 'instance', 'target_id' => 501,
+        'status' => 'succeeded', 'sequence' => 2, 'poll_after_seconds' => null, 'result' => $result];
+    $mock = MockClient::global([
+        UpdateInstanceRuntimeRequest::class => MockResponse::make(['data' => $final], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final]),
+    ]);
+    $exit = Artisan::call('instance:runtime:update', ['instance' => 501, '--json' => $json, '--no-interaction' => true]);
+    $output = trim(Artisan::output());
+    expect($exit)->toBe(0)->and($output)->not->toContain('MAIL_PASSWORD=', 'Confirm');
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
+    } else {
+        expect($output)->toContain('Runtime store: converted. Node: 22.23.5, 24.22.1.');
+    }
+    $mock->assertSent(fn ($request): bool => $request instanceof UpdateInstanceRuntimeRequest
+        && $request->resolveEndpoint() === '/api/v1/instances/501/runtime' && $request->body()->all() === []
+        && is_string($request->headers()->get('Idempotency-Key')));
+    MockClient::destroyGlobal();
+})->with([true, false]);

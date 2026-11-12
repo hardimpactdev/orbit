@@ -57,6 +57,8 @@ final class OperationBudgetTable
         // The 3,900 s converge basis is below the migrate path's declared 4,240 s: round to 4,500, plus 600 s for
         // admission and settlement. This lower bound includes restore/cleanup but not undeclared work or repetitions.
         'instance.migrate' => 5100,
+        // Private-store conversion (30s copy) plus a 90s shared tool deadline, under the 150s phase bound.
+        'instance.runtime_update' => 300,
         // No native run yet. Basis: the legacy rollback deadline of 900 s (docs/reference/deployments.md#deploy) and the chart's
         // budget. Replace with the 14-day p95 after the first success.
         'instance.rollback' => 900,

@@ -11,6 +11,7 @@ use Orbit\Sdk\Requests\Instances\MigrateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceMailRequest;
+use Orbit\Sdk\Requests\Instances\UpdateInstanceRuntimeRequest;
 use Orbit\Sdk\Responses\Instances\InstanceRegistrationResult;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
@@ -45,6 +46,8 @@ it('preserves lifecycle admission payloads, keys and typed Operation receipts', 
         'instance.register', '/api/v1/instances/register', ['source_path' => '/work/project', 'setup' => true]],
     'transfer' => [new TransferInstanceRequest(501, 10, name: 'proof', idempotencyKey: 'lifecycle-proof'),
         'instance.transfer', '/api/v1/instances/501/transfer', ['node_id' => 10, 'name' => 'proof']],
+    'runtime update' => [new UpdateInstanceRuntimeRequest(501, idempotencyKey: 'lifecycle-proof'),
+        'instance.runtime_update', '/api/v1/instances/501/runtime', []],
     'mail update' => [new UpdateInstanceMailRequest(501, idempotencyKey: 'lifecycle-proof'),
         'instance.mail_update', '/api/v1/instances/501/mail', []],
     'migrate' => [new MigrateInstanceRequest(501, idempotencyKey: 'lifecycle-proof'),

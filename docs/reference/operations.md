@@ -678,4 +678,6 @@ A declared `OperationArtifactSource` may return a bounded existing-file referenc
 
 `DirectOperationResultProjection` supplies the common atomic status/result transaction for extension families. Their fixed `result_hook` validates safe input and domain metadata; the result hook invokes its existing domain completion. Conn’s issue observations update its existing pairing metadata before the registered credential store accepts the output. No family transport or result controller is added.
 
+`instance.runtime_update` holds the Instance lock with a 300-second run budget. Its 150-second phase prepares only the named container’s private Node store, without Process actions; see [`instance:runtime:update`](/cli/instance/runtime-update).
+
 Development `instance.mail_update` holds the Instance lock and has a 120-second run budget. Its 90-second mail phase leaves room for input, result and cleanup. It returns path and mailer outcomes without environment values; see [`instance:mail:update`](/cli/instance/mail-update).

@@ -1,5 +1,5 @@
 ---
-title: "instance:runtime:update"
+title: "orbit instance:runtime:update"
 description: "Prepare one running Instance's private Node store without restarting Processes."
 covers:
   - apps/gateway/app/Domain/InstanceRuntime/**
@@ -21,7 +21,7 @@ orbit instance:runtime:update 42 --json
 
 | Argument or option | Meaning |
 | --- | --- |
-| `instance-id` | Numeric Instance ID. |
+| `instance` | Numeric Instance ID. |
 | `--json` | Use the standard [machine output](/reference/cli-ux#results). |
 
 The result contains `status` (`converted` or `unchanged`), `versions` in the private store, and `pins` with their sources and resolved versions. A repeat with no missing version reports `unchanged`.

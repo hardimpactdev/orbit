@@ -924,4 +924,4 @@ Each pass starts again at the first Node in risk order that the commit has not c
 
 A closed window or a busy publication lock defers a Node instead of failing it. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing. The rollout is off by default, so a Gateway release does not reach Nodes before an operator prepared them.
 
-Development [`instance:mail:update`](/cli/instance/mail-update) also holds the release idle guard until its Operation settles.
+Development [`instance:mail:update`](/cli/instance/mail-update) and [`instance:runtime:update`](/cli/instance/runtime-update) also hold the release idle guard until their Operations settle.
