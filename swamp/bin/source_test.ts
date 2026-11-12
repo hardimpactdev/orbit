@@ -91,6 +91,7 @@ Deno.test("hot workflow trees avoid literal behavior lookups and preserve consta
     const expected = new Map(Object.entries({
         "operation-instance-migrate/input": "ansible-input",
         "route-withdraw-node/input": "ansible-input",
+        "route-dns-grace/wait-private-dns-ttl": "route-dns-grace",
         "route-ingress-apply/result": "route-ingress-result",
         "route-lan-apply/changes": "route-lan-changes",
         "route-lan-apply/verify-tuples": "route-lan-applied",
@@ -100,9 +101,6 @@ Deno.test("hot workflow trees avoid literal behavior lookups and preserve consta
         "route-mutation-restore/result": "route-mutation-phase",
         "route-withdraw/result": "route-mutation-phase",
     }));
-    // The shape gate judges a PR with the checker of its base, which knows the DNS-grace wait by its literal name.
-    // This one name becomes a constant in the change after the checker that accepts the constant form is on main.
-    const literalUntilBaseCheckerAccepts = new Map([["route-dns-grace/wait-private-dns-ttl", "route-dns-grace"]]);
     const seen = new Set<Flow>();
     function walk(target: string) {
         const workflow = workflows.get(resolveConstantName(target));
@@ -121,10 +119,6 @@ Deno.test("hot workflow trees avoid literal behavior lookups and preserve consta
                     const spelled = task as Record<string, unknown>;
                     const name = spelled.behaviorName ?? spelled.modelName ?? spelled.behaviorIdOrName ??
                         spelled.modelIdOrName;
-                    if (literalUntilBaseCheckerAccepts.get(at) === name) {
-                        literalUntilBaseCheckerAccepts.delete(at);
-                        continue;
-                    }
                     assert(
                         typeof name === "string" && name.includes("${{"),
                         `${at}: literal behavior name ${name}`,
@@ -160,5 +154,4 @@ Deno.test("hot workflow trees avoid literal behavior lookups and preserve consta
         [],
         "Every fixed identity must be reached",
     );
-    assertEquals([...literalUntilBaseCheckerAccepts.keys()], [], "Remove a literal exception that no longer applies");
 });
