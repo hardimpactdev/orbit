@@ -146,6 +146,11 @@ it('shows migration mail outcomes and advisory warnings in human and JSON output
     'smtp' => [['mailer' => ['status' => 'already_smtp']], 'Mailer: already_smtp.'],
     'port conflict' => [['mail' => ['status' => 'skipped', 'reason' => 'mail_port_in_use']], 'Mail setup skipped: mail_port_in_use.'],
     'unit conflict' => [['mail' => ['status' => 'skipped', 'reason' => 'mail_unit_conflict']], 'Mail setup skipped: mail_unit_conflict.'],
+    'unused environment endpoint' => [['warnings' => [['code' => 'instance.migrate_env_service_unused',
+        'message' => '.env: DB_HOST=127.0.0.1:3306: no TCP service answered on the Node.']]],
+        'Warning: instance.migrate_env_service_unused. .env: DB_HOST=127.0.0.1:3306: no TCP service answered on the Node.'],
+    'generic environment warning' => [['warnings' => [['code' => 'instance.future_environment_warning', 'message' => 'A safe future warning.']]],
+        'Warning: instance.future_environment_warning. A safe future warning.'],
     'advisory' => [['warnings' => [['code' => 'instance.mail_update_failed', 'step' => 'mail']]],
         'Warning: instance.mail_update_failed. Run orbit instance:mail:update 501 to repair mail.'],
 ]);

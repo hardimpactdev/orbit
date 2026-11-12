@@ -21,7 +21,7 @@ default = ["swamp/tests/ansible_inputs_test.py"]
 file = "swamp/tests/ansible_instance_migrate_test.ts"
 after_merge = true
 reason = "111 retained cases need 7486 declared seconds including startup, above the six-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963. Changed cases use individually measured local times rounded up plus one second. All migration cases run after merge until their work is reduced or selection is narrowed."
-cost = 6820
+cost = 6940
 # 159.019s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
@@ -53,6 +53,7 @@ inputs = [
 ]
 
 [fixture.case_costs]
+  "stock unused MySQL passes both real preflights and its warning survives the completed move" = 120 # UNMEASURED conservative fixture estimate
   "linked retirement interrupted before unregister fails explicitly on repeat" = 11 # measured 9.348s locally; rounded up plus 1s
   "linked worktree preflight refuses nested without touching its active owner or sibling" = 7 # measured 5.081s locally; rounded up plus 1s
   "a linked worktree migrates before its active owner and preserves every file and sibling registration" = 39 # measured 37.995s locally; rounded up plus 1s
@@ -2687,7 +2688,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts"
-cost = 28
+cost = 29
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -2695,6 +2696,7 @@ inputs = [
   "swamp/workflows/workflow-operation-instance-migrate.yaml",
 ]
 [fixture.case_costs]
+  "environment warning receipts survive later phase results and remain generic" = 1 # completed local receipt fixture
 "a default that moved reports its commit and no T3 server" = 1
 "a non-default Instance that moved reports its T3 server, and needs its registration" = 1
 "a move that failed and restored names the failed phase with its own refusal, and says restored" = 1

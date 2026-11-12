@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "1797975f1aa79462d7edbf30ff9c3cb06c924dcfeb01e82dd28dcf3daa1e6190",
+    "source_sha256": "ec80156ddc925766a498111508dc0641e1af1e89e02ad2ad5bd5f6838105428e",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -113,7 +113,8 @@
       "stock selector preflight: real53",
       "stock selector preflight: selected Redis",
       "stock selector preflight: attached Redis",
-      "stock selector preflight: wrong Redis port"
+      "stock selector preflight: wrong Redis port",
+      "stock unused MySQL passes both real preflights and its warning survives the completed move"
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
@@ -602,10 +603,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 \u2192 v5.12.0",
-      "exact script output: v5.42.0 \u2192 v5.43.0",
-      "exact script output: v5.49.0 \u2192 v5.50.0",
-      "exact script output: v5.50.0 \u2192 v5.50.1",
+      "exact script output: v5.11.0 → v5.12.0",
+      "exact script output: v5.42.0 → v5.43.0",
+      "exact script output: v5.49.0 → v5.50.0",
+      "exact script output: v5.50.0 → v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -1788,8 +1789,15 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "eb0cb4ce337db4bf017c43743f65d536cfcce0341c59098a8432623d24a26369",
+    "source_sha256": "9fbf7c4358a403cb1d28785c8e95146dd2989b31ae332e6b3b79d5e26232d26b",
     "cases": [
+      "test_stock_mysql_without_a_host_listener_warns_instead_of_refusing",
+      "test_answering_unattached_loopback_service_retains_the_refusal",
+      "test_attached_services_and_public_answers_are_never_connected_to",
+      "test_private_dns_resolution_connects_only_after_every_address_is_private",
+      "test_unused_redis_mail_and_memcached_follow_the_same_probe_and_redaction_rule",
+      "test_only_refused_timeout_and_unreachable_errors_become_unused_warnings",
+      "test_probe_cache_and_limit_bound_total_network_waiting",
       "test_loopback_requires_exact_attached_key_pair_and_port",
       "test_database_urls_refuse_without_exposing_credentials_or_bypassing_attached_keys",
       "test_development_mail_satisfies_only_the_ipv4_forwarded_endpoints",
@@ -1954,7 +1962,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "f7c89e168f3a4e06db343d7842deeffd40ee1cf4138edd0c6a69f4d1584b813e",
+    "source_sha256": "c3c10c8a173e3f531893f6bbaa5cd86a3a216eb0911dbb6ad016e7bb8630035d",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -1982,7 +1990,8 @@
       "Node preparation fails before quiesce with its pin reason and restores only the new container",
       "the copied untracked count includes zero, excludes paths and survives later failure",
       "invalid or incomplete copied-file receipts do not claim a count",
-      "carried Schedule activation failures and missing receipts warn without failing completed migration"
+      "carried Schedule activation failures and missing receipts warn without failing completed migration",
+      "environment warning receipts survive later phase results and remain generic"
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {
