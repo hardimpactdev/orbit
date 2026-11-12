@@ -752,8 +752,9 @@
     ]
   },
   "swamp/tests/ansible_instance_module_args_test.py": {
-    "source_sha256": "89400c2f37fbf8ceb44f52e77dead3f472bf2c163ab7929e1158e3aa6c7e258e",
+    "source_sha256": "f97bb2de4178f86d32d333eab5b592a16bd746f3d6e59f9d45ba80b4629e6fa7",
     "cases": [
+      "test_every_command_argv_element_is_a_string_after_yaml_parsing",
       "test_every_module_call_passes_the_real_argument_spec",
       "test_migration_pause_runs_as_a_controller_action",
       "test_the_check_refuses_what_the_real_module_refuses"
@@ -2083,7 +2084,7 @@
     ]
   },
   "swamp/tests/ansible_instance_migrate_source_test.ts": {
-    "source_sha256": "d2260a8b607e2f2b552281605f3b56dc5f8b55857ec9634301204408de247d69",
+    "source_sha256": "7f2a38c2ea71647d83b434c6d5d836aae9b799f351fb1fd967b7a5bd0d38d616",
     "cases": [
       "migration source preflight distinguishes failure and timeout before changing the checkout",
       "a never-pushed branch at a pushed commit passes source and retirement checks and copies locally"

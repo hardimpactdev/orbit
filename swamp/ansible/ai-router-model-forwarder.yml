@@ -32,7 +32,7 @@
   tasks:
     # Containers call the bridge address, so it must be the bridge's own: a wrong address would bind the forwarder elsewhere.
     - name: Read the addresses of the bridge
-      ansible.builtin.command: { argv: [ip, -4, -o, addr, show, dev, "{{ intent.bridge }}"] }
+      ansible.builtin.command: { argv: [ip, "-4", -o, addr, show, dev, "{{ intent.bridge }}"] }
       register: bridge_addresses
       changed_when: false
     - name: Check that the address belongs to the bridge
