@@ -744,3 +744,5 @@ Private Node-runtime fixtures use the shipped conversion and fetch helper with a
 The Caddy candidate fixtures execute each changed writer with invalid and valid candidates. They keep every path and stand-in under a private temporary directory, run Ansible without facts or privilege, preserve relative-import directories and prove invalid input leaves live bytes unchanged with no reload.
 
 Node service endpoint fixtures run unprivileged in the existing migrate environment unit. They use temporary guest files and bounded stand-ins for Incus/systemd; one pinned-Ansible run proves the dedicated tag accepts minimal public intent without workspace fields. The helper is measured separately on fixture containers for real networking, source address and idle connection survival.
+
+Migration endpoint fixtures use local TCP sockets and mocked resolution boundaries to distinguish unused services, answering services and probe faults. Their warning receipts survive later phase results; inventory and retained cost totals are regenerated together.

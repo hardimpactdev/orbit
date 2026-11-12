@@ -435,6 +435,8 @@ The migration environment preflight uses this same admitted mail endpoint. Selec
 
 Both environment checks read only the application directory’s `.env`, each Process working directory’s `.env` inside the checkout, the environment files named by the Instance’s Process units, and each Schedule’s source working directory `.env`. The application directory uses the same root/subfolder rule as the container. They never walk dependency trees for `.env` fixtures. This selector is not a containment guard: explicitly named absolute paths and symlink targets are followed.
 
+An unattached selected loopback or private endpoint is checked from the Node before downtime. No TCP answer produces `instance.migrate_env_service_unused` in the generic `warnings` list; an answer keeps the existing refusal. Public or mixed-address names are never connected to. Up to 20 unique endpoints each share a two-second resolution/connect budget per check; unexpected probe errors refuse safely.
+
 Both environment checks read the source checkout before the copy. A `log` mailer is not selected there. No selector check runs after the mailer changes. Migration applies the same path and exact-line rule after copying `.env` and before starting application Processes. A mail failure records `instance.mail_update_failed` in `warnings` and does not fail or roll back an otherwise successful move. Run [`instance:mail:update`](/cli/instance/mail-update) to repair it. A listener or unit conflict succeeds with its named skip and never changes the mailer.
 
 ## Model access
