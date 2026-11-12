@@ -1773,7 +1773,7 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "edd9e6b4b4dfbd62eadcdefab6d3c78c90f16d8de3edd32cbf60445573be3cff",
+    "source_sha256": "a94d87a8d2226b97829a166f735fab05ffc8147e3323338096053391746c6356",
     "cases": [
       "test_loopback_requires_exact_attached_key_pair_and_port",
       "test_development_mail_satisfies_only_the_ipv4_forwarded_endpoints",

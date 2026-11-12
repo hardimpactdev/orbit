@@ -583,6 +583,9 @@ class NodeServiceTest(unittest.TestCase):
         import shutil
         import subprocess
         import sys
+        workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-instance-node-service.yaml').read_text())
+        phase = workflow['jobs'][0]['steps'][1]['task']['inputs']['run']
+        self.assertIn('--tags node-service \"$ORBIT_ANSIBLE/instance-container.yml\"', phase)
         executable = shutil.which('ansible-playbook')
         self.assertIsNotNone(executable, 'Pinned Ansible is required')
         directory = self.root / 'phase'

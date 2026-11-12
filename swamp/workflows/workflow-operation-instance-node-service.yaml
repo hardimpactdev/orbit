@@ -38,7 +38,7 @@ jobs:
           behaviorName: '${{ "instance-node-service-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
-            run: timeout 90 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags mail "$ORBIT_ANSIBLE/instance-node-service-update.yml"
+            run: timeout 90 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags node-service "$ORBIT_ANSIBLE/instance-container.yml"
             env:
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
