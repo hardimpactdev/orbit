@@ -117,11 +117,12 @@ class BranchSelectionTest(unittest.TestCase):
 
 
 class CloneTest(unittest.TestCase):
-    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", overrides=None, real_git=False):
+    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None):
         calls = []
         real_run = subprocess.run
         with tempfile.TemporaryDirectory() as folder:
             container = {
+                "mail": mail,
                 "name": "instance-7",
                 "project": "orbit-instances",
                 "network": "orbitinst0",
@@ -190,6 +191,7 @@ class CloneTest(unittest.TestCase):
                         NETWORK_CHECK.read_text(),
                         pwd.getpwuid(os.getuid()).pw_name,
                         folder + "/private",
+                        json.dumps({"mail": mail_code or 'print(\'{"status":"unchanged"}\')'}),
                         "container",
                     ],
                 ),
@@ -203,6 +205,8 @@ class CloneTest(unittest.TestCase):
                 except SystemExit as result:
                     self.assertEqual(result.code, 1)
             self.assertFalse(Path(folder + "/private/git-credential").exists())
+            if transcript is not None:
+                transcript.append(output.getvalue())
             return calls, read, error.getvalue()
 
     def test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start(self):
@@ -221,6 +225,35 @@ class CloneTest(unittest.TestCase):
         self.assertLess(calls.index(deleted), calls.index(start))
         check = next(i for i, call in enumerate(calls) if call[:2] == ["python3", "-c"])
         self.assertLess(check, calls.index(start))
+
+    def test_clone_launch_applies_mail_without_another_playbook(self):
+        fixture = BranchSelectionTest()
+        fixture.setUp()
+        try:
+            selected = {"repository": str(fixture.remote), "mirror": str(fixture.mirror), "protocols": ["file"], "branch": "mail-branch",
+                        "branch_selection": {"mode": "new", "target": "mail-branch", "base": "release", "source_sha": fixture.tip}}
+            for selection in [None, selected]:
+                with self.subTest(branch_selection=selection is not None):
+                    calls, _, error = self.clone(mail={"port": 1025}, overrides=selection, real_git=selection is not None)
+                    self.assertEqual(error, "")
+                    self.assertFalse(any("ansible-playbook" in call for call in calls))
+                    mail_call = next(i for i, call in enumerate(calls) if call[:2] == ["python3", "-c"] and '"status":"unchanged"' in call[2])
+                    start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+                    self.assertLess(start, mail_call)
+            self.assertEqual(fixture.git("-C", str(fixture.mirror), "rev-parse", "refs/heads/mail-branch").stdout.strip(), fixture.tip)
+        finally:
+            fixture.doCleanups()
+
+    def test_mail_failure_keeps_clone_launch_and_later_branch_work_successful(self):
+        for code in ["instance.host_unavailable", "process.target_inactive", "private tool output"]:
+            transcript = []
+            source = "import sys;sys.stderr.write(" + repr(code + "\n") + ");sys.exit(1)"
+            calls, _, error = self.clone(mail={"port": 1025}, mail_code=source, transcript=transcript)
+            self.assertEqual(error, "")
+            reason = code if code != "private tool output" else "instance.mail_update_failed"
+            self.assertIn("orbit-mail=failed:" + reason, transcript[0])
+            self.assertNotIn("private tool output", transcript[0])
+            self.assertTrue(any("ls-remote" in call for call in calls))
 
     def test_clone_uses_the_admitted_common_acl_name(self):
         _, read, error = self.clone(nic_acl="admitted-proxy")

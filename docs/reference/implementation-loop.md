@@ -92,6 +92,8 @@ Gateway bootstrap tests supply a fixed RSA key at the process boundary. The key 
 
 The [checks table](https://github.com/hardimpactdev/orbit/blob/main/.github/ci/checks.toml) defines the inputs of Gateway Pest and every other build check. `bin/ci-build-plan` interprets it. An input selects a check when it matches an include and no exclusion. `**` crosses directories; `*` and `?` stay within one name.
 
+Registry edits compare parsed entries against the merge base: each changed `check` entry selects its own job, while fixture-only edits and formatting select no extra fast jobs. Shared sections (including budgets, defaults, roots and selection rules) select all fast jobs. Changes to other files still select their usual checks. Fixture-only registry edits do not select Gateway release inputs on a PR; main keeps its release inputs.
+
 The job depends on input selection; only an explicit false selection skips it. Required checks has a static dependency on the job and validates the exact selection keys and boolean values before accepting the results. A selected failure, cancellation or unexpected skip fails the gate independently of `ORBIT_SLOW_CHECKS_BLOCKING`.
 
 The CLI Pest job installs `apps/cli` dev Composer dependencies with the shared PHP 8.5 action and coverage disabled. It runs the complete suite in one process with a 1 GiB memory limit and uploads JUnit results even after a failure.
@@ -100,7 +102,7 @@ The checks table also defines CLI Pest inputs. Required checks requires the job 
 
 The Swamp gate production-lints the observer preparation play. Its fixture tests install the candidate pin on all three nested Nodes and reject checksum and download failures. Gateway tests require new presence versions and host facts after a controlled restart. Runner tests require preparation before every batch and direct case, including old workflow calls without setup, and give preparation and batch setup separate bounded budgets.
 
-The mail phase is one unsliced Python fixture unit, declared at 120 seconds within the 150-second lane. Its registry regression checks both planning and the runner command. It exercises two IPv4 socket proxies, exact own-ACL admission, additive Docker DNAT persistence and refresh, foreign-resource skips, unchanged repeats, and retry after a failed unit write, after one successful service rewrite, and after all writes before reload.
+The mail phase runs as one fast, unsliced Python fixture in the Required PR path. It calls the shipped converger through unprivileged host and guest tool boundaries, rather than launching a playbook for every case. It exercises two IPv4 socket proxies, exact own-ACL admission, the real additive Docker DNAT resolver and refresh, foreign-resource skips, and unchanged repeats with new admission timestamps. It also retries after a failed unit write, after one successful service rewrite, and after all writes before reload. Its registry regression checks both Required selection and the runner command.
 
 The fixture for the mailer rule reproduces the Incus error when deletion finds no file: exit 1, even with `--force`. Its real replacement shell proves distinct source ACL and user-xattr preservation after rename; three Ansible launches also check safe failure text.
 
@@ -711,5 +713,7 @@ The migration mail fixture also checks the phase order: copy first, bounded mail
 Clone branch fixtures use unprivileged local Git repositories and run without an Ansible playbook. Their registered case names and conservative costs change together in `tools/tests/ci-fixture-cases.json` and `.github/ci/checks.toml`; collect names with `bin/ci-units collect --file swamp/tests/instance_clone_test.py`.
 
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise.
+
+The mail fixture executes the production prefix whitelist, the reviewed bare-CR and comment-grouping regressions, and a realistic thirty-line file. It preserves `lines` beside `guard_line` and uses three Ansible launches. Gateway tests compare every admitted shape with installed phpdotenv; Swamp fixtures need no PHP or Composer installation.
 
 Private Node-runtime fixtures use the shipped conversion and fetch helper with a fake Vite+ command; network verification remains a post-release live proof.
