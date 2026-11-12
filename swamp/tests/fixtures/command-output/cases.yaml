@@ -618,18 +618,21 @@ contexts:
     destroy_firewall:
       stdout: "[ 2] 3801 ALLOW IN # orbit:instance-8-t3\n"
   retirement-alone:
+    retired_worktree: false
     retired_repository: true
     retirement_worktrees:
       stdout: "worktree /srv/tool/default\u0000HEAD 32d5894464a2464ffa2db8b28fd457a27d3e7870\u0000branch refs/heads/main\u0000\u0000"
     retirement_checkout:
       stdout: "/srv/tool/default"
   retirement-linked:
+    retired_worktree: false
     retired_repository: true
     retirement_worktrees:
       stdout: "worktree /srv/tool/default\u0000HEAD 32d5894464a2464ffa2db8b28fd457a27d3e7870\u0000branch refs/heads/main\u0000\u0000worktree /srv/tool/detached\ncheckout\u0000HEAD 32d5894464a2464ffa2db8b28fd457a27d3e7870\u0000detached\u0000\u0000worktree /srv/tool/feature space\u0000HEAD 32d5894464a2464ffa2db8b28fd457a27d3e7870\u0000branch refs/heads/feature\u0000\u0000"
     retirement_checkout:
       stdout: "/srv/tool/default"
   retirement-detached:
+    retired_worktree: true
     retired_repository: false
     retirement_identity:
       stdout: '{"present":true,"valid":true,"linked":true,"git_dir":"/srv/tool/default/.git/worktrees/detached","common_dir":"/srv/tool/default/.git","descendants":[]}'
@@ -638,6 +641,7 @@ contexts:
     retirement_checkout:
       stdout: "/srv/tool/detached\ncheckout"
   retirement-linked-descendant:
+    retired_worktree: true
     retired_repository: false
     retirement_worktrees:
       stdout: "worktree /srv/tool/default\u0000\u0000worktree /srv/tool/feature space\u0000\u0000worktree /srv/tool/feature space/nested\ncheckout\u0000\u0000"
