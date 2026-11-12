@@ -1,0 +1,24 @@
+command: instance:mail:update
+chart: instance/mail-update
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+uncovered:
+  main: "Real-Ansible fixtures execute the exact byte rule and changed-only PHP refresh. Gateway fixtures cover path, ports and value-free results; the proof fleet lacks Instance containers."
+  conflict: "A listener or unit conflict succeeds with its named skip and never runs the one-line rule."
+  failed: "A stopped container never starts; a failed path preserves the file and a retry reuses the shared path."
+  preserved: "Fixtures cover all non-exact assignments, duplicates, multiline quote guards, BOM, symlinks and line-number-only reporting."
+  repeat: "An already-smtp second run is byte-identical and restarts nothing."
+  refusals: "Gateway fixtures cover checkout, production, no endpoint, stopped runtime, access and busy Instance locks."
+cases:
+  - id: invalid-id
+    batch: fresh-fleet
+    covers: []
+    summary: Reject a nonnumeric Instance locally.
+    act:
+      - cli:
+          run: [instance:mail:update, invalid]
+          forms: [json, human]
+          expect: {exit: 1, code: instance.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
