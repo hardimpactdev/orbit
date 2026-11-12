@@ -158,7 +158,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 1511
+cost = 1562
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
@@ -2799,7 +2799,7 @@ inputs = [
 "every destroy Ansible step enables failed task stderr" = 1
 [[fixture]]
 file = "swamp/tests/instance_node_runtime_test.py"
-cost = 17
+cost = 20
 [fixture.case_costs]
   "test_clone_without_processes_leaves_a_legacy_store_and_unused_pin_untouched" = 1 # completed local fixture, 2026-11-12
   "test_opaque_process_commands_still_prepare_a_writable_clone_store" = 1 # completed local fixture, 2026-11-12
