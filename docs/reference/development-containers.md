@@ -549,9 +549,13 @@ A stale projection mark is repaired only for an active default on an active app-
 
 All Routes targeting the Instance must be active and published, with no failure, placement transition, replacement or target-set change. No unfinished Instance or Route publication and no retained publication hold may remain. A non-web Project without a Route counts as complete.
 
-After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the default branch. Automatic deployment depends on the [shared producer and policy setting](/reference/deployments#automatic-development-defaults). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
+After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the default branch. Automatic deployment depends on the [shared producer and policy setting](/reference/deployments#automatic-development-defaults). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. Before that snapshot, a Node/Vite default converts an old shared Node store once as `orbit`, without restarting a Process.
 
-There are no development setup steps. The default Instance has them done already, so a clone needs none. A clone prepares its container in five direct command phases: container, workspace and Processes, agent, T3, and sessions. Each native step reports its timestamps through the existing Operation progress.
+A converted store replaces the same-commit seed too: an immutable old snapshot cannot inherit a later filesystem change. Until this explicit deploy, clones of an old seed still convert their own store correctly. After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
+
+There are no development setup steps. The default Instance has them done already, so a clone needs none. A clone prepares its container in five direct command phases: container, workspace and Processes, agent, T3, and sessions.
+
+The workspace phase prepares Node and fetches a changed branch pin before starting any Process, with no separate Node-store playbook. A prepared seed keeps its existing recipe and downloaded versions. Every clone gets a private writable store, including one with no Processes, so a Process added later can install its pin. Without a recognized Node/Vite consumer, only the pin fetch is skipped. Each native step reports its timestamps through the existing Operation progress.
 
 Conn supports an [explicit branch selection](/reference/conn#threads-in-an-orbit-project) for a clone. It prepares the Node mirror from the admitted remote source commit and checks out its bundle in the existing workspace phase. Dependencies and build still come from the default's seed; checkout runs no Project setup or deploy command again.
 
@@ -695,7 +699,7 @@ The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/c
 
 Before downtime, migration resolves the [deploy credential](/reference/github-app#instance-source-credentials) and makes one read of the Project's default branch with a 30-second limit. The Instance's local branch need not be pushed; its existing retirement checks still apply. Projects using `gh_cli` skip this App preflight. An unreadable source or timeout leaves the checkout serving. The local checkout still supplies the migration's mirror and files. The Git URL rewrite is quoted in `argv` so YAML cannot turn it into a mapping.
 
-[`orbit instance:migrate INSTANCE`](/cli/instance/migrate) moves one existing checkout Instance into a container on its Node, with its code. A default Instance moves first, and a non-default Instance before its default refuses with `instance.default_not_migrated`. The command is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
+[`orbit instance:migrate INSTANCE`](/cli/instance/migrate) moves one existing checkout Instance into a container on its Node, with its code. A linked worktree can move first while its owner remains an active host checkout on the same Node. Migration starts from the stock image and copies its own workspace; it consumes no default seed. The owner moves after its last dependent leaves. The command is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
 
 - **Stop.** Orbit removes the Instance's awake marker, and its Route shows the wake page. The Gateway starts no wake during the move.
 - **Repository.** Orbit builds a standalone repository in the container; the checkout's `.git` is never copied.
@@ -704,7 +708,7 @@ Before downtime, migration resolves the [deploy credential](/reference/github-ap
 - **Database.** A database on a Database server stays where it is, and the container gets its own way to it. A SQLite file in the checkout moves with the files.
 - **Start.** FrankenPHP starts as `orbit`. A non-default Instance gets its T3 server, registered as in [Create](#create). A default gets its first seed snapshot.
 - **Route.** Orbit points the Route at FrankenPHP in the container.
-- **Retirement.** Orbit moves the whole old checkout to retention and records its path and time. It deletes no Git metadata. The default's checkout stays until its last worktree has moved.
+- **Retirement.** Orbit retains all files and Git recovery data. It removes only the linked checkout's registration. An owner's dependents and any registered descendant block retirement.
 
 Registered Schedule timers keep their UUID, calendar, timeout and enabled or paused state. Their timers and commands run inside the container as `orbit`, only while it runs, without catch-up. [Schedule migration](/reference/schedules#checkout-migration) defines refusals, rollback and retained logs.
 
@@ -729,12 +733,12 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | Part | What Orbit does |
 | --- | --- |
 | Admission | An active checkout Instance on a Node of the build list, with no Route beside its own. Otherwise `instance.migrate_unsupported` |
-| Default first | A non-default Instance needs its default in a container, active and with a seed snapshot |
+| Non-default | The Project default is on the same Node; source identity, T3 and model-router prerequisites still apply. No migrated default or seed is needed |
 | Deployment | An unfinished deployment refuses the move with `instance.lifecycle_busy` |
 | PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
 | Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
 | While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
-| Retirement check | Before downtime and retention, blocks tracked changes, other worktrees, unpushed commits and stashes. Untracked files do not block. `instance.migrate_retirement_blocked` names up to 20 worktrees and files with total counts |
+| Retirement check | Checks Git identity before downtime and retention. Blocks tracked changes, owner dependencies, unpushed commits and stashes. Untracked files pass; errors name 20 paths and total counts |
 | Branch | The mirror fetches the recorded branch from the checkout itself. A retained checkout can carry commits that were never pushed; retirement refuses them. The move needs no token |
 | Files | One archive of the paths of `git diff HEAD` and `git ls-files --others`, extracted as `orbit`. Tracked files that the checkout deleted are removed |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace`, and the Gateway rewrites its stored values the same way |
@@ -753,10 +757,10 @@ The runtime reservation belongs to its admitting Operation. A late receipt canno
 | Seed | A default takes `seed-<commit>` with its units stopped. Its Project's other Instances can be clones from then on |
 | T3 | A non-default Instance gets the proxy device `t3`, the agent's files and its T3 server. The Conn layer records the server from the run's result |
 | Runtime | A Route that serves the container makes the container the Instance's runtime: the workspace becomes its checkout path |
-| Retained Git | The whole old checkout moves under `<checkout>.orbit-retired-git/<sha256 of original path>`. The Instance records `retained_git_path` and `retained_git_at`; no files or Git metadata are deleted |
-| Old checkout | Leaves its live path. Its files and Git metadata stay in retention; worktree entries are not pruned |
-| Last worktree | The default's old checkout is a retirement candidate. Any other registered worktree blocks retirement, including a path in the same batch |
-| Failed removal | The container stays the Instance. The run fails with `instance.migrate_retire_failed` (or the retirement refusal code for a new blocker), and the source or retained checkout stays on the Node |
+| Retained Git | The whole old checkout moves under `<checkout>.orbit-retired-git/<sha256 of original path>`. The Instance records `retained_git_path` and `retained_git_at`; files and Git recovery data stay there |
+| Linked checkout | Retains all files and independent Git data. Removes only its matching, now-missing owner registration after verification; keeps owner and sibling metadata untouched |
+| Last worktree | The default's old checkout is a retirement candidate. Any other registered worktree blocks owner retirement, including a path in the same batch |
+| Failed removal | The container keeps serving. Source or retained files stay. An interrupted linked unregister fails explicitly on repeat with `instance.migrate_retire_failed` |
 | Failure | Restore puts back a moved Route, then removes the container, its ACL, firewall rules and mirror |
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
 | After a failed restore | The reservation and deployment hold remain. Inspect the site and failed recovery step; deployments refuse with `instance.lifecycle_busy` until the move has run again |
@@ -1068,9 +1072,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | --- | --- | --- |
 | `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node. Also when the Project's default runs on another Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
-| `instance.default_not_migrated` | 409 | `instance:migrate` of a non-default Instance whose default Instance is still a checkout |
 | `instance.migrate_unsupported` | 409 | `instance:migrate` of an Instance that is not an active development checkout on a Node of the build list |
-| `instance.migrate_retirement_blocked` | 409 | A planned retirement has other registered worktrees or uncommitted changes. The error lists up to 20 worktree paths and changed files with total counts |
+| `instance.migrate_retirement_blocked` | 409 | Owner dependencies, registered descendants, changed Git identity or tracked changes block retirement. Names 20 paths and total counts |
 | `instance.migrate_unpushed_commits` | 409 | Local branches or detached HEAD have commits unreachable from all local remote-tracking refs. The error names each and its commit count; no fetch or source changes |
 | `instance.migrate_stashes_present` | 409 | A planned retirement has stashes. The error names the count and leaves the source untouched |
 | `instance.migrate_branch_changed` | 409 | The checkout is not on the branch that Orbit records for the Instance |
@@ -1157,6 +1160,8 @@ Migrate and clone prepare a writable `VP_HOME/js_runtime/node` directory in the 
 Vite+ resolves and downloads additional pins as `orbit`, through the Instance proxy, with its own signature and checksum verification. Resolution uses `vp env current node --json`; only a missing resolved executable runs `vp env install VERSION`. Orbit does not implement Node pin precedence. Each other pin on the Process-directory-to-workspace path is also checked in isolation by Vite+, so a malformed child cannot silently fall back to a valid parent.
 
 Migration prepares Node before quiesce. It mounts the serving checkout read-only for this phase and removes the mount even after failure. The phase has a 150-second bound; tool resolution and downloads share 90 seconds. Failure records `instance.node_runtime_prepare_failed` with the pin and a specific malformed-pin, network, HTTP, checksum, disk or unknown-version reason while the checkout keeps serving.
+
+Clone resolution and downloads share 60 seconds instead. Its guest helper allows 75 seconds for store preparation and fetch; all commands in the workspace phase share a 115-second deadline, inside the existing 120-second shell and 130-second Swamp limits. The Operation budget stays unchanged.
 
 Clone converts an old seed's whole-store link as the app user, retains private downloaded versions from new-style seeds, and fetches the selected branch's pin before starting Processes. No privileged command traverses or changes the private store. The launch phase installs a root-owned helper outside the store, but runs all conversion, copy, validation and downloads as `orbit`.
 

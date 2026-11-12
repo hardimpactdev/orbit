@@ -20,13 +20,13 @@ default = ["swamp/tests/ansible_inputs_test.py"]
 [[fixture]]
 file = "swamp/tests/ansible_instance_migrate_test.ts"
 after_merge = true
-reason = "102 retained cases need 7337 declared seconds including startup, above the six-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963; unmeasured cases remain estimates. All migration cases run after merge until their work is reduced or selection is narrowed."
-cost = 6725
+reason = "111 retained cases need 7486 declared seconds including startup, above the six-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963. Changed cases use individually measured local times rounded up plus one second. All migration cases run after merge until their work is reduced or selection is narrowed."
+cost = 6820
 # 159.019s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (120s); these are estimates, not completed measurements.
-slices = 102
+slices = 111
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -53,6 +53,15 @@ inputs = [
 ]
 
 [fixture.case_costs]
+  "linked retirement interrupted before unregister fails explicitly on repeat" = 11 # measured 9.348s locally; rounded up plus 1s
+  "linked worktree preflight refuses nested without touching its active owner or sibling" = 7 # measured 5.081s locally; rounded up plus 1s
+  "a linked worktree migrates before its active owner and preserves every file and sibling registration" = 39 # measured 37.995s locally; rounded up plus 1s
+  "linked worktree preflight refuses unstaged without touching its active owner or sibling" = 4 # measured 2.098s locally; rounded up plus 1s
+  "linked worktree preflight refuses staged without touching its active owner or sibling" = 4 # measured 2.15s locally; rounded up plus 1s
+  "linked worktree preflight refuses unpushed without touching its active owner or sibling" = 5 # measured 3.033s locally; rounded up plus 1s
+  "linked worktree preflight refuses stash without touching its active owner or sibling" = 5 # measured 3.603s locally; rounded up plus 1s
+  "linked worktree preflight refuses identity without touching its active owner or sibling" = 3 # measured 1.887s locally; rounded up plus 1s
+  "linked worktree quiesce rechecks new tracked changes before stopping any writer" = 18 # measured 16.745s locally; rounded up plus 1s
   "migration counts 0 files that Git does not ignore beside a large ignored tree" = 80 # conservative estimate; unprivileged archive fixture
   "migration counts 1 files that Git does not ignore beside a large ignored tree" = 80 # conservative estimate; unprivileged archive fixture
   "stock selector preflight: stock Laravel" = 120 # UNMEASURED estimate; registration refreshed from current source
@@ -73,7 +82,7 @@ inputs = [
   "the exact archive tree handles outside link changes after preflight and preserves rollback" = 74 # completed, run 43005032403
   "the exact archive tree handles broken link changes after preflight and preserves rollback" = 74 # completed, run 43005032403
   "a retained default copies its unpushed commit and changed, staged, untracked, deleted and ignored files" = 75 # completed, run 43005032403
-  "a linked checkout refuses retirement even when the default is in the same retirement batch" = 7 # completed, run 43000765953
+  "an owner refuses retirement while its child is in the same retirement batch" = 6 # measured 4.528s locally; rounded up plus 1s
   "a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact" = 100 # completed, run 43002948719
   "a move starts with a new container: one that an earlier failed move left goes first" = 120 # completed, run 43002948719
   "a checkout on another branch than the recorded one is refused before anything changes" = 10 # completed, run 43002948719
@@ -158,7 +167,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 1511
+cost = 1562
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
@@ -184,6 +193,7 @@ inputs = [
 ]
 
 [fixture.case_costs]
+  "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary" = 51 # completed local four-worker fixture, 2026-11-12
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 114 # completed body 84.962s, run 43010311414; larger completed history retained
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses" = 141 # completed body 86.635s, run 43010311414; larger completed history retained
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP" = 51 # completed body 36.925s, run 43010311414; larger completed history retained
@@ -2802,8 +2812,12 @@ inputs = [
 "every destroy Ansible step enables failed task stderr" = 1
 [[fixture]]
 file = "swamp/tests/instance_node_runtime_test.py"
-cost = 17
+cost = 21
 [fixture.case_costs]
+  "test_empty_clone_prepares_store_for_a_later_process_with_an_uncached_pin" = 1 # completed local fixture, 2026-11-12
+  "test_clone_fetch_shares_sixty_seconds_across_resolution_and_install" = 1 # completed local fixture, 2026-11-12
+  "test_opaque_process_commands_still_prepare_a_writable_clone_store" = 1 # completed local fixture, 2026-11-12
+  "test_seed_refresh_pending_survives_conversion_until_snapshot_completion" = 1 # completed local fixture, 2026-11-12
 "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat" = 1
 "test_recipe_copy_survives_current_flip_and_shared_pruning_and_seed_keeps_download" = 1
 "test_cloned_user_planted_links_never_change_their_external_target" = 1

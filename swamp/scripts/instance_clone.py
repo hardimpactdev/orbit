@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # Mirrored by the guest emitter; the clone tests keep the two sets in sync.
@@ -63,16 +64,20 @@ def main():
     name = container["name"]
     project = ["incus", "--project", container["project"]]
     changes = []
+    workspace_deadline = time.monotonic() + 115 if phase == "workspace" else None
     secret = sys.stdin.read()
 
     def run(argv, content=None, check=True):
+        remaining = 100 if workspace_deadline is None else workspace_deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(argv, 115)
         result = subprocess.run(
             argv,
             check=False,
             input=content,
             text=True,
             capture_output=True,
-            timeout=100,
+            timeout=remaining,
             env=dict(os.environ, LC_ALL="C", GIT_TERMINAL_PROMPT="0"),
         )
         if check and result.returncode:
@@ -100,6 +105,12 @@ def main():
         return owner
 
     def inside(member, private=""):
+        if member == "workspace":
+            # Install the shipped helper outside the app-owned store. Its only store
+            # entry runs as orbit inside the existing workspace launch below.
+            change(project + ["file", "push", "--create-dirs", "--uid", "0", "--gid", "0",
+                              "--mode", "0755", "-", name + "/usr/local/libexec/orbit-instance-node-runtime.py"],
+                   json.loads(sys.argv[6])["node"])
         payload = ["python3", "-c", guest, member, json.dumps(container)]
         result = run(project + ["exec", name, "--"] + payload, private, check=False)
         if result.returncode:

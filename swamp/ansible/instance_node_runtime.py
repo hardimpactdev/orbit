@@ -16,6 +16,8 @@ HOME = Path('/var/lib/orbit/vite-plus-home')
 SHARED = Path('/opt/orbit-runtime/current/vite-plus-home')
 VP = '/opt/orbit-runtime/current/bin/vp'
 CODE = 'instance.node_runtime_prepare_failed'
+FETCH_SECONDS = 90
+CLONE_FETCH_SECONDS = 60
 
 
 def versions(home):
@@ -28,11 +30,17 @@ def private_store(home):
     return not store.is_symlink() and store.is_dir() and not (store / 'node').is_symlink() and (store / 'node').is_dir()
 
 
-def prepare(home=HOME, shared=SHARED):
+def prepare(home=HOME, shared=SHARED, seed=False):
     """Launch only, as the app user. Copy the recipe once; retain private downloads."""
     home, shared = Path(home), Path(shared)
     store = home / 'js_runtime'
     home.mkdir(parents=True, exist_ok=True)
+    if seed and (not private_store(home) or any(
+            (store / 'node' / version).is_symlink() or not (store / 'node' / version).exists()
+            for version in versions(shared))):
+        # Persist before conversion: a retry must refresh the old immutable seed
+        # even when the previous run completed the store but not the snapshot.
+        (home / '.seed-refresh-required').touch()
     stage = None
     changed = False
     if store.is_symlink():
@@ -182,7 +190,7 @@ def node_environment(context, base, private_environments):
     return environment
 
 
-def fetch(container, home=HOME, vp=VP, app_user='orbit', private_environments=None):
+def fetch(container, home=HOME, vp=VP, app_user='orbit', private_environments=None, budget_seconds=FETCH_SECONDS):
     contexts = unit_contexts(container)
     if not contexts:
         return False, []
@@ -196,7 +204,7 @@ def fetch(container, home=HOME, vp=VP, app_user='orbit', private_environments=No
                 'extra_groups': os.getgrouplist(app_user, account.pw_gid)} if os.geteuid() == 0 else {}
     pins = []
     changed = False
-    deadline = time.monotonic() + 90
+    deadline = time.monotonic() + budget_seconds
     for context in contexts:
         environment = node_environment(context, base, private_environments or {})
         candidates = pin_candidates(context['directory'], container['workspace'])
@@ -272,16 +280,27 @@ def main():
         os.umask(0o002)
         if os.geteuid() == 0:
             raise RuntimeError('Node store preparation must run as the app user')
-        if action not in ('prepare', 'fetch', 'launch-fetch'):
+        if action not in ('prepare', 'fetch', 'launch-fetch', 'clone-fetch', 'seed-prepare', 'seed-complete'):
             raise RuntimeError('unknown Node preparation action')
+        if action == 'seed-prepare' and not container.get('processes'):
+            result = {'status': 'unchanged', 'versions': [], 'pins': [], 'reason': 'no_processes'}
+            result['seed_refresh_required'] = (HOME / '.seed-refresh-required').exists()
+            print(json.dumps(result))
+            return
         if action == 'fetch' and not private_store(HOME):
             raise RuntimeError('fetch requires an existing private Node store; legacy stores are not converted')
-        changed = prepare() if action in ('prepare', 'launch-fetch') else False
+        if action == 'seed-complete':
+            (HOME / '.seed-refresh-required').unlink(missing_ok=True)
+        changed = prepare(seed=action == 'seed-prepare') if action in ('prepare', 'launch-fetch', 'clone-fetch', 'seed-prepare') else False
         pins = []
-        if action in ('fetch', 'launch-fetch'):
-            fetched, pins = fetch(container, private_environments=json.loads(sys.stdin.read() or '{}'))
+        if action in ('fetch', 'launch-fetch', 'clone-fetch'):
+            fetched, pins = fetch(container, private_environments=json.loads(sys.stdin.read() or '{}'),
+                                  budget_seconds=CLONE_FETCH_SECONDS if action == 'clone-fetch' else FETCH_SECONDS)
             changed = changed or fetched
-        print(json.dumps({'status': 'converted' if changed else 'unchanged', 'versions': versions(HOME), 'pins': pins}))
+        result = {'status': 'converted' if changed else 'unchanged', 'versions': versions(HOME), 'pins': pins}
+        if action == 'seed-prepare':
+            result['seed_refresh_required'] = (HOME / '.seed-refresh-required').exists()
+        print(json.dumps(result))
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(json.dumps({'error_code': CODE, 'error_message': str(error)[:1000]}))
         sys.exit(1)

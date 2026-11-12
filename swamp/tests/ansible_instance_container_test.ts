@@ -237,6 +237,39 @@ Deno.test({
 });
 
 Deno.test({
+  name: "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      for (const phase of ["container", "workspace", "processes", "seed"]) {
+        const done = f.run(phase);
+        assert(done.ok, done.output);
+      }
+      const before = f.state();
+      // Simulate interruption after conversion but before snapshot capture.
+      // The durable marker, not this invocation's changed flag, must force refresh.
+      before.node_seed_pending = true;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(before));
+      const converted = f.run("seed");
+      assert(converted.ok, converted.output);
+      const calls = Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+      const snapshots = calls.filter((call) => call.includes("snapshot") && call.includes("create"));
+      assertEquals(snapshots.length, 2);
+      assert(snapshots[1].includes("--reuse"), "the old immutable seed cannot acquire the converted store");
+      assertEquals(f.state().containers["instance-7"].snapshots, before.containers["instance-7"].snapshots);
+      const stops = f.state().systemctl.filter((call: string[]) => call[0] === "stop").length;
+      const again = f.run("seed");
+      assert(again.ok, again.output);
+      assertEquals(again.changed, 0);
+      assertEquals(f.state().systemctl.filter((call: string[]) => call[0] === "stop").length, stops);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
   name: "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
   ignore: !hasAnsible,
   fn() {
