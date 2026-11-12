@@ -22,7 +22,7 @@ Preparing an `app-dev` Node for [Instance containers](/reference/development-con
 
 Migration checks remote source access before quiesce using the Node's existing Git transport. Its temporary fetch credential is mode 0600 and is removed after success, refusal or timeout; no source token enters the container.
 
-Ansible command arguments must parse as strings. The shared module-argument test rejects YAML mappings, numbers and booleans in literal `argv` lists.
+Each argument of an Ansible command must parse as a string. One shared test reads every literal `argv` list. It fails on a YAML mapping, a number or a boolean.
 
 Container Process journal and state reads use this Node’s existing SSH account and Incus access, under the [transport exception](/reference/node-agent#commands). They add no account, group membership or sudo rule. The Node already requires `python3` for the container host’s effective-NIC gate and bridge reader.
 
