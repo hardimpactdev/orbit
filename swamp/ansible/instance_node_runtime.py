@@ -24,67 +24,61 @@ def versions(home):
                   if re.fullmatch(r'[0-9]+[.][0-9]+[.][0-9]+', p.name) and (p / 'bin/node').is_file())
 
 
-def copy_tree(source, target):
-    subprocess.run(['cp', '-a', '--reflink=auto', '--no-preserve=ownership', str(source), str(target)], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=30)
-
-
-def prepare(home=HOME, shared=SHARED, owner=None):
-    """Copy verified recipe bytes once; preserve every previously downloaded version."""
+def prepare(home=HOME, shared=SHARED, owner=None, convert=True):
+    """Link the current verified recipe; never copy binaries or discard private downloads."""
     home, shared = Path(home), Path(shared)
-    home.mkdir(parents=True, exist_ok=True)
     store = home / 'js_runtime'
+    if not convert and store.is_symlink():
+        return False
+    home.mkdir(parents=True, exist_ok=True)
     changed = False
+    stage = None
     if store.is_symlink():
         stage = Path(tempfile.mkdtemp(prefix='.node-store-', dir=home))
-        stage.rmdir()
-        try:
-            copy_tree(store.resolve(), stage)
-            # Linux atomically exchanges the complete directory and old link. Open executables stay open.
+        target = stage
+    else:
+        target = store
+    try:
+        if not target.exists():
+            target.mkdir(mode=0o2770)
+            changed = True
+        node = target / 'node'
+        node.mkdir(mode=0o2770, exist_ok=True)
+        recipe = versions(shared)
+        for path in node.iterdir():
+            if path.is_symlink() and path.readlink().parent == shared / 'js_runtime/node' and path.name not in recipe:
+                path.unlink()
+                changed = True
+        for version in recipe:
+            path = node / version
+            if path.is_symlink() and not path.is_dir():
+                path.unlink()
+            if not path.exists():
+                path.symlink_to(shared / 'js_runtime/node' / version)
+                changed = True
+        if owner is not None:
+            for directory in (target, node):
+                metadata = directory.stat()
+                if (metadata.st_uid, metadata.st_gid) != owner:
+                    os.chown(directory, *owner)
+                    changed = True
+                if metadata.st_mode & 0o7777 != 0o2770:
+                    os.chmod(directory, 0o2770)
+                    changed = True
+        if stage is not None:
+            # Readers always see either the old link or the complete private directory.
             libc = ctypes.CDLL(None, use_errno=True)
             if libc.renameat2(-100, os.fsencode(stage), -100, os.fsencode(store), 2) != 0:
                 errno = ctypes.get_errno()
                 raise OSError(errno, os.strerror(errno))
             stage.unlink()
             changed = True
-        finally:
+    finally:
+        if stage is not None:
             if stage.is_symlink():
                 stage.unlink()
             elif stage.exists():
                 shutil.rmtree(stage)
-    if not store.exists():
-        store.mkdir(mode=0o2770)
-        changed = True
-    node = store / 'node'
-    node.mkdir(mode=0o2770, exist_ok=True)
-    for version in versions(shared):
-        if (node / version / 'bin/node').is_file():
-            continue
-        stage = Path(tempfile.mkdtemp(prefix='.node-copy-', dir=store))
-        try:
-            copy_tree(shared / 'js_runtime/node' / version, stage / version)
-            try:
-                (stage / version).rename(node / version)
-                changed = True
-            except FileExistsError:
-                if not (node / version / 'bin/node').is_file():
-                    raise RuntimeError('A Node installation is incomplete; repeat runtime preparation.')
-        finally:
-            shutil.rmtree(stage)
-    index = shared / 'js_runtime/node/index_cache.json'
-    if index.is_file() and not (node / index.name).exists():
-        shutil.copy2(index, node / index.name)
-        changed = True
-    if owner is not None and changed:
-        uid, gid = owner
-        for directory, children, files in os.walk(store):
-            os.chown(directory, uid, gid)
-            os.chmod(directory, 0o2770)
-            for name in files:
-                path = Path(directory) / name
-                if not path.is_symlink():
-                    os.chown(path, uid, gid)
-                    os.chmod(path, path.stat().st_mode | 0o660)
     return changed
 
 
@@ -92,13 +86,51 @@ def unit_contexts(container):
     contexts = []
     for process in container.get('processes', []):
         content = process['content']
+        commands = [shlex.split(line.split('=', 1)[1]) for line in content.splitlines() if line.startswith('ExecStart=')]
+        consumers = {'vp', 'node', 'npm', 'npx', 'pnpm', 'yarn'}
+        def executable(command):
+            words = iter(command)
+            first = next(words, '')
+            if Path(first).name == 'env':
+                for word in words:
+                    if word in ('-u', '--unset'):
+                        next(words, '')
+                    elif not word.startswith('-') and '=' not in word:
+                        return Path(word).name
+                return ''
+            return Path(first.removeprefix('-')).name
+        if not any(executable(command) in consumers for command in commands):
+            continue
         cwd = next((x.split('=', 1)[1] for x in content.splitlines() if x.startswith('WorkingDirectory=')), container['workspace'])
         cwd_words = shlex.split(cwd)
         contexts.append({'directory': cwd_words[0] if len(cwd_words) == 1 else cwd,
                          'unit': process.get('name'), 'content': content})
-    if not contexts:
-        contexts.append({'directory': container['workspace'], 'content': ''})
     return contexts
+
+
+def tool_failure(stderr, status):
+    """Closed, public diagnostics: never return raw tool output, URLs or environment values."""
+    text = stderr.lower()
+    if 'checksum' in text or 'hash mismatch' in text or 'shasums' in text:
+        return 'checksum verification failed'
+    if 'signature' in text:
+        return 'signature verification failed'
+    if 'no space left' in text or 'os error 28' in text or 'disk quota' in text:
+        return 'not enough disk space for Node'
+    if 'read-only file system' in text or 'os error 30' in text:
+        return 'the runtime store is read-only'
+    if 'permission denied' in text or 'os error 13' in text:
+        return 'permission denied while writing the runtime store'
+    if 'invalid' in text and any(word in text for word in ('version', 'node', 'lts', 'alias')):
+        return 'invalid Node version'
+    if any(word in text for word in ('no matching', 'no version matching', 'no version found', 'unknown version', 'unknown lts', 'version not found')) or re.search(r'version[^\n]*not found', text):
+        return 'unknown Node version'
+    http = re.search(r'(?:http[^\n]*?|status[^\n]*?)\b([45][0-9]{2})\b', text)
+    if http:
+        return 'Node download failed with HTTP ' + http[1]
+    if any(word in text for word in ('network', 'dns', 'resolve host', 'connection', 'connect error', 'timed out', 'timeout', 'proxy', 'request', 'tls', 'handshake', 'certificate')):
+        return 'network failure while resolving or downloading Node'
+    return 'Vite+ exited with status ' + str(status) + ' while preparing Node'
 
 
 def pin_candidates(directory, workspace):
@@ -109,7 +141,14 @@ def pin_candidates(directory, workspace):
         for name in ('.node-version', '.nvmrc'):
             path = directory / name
             if path.is_file():
-                result.append((str(path.relative_to(workspace)), path.read_text().strip()[:200]))
+                value = path.read_text().strip()
+                if name == '.nvmrc':
+                    declarations = [line.split('#', 1)[0].strip() for line in value.splitlines()
+                                    if line.split('#', 1)[0].strip() and '=' not in line.split('#', 1)[0]]
+                    if not declarations:
+                        continue
+                if value:
+                    result.append((str(path.relative_to(workspace)), value[:200]))
         path = directory / 'package.json'
         if path.is_file():
             try:
@@ -152,6 +191,9 @@ def node_environment(context, base, private_environments):
 
 
 def fetch(container, home=HOME, vp=VP, app_user='orbit', private_environments=None):
+    contexts = unit_contexts(container)
+    if not contexts:
+        return False, []
     home = Path(home)
     account = pwd.getpwnam(app_user)
     base = dict(os.environ, HOME=account.pw_dir, VP_HOME=str(home), VP_NO_UPDATE_CHECK='1', TMPDIR=str(home / 'cache'))
@@ -163,25 +205,29 @@ def fetch(container, home=HOME, vp=VP, app_user='orbit', private_environments=No
     pins = []
     changed = False
     deadline = time.monotonic() + 90
-    for context in unit_contexts(container):
+    for context in contexts:
         environment = node_environment(context, base, private_environments or {})
         candidates = pin_candidates(context['directory'], container['workspace'])
         if environment.get('VP_NODE_VERSION'):
             candidates.insert(0, ('VP_NODE_VERSION', environment['VP_NODE_VERSION']))
-        label = ', '.join(source + ' pins Node ' + value for source, value in candidates) or 'the runtime default'
+        label = ', '.join(source + ' pins Node ' + value.replace(chr(10), r'\n') for source, value in candidates) or 'the runtime default'
         def invoke(arguments, seconds, context=context, environment=environment, label=label):
             result = subprocess.run([str(vp), *arguments], cwd=context['directory'], env=environment,
                                     capture_output=True, text=True, check=False, timeout=max(0.001, min(seconds, deadline - time.monotonic())), umask=0o002, **identity)
-            if result.returncode:
-                text = result.stderr.lower()
-                reason = ('checksum verification failed' if 'checksum' in text or 'hash mismatch' in text else
-                          'signature verification failed' if 'signature' in text else
-                          'Node version could not be resolved' if 'no matching' in text or 'invalid version' in text else
-                          'Vite+ could not download or prepare Node')
-                raise RuntimeError(label + ': ' + reason)
+            diagnostic = result.stderr.lower()
+            if result.returncode or ('invalid' in diagnostic and ('version' in diagnostic or 'node' in diagnostic)):
+                raise RuntimeError(label + ': ' + tool_failure(result.stderr, result.returncode))
             return result.stdout
         try:
             node = json.loads(invoke(['env', 'current', 'node', '--json'], 30))['node']
+            if node.get('source') == 'default' and candidates:
+                ambiguous = any(source.endswith('.nvmrc') and len([
+                    line.split('#', 1)[0].strip() for line in value.splitlines()
+                    if line.split('#', 1)[0].strip() and '=' not in line.split('#', 1)[0]
+                ]) > 1 for source, value in candidates)
+                reason = ('ambiguous .nvmrc: more than one version declaration' if ambiguous else
+                          'Vite+ ignored the requested pin as invalid or unsupported')
+                raise RuntimeError(label + ': ' + reason)
             binary = Path(node['bin_path'])
             if not binary.is_relative_to(home / 'js_runtime'):
                 raise RuntimeError(label + ': Vite+ selected a Node outside the private store')
@@ -209,7 +255,7 @@ def main():
     container = json.loads(sys.argv[2])
     try:
         owner = (pwd.getpwnam('agent').pw_uid, grp.getgrnam('work').gr_gid) if os.geteuid() == 0 else None
-        changed = prepare(owner=owner)
+        changed = prepare(owner=owner, convert=action != 'refresh')
         pins = []
         if action == 'fetch':
             fetched, pins = fetch(container, private_environments=json.loads(sys.stdin.read() or '{}'))

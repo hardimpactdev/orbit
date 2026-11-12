@@ -29,6 +29,7 @@ after_merge_cases = ["a failed move removes its container, its ACL, its firewall
 slices = 92
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/instance-node-runtime.service", "swamp/ansible/instance-node-runtime.conf",
   "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -159,6 +160,7 @@ after_merge_cases = ["a clone copies the seed, takes its own address, ACL, firew
 slices = 23
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/instance-node-runtime.service", "swamp/ansible/instance-node-runtime.conf",
   "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1572,6 +1574,7 @@ file = "swamp/tests/instance_clone_guest_test.py"
 cost = 30
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/instance-node-runtime.service", "swamp/ansible/instance-node-runtime.conf",
   "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -2660,6 +2663,7 @@ file = "swamp/extensions/behaviors/operations/instance-dev-command/migrate_resul
 cost = 24
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/instance-node-runtime.service", "swamp/ansible/instance-node-runtime.conf",
   "swamp/ansible/tasks/instance-node-runtime.yml",
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
   "swamp/workflows/workflow-operation-instance-migrate.yaml",
@@ -2714,8 +2718,8 @@ inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts"
 
 [[fixture]]
 file = "swamp/tests/instance_node_runtime_test.py"
-cost = 10
-inputs = ["swamp/ansible/instance_node_runtime.py", "swamp/ansible/tasks/instance-node-runtime.yml", "swamp/workflows/workflow-operation-instance-migrate.yaml"]
+cost = 14
+inputs = ["swamp/ansible/instance-node-runtime.service", "swamp/ansible/instance-node-runtime.conf", "swamp/ansible/instance_node_runtime.py", "swamp/ansible/tasks/instance-node-runtime.yml", "swamp/workflows/workflow-operation-instance-migrate.yaml"]
 [fixture.case_costs]
 "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat" = 1
 "test_recipe_upgrade_and_seed_copy_keep_downloaded_versions_after_shared_pruning" = 1
@@ -2723,3 +2727,7 @@ inputs = ["swamp/ansible/instance_node_runtime.py", "swamp/ansible/tasks/instanc
 "test_recipe_pin_and_unpinned_projects_need_no_install" = 1
 "test_download_integrity_and_timeout_failures_name_the_pin" = 1
 "test_production_phase_removes_read_only_source_mount_after_failure_without_downtime" = 5
+"test_malformed_and_ambiguous_pins_refuse_instead_of_using_the_default" = 1
+"test_download_failures_keep_specific_safe_reasons" = 1
+"test_non_vite_projects_do_not_resolve_or_download_unused_pins" = 1
+"test_boot_refresh_never_converts_an_existing_legacy_store" = 1

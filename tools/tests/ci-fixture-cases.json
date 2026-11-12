@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "2686c0f4fb51e854d580ba81e885c8d05fdd3bfe5ae844ad6a0a765d81b59083",
+    "source_sha256": "d0ce06298c84573ee4f029eb712ab5187eb1e83da1242aff68d4b6b8ac5ea612",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -103,7 +103,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "316830599bc1e9d5e7c6417fb23fa3c19f8d55e8d8d313091e71d1b2bc598695",
+    "source_sha256": "d1a3935c971d5ae87039debbf28ad6438017578afc57cc397a647d100654e01c",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
@@ -1974,13 +1974,17 @@
     ]
   },
   "swamp/tests/instance_node_runtime_test.py": {
-    "source_sha256": "20a70bc7bd10c72717dd6f1d40c52efb84cb7e05d0d5d055a9cf8fbf87b8a60d",
+    "source_sha256": "59d63084585446ed51db04a7a76877ec92f50091af90633030579098bd600377",
     "cases": [
       "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat",
       "test_recipe_upgrade_and_seed_copy_keep_downloaded_versions_after_shared_pruning",
       "test_vite_alone_resolves_and_fetches_once_as_the_app_user",
       "test_recipe_pin_and_unpinned_projects_need_no_install",
       "test_download_integrity_and_timeout_failures_name_the_pin",
+      "test_malformed_and_ambiguous_pins_refuse_instead_of_using_the_default",
+      "test_download_failures_keep_specific_safe_reasons",
+      "test_non_vite_projects_do_not_resolve_or_download_unused_pins",
+      "test_boot_refresh_never_converts_an_existing_legacy_store",
       "test_production_phase_removes_read_only_source_mount_after_failure_without_downtime"
     ]
   },

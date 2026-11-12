@@ -77,6 +77,8 @@ function fixture() {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
+  Deno.copyFileSync(new URL("instance-node-runtime.service", root), `${folder}/instance-node-runtime.service`);
+  Deno.copyFileSync(new URL("instance-node-runtime.conf", root), `${folder}/instance-node-runtime.conf`);
   Deno.copyFileSync(new URL("tasks/instance-node-runtime.yml", root), `${folder}/tasks/instance-node-runtime.yml`);
   Deno.mkdirSync(`${folder}/run`);
   // The Project's repository, with one commit on main.

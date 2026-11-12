@@ -157,25 +157,6 @@
       ansible.builtin.command: { argv: [incus, list, --project, "{{ instances.project }}", --format, json, status=running] }
       register: folder_running
       changed_when: false
-    - name: Refresh recipe Node copies in already-private stores before the existing runtime restart
-      when: folder_name == 'runtime'
-      ansible.builtin.command:
-        argv:
-          - incus
-          - exec
-          - --project
-          - "{{ instances.project }}"
-          - "{{ item }}"
-          - --
-          - sh
-          - -c
-          - >-
-            if [ -f /usr/local/libexec/orbit-instance-node-runtime.py ] &&
-               [ ! -L /var/lib/orbit/vite-plus-home/js_runtime ]; then
-              python3 /usr/local/libexec/orbit-instance-node-runtime.py prepare '{}';
-            fi
-      loop: "{{ folder_running.stdout | from_json | map(attribute='name') | list }}"
-      changed_when: false
     - name: Restart them one after another
       ansible.builtin.command:
         argv: >-

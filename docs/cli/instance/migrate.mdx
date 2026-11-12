@@ -208,4 +208,4 @@ Mail setup runs after the copied `.env` and before application Processes start. 
 
 Human output shows the mailer outcome and line numbers, the named conflict skip, or the warning and repair command; JSON retains the same result fields, including `guard_line` when a preceding line is outside the shared whitelist. Repair it with [`instance:mail:update`](/cli/instance/mail-update).
 
-Before downtime, Orbit lets Vite+ resolve and prepare pinned Node versions in the new container’s private store. A failed download, verification or resolution stops the move with `instance.node_runtime_prepare_failed`, naming the pin and reason. The checkout keeps serving.
+Before downtime, Orbit lets Vite+ resolve and prepare pinned Node versions in the new container’s private store. An invalid or ambiguous pin, or a failed download, verification or resolution, stops the move with `instance.node_runtime_prepare_failed`, naming the pin and its specific network, HTTP, checksum, disk or unknown-version reason. The checkout keeps serving. Projects without a Vite+/Node Process do not fetch an unused Node pin.

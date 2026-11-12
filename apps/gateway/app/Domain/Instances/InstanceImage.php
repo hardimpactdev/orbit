@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use LogicException;
+
 /**
  * The container image of a development Instance (docs/reference/development-containers.md#inside-a-container): the stock Ubuntu image
  * with the OS packages the runtime needs, the users `agent` and `orbit` in the group `work`, no sudo, the firewall of the model route
@@ -45,6 +47,9 @@ final readonly class InstanceImage
             // Cloud-init also made the group `lxd` for that user, and it took gid 1000, which `orbit` needs.
             'prepare' => self::prepare(),
             'files' => [
+                ['path' => '/usr/local/libexec/orbit-instance-node-runtime.py', 'content' => self::nodeRuntimeAsset('instance_node_runtime.py'), 'uid' => 0, 'gid' => 0, 'mode' => '0755'],
+                ['path' => '/etc/systemd/system/orbit-.service.d/10-node-runtime.conf', 'content' => self::nodeRuntimeAsset('instance-node-runtime.conf'), 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                ['path' => '/etc/systemd/system/orbit-node-runtime.service', 'content' => self::nodeRuntimeAsset('instance-node-runtime.service'), 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
                 ['path' => '/etc/nftables.conf', 'content' => self::firewall($gateway), 'uid' => 0, 'gid' => 0, 'mode' => '0640'],
                 ['path' => '/etc/systemd/system/t3.service', 'content' => self::t3Unit(), 'uid' => 0, 'gid' => 0, 'mode' => '0640'],
                 ['path' => '/etc/sysctl.d/90-orbit-no-userns.conf', 'content' => "# Managed by Orbit.\nuser.max_user_namespaces = 0\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
@@ -61,7 +66,7 @@ final readonly class InstanceImage
                     'uid' => InstanceHostIntent::AgentUid, 'gid' => InstanceHostIntent::AgentUid, 'mode' => '0600'],
             ],
             'finish' => [
-                ['systemctl', 'enable', 'nftables.service', 't3.service'],
+                ['systemctl', 'enable', 'nftables.service', 't3.service', 'orbit-node-runtime.service'],
                 ['apt-get', 'clean'],
                 ['find', '/var/lib/apt/lists', '-mindepth', '1', '-delete'],
                 // The build container has booted, so it holds a machine-id, and every container of the image would share it. An empty
@@ -84,6 +89,13 @@ final readonly class InstanceImage
     public static function environment(string $gateway): array
     {
         return [...self::RuntimeEnvironment, ...InstanceEgress::environment($gateway)];
+    }
+
+    private static function nodeRuntimeAsset(string $name): string
+    {
+        $content = file_get_contents(base_path('../../swamp/ansible/'.$name));
+
+        return is_string($content) ? $content : throw new LogicException('The Instance Node-runtime asset is missing.');
     }
 
     private static function assignments(string $path, string $gateway): string
@@ -127,10 +139,6 @@ final readonly class InstanceImage
             setfacl -m g:work:rwX -m d:u::rwX,d:g::rwX,d:g:work:rwX,d:o::--- {$vite}
             install -d -o agent -g work -m 2770 {$vite}/cache
             install -d -o agent -g work -m 2770 {$vite}/js_runtime {$vite}/js_runtime/node
-            cp -a --reflink=auto --no-preserve=ownership {$sharedVite}/js_runtime/. {$vite}/js_runtime/
-            chown -R agent:work {$vite}/js_runtime
-            chmod -R g+rwX {$vite}/js_runtime
-            find {$vite}/js_runtime -type d -exec chmod 2770 {} +
             for part in bin node_modules recipe config.json; do
                 ln -s {$sharedVite}/\$part {$vite}/\$part
             done

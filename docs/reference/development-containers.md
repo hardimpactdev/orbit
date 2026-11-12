@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
-  - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,tasks/instance-container-phase.yml}
+  - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance-node-runtime.*,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network}.py,extensions/behaviors/operations/instance-dev-command/result.ts}
   - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/{notes/**,frankenphp.Caddyfile}}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
@@ -1144,10 +1144,12 @@ Two spikes on Beast on 2026-11-09 ran the user and agent layout in one container
 
 ## Private Node runtimes
 
-Each Instance keeps a writable `VP_HOME/js_runtime` directory. The recipe Node is copied from the verified shared home once, using a reflink when supported. Additional pins are resolved and downloaded by Vite+ as `orbit`, through the Instance proxy, with its signature and checksum verification. Resolution uses `vp env current node --json`; only a missing resolved executable runs `vp env install VERSION`. Orbit does not implement Node pin precedence.
+New create, clone and migrated containers keep a writable `VP_HOME/js_runtime` directory. The recipe Node is linked through the current read-only shared home; only additional pinned versions occupy private runtime disk. Additional pins are resolved and downloaded by Vite+ as `orbit`, through the Instance proxy, with its signature and checksum verification. Resolution uses `vp env current node --json`; only a missing resolved executable runs `vp env install VERSION`. Orbit does not implement Node pin precedence.
 
 Migration prepares Node in the new container before quiesce. It mounts the serving checkout read-only for this phase and removes the mount even after failure. The phase has a 150-second bound; tool resolution and downloads share 90 seconds. Failure records `instance.node_runtime_prepare_failed` with the pin and reason while the checkout keeps serving. Create and clone prepare before Process starts; an old seed's link is converted, and cached versions in a seed are retained. A different branch can fetch another version.
 
-A private copy survives shared-home pruning and recipe upgrades. The existing runtime-upgrade hook adds a new recipe Node to already-private stores before its normal Process restart sweep; it does not convert legacy containers as a fleet action. Per-Instance conversion itself restarts nothing. A running Process keeps its executable mapping and MainPID; the owner restarts a crashed or outdated vp-dev explicitly.
+A boot helper links the current recipe before basic services start, so a new-style store created from a reused image sees the current recipe without a download. A startup hook on its Orbit service units refreshes those links before the next Process start, including an existing runtime restart sweep. Both hooks remove obsolete recipe links and retain private downloaded versions. An old recipe requested by a pin is downloaded privately after its obsolete link is removed.
 
-Budget about 200 MB per extra Node version per Instance. Clones initially share the store through the seed snapshot. There is no automatic cleanup.
+When Node convergence runs, it installs no helper and changes no existing store. This release installs the hooks only in new create/clone/migrate containers; an existing shared-store symlink keeps its current behavior. Updating existing containers is a separate per-Instance action.
+
+The linked recipe Node uses no private binary disk. Budget about 200 MB per extra downloaded Node version per Instance. Clones initially share downloaded versions through the seed snapshot. There is no automatic cleanup.

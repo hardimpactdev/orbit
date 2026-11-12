@@ -109,6 +109,9 @@ if (family === "list") {
   }
   Deno.mkdirSync(`${rootfs(name)}/tmp`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/usr/local/bin`, { recursive: true });
+  // The new image ships the bootstrap; its own fixture executes the real code.
+  Deno.mkdirSync(`${rootfs(name)}/usr/local/libexec`, { recursive: true });
+  Deno.writeTextFileSync(`${rootfs(name)}/usr/local/libexec/orbit-instance-node-runtime.py`, "image bootstrap");
   Deno.mkdirSync(`${rootfs(name)}/etc/systemd/system/multi-user.target.wants`, { recursive: true });
   // The image was published from a booted container, so every container made from it starts with the image's machine-id.
   Deno.writeTextFileSync(`${rootfs(name)}/etc/machine-id`, "0123456789abcdef0123456789abcdef\n");

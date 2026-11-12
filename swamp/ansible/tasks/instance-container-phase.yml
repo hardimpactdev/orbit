@@ -611,9 +611,18 @@
       no_log: true
       changed_when: true
 
-- name: Fetch Node versions before starting application Processes
+- name: Read whether this container has the private-store bootstrap
   tags: [processes]
   when: phase == 'processes'
+  ansible.builtin.command:
+    argv: "{{ as_root + ['test', '-f', '/usr/local/libexec/orbit-instance-node-runtime.py'] }}"
+  register: node_private_bootstrap
+  changed_when: false
+  failed_when: node_private_bootstrap.rc not in [0, 1]
+
+- name: Fetch Node versions before starting application Processes
+  tags: [processes]
+  when: phase == 'processes' and node_private_bootstrap.rc == 0
   ansible.builtin.include_tasks:
     file: tasks/instance-node-runtime.yml
     apply: {tags: [processes]}
