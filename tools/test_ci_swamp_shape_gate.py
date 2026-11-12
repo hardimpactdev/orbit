@@ -61,24 +61,34 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(names[:2], ['ansible collections', 'ansible-lint'])
         self.assertEqual(names[-4:], ['check-swamp-shape', 'check-swamp-base-policy', 'lint-behavior-names', 'frozen agent commands'])
         # Eight named suites plus the file commands, with three Instance-host groups.
-        self.assertEqual(len([name for name in names if name.startswith('deno test')]), 8 + len(gate['deno_test_files']()))
+        self.assertEqual(len([name for name in names if name.startswith('deno test')]),
+                         8 + len(gate['deno_test_files']()) + len(gate['DENO_CONTROL_TESTS']))
         self.assertTrue(any('tests/ansible_instance_host_test.ts' in name for name in names))
         for step in steps('shape')[-4:-1]:
             self.assertEqual(step.argv[step.argv.index('--base') + 1], BASE)
         self.assertIn('/reports/shape.json', steps('shape')[-4].argv)
 
-    def test_control_runs_all_four_static_rules_without_fixtures(self):
+    def test_control_runs_the_writes_audit_and_all_static_rules_without_fixtures(self):
         control = [step for step in steps('shape') if not step.parallel and step.name != 'ansible collections']
         self.assertEqual([step.name for step in control],
-                         ['check-swamp-shape', 'check-swamp-base-policy', 'lint-behavior-names', 'frozen agent commands'])
+                         ['deno test tests/writes_declared_test.ts', 'check-swamp-shape', 'check-swamp-base-policy',
+                          'lint-behavior-names', 'frozen agent commands'])
         code, calls, output = ExitCodeTest().run_gate(['--only', 'control', '--base', BASE], [])
         self.assertEqual(code, 0, output)
-        self.assertEqual(len(calls), 4)
+        self.assertEqual(len(calls), len(control))
         self.assertEqual([argv[0] for argv in calls], [step.argv[0] for step in control])
-        for failure in range(4):
-            code, calls, _ = ExitCodeTest().run_gate(['--only', 'control', '--base', BASE], [0] * failure + [1])
+        self.assertEqual(calls[0], ['deno', 'test', '--allow-read', 'tests/writes_declared_test.ts'])
+        for failure, step in enumerate(control):
+            code, calls, output = ExitCodeTest().run_gate(['--only', 'control', '--base', BASE], [0] * failure + [1])
             self.assertEqual(code, 1)
-            self.assertEqual(len(calls), 4)
+            self.assertEqual(len(calls), len(control))
+            self.assertIn('FAILED: ' + step.name, output)
+
+    def test_full_shape_executes_the_writes_audit_once_with_read_only_permissions(self):
+        code, calls, output = ExitCodeTest().run_gate(['--only', 'shape', '--base', BASE], [])
+        self.assertEqual(code, 0, output)
+        audit = [argv for argv in calls if 'tests/writes_declared_test.ts' in argv]
+        self.assertEqual(audit, [['deno', 'test', '--allow-read', 'tests/writes_declared_test.ts']])
 
     def test_control_installs_the_pinned_tools_its_analyzers_call(self):
         scope = gate['main'].__globals__
@@ -105,9 +115,10 @@ class PlanTest(unittest.TestCase):
 class ParallelTest(unittest.TestCase):
     def test_prerequisites_and_ratchets_stay_serial(self):
         shape = steps('shape')
+        control_count = 4 + len(gate['DENO_CONTROL_TESTS'])
         self.assertFalse(shape[0].parallel)
-        self.assertTrue(all(step.parallel for step in shape[1:-4]))
-        self.assertTrue(all(not step.parallel for step in shape[-4:]))
+        self.assertTrue(all(step.parallel for step in shape[1:-control_count]))
+        self.assertTrue(all(not step.parallel for step in shape[-control_count:]))
         self.assertTrue(all(not step.parallel for step in steps('validate')))
 
     def test_independent_steps_overlap_with_a_bounded_budget_and_isolated_outputs(self):

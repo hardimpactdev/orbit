@@ -11,12 +11,23 @@
   vars:
     ansible_python_interpreter: "{{ ansible_playbook_python }}"
     run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
-    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    route_input: >-
+      {{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_INTENT_PATH')
+         | default(lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json', true)) | from_json }}
+    intent: "{{ route_input.route if lookup('ansible.builtin.env', 'ORBIT_INTENT_FIELD') == 'route' else route_input }}"
     node: "{{ intent.nodes[lookup('ansible.builtin.env', 'ORBIT_NODE_ID')] }}"
     address_target: "{{ node }}"
     address_identity: "{{ node.identity_file }}"
     address_group: route_node
   tasks:
+    - name: Create the site child scratch folder when reusing admitted input
+      when:
+        - lookup('ansible.builtin.env', 'ORBIT_INTENT_PATH') | length > 0
+        - lookup('ansible.builtin.env', 'ORBIT_INTENT_PATH') != run ~ '/intent.json'
+      ansible.builtin.file:
+        path: "{{ run }}"
+        state: directory
+        mode: '0700'
     - name: Address the Node
       ansible.builtin.import_tasks: tasks/address-node.yml
 
@@ -26,7 +37,10 @@
   gather_facts: false
   tags: [site]
   vars:
-    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    route_input: >-
+      {{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_INTENT_PATH')
+         | default(lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json', true)) | from_json }}
+    intent: "{{ route_input.route if lookup('ansible.builtin.env', 'ORBIT_INTENT_FIELD') == 'route' else route_input }}"
     node_id: "{{ lookup('ansible.builtin.env', 'ORBIT_NODE_ID') | int }}"
     node_ids: "{{ [node_id | int, node_id | string] }}"
     node: "{{ intent.nodes[node_id | string] }}"
@@ -34,7 +48,6 @@
     account_gid: "{{ getent_passwd[node.account][2] }}"
     account_home: "{{ getent_passwd[node.account][4] }}"
     signed: "{{ lookup('ansible.builtin.env', 'ORBIT_SIGNED').split('|||') }}"
-    pem_begin: "-----BEGIN CERTIFICATE-----"
   tasks:
     # The account passwd line: its gid and home (play variables) go into the pools and the certificate copy.
     - name: Read the account
@@ -86,102 +99,12 @@
       loop: "{{ intent.php_reloads | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
       loop_control:
         label: "{{ item.unit }}"
-    # The signed leaf beside its key, root:caddy 0644; current points at the new version, which the Caddy site names.
-    - name: Write the signed certificate
-      ansible.builtin.copy:
-        content: "{{ pem_begin ~ signed[item | int].split(pem_begin)[1] }}"
-        dest: "{{ intent.leaves[item | int].directory }}/cert.pem"
-        owner: root
-        group: caddy
-        mode: "0644"
-      loop: "{{ intent.leaf_indexes | default([]) }}"
-      loop_control:
-        label: "{{ intent.leaves[item | int].scope }}"
-      when: intent.leaves[item | int].node_id in node_ids
-    - name: Point current at the new certificate
-      ansible.builtin.file:
-        src: "{{ intent.leaves[item | int].target }}"
-        dest: "{{ intent.leaves[item | int].current }}"
-        owner: root
-        state: link
-        force: true
-        follow: false
-      loop: "{{ intent.leaf_indexes | default([]) }}"
-      loop_control:
-        label: "{{ intent.leaves[item | int].scope }}"
-      when: intent.leaves[item | int].node_id in node_ids
-    # The account copy the development servers read: one install of key and certificate, then its current link.
-    - name: Install the key and certificate for the account
-      ansible.builtin.command:
-        argv: >-
-          {{ ['timeout', '30', 'install', '-D', '-o', intent.leaves[item | int].user, '-g', account_gid, '-m', '0600',
-          '-t', account_home ~ '/.orbit/certificates/' ~ intent.leaves[item | int].scope ~ '/' ~ intent.leaves[item | int].target,
-          intent.leaves[item | int].directory ~ '/key.pem', intent.leaves[item | int].directory ~ '/cert.pem'] }}
-      loop: "{{ intent.leaf_indexes | default([]) }}"
-      loop_control:
-        label: "{{ intent.leaves[item | int].scope }}"
-      changed_when: true
-      when: intent.leaves[item | int].node_id in node_ids
-    - name: Point the account current at the new certificate
-      ansible.builtin.file:
-        src: "{{ intent.leaves[item | int].target }}"
-        dest: "{{ account_home ~ '/.orbit/certificates/' ~ intent.leaves[item | int].scope ~ '/current' }}"
-        owner: "{{ intent.leaves[item | int].user }}"
-        state: link
-        force: true
-        follow: false
-      loop: "{{ intent.leaf_indexes | default([]) }}"
-      loop_control:
-        label: "{{ intent.leaves[item | int].scope }}"
-      when: intent.leaves[item | int].node_id in node_ids
-    # The public Orbit root in the system trust folder.
-    - name: Trust the Orbit root
-      when: (node_ids | intersect(intent.trust | default([]))) | length > 0
-      block:
-        - name: Write the Orbit root
-          ansible.builtin.copy:
-            content: "{{ intent.root_certificate }}"
-            dest: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
-            owner: root
-            group: root
-            mode: "0644"
-          notify: Update the trust store
-    # Run it now, not at the end of the play: a later failure would leave the root written and the store not updated, and a rerun sees no change.
-    - name: Update the trust store when the root changed
-      ansible.builtin.meta: flush_handlers
-    # The Node's whole Caddyfile, as the Gateway rendered it with this Route; validated, then reloaded. Caddy is never restarted.
-    - name: Publish the Caddy site
-      when: intent.caddy | default([]) | selectattr('node_id', 'in', node_ids) | list | length > 0
-      block:
-        - name: Write the Caddyfile
-          ansible.builtin.copy:
-            content: "{{ item.content }}"
-            dest: /etc/caddy/Caddyfile
-            owner: root
-            group: caddy
-            mode: "0640"
-          loop: "{{ intent.caddy | selectattr('node_id', 'in', node_ids) | list }}"
-          loop_control:
-            label: /etc/caddy/Caddyfile
-        - name: Validate the Caddyfile
-          ansible.builtin.command:
-            argv: [timeout, "60", runuser, -u, caddy, --, caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
-          changed_when: false
-        - name: Reload Caddy
-          ansible.builtin.command:
-            argv: [timeout, "60", systemctl, reload, caddy]
-          changed_when: true
-    # A development Instance is published awake: the marker makes its first request reach the application.
-    - name: Mark the Instance awake
-      ansible.builtin.copy:
-        content: ""
-        dest: "{{ item.path }}"
-        owner: root
-        group: root
-        mode: "0644"
-      loop: "{{ intent.awake | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
-      loop_control:
-        label: "{{ item.path }}"
+    # One Node call keeps private keys local, then validates and reloads in the existing order.
+    - name: Converge certificate links trust and Caddy files
+      orbit_route_site:
+        intent: "{{ intent }}"
+        node_id: "{{ node_id }}"
+        signed: "{{ signed }}"
     # The last task: a success leaves no run folder, so the workflow cleans up only after a failure.
     - name: Remove the run folder
       ansible.builtin.file:
@@ -193,9 +116,3 @@
       vars:
         ansible_connection: local
         ansible_python_interpreter: "{{ ansible_playbook_python }}"
-  handlers:
-    # Only after a new Orbit root was written: the update costs about a second and a Route create is not the first on its Node.
-    - name: Update the trust store
-      ansible.builtin.command:
-        argv: [timeout, "60", update-ca-certificates]
-      changed_when: true

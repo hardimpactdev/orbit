@@ -41,6 +41,8 @@ The release ([stage 5](../../../docs/reference/pipeline/5-automatic-release.mmd)
 
 ## Lessons
 
+When promoting a fast read-only audit into CI controls, remove it from fixture discovery, the registry and the case inventory. Prove that its input paths select the control job, that it runs once in the full gate, and that a failing audit fails the control run. Run the gate's tool-contract fixture as well as the CI tooling tests: it checks fixture permissions, collection paths and complete file discovery. Measure the audit and report existing source failures separately.
+
 When a deployment captures source metadata, test an older pinned commit after the branch advances. A branch-head fake alone cannot prove that the selected runtime and the checked-out commit agree. Check recorded lifecycle refusals before reading remote metadata. Read it before opening any admission write transaction, including an automatic caller’s outer transaction; recheck lifecycle, source settings and idempotency under ownership before recording the result.
 
 Task parents that can use a ready VM capture resume only for a parked VM. Keep `task_vm_id` separate from the optional resume intent, and let the next workflow step follow either a succeeded or skipped resume.
@@ -58,7 +60,7 @@ A provider retirement needs its full resource inventory. An empty task VM sweep 
 
 Receipt redaction tests must inspect the persisted response. A numeric mask can also occur legitimately in an identity, digest or timestamp; searching the whole receipt creates clock-dependent false failures.
 
-When updating CLI fixtures from resource replies to Operations, preserve product result assertions as well as the transport envelope. Use the complete terminal result from its writer and an independently specified exact expectation. Check human warnings against the current command chart; a generic Operation success line does not prove them.
+When updating CLI or SDK fixtures from resource replies to Operations, preserve product result assertions as well as the transport envelope. In SDK tests, assert the start receipt’s identity, kind, target, status and request ID, and keep resource fields on their typed read requests. Use the complete terminal result from its writer and an independently specified exact expectation. Check human warnings against the current command chart; a generic Operation success line does not prove them.
 
 Run a combined Unit and Feature test collection when adding global test constants or helpers. Separate focused runs do not catch duplicate names across files.
 

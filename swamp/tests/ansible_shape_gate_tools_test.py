@@ -86,7 +86,8 @@ class ShapeGateToolsTest(unittest.TestCase):
     def test_deno_ansible_fixtures_receive_the_installed_pinned_collections(self):
         collections = self.system / 'collections'
         steps = self.gate.plan('HEAD', self.system, self.system, collections)
-        deno_tests = [step for step in steps if step.argv[:2] == ['deno', 'test'] and step.group == 'shape']
+        deno_tests = [step for step in steps if step.argv[:2] == ['deno', 'test']
+                      and step.group == 'shape' and step.parallel]
         self.assertTrue(deno_tests)
         for step in deno_tests:
             self.assertEqual(step.env.get('ANSIBLE_COLLECTIONS_PATH'), str(collections), step.name)
@@ -96,10 +97,16 @@ class ShapeGateToolsTest(unittest.TestCase):
         files = sorted(str(path.relative_to(ROOT / 'swamp')) for path in (ROOT / 'swamp/tests').glob('*_test.ts'))
         commands = [step for step in steps if step.group == 'shape' and step.argv[:3] == ['deno', 'test', '-A'] and step.argv[-1].startswith('tests/')]
         planned = [file for step in commands for file in step.argv[3:]]
+        controls = [step for step in steps if step.group == 'shape' and step.argv[:2] == ['deno', 'test'] and not step.parallel]
+        control_files = [step.argv[-1] for step in controls]
+        self.assertEqual(control_files, ['tests/writes_declared_test.ts'])
+        for step in controls:
+            self.assertEqual(step.argv, ['deno', 'test', '--allow-read', step.argv[-1]])
+            self.assertNotIn('ANSIBLE_COLLECTIONS_PATH', step.env)
         elsewhere = [step.argv[-1] for step in steps if step.group == 'validate' and step.argv[-1].startswith('tests/')]
         self.assertTrue(set(elsewhere) <= set(self.gate.DENO_TESTS_ELSEWHERE))
         self.assertTrue(set(self.gate.DENO_TESTS_ELSEWHERE) <= set(files), 'each file left out exists')
-        self.assertEqual(sorted(planned), [file for file in files if file not in self.gate.DENO_TESTS_ELSEWHERE])
+        self.assertEqual(sorted(planned + control_files), [file for file in files if file not in self.gate.DENO_TESTS_ELSEWHERE])
         self.assertIn('tests/ansible_instance_host_test.ts', planned)
         self.assertTrue(all(step.parallel for step in commands))
         instance = [step for step in commands if any('ansible_instance_host' in arg for arg in step.argv)]

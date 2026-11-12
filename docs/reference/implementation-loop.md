@@ -43,7 +43,7 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 ## CI
 
-Orbit CI runs builds, static checks and the full Gateway and CLI Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same fast checks.
+Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same fast checks.
 
 Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units in hosted shards. [Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
 
@@ -53,6 +53,7 @@ Pull requests and main pushes run the fast Swamp control checks. Selected shape 
 | Gateway static analysis | Run the complete Gateway PHPStan configuration and collect all Gateway tests |
 | Gateway Pest suite | Run the complete default Gateway suite on `ubuntu-26.04`: four workers, 1 GiB per PHP process and a five-second default per-test limit |
 | CLI Pest suite | Run the complete CLI suite on `ubuntu-26.04` in one process with 1 GiB of PHP memory |
+| PHP SDK Pest suite | Run the complete SDK suite on `ubuntu-26.04` in one process; fail on an empty suite and always upload JUnit results |
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
 | CLI static analysis, PHP SDK static analysis, E2E static analysis | Run PHPStan for `apps/cli`, `packages/php-sdk` or `apps/e2e` |
 | Docs build | Generate API contracts and the documentation index, run strict documentation lint and the complete Docs Pest suite, including its Python contracts; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) |
@@ -66,7 +67,7 @@ Pull requests and main pushes run the fast Swamp control checks. Selected shape 
 | Main delivery checks | On main, require the same selected fast jobs, independently of duplicate fixture shards and Main full set |
 | Main fixture report | After selected main fixtures finish, report failure, cancellation or capacity to the CI summary and the causal merged PR; never gate delivery |
 
-`Main delivery checks` depends exactly on `php`, `gateway-static`, `gateway-tests`, `cli`, `cli-static`, `cli-tests`, `sdk-static`, `e2e-static`, `docs`, `api-reference`, `web`, `pi`, `agent`, `proof`, `gateway-release`, `changes` and `swamp`. These are the existing builds, Pest suites, static checks, contracts and other fast checks. It adds no test or build. `Start the CLI release` depends on this result.
+`Main delivery checks` depends exactly on `php`, `gateway-static`, `gateway-tests`, `cli`, `cli-static`, `cli-tests`, `sdk-static`, `sdk-tests`, `e2e-static`, `docs`, `api-reference`, `web`, `pi`, `agent`, `proof`, `gateway-release`, `changes` and `swamp`. These are the existing builds, Pest suites, static checks, contracts and other fast checks. It adds no test or build. `Start the CLI release` depends on this result.
 
 The release resolver verifies a successful delivery job on the exact SHA in this repository's `ci.yml` main push or manual run; it accepts neither a PR check with the same name nor a commit status. The run may still be running or finish red because fixtures failed. Old commits without this result cannot be backfilled.
 
@@ -99,6 +100,10 @@ The job depends on input selection; only an explicit false selection skips it. R
 The CLI Pest job installs `apps/cli` dev Composer dependencies with the shared PHP 8.5 action and coverage disabled. It runs the complete suite in one process with a 1 GiB memory limit and uploads JUnit results even after a failure.
 
 The checks table also defines CLI Pest inputs. Required checks requires the job whenever selected; only an explicit false selection permits a skip.
+
+The PHP SDK Pest job installs `packages/php-sdk` dev Composer dependencies with scripts disabled, using the shared pinned PHP 8.5 action with coverage disabled. Its vendor cache is separate from runtime dependencies. SDK code, tests, fixtures and configuration select it; shared PHP action changes select all checks. Unrelated docs and app changes skip it. Both Required checks and Main delivery checks require selected SDK tests to pass. Missing or non-boolean selections, failures, cancellation and unexpected skips fail the gate.
+
+The initial SDK measurement at `1b46059657` found 1,250 cases: 1,236 passed, two failed and twelve errored, in 0.581 seconds of test time and 0.77 seconds wall time. The failures were stale expectations for Operations, malformed role assignments and the Node reboot hold. After repair, all 1,255 cases passed with 4,690 assertions in 0.608 seconds of test time and 0.83 seconds wall time. The job keeps a 120-second ceiling and a conservative 60-second table cost for PHP setup, dev-package installation, Pest and artifact upload. Cold downloads and the time from a push to Required checks remain unmeasured on hosted runners; verify the first hosted run before claiming the budget fits.
 
 The Swamp gate production-lints the observer preparation play. Its fixture tests install the candidate pin on all three nested Nodes and reject checksum and download failures. Gateway tests require new presence versions and host facts after a controlled restart. Runner tests require preparation before every batch and direct case, including old workflow calls without setup, and give preparation and batch setup separate bounded budgets.
 
@@ -198,7 +203,9 @@ A path inside a known root that no check claims selects that root's default, the
 
 Swamp source lives under `swamp/`. Its check inputs are declared in the same table. A run whose token the Gateway writes to a vault key, such as `task:sync` with `task-sync-token-<uuid>`, adds its key pattern to `swamp/config/gateway-workflow-grants.json`. Generated contracts checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp). The CI run on `main` selects other builds the same way.
 
-The Swamp shape job runs `bin/swamp-shape-gate --only control`. Scheduled and manual full-fixture runs use `--only shape`. The script runs the gate, Python analyzer, frozen-base policy and validation CI regression tests through Deno. It also runs pinned `ansible-lint` against the Node enrollment, role, development create, Route and task VM playbooks and checks the private Ansible input builder, the enrollment playbook contract and the waits of a nested fleet against a stub `incus`. The firewall regression test evaluates changed shapes, rule order and unchanged state through the pinned Ansible engine. The artifact tests cover candidate order, transport-only fallback, checksum rejection, cache reuse and staging cleanup.
+The Swamp shape job runs `bin/swamp-shape-gate --only control`. Its serial controls include all seven cases in the read-only `swamp/tests/writes_declared_test.ts` audit. Workflow, model and `writes-reviewed.json` changes select this job through the checks table. A failed audit fails the job. The audit also runs once in `--only shape`; fixture discovery, the fixture registry and its case inventory exclude it.
+
+The full shape group runs the gate, Python analyzer, frozen-base policy and validation CI regression tests through Deno. It also runs pinned `ansible-lint` against the Node enrollment, role, development create, Route and task VM playbooks and checks the private Ansible input builder, the enrollment playbook contract and the waits of a nested fleet against a stub `incus`. The firewall regression test evaluates changed shapes, rule order and unchanged state through the pinned Ansible engine. The artifact tests cover candidate order, transport-only fallback, checksum rejection, cache reuse and staging cleanup.
 
 The bridge writer fixture executes the shipped Ansible task against a temporary ACL boundary. It checks immediate busy refusal, partial withdrawal followed by refresh, failure health and successful recovery. Its fixture input map includes the shipped task and fake curl boundary. It performs no live Incus operation.
 
@@ -288,11 +295,11 @@ The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PH
 
 ### Gateway shards
 
-Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. CLI Pest runs in a separate hosted job in one process. E2E, SDK, remote-program and web unit test jobs remain local checks; their test files and commands remain available.
+Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. CLI Pest and SDK Pest each run in a separate hosted job in one process. E2E, remote-program and web unit test jobs remain local checks; their test files and commands remain available.
 
 ### Runner policy during the Swamp migration
 
-During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway and CLI Pest, Pi and Rust tests. Web unit tests stay local. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
+During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway, CLI and SDK Pest, Pi and Rust tests. Web unit tests stay local. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
 
 Sabre and Shark run CI runners in unprivileged Incus containers. With Nick's approval, both hosts also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Task VMs run only on Beast and Shark through Incus.
 
@@ -377,7 +384,7 @@ The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it con
 
 Root `composer check` builds OpenAPI, navigation, flow data and the documentation context index, then runs `bin/review-check`, the candidate gate. This refreshes ignored outputs from the current checkout before the impact and freshness checks read them.
 
-The Orbit Project uses it as its task check, so it runs in the task VM at every subtask handoff. The gate runs only fast checks and no test suite. CI omits the Project check and runs the selected jobs in [CI](#ci), including Gateway and CLI Pest when their inputs change. Required checks must pass on the final head before merge.
+The Orbit Project uses it as its task check, so it runs in the task VM at every subtask handoff. The gate runs only fast checks and no test suite. CI omits the Project check and runs the selected jobs in [CI](#ci), including Gateway, CLI and SDK Pest when their inputs change. Required checks must pass on the final head before merge.
 
 The gate checks the working tree as it is, including uncommitted and untracked files. It runs these checks.
 
@@ -559,7 +566,7 @@ A failure on main is a `Required checks` check run on a `main` commit that did n
 
 ### CI runs the task gate
 
-The task gate and CI serve different scopes. The task gate runs `bin/review-check`; CI omits that Project check and runs the selected builds, static checks and Gateway and CLI Pest. A passing Required checks result therefore does not certify every local Project check.
+The task gate and CI serve different scopes. The task gate runs `bin/review-check`; CI omits that Project check and runs the selected builds, static checks and Gateway, CLI and SDK Pest. A passing Required checks result therefore does not certify every local Project check.
 
 ### Every project passes the gate at each handoff
 
@@ -601,7 +608,7 @@ The Gateway default suite runs in one hosted job. Four workers keep setup costs 
 
 ### Full suites gate merges
 
-The check name remains `Required checks` so branch protection, task handoff CI and Gateway auto-release continue to resolve it. The name represents the selected builds, static checks and Gateway and CLI Pest suites in [CI](#ci). A green result requires every selected Pest job to pass. No ruleset change is needed for Orbit.
+The check name remains `Required checks` so branch protection, task handoff CI and Gateway auto-release continue to resolve it. The name represents the selected builds, static checks and Gateway, CLI and SDK Pest suites in [CI](#ci). A green result requires every selected Pest job to pass. No ruleset change is needed for Orbit.
 
 ### Gateway test time limits
 
@@ -719,6 +726,8 @@ When a fixture gains cases, collect its registrations with `bin/ci-units collect
 Migration fixtures check that untracked files survive copying and retirement, while tracked changes, stashes, unpushed commits and other worktrees retain their refusal codes. Batch phase plays in one Ansible invocation to keep each fixture within three playbook launches; update registered case names and costs together.
 
 The mail fixture executes the production prefix whitelist, the reviewed bare-CR and comment-grouping regressions, and a realistic thirty-line file. It preserves `lines` beside `guard_line` and uses three Ansible launches. Gateway tests compare every admitted shape with installed phpdotenv; Swamp fixtures need no PHP or Composer installation.
+
+The Route site fixture runs unprivileged. It checks the shipped file converger and real OpenSSL CSR action, and runs one real Ansible production phase for workspace access, `APP_URL`, environment links and PHP-FPM publication. Other cases exercise validation failure and retry without repeating playbook launches.
 
 The destroy guard is admission only. Tests pin the workflow to its pre-guard main bytes and prove retry/dispatch does not recheck Git after dismantling begins. Candidate pointer failures retain named warnings; target failures and confirmed dependents refuse before record or trigger changes.
 

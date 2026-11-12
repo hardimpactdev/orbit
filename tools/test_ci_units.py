@@ -294,6 +294,20 @@ class RegistrySelectionTest(unittest.TestCase):
 
 
 class TableTest(unittest.TestCase):
+    def test_writes_audit_is_owned_by_controls_and_never_scheduled_as_a_fixture(self):
+        file = 'swamp/tests/writes_declared_test.ts'
+        budget, fixtures, defaults = units.configuration()
+        self.assertNotIn(file, units.fixture_steps())
+        self.assertNotIn(file, fixtures)
+        self.assertNotIn(file, json.loads(units.INVENTORY.read_text()))
+        for path in (file, 'swamp/tests/writes-reviewed.json',
+                     'swamp/workflows/workflow-operation-instance-mail-update.yaml',
+                     'swamp/models/@nckrtl/orbit-gateway/orbit-gateway.yaml', 'bin/ci-units'):
+            with self.subTest(path=path):
+                result = units.plan([path], budget, fixtures, defaults)
+                scheduled = {unit.split('#')[0] for unit in names(result) + result['deferred']}
+                self.assertNotIn(file, scheduled)
+
     def test_table_files_costs_and_unsliceable_rules(self):
         budget, fixtures, defaults = units.configuration()
         self.assertEqual(budget, BUDGET)

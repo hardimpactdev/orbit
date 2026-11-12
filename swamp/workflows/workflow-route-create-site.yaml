@@ -6,6 +6,15 @@ queueTimeout: 30
 inputs:
   type: object
   properties:
+    # Existing admitted input may be reused read-only; the site child owns a separate scratch folder.
+    admitted:
+      type: object
+      properties:
+        path: {type: string}
+        assets: {type: string}
+        field: {type: string, enum: ['', route]}
+      required: [path, assets, field]
+      additionalProperties: false
     intent: {type: object}
     node_id: {type: integer, minimum: 1}
     signed: {type: array, items: {type: string}}
@@ -27,6 +36,7 @@ jobs:
   steps:
     # Input: the admitted intent and the shipped playbooks, as the run folder that the phase reads.
   - name: 'input'
+    guard: '${{ has(inputs.admitted) && inputs.admitted.path != "" }}'
     labels: {role: swamp}
     writes: true
     task:
@@ -42,7 +52,7 @@ jobs:
   - name: 'site'
     labels: {role: swamp}
     dependsOn:
-    - {step: 'input', condition: {type: succeeded}}
+    - {step: 'input', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     writes: true
     task:
       type: behavior
@@ -53,10 +63,12 @@ jobs:
         run: timeout 170 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags site "$ORBIT_ANSIBLE/route-create-site.yml"
         env:
           ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
-          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ORBIT_ANSIBLE: '${{ has(inputs.admitted) && inputs.admitted.path != "" ? inputs.admitted.assets : steps.input.outputs.assets }}'
+          ORBIT_INTENT_PATH: '${{ has(inputs.admitted) && inputs.admitted.path != "" ? inputs.admitted.path : "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+          ORBIT_INTENT_FIELD: '${{ has(inputs.admitted) && inputs.admitted.path != "" ? inputs.admitted.field : "" }}'
           ORBIT_NODE_ID: '${{ string(inputs.node_id) }}'
           ORBIT_SIGNED: '${{ inputs.signed.join("|||") }}'
-          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_CONFIG: '${{ (has(inputs.admitted) && inputs.admitted.path != "" ? inputs.admitted.assets : steps.input.outputs.assets) + "/ansible.cfg" }}'
           ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
           ORBIT_PREPARED: '${{ has(inputs.prepared) ? inputs.prepared : "" }}'
           ANSIBLE_FORCE_COLOR: '0'

@@ -342,6 +342,7 @@ jobs:
             execution_secrets: '${{ inputs.intent.route_secrets }}'
             signed: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps && steps["route-csr-" + string(i)].status == "succeeded" ? steps["route-csr-" + string(i)].outputs.sign.stdout : "") }}'
             prepared: '${{ string(inputs.node_id) }}'
+            admitted: '${{ {"path": "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.path : "", "assets": "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "", "field": "route"} }}'
       - name: seed
         labels: {role: swamp}
         writes: true
@@ -700,6 +701,7 @@ jobs:
             execution_secrets: '${{ inputs.intent.route_secrets }}'
             signed: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("clone-route-csr-" + string(i)) in steps && steps["clone-route-csr-" + string(i)].status == "succeeded" ? steps["clone-route-csr-" + string(i)].outputs.sign.stdout : "") }}'
             prepared: '${{ string(inputs.node_id) }}'
+            admitted: '${{ {"path": "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.path : "", "assets": "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "", "field": "route"} }}'
   # Compensation waits for all writers, including the independent Route job.
   - name: create
     dependsOn: [{job: input, condition: {type: or, conditions: [type: completed, type: skipped]}}, {job: legacy, condition: {type: or, conditions: [type: completed, type: skipped]}}, {job: clone, condition: {type: or, conditions: [type: completed, type: skipped]}}, {job: publication, condition: {type: or, conditions: [type: completed, type: skipped]}}]

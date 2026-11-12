@@ -2146,18 +2146,6 @@ inputs = [
   "swamp/bin/lint-workflow-placement.ts",
 ]
 
-[[fixture]]
-file = "swamp/tests/writes_declared_test.ts"
-cost = 4
-inputs = [
-  "bin/swamp-shape-gate",
-  "swamp/ansible/ansible.cfg",
-  "swamp/ansible/requirements.txt",
-  "swamp/ansible/requirements.yml",
-  "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/tests/writes-reviewed.json",
-]
-
 # CI check inputs. Includes are ORed; any !exclude wins, regardless of order.
 # ** crosses directories; * and ? stay within one name (selection_regex).
 # Costs are pull_request median wall seconds from ci-speed.md (2026-11-11).
@@ -2313,6 +2301,17 @@ inputs = [
   "tools/phpstan/**",
 ]
 cost = 16
+ceiling = 120
+
+[check.sdk-tests]
+inputs = [
+  "packages/php-sdk/**",
+  "!packages/php-sdk/**/*.md",
+  "!packages/php-sdk/**/*.mdx",
+]
+# Local baseline: 1,250 cases in 0.581s Pest / 0.77s wall; repaired suite has 1,255 cases.
+# Conservative estimate includes PHP setup, dev Composer install and JUnit upload; hosted cost is unproven.
+cost = 60
 ceiling = 120
 
 [check.e2e-static]
@@ -2563,7 +2562,7 @@ default = ["web"]
 
 [roots."packages/php-sdk"]
 inputs = ["packages/php-sdk/**"]
-default = ["sdk-static", "cli-static"]
+default = ["sdk-static", "sdk-tests", "cli-static"]
 
 [roots."docs"]
 inputs = ["docs/**"]
@@ -2723,6 +2722,30 @@ inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts"
 "container mail skips retain their reason and missing mail observations stay advisory" = 1
 "default and clone finish workspace T3 and registration despite bounded mail failure" = 1
 "a Node without the main Mailpit gets no mail warning or failure" = 1
+
+[[fixture]]
+file = "swamp/tests/ansible_route_site_test.py"
+cost = 14
+slices = false
+inputs = [
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/library/orbit_route_site.py",
+  "swamp/ansible/route-create-site.yml",
+  "swamp/ansible/tasks/route-access.yml",
+  "swamp/workflows/workflow-route-create-csr.yaml",
+  "swamp/workflows/workflow-route-create-site.yaml",
+]
+[fixture.case_costs]
+"test_certificate_links_account_copy_modes_and_literal_caddy_text" = 1
+"test_failed_validation_keeps_candidate_but_never_reloads_or_marks_awake" = 1
+"test_retry_after_reload_failure_completes_without_rewriting_public_files" = 1
+"test_php_only_publication_needs_no_caddy_group" = 1
+"test_production_workspace_app_url_links_and_php_tasks_are_unchanged" = 1
+"test_csr_action_owns_folder_and_key_before_public_request_returns" = 1
+"test_real_production_phase_keeps_access_app_url_php_links_and_reload" = 5
+"test_reused_input_is_read_only_and_child_cleanup_keeps_its_own_folder" = 1
+"test_existing_file_mode_drift_clears_unwanted_special_bits" = 1
+"test_same_content_destination_symlinks_are_replaced_without_touching_targets" = 1
 
 [[fixture]]
 file = "swamp/tests/instance_destroy_git_test.py"

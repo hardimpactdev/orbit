@@ -292,6 +292,39 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  sdk-tests:
+    name: PHP SDK Pest suite
+    needs: changes
+    if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['sdk-tests']) != 'false' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/php
+        with:
+          coverage: none
+      - name: Cache SDK test dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: packages/php-sdk/vendor
+          key: sdk-tests-dev-${{ runner.os }}-8.5-${{ hashFiles('packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock') }}
+      - name: Install SDK dev dependencies
+        run: composer install --working-dir=packages/php-sdk --no-interaction --prefer-dist --no-scripts
+      - name: Run the complete SDK Pest suite
+        working-directory: packages/php-sdk
+        run: vendor/bin/pest --fail-on-empty-test-suite --compact --colors=never --log-junit="$RUNNER_TEMP/sdk-tests.xml"
+      - name: Publish SDK Pest results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sdk-tests-junit
+          path: ${{ runner.temp }}/sdk-tests.xml
+          if-no-files-found: error
+          retention-days: 7
+
   sdk-static:
     name: PHP SDK static analysis
     needs: changes
@@ -772,7 +805,7 @@ jobs:
   required:
     name: ${{ github.ref == 'refs/heads/main' && 'PR required checks' || 'Required checks' }}
     if: always() && github.ref != 'refs/heads/main'
-    needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes, swamp, fixtures]
+    needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes, swamp, fixtures]
     runs-on: ubuntu-26.04
     timeout-minutes: ${{ github.event_name == 'pull_request' && vars.ORBIT_SLOW_CHECKS_BLOCKING != 'false' && vars.ORBIT_PROOF_BLOCKING != 'false' && needs.changes.outputs.proof_run == 'true' && 195 || 2 }}
     permissions:
@@ -783,7 +816,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Require builds, static checks and Gateway and CLI tests
+      - name: Require builds, static checks and Gateway, CLI and SDK tests
         env:
           NEEDS: ${{ toJSON(needs) }}
           PROOF_REQUIRED: ${{ github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' }}
@@ -818,7 +851,7 @@ jobs:
   delivery:
     name: Main delivery checks
     if: always() && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
-    needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes, swamp]
+    needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes, swamp]
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:

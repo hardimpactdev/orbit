@@ -9,7 +9,7 @@ import subprocess
 import tomllib
 from functools import lru_cache
 
-JOBS = ('php', 'gateway-static', 'gateway-tests', 'cli', 'cli-static', 'cli-tests', 'sdk-static', 'e2e-static', 'docs', 'api-reference', 'web', 'pi', 'agent', 'swamp', 'proof')
+JOBS = ('php', 'gateway-static', 'gateway-tests', 'cli', 'cli-static', 'cli-tests', 'sdk-static', 'sdk-tests', 'e2e-static', 'docs', 'api-reference', 'web', 'pi', 'agent', 'swamp', 'proof')
 ROOT = Path(__file__).resolve().parent.parent
 SELECTION = 'swamp/proof/selection.txt'
 SELECTION_COMMAND = re.compile(r'[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+')

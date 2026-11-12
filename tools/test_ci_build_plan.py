@@ -110,7 +110,27 @@ class BuildPlanTest(unittest.TestCase):
                 self.assertFalse(plan.select([path])['jobs']['gateway-tests'])
 
     def test_sdk_changes_build_both_consumers(self):
-        self.assertEqual({'php', 'gateway-tests', 'cli', 'cli-static', 'cli-tests', 'sdk-static', 'api-reference', 'web'}, self.selected(['packages/php-sdk/src/Request.php']))
+        self.assertEqual({'php', 'gateway-tests', 'cli', 'cli-static', 'cli-tests', 'sdk-static', 'sdk-tests', 'api-reference', 'web'}, self.selected(['packages/php-sdk/src/Request.php']))
+
+    def test_sdk_pest_selects_sdk_code_tests_fixtures_and_configuration(self):
+        for path in ('packages/php-sdk/src/Requests/Nodes/ShowNodeRequest.php',
+                     'packages/php-sdk/tests/Unit/Responses/Nodes/NodeResponseTest.php',
+                     'packages/php-sdk/fixtures/nodes/node-show/default.json',
+                     'packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock',
+                     'packages/php-sdk/phpunit.xml.dist', '.github/actions/php/action.yml'):
+            for main in (False, True):
+                with self.subTest(path=path, main=main):
+                    self.assertTrue(plan.select([path], main)['jobs']['sdk-tests'])
+
+    def test_sdk_pest_skips_unrelated_docs_apps_and_swamp(self):
+        for path in ('docs/api/php-sdk.mdx', 'packages/php-sdk/README.md',
+                     'apps/cli/app/Commands/Thing.php', 'apps/cli/composer.lock',
+                     'apps/gateway/app/Thing.php', 'apps/docs/composer.lock',
+                     'apps/e2e/tests/ThingTest.php', 'apps/web/src/main.ts',
+                     'swamp/workflows/workflow-example.yaml'):
+            for main in (False, True):
+                with self.subTest(path=path, main=main):
+                    self.assertFalse(plan.select([path], main)['jobs']['sdk-tests'])
 
     def test_a_composer_manifest_or_lock_selects_the_static_analysis_of_its_project(self):
         # Dependabot bumped laravel/boost in apps/cli/composer.lock and nothing analysed the CLI against it.
@@ -186,6 +206,10 @@ class BuildPlanTest(unittest.TestCase):
             'swamp/bin/swamp-shape-relocations.ts': {'shape', 'tests'},
             'swamp/ansible/task-vm-runtime.yml': {'shape', 'tests'},
             'swamp/workflows/workflow-operation-firewall-direct.yaml': {'shape', 'validate', 'tests'},
+            'swamp/workflows/workflow-operation-instance-mail-update.yaml': {'shape', 'validate', 'tests'},
+            'swamp/models/@nckrtl/orbit-gateway/orbit-gateway.yaml': {'shape', 'validate', 'tests'},
+            'swamp/tests/writes-reviewed.json': {'shape', 'tests'},
+            'swamp/tests/writes_declared_test.ts': {'shape', 'tests'},
             'swamp/config/serve-grants.json': {'shape', 'validate', 'tests'},
             'swamp/extensions/behaviors/node-worker/config.ts': {'shape', 'validate', 'tests'},
             'swamp/extensions/behaviors/_lib/public_output.ts': {'shape', 'validate', 'tests'},
@@ -197,11 +221,12 @@ class BuildPlanTest(unittest.TestCase):
             'apps/gateway/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php': {'shape', 'validate', 'tests'},
         }
         for path, expected in cases.items():
-            with self.subTest(path=path):
-                result = plan.select([path])
-                checks = {name for name, value in result['swamp_checks'].items() if value}
-                self.assertEqual(expected, checks)
-                self.assertEqual(bool(expected), result['jobs']['swamp'])
+            for main in (False, True):
+                with self.subTest(path=path, main=main):
+                    result = plan.select([path], main)
+                    checks = {name for name, value in result['swamp_checks'].items() if value}
+                    self.assertEqual(expected, checks)
+                    self.assertEqual(bool(expected), result['jobs']['swamp'])
 
     def test_shared_ci_changes_run_all_builds(self):
         self.assertEqual(set(plan.JOBS), self.selected(['.github/workflows/ci.yml']))

@@ -785,7 +785,7 @@
     ]
   },
   "swamp/tests/ansible_shape_gate_tools_test.py": {
-    "source_sha256": "a70cc7d76d9318e4f797dee9651bea556aeeb16ded6911944790cb64ee8f8a8b",
+    "source_sha256": "5d4ed64fa727443866ac35a2e1d76d9bad165053dd15c2e2ce775fbf9a0a1a44",
     "cases": [
       "test_uses_the_system_tools_only_when_built_for_these_pins",
       "test_a_built_venv_needs_no_write_access_and_no_install",
@@ -1769,18 +1769,6 @@
       "only the Gateway bootstrap runs without a worker placement"
     ]
   },
-  "swamp/tests/writes_declared_test.ts": {
-    "source_sha256": "9b4d11a8e2b7028920832ffcb90ecc2afaee4db5304775648770044ad7036480",
-    "cases": [
-      "every step with an external effect declares writes: true or is reviewed",
-      "a step that cannot run twice declares writes, and is not listed as reviewed",
-      "the reviewed list holds no stale entry and its unreviewed count is pinned",
-      "the pattern finds the commands that cannot run twice",
-      "unknown behavior and model methods are audited by default",
-      "a custom file writer cannot lose its writes declaration",
-      "every native-data exception has an exact method pair and a review reason"
-    ]
-  },
   "swamp/tests/instance_migrate_env_test.py": {
     "source_sha256": "e12a031c865034f2731e29f80d0f7ec4dc909644e418187aad64f9c4116906ec",
     "cases": [
@@ -1997,6 +1985,21 @@
       "the files Orbit renders do not count as unpushed work, at any depth",
       "any other change is still work that is not pushed",
       "every destroy Ansible step enables failed task stderr"
+    ]
+  },
+  "swamp/tests/ansible_route_site_test.py": {
+    "source_sha256": "9ebdb0ecbc366af2030d46d6f17c87b19f54424ff98c2d1be5340c74a47c68ee",
+    "cases": [
+      "test_certificate_links_account_copy_modes_and_literal_caddy_text",
+      "test_existing_file_mode_drift_clears_unwanted_special_bits",
+      "test_same_content_destination_symlinks_are_replaced_without_touching_targets",
+      "test_failed_validation_keeps_candidate_but_never_reloads_or_marks_awake",
+      "test_retry_after_reload_failure_completes_without_rewriting_public_files",
+      "test_php_only_publication_needs_no_caddy_group",
+      "test_production_workspace_app_url_links_and_php_tasks_are_unchanged",
+      "test_csr_action_owns_folder_and_key_before_public_request_returns",
+      "test_real_production_phase_keeps_access_app_url_php_links_and_reload",
+      "test_reused_input_is_read_only_and_child_cleanup_keeps_its_own_folder"
     ]
   },
   "swamp/tests/instance_node_runtime_test.py": {
