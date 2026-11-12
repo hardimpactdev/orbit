@@ -13,8 +13,8 @@ REPLACE = """set -eu
 umask 077
 test ! -L "$1" && test -f "$1"
 cat > "$2"
-chown --reference="$1" "$2"
-chmod --reference="$1" "$2"
+# GNU coreutils is in the stock image. mode also copies POSIX ACLs; explicit xattr makes errors fatal.
+cp --attributes-only --preserve=mode,ownership,timestamps,xattr -- "$1" "$2"
 mv -f -- "$2" "$1"
 """
 
@@ -23,9 +23,16 @@ def apply(prefix, path, remove):
     def command(argv, data=None):
         return subprocess.run(argv, input=data, capture_output=True, check=True).stdout
 
+    def cleanup():
+        result = subprocess.run(remove, capture_output=True, check=False)
+        # Incus 7: --force does not suppress ENOENT. Accept only this exact response.
+        if result.returncode == 1 and result.stdout == b'' and result.stderr == b'Error: file does not exist\n':
+            return
+        result.check_returncode()
+
     try:
         # Entry cleanup precedes even the .env existence/type read. Incus file access works offline.
-        command(remove)
+        cleanup()
         kind = command(prefix + ['sh', '-c', INSPECT, 'sh', path])
         if kind == b'absent':
             return {'status': 'not_present'}
@@ -67,7 +74,7 @@ def apply(prefix, path, remove):
         return {'status': 'changed', 'lines': numbers}
     finally:
         # This runs on the Node, outside the guest killed by a forced container stop.
-        command(remove)
+        cleanup()
 
 
 def interrupted(_signum, _frame):
@@ -81,8 +88,15 @@ def main():
         project, container = sys.argv[1:]
         result = apply(['incus', '--project', project, 'exec', container, '--'], '/srv/workspace/.env',
                        ['incus', '--project', project, 'file', 'delete', '--force', container + TEMPORARY])
-    except (OSError, ValueError, subprocess.SubprocessError):
-        print(json.dumps({'error_code': 'env.configuration_invalid'}))
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        result = {'error_code': 'env.configuration_invalid'}
+        # Never forward arbitrary tool output: a tool can echo input or file contents.
+        # Only complete, fixed Incus diagnostics are public; everything else stays private.
+        if isinstance(error, subprocess.CalledProcessError) and error.stderr in (
+                b'Error: Permission denied\n', b'Error: not authorized\n',
+                b'Error: The instance is not running\n'):
+            result['error_detail'] = error.stderr.decode().rstrip('\n')
+        print(json.dumps(result))
         return 1
     print(json.dumps(result))
     return 0

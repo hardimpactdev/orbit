@@ -94,6 +94,8 @@ Each role in the intent names its execution copies as a record: `{}` for a role 
 
 Generated Ansible vars preserve literal intent values. Only strings containing Jinja syntax receive `!unsafe`; quoted shell arguments such as `!` and scalar strings such as `on` keep their string types.
 
+The development mail phase sends failed-task messages to stderr so Operations retain the fixed error code and recognized tool diagnostic. File-content tasks remain `no_log`; arbitrary tool output is never exposed.
+
 The execution copies of task runs are not role records. Their vault key patterns are declared in `swamp/config/gateway-workflow-grants.json`; the [implementation loop](/reference/implementation-loop) says how.
 
 The `baseline` phase replaces the Node pin on 209, and it validates the sudo rule before the rule replaces the old one. The `tunnel` phase requires the WireGuard public key to be unique, and an existing hub to keep its peer-facing key, before it changes any tunnel file, interface or peer.

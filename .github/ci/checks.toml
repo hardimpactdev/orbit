@@ -2586,9 +2586,10 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_mail_line_test.py"
-cost = 36
+cost = 43
 slices = false
 inputs = [
+  "swamp/workflows/workflow-operation-instance-mail-update.yaml",
   "swamp/ansible/instance_mail_line.py",
   "swamp/ansible/tasks/instance-mail-line.yml",
   "swamp/ansible/instance-mail-update.yml",
@@ -2604,3 +2605,7 @@ inputs = [
 "test_failed_transfer_preserves_file_and_returns_only_a_code" = 1
 "test_interruption_after_staging_cleans_the_fixed_name_even_with_stopped_guest" = 2
 "test_next_run_removes_a_leftover_before_even_inspecting_a_stopped_guest" = 2
+"test_real_incus_missing_delete_contract_and_first_run" = 2
+"test_cleanup_rejects_every_other_delete_error_without_exposing_content" = 2
+"test_atomic_replacement_preserves_distinct_acl_and_user_xattr" = 2
+"test_workflow_reports_failed_tasks_to_stderr_and_keeps_content_private" = 1
