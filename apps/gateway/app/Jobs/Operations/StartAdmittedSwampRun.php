@@ -32,13 +32,14 @@ final class StartAdmittedSwampRun implements ShouldQueue
 
     public function handle(StartSwampRun $start, ExpireOperationAction $expire): void
     {
+        $jobStarted = microtime(true);
         $operation = Operation::query()->find($this->operationId);
         if ($operation === null || $operation->status !== OperationStatus::Queued) {
             return;
         }
         $operation = $expire->execute($operation);
         if ($operation->status === OperationStatus::Queued) {
-            $start->start($operation);
+            $start->start($operation, $jobStarted);
         }
     }
 

@@ -35,12 +35,13 @@ final readonly class StartSwampRun
         $this->clock = $clock ?? static fn (): float => microtime(true);
     }
 
-    public function start(Operation $operation): void
+    public function start(Operation $operation, ?float $jobStarted = null): void
     {
         $started = microtime(true);
         $outcome = 'unavailable';
         $accepted = false;
         $submitted = false;
+        $phases = $payload = [];
         try {
             if (! $this->begin($operation)) {
                 return;
@@ -50,20 +51,26 @@ final readonly class StartSwampRun
                 throw new ResourceOperationException('operation.direct_invalid', 'A declared direct Swamp intent is required.', 422);
             }
             $endpoint = $this->endpoint();
-            $response = $this->request($endpoint, [
+            $payload = [
                 'workflowIdOrName' => $declaration['workflow'],
                 'inputs' => app(DirectOperation::class)->workflowInputs($operation),
                 'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
-            ], $submitted);
+            ];
+            $phases['inputs_ms'] = self::milliseconds($started);
+            $response = $this->request($endpoint, $payload, $submitted, $phases);
             $accepted = true;
+            $binding = microtime(true);
             $this->bind($operation, $response['run_id']);
+            $phases['bind_ms'] = self::milliseconds($binding);
             if ($response['failed']) {
                 throw new ResourceOperationException('operation.native_dispatch_failed', 'The native workflow ended before its start completed.', 503);
             }
             $outcome = 'started';
+            $broadcasting = microtime(true);
             if (app(DirectOperation::class)->usesNativeTerminal($operation)) {
                 app(OperationBroadcaster::class)->changed($operation, true);
             }
+            $phases['broadcast_ms'] = self::milliseconds($broadcasting);
         } catch (Throwable $exception) {
             $safe = $exception instanceof ResourceOperationException
                 ? $exception : ($accepted ? $this->uncertain()
@@ -72,8 +79,14 @@ final readonly class StartSwampRun
             $this->fail($operation, $safe, notSubmitted: ! $submitted);
             throw new ResourceOperationException($safe->errorCode, $safe->getMessage(), $safe->status, details: ['operation_id' => $operation->id]);
         } finally {
-            Log::info('Swamp direct start', ['operation_id' => $operation->id,
-                'outcome' => $outcome, 'duration_ms' => (int) round((microtime(true) - $started) * 1000)]);
+            $context = ['operation_id' => $operation->id,
+                'outcome' => $outcome, 'duration_ms' => (int) round((microtime(true) - $started) * 1000)];
+            if ($outcome === 'started') {
+                $context += ['kind' => $operation->kind, ...$phases,
+                    'queue_wait_ms' => self::queueWaitMilliseconds($operation, $jobStarted ?? $started),
+                    'payload_bytes' => self::payloadBytes($payload)];
+            }
+            Log::info('Swamp direct start', $context);
         }
     }
 
@@ -173,9 +186,10 @@ final readonly class StartSwampRun
     }
 
     /** @param array<string,mixed> $payload
+     * @param  array<string,int>  $phases
      * @return array{run_id:string,failed:bool}
      */
-    private function request(WebSocketEndpoint $endpoint, array $payload, bool &$submitted): array
+    private function request(WebSocketEndpoint $endpoint, array $payload, bool &$submitted, array &$phases): array
     {
         $id = bin2hex(random_bytes(16));
         $stage = 'connect';
@@ -184,12 +198,17 @@ final readonly class StartSwampRun
         $shared = false;
         $socket = $this->socket;
         try {
+            $connecting = microtime(true);
             [$socket, $shared] = $dispatch->socket($endpoint, 15, $this->socket);
+            $phases['connect_ms'] = self::milliseconds($connecting);
             $stage = 'send';
+            $sending = microtime(true);
             // Once sending begins, failure can no longer disprove submission.
             $submitted = true;
             $socket->send(['type' => 'workflow.run', 'id' => $id, 'payload' => $payload]);
+            $phases['send_ms'] = self::milliseconds($sending);
             $stage = 'receive';
+            $receiving = microtime(true);
             // Observed pre-dispatch setup took 32.7s and 55.3s; worker dispatch follows started.
             $deadline = ($this->clock)() + self::ConfirmationSeconds;
             while ($socket->isConnected() && ($remaining = $deadline - ($this->clock)()) > 0) {
@@ -227,6 +246,8 @@ final readonly class StartSwampRun
                     }
                 }
                 if ($confirmed !== null) {
+                    $phases['first_event_ms'] = self::milliseconds($receiving);
+
                     return $confirmed;
                 }
             }
@@ -250,6 +271,37 @@ final readonly class StartSwampRun
             if (! $shared) {
                 $socket->close();
             }
+        }
+    }
+
+    private static function milliseconds(float $started, ?float $finished = null): int
+    {
+        return max(0, (int) floor((($finished ?? microtime(true)) - $started) * 1000));
+    }
+
+    /** Diagnostics must never turn an accepted start into a failure. */
+    private static function queueWaitMilliseconds(Operation $operation, float $jobStarted): int
+    {
+        try {
+            $created = $operation->created_at;
+
+            return $created === null ? 0 : self::milliseconds((float) $created->format('U.u'), $jobStarted);
+        } catch (Throwable) {
+            return 0;
+        }
+    }
+
+    /** Only the byte count leaves this method; encoding matches the socket's JSON flags.
+     * @param  array<string,mixed>  $payload
+     */
+    private static function payloadBytes(array $payload): int
+    {
+        try {
+            $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES);
+
+            return is_string($encoded) ? strlen($encoded) : 0;
+        } catch (Throwable) {
+            return 0;
         }
     }
 
