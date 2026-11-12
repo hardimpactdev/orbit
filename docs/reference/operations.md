@@ -569,6 +569,8 @@ Each completed pass records its end time, duration, and the count and oldest com
 
 A later completed pass with no ended-but-unsettled runs clears the settlement signal. A deliberate migration settlement window stays separate: only a proven terminal run that remains unsettled is counted. A failed state write logs one warning without failing the pass; its previous timestamp can then raise the stalled signal. No signal records Operation inputs or remote text.
 
+A check that stays running for hosted CI after its run succeeded is a wait and is not counted. When a pass cannot read whether an Operation settled, it logs a warning, finishes its other work and keeps the stored settlement count and time.
+
 The reconciler checks the exact run UUID, workflow name, Operation ID, kind and root Node. Missing or invalid history leaves an in-budget Operation pending. The job enforces its deadline when no terminal result is readable. Already-closed results stay as recorded; there is no backfill. Native terminal failure does not prove that every partial Node effect stopped.
 
 The internal legacy intent GET refuses kinds with full workflow inputs before calling their input builder. Submission already supplies their input through `DirectOperation::workflowInputs`. Only the two Fleet kinds still use the legacy GET; it returns stored Nodes and commit without a Swamp call.

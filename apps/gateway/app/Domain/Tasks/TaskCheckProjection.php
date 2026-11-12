@@ -91,6 +91,12 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
         });
     }
 
+    /** True while a check whose root succeeded stays running for hosted CI: a wait, not a missed settlement. */
+    public static function awaitsHostedCi(Operation $operation): bool
+    {
+        return $operation->kind === 'tasks.check' && ! $operation->status->terminal() && ($operation->result['pending'] ?? false) === true;
+    }
+
     /**
      * Writes what a check found onto its row. A review round calls this for the check of its fix, as the check operation does for its own.
      *

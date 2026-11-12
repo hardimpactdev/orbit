@@ -97,7 +97,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
                         app(InstanceMigrateProjection::class)->endUnavailable($operation);
                     }
                     if ($completedAt !== null) {
-                        $health->observe($operation->refresh(), $completedAt);
+                        $health->observe($operation, $completedAt);
                     }
                 }
             }

@@ -6,6 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
+use App\Domain\Tasks\TaskCheckProjection;
 use App\Models\Operation;
 use App\Models\ProblemCollectorState;
 use Carbon\CarbonImmutable;
@@ -25,10 +26,27 @@ final class OperationReconcileHealth
 
     private ?CarbonImmutable $oldest = null;
 
-    /** Called only with the completion time of an identity-checked terminal root read by this pass. */
+    private bool $complete = true;
+
+    /**
+     * Called only with the completion time of an identity-checked terminal root read by this pass.
+     * A failed read here must never stop the pass: the stored settlement facts then stay as they were.
+     */
     public function observe(Operation $operation, CarbonImmutable $completedAt): void
     {
+        try {
+            $operation = $operation->refresh();
+        } catch (Throwable $exception) {
+            $this->complete = false;
+            Log::warning('The settlement of a terminal Swamp run could not be read.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+
+            return;
+        }
         if ($operation->status->terminal() && ! ExpireOperationAction::awaitsSettlement($operation) && ! InstanceMigrateProjection::unsettled($operation)) {
+            return;
+        }
+        // A check whose root succeeded stays running by design while hosted CI is pending.
+        if (TaskCheckProjection::awaitsHostedCi($operation)) {
             return;
         }
         $this->count++;
@@ -52,7 +70,7 @@ final class OperationReconcileHealth
                 $state = ProblemCollectorState::query()->lockForUpdate()->orderBy('id')->first() ?? new ProblemCollectorState;
                 $state->observation = [...($state->observation ?? []),
                     'operation_reconcile_finished_at' => $finished, 'operation_reconcile_duration_ms' => $duration,
-                    'operation_settlement_oldest_completed_at' => $this->oldest?->toISOString(), 'operation_settlement_count' => $this->count];
+                    ...($this->complete ? ['operation_settlement_oldest_completed_at' => $this->oldest?->toISOString(), 'operation_settlement_count' => $this->count] : [])];
                 $state->save();
             });
         } catch (Throwable $exception) {
