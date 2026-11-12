@@ -11,6 +11,7 @@ use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
+use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
@@ -46,12 +47,16 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             if ($data['status'] === 'succeeded') {
                 $result['mail_keys_set'] = ValidatedData::stringList($operation->input['mail_keys_set'] ?? []);
             }
+            if ($container !== null && in_array($data['status'], ['failed', 'cancelled'], true)) {
+                $recovery = $this->recovery($operation, ValidatedData::object($container));
+                if ($recovery === null) {
+                    return $this->direct->project($operation, $data, $result);
+                }
+                $result['recovery'] = $recovery;
+            }
             $instance = app(InstanceLifecycleState::class)->instance($operation);
             if ((ValidatedData::object($operation->input['direct_provisioning'] ?? [])['already_active'] ?? false) === true) {
                 return $this->direct->project($operation, $data, $result);
-            }
-            if ($container !== null && in_array($data['status'], ['failed', 'cancelled'], true)) {
-                $result['recovery'] = $this->recovery($operation, ValidatedData::object($container));
             }
             if ($data['status'] === 'succeeded' && (($result['ready'] ?? false) !== true || ($result['instance_id'] ?? null) !== $instance->id || ! is_string($result['commit'] ?? null))) {
                 throw new ResourceOperationException('instance.result_invalid', 'Native creation did not prove its complete terminal result.');
@@ -106,11 +111,18 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
      * The reservation is intentional; name the existing recovery paths without claiming physical cleanup.
      *
      * @param  array<string, mixed>  $container
-     * @return array<string, mixed>
+     * @return array<string, mixed>|null
      */
-    public function recovery(Operation $operation, array $container): array
+    public function recovery(Operation $operation, array $container): ?array
     {
         $input = $operation->input;
+        $retained = Instance::query()->whereKey($operation->target_id)->where('id', $input['instance_id'])
+            ->where('project_id', $input['project_id'])->where('node_id', $input['node_id'])->where('node_id', $operation->node_id)
+            ->where('name', $input['name'])->where('source_prepare_id', $input['prepare_id'])
+            ->whereIn('status', [InstanceState::Reserved, InstanceState::SourceResolved])->lockForUpdate()->first();
+        if ($retained === null) {
+            return null;
+        }
         $clone = ($container['clone'] ?? null) !== null;
 
         return [

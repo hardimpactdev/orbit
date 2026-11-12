@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
+use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
@@ -868,3 +870,45 @@ it('keeps another Operation kind cancellation result unchanged', function (?arra
     expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled)
         ->and($operation->result)->toBe($result);
 })->with(['no result' => [null], 'existing result' => [['kept' => true]]]);
+
+$recoveryInvalidTargets = [
+    'deleted' => [function (Instance $instance): void {
+        $destroy = app(StartInstanceDestroyAction::class)->execute($instance, true);
+        app(ProjectDirectInstanceDestroyAction::class)->execute($destroy->input, []);
+        expect(Instance::query()->find($instance->id))->toBeNull();
+    }],
+    'active' => [fn (Instance $instance) => $instance->update(['status' => InstanceState::Active])],
+    'removing' => [fn (Instance $instance) => app(StartInstanceDestroyAction::class)->execute($instance, true)],
+    'another reservation' => [fn (Instance $instance) => $instance->update(['source_prepare_id' => '2af21576-58f7-46df-b971-f88e269b6688'])],
+];
+
+it('omits queued cancellation recovery when the create no longer owns a retained Instance', function (Closure $invalidate): void {
+    $node = containerDefaultNode();
+    $operation = containerCreate(seededDefault($node)->project, $node, 'removed-feature');
+    $instance = Instance::query()->findOrFail($operation->target_id);
+    $invalidate($instance);
+
+    app(CancelOperationAction::class)->execute($operation);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled)
+        ->and($operation->result ?? [])->not->toHaveKey('recovery');
+})->with($recoveryInvalidTargets);
+
+it('omits terminal recovery when the create no longer owns a retained Instance', function (Closure $invalidate): void {
+    $node = containerDefaultNode();
+    $operation = containerCreate(seededDefault($node)->project, $node, 'removed-feature');
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'removed-run']])->save();
+    $instance = Instance::query()->findOrFail($operation->target_id);
+    $invalidate($instance);
+    $state = Instance::query()->find($instance->id)?->status;
+    $result = ['instance_id' => $instance->id, 'ready' => false, 'failed_step' => 'register', 'commit' => str_repeat('a', 40)];
+
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
+        'status' => 'failed', 'run_id' => 'removed-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'error_code' => 'instance.container_process_inactive', 'result' => $result,
+    ]);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->result)->toBe($result)
+        ->and(Instance::query()->find($instance->id)?->status)->toBe($state);
+})->with($recoveryInvalidTargets);
