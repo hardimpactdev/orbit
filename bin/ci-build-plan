@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tomllib
 from functools import lru_cache
 
@@ -72,7 +73,86 @@ def proof_run(paths, selection):
     return False
 
 
-def proof_cases(paths, selection, read, files):
+INSTANCE_COMMANDS = ('instance:create', 'instance:clone', 'instance:migrate', 'instance:destroy')
+
+
+def instance_execution_coverage(paths, selection, read):
+    """Keep ownership from both sides: deleting a mapping cannot hide an execution change."""
+    import sys
+    sys.path.insert(0, str(ROOT / 'swamp/proof/runner'))
+    from selection import definitions
+    import yaml
+
+    owners = {}
+    for text in (read('base', SELECTION), selection):
+        rules = selection_rules(text or '')
+        values = [line.strip().split(None, 1)[1].strip() for line in (text or '').splitlines()
+                  if line.strip() and not line.strip().startswith('#')]
+        for path in paths:
+            if not path.startswith('swamp/') or path.startswith(('swamp/proof/', 'swamp/tests/')) or path.endswith(('.md', '.mdx', '.mmd', '_test.ts', '_test.py')):
+                continue
+            for (regex, _), value in zip(rules, values):
+                if regex.fullmatch(path):
+                    for command in value.split():
+                        if command in INSTANCE_COMMANDS:
+                            owners.setdefault(command, set()).add(path)
+
+    def real_cases(ref, file, command):
+        text = read(ref, file)
+        if text is None:
+            return []
+        raw = yaml.safe_load(text)
+        if isinstance(raw, dict) and raw.get('command') == command and raw.get('cases') == []:
+            return []
+        cases, _ = definitions(text, read(ref, 'swamp/proof/batches.yaml'))
+        return [name for name, definition in cases.items()
+                if definition['settings']['command'] == command
+                and not definition['case']['fails_today']
+                and any(step['name'] == 'cli' and step['args']['run'][0] == command
+                        and step['args'].get('expect', {}).get('exit') == 0
+                        and step['args'].get('expect', {}).get('status') == 'succeeded'
+                        and step['args'].get('expect', {}).get('request') != 'none'
+                        for stage in definition['case']['stages'] for step in stage['act'])]
+
+    coverage = []
+    for command in INSTANCE_COMMANDS:
+        file = 'swamp/proof/' + command.replace(':', '/', 1) + '.cases.yaml'
+        # Removing the last success case is also a coverage change, even without an execution edit.
+        if command not in owners and file not in paths:
+            continue
+        before, after = real_cases('base', file, command), real_cases('head', file, command)
+        if command in owners or bool(before) != bool(after):
+            coverage.append({'command': command, 'file': file, 'paths': sorted(owners.get(command, {file})),
+                             'real_cases': after, 'enforced': bool(before or after)})
+    return coverage
+
+
+def report_instance_execution_coverage(coverage, selected):
+    """Warnings today; a local selection error once that command has a real case. No fleet wait."""
+    lines, errors = [], []
+    for item in coverage:
+        entry = next((entry for entry in (selected or []) if entry['file'] == item['file']), None)
+        covered = entry is not None and any(entry['only'] is None or name in entry['only'] for name in item['real_cases'])
+        if covered:
+            lines.append(f"{item['command']}: real proof selected for " + ', '.join(item['paths']))
+            continue
+        message = 'no real proof case covers these executed files: ' + ', '.join(item['paths']) + f" ({item['command']})"
+        level = 'error' if item['enforced'] else 'warning'
+        # Escape workflow command data, including filenames from the PR.
+        escaped = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+        print(f'::{level} title=Instance execution proof coverage::{escaped}', file=sys.stderr)
+        lines.append(message)
+        if item['enforced']:
+            errors.append(message)
+    if lines and os.environ.get('GITHUB_STEP_SUMMARY'):
+        with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as summary:
+            import html
+            summary.write('### Instance execution proof coverage\n\n' + '\n'.join('- ' + html.escape(line) for line in lines) + '\n')
+    if errors:
+        raise ValueError('\n'.join(errors))
+
+
+def proof_cases(paths, selection, read, files, coverage=()):
     """Use the runner to plan every candidate, retaining verified empty selections. None means Gateway must refuse an unmapped path."""
     import sys
     sys.path.insert(0, str(ROOT / 'swamp/proof/runner'))
@@ -93,6 +173,8 @@ def proof_cases(paths, selection, read, files):
             everything = True
         elif matched and matched != 'skip' and not matched.startswith('none:'):
             for command in matched.split():
+                if any(item['command'] == command and not item['enforced'] and path in item['paths'] for item in coverage):
+                    continue  # A refusal-only file cannot prove Node execution; report the gap without allocating a fleet.
                 commands.setdefault(command, []).append(path)
     candidates = {f"swamp/proof/{c.split(':', 1)[0]}/{c.split(':', 1)[1].replace(':', '-')}.cases.yaml": c for c in sorted(commands)}
     if everything or batch_path in paths:
@@ -102,9 +184,10 @@ def proof_cases(paths, selection, read, files):
                     candidates[file] = yaml.load(read('head', file), Loader=Loader)['command']
                 except Exception:
                     candidates[file] = file.removeprefix('swamp/proof/').removesuffix('.cases.yaml').replace('/', ':', 1)
-    if not candidates:
-        return []
-    result = []
+    # A mixed PR may run another proof. Keep explicit empty entries for these files,
+    # otherwise the Gateway treats a missing artifact entry as whole-file execution.
+    result = [{'command': item['command'], 'file': item['file'], 'only': [], 'reasons': {}}
+              for item in coverage if not item['enforced'] and item['file'] in files and item['file'] not in candidates]
     for file, command in candidates.items():
         if file not in files:
             continue
@@ -266,7 +349,11 @@ def main():
             return process.stdout
         files = subprocess.check_output(['timeout', '60', 'git', 'ls-tree', '-r', '--name-only', a.head, '--', 'swamp/proof'], text=True).splitlines()
         files = [file for file in files if re.fullmatch(r'swamp/proof/[a-z][a-z0-9_]*/[a-z][a-z0-9_-]*\.cases\.yaml', file)]
-        result['proof_cases'] = proof_cases(paths, read('head', SELECTION), read, files)
+        selection = read('head', SELECTION)
+        coverage = instance_execution_coverage(paths, selection, read)
+        result['proof_cases'] = proof_cases(paths, selection, read, files, coverage)
+        result['instance_execution_coverage'] = coverage
+        report_instance_execution_coverage(coverage, result['proof_cases'])
         result['proof_run'] = result['proof_cases'] is None or any(entry['only'] is None or entry['only'] for entry in result['proof_cases'])
         if a.proof_selection_output:
             head = subprocess.check_output(['timeout', '60', 'git', 'rev-parse', a.head], text=True).strip()
