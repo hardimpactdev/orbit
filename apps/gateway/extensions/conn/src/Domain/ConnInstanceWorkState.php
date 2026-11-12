@@ -7,7 +7,11 @@ namespace Orbit\Extensions\Conn\Domain;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 
-/** The one admission boundary for container Git observations; no observer supplies them yet. */
+/**
+ * The one admission boundary for container Git observations; no observer supplies them yet.
+ * Future observations are dirty when uncommitted > 0, unpushed > 0, or has_upstream is false.
+ * Missing, stale (over ten minutes), or offline observations remain unknown, never safe.
+ */
 final readonly class ConnInstanceWorkState
 {
     public function assertRemovalSafe(Instance $instance): never

@@ -300,7 +300,7 @@ A server of an Instance names its `instance_id` and the container's `power_state
 - A host checkout refuses with `instance.not_container` (409).
 - Without acknowledgement, Orbit always refuses with `instance.unsaved_work` (409) and `{"uncommitted": null, "unpushed": null, "state": "unknown"}` in error details. Container Git observations are not available yet.
 
-Orbit never probes the container in this request. A refusal leaves Schedules, Routes, databases, pairings, environments and Operations unchanged. These checks do not change the CLI's destroy rules.
+Orbit never probes the container in this request. When Git observations become available, uncommitted work, unpushed commits or no upstream each require acknowledgement. An observation over ten minutes old or from an offline agent remains unknown. A refusal leaves Schedules, Routes, databases, pairings, environments and Operations unchanged. These checks do not change the CLI's destroy rules.
 
 With acknowledgement, Orbit admits the existing `instance.destroy` engine with force enabled and answers its Operation with HTTP 202. Existing lifecycle, Route and database blockers keep their codes and messages. Schedule removal runs only after admission commits, before the native run starts. Follow the Operation on `GET /operations/{id}`; `succeeded`, `failed`, `cancelled` and `interrupted` are terminal.
 
