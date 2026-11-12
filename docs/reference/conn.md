@@ -294,15 +294,19 @@ A server of an Instance names its `instance_id` and the container's `power_state
 
 ## Remove an Instance
 
-`POST /instances/{id}/destroy` requires an `Idempotency-Key` and `{"acknowledge_unsaved": true|false}`. The caller needs access to the Instance's Node. Only non-default container Instances can be removed here. A default refuses with `instance.default_protected` (409); a host checkout refuses with `instance.not_container` (409). These checks do not change the CLI's destroy rules.
+`POST /instances/{id}/destroy` requires an `Idempotency-Key` and `{"acknowledge_unsaved": true|false}`. The caller needs access to the Instance's Node. Only non-default container Instances can be removed here:
 
-Container Git observations are not available yet. Without acknowledgement, Orbit always refuses with `instance.unsaved_work` (409) and `{"uncommitted": null, "unpushed": null, "state": "unknown"}` in error details. Orbit never probes the container in this request. A refusal leaves Schedules, Routes, databases, pairings, environments and Operations unchanged.
+- A default refuses with `instance.default_protected` (409).
+- A host checkout refuses with `instance.not_container` (409).
+- Without acknowledgement, Orbit always refuses with `instance.unsaved_work` (409) and `{"uncommitted": null, "unpushed": null, "state": "unknown"}` in error details. Container Git observations are not available yet.
+
+Orbit never probes the container in this request. A refusal leaves Schedules, Routes, databases, pairings, environments and Operations unchanged. These checks do not change the CLI's destroy rules.
 
 With acknowledgement, Orbit admits the existing `instance.destroy` engine with force enabled and answers its Operation with HTTP 202. Existing lifecycle, Route and database blockers keep their codes and messages. Schedule removal runs only after admission commits, before the native run starts. Follow the Operation on `GET /operations/{id}`; `succeeded`, `failed`, `cancelled` and `interrupted` are terminal.
 
 The same caller, key, Instance ID and body return the same Operation with HTTP 202, even after the Instance was deleted. Reusing the key with a changed body refuses with `operation.idempotency_conflict` (409). A missing Instance without that receipt keeps the normal 404.
 
-On success, the container, its volume and snapshots, T3 history, Instance-owned database records, pairings and environment entry are deleted. The Route is withdrawn and deleted. Only owned databases are dropped; an owned database attached elsewhere refuses with its existing code, and shared or foreign databases stay. A migrated Instance's retired Git folder stays on the Node, and the Operation result retains `retained_git_path` and `retained_git_at`. See [Instance removal](/reference/instance-removal) for the engine's full cleanup and retry rules.
+On success, the container, its volume and snapshots, T3 history, Instance-owned database records, pairings and environment entry are deleted. The Route is withdrawn and deleted. Only owned databases are dropped; an owned database attached elsewhere refuses with its existing code, and shared or foreign databases stay. A migrated Instance's retained Git folder stays on the Node, and the Operation result retains `retained_git_path` and `retained_git_at`. See [Instance removal](/reference/instance-removal) for the engine's full cleanup and retry rules.
 
 ## Pairing and revocation
 

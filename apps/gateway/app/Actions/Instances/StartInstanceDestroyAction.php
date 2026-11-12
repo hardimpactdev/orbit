@@ -26,6 +26,7 @@ use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceTransfer;
@@ -63,14 +64,16 @@ final readonly class StartInstanceDestroyAction
         app(ContainerInstanceDestroy::class)->assertAvailable($instance, $force);
         $admission = $instance->status === InstanceState::Removing ? [] : app(InstanceDestroyWorktrees::class)->assertAvailable($instance);
         $snapshot = [...$this->snapshot($instance, $force), ...$admission];
-        // A native Schedule fires from its own workflow on serve, not from the Node; it stops before the Instance goes.
-        $members = array_column(is_array($snapshot['members'] ?? null) ? $snapshot['members'] : [], 'instance_id');
-        app(NativeSchedules::class)->removeForInstances($members === [] ? [$instance->id] : ValidatedData::integerList($members));
 
         return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId, $kind): Operation {
             if (($replay = $this->idempotency->replay($kind)) !== null) {
                 return $replay;
             }
+            // Dispatch discards this work on rollback and runs it before copies and the native start.
+            // All admission refusals therefore precede Schedule effects, without holding a DB lock for network work.
+            $members = array_column(is_array($snapshot['members'] ?? null) ? $snapshot['members'] : [], 'instance_id');
+            app(SwampDispatch::class)->copy(fn () => app(NativeSchedules::class)->removeForInstances(
+                $members === [] ? [$instance->id] : ValidatedData::integerList($members)));
             $input = app(DirectInstanceDestroyIntent::class)->record($snapshot);
             $input['run_budget_seconds'] = $this->budget($input);
 
