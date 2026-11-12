@@ -27,6 +27,8 @@ Loading Node...
 │
 ├  Reboot hold            no
 │
+├  Image refresh hold     yes
+│
 ├  WireGuard public key   app-dev-public-key
 │
 ├  DNS server override    10.0.0.2
