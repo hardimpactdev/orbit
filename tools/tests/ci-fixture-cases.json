@@ -592,10 +592,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 \u2192 v5.12.0",
-      "exact script output: v5.42.0 \u2192 v5.43.0",
-      "exact script output: v5.49.0 \u2192 v5.50.0",
-      "exact script output: v5.50.0 \u2192 v5.50.1",
+      "exact script output: v5.11.0 → v5.12.0",
+      "exact script output: v5.42.0 → v5.43.0",
+      "exact script output: v5.49.0 → v5.50.0",
+      "exact script output: v5.50.0 → v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -1976,7 +1976,7 @@
     ]
   },
   "swamp/tests/instance_destroy_git_test.py": {
-    "source_sha256": "495ea0b4710cbedf82049fc82b888741bdd00cc4da9266014a5fc34ac20519fa",
+    "source_sha256": "1010ada43464b0c71382e3daa0a80ece2b1dca68618049083684592c0a1a83ed",
     "cases": [
       "test_confirmed_registered_and_moved_dependents_are_found_even_with_force",
       "test_existing_owner_registration_refuses_without_reading_candidate_git",
@@ -1989,7 +1989,7 @@
       "test_target_directory_marker_resolve_and_git_failures_keep_path_and_cause",
       "test_alternates_dependency_and_symlinked_candidate_are_confirmed",
       "test_inspect_never_walks_checkout_contents_or_accepts_a_remove_action",
-      "test_workflow_and_source_removal_are_identical_to_the_pre_reland_main"
+      "test_source_removal_stays_unchanged_and_workflow_never_checks_dependencies"
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts": {
@@ -2001,7 +2001,7 @@
     ]
   },
   "swamp/tests/ansible_route_site_test.py": {
-    "source_sha256": "10bffda334426845865b174a4851f2011b17acbb1275ba36b607678846365bab",
+    "source_sha256": "6f4dbe4ea2789f037a25d58b772ccf044528799415da8ef4b3826c404ae1544f",
     "cases": [
       "test_certificate_links_account_copy_modes_and_literal_caddy_text",
       "test_existing_file_mode_drift_clears_unwanted_special_bits",
@@ -2013,6 +2013,8 @@
       "test_production_workspace_app_url_links_and_php_tasks_are_unchanged",
       "test_csr_action_owns_folder_and_key_before_public_request_returns",
       "test_real_production_phase_keeps_access_app_url_php_links_and_reload",
+      "test_real_site_phase_skips_missing_optional_storage_but_requires_the_web_root",
+      "test_route_ansible_failures_reach_stderr_and_module_diagnostics_never_expose_content",
       "test_reused_input_is_read_only_and_child_cleanup_keeps_its_own_folder"
     ]
   },
@@ -2045,6 +2047,19 @@
       "test_deploy_fetch_refuses_legacy_store_even_with_a_helper",
       "test_nested_ignored_pin_refuses_even_when_a_parent_pin_is_selected",
       "test_production_phase_removes_read_only_source_mount_after_failure_without_downtime"
+    ]
+  },
+  "swamp/tests/instance_destroy_routeless_test.ts": {
+    "source_sha256": "dff80fd9b009168e93fa1e938c88d503184d0b1fcb3605c18ab7788c8aabbfc4",
+    "cases": [
+      "destroy skips withdrawal without publications including old admission without mutation keys",
+      "Route-less checkout and linked worktree skip the child and still remove the real source"
+    ]
+  },
+  "swamp/tests/ansible_instance_route_withdraw_test.ts": {
+    "source_sha256": "01d908556d2e655a2da703663973a5329a7d31969e2e6b903a01414602050eb5",
+    "cases": [
+      "pending Route withdrawal removes partial publication and CSR residue or accepts an absent site with real Ansible"
     ]
   },
   "swamp/tests/ansible_instance_migrate_source_test.ts": {

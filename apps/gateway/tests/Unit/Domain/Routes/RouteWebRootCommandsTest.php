@@ -45,3 +45,18 @@ it('denies each checkout once and grants every site in the same three commands',
 it('names no command for an Instance without a served site', function () use ($access): void {
     expect(RouteWebRootCommands::access(9, $access([]), new Instance(['source_is_laravel' => true])))->toBe([]);
 });
+
+it('marks only optional Laravel storage paths and their exclusive parents as skippable', function () use ($access, $site): void {
+    $rows = RouteWebRootCommands::access(9, $access([$site('/fast/apps/shop/main')]), new Instance(['source_is_laravel' => true]));
+    expect($rows[2]['optional_paths'])->toBe(['/fast/apps/shop/main/storage/app', '/fast/apps/shop/main/storage'])
+        ->and($rows[3]['optional_paths'])->toBe(['/fast/apps/shop/main/storage/app/public'])
+        ->and($rows[4]['optional_paths'])->toBe(['/fast/apps/shop/main/storage/app/public'])
+        ->and($rows[0])->not->toHaveKey('optional_paths');
+    $rows = RouteWebRootCommands::access(9, $access([$site('/fast/apps/shop/main', 'storage/app/public')]), new Instance(['source_is_laravel' => true]));
+    expect(array_column($rows, 'optional_paths'))->toBe([]);
+});
+
+it('shares its admitted Laravel access rows with the real Ansible fixture', function (): void {
+    $rows = RouteWebRootCommands::access(9, ['user' => 'orbit', 'sites' => [['checkout' => '/fixture/checkout', 'relative_root' => 'public', 'application' => '/fixture/checkout']]], new Instance(['source_is_laravel' => true]));
+    expect($rows)->toBe(json_decode(file_get_contents(dirname(__DIR__, 6).'/swamp/tests/fixtures/route-access.json'), true, flags: JSON_THROW_ON_ERROR));
+});

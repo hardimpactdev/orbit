@@ -50,6 +50,10 @@ It runs the Project teardown commands, passed as run inputs, one command per ste
 
 Known limits: Git data of nested or bare repositories inside the checkout with outside dependents is not scanned. A moved worktree behind an unreadable parent is unknown, so admission proceeds with its warning. No lock excludes external Git writers. A worktree created after admission is not caught: the window includes the queue wait and the entire run until source removal. An admitted retry uses the saved intent. Dispatch never checks dependencies again, even if Git facts changed. Transfer uses the same admission-only boundary in its separate PR #3451.
 
+A sole pending or failed Route always runs withdrawal before its record goes with the Instance. A first publication can install a site, certificates or DNS and then fail its TLS probe while `sites_published` stays false. Status and that flag therefore never justify skipping withdrawal. Admission captures the possible publication and its absence; the shared withdrawal removes either partial publication or nothing, while keeping unrelated sites and DNS.
+
+The Route must belong to the Project, target exactly this Instance and have safe placement. Multiple owning Routes refuse. These checks follow the worktree admission check and precede Schedule or record changes.
+
 Three cases skip work:
 
 - An Instance without a Route skips the Route withdrawal and its DNS records.
