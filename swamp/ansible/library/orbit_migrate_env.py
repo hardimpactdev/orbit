@@ -2,13 +2,15 @@
 """Read copied dotenv files without executing them or returning their private values.
 
 Core Ansible modules do not parse dotenv. A custom read-only module keeps private
-file contents on the Node while parsing quoted values, discovering copied apps
+file contents on the Node while parsing quoted values, selecting named files
 and classifying IP endpoints with Python's standard library. A slurp/template
 implementation would transport complete private environments to the worker.
 """
+import glob
 import ipaddress
 import os
 import re
+import shlex
 
 DOCUMENTATION = r'''
 module: orbit_migrate_env
@@ -20,6 +22,16 @@ options:
     description: Checkout copied by the move.
     type: path
     required: true
+  environment_files:
+    description: Explicit application and Schedule environment paths; no checkout traversal.
+    type: list
+    elements: path
+    required: true
+  unit_files:
+    description: Admitted source Process units whose EnvironmentFile directives name additional files.
+    type: list
+    elements: path
+    default: []
   targets:
     description: Exact attached target endpoints recorded for the Instance.
     type: list
@@ -254,28 +266,46 @@ def connection(values, key):
     return True, port, reason
 
 
-def env_files(checkout):
-    """Follow copied app directories, including symlinks, once per inode to avoid cycles."""
+def env_files(checkout, environment_files=None, unit_files=()):
+    """Only the application's files and files explicitly named by admitted source units."""
     if not os.path.isdir(checkout):
         raise OSError(0, 'Cannot inspect the checkout directory.', checkout)
-
-    def refuse_unreadable(error):
-        raise OSError(0, 'Cannot inspect every copied directory.', error.filename or checkout) from error
-
-    visited = set()
-    for directory, children, files in os.walk(checkout, followlinks=True, onerror=refuse_unreadable):
-        stat = os.stat(directory)
-        identity = (stat.st_dev, stat.st_ino)
-        if identity in visited:
-            children[:] = []
+    paths = list(environment_files if environment_files is not None else [os.path.join(checkout, '.env')])
+    for unit in unit_files:
+        try:
+            with open(unit, encoding='utf-8') as handle:
+                lines = handle.read().splitlines()
+        except FileNotFoundError:
+            # The Process preflight owns a missing unit; it names no environment file here.
             continue
-        visited.add(identity)
-        children[:] = sorted(child for child in children if child != '.git')
-        if '.env' in files:
-            yield os.path.join(directory, '.env')
+        files = []
+        for line in lines:
+            key, separator, value = line.strip().partition('=')
+            if separator and key == 'EnvironmentFile':
+                if not value.strip():
+                    files = []
+                    continue
+                try:
+                    # Keep systemd's backslash escapes until token boundaries are known.
+                    words = shlex.shlex(value, posix=True)
+                    words.whitespace_split = True
+                    words.commenters = ''
+                    words.escape = ''
+                    files.extend(re.sub(r'\\x([0-9a-fA-F]{2})', lambda match: chr(int(match[1], 16)),
+                                        path.removeprefix('-')).replace('%%', '%') for path in words)
+                except ValueError as error:
+                    raise OSError(0, 'Cannot read the named environment paths.', unit) from error
+        for path in files:
+            paths.extend(glob.glob(path) if glob.has_magic(path) else [path])
+    for path in dict.fromkeys(paths):
+        path = path if os.path.isabs(path) else os.path.join(checkout, path)
+        # Application .env and optional EnvironmentFile may legitimately be absent.
+        # A broken symlink still exists as a directory entry and must fail the read.
+        if os.path.lexists(path):
+            yield path
 
 
-def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, development_mail=None):
+def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, development_mail=None, environment_files=None, unit_files=()):
     """Safe refusal lines, with no environment contents except validated host and numeric port."""
     attached = {(canonical_host(str(target['host']))[0], int(target['port'])) for target in targets}
     local = set()
@@ -289,7 +319,7 @@ def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, de
         local.add(host)
     refusals = []
     try:
-        paths = list(env_files(checkout))
+        paths = list(env_files(checkout, environment_files, unit_files))
     except OSError as error:
         relative = os.path.relpath(error.filename or checkout, checkout)
         return [f'{relative}: cannot inspect copied environments safely. {RECOVERY}']
@@ -353,6 +383,8 @@ def main():
 
     module = AnsibleModule(argument_spec={
         'checkout': {'type': 'path', 'required': True},
+        'environment_files': {'type': 'list', 'elements': 'path', 'required': True},
+        'unit_files': {'type': 'list', 'elements': 'path', 'default': []},
         'targets': {'type': 'list', 'elements': 'dict', 'required': True},
         'node_addresses': {'type': 'list', 'elements': 'str', 'required': True},
         'proxy_policy': {'type': 'dict', 'required': True},
