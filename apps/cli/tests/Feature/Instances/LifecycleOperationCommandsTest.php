@@ -166,7 +166,7 @@ it('reports copied untracked files for humans and keeps only the final Operation
         expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
         expect($output)->not->toContain('Copied ');
     } else {
-        $message = 'Copied '.$count.' untracked files (including ignored files).';
+        $message = 'Copied '.$count.' untracked files that Git does not ignore.';
         expect($output)->toContain($message)->and(substr_count($output, $message))->toBe(1);
     }
 })->with(['human' => false, 'json' => true])->with(['none' => 0, 'generated files' => 56]);
