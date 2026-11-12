@@ -70,7 +70,7 @@ With `--offline`, the run first tries each Node once. A Node that does not answe
 
 A failure before site withdrawal leaves the Route unchanged. Once withdrawal starts, a failed removal records the Route as `retiring`, with its failed step and error. Confirmed site withdrawal clears its publication flag; an incomplete child keeps the previous flag because some Nodes may still serve it.
 
-Completed work stays for the next removal attempt. DNS remains until every earlier step passes, so a refusal before publication leaves the site served and resolvable.
+Completed work stays for the next removal attempt. A retry still publishes the final DNS records and catalog after site withdrawal, even when the stored Route is already unpublished. DNS remains until every earlier step passes, so a refusal before publication leaves the site served and resolvable.
 
 The Operation records the failure:
 

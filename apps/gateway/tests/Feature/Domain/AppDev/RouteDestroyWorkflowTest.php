@@ -151,13 +151,29 @@ it('marks confirmed site removal unpublished if the final DNS step fails', funct
     ]);
     expect($route->refresh()->status)->toBe(RouteStatus::Retiring)->and($route->sites_published)->toBeFalse()
         ->and($route->error_code)->toBe('private_dns.publication_failed');
+    [$retry, $retryInputs] = destroyAdmission($route);
+    expect($retryInputs['intent']['dns'])->not->toBeEmpty();
+    $completed = destroyExpressions($retryInputs);
+    expect($completed['dnsRemoved'])->toBeTrue();
+    app(NativeRouteRemovalProjection::class)->apply($retry, [
+        'run_id' => 'fixture-run', 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['steps' => $completed['steps']],
+    ]);
+    expect(Route::query()->find($route->id))->toBeNull();
+
 });
 
 it('still refuses destruction of an active Instances Route before starting work', function (): void {
     [$node] = destroyFleet();
     $route = destroyFixture($node, 'active', 'owned');
-    expect(fn () => app(AdmitRouteOperationAction::class)->destroy($route))
-        ->toThrow(ResourceOperationException::class, 'must remain associated');
+    $error = null;
+    try {
+        app(AdmitRouteOperationAction::class)->destroy($route);
+    } catch (ResourceOperationException $failure) {
+        $error = $failure;
+    }
+    expect($error)->toBeInstanceOf(ResourceOperationException::class)
+        ->and($error?->errorCode)->toBe('route.target_conflict');
     expect(Operation::query()->where('kind', 'route.destroy')->exists())->toBeFalse();
 });
 
