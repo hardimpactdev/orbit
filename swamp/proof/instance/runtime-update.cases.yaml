@@ -1,0 +1,22 @@
+command: instance:runtime:update
+chart: instance/runtime-update
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+uncovered:
+  main: "The real-helper fixture converts the link with an unchanged running MainPID; Gateway fixtures prove a named Instance and lock."
+  repeat: "The helper's second conversion and cached fetch report unchanged; no Process command runs."
+  failed: "The production Ansible fixture covers failed verification and timeout with pin diagnostics; Processes remain untouched."
+  refusals: "Gateway fixtures cover non-container, stopped, busy and caller access refusals with no Operation."
+cases:
+  - id: invalid-id
+    batch: fresh-fleet
+    covers: []
+    summary: Reject a nonnumeric Instance locally.
+    act:
+      - cli:
+          run: [instance:runtime:update, invalid]
+          forms: [json, human]
+          expect: {exit: 1, code: instance.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}

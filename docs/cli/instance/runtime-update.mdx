@@ -1,0 +1,47 @@
+---
+title: "instance:runtime:update"
+description: "Prepare one running Instance's private Node store without restarting Processes."
+covers:
+  - apps/gateway/app/Domain/InstanceRuntime/**
+  - apps/gateway/app/Http/Controllers/Api/InstanceRuntimeController.php
+  - apps/gateway/routes/api/instance-runtime.php
+  - apps/cli/app/Commands/Instances/UpdateInstanceRuntimeCommand.php
+  - packages/php-sdk/src/Requests/Instances/UpdateInstanceRuntimeRequest.php
+  - swamp/workflows/workflow-operation-instance-runtime-update.yaml
+---
+
+Prepare the private Node store of one named, running container Instance. Orbit preserves its downloaded versions, resolves Project pins with Vite+, and fetches a missing resolved version through the Instance proxy.
+
+## Usage
+
+```bash
+orbit instance:runtime:update 42
+orbit instance:runtime:update 42 --json
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `instance-id` | Numeric Instance ID. |
+| `--json` | Use the standard [machine output](/reference/cli-ux#results). |
+
+The result contains `status` (`converted` or `unchanged`), `versions` in the private store, and `pins` with their sources and resolved versions. A repeat with no missing version reports `unchanged`.
+
+Orbit never stops, starts or restarts a Process for this command. A running Process keeps its MainPID and open executable. After the update succeeds, the owner explicitly restarts a crashed or outdated vp-dev. See [private Node runtimes](/reference/development-containers#private-node-runtimes) for disk cost, seed reuse and upgrades.
+
+## How it works
+
+The phase has a 150-second bound; Vite+ resolution and downloads share 90 seconds. It changes only the named container. A failed fetch keeps completed copies and names the pin and reason; repeat the command after correcting the cause.
+
+<div className="flow-at" data-chart="instance/runtime-update"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance ID is not a positive integer. |
+| `operation.kind_unavailable` | The Instance has no container runtime. |
+| `process.target_inactive` | The container is stopped; this command does not start it. |
+| `instance.lifecycle_busy` | The Instance or one of its Processes has unfinished work. |
+| `operation.target_busy` | Another Operation holds the Instance lock. |
+| `instance.node_runtime_prepare_failed` | Store conversion, Node resolution, download or verification failed. Processes stay as they were. |
+| `node_access.required` | The calling Node cannot access the Instance's Node. |

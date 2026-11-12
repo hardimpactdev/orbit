@@ -51,7 +51,8 @@
             "cli/instance/analytics-disable",
             "cli/instance/transfer",
             "cli/instance/migrate",
-            "cli/instance/mail-update"
+            "cli/instance/mail-update",
+            "cli/instance/runtime-update"
           ]
         }
       ]
