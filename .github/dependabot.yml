@@ -44,12 +44,20 @@ updates:
       default-days: 7
   - package-ecosystem: bun
     directory: /apps/web
+    # Version bumps must also move the Vite core alias and runner overrides.
+    ignore:
+      - dependency-name: vite-plus
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
     patterns: ["*"]
     multi-ecosystem-group: daily
     cooldown:
       default-days: 7
   - package-ecosystem: bun
     directory: /apps/pi-server
+    # Version bumps must also move the Vite core alias and runner overrides.
+    ignore:
+      - dependency-name: vite-plus
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
     patterns: ["*"]
     multi-ecosystem-group: daily
     cooldown:
