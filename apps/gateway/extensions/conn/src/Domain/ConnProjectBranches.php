@@ -64,7 +64,7 @@ final readonly class ConnProjectBranches
         }
         $byBranch = [];
         foreach ($instances->get() as $instance) {
-            $branch = $instance->branch ?? IntendedInstanceBranch::resolve($instance->name, $instance->branch_override, $project->default_branch);
+            $branch = IntendedInstanceBranch::forInstance($instance, $project->default_branch);
             if ($branch !== null) {
                 $byBranch[$branch] ??= new ConnBranchInstanceData($instance->id, $instance->name);
             }

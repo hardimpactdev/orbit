@@ -1574,7 +1574,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 30
+cost = 34
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1585,6 +1585,26 @@ inputs = [
   "swamp/scripts/instance_clone.py",
   "swamp/scripts/instance_clone_guest.py",
 ]
+
+# Local unprivileged Git fixture: 1.02 s total; two seconds per case is a conservative CI estimate.
+[fixture.case_costs]
+  "test_legacy_new_branch_still_uses_seed_without_selection" = 2
+  "test_legacy_existing_remote_branch_still_uses_its_tip" = 2
+  "test_new_branch_uses_fetched_base_tip_not_seed" = 2
+  "test_existing_branch_uses_its_remote_tip" = 2
+  "test_resume_keeps_admitted_commit_when_remote_advances" = 2
+  "test_deleted_existing_branch_never_falls_back_to_seed_or_local_ref" = 2
+  "test_deleted_base_is_not_a_new_branch_at_seed" = 2
+  "test_target_created_after_admission_is_not_silently_reused" = 2
+  "test_unreadable_remote_fails_without_creating_a_branch" = 2
+  "test_unreachable_frozen_commit_fails_without_using_current_tip" = 2
+  "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start" = 2
+  "test_clone_uses_the_admitted_common_acl_name" = 2
+  "test_clone_refuses_unsafe_effective_nics_before_start" = 2
+  "test_guest_and_node_command_names_stay_in_sync" = 2
+  "test_preserves_only_the_guest_command_and_exit_code" = 2
+  "test_rejects_private_or_mismatched_guest_diagnostics" = 2
+  "test_node_command_failure_names_executable_and_exit_without_output" = 2
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_native_faults_test.ts"

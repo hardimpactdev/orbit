@@ -256,6 +256,29 @@ The check creates no records, including Activity rows. A later create can still 
 - A Project without a ready container default fails with `instance.default_missing` (409).
 - An `Idempotency-Key` is bound to the calling Node.
 
+The optional `branch` object selects another source: `{"mode":"new","from":"release"}` creates the Instance-named branch at the fetched tip of `release`; `{"mode":"existing","name":"feature/login"}` checks out that remote branch. New mode requires `from` and forbids `name`; existing mode requires `name` and forbids `from`. Extra keys, null, and invalid Git branch names fail with `validation.failed` (422). With no `branch`, admission makes no remote read and preserves the existing create, result and retry behavior.
+
+A request that sends `branch` reserves one branch per Project inside create's transaction. Every Instance on every Node and in every state holds its recorded or intended branch until deleted. The default holds the Project's default branch. The client must not offer the default branch as a target. Old requests without `branch` and core create retain their existing rules.
+
+Before reserving any Instance, Operation or container, explicit selection reads the credentialed remote heads once. Credential acquisition and git share ten seconds. Only a successful read proves absence. These admission refusals leave no new Instance, Operation or reservation:
+
+| Code | Status | `details` |
+| --- | --- | --- |
+| `branch.in_use` | 409 | `{"instance":{"id":42,"name":"login"}}`, or `{}` when the holder's Node is hidden. |
+| `branch.not_found` | 422 | `{"field":"branch.name"}` for missing existing branch; `{"field":"branch.from"}` for missing base. |
+| `branch.exists` | 422 | `{"field":"name","branch":"fix-login"}` when the derived new target already exists remotely without a holder. |
+| `source.head_unavailable` | 502 | Empty details; authentication, unreadable, malformed or timed-out remote read. |
+
+The name check does not know remote branches; create reports `branch.exists`. A caller can resume the same name only with an identical selection; a changed mode, target or base answers `instance.placement_conflict` (409). An Idempotency-Key replay returns its Operation. Admission freezes the mode, target, base and source commit for resume. Explicit results add `branch` and `base_branch`; the latter is null in existing mode.
+
+After admission, a remote change or an execution failure ends the Operation and keeps the Instance for retry. If mirror preparation observes a new target remotely, an existing branch or base disappears, a fetch cannot read the remote, or a rewritten source does not provide the frozen commit, `clone-container` fails with `instance.create_clone_failed`. That phase prepares the Node mirror; `clone-workspace` then checks out its bundle. A bundle, transfer or guest checkout failure carries `instance.create_workspace_failed`. These later failures cannot be closed by the earlier remote read.
+
+A legacy or core create can also claim the same branch after opt-in admission, because those calls retain their old rules; this does not produce a later occupancy check or failure. Explicit admission serializes competing explicit creates, not remote repository writes or legacy calls.
+
+A remote target created after the Node's final head read cannot be detected by create; it does not change the frozen local commit and produces no create failure. A later Git push can encounter that remote conflict.
+
+Checkout stays inside `clone-workspace`. No setup or deploy command runs again after checkout. Dependencies and build come from the default's seed, and may need an install or build for the selected code.
+
 Conn follows that Operation with `GET /operations/{id}`. Conn Operation show also shows an `instance.create` that the caller started, here or with `instance:create`. Conn Operation cancel does not cancel it.
 
 Operation show returns the same recorded `steps` as core Operation show, in recorded order: `name`, `job`, `status`, `started_at` and `finished_at`. Steps contain no command output, secrets or environment values. Both endpoints accept `after_sequence` but currently return all recorded steps.
