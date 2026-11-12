@@ -38,6 +38,11 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             $operation->refresh();
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
             $result = ValidatedData::object($data['result'] ?? []);
+            if (is_array($operation->input['branch_selection'] ?? null)) {
+                $selection = InstanceBranchSelection::fromArray(ValidatedData::object($operation->input['branch_selection']));
+                $result['branch'] = $selection->target;
+                $result['base_branch'] = $selection->base;
+            }
             if ($data['status'] === 'succeeded') {
                 $result['mail_keys_set'] = ValidatedData::stringList($operation->input['mail_keys_set'] ?? []);
             }

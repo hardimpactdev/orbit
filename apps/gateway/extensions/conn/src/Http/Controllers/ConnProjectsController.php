@@ -51,7 +51,9 @@ final class ConnProjectsController extends Controller
     {
         $caller = $this->caller($request);
         $projects->assertNameFree($caller, $project, $request->name());
-        $operation = $action->execute(new CreateInstanceData($project->id, $request->default()->node_id, $request->name(), null, null, null),
+        $selection = $request->branchSelection();
+        $operation = $action->execute(new CreateInstanceData($project->id, $request->default()->node_id, $request->name(), null, null, $selection?->target,
+            branchSelection: $selection),
             'node:'.$caller->id, $request->attributes->getString('orbit.request_id'));
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(),

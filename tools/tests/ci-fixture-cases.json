@@ -1344,8 +1344,18 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "d1469ab0a4a711a101474e11ee034214c659d7ec19a620c1e2c99a455a50f161",
+    "source_sha256": "9cdbd041c4e7839dddf776c3f1a1ed95adebb8ef93e9bcf1a3dfb07ed11cea78",
     "cases": [
+      "test_legacy_new_branch_still_uses_seed_without_selection",
+      "test_legacy_existing_remote_branch_still_uses_its_tip",
+      "test_new_branch_uses_fetched_base_tip_not_seed",
+      "test_existing_branch_uses_its_remote_tip",
+      "test_resume_keeps_admitted_commit_when_remote_advances",
+      "test_deleted_existing_branch_never_falls_back_to_seed_or_local_ref",
+      "test_deleted_base_is_not_a_new_branch_at_seed",
+      "test_target_created_after_admission_is_not_silently_reused",
+      "test_unreadable_remote_fails_without_creating_a_branch",
+      "test_unreachable_frozen_commit_fails_without_using_current_tip",
       "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
       "test_clone_uses_the_admitted_common_acl_name",
       "test_clone_refuses_unsafe_effective_nics_before_start",
