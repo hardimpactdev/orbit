@@ -10,6 +10,7 @@ use App\Domain\Gateway\GatewayQueue;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NativeRunCancellation;
+use App\Domain\Operations\OperationReconcileHealth;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -22,6 +23,8 @@ use App\Infrastructure\Swamp\ReadNativeRunFailure;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
 use App\Models\Operation;
+use Carbon\CarbonImmutable;
+use Closure;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
@@ -57,29 +60,46 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
 
     public function handle(SwampCommandStep $step, ExpireOperationAction $expire, CancelSwampRun $cancel, OperationStore $store): void
     {
+        $started = hrtime(true);
+        $health = new OperationReconcileHealth;
+        $this->pass($step, $expire, $cancel, $store, $health);
+        $health->record($started);
+    }
+
+    private function pass(SwampCommandStep $step, ExpireOperationAction $expire, CancelSwampRun $cancel, OperationStore $store, OperationReconcileHealth $health): void
+    {
         $kinds = array_keys(app(DirectOperation::class)->definitions());
         if ($kinds === []) {
             return;
         }
         $started = microtime(true);
         $cancellation = app(NativeRunCancellation::class);
-        OperationRunBudgets::duringTick(function () use ($kinds, $step, $expire, $cancel, $store, $cancellation, $started): void {
+        OperationRunBudgets::duringTick(function () use ($kinds, $step, $expire, $cancel, $store, $cancellation, $started, $health): void {
             $forward = [];
             foreach (self::open($kinds)->lazyById() as $operation) {
+                $completedAt = null;
+                $settled = true;
+                $onTerminal = static function (CarbonImmutable $at) use (&$completedAt): void {
+                    $completedAt = $at;
+                };
                 try {
                     if (InstanceMigrateProjection::unsettled($operation)) {
                         app(InstanceMigrateProjection::class)->rememberSettlementLimit($operation);
                     }
-                    $operation = $this->reconcile($operation, $step, $expire);
+                    $operation = $this->reconcile($operation, $step, $expire, $onTerminal);
                     if ($cancellation->awaitsForwarding($operation)) {
                         $forward[] = $operation;
                     }
                 } catch (Throwable $exception) {
+                    $settled = false;
                     $this->warn($operation, $exception);
                 } finally {
                     if ($operation->kind === 'instance.migrate' && InstanceMigrateProjection::unsettled($operation->refresh())) {
                         app(InstanceMigrateProjection::class)->rememberSettlementLimit($operation);
                         app(InstanceMigrateProjection::class)->endUnavailable($operation);
+                    }
+                    if ($completedAt !== null) {
+                        $health->observe($operation, $completedAt, $settled);
                     }
                 }
             }
@@ -139,7 +159,8 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
                 ->whereNull('state->native_cancel_confirmed_at')->whereNull('state->native_timeout->native_terminal_status')));
     }
 
-    private function reconcile(Operation $operation, SwampCommandStep $step, ExpireOperationAction $expire): Operation
+    /** @param Closure(CarbonImmutable):void $onTerminal */
+    private function reconcile(Operation $operation, SwampCommandStep $step, ExpireOperationAction $expire, Closure $onTerminal): Operation
     {
         if ($operation->status === OperationStatus::Waiting && isset($operation->input['capacity_request'])) {
             app(TaskVmAdmission::class)->admit($operation->id);
@@ -154,7 +175,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             $run = $operation->state['swamp_run_id'] ?? null;
             if (! $operation->status->terminal() && $operation->node_id !== null && is_string($run) && Str::isUuid($run)) {
                 $definition = $direct->definition($operation->kind) ?? throw new \LogicException('The reconciler requires a registered kind.');
-                $receipt = app(ReadNativeRunFailure::class)->read($operation, $definition['workflow'], $run);
+                $receipt = app(ReadNativeRunFailure::class)->read($operation, $definition['workflow'], $run, $onTerminal);
                 if ($receipt !== null) {
                     return app(FailNativeOperationAction::class)->execute($operation, $run, $receipt['status'], $receipt['failure'], $receipt['finished_at']);
                 }
@@ -177,7 +198,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             if ($operation->cancel_requested_at !== null) {
                 app(NativeRunCancellation::class)->request($operation);
             }
-            $this->project($operation, $run, $selector, $step, $expire);
+            $this->project($operation, $run, $selector, $step, $expire, $onTerminal);
             $operation->refresh();
         }
 
@@ -185,14 +206,15 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
     }
 
     /**
+     * @param  Closure(CarbonImmutable):void  $onTerminal
      * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true,data?:string}  $selector
      */
-    private function project(Operation $operation, string $run, array $selector, SwampCommandStep $step, ExpireOperationAction $expire): void
+    private function project(Operation $operation, string $run, array $selector, SwampCommandStep $step, ExpireOperationAction $expire, Closure $onTerminal): void
     {
         $deadline = OperationRunBudgets::deadline($operation);
         $atDeadline = $deadline !== null && ! $deadline->isFuture();
         try {
-            $step->projectTerminal($operation, ['id' => $run], $selector, $atDeadline);
+            $step->projectTerminal($operation, ['id' => $run], $selector, $atDeadline, $onTerminal);
         } catch (SwampTerminalReadUnavailable) {
             // The run has not ended in the history yet, or serve did not answer: the next pass reads again.
             $this->expireAtDeadline($operation, $atDeadline, $expire);

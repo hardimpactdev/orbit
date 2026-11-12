@@ -85,7 +85,7 @@ Logs, Activity, assistance signals, and the Horizon-only collection have no sche
 
 While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks. `horizon:snapshot` does not run, and the Gateway creates no `horizon` Process. Native Operation starts and Task VMs need the queue. An Operation whose start cannot be queued fails with `swamp.start_enqueue_failed`. While task VMs are enabled, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
 
-Operations need the queue too: the minute `ReconcileSwampOperations` job, unique for 300 seconds, reads each open run's terminal result and records it on the `operations` queue ([Operations](/reference/operations#how-an-operation-runs)). It is the one scheduled job that works with Swamp runs.
+Operations need the queue too: the minute `ReconcileSwampOperations` job, unique for 300 seconds, reads each open run's terminal result and records it on the `operations` queue ([Operations](/reference/operations#how-an-operation-runs)). It is the one scheduled job that works with Swamp runs. The job records completed passes, so [`gateway:status`](/cli/gateway/status) can report [stalled reconciliation and stuck settlement](/reference/operations#recover-a-terminal-native-result) even when dispatch succeeds but the queue does not execute it.
 
 ## Horizon
 

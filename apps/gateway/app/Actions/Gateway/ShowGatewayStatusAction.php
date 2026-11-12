@@ -12,6 +12,7 @@ use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayVersion;
 use App\Domain\Nodes\NodeAccessAuthorizer;
+use App\Domain\Operations\OperationReconcileHealth;
 use App\Domain\Problems\ProblemSource;
 use App\Models\Node;
 use App\Models\ProblemCollectorState;
@@ -103,6 +104,15 @@ final readonly class ShowGatewayStatusAction
             if ($gateway instanceof Node) {
                 $groups['slow'] = ['node_id' => $gateway->id, 'node_name' => $gateway->name, 'code' => 'gateway.doctor_collection_slow',
                     'count' => 1, 'since' => $collectedAt, 'newest_since' => $collectedAt, 'resource' => null];
+            }
+        }
+        $signals = app(OperationReconcileHealth::class)->issues($observation);
+        if ($signals !== []) {
+            $gateway = Node::query()->find($this->access->activeGatewayId());
+            if ($gateway instanceof Node) {
+                foreach ($signals as $signal) {
+                    $groups[$signal['code']] = ['node_id' => $gateway->id, 'node_name' => $gateway->name, ...$signal];
+                }
             }
         }
         // Status explicitly includes the caller's own Node; other commands keep the shared grant rule.
