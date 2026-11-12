@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "b7101c8210690f9041039ff197764ecd968770a44aec6774bea3029b936ca943",
+    "source_sha256": "1797975f1aa79462d7edbf30ff9c3cb06c924dcfeb01e82dd28dcf3daa1e6190",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -23,6 +23,8 @@
       "linked worktree preflight refuses unpushed without touching its active owner or sibling",
       "linked worktree preflight refuses stash without touching its active owner or sibling",
       "linked worktree preflight refuses identity without touching its active owner or sibling",
+      "linked worktree preflight refuses nested without touching its active owner or sibling",
+      "linked retirement interrupted before unregister fails explicitly on repeat",
       "linked worktree quiesce rechecks new tracked changes before stopping any writer",
       "an owner refuses retirement while its child is in the same retirement batch",
       "a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact",
@@ -599,10 +601,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 → v5.12.0",
-      "exact script output: v5.42.0 → v5.43.0",
-      "exact script output: v5.49.0 → v5.50.0",
-      "exact script output: v5.50.0 → v5.50.1",
+      "exact script output: v5.11.0 \u2192 v5.12.0",
+      "exact script output: v5.42.0 \u2192 v5.43.0",
+      "exact script output: v5.49.0 \u2192 v5.50.0",
+      "exact script output: v5.50.0 \u2192 v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",

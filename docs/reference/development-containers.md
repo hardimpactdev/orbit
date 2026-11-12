@@ -704,7 +704,7 @@ Before downtime, migration resolves the [deploy credential](/reference/github-ap
 - **Database.** A database on a Database server stays where it is, and the container gets its own way to it. A SQLite file in the checkout moves with the files.
 - **Start.** FrankenPHP starts as `orbit`. A non-default Instance gets its T3 server, registered as in [Create](#create). A default gets its first seed snapshot.
 - **Route.** Orbit points the Route at FrankenPHP in the container.
-- **Retirement.** Orbit retains the whole checkout and records its path and time. Linked retirement keeps an independent Git copy and removes its matching registration. Owner retirement waits for the last dependent.
+- **Retirement.** Orbit retains all files and Git recovery data. It removes only the linked checkout's registration. An owner's dependents and any registered descendant block retirement.
 
 Registered Schedule timers keep their UUID, calendar, timeout and enabled or paused state. Their timers and commands run inside the container as `orbit`, only while it runs, without catch-up. [Schedule migration](/reference/schedules#checkout-migration) defines refusals, rollback and retained logs.
 
@@ -756,7 +756,7 @@ The runtime reservation belongs to its admitting Operation. A late receipt canno
 | Retained Git | The whole old checkout moves under `<checkout>.orbit-retired-git/<sha256 of original path>`. The Instance records `retained_git_path` and `retained_git_at`; files and Git recovery data stay there |
 | Linked checkout | Retains all files and independent Git data. Removes only its matching, now-missing owner registration after verification; keeps owner and sibling metadata untouched |
 | Last worktree | The default's old checkout is a retirement candidate. Any other registered worktree blocks owner retirement, including a path in the same batch |
-| Failed removal | The container stays the Instance. The run fails with `instance.migrate_retire_failed` (or the retirement refusal code for a new blocker), and the source or retained checkout stays on the Node |
+| Failed removal | The container keeps serving. Source or retained files stay. An interrupted linked unregister fails explicitly on repeat with `instance.migrate_retire_failed` |
 | Failure | Restore puts back a moved Route, then removes the container, its ACL, firewall rules and mirror |
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
 | After a failed restore | The reservation and deployment hold remain. Inspect the site and failed recovery step; deployments refuse with `instance.lifecycle_busy` until the move has run again |
@@ -1069,7 +1069,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node. Also when the Project's default runs on another Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
 | `instance.migrate_unsupported` | 409 | `instance:migrate` of an Instance that is not an active development checkout on a Node of the build list |
-| `instance.migrate_retirement_blocked` | 409 | An owner has other worktrees, or a checkout has changed Git identity or tracked files. Names 20 paths and total counts |
+| `instance.migrate_retirement_blocked` | 409 | Owner dependencies, registered descendants, changed Git identity or tracked changes block retirement. Names 20 paths and total counts |
 | `instance.migrate_unpushed_commits` | 409 | Local branches or detached HEAD have commits unreachable from all local remote-tracking refs. The error names each and its commit count; no fetch or source changes |
 | `instance.migrate_stashes_present` | 409 | A planned retirement has stashes. The error names the count and leaves the source untouched |
 | `instance.migrate_branch_changed` | 409 | The checkout is not on the branch that Orbit records for the Instance |

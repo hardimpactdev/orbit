@@ -136,6 +136,9 @@
                     raise ValueError('Recovery index changed')
                 check_identity()
                 # Retain the complete original tree before replacing its gitfile with the verified private store.
+                evidence = root / (destination.name + '.json')
+                progress = {'source': str(source), 'identity': identity, 'state': 'pending'}
+                evidence.write_text(json.dumps(progress))
                 source.rename(destination)
                 (destination / '.git').unlink()
                 recovery.rename(destination / '.git')
@@ -144,6 +147,8 @@
                 if source.exists() or pointer != str(source.resolve() / '.git'):
                     raise ValueError('Refusing to unregister a changed or existing worktree')
                 shutil.rmtree(private)
+                progress['state'] = 'complete'
+                evidence.write_text(json.dumps(progress))
             finally:
                 # Before rename it is disposable; after rename it is recovery data until .git is installed.
                 if source.exists() or (destination / '.git').is_dir():

@@ -11,6 +11,7 @@
       - python3
       - -c
       - |
+        import hashlib
         import json
         import os
         import subprocess
@@ -18,6 +19,7 @@
         from pathlib import Path
 
         source = Path(sys.argv[1])
+        root = Path(sys.argv[2])
         def git(*args):
             result = subprocess.run(
                 ['git', '-c', 'safe.directory=*', '-C', str(source), *args],
@@ -39,19 +41,35 @@
                         raise ValueError('unexpected worktree administration path')
                     if (private / 'gitdir').resolve(strict=True).read_text().strip() != str(source.resolve() / '.git'):
                         raise ValueError('worktree registration changed')
-                result.update(git_dir=str(private), common_dir=str(common), linked=linked)
+                descendants = [
+                    token[9:] for token in git('worktree', 'list', '--porcelain', '-z').split('\0')
+                    if token.startswith('worktree ') and Path(token[9:]).resolve() != top
+                    and Path(token[9:]).resolve().is_relative_to(top)]
+                result.update(git_dir=str(private), common_dir=str(common), linked=linked, descendants=descendants)
             except (OSError, ValueError, subprocess.CalledProcessError):
                 result['valid'] = False
+        else:
+            # A retained identity receipt distinguishes a finished repeat from an interrupted unregister.
+            evidence = root / (hashlib.sha256(os.fsencode(source)).hexdigest() + '.json')
+            if evidence.exists():
+                progress = json.loads(evidence.read_text())
+                if progress['source'] != str(source) or progress['state'] != 'complete':
+                    result.update(valid=False, error_code='instance.migrate_retire_failed',
+                                  message='Incomplete linked retirement for ' + str(source)
+                                  + '; inspect retained identity receipt ' + str(evidence))
         print(json.dumps(result))
       - "{{ retired.path }}"
+      - "{{ migrate.checkout }}.orbit-retired-git"
   register: retirement_identity
   changed_when: false
 
 - name: Explain a changed Git identity
   when: not (retirement_identity.stdout | from_json).valid
   ansible.builtin.set_fact:
-    migrate_refusal_code: instance.migrate_retirement_blocked
-    migrate_refusal_message: "Cannot retire checkout {{ retired.path | to_json }}: Git identity or worktree registration changed."
+    migrate_refusal_code: "{{ (retirement_identity.stdout | from_json).error_code | default('instance.migrate_retirement_blocked') }}"
+    migrate_refusal_message: >-
+      {{ (retirement_identity.stdout | from_json).message |
+         default('Cannot retire checkout ' ~ (retired.path | to_json) ~ ': Git identity or worktree registration changed.') }}
 
 - name: Require the checkout's Git identity
   ansible.builtin.assert:
@@ -95,7 +113,8 @@
       ansible.builtin.set_fact:
         retirement_other_worktrees: >-
           {{ (retirement_worktrees.stdout | regex_findall('(?:\A|\x00)worktree ([^\x00]+)')
-              | reject('equalto', retirement_checkout.stdout | trim) | list) if retired_repository | bool else [] }}
+              | reject('equalto', retirement_checkout.stdout | trim) | list) if retired_repository | bool
+              else (retirement_identity.stdout | from_json).descendants }}
         retirement_changes: "{{ retirement_status.stdout_lines }}"
     - name: Explain a blocked retirement
       when: retirement_other_worktrees | length > 0 or retirement_changes | length > 0

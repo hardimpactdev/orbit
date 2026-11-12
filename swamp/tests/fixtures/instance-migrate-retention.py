@@ -16,6 +16,9 @@ COMMAND = next(task['ansible.builtin.command']['argv'][2] for task in TASK_LIST
                if task['name'] == 'Retain the checkout without deleting any files')
 PREPARE = next(task['ansible.builtin.command']['argv'][2] for task in TASK_LIST
                if task['name'] == 'Prepare the retained Git path before moving any checkout')
+IDENTITY_CHECK = next(task['ansible.builtin.command']['argv'][2]
+                      for task in yaml.safe_load(TASKS.with_name('instance-migrate-retirement-check.yml').read_text())
+                      if task['name'] == 'Read canonical Git identity and linked registration')
 GIT_ENV = {**os.environ, 'GIT_AUTHOR_NAME': 'Orbit', 'GIT_AUTHOR_EMAIL': 'orbit@example.test',
            'GIT_COMMITTER_NAME': 'Orbit', 'GIT_COMMITTER_EMAIL': 'orbit@example.test'}
 
@@ -140,6 +143,51 @@ class RetentionTest(unittest.TestCase):
         self.assertFalse((recovery / 'objects/info/alternates').exists())
         self.assertEqual(snapshot(owner), before)
         self.assertTrue(Path(expected['git_dir']).exists())
+
+    def test_owner_physically_inside_the_linked_checkout_is_a_named_descendant(self):
+        owner = self.source
+        child = self.folder / 'child'
+        git(owner, 'worktree', 'add', '--quiet', '-b', 'child', str(child))
+        nested_owner = child / 'nested-owner'
+        owner.rename(nested_owner)
+        git(nested_owner, 'worktree', 'repair', str(child))
+        before = snapshot(self.folder)
+
+        result = subprocess.run([sys.executable, '-c', IDENTITY_CHECK, str(child), str(self.root)],
+                                check=True, capture_output=True, text=True)
+
+        self.assertIn(str(nested_owner), json.loads(result.stdout).get('descendants', []))
+        self.assertEqual(snapshot(self.folder), before)
+        self.assertEqual(git(nested_owner, 'symbolic-ref', '--short', 'HEAD'), 'main')
+
+    def test_interrupted_unregister_records_incomplete_identity_for_the_repeat_guard(self):
+        owner = self.source
+        child = self.folder / 'child'
+        git(owner, 'worktree', 'add', '--quiet', '-b', 'child', str(child))
+        expected = identity(child)
+        self.root.mkdir()
+        interrupted = COMMAND.replace("shutil.rmtree(private)", "raise OSError('fixture: unregister interrupted')")
+
+        first = subprocess.run([sys.executable, '-c', interrupted, str(child), str(self.root), json.dumps(expected)],
+                               check=False, capture_output=True, text=True)
+
+        self.assertNotEqual(first.returncode, 0)
+        digest = hashlib.sha256(os.fsencode(child)).hexdigest()
+        retained = self.root / digest
+        evidence = json.loads((self.root / (digest + '.json')).read_text())
+        self.assertEqual(evidence, {'source': str(child), 'identity': expected, 'state': 'pending'})
+        self.assertEqual(git(retained, 'show', 'HEAD:content.txt'), 'committed content')
+        self.assertTrue(Path(expected['git_dir']).exists())
+        before = snapshot(owner)
+
+        repeat = subprocess.run([sys.executable, '-c', IDENTITY_CHECK, str(child), str(self.root)],
+                                check=True, capture_output=True, text=True)
+        result = json.loads(repeat.stdout)
+
+        self.assertFalse(result['valid'])
+        self.assertEqual(result['error_code'], 'instance.migrate_retire_failed')
+        self.assertIn('Incomplete linked retirement', result['message'])
+        self.assertEqual(snapshot(owner), before)
 
     def test_recovery_materializes_relative_alternates(self):
         store = self.folder / 'store'

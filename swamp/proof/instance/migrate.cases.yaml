@@ -6,7 +6,8 @@
 # downtime; all untracked files pass, copy into the container and report the count of untracked files that Git does not ignore (selected nested repository leaves included, no paths/content).
 # Late ignored and non-ignored files do not refuse the move and remain in the retained checkout; submodule changes still refuse.
 # Counts include archived untracked leaves inside nested repositories; directories do not count.
-# Linked and detached worktrees refuse and name their paths.
+# Owner dependencies and registered descendants of any retiring checkout refuse and name their paths.
+# Linked worktrees with external siblings can move first; an interrupted unregister fails explicitly on repeat.
 # Target probes run in the container phase before quiesce; an unreachable SQL or Redis target leaves the awake marker,
 # checkout and host Process states untouched. Restore deletes the failed container and its exact target rules only.
 # Process fixtures stop and disable host units before copying, install private Process environments in the container,

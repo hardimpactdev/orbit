@@ -863,14 +863,14 @@ Deno.test({
   },
 });
 
-for (const blocker of ["unstaged", "staged", "unpushed", "stash", "identity"] as const) {
+for (const blocker of ["unstaged", "staged", "unpushed", "stash", "identity", "nested"] as const) {
   Deno.test({
     name: "linked worktree preflight refuses " + blocker + " without touching its active owner or sibling",
     ignore: !hasAnsible,
     fn() {
       const f = fixture("feature");
       try {
-        const sibling = f.apps + "/sibling";
+        const sibling = blocker === "nested" ? f.checkout + "/nested-sibling" : f.apps + "/sibling";
         git(f.main, "worktree", "add", "--quiet", "-b", "sibling", sibling);
         if (blocker === "unstaged" || blocker === "staged") {
           Deno.writeTextFileSync(f.checkout + "/index.php", "tracked edit");
@@ -879,7 +879,7 @@ for (const blocker of ["unstaged", "staged", "unpushed", "stash", "identity"] as
         else if (blocker === "stash") {
           Deno.writeTextFileSync(f.checkout + "/index.php", "stashed edit");
           git(f.checkout, "stash", "push", "--quiet");
-        } else {
+        } else if (blocker === "identity") {
           const admin = git(f.checkout, "rev-parse", "--absolute-git-dir");
           Deno.writeTextFileSync(admin + "/gitdir", sibling + "/.git\n");
         }
@@ -892,10 +892,47 @@ for (const blocker of ["unstaged", "staged", "unpushed", "stash", "identity"] as
         assert(exists(f.migrate.awake.path));
         assertEquals(f.state().containers ?? {}, {});
         assert(!exists(f.checkout + ".orbit-retired-git"));
+        if (blocker === "nested") {
+          assert(f.result().error_message.includes(sibling));
+          const retirement = f.run("retire");
+          assert(!retirement.ok, retirement.output);
+          assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
+          assert(f.result().error_message.includes(sibling));
+          assertEquals(gitFiles(f.apps), before);
+          assertEquals(git(sibling, "symbolic-ref", "--short", "HEAD"), "sibling");
+        }
       } finally { f.cleanup(); }
     },
   });
 }
+
+Deno.test({
+  name: "linked retirement interrupted before unregister fails explicitly on repeat",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture("feature");
+    try {
+      const admin = git(f.checkout, "rev-parse", "--absolute-git-dir");
+      const file = f.folder + "/tasks/instance-migrate-retire.yml";
+      const original = Deno.readTextFileSync(file);
+      Deno.writeTextFileSync(file, original.replace("shutil.rmtree(private)", "raise OSError('fixture: interrupted before unregister')"));
+      const first = f.run("retire");
+      assert(!first.ok, first.output);
+      assertEquals(f.result().error_code, "instance.migrate_retire_failed");
+      assert(!exists(f.checkout));
+      assert(exists(f.retained() + "/.git/index"));
+      assert(exists(admin));
+      const before = gitFiles(f.apps);
+      Deno.writeTextFileSync(file, original);
+      const repeat = f.run("retire");
+      assert(!repeat.ok, repeat.output);
+      assertEquals(f.result().error_code, "instance.migrate_retire_failed");
+      assert(f.result().error_message.includes("Incomplete linked retirement"));
+      assertEquals(gitFiles(f.apps), before);
+      assert(exists(admin));
+    } finally { f.cleanup(); }
+  },
+});
 
 Deno.test({
   name: "linked worktree quiesce rechecks new tracked changes before stopping any writer",
