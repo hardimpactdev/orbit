@@ -710,6 +710,8 @@ The development mail-line fixture runs unprivileged. It executes the shipped byt
 
 The migration mail fixture also checks the phase order: copy first, bounded mail attempt second, application starts last. A failed attempt retains the copied file and produces a warning receipt.
 
+The destroy dependency fixture uses real Git in private temporary directories. It runs unprivileged, includes three Ansible phase launches, and proves refusal, registration removal and preservation of the owner’s Git data. It covers moved worktrees and prunable registrations without scanning checkout contents. Gateway tests bind a deterministic remote-program fake by default, so admission cannot reach real SSH; tests of the boundary replace it explicitly. Inventory and named cost keys are collected together.
+
 Clone branch fixtures use unprivileged local Git repositories and run without an Ansible playbook. Their registered case names and conservative costs change together in `tools/tests/ci-fixture-cases.json` and `.github/ci/checks.toml`; collect names with `bin/ci-units collect --file swamp/tests/instance_clone_test.py`.
 
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise.
