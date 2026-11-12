@@ -41,6 +41,13 @@ sequenceDiagram
     %%> - the database family creates the owner and the database on the Project's database server, on this Node or another
     %%> - needs the container's database rule; without it the admission refuses `operation.kind_unavailable`
   end
+  opt Node runs the main Mailpit
+    SW->>C: Apply mail setup<br/>mail<br/>tags mail
+    %%> Why:
+    %%> - the exact own-ACL SMTP rule and additive bridge endpoint reach Mailpit without a Node converge
+    %%> When:
+    %%> - two IPv4 loopback sockets forward 1025 and 2525; a foreign listener skips setup without stopping its Process
+  end
   SW->>C: Prepare the workspace<br/>Ansible · tags workspace
   %%> What it does:
   %%> - pushes the default branch in as a bundle and checks it out in `/srv/workspace` as `orbit`, with the group, setgid bits and default ACLs

@@ -221,6 +221,7 @@ def main():
                         "/etc/systemd/system/multi-user.target.wants",
                         "/etc/systemd/system",
                         "/etc/orbit/processes",
+                        "/etc/systemd/system/sockets.target.wants",
                     ]
                 ):
                     response = run(["incus", "query", files + directory], check=False)
@@ -240,6 +241,7 @@ def main():
                                 and item not in own_units
                             )
                             or (index == 2 and item not in own_ids)
+                            or (index == 3 and item in {"orbit-mail-1025.socket", "orbit-mail-2525.socket"})
                         ):
                             remove.append(name + directory + "/" + item)
                 if remove:

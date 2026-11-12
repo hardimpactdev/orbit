@@ -138,6 +138,7 @@ additionalFiles:
   - ansible/tasks/instance-network-nic-check.yml
   - ansible/tasks/instance-network-move.yml
   - ansible/tasks/instance-network-move-nic.yml
+  - ansible/tasks/instance-mail.yml
   - ansible/tasks/instance-bridge-rules.yml
   - ansible/instance_bridge.py
   - ansible/instance_network.py

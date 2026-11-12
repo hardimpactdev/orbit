@@ -30,6 +30,14 @@
       {{ (container.units + (container.processes | default([]) | selectattr('desired', 'equalto', 'running') | list))
          | map(attribute='name') | list }}
 
+# A dedicated phase also serves the one-Instance refresh without visiting workspace or Process tasks.
+- name: Apply development mail
+  tags: [mail]
+  when: phase == 'mail' and container.mail | default(none) is not none
+  ansible.builtin.include_tasks:
+    file: tasks/instance-mail.yml
+    apply: {tags: [mail]}
+
 - name: Read the container
   tags: [container, clone, stop, start]
   ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }

@@ -50,7 +50,9 @@
         - name: Write the result
           tags: [always]
           ansible.builtin.copy:
-            content: "{{ (process_result if process_result is defined else {'commit': container_commit | default(none)}) | to_json }}"
+            content: >-
+              {{ (mail_result if mail_result is defined else
+                  (process_result if process_result is defined else {'commit': container_commit | default(none)})) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           no_log: true

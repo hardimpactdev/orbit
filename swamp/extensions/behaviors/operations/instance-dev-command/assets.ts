@@ -27,6 +27,7 @@ export const behavior = {
                 sessions_observation: z.string().default(""),
                 route_observation: ObjectValue.default({}),
                 container: z.object({
+                    mail: Step.nullable().default(null),
                     launch: z.string(),
                     workspace: Step.nullable(),
                     deploy: z.array(z.string()),
@@ -51,6 +52,7 @@ export const behavior = {
                     sessions_observation?: string;
                     route_observation?: Record<string, unknown>;
                     container?: {
+                        mail?: z.infer<typeof Step> | null;
                         launch: string;
                         workspace: z.infer<typeof Step> | null;
                         deploy: string[];

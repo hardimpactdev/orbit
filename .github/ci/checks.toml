@@ -2560,3 +2560,26 @@ default = ["swamp-shape"]
 [roots."."]
 inputs = [".editorconfig", ".gitattributes", ".gitignore", ".node-version", "composer.json", "composer.lock", "vet.json", "LICENSE", "*.md", "*.mdx", "*.mmd"]
 default = []
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_mail_test.py"
+after_merge = true
+reason = "over the 180 s ceiling, follow-up"
+cost = 120
+# Per-case estimates; real Ansible executes only against fake Incus and Docker boundaries.
+slices = false
+inputs = [
+  "apps/gateway/app/Domain/Instances/DevelopmentMail.php",
+  "swamp/ansible/tasks/instance-mail.yml",
+  "swamp/ansible/tasks/instance-bridge-rules.yml",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+]
+[fixture.case_costs]
+"test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes" = 14
+"test_foreign_listener_or_unit_skips_both_ports_without_mutation" = 6
+"test_stopped_missing_binary_or_path_failure_never_changes_guest" = 6
+"test_failed_unit_write_keeps_network_path_and_a_retry_completes_it" = 14
+"test_failure_after_one_successful_service_write_finishes_pending_activation" = 40
+"test_failure_after_all_writes_before_reload_finishes_pending_activation" = 40

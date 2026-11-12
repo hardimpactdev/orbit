@@ -91,7 +91,7 @@ describe('the first default Instance of a Project on a build-list Node', functio
             'acl_rules' => ['description' => 'Orbit Instance '.$operation->target_id, 'egress' => [],
                 'ingress' => [['action' => 'allow', 'source' => '10.253.0.1/32', 'protocol' => 'tcp', 'destination_port' => '8080', 'state' => 'enabled']]],
             'mirror' => '/var/lib/orbit/instance-repositories/'.$operation->target_id.'.git', 'repository' => 'https://github.com/nckrtl/tool.git',
-            'branch' => 'main', 'commit' => null, 'workspace' => '/srv/workspace', 'environment_file' => '/srv/workspace/.env', 'units' => [],
+            'branch' => 'main', 'commit' => null, 'workspace' => '/srv/workspace', 'environment_file' => '/srv/workspace/.env', 'mail' => null, 'mail_units' => [], 'units' => [],
             'processes' => [],
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin',
                 'VP_HOME=/var/lib/orbit/vite-plus-home', 'VP_NO_UPDATE_CHECK=1', 'HTTP_PROXY=http://10.253.0.1:3128',
@@ -377,8 +377,8 @@ describe('the container PHP runtime development SSR origin', function (): void {
         try {
             $container = app(InstanceContainer::class)->intent($instance, $runtime);
             $reads = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'from "processes"'));
-            expect($reads)->toHaveCount(2);
-            expect(DB::getQueryLog())->toHaveCount($production ? 15 : 16);
+            expect($reads)->toHaveCount($production ? 2 : 3);
+            expect(DB::getQueryLog())->toHaveCount($production ? 15 : 18);
         } finally {
             DB::disableQueryLog();
             DB::flushQueryLog();

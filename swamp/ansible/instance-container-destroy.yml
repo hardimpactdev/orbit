@@ -66,6 +66,8 @@
                 {{ destroy_firewall.stdout | regex_findall('(?m)^\[\s*(\d+)\].*# ' ~ (container.firewall_prefix | regex_escape) ~ '[^\n]*$')
                    | map('int') | sort(reverse=true) | list }}
               changed_when: true
+            - name: Remove this Instance's pending mail activation state
+              ansible.builtin.file: {path: "/var/lib/orbit/instance-mail/{{ container.name }}", state: absent}
             - name: Remove the Node repository mirror
               ansible.builtin.file: { path: "{{ container.mirror }}", state: absent }
             - name: Read the remaining containers
