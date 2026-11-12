@@ -764,6 +764,7 @@ it('refuses to stop an attached service before recording any Operation for local
         $process = nodeServiceAttachmentProcess($caller, ['0.0.0.0:8094:8080/tcp'], 'local-service');
     }
     $instance->nodeServiceTargets()->create(['node_id' => $process->owner_id, ...$input, 'process_id' => $process->id]);
+    $process->update(['runtime_config' => [...$process->runtime_config, 'command' => ['sleep', 'infinity']]]);
     $before = $process->refresh()->getRawOriginal();
     try {
         app(StopProcessAction::class)->admit($process);
