@@ -2161,7 +2161,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_env_test.py"
-cost = 8
+cost = 24
 inputs = ["swamp/ansible/library/orbit_migrate_env.py", "swamp/ansible/instance_node_services.py", "swamp/ansible/tasks/instance-container-phase.yml", "swamp/ansible/instance-container.yml", "swamp/ansible/instance-migrate.yml", "swamp/tests/fixtures/migrate-env-services.json"]
 
 [[fixture]]

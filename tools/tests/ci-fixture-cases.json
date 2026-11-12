@@ -1775,7 +1775,7 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "362db7b9578a6ea1cc393fe3fefd2ad0cb9fb850c481e31bc96688f9d02f8fc9",
+    "source_sha256": "17eadc35761378727fc08b2941d80cd8671a5074ca42b1c444022552e2aa0618",
     "cases": [
       "test_loopback_requires_exact_attached_key_pair_and_port",
       "test_database_urls_refuse_without_exposing_credentials_or_bypassing_attached_keys",
@@ -1827,6 +1827,9 @@
       "test_exact_incus_type_wide_dropin_is_allowed_but_modified_content_refuses",
       "test_public_failure_boundary_keeps_only_allowlisted_codes",
       "test_real_ansible_phase_accepts_minimal_intent_without_workspace_fields",
+      "test_failed_socket_enable_names_target_in_create_and_migrate_receipts",
+      "test_failed_service_restart_names_target_in_create_and_migrate_receipts",
+      "test_inactive_socket_names_target_in_create_and_migrate_receipts",
       "test_real_create_and_migrate_failure_receipts_keep_target_and_block_later_work",
       "test_no_attachment_is_noop_and_phase_before_application_work"
     ]

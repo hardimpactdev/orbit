@@ -61,6 +61,14 @@ def command(argv, content=None, public_guest=False):
     return result.stdout
 
 
+
+def activate(run, argv, target):
+    try:
+        run(argv)
+    except (RuntimeError, OSError, subprocess.SubprocessError) as error:
+        raise TargetFailure('instance.node_service_unreachable', target) from error
+
+
 def atomic(path, content, mode):
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     descriptor, temporary = tempfile.mkstemp(dir=path.parent)
@@ -236,23 +244,24 @@ def guest(action, plan, root=Path('/'), run=command, connect=socket.create_conne
         if failed:
             run(['systemctl', 'reset-failed', '--'] + failed)
         services = [name for name in pending if name.endswith('.service')]
-        if services:
-            run(['systemctl', 'try-restart', '--'] + services)
+        for name in services:
+            port = int(name.removeprefix('orbit-node-service-').split('.')[0])
+            activate(run, ['systemctl', 'try-restart', '--', name], by_port[port])
     drift = [unit_name(p) + '.socket' for p in ports if not ready(rows.get(unit_name(p) + '.socket', {}), p)]
-    if drift:
-        run(['systemctl', 'enable', '--now', '--'] + drift)
+    for port in ports:
+        name = unit_name(port) + '.socket'
+        if name in drift:
+            activate(run, ['systemctl', 'enable', '--now', '--', name], by_port[port])
     final = socket_rows(run, ports)
-    if not all(ready(final.get(unit_name(p) + '.socket', {}), p) for p in ports):
-        raise RuntimeError('process.target_inactive')
+    for port in ports:
+        if not ready(final.get(unit_name(port) + '.socket', {}), port):
+            raise TargetFailure('process.target_inactive', by_port[port])
     started = []
     if plan.get('probe', True):
         for target in by_port.values():
             port = target['port']
             if service_pid(final, port) is None:
-                try:
-                    run(['systemctl', 'start', '--', unit_name(port) + '.service'])
-                except RuntimeError as error:
-                    raise TargetFailure('instance.node_service_unreachable', target) from error
+                activate(run, ['systemctl', 'start', '--', unit_name(port) + '.service'], target)
                 started.append(port)
             probe_proxy(target, root, run, connect)
     return {'changed': bool(changed or pending or drift or mutation or failed or started or plan.get('pending_removal', False))}

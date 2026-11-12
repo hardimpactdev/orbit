@@ -508,8 +508,8 @@ it('projects exact deduplicated targets into the container ACL and preserves clo
     $clone->checkout_path = '/workspace/clone';
     $clone->save();
     $copy = $policy->reserve($clone, $node, $instance);
-    expect($policy->intent($clone, $copy)['node_services'])->toBe([])
-        ->and($policy->intent($clone, $copy)['acl_rules']['egress'])->toBe([]);
+    expect($policy->intent($clone, $copy))->not->toHaveKey('node_services');
+    expect($policy->intent($clone, $copy)['acl_rules']['egress'])->toBe([]);
 });
 
 it('refuses detach on stopped containers without deleting its record or starting it', function (): void {

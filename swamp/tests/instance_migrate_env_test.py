@@ -724,13 +724,48 @@ class NodeServiceTest(unittest.TestCase):
         self.assertIn('changed=0', result.stdout)
         self.assertNotIn('config:clear', result.stdout)
 
+    def test_failed_socket_enable_names_target_in_create_and_migrate_receipts(self):
+        self.assert_socket_failure('enable', 'instance.node_service_unreachable')
+
+    def test_failed_service_restart_names_target_in_create_and_migrate_receipts(self):
+        self.apply()
+        service = self.guest / 'etc/systemd/system/orbit-node-service-3308.service'
+        service.write_text(service.read_text() + '# stale owned unit\n')
+        self.assert_socket_failure('try-restart', 'instance.node_service_unreachable')
+
+    def test_inactive_socket_names_target_in_create_and_migrate_receipts(self):
+        self.assert_socket_failure('inactive', 'process.target_inactive')
+
+    def assert_socket_failure(self, action, expected_code):
+        original = self.guest_run
+
+        def fail(argv, content=None):
+            if action == 'inactive' and argv[:2] == ['systemctl', 'enable']:
+                return ''  # Command succeeds but the socket never becomes active/listening.
+            if argv[:2] == ['systemctl', action]:
+                raise RuntimeError('PRIVATE-SYSTEMCTL-OUTPUT')
+            return original(argv, content)
+
+        self.guest_run = fail
+        with self.assertRaises(TARGETS.TargetFailure) as error:
+            self.apply()
+        evidence = error.exception.evidence()
+        self.assertEqual(evidence, {'error_code': expected_code, 'node_service_target':
+                                   {'id': 7, 'process_id': 19, 'process_name': 'fixture-db', 'port': 3308}})
+        self.assertTrue((self.root / 'state/instance-7/activation.json').exists())
+        self.assertNotIn('PRIVATE', json.dumps(evidence))
+        self.assert_failure_receipts(evidence)
+
     def test_real_create_and_migrate_failure_receipts_keep_target_and_block_later_work(self):
+        self.assert_failure_receipts({'error_code': 'instance.node_service_unreachable', 'node_service_target':
+                                     {'id': 7, 'process_id': 19, 'process_name': 'fixture-db', 'port': 3308}})
+
+    def assert_failure_receipts(self, evidence):
         import shutil
         import subprocess
         target = next(task for task in yaml.safe_load((ROOT / 'ansible/tasks/instance-container-phase.yml').read_text())
                       if task['name'] == 'Prepare attached Node services before application work')
-        identity = {'id': 7, 'process_id': 19, 'process_name': 'fixture-db', 'port': 3308}
-        evidence = {'error_code': 'instance.node_service_unreachable', 'node_service_target': identity}
+        identity = evidence['node_service_target']
         executable = shutil.which('ansible-playbook')
         self.assertIsNotNone(executable)
         for kind in ('create', 'migrate'):
@@ -740,7 +775,7 @@ class NodeServiceTest(unittest.TestCase):
                 # Only the Node helper is a stand-in. Evaluate the actual phase and failure receipt tasks.
                 (directory / 'instance_node_services.py').write_text(
                     'import sys; print(' + repr(json.dumps(evidence)) + '); '
-                    'raise SystemExit("instance.node_service_unreachable")')
+                    'raise SystemExit(' + repr(evidence['error_code']) + ')')
                 (directory / 'instance_bridge.py').write_text('')
                 playbook = 'instance-container.yml' if kind == 'create' else 'instance-migrate.yml'
                 play = yaml.safe_load((ROOT / 'ansible' / playbook).read_text())[1]
