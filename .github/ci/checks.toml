@@ -2615,7 +2615,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_mail_line_test.py"
-cost = 47
+cost = 57
 slices = false
 inputs = [
   "swamp/ansible/library/orbit_migrate_env.py",
@@ -2628,8 +2628,9 @@ inputs = [
   "swamp/ansible/requirements.yml",
 ]
 [fixture.case_costs]
-"test_migrate_log_loopback_passes_source_check_then_becomes_smtp" = 3
+"test_migrate_log_loopback_passes_source_check_then_becomes_smtp" = 1
 "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte" = 5
+"test_prefix_whitelist_accepts_only_safe_whole_lines_and_reports_first_refusal" = 12
 "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved" = 7
 "test_missing_key_missing_file_symlink_and_already_smtp_write_nothing" = 2
 "test_atomic_replacement_preserves_owner_group_and_mode_without_backup" = 2
@@ -2696,36 +2697,3 @@ inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts"
 "container mail skips retain their reason and missing mail observations stay advisory" = 1
 "default and clone finish workspace T3 and registration despite bounded mail failure" = 1
 "a Node without the main Mailpit gets no mail warning or failure" = 1
-
-[[fixture]]
-file = "swamp/tests/instance_destroy_git_test.py"
-cost = 15
-slices = false
-inputs = [
-  "swamp/ansible/instance/destroy-git.py",
-  "swamp/ansible/instance-checkout-destroy.yml",
-  "swamp/workflows/workflow-operation-instance-destroy.yaml",
-]
-[fixture.case_costs]
-"test_owner_refuses_for_both_force_values_and_lying_layout_records" = 1
-"test_dependent_removal_unregisters_only_it_and_preserves_owner_git_and_work" = 1
-"test_unowned_worktree_blocks_with_its_path" = 1
-"test_standalone_checkout_and_absent_repeat_are_removed" = 1
-"test_unreadable_git_and_failed_unregister_never_fall_back_to_rm" = 1
-"test_real_ansible_phase_refuses_owner_removes_dependent_then_owner" = 7
-"test_moved_worktree_is_found_from_recorded_path_at_admission_and_removal" = 1
-"test_deleted_prunable_registration_is_nonblocking" = 1
-"test_checkout_contents_are_never_walked_during_inspection" = 1
-
-[[fixture]]
-file = "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts"
-cost = 3
-inputs = [
-  "swamp/ansible/instance/destroy-git.py",
-  "swamp/ansible/instance-checkout-destroy.yml",
-  "swamp/workflows/workflow-operation-instance-destroy.yaml",
-]
-[fixture.case_costs]
-"the files Orbit renders do not count as unpushed work, at any depth" = 1
-"any other change is still work that is not pushed" = 1
-"every destroy Ansible step enables failed task stderr" = 1

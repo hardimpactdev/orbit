@@ -1894,10 +1894,11 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_line_test.py": {
-    "source_sha256": "2e01ce293092ce498f393f9ae2e65f0d800753fe0a6131b92801fa03ef956434",
+    "source_sha256": "4a237bffa8bfd61632dcd7eab655cde451b89593d774e83e0fc66c1e2669a8ca",
     "cases": [
       "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte",
       "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved",
+      "test_prefix_whitelist_accepts_only_safe_whole_lines_and_reports_first_refusal",
       "test_missing_key_missing_file_symlink_and_already_smtp_write_nothing",
       "test_atomic_replacement_preserves_owner_group_and_mode_without_backup",
       "test_real_incus_missing_delete_contract_and_first_run",
@@ -1913,7 +1914,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "f05d13d13a39e49f96d7264df8f04bb4d9cbaac94334045aeb147d45378c539c",
+    "source_sha256": "e0cea7c4856c72351dd3c4d77e5076f76f5ac6ddc37a3aa3e6f3e4d0a3a7eb45",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -1938,28 +1939,6 @@
       "mail failure is an advisory warning and cannot fail or restore a completed migration",
       "migration retains each exact-line outcome and the named path conflict without values",
       "missing or malformed successful mail receipts become advisory warnings"
-    ]
-  },
-  "swamp/tests/instance_destroy_git_test.py": {
-    "source_sha256": "6b1f3fe00bf47319e43adffe3548bc2a65b3966d3ddd259758fe9c2aea999fac",
-    "cases": [
-      "test_owner_refuses_for_both_force_values_and_lying_layout_records",
-      "test_dependent_removal_unregisters_only_it_and_preserves_owner_git_and_work",
-      "test_unowned_worktree_blocks_with_its_path",
-      "test_standalone_checkout_and_absent_repeat_are_removed",
-      "test_unreadable_git_and_failed_unregister_never_fall_back_to_rm",
-      "test_moved_worktree_is_found_from_recorded_path_at_admission_and_removal",
-      "test_deleted_prunable_registration_is_nonblocking",
-      "test_checkout_contents_are_never_walked_during_inspection",
-      "test_real_ansible_phase_refuses_owner_removes_dependent_then_owner"
-    ]
-  },
-  "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts": {
-    "source_sha256": "432c00148c29ef9792162658cf8696e50e8e0692be4ec76f28e5394b29a506fa",
-    "cases": [
-      "the files Orbit renders do not count as unpushed work, at any depth",
-      "any other change is still work that is not pushed",
-      "every destroy Ansible step enables failed task stderr"
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {

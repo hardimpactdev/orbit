@@ -143,8 +143,6 @@ additionalFiles:
   - ansible/instance-mail-update.yml
   - ansible/instance_mail.py
   - ansible/instance_mail_line.py
-  - ansible/instance/destroy-git.py
-  - ansible/instance-checkout-destroy.yml
   - ansible/tasks/instance-bridge-rules.yml
   - ansible/instance_bridge.py
   - ansible/instance_network.py

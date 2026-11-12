@@ -1153,17 +1153,3 @@ it('keeps only well-formed key names on a sync that would drop keys', function (
     expect(GatewayFailureRenderer::safeDetails('env.sync_would_drop_keys', ['keys' => 'FOREIGN,mail.from', 'value' => 'secret']))->toBe(['keys' => 'FOREIGN,mail.from'])
         ->and(GatewayFailureRenderer::safeDetails('env.sync_would_drop_keys', ['keys' => "FOREIGN=secret\n"]))->toBe([]);
 });
-
-it('bounds and types worktree dependency details without keeping unrelated fields', function (): void {
-    $row = ['id' => 69, 'name' => 'default', 'project_id' => 12, 'secret' => 'drop'];
-    $safe = GatewayFailureRenderer::safeDetails('instance.worktree_dependents', [
-        'dependents' => [...array_fill(0, 60, $row), ['id' => 'bad']],
-        'other_dependents' => 2, 'unowned_paths' => array_fill(0, 60, '/work/unowned'), 'stdout' => 'drop',
-    ]);
-    expect($safe['dependents'])->toHaveCount(50)->and($safe['dependents'][0])->toBe(['id' => 69, 'name' => 'default', 'project_id' => 12])
-        ->and($safe['unowned_paths'])->toHaveCount(50)->and($safe['other_dependents'])->toBe(2)->and($safe)->not->toHaveKey('stdout');
-    expect(GatewayFailureRenderer::safeDetails('instance.worktree_dependents', [
-        'dependents' => [['id' => 0, 'name' => 'bad', 'project_id' => 1], ['id' => 1, 'name' => [], 'project_id' => 1]],
-        'other_dependents' => '2', 'unowned_paths' => ['relative', [], str_repeat('x', 513)],
-    ]))->toBe(['dependents' => [], 'unowned_paths' => []]);
-});
