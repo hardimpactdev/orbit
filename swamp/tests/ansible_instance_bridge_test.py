@@ -648,9 +648,153 @@ class BridgePolicy(unittest.TestCase):
             self.assertEqual(json.loads((root / 'health.json').read_text())['error_code'], 'instance.container_endpoint_unresolved')
             before = json.loads(json.dumps(current))
             with patch.object(bridge.subprocess, 'check_output', return_value=''):
-                with self.assertRaisesRegex(bridge.PolicyError, 'instance.container_endpoint_unresolved'):
-                    bridge.apply(root, None)
+                bridge.apply(root, None)
                 self.assertEqual(current, before)
+                self.assertEqual(json.loads((root / 'health.json').read_text())['warning_count'], 1)
+
+    def test_isolate_mixed_live_dead_refresh_preserves_saved_rule_and_updates_live(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, incus = Path(directory), Incus()
+            dead = {'host': '10.253.0.1', 'port': 13310, 'docker': True}
+            live = {'host': '10.44.0.7', 'port': 3306, 'docker': True}
+            others = [{'host': '10.253.0.1', 'port': 1025, 'docker': False},
+                      {'host': '172.17.0.5', 'port': 3306, 'docker': False}]
+            dead_nat = '-A DOCKER -d 10.253.0.1/32 -p tcp --dport 13310 -j DNAT --to-destination 172.17.0.8:9999\n'
+            admitted = {**intent(1), 'endpoints': [live, dead, *others],
+                        'baseline': {'egress': [{'action': 'reject', 'protocol': 'udp', 'state': 'enabled'}]}}
+            with patch.object(bridge, 'api', side_effect=incus.api):
+                with patch.object(bridge.subprocess, 'check_output', return_value=nat() + dead_nat):
+                    bridge.apply(root, admitted, True)
+                before = copy.deepcopy(incus.current)
+                dead_record = next((root / 'endpoints').glob('10.253.0.1-13310-*.json'))
+                saved = dead_record.read_bytes()
+                output = io.StringIO()
+                with (
+                    patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.9')),
+                    patch.object(sys, 'argv', ['bridge', '--state-dir', str(root)]),
+                    redirect_stdout(output),
+                ):
+                    self.assertIsNone(bridge.main())
+                self.assertNotIn('error_code', json.loads(output.getvalue()))
+                self.assertIn('172.17.0.9/32', [row.get('destination') for row in incus.current['egress']])
+                for row in before['egress']:
+                    self.assertIn(row, incus.current['egress'])  # No old, dead, mail, DB or baseline rule removed.
+                self.assertEqual(dead_record.read_bytes(), saved)
+                self.assertEqual(json.loads((root / 'health.json').read_text()), {
+                    'error_code': None, 'warning_count': 1,
+                    'warnings': [{'code': 'instance.container_endpoint_unresolved', 'host': dead['host'], 'port': dead['port']}],
+                })
+                # Same-address restart adds no ACL outage: its saved allow never left.
+                with patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.9') + dead_nat):
+                    version = incus.version
+                    bridge.apply(root, None)
+                    self.assertEqual(incus.version, version)
+                    self.assertEqual(json.loads((root / 'health.json').read_text()), {'error_code': None})
+
+    def test_isolate_empty_or_failed_nat_snapshot_changes_no_acl_or_endpoint_record(self):
+        for snapshot in ('', '*nat\n:DOCKER - [0:0]\nCOMMIT\n', '-A POSTROUTING -j MASQUERADE\n',
+                         subprocess.CalledProcessError(1, 'iptables-save'), subprocess.TimeoutExpired('iptables-save', 5)):
+            with self.subTest(snapshot=type(snapshot).__name__), tempfile.TemporaryDirectory() as directory:
+                root, incus = Path(directory), Incus()
+                admitted = {**intent(1), 'endpoints': [
+                    {'host': '10.44.0.7', 'port': 3306, 'docker': True},
+                    {'host': '10.44.0.8', 'port': 3306, 'docker': True},
+                    {'host': '10.253.0.1', 'port': 1025, 'docker': False},
+                ]}
+                table = nat() + nat('172.17.0.5').replace('10.44.0.7/32', '10.44.0.8/32')
+                with patch.object(bridge, 'api', side_effect=incus.api) as api:
+                    with patch.object(bridge.subprocess, 'check_output', return_value=table):
+                        bridge.apply(root, admitted, True)
+                    before = copy.deepcopy(incus.current)
+                    records = {str(p): p.read_bytes() for p in (root / 'endpoints').glob('*.json')}
+                    api.reset_mock()
+                    with patch.object(bridge.subprocess, 'check_output',
+                                      return_value=snapshot if isinstance(snapshot, str) else '',
+                                      side_effect=None if isinstance(snapshot, str) else snapshot):
+                        bridge.apply(root, None)
+                    api.assert_not_called()  # Even direct endpoints are untouched on a global empty read.
+                    self.assertEqual(incus.current, before)
+                    self.assertEqual(records, {str(p): p.read_bytes() for p in (root / 'endpoints').glob('*.json')})
+                    self.assertEqual(json.loads((root / 'health.json').read_text())['warning_count'], 2)
+                    with patch.object(bridge.subprocess, 'check_output', return_value=table):
+                        version = incus.version
+                        bridge.apply(root, None)
+                        self.assertEqual(incus.version, version)
+                        self.assertEqual(incus.current, before)
+
+    def test_isolate_duplicate_dnat_rows_never_change_the_saved_live_allow(self):
+        for duplicate in (nat() + nat(), nat() + nat('172.17.0.9'), nat('172.17.0.9') + nat('172.17.0.9')):
+            with self.subTest(duplicate=duplicate), tempfile.TemporaryDirectory() as directory:
+                root, incus = Path(directory), Incus()
+                with patch.object(bridge, 'api', side_effect=incus.api):
+                    with patch.object(bridge.subprocess, 'check_output', return_value=nat()):
+                        bridge.apply(root, {**intent(1), 'endpoints': [{'host': '10.44.0.7', 'port': 3306, 'docker': True}]}, True)
+                    before = copy.deepcopy(incus.current)
+                    records = {str(p): p.read_bytes() for p in (root / 'endpoints').glob('*.json')}
+                    with patch.object(bridge.subprocess, 'check_output', return_value=duplicate):
+                        bridge.apply(root, None)
+                    self.assertEqual(incus.current, before)
+                    self.assertEqual(records, {str(p): p.read_bytes() for p in (root / 'endpoints').glob('*.json')})
+                    self.assertEqual(json.loads((root / 'health.json').read_text())['warning_count'], 1)
+
+    def test_isolate_two_hundred_unresolved_records_preserve_rules_and_bound_health(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, incus = Path(directory), Incus()
+            config = {key: value for key, value in intent(1).items() if key != 'endpoints'}
+            bridge.state_file(root, 'config', config)
+            for number in range(200):
+                row = {'host': '255.255.255.254', 'port': 60000 + number, 'docker': True,
+                       'admitted_at': config['admitted_at'], 'translated': {'host': '172.17.0.8', 'port': 10000 + number}}
+                bridge.state_file(root, 'endpoint', row, host=row['host'], port=row['port'], capture=row['admitted_at'])
+                incus.current['egress'].append(bridge.endpoint_rule(row['translated']['host'], row['translated']['port'], config['cidr'], row['admitted_at']))
+            bridge.state_file(root, 'health', {'error_code': 'instance.bridge_state_unresolved'})
+            before = copy.deepcopy(incus.current)
+            records = {str(p): p.read_bytes() for p in (root / 'endpoints').glob('*.json')}
+            with patch.object(bridge, 'api', side_effect=incus.api), patch.object(bridge.subprocess, 'check_output', return_value=nat()):
+                bridge.apply(root, None)
+                report = (root / 'health.json').read_bytes()
+                self.assertLess(len(report), 4096)
+                health = json.loads(report)
+                self.assertEqual(health['error_code'], 'instance.bridge_state_unresolved')
+                self.assertEqual(health['warning_count'], 200)
+                self.assertEqual(len(health['warnings']), 20)
+                self.assertEqual(incus.current, before)
+                self.assertEqual(records, {str(p): p.read_bytes() for p in (root / 'endpoints').glob('*.json')})
+                stat = (root / 'health.json').stat()
+                self.assertEqual(bridge.apply(root, None), 0)
+                after = (root / 'health.json').stat()
+                self.assertEqual((stat.st_ino, stat.st_mtime_ns), (after.st_ino, after.st_mtime_ns))
+                print('HEALTH-200 bytes=' + str(len(report)) + ' warnings=200 samples=20')
+                # The byte cap also holds if a sample is unexpectedly oversized.
+                bridge.refresh_health(root, True, [{'code': 'instance.container_endpoint_unresolved', 'host': 'x' * 5000, 'port': 1}])
+                bounded = (root / 'health.json').read_bytes()
+                self.assertLess(len(bounded), 4096)
+                self.assertEqual(json.loads(bounded), {'error_code': None, 'warning_count': 1, 'warnings': []})
+
+    def test_isolate_write_failure_still_exits_nonzero(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, incus = Path(directory), Incus()
+            docker = {**intent(1), 'endpoints': [{'host': '10.44.0.7', 'port': 3306, 'docker': True}]}
+            with patch.object(bridge, 'api', side_effect=incus.api), patch.object(bridge.subprocess, 'check_output', return_value=nat()):
+                bridge.apply(root, docker, True)
+
+            def refuse(name, value=None, etag=None, deadline=None):
+                if value is not None:
+                    raise bridge.PolicyError('instance.container_bridge_write_failed')
+                return incus.api(name, value, etag, deadline)
+
+            output, error = io.StringIO(), io.StringIO()
+            with (
+                patch.object(bridge, 'api', side_effect=refuse),
+                patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.9')),
+                patch.object(sys, 'argv', ['bridge', '--state-dir', str(root)]),
+                redirect_stdout(output), redirect_stderr(error), self.assertRaises(SystemExit) as failed,
+            ):
+                bridge.main()
+            self.assertEqual(failed.exception.code, 1)
+            self.assertEqual(json.loads(output.getvalue())['error_code'], 'instance.container_bridge_write_failed')
+            self.assertEqual(json.loads((root / 'health.json').read_text())['error_code'], 'instance.container_bridge_write_failed')
+            self.assertEqual(len(incus.current['egress']), 1)
 
     def test_withdrawal_retains_stopped_shared_service_and_unrelated_stopped_database(self):
         mail = {'host': '10.253.0.1', 'port': 1025, 'docker': True}
