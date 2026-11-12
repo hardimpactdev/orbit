@@ -97,16 +97,18 @@
   tasks:
     - name: Withdraw
       block:
-        # Composing and applying are seconds apart: a file that changed since the read is not overwritten.
+        # Keep the existing pool/DNS checks. Caddy is checked again inside its Node transaction.
         - name: Check the files are as they were read
+          vars:
+            expected: "{{ plan.expect | dict2items | rejectattr('key', 'equalto', '/etc/caddy/Caddyfile') | list }}"
           ansible.builtin.command:
-            argv: "{{ ['sha256sum', '--'] + (plan.expect | dict2items | map(attribute='key') | list) }}"
+            argv: "{{ ['sha256sum', '--'] + (expected | map(attribute='key') | list) }}"
           register: seen
-          when: plan.expect | length > 0
+          when: expected | length > 0
           changed_when: false
           failed_when: >-
             seen.rc != 0 or
-            (seen.stdout_lines | map('split', ' ') | map('first') | list) != (plan.expect | dict2items | map(attribute='value') | list)
+            (seen.stdout_lines | map('split', ' ') | map('first') | list) != (expected | map(attribute='value') | list)
           check_mode: false
         # Pools first, as the PHP delta did: written, tested, then reloaded. A reload keeps open requests; a stopped unit stays stopped.
         - name: Write the PHP-FPM pool files
@@ -143,15 +145,10 @@
         # The Node's whole Caddyfile without the Route; validated, then reloaded. Caddy is never restarted.
         - name: Publish the Caddyfile
           when: plan.caddy is not none
-          block:
-            - name: Validate and publish the withdrawn Caddyfile
-              ansible.builtin.import_tasks: tasks/caddy-publish.yml
-              vars:
-                caddy_content: "{{ plan.caddy.content }}"
-            - name: Reload Caddy
-              ansible.builtin.command:
-                argv: [timeout, "60", systemctl, reload, caddy]
-              changed_when: true
+          orbit_caddy_publish:
+            content: "{{ plan.caddy.content }}"
+            # Existing composers omit an empty read; absence and empty bytes have the same base.
+            composed_from_sha256: "{{ plan.expect['/etc/caddy/Caddyfile'] | default('' | hash('sha256')) }}"
         - name: Publish the private DNS records
           when: plan.dns is not none
           block:

@@ -2083,7 +2083,7 @@
     ]
   },
   "swamp/tests/caddy_candidate_test.py": {
-    "source_sha256": "2d345a6c3d9576df6477b274b7da45b4cbfa660e8b35c3dd115690fd42315aa2",
+    "source_sha256": "ad328444d166af6d3c81ad5f7360cb289b7acef1a75d885246833a8c1de62935",
     "cases": [
       "test_native_whole_node_caddy_publication",
       "test_native_delta_used_by_all_three_migrate_caddy_passes",
@@ -2125,9 +2125,11 @@
     ]
   },
   "swamp/tests/ansible_instance_route_withdraw_test.ts": {
-    "source_sha256": "01d908556d2e655a2da703663973a5329a7d31969e2e6b903a01414602050eb5",
+    "source_sha256": "8a652cb65effdf0c3971b1482d1bfaa8798263319980d8182bd38d3ce700b977",
     "cases": [
-      "pending Route withdrawal removes partial publication and CSR residue or accepts an absent site with real Ansible"
+      "withdrawal removes a published site and its CSR residue with real Ansible",
+      "withdrawal accepts an absent site and removes CSR residue with real Ansible",
+      "withdrawal refuses an old writer between composition and apply with real Ansible"
     ]
   },
   "swamp/tests/ansible_instance_migrate_source_test.ts": {
@@ -2171,6 +2173,20 @@
       "real clone commands stay below 32 KiB with a large Gateway intent",
       "real clone launch preserves stdin and cleanup works after an early container failure",
       "workflow command and inline script templates keep 16 KiB of budget headroom"
+    ]
+  },
+  "swamp/tests/caddy_publish_test.py": {
+    "source_sha256": "697f557a1ef9a249b0d5551d8979810628e249003801863be00976d5e22f3859",
+    "cases": [
+      "test_same_checksum_publishes_exact_validated_inode_and_reloads",
+      "test_old_writer_between_read_and_apply_refuses_with_both_checksum_origins",
+      "test_two_interleaved_writers_preserve_the_first_site_and_refuse_the_second",
+      "test_invalid_candidate_keeps_live_bytes_metadata_and_skips_reload",
+      "test_reload_failure_retains_validated_publication_and_frees_lock",
+      "test_missing_and_empty_composed_bases_are_checked_not_unconditional",
+      "test_lock_wait_uses_five_second_bound_and_busy_refusal_keeps_live_file",
+      "test_holder_death_closes_the_descriptor_and_releases_the_lock",
+      "test_invalid_lock_or_checksum_refuses_without_touching_live_file"
     ]
   }
 }
