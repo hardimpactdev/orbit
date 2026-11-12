@@ -2131,7 +2131,7 @@ Deno.test({
       git(f.checkout, "commit", "--quiet", "-m", "nested app");
       git(f.checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
       const sourceUnit = `${f.folder}/source.service`;
-      Deno.writeTextFileSync(sourceUnit, "[Service]\nExecStart=/bin/true\n");
+      Deno.writeTextFileSync(sourceUnit, `[Service]\nEnvironmentFile=-"${f.checkout}/apps/mail/.env"\nExecStart=/bin/true\n`);
       f.migrate.processes.push({ name: "writer.service", path: sourceUnit, environment_directory: `${f.folder}/source-env`, desired: "running", executables: ["/bin/true"] });
       const schedules = migrationSchedules(f, "enabled");
       Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify({ ...schedules.states, "writer.service": { state: "running", enabled: true } }));
@@ -2139,6 +2139,24 @@ Deno.test({
       f.migrate.databases = [{ host: "127.0.0.1", port: 1 }];
       f.write();
       const stateBefore = f.state();
+
+      Deno.mkdirSync(`${f.checkout}/second`);
+      const primaryEnvironment = Deno.readTextFileSync(`${f.checkout}/.env`);
+      const sourceContent = Deno.readTextFileSync(sourceUnit);
+      Deno.writeTextFileSync(`${f.checkout}/.env`, "DB_CONNECTION=sqlite\nMAIL_MAILER=log\n");
+      Deno.writeTextFileSync(`${f.checkout}/second/.env`, "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n");
+      Deno.writeTextFileSync(sourceUnit, `[Service]\nWorkingDirectory=${f.checkout}/second\nEnvironmentFile=-${f.checkout}/.env\nExecStart=/bin/true\n`);
+      const secondRefused = f.run("container");
+      assert(!secondRefused.ok, secondRefused.output);
+      assertEquals(f.result().error_code, "instance.migrate_env_service_unreachable");
+      assert(f.result().error_message.includes("second/.env: DB_HOST=127.0.0.1:3306"));
+      assert(!exists(`${f.folder}/calls`), "a second application refusal precedes every probe");
+      assert(!exists(`${f.folder}/run/quiesced`));
+      assertEquals(Deno.readTextFileSync(`${f.folder}/host-processes.json`), before);
+      assertEquals(f.state(), stateBefore);
+      Deno.removeSync(`${f.checkout}/second`, { recursive: true });
+      Deno.writeTextFileSync(`${f.checkout}/.env`, primaryEnvironment);
+      Deno.writeTextFileSync(sourceUnit, sourceContent);
 
       const refused = f.run("container");
 
@@ -2238,6 +2256,17 @@ for (const scenario of ["stock Laravel", "real53", "selected Redis", "attached R
     ignore: !hasAnsible,
     fn() {
       const f = fixture();
+      for (const name of [
+        "vendor/nunomaduro/collision/tests/LaravelApp/.env",
+        "vendor/vlucas/phpdotenv/tests/fixtures/env/.env",
+        "vendor/laravel/framework/tests/Foundation/Fixtures/.env",
+        "node_modules/example/tests/.env",
+      ]) {
+        const path = `${f.checkout}/${name}`;
+        Deno.mkdirSync(path.slice(0, path.lastIndexOf("/")), { recursive: true });
+        Deno.writeTextFileSync(path, "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nMAIL_MAILER=smtp\nMAIL_HOST=127.0.0.1\nMAIL_PORT=1025\n");
+      }
+
       try {
         const selected = scenario.includes("Redis");
         const text = scenario === "stock Laravel"

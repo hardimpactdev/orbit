@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "99302ecb7d7ee6e6192e2fcc092c648f76e2fa233f602470549695b11f01bf33",
+    "source_sha256": "edee53732e9a864b8cedd39c46d42f6ae57b10e9c847fc604408e6beefc0d141",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -1773,7 +1773,7 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "e12a031c865034f2731e29f80d0f7ec4dc909644e418187aad64f9c4116906ec",
+    "source_sha256": "b4a913f8022e8e56039cd9be42de73d7b9cd7b81335d67a4d779a98e09022459",
     "cases": [
       "test_development_mail_satisfies_only_the_ipv4_forwarded_endpoints",
       "test_ipv6_mail_is_refused_even_with_the_development_mail_path",
@@ -1788,7 +1788,11 @@
       "test_memcached_and_prefixed_mail_conventions",
       "test_ipv6_loopback_canonical_target_and_ipv4_mapped_loopback",
       "test_quotes_spaces_export_comments_and_crlf",
-      "test_every_copied_nested_env_is_checked_including_ignored_and_symlinked_apps",
+      "test_dependency_env_fixtures_are_never_discovered",
+      "test_process_named_environment_outside_the_root_is_read",
+      "test_process_working_directory_environment_is_read_only_inside_checkout",
+      "test_application_and_schedule_environment_paths_are_explicit",
+      "test_only_explicit_symlinked_env_files_are_read_without_tree_traversal",
       "test_node_addresses_and_unspecified_hosts_are_refused_even_inside_allowed_ranges",
       "test_direct_services_require_exact_admission_even_for_fleet_and_wireguard_addresses",
       "test_bare_stock_hosts_and_nonredis_or_unknown_selectors_do_not_select_a_service",
@@ -1810,7 +1814,7 @@
       "test_projected_target_address_does_not_cover_a_different_recorded_endpoint",
       "test_mixed_network_selections_cannot_use_only_the_default_drivers_port",
       "test_explicit_connection_evidence_overrides_listener_exemptions",
-      "test_traversal_stat_and_read_errors_return_safe_preflight_refusals",
+      "test_named_unit_and_env_read_errors_return_safe_preflight_refusals",
       "test_multiline_private_values_do_not_forge_service_keys"
     ]
   },
