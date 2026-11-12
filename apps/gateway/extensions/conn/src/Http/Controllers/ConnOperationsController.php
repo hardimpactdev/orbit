@@ -46,7 +46,9 @@ final class ConnOperationsController extends Controller
         $caller = RequireActiveWireGuardPeer::activePeer($request);
         $target = match ($operation->kind) {
             'conn.pairing_create' => 'conn_pairing', 'conn.pairing_revoke' => 'conn_pairing_node', 'conn.gateway_sessions_revoke' => 'conn_environment',
-            'instance.create', 'instance.destroy' => 'instance', default => null,
+            'instance.create' => 'instance',
+            'instance.destroy' => ($operation->state['conn_destroy_caller_node_id'] ?? null) === $caller?->id ? 'instance' : null,
+            default => null,
         };
         // Instance lifecycle admission records its caller as node:<id>.
         $owner = in_array($operation->kind, ['instance.create', 'instance.destroy'], true)

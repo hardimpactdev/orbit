@@ -16,7 +16,7 @@ covers:
 
 The Gateway then records the selected Instance, owned resources and desired removal state. All effects run from control Node209 through official SSH with its approved identity and the targets' full stored host pins. The Gateway projects the admitted records after the bound native terminal result; workflow steps do not read intent or send phase callbacks to the Gateway. The PHP provisioner, source-removal executor, phase checkpoint methods and callback runner are deleted. Shared source classification and native source inspection remain pure inputs to the native workflows.
 
-Admission finishes before any Schedule removal: after commit, the shared dispatch removes native Schedules before starting the admitted run. A refused admission leaves them intact.
+Conn runs the same stored blocker checks before it calls the engine. Core callers keep their existing order: native Schedule removal precedes the intent transaction. A Schedule publication failure leaves the Instance and Route active and records no removal Operation.
 
 ```bash
 orbit instance:destroy <instance> [--yes] [--force] [--json]

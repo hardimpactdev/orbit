@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Actions;
 
 use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\DefaultInstanceName;
+use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\Conn\Domain\ConnInstanceWorkState;
 
 /** Conn consent precedes the existing forced engine; no request probes the container. */
@@ -29,6 +32,15 @@ final readonly class DestroyConnInstanceAction
             $this->work->assertRemovalSafe($instance);
         }
 
-        return $this->destroy->execute($instance, true, 'node:'.$caller->id, $requestId);
+        app(ContainerInstanceDestroy::class)->assertAvailable($instance, true);
+        app(DirectInstanceDestroyIntent::class)->assertAvailable($this->destroy->snapshot($instance, true));
+        $operation = $this->destroy->execute($instance, true, 'node:'.$caller->id, $requestId);
+
+        return DB::transaction(function () use ($operation, $caller): Operation {
+            $recorded = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            $recorded->update(['state' => [...($recorded->state ?? []), 'conn_destroy_caller_node_id' => $caller->id]]);
+
+            return $recorded;
+        });
     }
 }

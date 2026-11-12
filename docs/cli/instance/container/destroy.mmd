@@ -39,7 +39,7 @@ sequenceDiagram
     Note over GW: Capture removal intent<br/>mark removing
     %%> Result:
     %%> - capture the clone's container identity, Route, Processes and owned databases
-    %%> - finish admission before Schedule removal; after commit, dispatch removes Schedules before starting the run
+    %%> - Conn runs stored blocker checks before calling the engine; the engine keeps its existing Schedule removal and failure boundary
     %%> - keep its runtime row, address and T3 port reserved until terminal success
     %%> - Conn refuses new pairings while the Instance is removing
     GW->>SW: Start run, full intent<br/>operation-instance-destroy

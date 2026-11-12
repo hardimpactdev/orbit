@@ -8,6 +8,7 @@ use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampDispatch;
@@ -43,6 +44,8 @@ beforeEach(function (): void {
     {
         public array $messages = [];
 
+        public bool $scheduleRemovalFails = false;
+
         private array $last = [];
 
         public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
@@ -54,6 +57,9 @@ beforeEach(function (): void {
 
         public function receive(float $timeoutSeconds): array
         {
+            if ($this->scheduleRemovalFails && $this->last['type'] === 'workflow.trigger.remove') {
+                return [['id' => $this->last['id'], 'type' => 'error', 'error' => ['code' => 'fixture_unavailable']]];
+            }
             if ($this->last['type'] !== 'vault.put') {
                 return [['id' => $this->last['id'], 'type' => 'error', 'error' => ['code' => 'not_found']]];
             }
@@ -208,12 +214,17 @@ it('requires access to the Instance Node before removal or replay', function ():
     expect(connRemovalStored())->toBe($before);
 });
 
-it('preserves late engine refusals before Schedule effects and drops their queued work on rollback', function (string $blocker, string $code): void {
+it('runs stored engine blockers before any Schedule effect', function (string $blocker, string $code): void {
     $instance = connRemovalClone();
     connRemovalResources($instance);
     if ($blocker === 'database') {
         $database = DatabaseConnection::query()->where('owner_instance_id', $instance->id)->firstOrFail();
         DatabaseConnectionTarget::query()->create(['database_connection_id' => $database->id, 'instance_id' => $this->default->id, 'prefix' => 'DB']);
+    } elseif ($blocker === 'clone') {
+        Instance::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+            'name' => 'incomplete-clone', 'clone_candidate_id' => $instance->id, 'checkout_path' => '/fixture/clone']);
+    } elseif ($blocker === 'account') {
+        $this->node->update(['user' => 'root']);
     } else {
         Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => $instance->id,
             'node_id' => $instance->node_id, 'status' => 'running', 'input' => [], 'state' => []]);
@@ -223,11 +234,13 @@ it('preserves late engine refusals before Schedule effects and drops their queue
     connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertConflict()->assertJsonPath('error.code', $code);
     expect(connRemovalStored())->toBe($before)->and($this->socket->messages)->toBe($messages);
 
-    // Flush dispatch through an independent commit; rejected removal must not leak Schedule work into it.
+    // A refused pre-check must not have queued any work either.
     app(SwampDispatch::class)->copy(static function (): void {});
     expect(connRemovalStored())->toBe($before)->and($this->socket->messages)->toBe($messages);
 })->with(['owned database used elsewhere' => ['database', 'database.connection_attached'],
-    'existing destroy' => ['destroy', 'operation.target_busy']]);
+    'existing destroy' => ['destroy', 'operation.target_busy'],
+    'incomplete clone' => ['clone', 'instance.clone_in_progress'],
+    'unsupported Node account' => ['account', 'instance.destroy_unsupported']]);
 
 it('keeps a migrated Instances retired Git fact in the result after deletion', function (): void {
     $instance = connRemovalClone(true);
@@ -261,3 +274,44 @@ it('requires a key and a strict JSON acknowledgement', function (): void {
     }
     expect(connRemovalStored())->toBe($before);
 });
+
+it('keeps the existing Schedule outage boundary for the CLI engine and Conn', function (bool $conn): void {
+    $instance = connRemovalClone();
+    connRemovalResources($instance);
+    $before = connRemovalStored();
+    $this->socket->scheduleRemovalFails = true;
+    $response = $conn ? connRemovalCall($instance->id, ['acknowledge_unsaved' => true])
+        : $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+            ->deleteJson('/api/v1/instances/'.$instance->id, ['force' => true]);
+    $response->assertStatus(503)->assertJsonPath('error.code', 'swamp.schedule_publish_unavailable');
+    $after = connRemovalStored();
+    // Main changes only Schedule failure evidence, with no removal intent or Operation.
+    $before['schedules'] = $after['schedules'];
+    expect($after)->toBe($before)
+        ->and($instance->refresh()->status)->toBe(InstanceState::Active)
+        ->and(Route::query()->where('domain', 'feature.fixture.test')->value('status'))->toBe(RouteStatus::Active)
+        ->and(Route::query()->where('domain', 'feature.fixture.test')->value('sites_published'))->toBeTrue()
+        ->and(Schedule::query()->where('target_id', $instance->id)->value('error_code'))->toBe('swamp.schedule_publish_unavailable');
+})->with(['CLI' => [false], 'Conn' => [true]]);
+
+it('refuses missing null and non-boolean consent in a JSON object without effects', function (string $content): void {
+    $instance = connRemovalClone();
+    connRemovalResources($instance);
+    $before = connRemovalStored();
+    $messages = $this->socket->messages;
+    $this->call('POST', '/api/v1/conn/instances/'.$instance->id.'/destroy', [], [], [], [
+        'REMOTE_ADDR' => $this->phone->wireguard_ip, 'CONTENT_TYPE' => 'application/json',
+        'HTTP_ACCEPT' => 'application/json', 'HTTP_IDEMPOTENCY_KEY' => 'fixture-invalid-consent',
+    ], $content)->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect(connRemovalStored())->toBe($before)->and($this->socket->messages)->toBe($messages);
+})->with(['omitted member' => ['{}'], 'empty body' => [''], 'null' => ['{"acknowledge_unsaved":null}'],
+    'string' => ['{"acknowledge_unsaved":"true"}'], 'zero' => ['{"acknowledge_unsaved":0}'], 'one' => ['{"acknowledge_unsaved":1}']]);
+
+it('keeps a Conn destroy readable at every terminal status when failure detail is absent', function (string $status): void {
+    $instance = connRemovalClone();
+    $response = connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    $operation->update(['status' => $status, 'finished_at' => now(), 'error_code' => 'fixture.destroy_failed']);
+    connRemovalRead($operation)->assertOk()->assertJsonPath('data.status', $status)
+        ->assertJsonPath('data.error_code', 'fixture.destroy_failed')->assertJsonPath('data.error', null);
+})->with(['failed', 'cancelled', 'interrupted']);

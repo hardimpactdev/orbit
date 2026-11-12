@@ -269,7 +269,7 @@ describe('clone Operation progress', function (): void {
 
     it('returns 404 for a caller-owned kind outside the Conn allowlist', function (): void {
         $operation = Operation::query()->create([
-            'kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => 1, 'node_id' => $this->beast->id,
+            'kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => 1, 'node_id' => $this->beast->id,
             'input' => ['caller_node_id' => $this->phone->id], 'state' => [], 'status' => OperationStatus::Running,
             'sequence' => 1, 'attempts' => 1, 'triggered_by' => 'node:'.$this->phone->id,
         ]);
