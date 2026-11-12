@@ -322,6 +322,12 @@ Inherited refusals keep their codes:
 | `database.connection_attached` | An owned database is attached outside the removal set. |
 | `database.ownership_unproven` | The database's owner or managed state cannot be proven. |
 | `database.removal_conflict` | Owned database membership, server state or SQLite path is unsafe. |
+| `database.server_required` | The remote database has no managed server. |
+| `database.server_in_use` | Database creation is unfinished on its server. |
+| `database.system_database` | A system database cannot be dropped. |
+| `certificate.scope_invalid` | A Route leaf has no valid admitted account or scope. |
+| `swamp.ssh_identity_unavailable` | The control Node SSH identity is not configured. |
+| `swamp.ssh_target_unavailable` | The stored target address, account or host key is missing. |
 
 Infrastructure failures keep their existing codes, such as `swamp.schedule_publish_unavailable` (503). A failed Operation can have `error: null` even when `error_code` is set; Conn must use that code without assuming `error.detail` exists.
 
