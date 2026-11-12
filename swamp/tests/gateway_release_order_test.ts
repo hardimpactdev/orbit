@@ -7,7 +7,7 @@ type Step = {
   allowFailure?: boolean;
   guard?: string;
   dependsOn?: { step: string; condition: Condition }[];
-  task: { inputs?: { argv?: string[] }; workflowIdOrName?: string };
+  task: { inputs?: { argv?: string[]; run?: string; env?: Record<string, string> }; workflowIdOrName?: string };
 };
 async function steps(file: string): Promise<Step[]> {
   const workflow = parse(await Deno.readTextFile(new URL(`../workflows/${file}.yaml`, import.meta.url))) as { jobs: { steps: Step[] }[] };
@@ -54,15 +54,41 @@ Deno.test("the candidate release publishes bridge helpers before switching, inde
   assertEquals(switchBack.dependsOn, [{step: "Verify the Gateway", condition: {type: "failed"}}]);
   assertEquals(read.allowFailure, true);
   assertEquals(publish.allowFailure, true);
-  assert(read.task.inputs?.argv?.join(" ").includes("/bootstrap/cache/bridge-helpers.json"));
+  assert(read.task.inputs?.argv?.join(" ").includes("GatewayReleaseBridgeInput::class)->capture()"));
   assertEquals(publish.dependsOn, [{ step: "Write bridge helper intent", condition: { type: "succeeded" } }]);
   assert(activate.find((step) => step.name === "Switch the release")!.dependsOn!.some(
     (edge) => edge.step === "bridge_helpers" && edge.condition.type === "always"));
   const build = await Deno.readTextFile(new URL("../scripts/gateway-release-build.sh", import.meta.url));
-  assert(build.includes("GatewayReleaseBridgeInput::class)->capture()"));
-  assert(build.indexOf("bridge_input=") > build.indexOf("\nfi\n"), "reused sealed releases recapture Nodes too");
+  assert(!build.includes("GatewayReleaseBridgeInput"), "helper capture is outside the fatal build");
+  assert(!build.includes("bridge-helpers.json"), "helper cache writes cannot fail the build");
   assertEquals(activate.find((step) => step.name === "Clean bridge helper intent")!.dependsOn, [
     { step: "Write bridge helper intent", condition: { type: "always" } },
     { step: "bridge_helpers", condition: { type: "always" } },
   ]);
+});
+
+
+Deno.test("a failed helper capture reports not delivered and leaves the live switch unconditional", () => {
+  const root = Deno.makeTempDirSync();
+  try {
+    const php = root + "/php8.5";
+    Deno.writeTextFileSync(php, "#!/bin/sh\necho 'capture failed: synthetic private output' >&2\nexit 1\n");
+    Deno.chmodSync(php, 0o755);
+    const read = activate.find((step) => step.name === "Read bridge helper intent")!;
+    const argv = read.task.inputs!.argv!;
+    const capture = new Deno.Command(argv[0], {args: argv.slice(1),
+      env: {PATH: root + ":" + Deno.env.get("PATH")!}}).outputSync();
+    assertEquals(capture.success, false);
+    assertEquals(read.allowFailure, true);
+    const report = activate.find((step) => step.name === "bridge_helpers")!;
+    const receipt = new Deno.Command("/bin/sh", {args: ["-c", report.task.inputs!.run!],
+      env: {ORBIT_RUN: root, BRIDGE_CAPTURE_OK: "false", BRIDGE_PHASE_EXIT: ""}}).outputSync();
+    assertEquals(receipt.success, true);
+    assertEquals(JSON.parse(new TextDecoder().decode(receipt.stdout)), {nodes: [], reason: "capture"});
+    assertEquals(report.allowFailure, true);
+    assert(activate.find((step) => step.name === "Switch the release")!.dependsOn!.some(
+      (edge) => edge.step === "bridge_helpers" && edge.condition.type === "always"));
+  } finally {
+    Deno.removeSync(root, {recursive: true});
+  }
 });

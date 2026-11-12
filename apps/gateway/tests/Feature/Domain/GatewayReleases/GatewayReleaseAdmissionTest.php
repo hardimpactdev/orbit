@@ -177,12 +177,15 @@ it('retains per-Node helper failures in a verified release and its Operation wit
     $operation = Operation::query()->create(['kind' => 'gateway.release', 'target_type' => 'gateway_release',
         'target_id' => $release->id, 'status' => 'running', 'input' => ['sha' => $sha, 'previous' => substr(ReleaseA, 0, 12)],
         'triggered_by' => 'gateway-release', 'state' => ['swamp_run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f']]);
-    $rows = [['node_id' => 7, 'updated' => true, 'reason' => 'updated'],
-        ['node_id' => 8, 'updated' => false, 'reason' => 'checksum'],
-        ['node_id' => 9, 'updated' => false, 'reason' => 'timeout'],
-        ['node_id' => 10, 'updated' => false, 'reason' => 'copy']];
+    $rows = [['node_id' => 7, 'updated' => true, 'reason' => 'updated', 'installed_sha256' => str_repeat('a', 64)],
+        ['node_id' => 8, 'updated' => false, 'reason' => 'checksum', 'installed_sha256' => null],
+        ['node_id' => 9, 'updated' => false, 'reason' => 'timeout', 'installed_sha256' => null],
+        ['node_id' => 10, 'updated' => false, 'reason' => 'copy', 'installed_sha256' => null],
+        ['node_id' => 11, 'updated' => false, 'reason' => 'target_symlink', 'installed_sha256' => null],
+        ['node_id' => 12, 'updated' => false, 'reason' => 'candidate_symlink', 'installed_sha256' => null]];
     $handoff = ['bridge_helpers' => ['stdout' => json_encode(['nodes' => array_map(
-        static fn (array $row): array => $row + ['stderr' => 'Bearer secret-token'], $rows)], JSON_THROW_ON_ERROR)]];
+        static fn (array $row): array => array_replace($row, ['stderr' => 'Bearer secret-token',
+            'installed_sha256' => $row['node_id'] === 8 ? 'Bearer secret-token' : $row['installed_sha256']]), $rows)], JSON_THROW_ON_ERROR)]];
     new GatewayReleaseRunProjection()->apply($operation, [
         'run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f', 'status' => 'succeeded',
         'started_at' => '2026-11-04T16:00:00.000Z', 'finished_at' => '2026-11-04T16:01:00.000Z',
@@ -217,5 +220,23 @@ it('keeps an unconfirmed Node in the release receipt after a publication timeout
     expect($release->refresh()->outcome)->toBe('verified')
         ->and($operation->refresh()->status->value)->toBe('succeeded')
         ->and($operation->error_code)->toBeNull()
-        ->and($operation->result['bridge_helpers'])->toBe(['nodes' => [['node_id' => 7, 'updated' => false, 'reason' => $reason]]]);
+        ->and($operation->result['bridge_helpers'])->toBe(['nodes' => [['node_id' => 7, 'updated' => false, 'reason' => $reason, 'installed_sha256' => null]]]);
 })->with([[124, 'timeout'], [2, 'report']]);
+
+it('records a failed helper capture without failing the verified release', function (): void {
+    Queue::fake();
+    $release = GatewayRelease::query()->create(['requested' => ReleaseC, 'trigger' => 'auto', 'outcome' => GatewayRelease::Running,
+        'force' => false, 'phases' => [], 'duration_ms' => 0]);
+    $operation = Operation::query()->create(['kind' => 'gateway.release', 'target_type' => 'gateway_release',
+        'target_id' => $release->id, 'status' => 'running', 'input' => ['sha' => ReleaseC, 'previous' => substr(ReleaseA, 0, 12)],
+        'triggered_by' => 'gateway-release', 'state' => ['swamp_run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f']]);
+    new GatewayReleaseRunProjection()->apply($operation, [
+        'run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f', 'status' => 'succeeded',
+        'started_at' => '2026-11-04T16:00:00.000Z', 'finished_at' => '2026-11-04T16:01:00.000Z',
+        'result' => ['bridge_helpers' => ['bridge_helpers' => ['stdout' => '{"nodes":[],"reason":"capture"}']]],
+    ]);
+    expect($release->refresh()->outcome)->toBe('verified')
+        ->and($operation->refresh()->status->value)->toBe('succeeded')
+        ->and($operation->result['bridge_helpers'])->toBe(['nodes' => [], 'reason' => 'capture'])
+        ->and($release->phases['bridge_helpers'])->toBe(['nodes' => [], 'reason' => 'capture']);
+});

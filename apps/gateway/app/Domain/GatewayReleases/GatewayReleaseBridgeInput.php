@@ -12,7 +12,7 @@ use App\Models\Node;
 use Illuminate\Database\Eloquent\Builder;
 use RuntimeException;
 
-/** The candidate Gateway captures public SSH intent during its existing release build. */
+/** The candidate Gateway captures public SSH intent during the non-fatal activation step. */
 final readonly class GatewayReleaseBridgeInput
 {
     public function __construct(private ManagedNodeEligibility $eligibility, private SwampSshExecutionInput $ssh) {}

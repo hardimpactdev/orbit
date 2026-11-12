@@ -73,11 +73,11 @@ sequenceDiagram
     %%> - the run fails with `gateway.release_horizon_unit_stale` for a unit without the policy, or `gateway.release_horizon_not_drained` when the unit did not stop in time; Horizon is started again below
     AC->>GN: Read bridge helper intent<br/>candidate release capture
     %%> What it does:
-    %%> - the candidate build captures managed app-dev SSH targets and its helper checksum; no new field is needed from an older admitting Gateway
+    %%> - activation captures managed app-dev SSH targets and the helper checksum with the candidate code; capture failure is recorded and never stops the release
     AC->>GN: Publish bridge helpers<br/>Ansible · before live switch
     %%> What it does:
     %%> - reach each captured Node with pinned SSH keys, with no nightly window
-    %%> - only when its refresh service unit exists, atomically replace the installed helper and verify SHA-256
+    %%> - only when its refresh service unit exists, verify a candidate beside the target before atomic rename; refuse symlinks
     %%> - an in-flight Python refresh keeps its old open file; the next timer start opens the replacement
     %%> On failure:
     %%> - no delivery failure stops the release or triggers switch-back; the result names each Node and its reason
@@ -85,7 +85,7 @@ sequenceDiagram
     %%> Time:
     %%> - four Nodes in parallel, no task barrier between Nodes; Node reads wait at most 10 seconds each and copying at most 15 seconds
     %%> - publication stops after 180 seconds plus 5 seconds to kill; Nodes without a final observation are named as not updated
-    %%> - receipt and cleanup each have a 10-second bound plus 2 seconds to kill; queue and staging time are additional
+    %%> - receipt and cleanup each have a 10-second bound plus 2 seconds to kill; queue and staging time are additional, so no total bound is proven
     AC->>GN: Switch the release<br/>gateway-rollback · Horizon
     %%> Why:
     %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart

@@ -64,15 +64,6 @@ else
   cache || { rm -f "$release/REVISION"; fail gateway.release_configuration_failed "config:cache failed"; }
   chmod u-w "$release"
 fi
-# Capture public Node intent with the candidate code on every build, including a reused seal.
-# This also works when the running Gateway admitted a release before this capture existed.
-bridge_input="$app/bootstrap/cache/.bridge-helpers.next"
-# shellcheck disable=SC2016
-php8.5 -r 'require $argv[1]."/vendor/autoload.php"; $app = require $argv[1]."/bootstrap/app.php";
-  $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-  echo json_encode($app->make(App\Domain\GatewayReleases\GatewayReleaseBridgeInput::class)->capture(), JSON_THROW_ON_ERROR);' "$app" > "$bridge_input"
-chmod 0600 "$bridge_input"
-mv "$bridge_input" "$app/bootstrap/cache/bridge-helpers.json"
 # The new code renders its own grants; the load step splits the two files at the separator line.
 # shellcheck disable=SC2016
 php8.5 -r 'require $argv[1]."/vendor/autoload.php"; $g = (new App\Infrastructure\GatewayReleases\SwampGrantRenderer)->render($argv[2]);

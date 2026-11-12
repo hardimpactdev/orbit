@@ -1,5 +1,5 @@
 ---
-# The candidate Gateway captured this public release material during the build.
+# Activation captures public release material with the candidate Gateway code.
 - name: Address the Instance hosts
   hosts: localhost
   connection: local
@@ -65,44 +65,7 @@
             path: "{{ bridge_release_unit }}"
             get_checksum: false
           register: bridge_refresh
-        - name: Publish only where the refresh unit exists
-          when: bridge_refresh.stat.exists | default(false)
-          block:
-            # Replaces a destination symlink itself; never changes its referent.
-            - name: Install the exact candidate helper atomically
-              timeout: "{{ bridge_release_copy_seconds | default(15) }}"
-              ignore_errors: true
-              ignore_unreachable: true
-              ansible.builtin.copy:
-                src: "{{ playbook_dir }}/instance_bridge.py"
-                dest: "{{ bridge_release_path }}"
-                mode: '0755'
-                unsafe_writes: false
-                follow: false
-              register: bridge_delivery
-            - name: Read the installed helper checksum
-              timeout: "{{ bridge_release_read_seconds | default(10) }}"
-              ignore_errors: true
-              ignore_unreachable: true
-              when: not (bridge_delivery.failed | default(false)) and not (bridge_delivery.unreachable | default(false))
-              ansible.builtin.stat:
-                path: "{{ bridge_release_path }}"
-                checksum_algorithm: sha256
-                follow: false
-              register: bridge_installed
-            - name: Verify the helper follows the candidate release
-              ignore_errors: true
-              when: >-
-                not (bridge_delivery.failed | default(false)) and not (bridge_delivery.unreachable | default(false))
-                and not (bridge_installed.failed | default(false)) and not (bridge_installed.unreachable | default(false))
-              ansible.builtin.assert:
-                that:
-                  - bridge_installed.stat.isreg | default(false)
-                  - bridge_installed.stat.checksum | default('') == bridge_release.sha256
-                quiet: true
-                fail_msg: gateway.release_bridge_checksum_mismatch
-              register: bridge_verified
-        - name: Classify the delivery observation without retaining output
+        - name: Classify refresh unit access
           ansible.builtin.set_fact:
             bridge_reason: >-
               {{ 'unreachable' if bridge_refresh.unreachable | default(false)
@@ -111,18 +74,133 @@
                    or 'timed out' in (bridge_refresh.msg | default('') | lower))
                  else 'access' if bridge_refresh.failed | default(false)
                  else 'no_unit' if not (bridge_refresh.stat.exists | default(false))
-                 else 'unreachable' if bridge_delivery.unreachable | default(false)
-                 else 'timeout' if bridge_delivery.failed | default(false) and (
-                   'timeout' in (bridge_delivery.msg | default('') | lower)
-                   or 'timed out' in (bridge_delivery.msg | default('') | lower))
-                 else 'copy' if bridge_delivery.failed | default(false)
-                 else 'unreachable' if bridge_installed.unreachable | default(false)
-                 else 'timeout' if bridge_installed.failed | default(false) and (
-                   'timeout' in (bridge_installed.msg | default('') | lower)
-                   or 'timed out' in (bridge_installed.msg | default('') | lower))
-                 else 'checksum' if bridge_installed.failed | default(false) or bridge_verified.failed | default(false)
-                 else 'updated' if bridge_delivery.changed
-                 else 'current' }}
+                 else 'pending' }}
+        - name: Verify and publish only where the refresh unit exists
+          when: >-
+            not (bridge_refresh.failed | default(false)) and not (bridge_refresh.unreachable | default(false))
+            and bridge_refresh.stat.exists | default(false)
+          ignore_unreachable: true
+          block:
+            - name: Read the target without following links
+              timeout: "{{ bridge_release_read_seconds | default(10) }}"
+              ansible.builtin.stat:
+                path: "{{ bridge_release_path }}"
+                follow: false
+                checksum_algorithm: sha256
+              register: bridge_target
+            - name: Refuse a destination symlink
+              ansible.builtin.assert:
+                that:
+                  - not (bridge_target.unreachable | default(false))
+                  - not (bridge_target.stat.islnk | default(false))
+                quiet: true
+                fail_msg: gateway.release_bridge_target_symlink
+            - name: Stage a changed helper beside the target
+              when: bridge_target.stat.checksum | default('') != bridge_release.sha256
+              block:
+                - name: Allocate a private helper candidate
+                  timeout: "{{ bridge_release_copy_seconds | default(15) }}"
+                  ansible.builtin.tempfile:
+                    state: file
+                    path: "{{ bridge_release_path | dirname }}"
+                    prefix: .orbit-instance-bridge-
+                  register: bridge_candidate
+                  changed_when: false
+                - name: Read the candidate without following links
+                  timeout: "{{ bridge_release_read_seconds | default(10) }}"
+                  ansible.builtin.stat:
+                    path: "{{ bridge_candidate.path }}"
+                    follow: false
+                    get_checksum: false
+                  register: bridge_candidate_before
+                - name: Refuse a candidate symlink
+                  ansible.builtin.assert:
+                    that: not (bridge_candidate_before.stat.islnk | default(false))
+                    quiet: true
+                    fail_msg: gateway.release_bridge_candidate_symlink
+                - name: Write the helper candidate with explicit attributes
+                  timeout: "{{ bridge_release_copy_seconds | default(15) }}"
+                  ansible.builtin.copy:
+                    src: "{{ playbook_dir }}/instance_bridge.py"
+                    dest: "{{ bridge_candidate.path }}"
+                    owner: root
+                    group: root
+                    mode: '0755'
+                  register: bridge_delivery
+                  changed_when: false
+                - name: Read the candidate checksum
+                  timeout: "{{ bridge_release_read_seconds | default(10) }}"
+                  ansible.builtin.stat:
+                    path: "{{ bridge_candidate.path }}"
+                    follow: false
+                    checksum_algorithm: sha256
+                  register: bridge_staged
+                - name: Verify the candidate before publication
+                  ansible.builtin.assert:
+                    that:
+                      - bridge_staged.stat.isreg | default(false)
+                      - bridge_staged.stat.checksum | default('') == bridge_release.sha256
+                    quiet: true
+                    fail_msg: gateway.release_bridge_checksum_mismatch
+                - name: Publish the verified candidate atomically
+                  timeout: "{{ bridge_release_copy_seconds | default(15) }}"
+                  ansible.builtin.command:
+                    argv: [mv, "-fT", "--", "{{ bridge_candidate.path }}", "{{ bridge_release_path }}"]
+                  register: bridge_publish
+                  changed_when: true
+            - name: Enforce the installed helper attributes
+              timeout: "{{ bridge_release_read_seconds | default(10) }}"
+              ansible.builtin.file:
+                path: "{{ bridge_release_path }}"
+                owner: root
+                group: root
+                mode: '0755'
+              register: bridge_attributes
+            - name: Read the installed helper checksum
+              timeout: "{{ bridge_release_read_seconds | default(10) }}"
+              ansible.builtin.stat:
+                path: "{{ bridge_release_path }}"
+                checksum_algorithm: sha256
+                follow: false
+              register: bridge_installed
+            - name: Verify the observed installed checksum
+              ansible.builtin.assert:
+                that:
+                  - bridge_installed.stat.isreg | default(false)
+                  - bridge_installed.stat.checksum | default('') == bridge_release.sha256
+                quiet: true
+                fail_msg: gateway.release_bridge_checksum_mismatch
+            - name: Confirm the observed installed helper
+              ansible.builtin.set_fact:
+                bridge_reason: "{{ 'updated' if bridge_publish.changed | default(false) or bridge_attributes.changed else 'current' }}"
+          rescue:
+            - name: Classify a refused publication without retaining output
+              ansible.builtin.set_fact:
+                bridge_reason: >-
+                  {{ 'unreachable' if bridge_target.unreachable | default(false)
+                       or bridge_candidate.unreachable | default(false)
+                       or bridge_candidate_before.unreachable | default(false)
+                       or bridge_delivery.unreachable | default(false)
+                       or bridge_staged.unreachable | default(false)
+                       or bridge_publish.unreachable | default(false)
+                       or bridge_attributes.unreachable | default(false)
+                       or bridge_installed.unreachable | default(false)
+                     else 'timeout' if 'timeout' in (ansible_failed_result.msg | default('') | lower)
+                       or 'timed out' in (ansible_failed_result.msg | default('') | lower)
+                     else 'target_symlink' if ansible_failed_result.msg | default('') == 'gateway.release_bridge_target_symlink'
+                     else 'candidate_symlink' if ansible_failed_result.msg | default('') == 'gateway.release_bridge_candidate_symlink'
+                     else 'checksum' if ansible_failed_result.msg | default('') == 'gateway.release_bridge_checksum_mismatch'
+                     else 'copy' }}
+          always:
+            - name: Remove the private candidate without touching a refused symlink
+              timeout: "{{ bridge_release_copy_seconds | default(15) }}"
+              failed_when: false
+              ignore_unreachable: true
+              when: bridge_candidate.path is defined and not (bridge_candidate_before.stat.islnk | default(false))
+              ansible.builtin.file:
+                path: "{{ bridge_candidate.path }}"
+                state: absent
+              changed_when: false
     - name: Record the Node delivery observation
       timeout: 5
       become: false
@@ -131,4 +209,6 @@
       ansible.builtin.copy:
         dest: "{{ run }}/bridge-{{ bridge_node_id }}.json"
         mode: '0600'
-        content: "{{ {'node_id': bridge_node_id | int, 'updated': bridge_reason in ['updated', 'current'], 'reason': bridge_reason} | to_json }}"
+        content: >-
+          {{ {'node_id': bridge_node_id | int, 'updated': bridge_reason in ['updated', 'current'],
+              'reason': bridge_reason, 'installed_sha256': (bridge_installed.stat.checksum | default(none))} | to_json }}

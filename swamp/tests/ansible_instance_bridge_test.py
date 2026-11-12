@@ -1,10 +1,12 @@
 """Exact DNAT resolution and shared boot/attach/converge policy, without Docker or Incus mutations."""
 import copy
+import grp
 import hashlib
 import importlib.util
 import io
 import json
 import os
+import pwd
 import shutil
 import socket
 import subprocess
@@ -897,8 +899,19 @@ class ReleaseHelperDelivery(unittest.TestCase):
         values = {'ansible_become': False, 'ansible_python_interpreter': sys.executable,
                   'bridge_release_path': str(self.installed), 'bridge_release_unit': str(self.unit)}
         values.update(extra or {})
+        # The real shipped tasks run in a temporary folder. CI has no root;
+        # a separate root run in the work clone proves actual root:root.
+        playbook = self.root / 'delivery.yml'
+        text = (self.source.parent / 'gateway-release-bridge.yml').read_text()
+        self.assertIn('owner: root', text)
+        self.assertIn('group: root', text)
+        if os.geteuid() != 0:
+            text = text.replace('owner: root', 'owner: ' + pwd.getpwuid(os.geteuid()).pw_name)
+            text = text.replace('group: root', 'group: ' + grp.getgrgid(os.getegid()).gr_name)
+        playbook.write_text(text)
+        shutil.copyfile(self.source, self.root / 'instance_bridge.py')
         argv = ['ansible-playbook', '-i', str(inventory), '--forks', '4', '-e', json.dumps(values),
-                str(Path(__file__).parents[1] / 'ansible/gateway-release-bridge.yml')]
+                str(playbook)]
         if deadline is not None:
             argv = ['timeout', '--kill-after=1', str(deadline), *argv]
         result = subprocess.run(argv,
@@ -912,7 +925,7 @@ class ReleaseHelperDelivery(unittest.TestCase):
         workflow = yaml.safe_load((Path(__file__).parents[1] / 'workflows/workflow-gateway-release-activate.yaml').read_text())
         step = next(step for job in workflow['jobs'] for step in job['steps'] if step['name'] == 'bridge_helpers')
         result = subprocess.run(['/bin/sh', '-c', step['task']['inputs']['run']],
-                                env={**os.environ, 'ORBIT_RUN': str(self.run), 'BRIDGE_PHASE_EXIT': str(self.phase_exit)}, capture_output=True,
+                                env={**os.environ, 'ORBIT_RUN': str(self.run), 'BRIDGE_PHASE_EXIT': str(self.phase_exit), 'BRIDGE_CAPTURE_OK': 'true'}, capture_output=True,
                                 text=True, timeout=15, check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return json.loads(result.stdout)['nodes']
@@ -931,40 +944,58 @@ class ReleaseHelperDelivery(unittest.TestCase):
             + "        return super().exec_command(cmd, in_data, sudoable)\n")
         self.inventory['all']['hosts']['bridge_7']['ansible_connection'] = 'bridge_fault'
 
-    def test_post_copy_corruption_is_reported_as_checksum_and_does_not_fail_delivery(self):
+    def row(self, reason, node_id=7, checksum=None):
+        return {'node_id': node_id, 'updated': reason in ('updated', 'current'), 'reason': reason,
+                'installed_sha256': self.capture['sha256'] if reason in ('updated', 'current') else checksum}
+
+    def test_corrupt_candidate_is_removed_without_replacing_the_old_helper(self):
+        old = self.installed.read_bytes()
+        inode = self.installed.stat().st_ino
+        self.fault_connection(
+            "for candidate in Path(os.environ['ORBIT_TEST_INSTALLED_HELPER']).parent.glob('.orbit-instance-bridge-*'):\n"
+            "    if not candidate.is_symlink() and hashlib.sha256(candidate.read_bytes()).hexdigest() == os.environ['ORBIT_TEST_HELPER_DIGEST']:\n"
+            "        candidate.write_text('# corrupt candidate\\n')")
+        result = self.publish()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.receipt(), [self.row('checksum')])
+        self.assertEqual(self.installed.read_bytes(), old)
+        self.assertEqual(self.installed.stat().st_ino, inode)
+        self.assertEqual(list(self.root.glob('.orbit-instance-bridge-*')), [], result.stdout + result.stderr)
+
+    def test_installed_readback_mismatch_reports_the_observed_checksum(self):
         self.fault_connection(
             "helper = Path(os.environ['ORBIT_TEST_INSTALLED_HELPER'])\n"
             "if helper.exists() and hashlib.sha256(helper.read_bytes()).hexdigest() == os.environ['ORBIT_TEST_HELPER_DIGEST']:\n"
-            "    helper.write_text('# corrupted after copying\\n')")
+            "    helper.write_text('# corrupt after rename\\n')")
         result = self.publish()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.receipt(), [{'node_id': 7, 'updated': False, 'reason': 'checksum'}])
+        self.assertEqual(self.receipt(), [self.row('checksum', checksum=hashlib.sha256(self.installed.read_bytes()).hexdigest())])
 
     def test_copy_failure_is_reported_without_failing_delivery(self):
         self.installed = self.root / 'missing-parent' / 'helper'
         result = self.publish()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.receipt(), [{'node_id': 7, 'updated': False, 'reason': 'copy'}])
+        self.assertEqual(self.receipt(), [self.row('copy')])
 
     def test_each_node_task_has_a_bounded_wait_and_a_timeout_receipt(self):
         self.fault_connection("time.sleep(2)")
         result = self.publish(extra={'bridge_release_read_seconds': 1})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.receipt(), [{'node_id': 7, 'updated': False, 'reason': 'timeout'}])
+        self.assertEqual(self.receipt(), [self.row('timeout')])
 
     def test_the_outer_deadline_keeps_a_receipt_for_unfinished_nodes(self):
         self.fault_connection("time.sleep(4)")
         result = self.publish(deadline=2)
         self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
-        self.assertEqual(self.receipt(), [{'node_id': 7, 'updated': False, 'reason': 'timeout'}])
+        self.assertEqual(self.receipt(), [self.row('timeout')])
 
     def test_an_unobserved_node_after_a_phase_error_is_not_misreported_as_a_timeout(self):
         del self.capture['nodes'][0]['host']
         result = self.publish()
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(self.receipt(), [{'node_id': 7, 'updated': False, 'reason': 'report'}])
+        self.assertEqual(self.receipt(), [self.row('report')])
 
-    def test_a_destination_symlink_is_replaced_without_changing_its_referent(self):
+    def test_a_destination_symlink_is_refused_without_changing_its_referent(self):
         referent = self.root / 'foreign-file'
         referent.write_text('keep the referent\n')
         referent.chmod(0o600)
@@ -973,11 +1004,27 @@ class ReleaseHelperDelivery(unittest.TestCase):
         self.installed.symlink_to(referent)
         result = self.publish()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse(self.installed.is_symlink())
-        self.assertEqual(self.installed.read_bytes(), self.source.read_bytes())
+        self.assertTrue(self.installed.is_symlink())
+        self.assertEqual(self.receipt(), [self.row('target_symlink')])
         self.assertEqual(referent.read_text(), 'keep the referent\n')
         self.assertEqual(referent.stat().st_ino, inode)
         self.assertEqual(referent.stat().st_mode & 0o777, 0o600)
+
+    def test_a_candidate_symlink_is_refused_without_replacing_it_or_the_old_helper(self):
+        referent = self.root / 'foreign-file'
+        referent.write_text('keep the referent\n')
+        old = self.installed.read_bytes()
+        self.fault_connection(
+            "for candidate in Path(os.environ['ORBIT_TEST_INSTALLED_HELPER']).parent.glob('.orbit-instance-bridge-*'):\n"
+            "    if not candidate.is_symlink() and candidate.stat().st_size == 0:\n"
+            "        candidate.unlink()\n"
+            "        candidate.symlink_to(candidate.parent / 'foreign-file')")
+        result = self.publish()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.receipt(), [self.row('candidate_symlink')])
+        self.assertEqual(self.installed.read_bytes(), old)
+        self.assertEqual(referent.read_text(), 'keep the referent\n')
+        self.assertTrue(next(self.root.glob('.orbit-instance-bridge-*')).is_symlink())
 
     def test_release_replaces_the_real_helper_atomically_and_repeats_without_replacing_it(self):
         with self.installed.open() as running_refresh:
@@ -988,10 +1035,14 @@ class ReleaseHelperDelivery(unittest.TestCase):
             self.assertNotEqual(self.installed.stat().st_ino, inode)
         self.assertEqual(self.installed.read_bytes(), self.source.read_bytes())
         self.assertEqual(self.installed.stat().st_mode & 0o777, 0o755)
+        self.assertEqual(self.installed.stat().st_uid, os.geteuid())
+        self.assertEqual(self.installed.stat().st_gid, os.getegid())
+        self.assertEqual(self.receipt(), [self.row('updated')])
         inode = self.installed.stat().st_ino
         result = self.publish()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.installed.stat().st_ino, inode)
+        self.assertEqual(self.receipt(), [self.row('current')])
 
     def test_a_node_without_the_refresh_unit_keeps_its_helper_unchanged(self):
         self.unit.unlink()
@@ -1008,8 +1059,8 @@ class ReleaseHelperDelivery(unittest.TestCase):
         self.assertIn('UNREACHABLE', result.stdout)
         self.assertEqual(self.installed.read_bytes(), self.source.read_bytes())
         self.assertEqual(self.receipt(), [
-            {'node_id': 8, 'updated': False, 'reason': 'unreachable'},
-            {'node_id': 7, 'updated': True, 'reason': 'updated'}])
+            self.row('unreachable', 8),
+            self.row('updated')])
 
     def test_a_connection_lost_during_readback_does_not_fail_the_release(self):
         plugins = self.root / 'connections'
@@ -1036,7 +1087,7 @@ class ReleaseHelperDelivery(unittest.TestCase):
         self.capture['sha256'] = '0' * 64
         result = self.publish()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.receipt(), [{'node_id': 7, 'updated': False, 'reason': 'checksum'}])
+        self.assertEqual(self.receipt(), [self.row('checksum')])
         self.assertEqual(self.installed.read_text(), '# old complete helper\n')
 
 if __name__ == '__main__':

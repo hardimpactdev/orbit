@@ -185,7 +185,7 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
      * Keep only the public per-Node receipt; missing completion never means updated.
      *
      * @param  array<string,mixed>  $data
-     * @return array{nodes:list<array{node_id:int,updated:bool,reason:string}>}|null
+     * @return array{nodes:list<array{node_id:int,updated:bool,reason:string,installed_sha256:?string}>,reason?:string}|null
      */
     private static function bridgeHelpers(array $data): ?array
     {
@@ -203,23 +203,31 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             return is_array($parsed) ? $parsed : [];
         };
         $report = is_array($handoff['bridge_helpers'] ?? null) ? $handoff['bridge_helpers'] : [];
-        $rows = $decode($report['stdout'] ?? null)['nodes'] ?? [];
+        $receipt = $decode($report['stdout'] ?? null);
+        $rows = $receipt['nodes'] ?? [];
         $read = is_array($handoff['Read bridge helper intent'] ?? null) ? $handoff['Read bridge helper intent'] : [];
         $expected = $decode($read['stdout'] ?? null)['nodes'] ?? [];
         $byNode = [];
         foreach (is_array($rows) ? $rows : [] as $row) {
             if (! is_array($row) || ! is_int($row['node_id'] ?? null) || ! is_bool($row['updated'] ?? null)
-                || ! in_array($row['reason'] ?? null, ['updated', 'current', 'no_unit', 'unreachable', 'access', 'copy', 'checksum', 'timeout', 'report'], true)) {
+                || ! in_array($row['reason'] ?? null, ['updated', 'current', 'no_unit', 'unreachable', 'access', 'copy', 'checksum', 'timeout', 'report', 'target_symlink', 'candidate_symlink'], true)) {
                 continue;
             }
-            $byNode[$row['node_id']] = ['node_id' => $row['node_id'], 'updated' => $row['updated'], 'reason' => $row['reason']];
+            $checksum = is_string($row['installed_sha256'] ?? null) && preg_match('/^[a-f0-9]{64}$/D', $row['installed_sha256']) === 1
+                ? $row['installed_sha256'] : null;
+            $byNode[$row['node_id']] = ['node_id' => $row['node_id'], 'updated' => $row['updated'] && $checksum !== null,
+                'reason' => $row['updated'] && $checksum === null ? 'checksum' : $row['reason'], 'installed_sha256' => $checksum];
         }
         $publish = is_array($handoff['Publish bridge helpers'] ?? null) ? $handoff['Publish bridge helpers'] : [];
         $missing = in_array($publish['exitCode'] ?? null, [124, 137], true) ? 'timeout' : 'report';
         foreach (is_array($expected) ? $expected : [] as $node) {
             if (is_array($node) && is_int($node['node_id'] ?? null) && ! isset($byNode[$node['node_id']])) {
-                $byNode[$node['node_id']] = ['node_id' => $node['node_id'], 'updated' => false, 'reason' => $missing];
+                $byNode[$node['node_id']] = ['node_id' => $node['node_id'], 'updated' => false, 'reason' => $missing, 'installed_sha256' => null];
             }
+        }
+
+        if (($receipt['reason'] ?? null) === 'capture' || ($receipt === [] && ! array_key_exists('stdout', $read))) {
+            return ['nodes' => array_values($byNode), 'reason' => 'capture'];
         }
 
         return ['nodes' => array_values($byNode)];
