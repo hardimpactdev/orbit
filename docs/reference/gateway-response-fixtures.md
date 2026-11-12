@@ -11,6 +11,8 @@ covers:
 
 # Gateway response fixtures
 
+The `gateway/gateway-status` fixtures carry `reconcile` beside `doctor`. The Doctor fixture includes recorded pass facts for a peer with Gateway Node access; the peer fixture keeps `reconcile` null without that access. SDK mapping and CLI expectations use the same three fields. The human output adds one line with the pass time, duration, and unsettled count. [Gateway status](/cli/gateway/status) owns their meaning and access rule.
+
 The `database-server-update` fixtures replay [`database:server:update --require-password`](/cli/database/server-update). The request uses PATCH and an explicit true field; its Operation fixture retains `database_server.close`, the persisted execution kind.
 
 The `operations/operation-show/overdue` fixture records a timed-out Operation with `overdue_since` and its existing cancel request. The CLI replays that deadline audit in human and JSON output. It is reporting only; cancellation timing is unchanged.

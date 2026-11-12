@@ -53,7 +53,7 @@ final class OperationReconcileHealth
     }
 
     /** One small write at the job's end, including an empty pass. Recording must never fail reconciliation. */
-    public function record(int $started): void
+    public function record(int $started, int $operations): void
     {
         $finished = now()->toISOString();
         $duration = round((hrtime(true) - $started) / 1_000_000, 3);
@@ -73,6 +73,43 @@ final class OperationReconcileHealth
         } catch (Throwable $exception) {
             rescue(fn () => Log::warning('The Operation reconcile pass facts could not be recorded.', ['exception_type' => $exception::class]), report: false);
         }
+        rescue(fn () => Log::info('Operation reconcile pass ran.', [
+            'duration_ms' => $duration, 'operations' => $operations, 'unsettled' => $this->count,
+        ]), report: false);
+    }
+
+    /**
+     * @param  array<string,mixed>|null  $observation
+     * @return array{finished_at:?string,last_pass_ms:int|float|null,unsettled_count:int}
+     */
+    public function facts(?array $observation): array
+    {
+        $duration = $observation['operation_reconcile_duration_ms'] ?? null;
+        $count = $observation['operation_settlement_count'] ?? null;
+
+        return [
+            'finished_at' => $this->timestamp($observation['operation_reconcile_finished_at'] ?? null),
+            'last_pass_ms' => (is_int($duration) || is_float($duration)) && is_finite($duration) && $duration >= 0 ? $duration : null,
+            'unsettled_count' => is_int($count) ? $count : 0,
+        ];
+    }
+
+    private function timestamp(mixed $value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+        $parsed = date_parse($value);
+        if ($parsed['error_count'] > 0 || $parsed['warning_count'] > 0 || isset($parsed['relative'])) {
+            return null;
+        }
+        foreach (['year', 'month', 'day', 'hour', 'minute', 'second'] as $part) {
+            if ($parsed[$part] === false) {
+                return null;
+            }
+        }
+
+        return $value;
     }
 
     /**
@@ -81,15 +118,15 @@ final class OperationReconcileHealth
      */
     public function issues(?array $observation): array
     {
-        $finished = $observation['operation_reconcile_finished_at'] ?? null;
-        $finished = is_string($finished) ? $finished : null;
-        $oldest = $observation['operation_settlement_oldest_completed_at'] ?? null;
-        $count = $observation['operation_settlement_count'] ?? 0;
+        $facts = $this->facts($observation);
+        $finished = $facts['finished_at'];
+        $oldest = $this->timestamp($observation['operation_settlement_oldest_completed_at'] ?? null);
+        $count = $facts['unsettled_count'];
         $issues = [];
         if ($finished !== null ? CarbonImmutable::parse($finished)->lessThan(now()->subMinutes(self::PassMinutes)) : $this->hasOldOpenNativeOperation()) {
             $issues[] = ['code' => 'gateway.operation_reconcile_stalled', 'count' => 1, 'since' => $finished, 'newest_since' => $finished, 'resource' => null];
         }
-        if (is_string($oldest) && is_int($count) && $count > 0 && CarbonImmutable::parse($oldest)->lessThan(now()->subMinutes(self::SettlementMinutes))) {
+        if ($oldest !== null && $count > 0 && CarbonImmutable::parse($oldest)->lessThan(now()->subMinutes(self::SettlementMinutes))) {
             $issues[] = ['code' => 'gateway.operation_settlement_stuck', 'count' => $count, 'since' => $oldest, 'newest_since' => $oldest, 'resource' => null];
         }
 
