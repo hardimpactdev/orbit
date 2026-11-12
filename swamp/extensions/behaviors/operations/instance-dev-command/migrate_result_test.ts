@@ -8,7 +8,7 @@ const server = JSON.stringify({ environment_id: "env-1", gateway_session: { vaul
 const defaultIntent = { instance_id: 53, container: { clone: null }, route_mutations: { forward: {} } };
 const cloneIntent = { instance_id: 761, container: { clone: { t3: {} } }, route_mutations: { forward: {} } };
 const moved = {
-    quiesce: "succeeded", container: "succeeded", workspace: "succeeded", files: "succeeded", agent: "skipped",
+    quiesce: "succeeded", container: "succeeded", workspace: "succeeded", files: "succeeded", files_check: "succeeded", agent: "skipped",
     processes: "succeeded", seed: "succeeded", t3: "skipped", register: "skipped", route: "succeeded", retire: "succeeded",
     restore_route: "skipped", restore: "skipped",
 };
@@ -234,7 +234,7 @@ Deno.test("the copied untracked count includes zero, excludes paths and survives
     try {
         for (const count of [0, 56]) {
             await Deno.writeTextFile(`${folder}/untracked-files.json`, JSON.stringify({
-                untracked_files_copied: count, paths: ["credentials.json"], content: "private",
+                untracked_files_copied: count, copied_paths: ["63726564656e7469616c732e6a736f6e"], paths: ["credentials.json"], content: "private",
             }));
             const written = await writtenFailure(folder);
             assertEquals(written, { untracked_files_copied: count });
@@ -264,4 +264,30 @@ Deno.test("invalid or incomplete copied-file receipts do not claim a count", asy
     } finally {
         await Deno.remove(folder, { recursive: true });
     }
+});
+
+Deno.test("uncopied work fails before Route cut-over, restores the source and keeps its named code", () => {
+    const phases = { ...moved, files_check: "failed", route: "skipped", retire: "skipped", restore: "succeeded" };
+    const error_message = 'New untracked paths absent from the archive: ["late.txt"].';
+    assertEquals(result(defaultIntent, phases, workspace, null, {
+        error_code: "instance.migrate_retirement_blocked", error_message, untracked_files_copied: 4,
+    }), {
+        instance_id: 53, ready: false, moved: false, restored: true, commit, untracked_files_copied: 4,
+        error_message, failed_step: "files_check", error_code: "instance.migrate_retirement_blocked",
+    });
+});
+
+Deno.test("the manifest check gates cut-over and restoration waits for it even without a Route", async () => {
+    const { parse } = await import("jsr:@std/yaml@1");
+    const flow = parse(await Deno.readTextFile(new URL("../../../../workflows/workflow-operation-instance-migrate.yaml", import.meta.url))) as {
+        jobs: { steps: { name: string; guard?: string; dependsOn?: { step: string; condition: {type: string} }[]; task: { inputs?: { run?: string; phases?: string } } }[] }[];
+    };
+    const steps = Object.fromEntries(flow.jobs[0].steps.map((step) => [step.name, step]));
+    assertEquals(steps["files-check"].guard, undefined);
+    assertEquals(steps["files-check"].dependsOn?.map((edge) => edge.step), ["container-processes", "seed", "t3-register"]);
+    assertEquals(steps.route.dependsOn?.find((edge) => edge.step === "files-check")?.condition.type, "succeeded");
+    assertEquals(steps.retire.dependsOn?.find((edge) => edge.step === "files-check")?.condition.type, "succeeded");
+    assertEquals(steps.restore.dependsOn?.find((edge) => edge.step === "files-check")?.condition.type, "always");
+    assertEquals(steps["files-check"].task.inputs?.run?.includes("--tags files_check"), true);
+    assertEquals(steps.finish.task.inputs?.phases?.includes('"files_check"'), true);
 });

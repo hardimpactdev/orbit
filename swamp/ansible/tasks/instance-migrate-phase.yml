@@ -32,12 +32,40 @@
 
 # Check every planned retirement before any Node change, and again before any checkout in the batch goes.
 - name: Check all planned retirements
-  when: phase in ['container', 'quiesce', 'retire']
+  when: phase in ['container', 'quiesce', 'files_check', 'retire']
   ansible.builtin.include_tasks:
     file: instance-migrate-retirement-check.yml
     apply: { tags: [always] }
   loop: "{{ migrate.retire }}"
   loop_control: { loop_var: retired, label: "{{ retired.path }}" }
+
+# The receipt is private worker data. Only its count enters the public result.
+- name: Refuse untracked paths that did not enter the archive
+  when: >-
+    phase == 'files_check' or (phase == 'retire' and
+    lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/untracked-files.json', errors='ignore')
+    | default('', true) | length > 0)
+  block:
+    - name: Compare current untracked paths with the actual archived paths
+      ansible.builtin.command:
+        argv: [python3, '-c', "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_files.py') }}", "{{ phase }}", "{{ migrate.checkout }}"]
+        stdin: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/untracked-files.json') }}"
+      register: migrate_files_check
+      changed_when: false
+      no_log: true
+    - name: Explain uncopied work before cut-over or retirement
+      when: (migrate_files_check.stdout | from_json).count > 0
+      ansible.builtin.set_fact:
+        migrate_refusal_code: instance.migrate_retirement_blocked
+        migrate_refusal_message: >-
+          Cannot migrate checkout {{ migrate.checkout | to_json }}.
+          New untracked paths absent from the archive ({{ (migrate_files_check.stdout | from_json).count }} total; first 20):
+          {{ (migrate_files_check.stdout | from_json).paths | to_json }}.
+    - name: Refuse uncopied untracked work
+      ansible.builtin.assert:
+        that: (migrate_files_check.stdout | from_json).count == 0
+        fail_msg: "{{ migrate_refusal_message | default('instance.migrate_retirement_blocked') }}"
+        quiet: true
 
 # The move copies the files that differ from the commit of the recorded branch, so the checkout must be on it.
 - name: Check the checkout's branch
@@ -263,15 +291,13 @@
         ORBIT_ARCHIVE: "{{ node_archive }}.tar"
         ORBIT_CHECKOUT: "{{ migrate.checkout }}"
       changed_when: true
-    - name: Count untracked paths from the exact archive manifest
+    - name: Record archived paths and count untracked leaves
       ansible.builtin.command:
-        argv:
-          - python3
-          - -c
-          - 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).read_bytes().count(b"\0"))'
-          - "{{ node_archive }}.untracked"
+        argv: [python3, '-', record, "{{ node_archive }}.tar", "{{ node_archive }}.untracked"]
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_files.py') }}"
       register: migrate_untracked_count
       changed_when: false
+      no_log: true
     - name: Push the archive and the deleted files into the container
       ansible.builtin.command:
         argv: >-
@@ -314,8 +340,9 @@
 
 - name: Record the copied untracked file count for the terminal result
   when: phase == 'files'
+  no_log: true
   ansible.builtin.copy:
-    content: "{{ {'untracked_files_copied': migrate_untracked_count.stdout | int} | to_json }}"
+    content: "{{ migrate_untracked_count.stdout }}"
     dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/untracked-files.json"
     mode: "0600"
   delegate_to: localhost

@@ -125,6 +125,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-migrate-incus.ts", import.meta.url).pathname}' "$@"\n`,
   );
   Deno.chmodSync(`${folder}/bin/incus`, 0o755);
+  Deno.copyFileSync(new URL("instance_migrate_files.py", root), `${folder}/instance_migrate_files.py`);
   Deno.copyFileSync(new URL("instance_migrate_links.py", root), `${folder}/instance_migrate_links.py`);
   for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-process-ready.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-schedules.yml", "instance-migrate-schedule-check.yml", "instance-migrate-link-result.yml", "instance-migrate-env-check.yml"]) {
     const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => {
@@ -283,14 +284,14 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
       const batchFile = "batched-migrate.yml";
       if (batch) {
         const plays = phases.flatMap((selected) => {
-          const source = ["container", "quiesce", "files", "retire", "restore"].includes(selected) ? "instance-migrate.yml" : "instance-container.yml";
+          const source = ["container", "quiesce", "files", "files_check", "retire", "restore"].includes(selected) ? "instance-migrate.yml" : "instance-container.yml";
           return JSON.parse(JSON.stringify(parse(Deno.readTextFileSync(`${folder}/${source}`)))
             .replaceAll("ansible_run_tags | first", `'${selected}'`)) as Task[];
         });
         for (const play of plays) play.tags = ["always"];
         Deno.writeTextFileSync(`${folder}/${batchFile}`, stringify(plays));
       }
-      const playbook = batch ? batchFile : !rawContainer && ["container", "quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
+      const playbook = batch ? batchFile : !rawContainer && ["container", "quiesce", "files", "files_check", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
       const done = new Deno.Command(phase === "processes" ? "timeout" : "ansible-playbook", {
         args: [...(phase === "processes" ? ["120", "ansible-playbook"] : []), "-i", "localhost,", "--tags", batch ? "all" : phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
           "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/${playbook}`],
@@ -606,28 +607,94 @@ os.execv("/usr/bin/tar", ["tar", *sys.argv[1:]])
 }
 
 Deno.test({
-  name: "untracked non-ignored files migrate with ignored files, report the copied count and remain in retained Git",
+  name: "untracked non-ignored files and nested repository leaves migrate with an exact archived file count",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
-      // Include a newline in a name: the count must use Git's NUL separators, not lines.
+      // Include a newline in a name: manifests must use NUL separators, not lines.
       Deno.writeTextFileSync(`${f.checkout}/generated\nwayfinder.ts`, "generated output\n");
-      const before = git(f.checkout, "status", "--porcelain=v1", "--untracked-files=all");
+      const nested = `${f.checkout}/nested`;
+      Deno.mkdirSync(nested);
+      git(nested, "init", "--quiet");
+      for (let i = 0; i < 31; i++) Deno.writeTextFileSync(`${nested}/file-${i}`, `nested ${i}\n`);
+      const leaves = (path: string): number => [...Deno.readDirSync(path)].reduce(
+        (count, entry) => count + (entry.isDirectory ? leaves(`${path}/${entry.name}`) : 1), 0);
+      const nestedLeaves = leaves(nested);
       f.buildBatched();
       assertEquals(f.read("generated\nwayfinder.ts"), "generated output\n");
       assertEquals(f.read("vendor/pkg/a.php"), "<?php // dependency\n");
       assertEquals(f.read("database/database.sqlite"), "sqlite\n");
-      assertEquals(JSON.parse(Deno.readTextFileSync(`${f.folder}/run/untracked-files.json`)), { untracked_files_copied: 4 });
-      // Another untracked file arriving after copy must also pass the repeated retirement guard.
-      Deno.writeTextFileSync(`${f.checkout}/late.txt`, "late untracked\n");
-      const retired = f.run("retire");
-      assert(retired.ok, retired.output);
+      for (let i = 0; i < 31; i++) assertEquals(f.read(`nested/file-${i}`), `nested ${i}\n`);
+      const receipt = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/untracked-files.json`));
+      assertEquals(receipt.untracked_files_copied, 4 + nestedLeaves);
+      const completed = f.run(["files_check", "retire"]);
+      assert(completed.ok, completed.output);
       assert(exists(f.migrate.awake.path));
       assertEquals(f.state().containers["instance-7"].status, "Running");
       assertEquals(Deno.readTextFileSync(`${f.retained()}/generated\nwayfinder.ts`), "generated output\n");
-      assertEquals(Deno.readTextFileSync(`${f.retained()}/late.txt`), "late untracked\n");
-      assert(git(f.retained(), "status", "--porcelain=v1", "--untracked-files=all").includes(before));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "late untracked files including nested repository leaves refuse before cut-over and restore the source",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      Deno.mkdirSync(`${f.checkout}/nested`);
+      git(`${f.checkout}/nested`, "init", "--quiet");
+      Deno.writeTextFileSync(`${f.checkout}/nested/first.txt`, "copied\n");
+      f.buildBatched();
+      Deno.writeTextFileSync(`${f.checkout}/late.txt`, "late work\n");
+      Deno.writeTextFileSync(`${f.checkout}/nested/late.txt`, "nested late work\n");
+      const checked = f.run("files_check");
+      assert(!checked.ok, checked.output);
+      assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
+      assert(f.result().error_message.includes("late.txt"));
+      assert(f.result().error_message.includes("nested/late.txt"));
+      assert(!exists(`${f.rootfs}/srv/workspace/late.txt`));
+      const restored = f.run("restore");
+      assert(restored.ok, restored.output);
+      assert(!exists(f.rootfs));
+      assert(exists(f.migrate.awake.path));
+      assertEquals(Deno.readTextFileSync(`${f.checkout}/late.txt`), "late work\n");
+      assertEquals(Deno.readTextFileSync(`${f.checkout}/nested/late.txt`), "nested late work\n");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "untracked files inside a tracked submodule retain the named retirement refusal even when Git config ignores it",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const source = `${f.folder}/module-source`;
+      Deno.mkdirSync(source);
+      git(source, "init", "--quiet");
+      Deno.writeTextFileSync(`${source}/tracked.txt`, "module seed\n");
+      git(source, "add", ".");
+      git(source, "commit", "--quiet", "-m", "module seed");
+      git(f.checkout, "-c", "protocol.file.allow=always", "submodule", "add", "--quiet", source, "sub");
+      git(f.checkout, "commit", "--quiet", "-m", "tracked submodule");
+      git(f.checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
+      git(f.checkout, "config", "submodule.sub.ignore", "all");
+      Deno.writeTextFileSync(`${f.checkout}/sub/new-untracked`, "cannot be copied by the parent archive\n");
+      assertEquals(git(f.checkout, "status", "--porcelain=v1", "--untracked-files=no"), "");
+      const refused = f.run("container");
+      assert(!refused.ok, refused.output);
+      assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
+      assert(f.result().error_message.includes("sub"));
+      assert(f.result().error_message.includes("parent checkout archive"));
+      assertEquals(f.state().containers ?? {}, {});
+      assert(exists(f.migrate.awake.path));
+      assertEquals(Deno.readTextFileSync(`${f.checkout}/sub/new-untracked`), "cannot be copied by the parent archive\n");
     } finally {
       f.cleanup();
     }

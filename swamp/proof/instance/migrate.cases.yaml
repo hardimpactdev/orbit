@@ -3,8 +3,10 @@
 # container image, which the proof fleet does not build yet (docs/solutions/development-container-runtime.md, PR 4). Until then
 # the Pest, Deno and Ansible fixture tests cover the move, and the live check on a build-list Node proves it.
 # Retirement fixture coverage (ansible_instance_migrate_test.ts): dirty tracked/staged/deleted/renamed files refuse before
-# downtime; all untracked files pass, copy into the container and report their count (including ignored files, no paths/content).
-# Untracked files also pass the final check and remain in retained Git; linked and detached worktrees refuse and name their paths.
+# downtime; all untracked files pass, copy into the container and report their count (including ignored files and nested repository leaves, no paths/content).
+# New paths after copying refuse before cut-over and restore the checkout; submodule changes still refuse.
+# Counts include archived untracked leaves inside nested repositories; directories do not count.
+# Linked and detached worktrees refuse and name their paths.
 # Target probes run in the container phase before quiesce; an unreachable SQL or Redis target leaves the awake marker,
 # checkout and host Process states untouched. Restore deletes the failed container and its exact target rules only.
 # Process fixtures stop and disable host units before copying, install private Process environments in the container,

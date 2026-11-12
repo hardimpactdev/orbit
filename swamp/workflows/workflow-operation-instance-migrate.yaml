@@ -204,12 +204,29 @@ jobs:
           inputs:
             instance_id: '${{ inputs.intent.instance_id }}'
             folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      # Refuse uncopied work before cut-over; a failure restores the unchanged checkout.
+      - name: files-check
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: container-processes, condition: {type: succeeded}}
+          - {step: seed, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: t3-register, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-files-check-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags files_check "$ORBIT_ANSIBLE/instance-migrate.yml"
+            env: *phase
       # Move the Route: one publication replaces the checkout's site and PHP-FPM pool with the container's site. It comes last,
       # when the container has proved itself. The child allows its own step failures; its ready result says whether the Route moved.
       - name: route
         labels: {role: swamp}
         writes: true
         dependsOn:
+          - {step: files-check, condition: {type: succeeded}}
           - {step: container-processes, condition: {type: succeeded}}
           - {step: seed, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
           - {step: t3-register, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
@@ -231,6 +248,7 @@ jobs:
         labels: {role: swamp}
         writes: true
         dependsOn:
+          - {step: files-check, condition: {type: succeeded}}
           - {step: container-processes, condition: {type: succeeded}}
           - {step: seed, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
           - {step: t3-register, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
@@ -269,6 +287,7 @@ jobs:
         labels: {role: swamp}
         writes: true
         dependsOn:
+          - {step: files-check, condition: {type: always}}
           - {step: input, condition: {type: succeeded}}
           - {step: quiesce, condition: {type: always}}
           - {step: container, condition: {type: always}}
@@ -310,7 +329,7 @@ jobs:
             intent: '${{ inputs.intent }}'
             folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
             workspace: '${{ "workspace" in steps ? steps.workspace : null }}'
-            phases: '${{ {"mail": "Apply development mail" in steps ? steps["Apply development mail"].status : "skipped", "quiesce": "quiesce" in steps ? steps.quiesce.status : "skipped", "container": "container" in steps ? steps.container.status : "skipped", "workspace": "workspace" in steps ? steps.workspace.status : "skipped", "files": "files" in steps ? steps.files.status : "skipped", "agent": "agent" in steps ? steps.agent.status : "skipped", "processes": "container-processes" in steps ? steps["container-processes"].status : "skipped", "seed": "seed" in steps ? steps.seed.status : "skipped", "t3": "t3" in steps ? steps.t3.status : "skipped", "register": "t3-sessions" in steps && steps["t3-sessions"].status == "failed" ? "failed" : ("t3-register" in steps ? steps["t3-register"].status : "skipped"), "route": !("route" in steps) || steps.route.status == "skipped" ? "skipped" : (steps.route.status == "succeeded" && steps.route.outputs.result.ready ? "succeeded" : "failed"), "retire": "retire" in steps ? steps.retire.status : "skipped", "restore_route": !("restore-route" in steps) || steps["restore-route"].status == "skipped" ? "skipped" : (steps["restore-route"].status == "succeeded" && steps["restore-route"].outputs.result.ready ? "succeeded" : "failed"), "restore": "restore" in steps ? steps.restore.status : "skipped"} }}'
+            phases: '${{ {"mail": "Apply development mail" in steps ? steps["Apply development mail"].status : "skipped", "quiesce": "quiesce" in steps ? steps.quiesce.status : "skipped", "container": "container" in steps ? steps.container.status : "skipped", "workspace": "workspace" in steps ? steps.workspace.status : "skipped", "files": "files" in steps ? steps.files.status : "skipped", "files_check": "files-check" in steps ? steps["files-check"].status : "skipped", "agent": "agent" in steps ? steps.agent.status : "skipped", "processes": "container-processes" in steps ? steps["container-processes"].status : "skipped", "seed": "seed" in steps ? steps.seed.status : "skipped", "t3": "t3" in steps ? steps.t3.status : "skipped", "register": "t3-sessions" in steps && steps["t3-sessions"].status == "failed" ? "failed" : ("t3-register" in steps ? steps["t3-register"].status : "skipped"), "route": !("route" in steps) || steps.route.status == "skipped" ? "skipped" : (steps.route.status == "succeeded" && steps.route.outputs.result.ready ? "succeeded" : "failed"), "retire": "retire" in steps ? steps.retire.status : "skipped", "restore_route": !("restore-route" in steps) || steps["restore-route"].status == "skipped" ? "skipped" : (steps["restore-route"].status == "succeeded" && steps["restore-route"].outputs.result.ready ? "succeeded" : "failed"), "restore": "restore" in steps ? steps.restore.status : "skipped"} }}'
             server: '${{ "t3-register" in steps && steps["t3-register"].status == "succeeded" ? steps["t3-register"].outputs.stdout : null }}'
       - name: accepted
         labels: {role: swamp}
