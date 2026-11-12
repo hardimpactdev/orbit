@@ -17,6 +17,7 @@ export const behavior = {
                 "Map the create phase steps to one public terminal receipt",
             arguments: z.object({
                 intent: ObjectValue,
+                folder: z.string().regex(/^\/tmp\/orbit-ansible-[A-Za-z0-9-]+$/),
                 checkout: Step.nullable(),
                 database: z.string(),
                 setup: z.string(),
@@ -42,6 +43,7 @@ export const behavior = {
             execute: async (
                 args: {
                     intent: Record<string, unknown>;
+                    folder: string;
                     checkout: z.infer<typeof Step> | null;
                     database: string;
                     setup: string;
@@ -67,6 +69,19 @@ export const behavior = {
                 ctx: Context,
             ) => {
                 const value = createResult(args.intent, args);
+                const result = JSON.parse(value.stdout);
+                if (!value.ready && ["container", "clone"].includes(result.failed_step)) {
+                    try {
+                        // The phase owns redaction; preserve its public target evidence in the Operation.
+                        const failure = z.object({
+                            error_code: z.string().regex(/^[a-z]+\.[a-z0-9_]+$/),
+                            node_service_target: ObjectValue,
+                        }).safeParse(JSON.parse(await Deno.readTextFile(args.folder + "/result.json")));
+                        if (failure.success) value.stdout = JSON.stringify({...result, ...failure.data});
+                    } catch (error) {
+                        if (!(error instanceof Deno.errors.NotFound || error instanceof SyntaxError)) throw error;
+                    }
+                }
                 await ctx.writeResource("result", "create", value);
                 return value;
             },
