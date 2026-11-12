@@ -7,6 +7,7 @@ use Orbit\Sdk\Requests\Vault\DestroyVaultRequest;
 use Orbit\Sdk\Requests\Vault\SetupVaultRequest;
 use Orbit\Sdk\Requests\Vault\ShowVaultStatusRequest;
 use Orbit\Sdk\Requests\Vault\SyncVaultRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Vault\VaultStatusResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
@@ -67,7 +68,7 @@ describe('vault requests', function (): void {
         $clientSecret = 'vault-client-secret-sentinel';
         $masterPassword = 'vault-master-password-sentinel';
         $mockClient = new MockClient([
-            SetupVaultRequest::class => MockResponse::make(vault_status_payload()),
+            SetupVaultRequest::class => MockResponse::make(vault_operation_payload('vault.setup'), 202),
         ]);
         $request = vault_setup_request($clientSecret, $masterPassword);
 
@@ -81,8 +82,13 @@ describe('vault requests', function (): void {
             'organization' => 'Orbit',
             'collection' => 'Databases',
         ])
-            ->and($response)->toBeInstanceOf(VaultStatusResponse::class)
-            ->and($response->configured)->toBeTrue()
+            ->and($response)->toBeInstanceOf(OperationResponse::class)
+            ->and($response->id)->toBe(901)
+            ->and($response->kind)->toBe('vault.setup')
+            ->and($response->targetType)->toBe('vault')
+            ->and($response->targetId)->toBe(1)
+            ->and($response->status)->toBe('queued')
+            ->and($response->requestId)->toBe(node_role_request_id())
             ->and(print_r($request, true))->not->toContain($clientSecret)->not->toContain($masterPassword)
             ->and(fn () => serialize($request))->toThrow(LogicException::class);
     });
@@ -96,20 +102,35 @@ describe('vault requests', function (): void {
         expect(new $class)->not->toBeInstanceOf(HasBody::class);
     })->with([ShowVaultStatusRequest::class, SyncVaultRequest::class]);
 
-    it('returns the status from status, sync, and teardown', function (string $class, bool $configured): void {
+    it('reads the configured and absent Vault status', function (bool $configured): void {
         $mockClient = new MockClient([
-            $class => MockResponse::make(vault_status_payload($configured)),
+            ShowVaultStatusRequest::class => MockResponse::make(vault_status_payload($configured)),
         ]);
 
-        $response = node_role_gateway_connector($mockClient)->send(new $class)->dto();
+        $response = node_role_gateway_connector($mockClient)->send(new ShowVaultStatusRequest)->dto();
 
         expect($response)->toBeInstanceOf(VaultStatusResponse::class)
             ->and($response->configured)->toBe($configured)
+            ->and($response->requestId)->toBe(node_role_request_id())
+            ->and($response->toArray())->toMatchArray(vault_status_payload($configured)['data']);
+    })->with(['configured' => true, 'absent' => false]);
+
+    it('maps sync and teardown to correlated Operation receipts', function (string $class, string $kind): void {
+        $mockClient = new MockClient([
+            $class => MockResponse::make(vault_operation_payload($kind), 202),
+        ]);
+        $response = node_role_gateway_connector($mockClient)->send(new $class)->dto();
+
+        expect($response)->toBeInstanceOf(OperationResponse::class)
+            ->and($response->id)->toBe(901)
+            ->and($response->kind)->toBe($kind)
+            ->and($response->targetType)->toBe('vault')
+            ->and($response->targetId)->toBe(1)
+            ->and($response->status)->toBe('queued')
             ->and($response->requestId)->toBe(node_role_request_id());
     })->with([
-        [ShowVaultStatusRequest::class, true],
-        [SyncVaultRequest::class, true],
-        [DestroyVaultRequest::class, false],
+        [SyncVaultRequest::class, 'vault.sync'],
+        [DestroyVaultRequest::class, 'vault.teardown'],
     ]);
 
     it('preserves a Gateway vault error', function (): void {
@@ -130,3 +151,13 @@ describe('vault requests', function (): void {
         }
     });
 });
+
+/** @return array<string, mixed> */
+function vault_operation_payload(string $kind): array
+{
+    return [
+        'data' => ['id' => 901, 'kind' => $kind, 'target_type' => 'vault', 'target_id' => 1,
+            'status' => 'queued', 'sequence' => 1, 'steps' => []],
+        'meta' => ['request_id' => node_role_request_id()],
+    ];
+}

@@ -1,11 +1,11 @@
 ---
 title: "orbit node:update"
 sidebarTitle: "node:update"
-description: "Change the name, platform, LAN address, reboot hold, apps folder, or task VM host settings of a Node. Only an apps folder change runs on the Node."
+description: "Change the name, platform, LAN address, reboot hold, image refresh hold, apps folder, or task VM host settings of a Node. Only an apps folder change runs on the Node."
 ---
 
 ```bash
-orbit node:update <node> [--name=NAME] [--platform=PLATFORM] [--lan-ip=IP] [--reboot-hold=true|false] [--apps-path=PATH] [--task-vms=JSON] [--json]
+orbit node:update <node> [--name=NAME] [--platform=PLATFORM] [--lan-ip=IP] [--reboot-hold=true|false] [--image-refresh-hold|--no-image-refresh-hold] [--apps-path=PATH] [--task-vms=JSON] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -18,6 +18,7 @@ orbit node:update <node> [--name=NAME] [--platform=PLATFORM] [--lan-ip=IP] [--re
 | `--platform=PLATFORM` | unchanged | `linux`, `macos`, or `ipados`. Only an unmanaged Node takes a platform. |
 | `--lan-ip=IP` | unchanged | The Node's LAN IPv4 address. An empty value, `--lan-ip=`, clears it. |
 | `--reboot-hold=BOOL` | unchanged | Set or clear the [fleet reboot hold](/reference/gateway-recovery#fleet-reboot). Defaults to false on a new Node. |
+| `--image-refresh-hold`, `--no-image-refresh-hold` | unchanged | Set or clear the [task VM image refresh hold](/reference/compute-drivers#refresh-the-base-snapshot). Defaults to false on a new Node. |
 | `--apps-path=PATH` | unchanged | The [apps folder](/reference/node-settings#set-the-apps-root). An empty value, `--apps-path=`, unsets it. |
 | `--task-vms=JSON` | unchanged | The [task VM host settings](/reference/node-settings#configure-a-task-vm-host) as a JSON object. `--task-vms=null` removes them. |
 | `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
@@ -29,6 +30,8 @@ orbit node:update 5 --platform=ipados
 orbit node:update 1 --lan-ip=10.0.0.2
 orbit node:update 7 --reboot-hold=true
 orbit node:update 7 --reboot-hold=false
+orbit node:update 12 --image-refresh-hold
+orbit node:update 12 --no-image-refresh-hold
 orbit node:update 7 --apps-path=/mnt/apps
 orbit node:update 9 --task-vms='{"cidr":"10.251.77.0/24","task_places":2,"ci_places":2,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
 orbit node:update 9 --task-vms='{"cidr":"10.251.77.0/24","task_places":2,"ci_places":2,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1}}'
@@ -44,11 +47,12 @@ Repeating a value that is already stored succeeds with `Skipped — already set 
 - **Platform.** Only an unmanaged Node takes a platform: it has no pinned SSH host fingerprint and no role. Use it to record what an operator-owned peer runs, such as an iPad on `ipados`. Enrollment observes a managed Node's platform, so a managed Node is refused with `node.platform_managed` and nothing changes. `node:add` does not accept `ipados`, and Orbit runs nothing on an `ipados` Node. [iPadOS peers](/reference/node-provisioning#ipados-peers) lists what is refused or skipped.
 - **LAN address.** An IPv4 address on the Node's private network, or empty to clear it. It must differ from the LAN address of every other Node on the same network. On the hub's private network that is every Node, in a Cluster or not; elsewhere it is the Nodes of the Node's Cluster, or, for a Node outside every Cluster, the other Nodes outside every Cluster. Orbit saves it without contacting the machine and republishes nothing. Live state that uses the old address stays until the Node that holds it is converged. For a Node in a Cluster, run [`cluster:node:add`](/cli/cluster/node-add) for the Cluster's Router again so its [Router LAN rules](/cli/firewall#router-lan-member-rules) follow. Converge the ingress Nodes whose public Process Routes reach the Node over the LAN. Routes and database connections use the new address the next time Orbit publishes them. A Cluster Router reaches the Node there, and a Node on the hub's private network reaches the WireGuard hub at the hub's LAN address after its next [`node:converge`](/cli/node/converge). Set the hub's address and converge the hub before the other Nodes'. [The LAN endpoint](/reference/wireguard-endpoints#the-lan-endpoint) has the rule, the proof and the order.
 - **Reboot hold.** A boolean stored on the Node without contacting it. Every Node read shows `reboot_hold`. It takes effect at the next fleet reboot admission, including operator passes. A held Node is read for its due state but never drained or rebooted by the pass. Due Nodes report `deferred` with `operator_hold`; Nodes that are not due report `not_due`. Overdue alerts remain active.
+- **Image refresh hold.** Stored as `image_refresh_hold` without contacting the Node. Every Node read shows it. Release, daily and operator refreshes respect it at admission. The host keeps serving its last promoted image. An admitted refresh continues.
 - **Task VM host settings.** The JSON object supports the [typed host fields](/reference/node-settings#configure-a-task-vm-host). It has no `node_id`, because the selected Node supplies its identity. Keep the host's current values when you change it. Remove the settings only after you destroy the host's task VMs. An `app-dev` role alone never makes a Node a task VM host. The optional [`containers` member](/reference/node-settings#task-container-fields) adds task container places with their own project, bridge and CIDR. Orbit refuses to remove it, or to change its `project`, `network` or `cidr`, while the host has a task container that is not destroyed. Removing it, or changing its `network` or `cidr`, starts a run that withdraws the container bridge's DHCP and DNS input rules first, as a change of the VM bridge does for its own rules.
 
 ## The apps folder
 
-A change to the apps folder runs on the Node when the folder must exist. The CLI follows the task and prints its final receipt. The folder is set only when the run succeeds. A new name, platform or reboot hold in the same request is saved at once. Unsetting the folder on a Node without an active `app-dev` role needs no folder, so it is saved at once. Unsetting it on a Node with that role prepares the default folder, `<managed-user-home>/apps`.
+A change to the apps folder runs on the Node when the folder must exist. The CLI follows the task and prints its final receipt. The folder is set only when the run succeeds. A new name, platform or either hold in the same request is saved at once. Unsetting the folder on a Node without an active `app-dev` role needs no folder, so it is saved at once. Unsetting it on a Node with that role prepares the default folder, `<managed-user-home>/apps`.
 
 A change never moves an existing checkout; new development Instances use the new folder. If the run fails, the setting stays as it was. Folders it created stay, and running the same command again after the cause is fixed finishes the change. [Node settings](/reference/node-settings#validation) lists the checks on the folder and their failure codes.
 
@@ -63,9 +67,10 @@ A skipped repeat prints `Skipped — already set (node.unchanged)`. With `--json
 | Code | Meaning |
 | --- | --- |
 | `node.id_invalid` | The Node is missing or is not a positive integer, and the CLI cannot prompt. |
-| `node.option_required` | None of `--name`, `--platform`, `--lan-ip`, `--reboot-hold`, `--apps-path`, or `--task-vms` was given. |
+| `node.option_required` | None of `--name`, `--platform`, `--lan-ip`, `--reboot-hold`, `--image-refresh-hold`, `--no-image-refresh-hold`, `--apps-path`, or `--task-vms` was given. |
 | `node.name_required`, `node.platform_required` | `--name` or `--platform` is empty. |
 | `node.reboot_hold_invalid` | `--reboot-hold` is not `true` or `false`. |
+| `node.image_refresh_hold_invalid` | Both image refresh hold options were given. |
 | `node.setting_invalid` | `--task-vms` is not a typed JSON host object or `null`. |
 | `validation.failed` | The name is malformed or taken, the platform is unknown, or the LAN address is not an IPv4 address. Nothing changes. |
 | `cluster.lan_ip_conflict` | Another Node of the same network has that LAN address: any Node on the hub's private network, one of its Cluster, or, outside every Cluster, another Node outside every Cluster. Nothing changes. |

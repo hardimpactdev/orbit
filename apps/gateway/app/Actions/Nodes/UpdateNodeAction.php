@@ -48,16 +48,16 @@ final readonly class UpdateNodeAction
 
     /**
      * Saves record fields at once. Apps preparation and task-host input withdrawal start a run; its settings
-     * are stored when the run succeeds, while a new name, platform, LAN address or reboot hold in the same request is already saved.
+     * are stored when the run succeeds, while a new name, platform, LAN address or either hold in the same request is already saved.
      * A record-only request whose values all equal the stored ones writes nothing and is reported unchanged.
      */
     public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null,
-        bool $hasLanIp = false, ?string $lanIp = null, ?bool $rebootHold = null): UpdateNodeResult
+        bool $hasLanIp = false, ?string $lanIp = null, ?bool $rebootHold = null, ?bool $imageRefreshHold = null): UpdateNodeResult
     {
         try {
-            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold): UpdateNodeResult {
+            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold, $imageRefreshHold): UpdateNodeResult {
                 $node->refresh();
-                $update = fn (): UpdateNodeResult => $this->update($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold);
+                $update = fn (): UpdateNodeResult => $this->update($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold, $imageRefreshHold);
 
                 return $name === null || $name === $node->name ? $update() : $this->provisioningLock->run($name, $update);
             });
@@ -67,12 +67,12 @@ final readonly class UpdateNodeAction
     }
 
     private function update(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller, ?string $requestId,
-        bool $hasLanIp, ?string $lanIp, ?bool $rebootHold): UpdateNodeResult
+        bool $hasLanIp, ?string $lanIp, ?bool $rebootHold, ?bool $imageRefreshHold): UpdateNodeResult
     {
         $written = false;
-        $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold, &$written): Node|Operation {
+        $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold, $imageRefreshHold, &$written): Node|Operation {
             $node->refresh();
-            $written = $this->record($node, $name, $platform, $hasLanIp, $lanIp, $rebootHold);
+            $written = $this->record($node, $name, $platform, $hasLanIp, $lanIp, $rebootHold, $imageRefreshHold);
             if ($settings->isEmpty()) {
                 return $node;
             }
@@ -126,10 +126,10 @@ final readonly class UpdateNodeAction
     }
 
     /**
-     * Saves the name, platform, LAN address and reboot hold, the registry facts that need no run, and reports whether one changed. The LAN
+     * Saves the name, platform, LAN address and holds, the registry facts that need no run, and reports whether one changed. The LAN
      * address selects where Orbit renders LAN traffic, the hub endpoint included (ADR 0251); each render picks it up.
      */
-    private function record(Node $node, ?string $name, ?string $platform, bool $hasLanIp, ?string $lanIp, ?bool $rebootHold): bool
+    private function record(Node $node, ?string $name, ?string $platform, bool $hasLanIp, ?string $lanIp, ?bool $rebootHold, ?bool $imageRefreshHold): bool
     {
         // Enrollment observes a managed Node's platform, so only an unmanaged Node takes one from this command.
         if ($platform !== null && ((is_string($node->ssh_host_fingerprint) && $node->ssh_host_fingerprint !== '') || $node->roles()->exists())) {
@@ -152,6 +152,9 @@ final readonly class UpdateNodeAction
         }
         if ($rebootHold !== null) {
             $node->reboot_hold = $rebootHold;
+        }
+        if ($imageRefreshHold !== null) {
+            $node->image_refresh_hold = $imageRefreshHold;
         }
         if (! $node->isDirty()) {
             return false;

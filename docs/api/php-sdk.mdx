@@ -54,11 +54,11 @@ The connector retries a read once. When a `GET` or `HEAD` request fails because 
 Each operation is a request class under `Orbit\Sdk\Requests\<Family>`. Construct it with named arguments, send it, and call `dto()` for the typed response.
 
 ```php
-use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
+use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
 $node = $connector
-    ->send(new AddNodeRequest(name: 'beast', publicSshHost: 'beast.example.com', roles: ['app-dev'], tld: 'test'))
+    ->send(new ShowNodeRequest(nodeId: 210))
     ->dto();
 
 assert($node instanceof NodeResponse);
@@ -85,7 +85,7 @@ Response classes are `final readonly` objects with public camel-case properties 
 
 | Response | Returned by |
 | --- | --- |
-| `NodeResponse`, `NodesResponse` | Node operations. |
+| `NodeResponse`, `NodesResponse` | Node reads and synchronous updates. |
 | `ProjectResponse`, `ProjectRuntimeDefinitionResponse` | Projects and their process and Schedule definitions. |
 | `InstanceResponse` | Instance placement. |
 | `DeploymentConfigResponse`, `DeploymentStepResponse`, `DeploymentReleasesResponse` | Deploy steps, configuration documents, and retained releases. |
@@ -122,7 +122,7 @@ A transport failure such as an unreachable Gateway or a certificate mismatch thr
 
 ## Follow an operation
 
-`DeployInstanceRequest`, `RollbackInstanceRequest`, and `SynchronizeInstanceEnvironmentRequest` start an [operation](/reference/operations) and return its `OperationResponse` at once. Read it again with `ShowOperationRequest` after `pollAfterSeconds`, until `terminal()` is true. Pass the last `sequence` as `afterSequence` to receive only the steps that changed.
+`AddNodeRequest`, `CreateInstanceRequest`, `CloneInstanceRequest`, `TransferInstanceRequest`, Cluster Router set and unset, Vault setup, sync and teardown, deploy, rollback, and environment synchronization start an [operation](/reference/operations) and return its `OperationResponse` at once. Read it again with `ShowOperationRequest` after `pollAfterSeconds`, until `terminal()` is true. Pass the last `sequence` as `afterSequence` to receive only the steps that changed.
 
 ```php
 use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
@@ -137,6 +137,8 @@ while (! $operation->terminal()) {
 
 printf("%s %s\n", $operation->status, $operation->result['selected_release'] ?? $operation->errorCode ?? '');
 ```
+
+After success, read the resource with its show request, such as `ShowNodeRequest` or `ShowInstanceRequest`. The Operation result carries completion evidence; it is not the resource DTO. Vault changes use `ShowVaultStatusRequest` to read the current status.
 
 Closing the connection or stopping the loop does not stop the operation. `CancelOperationRequest` asks it to stop. The SDK never retries a start request.
 

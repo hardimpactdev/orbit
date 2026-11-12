@@ -31,11 +31,14 @@ final readonly class TaskVmImageRefreshTrigger
     /**
      * Every host, to `$commit` or to the release the Gateway runs.
      *
-     * @return array<string,string> host name => `operation:<id>` or the refusal code
+     * @return array<string,string> host name => `operation:<id>`, `skipped:operator_hold` or the refusal code
      */
     public function admitAll(string $reason, ?string $commit = null, int $attempts = 1): array
     {
-        return self::rounds($this->hosts(), fn (Node $host): string => $this->admit($host, $reason, $commit), $attempts);
+        $results = self::rounds($this->hosts(), fn (Node $host): string => $this->admit($host, $reason, $commit), $attempts);
+        Log::info('Task image refresh admissions.', ['reason' => $reason, 'hosts' => $results]);
+
+        return $results;
     }
 
     /**
@@ -44,7 +47,7 @@ final readonly class TaskVmImageRefreshTrigger
      *
      * @param  list<Node>  $hosts
      * @param  Closure(Node): string  $admit
-     * @return array<string,string> host name => `operation:<id>` or the refusal code
+     * @return array<string,string> host name => `operation:<id>`, `skipped:operator_hold` or the refusal code
      */
     public static function rounds(array $hosts, Closure $admit, int $attempts): array
     {
@@ -78,12 +81,17 @@ final readonly class TaskVmImageRefreshTrigger
         return 'task_vm.host_unavailable';
     }
 
-    /** @return string `operation:<id>` or the refusal code */
+    /** @return string `operation:<id>`, `skipped:operator_hold` or the refusal code */
     private function admit(Node $host, string $reason, ?string $commit): string
     {
         try {
             return 'operation:'.$this->start->execute($host, 'refresh-'.$reason, $commit)->id;
         } catch (ResourceOperationException $refused) {
+            if ($refused->errorCode === TaskVmImageRefreshIntent::Held) {
+                Log::info('A task image refresh was skipped.', ['node_id' => $host->id, 'host' => $host->name, 'reason' => 'operator_hold', 'trigger' => $reason]);
+
+                return 'skipped:operator_hold';
+            }
             Log::warning('A task image refresh was not admitted.', ['node_id' => $host->id, 'reason' => $reason, 'error_code' => $refused->errorCode]);
 
             return $refused->errorCode;
