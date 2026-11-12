@@ -66,10 +66,6 @@ final class GatewayFailureRenderer
             return $safe;
         }
 
-        if ($code === 'instance.worktree_dependents') {
-            return self::worktreeDetails($details);
-        }
-
         if ($code === 'env.configuration_invalid') {
             return self::environmentConfigurationDetails($details);
         }
@@ -117,46 +113,6 @@ final class GatewayFailureRenderer
         }
 
         return [...$safe, ...self::operationDetails($details), ...self::buildDetails($details)];
-    }
-
-    /**
-     * @param  array<string,mixed>  $details
-     * @return array{dependents?:list<array{id:int,name:string,project_id:int}>,other_dependents?:int,unowned_paths?:list<string>}
-     */
-    private static function worktreeDetails(array $details): array
-    {
-        $safe = [];
-        $dependents = $details['dependents'] ?? null;
-        if (is_array($dependents) && array_is_list($dependents)) {
-            $safe['dependents'] = [];
-            foreach (array_slice($dependents, 0, self::MAX_FIELD_MESSAGES) as $row) {
-                if (! is_array($row)) {
-                    continue;
-                }
-                $id = $row['id'] ?? null;
-                $projectId = $row['project_id'] ?? null;
-                $name = is_string($row['name'] ?? null) ? self::safeText($row['name'], self::MAX_FIELD_LENGTH) : null;
-                if (is_int($id) && $id > 0 && is_int($projectId) && $projectId > 0 && $name !== null) {
-                    $safe['dependents'][] = ['id' => $id, 'name' => $name, 'project_id' => $projectId];
-                }
-            }
-        }
-        $others = $details['other_dependents'] ?? null;
-        if (is_int($others) && $others >= 0) {
-            $safe['other_dependents'] = $others;
-        }
-        $paths = $details['unowned_paths'] ?? null;
-        if (is_array($paths) && array_is_list($paths)) {
-            $safe['unowned_paths'] = [];
-            foreach (array_slice($paths, 0, self::MAX_FIELD_MESSAGES) as $raw) {
-                $path = is_string($raw) ? self::safeText($raw, self::MAX_MESSAGE_LENGTH) : null;
-                if ($path !== null && str_starts_with($path, '/')) {
-                    $safe['unowned_paths'][] = $path;
-                }
-            }
-        }
-
-        return $safe;
     }
 
     /**
@@ -279,19 +235,6 @@ final class GatewayFailureRenderer
         }
 
         $humanDetails = $details;
-        if ($code === 'instance.worktree_dependents') {
-            $safe = self::worktreeDetails($details);
-            $humanDetails = [];
-            foreach ($safe['dependents'] ?? [] as $row) {
-                $humanDetails['dependents'][] = $row['name'].' (#'.$row['id'].', Project #'.$row['project_id'].')';
-            }
-            if (isset($safe['other_dependents'])) {
-                $humanDetails['other_dependents'] = (string) $safe['other_dependents'];
-            }
-            if (isset($safe['unowned_paths'])) {
-                $humanDetails['unowned_paths'] = $safe['unowned_paths'];
-            }
-        }
 
         // The error message already names the Node, stage, and Caddy message of a failed build.
         if (self::buildDetails($details) !== []) {
