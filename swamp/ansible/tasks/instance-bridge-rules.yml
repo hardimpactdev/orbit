@@ -3,11 +3,95 @@
   tags: [always]
   ansible.builtin.file: {path: /usr/local/libexec, state: directory, owner: root, group: root, mode: '0755'}
 
-- name: Install the shared endpoint resolver and exact-rule writer
+- name: Read the installed bridge helper without following links
   tags: [always]
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/instance_bridge.py"
-    dest: /usr/local/libexec/orbit-instance-bridge
+  ansible.builtin.stat:
+    path: /usr/local/libexec/orbit-instance-bridge
+    follow: false
+    checksum_algorithm: sha256
+  register: bridge_helper_installed
+
+- name: Refuse a bridge helper target symlink
+  tags: [always]
+  ansible.builtin.assert:
+    that: not (bridge_helper_installed.stat.islnk | default(false))
+    fail_msg: instance.bridge_helper_target_symlink
+    quiet: true
+
+- name: Install a changed bridge helper
+  tags: [always]
+  vars:
+    bridge_helper_sha256: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_bridge.py', rstrip=false) | hash('sha256') }}"
+  when: >-
+    bridge_helper_installed.stat.checksum | default('') != bridge_helper_sha256
+  block:
+    - name: Allocate a bridge helper candidate beside the target
+      ansible.builtin.tempfile:
+        state: file
+        path: /usr/local/libexec
+        prefix: .orbit-instance-bridge-
+      register: bridge_helper_candidate
+      changed_when: false
+
+    - name: Read the candidate without following links
+      ansible.builtin.stat:
+        path: "{{ bridge_helper_candidate.path }}"
+        follow: false
+        get_checksum: false
+      register: bridge_helper_candidate_before
+
+    - name: Refuse a bridge helper candidate symlink
+      ansible.builtin.assert:
+        that: not (bridge_helper_candidate_before.stat.islnk | default(false))
+        fail_msg: instance.bridge_helper_candidate_symlink
+        quiet: true
+
+    - name: Verify and publish the bridge helper candidate
+      block:
+        - name: Write the bridge helper candidate
+          ansible.builtin.copy:
+            src: "{{ playbook_dir }}/instance_bridge.py"
+            dest: "{{ bridge_helper_candidate.path }}"
+            owner: root
+            group: root
+            mode: '0755'
+          changed_when: false
+
+        - name: Read the staged bridge helper checksum
+          ansible.builtin.stat:
+            path: "{{ bridge_helper_candidate.path }}"
+            follow: false
+            checksum_algorithm: sha256
+          register: bridge_helper_candidate_verified
+
+        - name: Require the expected bridge helper checksum
+          ansible.builtin.assert:
+            that:
+              - bridge_helper_candidate_verified.stat.isreg | default(false)
+              - bridge_helper_candidate_verified.stat.checksum | default('') == bridge_helper_sha256
+            fail_msg: instance.bridge_helper_checksum_mismatch
+            quiet: true
+
+        - name: Publish the verified bridge helper atomically
+          ansible.builtin.command:
+            argv:
+              - mv
+              - "-fT"
+              - "--"
+              - "{{ bridge_helper_candidate.path }}"
+              - /usr/local/libexec/orbit-instance-bridge
+          changed_when: true
+      always:
+        - name: Remove the bridge helper candidate
+          ansible.builtin.file:
+            path: "{{ bridge_helper_candidate.path }}"
+            state: absent
+          changed_when: false
+
+- name: Set the installed bridge helper ownership and mode
+  tags: [always]
+  ansible.builtin.file:
+    path: /usr/local/libexec/orbit-instance-bridge
     owner: root
     group: root
     mode: '0755'

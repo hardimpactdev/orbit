@@ -1,9 +1,12 @@
 """Exact DNAT resolution and shared boot/attach/converge policy, without Docker or Incus mutations."""
 import copy
+import grp
+import hashlib
 import importlib.util
 import io
 import json
 import os
+import pwd
 import shutil
 import subprocess
 import sys
@@ -854,6 +857,125 @@ class BridgePolicy(unittest.TestCase):
         self.assertEqual(bridge.plan(current, {}, '10.253.0.0/24', {'egress': [proxy], 'ingress': [ingress]}, 1800000000000001),
                          [('remove', 'egress', current['egress'][-1])])
         self.assertEqual(bridge.plan(current, {}, '10.253.0.0/24', {}), [])
+
+
+@unittest.skipUnless(shutil.which('ansible-playbook'), 'pinned Ansible is required')
+class BridgeHelperInstallation(unittest.TestCase):
+    def setUp(self):
+        import yaml
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.libexec = self.root / 'libexec'
+        self.libexec.mkdir()
+        self.installed = self.libexec / 'orbit-instance-bridge'
+        self.old = b'# old complete helper\n'
+        self.installed.write_bytes(self.old)
+        self.source = Path(__file__).parents[1] / 'ansible/instance_bridge.py'
+        self.digest = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        text = (self.source.parent / 'tasks/instance-bridge-rules.yml').read_text()
+        # Execute the real installer, excluding endpoint application. CI is
+        # unprivileged; root execution in the work clone also proves root:root.
+        text = text.split('# One attempt', 1)[0]
+        self.assertIn('owner: root\n            group: root\n            mode:', text)
+        if os.geteuid() != 0:
+            text = text.replace('owner: root', 'owner: ' + pwd.getpwuid(os.geteuid()).pw_name)
+            text = text.replace('group: root', 'group: ' + grp.getgrgid(os.getegid()).gr_name)
+        text = text.replace('/usr/local/libexec', str(self.libexec))
+        (self.root / 'tasks.yml').write_text(text)
+        shutil.copyfile(self.source, self.root / 'instance_bridge.py')
+        self.playbook = self.root / 'play.yml'
+        self.playbook.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False,
+            'tasks': [{'ansible.builtin.include_tasks': str(self.root / 'tasks.yml')}]}]))
+
+    def install(self, fault=''):
+        plugins = self.root / 'connections'
+        plugins.mkdir(exist_ok=True)
+        (plugins / 'bridge_install_fault.py').write_text(
+            "import hashlib, os\n"
+            "from pathlib import Path\n"
+            "from ansible.plugins.connection.local import Connection as LocalConnection\n"
+            "class Connection(LocalConnection):\n"
+            "    transport = 'bridge_install_fault'\n"
+            "    def exec_command(self, cmd, in_data=None, sudoable=True):\n"
+            "        root = Path(os.environ['BRIDGE_INSTALL_FIXTURE'])\n"
+            "        fault = os.environ['BRIDGE_INSTALL_FAULT']\n"
+            "        marker = root / 'injected'\n"
+            "        for candidate in (root / 'libexec').glob('.orbit-instance-bridge-*'):\n"
+            "            if marker.exists() or candidate.is_symlink():\n"
+            "                continue\n"
+            "            if fault == 'symlink' and candidate.stat().st_size == 0:\n"
+            "                candidate.unlink()\n"
+            "                candidate.symlink_to(root / 'referent')\n"
+            "                marker.touch()\n"
+            "            if fault == 'corrupt' and hashlib.sha256(candidate.read_bytes()).hexdigest() == os.environ['BRIDGE_INSTALL_DIGEST']:\n"
+            "                candidate.write_bytes(b'# corrupt candidate\\n')\n"
+            "                marker.touch()\n"
+            "        return super().exec_command(cmd, in_data, sudoable)\n")
+        result = subprocess.run(['ansible-playbook', '-i', 'localhost,',
+            '-c', 'bridge_install_fault', '-e', json.dumps({'ansible_python_interpreter': sys.executable}),
+            str(self.playbook)], capture_output=True, text=True, timeout=45, check=False,
+            env={**os.environ, 'ANSIBLE_CONNECTION_PLUGINS': str(plugins), 'ANSIBLE_NOCOLOR': '1',
+                 'BRIDGE_INSTALL_FIXTURE': str(self.root), 'BRIDGE_INSTALL_FAULT': fault,
+                 'BRIDGE_INSTALL_DIGEST': self.digest})
+        return result
+
+    def test_verified_install_is_atomic_owned_executable_and_unchanged_repeat_is_write_free(self):
+        inode = self.installed.stat().st_ino
+        with self.installed.open('rb') as running_refresh:
+            result = self.install()
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(running_refresh.read(), self.old)
+        self.assertNotEqual(self.installed.stat().st_ino, inode)
+        self.assertEqual(self.installed.read_bytes(), self.source.read_bytes())
+        self.assertEqual(self.installed.stat().st_uid, os.geteuid())
+        self.assertEqual(self.installed.stat().st_gid, os.getegid())
+        self.assertEqual(self.installed.stat().st_mode & 0o777, 0o755)
+        self.assertEqual(list(self.libexec.glob('.orbit-instance-bridge-*')), [])
+        before = self.installed.stat()
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('changed=0', result.stdout)
+        after = self.installed.stat()
+        for field in ('st_ino', 'st_mtime_ns', 'st_ctime_ns', 'st_uid', 'st_gid', 'st_mode'):
+            self.assertEqual(getattr(after, field), getattr(before, field))
+
+    def test_corrupt_candidate_is_removed_and_old_helper_stays_installed(self):
+        before = self.installed.stat()
+        result = self.install('corrupt')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('instance.bridge_helper_checksum_mismatch', result.stdout)
+        self.assertTrue((self.root / 'injected').exists())
+        self.assertEqual(self.installed.read_bytes(), self.old)
+        after = self.installed.stat()
+        for field in ('st_ino', 'st_mtime_ns', 'st_ctime_ns', 'st_uid', 'st_gid', 'st_mode'):
+            self.assertEqual(getattr(after, field), getattr(before, field))
+        self.assertEqual(list(self.libexec.glob('.orbit-instance-bridge-*')), [])
+
+    def test_target_symlink_is_refused_without_touching_its_referent(self):
+        referent = self.root / 'referent'
+        referent.write_bytes(b'private referent')
+        self.installed.unlink()
+        self.installed.symlink_to(referent)
+        result = self.install()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('instance.bridge_helper_target_symlink', result.stdout)
+        self.assertTrue(self.installed.is_symlink())
+        self.assertEqual(referent.read_bytes(), b'private referent')
+        self.assertEqual(list(self.libexec.glob('.orbit-instance-bridge-*')), [])
+
+    def test_candidate_symlink_is_refused_without_replacing_it_or_the_target(self):
+        referent = self.root / 'referent'
+        referent.write_bytes(b'private referent')
+        result = self.install('symlink')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('instance.bridge_helper_candidate_symlink', result.stdout)
+        self.assertTrue((self.root / 'injected').exists())
+        self.assertEqual(self.installed.read_bytes(), self.old)
+        self.assertEqual(referent.read_bytes(), b'private referent')
+        candidates = list(self.libexec.glob('.orbit-instance-bridge-*'))
+        self.assertEqual(len(candidates), 1)
+        self.assertTrue(candidates[0].is_symlink())
 
 
 if __name__ == '__main__':
