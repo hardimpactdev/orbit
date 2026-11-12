@@ -185,10 +185,12 @@
     ]
   },
   "swamp/bin/check-swamp-base-policy_test.ts": {
-    "source_sha256": "bb97c5f5b46301e2747291bcfb737bf70ddb42ce65fd7c5d2024c0aab59ff129",
+    "source_sha256": "184a21e440855b48da1d565b48b4fa88cb62dc7c620b78f1a9dc4316b23fde12",
     "cases": [
       "real frozen policy owns limits and dependencies",
-      "stale baseline evidence can be repaired without growing immutable source debt"
+      "stale baseline evidence can be repaired without growing immutable source debt",
+      "bridge transaction contract is enforced by current and immutable base rules",
+      "current and frozen bridge policy enforce closed state custody and import boundaries"
     ]
   },
   "swamp/bin/check-swamp-shape_test.ts": {
@@ -307,7 +309,7 @@
     ]
   },
   "swamp/bin/source_test.ts": {
-    "source_sha256": "0879d78496c83f95a3f53e3d91a0721b5ea6b7d019289f7c98900d9ba677d2aa",
+    "source_sha256": "20088cad6df0547e92933a6e90a73f421ca77bc3a13a93cfaf2894969dae9696",
     "cases": [
       "model IDs are unique",
       "workflow queue bounds have measured per-kind budgets",
@@ -332,7 +334,7 @@
     ]
   },
   "swamp/bin/swamp-shape-python_test.ts": {
-    "source_sha256": "2270f8f5ec52e8a009a953edb24c1336791571a5921f181ef4b5d3a4e7106441",
+    "source_sha256": "ae3b12c76d6b7524e81bad1d94e49cc6f2757eac7d872764d707a1c6438d5d21",
     "cases": [
       "python_secret_flow_is_from_environment_not_internal_argument_names",
       "fixed_external_origin_with_dynamic_path_is_not_gateway_http",
@@ -344,7 +346,11 @@
       "validated_parameterized_host_tool_transaction",
       "path_guard_custody_or_acquisition_changes_are_not_proven",
       "mutated_or_untyped_callers_cannot_claim_constructor_provenance",
-      "native_certificate_signer_has_only_the_scoped_post_and_checked_numeric_operation"
+      "native_certificate_signer_has_only_the_scoped_post_and_checked_numeric_operation",
+      "bridge transaction proves one nonblocking acquisition and complete custody",
+      "bridge custody cannot be bypassed by a caller, descriptor or binding change",
+      "bridge proof denies destructive calls outside the closed state helper",
+      "bridge proof rejects package and relative imports across the full inventory"
     ]
   },
   "swamp/bin/validate-swamp-workflows_test.ts": {
@@ -682,10 +688,11 @@
     ]
   },
   "swamp/tests/ansible_inputs_test.py": {
-    "source_sha256": "a2fb8eddf67ab13e654a59a497e751ca589f7954f0caaf5baadf3ffeb62c7ac3",
+    "source_sha256": "52dde6e21fcbb264c8c5520158ba4fd4fb8fa29dd625d122a12ad2e98e7e6572",
     "cases": [
       "test_admitted_identity_and_secret_file_custody",
       "test_metrics_container_plan_preserves_the_admitted_state",
+      "test_every_ansible_step_sends_its_failed_task_to_stderr",
       "test_required_machine_phases_use_the_existing_ansible_entry_point",
       "test_observations_precede_pure_composition_and_machine_application",
       "test_chart_exposes_each_observe_compose_variables_and_apply_step",
@@ -697,15 +704,34 @@
     ]
   },
   "swamp/tests/ansible_instance_bridge_test.py": {
-    "source_sha256": "21b390491370bd9026acb0cdfbc0352a8f41d8e006cf0f5c3ec268d759e22573",
+    "source_sha256": "7dd63221bd726b9635a124334ca029ff0aa9c3aa33f7535086f570f065cfd3f9",
     "cases": [
       "test_stale_capture_keeps_later_admission_then_current_capture_prunes_it",
-      "test_same_tuple_readmission_during_stale_prune_bumps_etag_and_survives_retry",
-      "test_readmission_after_acl_write_survives_old_record_compaction",
+      "test_refresh_paused_after_read_cannot_resurrect_last_user_after_withdrawal",
+      "test_busy_refresh_must_be_reinvoked_and_then_reads_post_withdrawal_records",
+      "test_busy_admission_must_be_reinvoked_after_withdrawal_compaction",
+      "test_every_busy_mode_acquires_once_and_mutates_no_records_acl_or_health",
+      "test_reads_share_remaining_budget_and_curl_keeps_its_request_limit",
+      "test_curl_exit_28_records_the_public_command_timeout_after_readback",
+      "test_first_acl_get_timeout_never_admits_a_staged_record_or_a_later_refresh",
+      "test_later_ambiguous_put_commits_only_the_endpoints_confirmed_by_readback",
+      "test_partial_removal_followed_by_refresh_never_resurrects_confirmed_withdrawal",
+      "test_ansible_partial_withdrawal_then_refresh_keeps_confirmed_removal_and_failure_health",
+      "test_crash_after_confirmed_removal_cannot_be_reported_healthy_by_refresh",
+      "test_withdrawal_of_an_unsaved_docker_tuple_refuses_before_acl_mutation",
+      "test_busy_caller_exits_and_never_applies_its_intent_after_holder_releases",
+      "test_descriptor_custody_spans_acl_records_health_and_releases_on_every_exit",
+      "test_expired_helper_budget_refuses_before_record_or_acl_work",
+      "test_cli_reports_busy_without_a_second_acquire_or_health_mutation",
+      "test_nat_and_incus_timeouts_release_the_lock_and_record_named_failure",
       "test_reconcile_compacts_old_records_deduplicates_and_never_deletes_newer_records",
       "test_rechecks_newer_rule_without_a_record_before_removing_and_preserves_unknown_descriptions",
       "test_only_one_exact_published_mapping_is_accepted",
+      "test_wildcard_and_explicit_bridge_publications_share_the_exact_resolver",
       "test_address_change_adds_new_tuple_until_host_reconcile_removes_the_old",
+      "test_withdrawal_retains_stopped_shared_service_and_unrelated_stopped_database",
+      "test_withdrawal_uses_last_refresh_translation_and_preserves_newer_admission",
+      "test_withdrawal_cannot_admit_an_unrecorded_endpoint_or_changed_publication_kind",
       "test_reconcile_preserves_proxy_ingress_and_rules_outside_its_endpoint_shape"
     ]
   },
@@ -812,7 +838,7 @@
     ]
   },
   "swamp/tests/ansible_task_container_host_prepare_test.ts": {
-    "source_sha256": "e945c4caef36728af235d06e490e7472da77b6a86814f2aca85f2d7888a78ced",
+    "source_sha256": "f36ffc34a5410d2c9b121edc624af71874e72cdf2ab8666bd7294ad66d06a9af",
     "cases": [
       "a container host gets its kernel side, bridge, project and clone check beside the VM side, then changes nothing",
       "the container bridge gets DHCP and DNS input rules under its own catalog names",
@@ -897,7 +923,7 @@
     ]
   },
   "swamp/tests/ansible_task_vm_fleet_build_test.ts": {
-    "source_sha256": "955a4f08f760e17b989b7b45bf3207cb4f37276397e195b9edb17fc0bf84812c",
+    "source_sha256": "a2ab5c30d1863a739e298910b2c9396323fa8b78d1194bb6e21208276256c77e",
     "cases": [
       "a blank seed gets the network, then the containers, the Gateway bootstrap and the nested Orbit steps in order, then the operator join",
       "a half-made fleet starts from nothing: its containers go first",
@@ -1349,7 +1375,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "9cdbd041c4e7839dddf776c3f1a1ed95adebb8ef93e9bcf1a3dfb07ed11cea78",
+    "source_sha256": "828211680eff46bc36892579e433bf811bfd285f81edc53c3178f312bfe4ee55",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1362,6 +1388,8 @@
       "test_unreadable_remote_fails_without_creating_a_branch",
       "test_unreachable_frozen_commit_fails_without_using_current_tip",
       "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
+      "test_clone_launch_applies_mail_without_another_playbook",
+      "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful",
       "test_clone_uses_the_admitted_common_acl_name",
       "test_clone_refuses_unsafe_effective_nics_before_start",
       "test_guest_and_node_command_names_stay_in_sync",
@@ -1879,22 +1907,29 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_test.py": {
-    "source_sha256": "76abb617947c85a43acf0ea6f5391621b4137cffb2860f9f280fe30935af5d6a",
+    "source_sha256": "8d463986f73bba118e9f87ad0eeac78f701f260024041f9a877ffb0a41fa82d6",
     "cases": [
-      "test_migrate_selected_smtp_passes_real_preflight_and_installs_forwarders",
       "test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes",
+      "test_new_admission_metadata_and_incus_empty_fields_are_unchanged",
       "test_failed_unit_write_keeps_network_path_and_a_retry_completes_it",
       "test_failure_after_one_successful_service_write_finishes_pending_activation",
       "test_failure_after_all_writes_before_reload_finishes_pending_activation",
       "test_foreign_listener_or_unit_skips_both_ports_without_mutation",
-      "test_stopped_missing_binary_or_path_failure_never_changes_guest"
+      "test_stopped_missing_binary_or_path_failure_never_changes_guest",
+      "test_migrate_selected_smtp_passes_real_preflight_and_installs_forwarders",
+      "test_active_owned_socket_with_missing_enable_link_is_repaired",
+      "test_failed_guest_entry_preserves_only_exact_public_codes_at_subprocess_boundary",
+      "test_real_default_launch_continues_after_mail_failure",
+      "test_no_endpoint_does_no_work",
+      "test_create_launches_share_the_mail_step_and_receipt"
     ]
   },
   "swamp/tests/ansible_instance_mail_line_test.py": {
-    "source_sha256": "2e01ce293092ce498f393f9ae2e65f0d800753fe0a6131b92801fa03ef956434",
+    "source_sha256": "4a237bffa8bfd61632dcd7eab655cde451b89593d774e83e0fc66c1e2669a8ca",
     "cases": [
       "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte",
       "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved",
+      "test_prefix_whitelist_accepts_only_safe_whole_lines_and_reports_first_refusal",
       "test_missing_key_missing_file_symlink_and_already_smtp_write_nothing",
       "test_atomic_replacement_preserves_owner_group_and_mode_without_backup",
       "test_real_incus_missing_delete_contract_and_first_run",
@@ -1910,7 +1945,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "071fe4dd765b27ba0f77565a170b6d32e5eeb50b94cc4c08aa89e50232a932cf",
+    "source_sha256": "f559d40678978d2ee226746b97a1a539d54d91a605759221d9a7df6073e2ef7e",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -1939,7 +1974,7 @@
     ]
   },
   "swamp/tests/instance_node_runtime_test.py": {
-    "source_sha256": "5ecdd774ee27b55e8635e06ce60fa5bd230b72832c83e79375e07b87601d215a",
+    "source_sha256": "20a70bc7bd10c72717dd6f1d40c52efb84cb7e05d0d5d055a9cf8fbf87b8a60d",
     "cases": [
       "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat",
       "test_recipe_upgrade_and_seed_copy_keep_downloaded_versions_after_shared_pruning",
@@ -1947,6 +1982,27 @@
       "test_recipe_pin_and_unpinned_projects_need_no_install",
       "test_download_integrity_and_timeout_failures_name_the_pin",
       "test_production_phase_removes_read_only_source_mount_after_failure_without_downtime"
+    ]
+  },
+  "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {
+    "source_sha256": "766c8a4602e80721efc68bf018c2b8681d5274b9798ef727a5f1e045baf1050b",
+    "cases": [
+      "create returns only the commit when every step finished",
+      "create names the first unfinished phase",
+      "a Project without setup steps runs no setup phase",
+      "a web-serving create needs its Route; a Project without one skips it",
+      "an already active create reports ready without step evidence",
+      "VP preparation uses stock CLI environment installation and discrete official SSH effects",
+      "a create that copies the default database needs that copy; others skip it",
+      "a Route certificate that failed is the Route's failure, not the setup it skipped",
+      "a failed setup wins over the Route it skipped",
+      "the Route is not finished until every certificate step succeeded",
+      "a container default takes its commit from the workspace and finishes after the seed snapshot",
+      "a clone finishes only with its registered T3 server, which the receipt carries; it has no deploy step or seed",
+      "readiness records only timestamps from the T3 checks and the Route TLS probe",
+      "container mail skips retain their reason and missing mail observations stay advisory",
+      "default and clone finish workspace T3 and registration despite bounded mail failure",
+      "a Node without the main Mailpit gets no mail warning or failure"
     ]
   }
 }

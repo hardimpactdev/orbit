@@ -153,6 +153,7 @@ class NodeRuntimeTest(unittest.TestCase):
         (self.home / 'js_runtime').symlink_to(self.shared / 'js_runtime')
         script = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
         script = script.replace("Path('/opt/orbit-runtime/current/vite-plus-home')", 'Path(' + repr(str(self.shared)) + ')')
+        script = script.replace("app_user=\'orbit\'", "app_user=" + repr(pwd.getpwuid(os.getuid()).pw_name))
         script = script.replace("VP = '/opt/orbit-runtime/current/bin/vp'", 'VP = ' + repr(str(self.vp)))
         (self.root / 'instance_node_runtime.py').write_text(script)
         (self.root / 'tasks').mkdir()

@@ -57,7 +57,7 @@ def main():
     network_check = sys.argv[3]
     account = sys.argv[4]
     folder = Path(sys.argv[5])
-    phase = sys.argv[6]
+    phase = sys.argv[-1]
     if phase not in {"container", "workspace", "agent", "t3", "sessions", "cleanup"}:
         raise ValueError("instance.clone_phase_invalid")
     name = container["name"]
@@ -334,6 +334,24 @@ def main():
                 raise RuntimeError("instance.container_network_unsafe")
             if read["status"] != "Running":
                 change(project + ["start", name])
+            if container.get("mail") is not None:
+                try:
+                    bundle = json.loads(sys.argv[6])
+                    attempted = run(["python3", "-c", bundle["mail"],
+                                     json.dumps(container), json.dumps(bundle)], check=False)
+                    if attempted.returncode:
+                        code = attempted.stderr.removesuffix("\n")
+                        mail = {"status": "failed", "reason": code if code in
+                                {"instance.host_unavailable", "process.target_inactive"} else "instance.mail_update_failed"}
+                    else:
+                        mail = json.loads(attempted.stdout)
+                        if mail.get("status") not in {"applied", "unchanged", "skipped"} or (
+                            mail["status"] == "skipped" and mail.get("reason") not in {"mail_port_in_use", "mail_unit_conflict"}
+                        ):
+                            raise ValueError("invalid mail outcome")
+                except Exception:  # noqa: BLE001 - mail is advisory; keep arbitrary tool output private.
+                    mail = {"status": "failed", "reason": "instance.mail_update_failed"}
+                print("orbit-mail=" + mail["status"] + (":" + mail["reason"] if "reason" in mail else ""))
             # Git credentials remain on the Node, and leave even when a read/fetch fails.
             mirror = Path(container["mirror"])
             mirror.parent.mkdir(mode=0o700, parents=True, exist_ok=True)

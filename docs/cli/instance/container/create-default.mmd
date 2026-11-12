@@ -35,18 +35,16 @@ sequenceDiagram
   %%> - the NIC carries `orbitinst0-proxy` and the container's own ACL, which lets only the Node's Caddy reach port 8080; `orbitinst0-egress` stays on the bridge only
   %%> - the agent folder is mounted too, so its clones have it; nothing in the default runs from it
   %%> - fetches the default branch into the Node's mirror with the read token; the token stays on the Node
+  %%> Mail:
+  %%> - the same launch applies the exact SMTP path before the four root-owned mail units; no separate mail playbook or step
+  %%> - two IPv4 loopback sockets forward 1025 and 2525; foreign units or listeners skip setup without stopping their Process
+  %%> On mail failure:
+  %%> - keep a mail warning and continue workspace, T3 and registration; mail:update remains the repair command
   opt database on a Database server
     SW->>N: Create the database<br/>child operation-database-create
     %%> What it does:
     %%> - the database family creates the owner and the database on the Project's database server, on this Node or another
     %%> - needs the container's database rule; without it the admission refuses `operation.kind_unavailable`
-  end
-  opt Node runs the main Mailpit
-    SW->>C: Apply mail setup<br/>mail<br/>tags mail
-    %%> Why:
-    %%> - the exact own-ACL SMTP rule and additive bridge endpoint reach Mailpit without a Node converge
-    %%> When:
-    %%> - two IPv4 loopback sockets forward 1025 and 2525; a foreign listener skips setup without stopping its Process
   end
   SW->>C: Prepare the workspace<br/>Ansible · tags workspace
   %%> What it does:

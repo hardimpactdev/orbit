@@ -1,245 +1,29 @@
 ---
-# Shared mail phase: Node-side Incus commands only, no workspace or application Process changes.
-- name: Read the named container before mail setup
+# One Node entry, two batched guest commands; shared with the native clone launch.
+- name: Apply and check the admitted mail setup
   ansible.builtin.command:
-    argv: [incus, query, --, "/1.0/instances/{{ container.name }}?project={{ container.project }}"]
-  register: mail_container
-  changed_when: false
+    argv:
+      - python3
+      - -c
+      - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_mail.py') }}"
+      - "{{ container | to_json }}"
+      - >-
+        {{ {'mail': lookup('ansible.builtin.file', playbook_dir ~ '/instance_mail.py'),
+            'bridge': lookup('ansible.builtin.file', playbook_dir ~ '/instance_bridge.py')} | to_json }}
+  register: mail_apply
+  failed_when: false
+  changed_when: mail_apply.rc == 0 and (mail_apply.stdout | from_json).status == 'applied'
 
-- name: Refuse a stopped container
+- name: Require the admitted mail setup
   ansible.builtin.assert:
-    that: (mail_container.stdout | from_json).status == 'Running'
-    fail_msg: process.target_inactive
+    that: mail_apply.rc == 0
+    fail_msg: "{{ mail_apply.stderr if mail_apply.stderr in ['process.target_inactive', 'instance.host_unavailable'] else 'instance.mail_update_failed' }}"
     quiet: true
 
-- name: Check the image SMTP proxy executable
-  ansible.builtin.command:
-    argv: "{{ as_root + ['test', '-x', '/usr/lib/systemd/systemd-socket-proxyd'] }}"
-  register: mail_binary
-  changed_when: false
-  failed_when: false
-
-- name: Require the image SMTP proxy
-  ansible.builtin.assert:
-    that: mail_binary.rc == 0
-    fail_msg: instance.host_unavailable
-    quiet: true
-
-- name: Read the mail unit files
-  ansible.builtin.command:
-    argv: "{{ as_root + ['cat', '/etc/systemd/system/' ~ item.name] }}"
-  loop: "{{ container.mail_units }}"
-  loop_control: {label: "{{ item.name }}"}
-  register: mail_files
-  changed_when: false
-  failed_when: mail_files.rc not in [0, 1]
-
-- name: Read the mail socket states
-  ansible.builtin.command:
-    argv: >-
-      {{ as_root + ['systemctl', 'show', 'orbit-mail-' ~ item ~ '.socket',
-          '--property=ActiveState', '--property=Listen', '--property=UnitFileState'] }}
-  loop: [1025, 2525]
-  register: mail_sockets
-  changed_when: false
-  failed_when: false
-
-- name: Read listeners on the two SMTP ports
-  ansible.builtin.command:
-    argv: "{{ as_root + ['ss', '-H', '-ltn', 'sport = :' ~ item] }}"
-  loop: [1025, 2525]
-  register: mail_listeners
-  changed_when: false
-
-- name: Start the mail conflict decision
+- name: Retain the public mail result
   ansible.builtin.set_fact:
-    mail_skip: ''
-    mail_changed_units: []
-    mail_state: "/var/lib/orbit/instance-mail/{{ container.name }}"
+    mail_result: "{{ mail_apply.stdout | from_json }}"
 
-- name: Keep a foreign unit file
-  when: >-
-    item.rc == 0 and not item.stdout.startswith('# Managed by Orbit: development mail.\n')
-  ansible.builtin.set_fact:
-    mail_skip: mail_unit_conflict
-  loop: "{{ mail_files.results }}"
-  loop_control: {label: "{{ item.item.name }}"}
-
-- name: Keep a foreign listener
-  when:
-    - mail_listeners.results[item].stdout | length > 0
-    - >-
-      'ActiveState=active' not in mail_sockets.results[item].stdout_lines
-      or ('Listen=127.0.0.1:' ~ ([1025, 2525][item] | string) ~ ' (Stream)') not in mail_sockets.results[item].stdout_lines
-  ansible.builtin.set_fact:
-    mail_skip: mail_port_in_use
-  loop: [0, 1]
-
-- name: Report a mail setup skipped for a Project-owned resource
-  when: mail_skip | length > 0
-  ansible.builtin.set_fact:
-    mail_result: {status: skipped, reason: "{{ mail_skip }}"}
-
-- name: Apply the admitted mail setup
-  when: mail_skip | length == 0
-  block:
-    - name: Admit the SMTP bridge endpoint additively
-      ansible.builtin.include_tasks: instance-bridge-rules.yml
-      vars:
-        bridge_network: "{{ container.network }}"
-        bridge_cidr: "{{ container.bridge_cidr }}"
-        bridge_endpoints: "{{ [container.mail] }}"
-        bridge_admitted_at: "{{ container.bridge_admitted_at }}"
-        bridge_reconcile: false
-
-    - name: Read only this Instance's ACL
-      ansible.builtin.command:
-        argv: [incus, query, --, "/1.0/network-acls/{{ container.acl }}?project=default"]
-      register: mail_acl
-      changed_when: false
-
-    - name: Name the exact SMTP rule
-      ansible.builtin.set_fact:
-        mail_rule:
-          action: allow
-          destination: "{{ container.mail.host }}/32"
-          protocol: tcp
-          destination_port: "{{ container.mail.port | string }}"
-          state: enabled
-          description: Orbit development SMTP
-
-    - name: Name the previous Orbit SMTP rule and keep all other rules
-      ansible.builtin.set_fact:
-        mail_previous: >-
-          {{ (mail_acl.stdout | from_json).egress | selectattr('description', 'defined')
-             | selectattr('description', 'equalto', 'Orbit development SMTP') | list }}
-        mail_keep_rules: []
-
-    - name: Preserve every non-mail ACL rule in its current order
-      when: item.description | default('') != 'Orbit development SMTP'
-      ansible.builtin.set_fact:
-        mail_keep_rules: "{{ mail_keep_rules + [item] }}"
-      loop: "{{ (mail_acl.stdout | from_json).egress }}"
-
-    - name: Add the SMTP rule without replacing any other ACL rule
-      when: >-
-        mail_previous | length != 1 or
-        ((mail_previous | first | default({})) | dict2items | rejectattr('value', 'equalto', '') | items2dict) != mail_rule
-      ansible.builtin.command:
-        argv: [incus, network, acl, edit, "{{ container.acl }}", --project, default]
-        stdin: >-
-          {{ ((mail_acl.stdout | from_json) | dict2items | selectattr('key', 'in', ['description', 'ingress', 'egress']) | items2dict)
-             | combine({'egress': mail_keep_rules + [mail_rule]}) | to_json }}
-      register: mail_acl_written
-      changed_when: true
-
-    - name: Name every unit that needs writing before the first write
-      when: item.rc != 0 or item.stdout ~ '\n' != item.item.content
-      ansible.builtin.set_fact:
-        mail_changed_units: "{{ mail_changed_units + [item.item.name] }}"
-      loop: "{{ mail_files.results }}"
-      loop_control: {label: "{{ item.item.name }}"}
-
-    - name: Read pending mail activation metadata
-      ansible.builtin.stat:
-        path: "{{ mail_state }}/activation.json"
-        get_checksum: false
-        get_mime: false
-      register: mail_pending_file
-
-    - name: Read the pending unit names
-      when: mail_pending_file.stat.exists
-      ansible.builtin.slurp: {src: "{{ mail_state }}/activation.json"}
-      register: mail_pending_read
-
-    - name: Keep earlier activation work together with this attempt
-      ansible.builtin.set_fact:
-        mail_activation_units: >-
-          {{ (((mail_pending_read.content | default('W10=') | b64decode | from_json) + mail_changed_units)
-              | intersect(container.mail_units | map(attribute='name') | list)) | unique | sort }}
-
-    - name: Create this Instance's Node-owned activation state
-      when: mail_activation_units | length > 0
-      ansible.builtin.file: {path: "{{ mail_state }}", state: directory, owner: root, group: root, mode: '0700'}
-
-    # Persist before any unit write: a failed later write or reload must not lose the earlier activation work.
-    - name: Retain pending activation before writing any unit
-      when: mail_activation_units | length > 0
-      ansible.builtin.copy:
-        content: "{{ mail_activation_units | to_json }}"
-        dest: "{{ mail_state }}/activation.json"
-        owner: root
-        group: root
-        mode: '0600'
-
-    - name: Write only changed mail units as root
-      when: item.rc != 0 or item.stdout ~ '\n' != item.item.content
-      ansible.builtin.command:
-        argv: >-
-          {{ ['incus', '--project', container.project, 'file', 'push', '--uid', '0', '--gid', '0', '--mode', '0644', '-',
-              container.name ~ '/etc/systemd/system/' ~ item.item.name] }}
-        stdin: "{{ item.item.content }}"
-        stdin_add_newline: false
-      loop: "{{ mail_files.results }}"
-      loop_control: {label: "{{ item.item.name }}"}
-      register: mail_written
-      changed_when: true
-
-    - name: Reload changed mail units
-      when: mail_activation_units | length > 0
-      ansible.builtin.command:
-        argv: "{{ as_root + ['systemctl', 'daemon-reload'] }}"
-      changed_when: true
-
-    # try-restart leaves an idle socket-activated proxy inactive; systemd retains the listening descriptor.
-    - name: Restart only changed active mail proxies
-      when: item in mail_activation_units
-      ansible.builtin.command:
-        argv: "{{ as_root + ['systemctl', 'try-restart', item] }}"
-      loop: [orbit-mail-1025.service, orbit-mail-2525.service]
-      changed_when: true
-
-    - name: Enable and start the mail sockets only on drift
-      when: "'ActiveState=active' not in item.stdout_lines or 'UnitFileState=enabled' not in item.stdout_lines"
-      ansible.builtin.command:
-        argv: "{{ as_root + ['systemctl', 'enable', '--now', 'orbit-mail-' ~ item.item ~ '.socket'] }}"
-      loop: "{{ mail_sockets.results }}"
-      changed_when: true
-      register: mail_enabled
-
-    - name: Read the installed mail sockets
-      ansible.builtin.command:
-        argv: >-
-          {{ as_root + ['systemctl', 'show', 'orbit-mail-' ~ item ~ '.socket',
-              '--property=ActiveState', '--property=Listen', '--property=UnitFileState'] }}
-      loop: [1025, 2525]
-      register: mail_checked
-      changed_when: false
-
-    - name: Require both IPv4 loopback listeners enabled and active
-      ansible.builtin.assert:
-        that:
-          - "'ActiveState=active' in item.stdout_lines"
-          - "'UnitFileState=enabled' in item.stdout_lines"
-          - "('Listen=127.0.0.1:' ~ (item.item | string) ~ ' (Stream)') in item.stdout_lines"
-        fail_msg: process.target_inactive
-        quiet: true
-      loop: "{{ mail_checked.results }}"
-      loop_control: {label: "{{ item.item }}"}
-
-    - name: Clear activation only after reload restarts and socket checks complete
-      when: mail_activation_units | length > 0
-      ansible.builtin.file: {path: "{{ mail_state }}/activation.json", state: absent}
-
-    - name: Report the mail path result
-      ansible.builtin.set_fact:
-        mail_result:
-          status: >-
-            {{ 'applied' if mail_activation_units | length > 0 or mail_acl_written.changed | default(false)
-                or bridge_rule_write.changed | default(false)
-                or mail_enabled.results | selectattr('changed', 'defined') | selectattr('changed') | list | length > 0 else 'unchanged' }}
-
-# Public bounded vocabulary only, so the lifecycle's pure result decoder can retain a skip reason.
 - name: Report the public mail outcome
   ansible.builtin.debug:
     msg: "orbit-mail={{ mail_result.status }}{{ (':' ~ mail_result.reason) if mail_result.reason is defined else '' }}"

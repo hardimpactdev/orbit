@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,tasks/instance-container-phase.yml}
-  - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network}.py}
+  - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network}.py,extensions/behaviors/operations/instance-dev-command/result.ts}
   - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/{notes/**,frankenphp.Caddyfile}}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
 ---
@@ -387,7 +387,7 @@ A note gives no instructions about the work. Instructions, skills and MCP server
 
 On a Node with the main Mailpit, Orbit gives every development container two IPv4 loopback listeners: `127.0.0.1:1025` and `127.0.0.1:2525`. Each forwards TCP to the Node's Instance bridge gateway at the configured SMTP port. The single fleet setting `instances.mailpit` names the Node Process and published port. Only an active, desired-running Docker Node Process with that name and a reachable TCP publication supplies an endpoint. Other Nodes, production placements and checkout Instances get no setup.
 
-Create and development clone apply the mail phase before workspace preparation. The phase installs the hardened bridge helper through its existing additive path, admits the translated Docker tuple, and adds the exact gateway TCP port to this Instance's own ACL. No Node converge is required. The existing refresh timer re-resolves Docker addresses from the persisted public endpoint. No Docker address is stored as fleet configuration.
+Create and development clone apply mail inside the container launch, before workspace preparation. There is no separate `mail` or `clone-mail` step or playbook launch. Default create reuses its container play; native `clone-container` calls the same batched converger. It uses the hardened bridge helper additively, admits the translated Docker tuple, and adds the exact gateway TCP port to this Instance's own ACL. No Node converge is required. The existing refresh timer re-resolves Docker addresses from the persisted public endpoint. No Docker address is stored as fleet configuration.
 
 ### Listeners and lifecycle
 
@@ -395,11 +395,15 @@ The stock image supplies `/usr/lib/systemd/systemd-socket-proxyd`; setup checks 
 
 ### Apply and retry
 
+Create and clone treat mail failures as advisory: the container launch succeeds and workspace, T3 and registration continue. The receipt carries `mail.status=failed` with a bounded reason and `warnings: [{code: "instance.mail_update_failed", step: "mail"}]`. A Node without the main Mailpit adds no warning. `instance:mail:update` retains a real failure when its mail work fails.
+
 Network changes precede unit writes. A failure after admission can leave the exact ACL rule, its confirmed bridge endpoint and some unit files in place; no application Process is restarted. A rerun keeps the admitted path, completes missing or changed units and enables both sockets.
 
-Pending activation lives on the Node at `/var/lib/orbit/instance-mail/<container>/activation.json`, root-only, with unit names only. Orbit saves it before writing units and clears it after reload, restarts and socket checks succeed. A repeat with no drift changes nothing.
+Pending activation lives on the Node at `/var/lib/orbit/instance-mail/<container>/activation.json`, root-only, with unit names only. Orbit saves it before writing units and clears it after reload, restarts and socket checks succeed. A repeat with no drift changes nothing and reports `unchanged`. Refreshing an endpoint’s admission timestamp alone does not count as a changed mail path.
 
-Updated endpoint settings rewrite the proxy services and restart active proxies, leaving application Processes running. The runtime folder's existing `try-restart orbit-*.service` also leaves idle proxies inactive; an active proxy restart can close its current SMTP connections while its socket remains listening. Process cleanup matches `orbit-process-*` and does not remove these mail units. Clone preparation disables inherited mail socket links before first boot, then its mail phase enables its own listeners.
+One guest preflight checks the executable, unit ownership and contents, socket states and both ports; only when needed, a second guest command installs and activates the four units together. An unchanged repeat needs only the preflight entry. An active Orbit socket with a missing enable link remains Orbit-owned; the next run restores enablement. Guest failures retain only the fixed public `instance.host_unavailable` and `process.target_inactive` codes; tool output remains private. Network admission completes before any unit write.
+
+Updated endpoint settings rewrite the proxy services and restart active proxies, leaving application Processes running. The runtime folder's existing `try-restart orbit-*.service` also leaves idle proxies inactive; an active proxy restart can close its current SMTP connections while its socket remains listening. Process cleanup matches `orbit-process-*` and does not remove these mail units. Clone preparation disables inherited mail socket links before first boot, then its container launch enables its own listeners.
 
 Destroy deletes the container, its private Node activation state and its own ACL, including the SMTP rule. It does not withdraw the shared bridge tuple: that stays for ordinary host reconciliation, like database tuples, and remains needed while other Instances use Mailpit. There is no new helper withdrawal.
 
@@ -409,7 +413,19 @@ Before rename, Orbit clears the staged file’s inherited access ACL, copies met
 
 The write uses the one reserved staging file `/srv/workspace/.env.orbit-mail` and an atomic rename, with no backup. Missing files and files without any `MAIL_MAILER` occurrence return `not_present`; one exact `MAIL_MAILER=smtp`, with or without matching single or double quotes, returns `already_smtp`.
 
-Every other form stays as written. A mention in a comment or another value also counts. Multiple occurrences, a symlink, or an earlier line that opens a multiline quoted value stay untouched. `left_as_written` reports only the 1-based line numbers of all occurrences; numbers can repeat for one line. Only `changed` clears an available Laravel config cache and restarts running FrankenPHP and recognized PHP queue or Horizon workers. An unrelated Process is never restarted.
+Every other form stays as written. A mention in a comment or another value also counts. Multiple occurrences or a symlink stay untouched. Before changing the mail line, Orbit accepts only these whole-line shapes above it, after removing a file-leading BOM for the check:
+
+- Empty lines or spaces and tabs only.
+- A comment with optional spaces or tabs before `#`, with no single quote, double quote or backslash in its text.
+- `KEY=value`, with no quotes, backslash, `#` or whitespace in the bare value. The value may be empty.
+- `KEY="value"`, with no double quote or backslash inside.
+- `KEY='value'`, with no single quote or backslash inside, and no `="` marker.
+
+`KEY` matches `[A-Za-z_][A-Za-z0-9_.]*`; no form permits `export`, spaces around `=`, or text after a closing quote. Matching quotes can contain the other quote type, so `APP_NAME="Nick's App"` passes. A bare CR above the mail line, outside CRLF, refuses. Orbit refuses whitespace in bare values and `="` inside single quotes because the installed phpdotenv reader cannot parse those forms as one assignment.
+
+This guard examines only preceding lines: a later quote cannot turn an earlier assignment into value text. Orbit still counts `MAIL_MAILER` across the whole file. The installed phpdotenv tests confirm each admitted shape leaves the mail line as an assignment.
+
+`left_as_written` keeps the 1-based MAIL_MAILER occurrence numbers in `lines`; numbers can repeat for one line. A preceding line outside the whitelist also reports its first 1-based line number as `guard_line`. No line content appears. Only `changed` clears an available Laravel config cache and restarts running FrankenPHP and recognized PHP queue or Horizon workers. An unrelated Process is never restarted.
 
 The Node removes the fixed staging name before inspecting `.env` and again on every exit. It uses `incus file delete --force`, accepting only exit 1 with the exact `Error: file does not exist` diagnostic as an already-absent file. Other deletion errors fail the step. File access works even after a forced container stop: [Incus container file access](https://github.com/lxc/incus/blob/v7.0.1/doc/howto/instances_access_files.md) mounts a stopped container’s root filesystem. A completed or failed step leaves no staging file for a seed or clone. An abrupt Node loss during staging can leave it until the next attempt; a seed or clone taken before that cleanup can inherit it.
 

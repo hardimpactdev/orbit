@@ -329,6 +329,6 @@ Create-time setup runs as the managed user, before an agent uses the Instance. A
 
 CI artifacts are repository data. The Gateway already owns the GitHub App, so it downloads and validates the files before Node delivery. Personal tokens on disposable machines were rejected because they duplicate credentials and complicate revocation. A fixed setup identifier keeps the existing ordered step contract and prevents Projects from selecting arbitrary artifact URLs or granting a Node App access. Both instance setup and task baseline setup interpret it before any shell execution.
 
-On a container Node with the main Mailpit, create and development clone apply the [mail phase](/reference/development-containers#development-mail) before preparing the workspace. It admits the SMTP path and enables two loopback listeners, without a Node converge.
+On a container Node with the main Mailpit, create and development clone apply [mail setup](/reference/development-containers#development-mail) within their container launch, before preparing the workspace. They reuse the existing launch instead of dispatching a separate `mail` or `clone-mail` step. It admits the SMTP path and enables two loopback listeners, without a Node converge.
 
 Container create seeds its [private Node store](/reference/development-containers#private-node-runtimes) before deployment steps and prepares pinned Node versions before application Processes start. A seed clone retains downloaded versions.
