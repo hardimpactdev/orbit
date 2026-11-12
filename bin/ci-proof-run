@@ -152,7 +152,7 @@ def main():
             sys.exit('The orbit CLI is not on the runner PATH. The runner must be an enrolled Node.')
         code, output = run(sha, key, orbit)
         outcome, lines, receipt = report(code, output, sha, key, allow_trust_skip=check_eligibility)
-    text = '\n'.join([f"## Proof run of `{sha[:12]}`: {outcome}", '', *lines, ''])
+    text = '\n'.join([f"## Proof run of `{sha[:12]}`: {outcome}", '', 'Proof base refresh does not yet reconverge nested Node OS state; the snapshot can retain enrollment-era policy.', '', *lines, ''])
     print(text)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:

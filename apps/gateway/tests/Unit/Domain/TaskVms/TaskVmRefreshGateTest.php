@@ -46,7 +46,13 @@ it('places the agent delivery of the checkout on the nested Gateway before its S
     expect($steps['Place the agent delivery']['task']['inputs']['argv'])
         ->toContain($checkout.GatewayReleaseAgentDelivery::Pin, $checkout.GatewayReleaseAgentDelivery::Manifest)
         ->and(array_column($steps['Re-mint the Swamp tokens']['dependsOn'], 'step'))->toBe(['Place the agent delivery'])
-        ->and($steps['Migrate']['dependsOn'])->toContain(['step' => 'Place the agent delivery', 'condition' => ['type' => 'succeeded']]);
+        ->and($steps['Re-mint the Swamp tokens']['guard'])->toBe('${{ !(has(inputs.remint) && inputs.remint) }}')
+        // Renewal runs only for remint=true; false or absent skips it. A skipped renewal cannot hide failed delivery.
+        ->and($steps['Reconcile the Swamp grants']['dependsOn'])->toBe([
+            ['step' => 'Place the agent delivery', 'condition' => ['type' => 'succeeded']],
+            ['step' => 'Re-mint the Swamp tokens', 'condition' => ['type' => 'or', 'conditions' => [['type' => 'succeeded'], ['type' => 'skipped']]]],
+        ])
+        ->and($steps['Migrate']['dependsOn'])->toBe([['step' => 'Reconcile the Swamp grants', 'condition' => ['type' => 'succeeded']]]);
 });
 
 it('carries the error of a failed Ansible run to the Operation: the run keeps its output and an assert fails with its stderr', function (string $workflow, string $run, string $check): void {

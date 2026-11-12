@@ -34,7 +34,7 @@ class TaskVmRoleTest(unittest.TestCase):
         # The image phase takes the containers' `base` snapshots. No play waits for the nested fleet.
         image = yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())[1]
         self.assertEqual({task['name']: task['tags'] for task in image['tasks']},
-                         {'Take the base snapshots': ['fleet']})
+                         {'Take the base snapshots': ['fleet'], 'Record the snapshotted grants': ['fleet']})
 
     def test_the_nested_gateway_restarts_and_redelivers_only_for_what_changed(self):
         role = yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())

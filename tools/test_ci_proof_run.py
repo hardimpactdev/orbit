@@ -198,6 +198,9 @@ class RunTest(unittest.TestCase):
         self.assertEqual(0, done.returncode, done.stderr)
         self.assertIn(f'proof:run {SHA} --json --idempotency-key ci-proof.7.2', done.stderr)
         self.assertIn('passed', summary)
+        caveat = 'Proof base refresh does not yet reconverge nested Node OS state; the snapshot can retain enrollment-era policy.'
+        self.assertIn(caveat, summary)
+        self.assertIn(caveat, done.stdout)
 
     def test_a_failed_case_fails_the_job(self):
         done, _ = self.run_script('cat <<\'JSON\'\n' + document('failed') + '\nJSON\n')

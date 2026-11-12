@@ -81,6 +81,7 @@ sequenceDiagram
   %%> - a timeout, another systemd state or an inactive required mount fails before apply, with the state or mount in the error
   SW->>NT: Apply the checkout<br/>migrate · restart services
   %%> What it does:
+  %%> - first renders and reloads the candidate checkout's scoped Swamp grants with the existing serve-driver credential, including after a restore; token renewal is separate
   %%> - runs the migrations and restarts the long-running services (Horizon, the scheduler, the agent-view subscriber) in the nested Gateway, so they run the checked-out code
   %%> - before discovery and cases, the shared runner installs the checkout's pinned Ansible collections, renders its Swamp grants and reloads them; the restored base can lack a new callback or vault key pattern
   %%> - the proof-only play records the tested Gateway revision and configures its static CLI catalog from the checksum-pinned published fixture; the candidate CLI still runs from source, and no real Gateway receives this catalog
