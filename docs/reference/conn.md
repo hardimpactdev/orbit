@@ -240,6 +240,8 @@ If GitHub fails, returns malformed data, or has more than 500 open requests, all
 - `domain_invalid` means the generated domain cannot be issued by the live CSR producer. See [certificate limits](/reference/routes#certificate-request-forms).
 - `domain` previews `<name>.<project-slug>.<effective-tld>`. The default's placement selects the active Cluster TLD before the Node TLD.
 
+Domains longer than 64 characters are accepted up to the DNS limits because the Node CSR carries the domain in SAN.
+
 Create refuses an invalid domain with `route.domain_invalid` (422) before starting an Operation. Its admission transaction leaves no Instance reservation.
 
 The domain is null for an invalid name, a non-web Project, or no usable domain.
