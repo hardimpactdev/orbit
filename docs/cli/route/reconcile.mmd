@@ -37,7 +37,9 @@ sequenceDiagram
   SW->>N: Probe the site over TLS<br/>@swamp/ssh exec · SNI domain
   %%> Why:
   %%> - the probe checks the hostname and the Orbit CA; an application HTTP error does not fail it, and a failed probe stops the cutover
-  opt DNS answer changes
+  opt DNS records or catalog change
+    %%> When:
+    %%> - the admitted records or catalog differ from the preceding publication stage; equality skips the child before dispatch
     SW->>V: Move private DNS<br/>records + catalog, then reload
     SW->>SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
     %%> Why once for all Routes:
