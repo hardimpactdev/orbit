@@ -1,0 +1,33 @@
+Requesting status...
+
+┌  Check gateway: test
+│
+├  ● Received status
+│
+└  Gateway status received.
+
+
+┌  Gateway: test
+│
+├  URL                  https://10.70.0.1
+│
+├  Name                 orbit-gateway
+│
+├  Status               ok
+│
+├  Version              dev
+│
+├  PHP version          8.5.12
+│
+├  Laravel version      13.42.0
+│
+├  Release              —
+│
+├  Automatic releases   disabled
+│
+└  Request ID           0198e15c-bf97-7c23-8f1f-61b8fe67a844
+
+Doctor: issues, collected 2026-11-12T12:00:00.000000Z
+  beast process.state_mismatch ×2 since 2026-11-01, newest since 2026-11-12
+  shark process.state_mismatch ×1 since 2026-11-10 (process 24)
+  beast process.crash_loop ×1 since 2026-11-09 (process 23)

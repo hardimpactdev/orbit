@@ -24,6 +24,8 @@ final readonly class GatewayStatusResponse
         public ?string $release = null,
         public ?string $releaseSha = null,
         public ?array $autoRelease = null,
+        /** @var array{collected_at: ?string, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>}|null */
+        public ?array $doctor = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -39,6 +41,7 @@ final readonly class GatewayStatusResponse
             'release' => $this->release,
             'release_sha' => $this->releaseSha,
             'auto_release' => $this->autoRelease,
+            'doctor' => $this->doctor,
             'request_id' => $this->requestId,
         ];
     }

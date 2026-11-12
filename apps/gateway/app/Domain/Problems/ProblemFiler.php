@@ -90,6 +90,9 @@ final readonly class ProblemFiler
                     if ($reason !== null) {
                         $this->recovery->resolve($locked, $reason);
                     }
+                    if ($this->suppression->blocksFiling($locked)) {
+                        return;
+                    }
                     $group = $locked->task_group_id === null ? null : Task::topLevel()->lockForUpdate()->find($locked->task_group_id);
                     if (! $group instanceof Task || ! $this->snapshots->unchanged($group, $locked->evidence['generated_group_hash'] ?? null)) {
                         return;

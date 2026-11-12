@@ -17,9 +17,9 @@ Requesting status...
 │
 ├  Version              1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d
 │
-├  PHP version          8.5.0
+├  PHP version          8.5.12
 │
-├  Laravel version      13.0.0
+├  Laravel version      13.42.0
 │
 ├  CLI release          0.4681.0
 │
@@ -31,3 +31,4 @@ Requesting status...
 │
 └  Request ID           0198e15c-bf97-7c23-8f1f-61b8fe67a844
 
+Doctor: not collected yet

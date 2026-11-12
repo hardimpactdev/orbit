@@ -23,5 +23,7 @@ final class GatewayStatusData extends Data
         public ?string $release,
         public ?string $releaseSha,
         public ?GatewayAutoReleaseStatusData $autoRelease,
+        /** @var array{collected_at: ?string, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>}|null */
+        public ?array $doctor = null,
     ) {}
 }

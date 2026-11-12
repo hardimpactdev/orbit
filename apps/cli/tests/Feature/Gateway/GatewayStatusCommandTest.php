@@ -60,6 +60,7 @@ describe(GatewayStatusCommand::class, function (): void {
             'release' => null,
             'release_sha' => null,
             'auto_release' => null,
+            'doctor' => null,
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -109,6 +110,7 @@ describe(GatewayStatusCommand::class, function (): void {
             'release' => null,
             'release_sha' => null,
             'auto_release' => null,
+            'doctor' => null,
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -257,3 +259,22 @@ describe(GatewayStatusCommand::class, function (): void {
             ->not->toContain('transport-secret');
     });
 });
+
+it('renders the recorded Doctor groups and transports the same JSON through the SDK', function (): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(name: 'test', url: 'https://10.70.0.1'));
+    run_contract('gateway/gateway-status/doctor', 'gateway:status', [], 'gateway/gateway-status/doctor.human.txt', 0);
+    run_contract('gateway/gateway-status/doctor', 'gateway:status', ['--json' => true], 'gateway/gateway-status/doctor.json', 0);
+});
+
+it('prints only the Doctor health and collection time for an empty list', function (?string $at, string $line): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(name: 'test', url: 'https://10.70.0.1'));
+    MockClient::global([ShowGatewayStatusRequest::class => MockResponse::make([
+        'data' => ['doctor' => ['collected_at' => $at, 'issues' => []]],
+        'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+    ])]);
+    Artisan::call('gateway:status');
+    expect(Artisan::output())->toContain($line)->not->toContain('×')->not->toContain('since ');
+})->with([
+    ['2026-11-12T12:00:00Z', 'Doctor: healthy, collected 2026-11-12T12:00:00Z'],
+    [null, 'Doctor: not collected yet'],
+]);

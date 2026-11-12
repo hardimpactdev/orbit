@@ -1,0 +1,65 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Gateway\\ShowGatewayStatusRequest",
+    "route": "GET /api/v1/gateway/status",
+    "status": 200,
+    "body": {
+        "data": {
+            "name": "orbit-gateway",
+            "status": "ok",
+            "version": "dev",
+            "php_version": "8.5.12",
+            "laravel_version": "13.42.0",
+            "desired_fleet_state": null,
+            "release": null,
+            "release_sha": null,
+            "auto_release": {
+                "enabled": false,
+                "paused": false,
+                "last_checked_at": null,
+                "last_result": null
+            },
+            "doctor": {
+                "collected_at": "2026-11-12T12:00:00.000000Z",
+                "issues": [
+                    {
+                        "node_id": 1,
+                        "node_name": "beast",
+                        "code": "process.state_mismatch",
+                        "count": 2,
+                        "since": "2026-11-01T00:00:00.000000Z",
+                        "newest_since": "2026-11-12T11:00:00.000000Z",
+                        "resource": null
+                    },
+                    {
+                        "node_id": 2,
+                        "node_name": "shark",
+                        "code": "process.state_mismatch",
+                        "count": 1,
+                        "since": "2026-11-10T00:00:00.000000Z",
+                        "newest_since": "2026-11-10T00:00:00.000000Z",
+                        "resource": {
+                            "type": "process",
+                            "id": "24"
+                        }
+                    },
+                    {
+                        "node_id": 1,
+                        "node_name": "beast",
+                        "code": "process.crash_loop",
+                        "count": 1,
+                        "since": "2026-11-09T00:00:00.000000Z",
+                        "newest_since": "2026-11-09T00:00:00.000000Z",
+                        "resource": {
+                            "type": "process",
+                            "id": "23"
+                        }
+                    }
+                ]
+            }
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}
