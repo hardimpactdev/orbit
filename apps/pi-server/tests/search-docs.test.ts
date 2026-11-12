@@ -1,14 +1,17 @@
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
     callBoostSearchDocs,
     createSearchDocsTool,
     resolveLaravelApp,
 } from "../src/search-docs.ts";
 
-type Mode = "answer" | "tool-error" | "hang" | "crash" | "disabled";
+vi.mock("node:child_process", { spy: true });
+
+type Mode = "answer" | "tool-error" | "hang" | "silent-hang" | "crash" | "disabled";
 
 /**
  * A fake `artisan` that speaks MCP over stdio like `php artisan boost:mcp`. The tests run it
@@ -17,12 +20,12 @@ type Mode = "answer" | "tool-error" | "hang" | "crash" | "disabled";
 function fakeArtisan(mode: Mode): string {
     return `
 const fs = require("node:fs");
-const log = (entry) => fs.appendFileSync("received.jsonl", JSON.stringify(entry) + "\\n");
-log({ pid: process.pid, argv: process.argv.slice(2), appDebug: process.env.APP_DEBUG, token: process.env.PI_SERVER_TOKEN ?? null });
 const mode = ${JSON.stringify(mode)};
+const log = (entry) => mode !== "silent-hang" && fs.appendFileSync("received.jsonl", JSON.stringify(entry) + "\\n");
+log({ pid: process.pid, argv: process.argv.slice(2), appDebug: process.env.APP_DEBUG, token: process.env.PI_SERVER_TOKEN ?? null });
 if (mode === "crash") { process.stderr.write("PHP Fatal error: boom\\n"); process.exit(1); }
 if (mode === "disabled") { process.stdout.write('ERROR  There are no commands defined in the "boost" namespace.\\n'); process.exit(1); }
-if (mode === "hang") { process.on("SIGTERM", () => {}); setInterval(() => {}, 1000); }
+if (mode === "hang" || mode === "silent-hang") { process.on("SIGTERM", () => {}); setInterval(() => {}, 1000); }
 const reply = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {
@@ -32,7 +35,7 @@ process.stdin.on("data", (chunk) => {
         const message = JSON.parse(buffer.slice(0, newline));
         buffer = buffer.slice(newline + 1);
         log(message);
-        if (mode === "hang") continue;
+        if (mode === "hang" || mode === "silent-hang") continue;
         if (message.method === "initialize") {
             process.stdout.write("PHP Deprecated: noise before the answer\\n");
             reply({ id: message.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} } } });
@@ -189,17 +192,30 @@ describe("callBoostSearchDocs", () => {
         );
     });
 
-    it("stops Boost and fails after the timeout", async () => {
-        const app = laravelApp(workspace(), { mode: "hang" });
-        const started = Date.now();
+    it.each(["hang", "silent-hang"] as const)(
+        "stops Boost and fails after the timeout (%s)",
+        async (mode) => {
+            const app = laravelApp(workspace(), { mode });
+            const spawned = vi.mocked(spawn);
+            spawned.mockClear();
+            try {
+                const started = Date.now();
+                const pending = call(app, { timeoutMs: 500 });
+                const child = spawned.mock.results[0]!.value;
+                expect(child.pid).toBeTypeOf("number");
 
-        await expect(call(app, { timeoutMs: 500 })).rejects.toThrow(
-            "Laravel Boost did not answer within 0.5 seconds.",
-        );
-        expect(Date.now() - started).toBeLessThan(5_000);
-        const pid = received(app)[0].pid;
-        await expect.poll(() => isRunning(pid), { interval: 5 }).toBe(false);
-    });
+                await expect(pending).rejects.toThrow(
+                    "Laravel Boost did not answer within 0.5 seconds.",
+                );
+                expect(Date.now() - started).toBeLessThan(5_000);
+                await expect.poll(() => child.signalCode, { interval: 5 }).toBe("SIGKILL");
+                expect(isRunning(child.pid!)).toBe(false);
+            } finally {
+                spawned.mock.results[0]?.value.kill("SIGKILL");
+                spawned.mockClear();
+            }
+        },
+    );
 
     it("stops Boost when the turn is aborted", async () => {
         const app = laravelApp(workspace(), { mode: "hang" });

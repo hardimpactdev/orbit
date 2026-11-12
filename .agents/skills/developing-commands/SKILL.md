@@ -112,3 +112,5 @@ A release gate that excludes after-merge fixtures must verify the exact SHA, mai
 For CI or CLI release workflow changes, run `apps/cli/tests/Feature/CliReleaseContractTest.php` with the CLI’s Pest runner as well as the CI tooling tests. The CLI suite owns release-contract assertions that workflow lint and Python tests do not exercise.
 
 CI metadata preflights share one API deadline and run only for selected work. Ineligibility skips; an API error fails. A runtime trust refusal skips only with explicit admission failure and no case evidence; preserve interrupted and completed failures. Keep report-only checks outside Required dependencies.
+
+Child-process timeout tests must observe the PID returned by spawn, not require a startup log that the deadline may prevent. Keep a silent-child regression and assert real process termination.
