@@ -222,3 +222,40 @@ Deno.test("missing or malformed successful mail receipts become advisory warning
         assertEquals(result(defaultIntent, {...moved, mail: "skipped"}, workspace, null, null).warnings, undefined);
     } finally { await Deno.remove(folder, {recursive: true}); }
 });
+
+Deno.test("the copied untracked count includes zero, excludes paths and survives later failure", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        for (const count of [0, 56]) {
+            await Deno.writeTextFile(`${folder}/untracked-files.json`, JSON.stringify({
+                untracked_files_copied: count, paths: ["credentials.json"], content: "private",
+            }));
+            const written = await writtenFailure(folder);
+            assertEquals(written, { untracked_files_copied: count });
+            assertEquals(result(defaultIntent, moved, workspace, null, written), {
+                instance_id: 53, ready: true, moved: true, restored: false, commit, untracked_files_copied: count,
+            });
+            assertEquals(result(defaultIntent, { ...moved, retire: "failed" }, workspace, null, written).untracked_files_copied, count);
+            assertEquals(result(defaultIntent, { ...moved, files: "failed" }, workspace, null, written).untracked_files_copied, undefined);
+            assertEquals(result(defaultIntent, { ...moved, files: "skipped" }, workspace, null, written).untracked_files_copied, undefined);
+        }
+    } finally {
+        await Deno.remove(folder, { recursive: true });
+    }
+});
+
+Deno.test("invalid or incomplete copied-file receipts do not claim a count", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        for (const value of [-1, 1.5, "56", null]) {
+            await Deno.writeTextFile(`${folder}/untracked-files.json`, JSON.stringify({ untracked_files_copied: value }));
+            assertEquals(await writtenFailure(folder), null);
+        }
+        for (const value of ["{", "{}", "null"]) {
+            await Deno.writeTextFile(`${folder}/untracked-files.json`, value);
+            assertEquals(await writtenFailure(folder), null);
+        }
+    } finally {
+        await Deno.remove(folder, { recursive: true });
+    }
+});

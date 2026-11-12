@@ -714,13 +714,15 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
 | Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
 | While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
-| Retirement check | Before downtime and before retention, planned retirements need no other worktrees, uncommitted changes, unpushed commits or stashes. `instance.migrate_retirement_blocked` names up to 20 worktrees and files with total counts |
+| Retirement check | Before downtime and retention, blocks tracked changes, other worktrees, unpushed commits and stashes. Untracked files do not block. `instance.migrate_retirement_blocked` names up to 20 worktrees and files with total counts |
 | Branch | The mirror fetches the recorded branch from the checkout itself. A retained checkout can carry commits that were never pushed; retirement refuses them. The move needs no token |
 | Files | One archive of the paths of `git diff HEAD` and `git ls-files --others`, extracted as `orbit`. Tracked files that the checkout deleted are removed |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace`, and the Gateway rewrites its stored values the same way |
 | Database server | The NIC ACL and the Node's firewall rule to every attached target. The container phase checks every port from inside before quiesce, else `instance.database_unreachable`, with zero downtime |
 | SQLite | The file moves with the files. The Gateway drops the connection record of a SQLite file inside the checkout |
 | Route | The same Route, domain and certificate. One publication replaces the checkout's site and PHP-FPM pool with the container's site |
+
+All untracked files enter the default's seed snapshot and every clone, as ignored build output already does. A branch that later tracks one of those paths can refuse checkout in a clone or deploy. Forgotten credentials files travel into the seed like `.env` does. Migration reports `untracked_files_copied`, including ignored files, without exposing new paths or file contents.
 
 The runtime reservation belongs to its admitting Operation. A late receipt cannot change a newer owner. Settlement reads private material before taking the Instance lock, then checks ownership and records the runtime and receipt atomically. An already-settled stale runtime is not repaired: inspections keep selecting it until a new migrate reuses and owns that reservation.
 

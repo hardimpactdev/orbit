@@ -45,7 +45,7 @@ sequenceDiagram
   %%> What it does:
   %%> - before any Node change, checks the recorded branch and every planned retirement; a refusal leaves prior resources untouched
   %%> - checks checkout symlinks and dependency package links before creating the container, skipping `.git` and installed package contents; broken links or targets outside the checkout refuse with `instance.migrate_symlink_unsupported`, naming every path and target
-  %%> - retirement preflight refuses unpushed local branches or detached HEAD and stashes, with their existing named errors; it reads local refs only
+  %%> - retirement preflight refuses tracked staged or unstaged changes, other worktrees, unpushed local branches or detached HEAD and stashes, with their existing named errors; untracked files, ignored or not, do not block; it reads local refs only
   %%> - checks service hosts selected by cache, session, queue, broadcasting, database or mail drivers (never by Redis client or endpoint declarations alone) in the checkout and nested app `.env` files before any probe or Node change; direct services require an exact endpoint from the shared container access plan; unsupported endpoints refuse with `instance.migrate_env_service_unreachable`, naming the file, key and host:port without credentials; unreadable syntax names only the file and line, and traversal/read failures name only the path
   %%> - selected SMTP on 127.0.0.1 or localhost, port 1025 or 2525, is satisfied by the same admitted main Mailpit endpoint used by the mail phase; absent mail explains the missing forwarder, and direct ::1 refuses because listeners are IPv4 only; both selector checks read the source before the copy and mailer rule
   %%> - deletes a container that an earlier failed move left, then creates and starts the new container through the shared container phase; discard leaves shared bridge endpoint rules for host reconciliation
@@ -66,7 +66,8 @@ sequenceDiagram
   %%> - a non-default checkout is a linked worktree, so its `.git` is never copied
   SW->>C: Copy the files<br/>Ansible · tags files
   %%> What it does:
-  %%> - copies every file that differs from the commit, every untracked file and every ignored file, `.env` among them
+  %%> - copies every file that differs from the commit, every untracked file and every ignored file, `.env` among them; the result counts copied untracked files, including ignored files, without paths or contents
+  %%> - untracked files enter the default's seed and every clone, as ignored build output already does; a later branch tracking those paths can refuse checkout in a clone or deploy; forgotten credentials travel into the seed like `.env`
   %%> - removes the tracked files that the checkout deleted, and rewrites the checkout's path in `.env` to `/srv/workspace`
   %%> - checks the exact copied tree inside the container, maps old-checkout targets into the workspace and rewrites absolute internal links there; broken or external links fail with the same code before any Process starts, relative links keep their targets, and source links never change
   %%> - a non-default Instance gets the proxy device that publishes its T3 port

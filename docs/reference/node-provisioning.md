@@ -985,4 +985,6 @@ Development mail repair uses the Node’s existing Python prerequisite through f
 
 Container migration reuses this [development mail phase](/reference/development-containers#development-mail) after copying the workspace. It requires no Node converge.
 
+Instance migration permits untracked files during retirement and counts all copied untracked files, including ignored files. Tracked changes, other worktrees, unpushed commits and stashes still block; [migration](/cli/instance/migrate) explains the seed and checkout consequences.
+
 Instance migration checks selected environment services before downtime. Its mail check uses the admitted [development mail endpoint](/reference/development-containers#development-mail), so the preflight and mail setup share one eligibility decision.

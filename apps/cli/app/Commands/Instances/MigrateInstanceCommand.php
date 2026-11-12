@@ -39,6 +39,10 @@ HELP;
 
     protected function writeOperationResult(OperationResponse $operation): void
     {
+        $copied = $operation->result['untracked_files_copied'] ?? null;
+        if (is_int($copied) && $copied >= 0) {
+            $this->writeHumanMessage('Copied '.$copied.' untracked files (including ignored files).');
+        }
         $mail = $operation->result['mail'] ?? null;
         $mailer = $operation->result['mailer'] ?? null;
         if (is_array($mail) && ($mail['status'] ?? null) === 'skipped' && in_array($mail['reason'] ?? null, ['mail_port_in_use', 'mail_unit_conflict'], true)) {
