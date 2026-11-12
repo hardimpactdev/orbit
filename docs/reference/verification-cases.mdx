@@ -184,6 +184,30 @@ Restore before each batch and after the last batch, especially after `node-down`
 
 ## Fixtures
 
+### Development container measurement
+
+`swamp/proof/instance/create.cases.yaml` contains one local measurement case, `development-clone-runtime`. It is not admitted as required CI coverage. Keep the Instance execution guard mappings unchanged until advisory integration and measured setup, case and cleanup costs have been accepted. Run it only on a disposable task VM's existing nested fleet; it does not build an outer Instance or change a live Node.
+
+The `instance_fixture` setup prepares `nested-app-dev` with the normal Instance host tasks and a directory pool. It enables container placement only for that nested Node. The fixture requires the recipe's Incus line, sufficient mapped subordinate IDs, working idmapped disk mounts, the nested Gateway's Swamp workers, Conn and a real model guard. It refuses missing prerequisites; it creates no guard success record and installs no model credentials. The Project reads the public `octocat/Hello-World` repository without a new credential. Its non-web type needs neither a Route nor a database. The Project and its default are created through the real CLI.
+
+The case calls `instance:create` for a development clone through the candidate CLI. Terminal success alone is insufficient: `instance_runtime` checks the admitted clone source, the recorded active runtime, a running Incus container, active T3, the served T3 environment identity, and a writable Git workspace as both container users. It then calls `instance:destroy` and checks removal of the container, ACL, mirror, runtime and Conn record. A finalizer also destroys owned resources after an assertion or setup failure, including a create whose CLI response was lost. Cleanup failure fails the case. Evidence records preparation, case and cleanup separately; no timing is assumed.
+
+Keep the Project, default, seed, cloned containers and T3 sessions out of `base`. They are mutable and can retain old source or sessions. For measurement, prepare them after each restore from the tested checkout and destroy them before restoring again. The shared host tasks select image and folder versions by their content digests. A future Fleet-owned base refresh may cache only the host pool, image and shared folders: every release refresh must converge them from that release before taking `base`, and each case must still converge the candidate before creating a fresh Project and seed. This branch adds no refresh hook and takes no snapshot.
+
+Plan without contacting a fleet:
+
+```bash
+python3 swamp/proof/runner/runner.py plan --steps --file swamp/proof/instance/create.cases.yaml
+```
+
+After the parent has prepared and authorized a disposable task VM, run the case from its checkout as `orbit`:
+
+```bash
+PROOF_EVIDENCE=/tmp/instance-create-proof python3 swamp/proof/runner/runner.py case development-clone-runtime --file swamp/proof/instance/create.cases.yaml
+```
+
+For the two-version regression, keep this branch's runner, fixture helpers, playbook and case in an unmounted harness directory. On two fresh disposable task VMs, mount a checkout of `5d7b46d03e36b28a209f5dc1791f9042ce7fdf8c` and `174c037203004c8b2068efc34f9275ccc232d076` respectively at the normal nested checkout path. Copy only the harness files into each tested checkout without changing its operational files. Record `git rev-parse HEAD` on the outer VM and both mounted Nodes before running. Use the same fixture repository revision and recipe pins for both runs. The old commit must fail the real create assertion at the script-argument boundary; an unmet prerequisite, setup failure or cleanup failure does not establish the regression. The fixed commit must pass runtime checks and cleanup. Retain the full CLI and Operation evidence, safe public failed step and error code, runtime reads, Doctor result and wall time for restore/preparation, case, cleanup and the complete run. Restore or delete each owned VM after collecting evidence. Do not switch a shared checkout or refresh an image to perform this comparison.
+
 A fixture is a named list of steps with parameters. It keeps the starting state out of every case. `use: blocked-port` inserts it; `use: {fixture: blocked-port, proto: [tcp, udp]}` sets its parameters.
 
 ```yaml
