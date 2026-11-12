@@ -190,9 +190,10 @@ it('accepts bounded task failures and retains them in the Operation result', fun
     $operation = app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => 'failed', 'result' => $result]);
     expect($operation->result)->toBe($result)->and($operation->status)->toBe(OperationStatus::Failed);
 })->with([
-    'command' => [['task' => 'probe : Fail a command', 'role' => null, 'host' => 'target', 'reason' => 'command_failed', 'rc' => 7]],
-    'hidden' => [['task' => null, 'role' => null, 'host' => 'hub', 'reason' => 'hidden']],
-    'role' => [['task' => 'Check configuration', 'role' => 'probe', 'host' => 'hub', 'reason' => 'assertion']],
+    'command' => [['task' => 'probe : Fail a command', 'host' => 'target', 'reason' => 'command_failed', 'rc' => 7]],
+    'hidden' => [['task' => null, 'host' => 'hub', 'reason' => 'hidden']],
+    'null task' => [['task' => null, 'host' => 'target', 'reason' => 'command_failed', 'rc' => 7]],
+    'assertion' => [['task' => 'Check configuration', 'host' => 'hub', 'reason' => 'assertion']],
 ]);
 
 it('refuses unsafe or inconsistent task failure evidence', function (array $failure, ?string $phase): void {
@@ -200,12 +201,12 @@ it('refuses unsafe or inconsistent task failure evidence', function (array $fail
 
     expect(fn () => NodeConvergeResult::parse($result))->toThrow(ResourceOperationException::class, 'terminal result is invalid');
 })->with((function (): array {
-    $failure = ['task' => 'Fail a command', 'role' => null, 'host' => 'target', 'reason' => 'command_failed', 'rc' => 7];
+    $failure = ['task' => 'Fail a command', 'host' => 'target', 'reason' => 'command_failed', 'rc' => 7];
     $cases = [];
     foreach ([
         'unknown reason' => ['reason' => 'LEAK_MSG'],
         'long task' => ['task' => str_repeat('x', 121)],
-        'long role' => ['role' => str_repeat('x', 121)],
+        'removed role' => ['role' => null],
         'control character' => ['task' => "bad\nname"],
         'non ASCII' => ['task' => 'é'],
         'address' => ['host' => '192.0.2.1'],
@@ -221,8 +222,8 @@ it('refuses unsafe or inconsistent task failure evidence', function (array $fail
     $withoutRc = $failure;
     unset($withoutRc['rc']);
     $cases['missing command rc'] = [$withoutRc, 'roles'];
-    unset($withoutRc['role']);
-    $cases['missing role'] = [$withoutRc, 'roles'];
+    unset($withoutRc['task']);
+    $cases['missing task'] = [$withoutRc, 'roles'];
     $cases['successful operation'] = [$failure, null];
 
     return $cases;

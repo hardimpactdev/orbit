@@ -643,12 +643,13 @@
     ]
   },
   "swamp/tests/ansible_command_output_test.py": {
-    "source_sha256": "68821d06d0c31cf0c43faf93a99ff3b9878db0751290703c3a3313994f2e8217",
+    "source_sha256": "c37a1a3815f0ad0e0ba52faa8ae210140f3db1164e4ae8c506d8357bf3829e1e",
     "cases": [
       "test_every_regex_is_exercised_or_classified_without_command_output",
       "test_unclassified_native_regex_tests_fail_coverage",
       "test_recorded_output_through_production_expressions",
-      "test_dpkg_installed_held_removed_and_absent"
+      "test_dpkg_installed_held_removed_and_absent",
+      "test_every_reachable_converge_task_name_is_static"
     ]
   },
   "swamp/tests/ansible_container_host_system_test.py": {
@@ -846,7 +847,7 @@
     ]
   },
   "swamp/tests/ansible_static_php_test.py": {
-    "source_sha256": "0ceee7bc659a002a18635ec911a5bdb7e63d79525bb7927668271912ae3d65a9",
+    "source_sha256": "86d9ee6d2294d2486faf022aabe804f61a155fe082d16e6b821dfbac8ecd28c4",
     "cases": [
       "test_matching_build_passes",
       "test_a_missing_and_an_extra_extension_fail_for_their_binary",
@@ -1511,7 +1512,7 @@
     ]
   },
   "swamp/tests/node_converge_test.ts": {
-    "source_sha256": "b5a3615352d159c2b442b332ea3594a1c3f7ed91da68d14ae7d6d1a626486cf7",
+    "source_sha256": "9550079fe51653a0a763b1cc54fc36216ba768ed8a74e6dde468fcfc56d2a364",
     "cases": [
       "converge reports all phases, live no-op counts and measured elapsed time; hub changes are not target changes",
       "converge stops reporting success at input and preserves the first failure",
@@ -1541,7 +1542,7 @@
       "a protected package cannot produce a machine plan",
       "a failed Tool postcondition is not installed",
       "the workflow has ordered phase invocations and an always-dependent private cleanup",
-      "a failed role command exports only the first bounded task and return code",
+      "a failed role command exports only its bounded task and return code",
       "converge classifies unreachable without exporting host output",
       "converge classifies assert without exporting host output",
       "converge classifies fail without exporting host output",
@@ -1549,10 +1550,19 @@
       "converge classifies module without exporting host output",
       "converge classifies unbounded rc without exporting host output",
       "converge identifies the hub failure while target stats stay clean",
-      "no_log and censored tasks hide names, roles and return codes",
-      "converge bounds task and role text and refuses host addresses",
+      "no_log and censored tasks hide names and return codes",
+      "converge bounds task text and refuses host addresses",
       "unreadable or task-free failure reports never throw or invent a task",
-      "successful converge results have no failure key"
+      "successful converge results have no failure key",
+      "the last fatal record explains ignored callback statistics",
+      "the last fatal record explains rescued callback statistics",
+      "the last fatal record explains always callback statistics",
+      "a rescued callback without fatal statistics succeeds with no failure",
+      "a censored unreachable callback identifies its failed host without leaking its name",
+      "a rendered-secret callback retains the failure while withholding the name and private markers",
+      "a path callback retains the failure while withholding the name and private markers",
+      "value-like names are withheld without changing the failure class",
+      "only hosts with fatal statistics compete in play and task order, with hub winning ties"
     ]
   },
   "swamp/tests/node_network_hub_prune_test.ts": {

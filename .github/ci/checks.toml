@@ -750,6 +750,7 @@ inputs = [
 file = "swamp/tests/ansible_command_output_test.py"
 cost = 3
 inputs = [
+  "apps/gateway/app/Domain/Nodes/NodeDesiredConvergeInput.php",
   "bin/swamp-shape-gate",
   "swamp/ansible/**/*.yaml",
   "swamp/ansible/**/*.yml",
@@ -758,6 +759,7 @@ inputs = [
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/tests/fixtures/command-output/**",
+  "swamp/workflows/workflow-operation-node-converge-direct.yaml",
 ]
 
 [[fixture]]
@@ -1804,8 +1806,7 @@ inputs = [
   "swamp/extensions/behaviors/operations/tools/native.ts",
   "swamp/scripts/instance_clone.py",
   "swamp/scripts/instance_clone_guest.py",
-  "swamp/tests/fixtures/node-converge-command.json",
-  "swamp/tests/fixtures/node-converge-hidden.json",
+  "swamp/tests/fixtures/node-converge-*.json",
   "swamp/workflows/workflow-operation-node-converge-direct.yaml",
 ]
 

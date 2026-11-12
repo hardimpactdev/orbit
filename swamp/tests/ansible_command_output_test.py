@@ -1,4 +1,5 @@
 """Exercise production command-output parsers with the pinned Ansible/Jinja engine."""
+import re
 import unittest
 from pathlib import Path
 
@@ -140,6 +141,60 @@ class CommandOutputTest(unittest.TestCase):
                 templar = Templar(loader=DataLoader(), variables={'container_incus_package': {'stdout': status}})
                 result = templar.evaluate_expression(trust_as_template(install['when']))
                 self.assertEqual(result, package in {'orbit-removed', 'orbit-absent'})
+
+
+def converge_task_sources():
+    """Follow the phase playbooks and every literal include, including handlers and recovery blocks."""
+    swamp = ROOT.parent
+    workflow = (swamp / 'workflows/workflow-operation-node-converge-direct.yaml').read_text()
+    gateway = (swamp.parent / 'apps/gateway/app/Domain/Nodes/NodeDesiredConvergeInput.php').read_text()
+    roots = set(re.findall(r'\$ORBIT_ANSIBLE/([\w.-]+\.ya?ml)', workflow))
+    roots.update(re.findall(r"'([^']+\.ya?ml)'", gateway))
+    assert roots, 'No converge playbooks found'
+    files, names = set(), []
+
+    def include(source, value):
+        name = value.get('file') if isinstance(value, dict) else value
+        assert isinstance(name, str) and '{{' not in name and '{%' not in name, (source, value)
+        candidates = [source.parent / name, ROOT / name]
+        path = next((path.resolve() for path in candidates if path.is_file()), None)
+        assert path is not None and path.is_relative_to(ROOT), (source, name)
+        read(path)
+
+    def walk(entries, source):
+        for task in entries:
+            assert isinstance(task, dict), (source, task)
+            if 'hosts' not in task and not any(key.rsplit('.', 1)[-1] == 'import_playbook' for key in task):
+                names.append((source, task.get('name')))
+            for key, value in task.items():
+                action = key.rsplit('.', 1)[-1]
+                if action in {'include_tasks', 'import_tasks', 'import_playbook'}:
+                    include(source, value)
+                elif action in {'roles', 'include_role', 'import_role'}:
+                    raise AssertionError(f'Extend the converge name walker before adding roles: {source}')
+                elif key in {'tasks', 'pre_tasks', 'post_tasks', 'handlers', 'block', 'rescue', 'always'}:
+                    walk(value, source)
+
+    def read(path):
+        if path not in files:
+            files.add(path)
+            walk(yaml.safe_load(path.read_text()), path)
+
+    for name in sorted(roots):
+        read((ROOT / name).resolve())
+    return files, names
+
+
+class ConvergeTaskNamesTest(unittest.TestCase):
+    def test_every_reachable_converge_task_name_is_static(self):
+        files, names = converge_task_sources()
+        self.assertTrue(files)
+        self.assertTrue(names)
+        for path, name in names:
+            with self.subTest(file=str(path.relative_to(ROOT)), name=name):
+                self.assertIsInstance(name, str)
+                self.assertNotIn('{{', name)
+                self.assertNotIn('{%', name)
 
 
 if __name__ == '__main__':

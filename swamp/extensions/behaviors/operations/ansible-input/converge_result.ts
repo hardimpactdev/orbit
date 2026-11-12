@@ -4,11 +4,11 @@ export const phases = ["input", "agent", "software", "roles", "tools", "network"
 const SafeText = z.string().min(1).max(120).regex(/^[\x20-\x7e]+$/).nullable();
 const ReturnCode = z.number().int().min(-2147483648).max(2147483647).refine((rc) => rc !== 0 && rc !== 124);
 const Failure = z.object({
-    task: SafeText, role: SafeText, host: z.enum(["target", "hub"]),
+    task: SafeText, host: z.enum(["target", "hub"]),
     reason: z.enum(["hidden", "unreachable", "timeout", "assertion", "command_failed", "module_failed"]),
     rc: ReturnCode.optional(),
 }).strict().refine((failure) => (failure.reason === "command_failed") === (failure.rc !== undefined) &&
-    (failure.reason !== "hidden" || (failure.task === null && failure.role === null)));
+    (failure.reason !== "hidden" || failure.task === null));
 export const Result = z.object({
     phases: z.array(z.object({ name: z.enum(phases), status: z.enum(["succeeded", "failed", "skipped"]), changed: z.number().int().nonnegative(), elapsed_seconds: z.number().finite().nonnegative() }).strict()).length(7),
     changed: z.number().int().nonnegative(), elapsed_seconds: z.number().finite().nonnegative(), cleanup_complete: z.boolean(),
@@ -26,7 +26,8 @@ const Play = z.object({ tasks: z.array(z.unknown()) });
 const Task = z.object({ task: Fields, hosts: z.record(z.string(), Fields) });
 
 function safeText(value: unknown): string | null {
-    return typeof value === "string" && value.length ? value.replace(/[^\x20-\x7e]/g, "?").slice(0, 120) : null;
+    if (typeof value !== "string" || !value.length || /[\/=@]|[A-Za-z0-9+_-]{16,}/.test(value)) return null;
+    return value.replace(/[^\x20-\x7e]/g, "?").slice(0, 120);
 }
 
 function hidden(value: Record<string, unknown>): boolean {
@@ -37,27 +38,40 @@ function hidden(value: Record<string, unknown>): boolean {
         }));
 }
 
-function firstFailure(plays: unknown[]): z.infer<typeof Failure> | undefined {
-    for (const rawPlay of plays) {
+function fatalFailure(report: z.infer<typeof Report>): z.infer<typeof Failure> | undefined {
+    type Candidate = { order: number; failure: z.infer<typeof Failure> };
+    const failed = new Map<string, Candidate>();
+    const censored = new Map<string, Candidate>();
+    let order = 0;
+    for (const rawPlay of report.plays) {
         const play = Play.safeParse(rawPlay);
         if (!play.success) continue;
         for (const rawTask of play.data.tasks) {
             const row = Task.safeParse(rawTask);
             if (!row.success) continue;
-            for (const [alias, result] of Object.entries(row.data.hosts)) {
-                if ((alias !== "target" && alias !== "hub") || (result.failed !== true && result.unreachable !== true)) continue;
-                if (hidden(row.data.task) || hidden(result)) return { task: null, role: null, host: alias, reason: "hidden" };
+            for (const alias of ["hub", "target"] as const) {
+                const position = order++;
+                const stats = report.stats[alias];
+                const result = row.data.hosts[alias];
+                if (!stats || (stats.failures === 0 && stats.unreachable === 0) || !result) continue;
+                const isHidden = hidden(row.data.task) || hidden(result);
+                if (isHidden) censored.set(alias, { order: position, failure: { task: null, host: alias, reason: "hidden" } });
+                if (result.failed !== true && result.unreachable !== true) continue;
                 const rc = ReturnCode.safeParse(result.rc);
                 const action = typeof result.action === "string" ? result.action.split(".").at(-1) : undefined;
-                const reason = result.unreachable === true ? "unreachable"
+                const reason = isHidden ? "hidden" : result.unreachable === true ? "unreachable"
                     : result.rc === 124 ? "timeout"
                     : action === "assert" || action === "fail" || Object.hasOwn(result, "assertion") || Object.hasOwn(result, "evaluated_to") ? "assertion"
                     : rc.success ? "command_failed" : "module_failed";
-                return { task: safeText(row.data.task.name), role: safeText(row.data.task.role), host: alias, reason,
-                    ...(reason === "command_failed" && rc.success ? { rc: rc.data } : {}) };
+                failed.set(alias, { order: position, failure: { task: isHidden ? null : safeText(row.data.task.name), host: alias, reason,
+                    ...(reason === "command_failed" && rc.success ? { rc: rc.data } : {}) } });
             }
         }
     }
+    // A host stops at its fatal task. Earlier ignored/rescued failures do not explain its final stats.
+    return ["hub", "target"].map((host) => failed.get(host) ?? censored.get(host))
+        .filter((candidate): candidate is Candidate => candidate !== undefined)
+        .sort((a, b) => a.order - b.order)[0]?.failure;
 }
 
 /** Private callbacks are untrusted. Export only counts, timing, bounded Tool observations and fixed-shape task failures. */
@@ -80,7 +94,7 @@ export async function convergeResult(folder: string) {
                 status = timing.exit_code === 0 && report.stats.target !== undefined &&
                         Object.values(report.stats).every((stat) => stat.failures === 0 && stat.unreachable === 0)
                     ? "succeeded" : "failed";
-                if (status === "failed") failure = firstFailure(report.plays);
+                if (status === "failed") failure = fatalFailure(report);
                 if (name === "tools") {
                     tools = Result.shape.tools.parse(JSON.parse(await Deno.readTextFile(`${folder}/tools-result.json`)));
                     if (new Set(tools.map((tool) => tool.id)).size !== tools.length) status = "failed";

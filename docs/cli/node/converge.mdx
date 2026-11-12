@@ -47,7 +47,9 @@ A repeat starts a new Operation and applies all phases again; it is not skipped 
 
 A failed phase leaves the Operation failed with its failed step and error code. Completed and partial changes stay on the Node; nothing is rolled back. A new attempt starts at input and safely reapplies every phase. Temporary files are removed when work stops after success or failure; an interruption does not prove cleanup completed, and incomplete cleanup is reported without hiding the original failure.
 
-The Operation's `result.failure`, shown by `orbit operation:show`, identifies the first failed task in the failed phase. It contains `task` and `role` (nullable, at most 120 printable ASCII characters each), `host` (`target` or `hub`, never an address), and `reason`. A role is present only when the task record provides it. Hidden tasks return null names and `reason: "hidden"`. Missing, malformed or task-free failure reports leave `failure` absent. Successful results have no `failure`. Task output, messages, commands, arguments and loop values stay private.
+The Operation's `result.failure`, shown by `orbit operation:show`, contains `task` (nullable, at most 120 printable ASCII characters), `host` (`target` or `hub`, never an address), and `reason`. For each host whose statistics count failure or unreachability, Orbit selects its last failed or unreachable task. Of those tasks, the earliest in play and task order wins; a tie selects `hub`. This excludes earlier ignored and rescued failures.
+
+Converge task names are static because a failed converge shows them. Names containing `/`, `=`, `@` or 16 consecutive base64-like characters are withheld. Hidden tasks return `task: null` and `reason: "hidden"`. When a host's statistics fail but only censored records identify its failure, Orbit reports that host as hidden. Missing, malformed or task-free failure reports leave `failure` absent. Successful results have no `failure`. Task output, messages, commands, arguments and loop values stay private.
 
 Reasons are selected in this order:
 

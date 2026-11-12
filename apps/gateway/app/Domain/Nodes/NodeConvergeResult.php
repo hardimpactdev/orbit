@@ -22,9 +22,8 @@ final class NodeConvergeResult
         }
         $raw = array_intersect_key($value, array_flip(['outcome', 'phases', 'failed_phase', 'changed', 'elapsed_seconds', 'tools', 'error_code', 'cleanup_complete', 'failure']));
         $rules = [
-            'failure' => ['sometimes', 'required', 'array:task,role,host,reason,rc'],
+            'failure' => ['sometimes', 'required', 'array:task,host,reason,rc'],
             'failure.task' => ['present_with:failure', 'nullable', 'string', 'min:1', 'max:120', 'regex:/\A[\x20-\x7e]+\z/D'],
-            'failure.role' => ['present_with:failure', 'nullable', 'string', 'min:1', 'max:120', 'regex:/\A[\x20-\x7e]+\z/D'],
             'failure.host' => ['required_with:failure', Rule::in(['target', 'hub'])],
             'failure.reason' => ['required_with:failure', Rule::in(['hidden', 'unreachable', 'timeout', 'assertion', 'command_failed', 'module_failed'])],
             'failure.rc' => ['sometimes', 'integer', 'min:-2147483648', 'max:2147483647', Rule::notIn([0, 124])],
@@ -83,7 +82,7 @@ final class NodeConvergeResult
             $hasRc = array_key_exists('rc', $taskFailure);
             if ($failure === null || ($taskFailure['reason'] === 'command_failed') !== $hasRc
                 || ($hasRc && ! is_int($taskFailure['rc']))
-                || ($taskFailure['reason'] === 'hidden' && ($taskFailure['task'] !== null || $taskFailure['role'] !== null))) {
+                || ($taskFailure['reason'] === 'hidden' && $taskFailure['task'] !== null)) {
                 self::invalid();
             }
         }
