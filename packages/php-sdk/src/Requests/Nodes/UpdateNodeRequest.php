@@ -35,6 +35,7 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
         private readonly bool $hasLanIp = false,
         private readonly ?string $lanIp = null,
         private readonly ?bool $rebootHold = null,
+        private readonly ?bool $imageRefreshHold = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -80,6 +81,10 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
 
         if ($this->rebootHold !== null) {
             $body['reboot_hold'] = $this->rebootHold;
+        }
+
+        if ($this->imageRefreshHold !== null) {
+            $body['image_refresh_hold'] = $this->imageRefreshHold;
         }
 
         if ($this->hasApps) {

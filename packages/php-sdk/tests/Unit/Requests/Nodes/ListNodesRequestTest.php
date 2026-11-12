@@ -77,7 +77,7 @@ it('maps an empty gateway collection', function (): void {
         ]);
 });
 
-/** @return list<array<string, int|string|list<string>|null>> */
+/** @return list<array<string, int|string|bool|list<string>|null>> */
 function list_nodes_gateway_data(): array
 {
     return [
@@ -94,6 +94,8 @@ function list_nodes_gateway_data(): array
             'user' => 'orbit',
             'wireguard_ip' => '10.44.0.3',
             'lan_ip' => '10.0.0.3',
+            'reboot_hold' => false,
+            'image_refresh_hold' => false,
             'wireguard_public_key' => 'app-dev-public-key',
             'dns_server_override' => '10.0.0.2',
             'ssh_host_fingerprint' => 'SHA256:app-dev',
@@ -123,6 +125,8 @@ function list_nodes_gateway_data(): array
             'user' => 'root',
             'wireguard_ip' => null,
             'lan_ip' => null,
+            'reboot_hold' => false,
+            'image_refresh_hold' => false,
             'wireguard_public_key' => null,
             'dns_server_override' => null,
             'ssh_host_fingerprint' => null,
@@ -138,7 +142,7 @@ function list_nodes_gateway_data(): array
     ];
 }
 
-/** @return array<string, int|string|list<string>|null> */
+/** @return array<string, int|string|bool|list<string>|null> */
 function first_list_node_with_request_id(): array
 {
     return [
@@ -147,7 +151,7 @@ function first_list_node_with_request_id(): array
     ];
 }
 
-/** @return list<array<string, int|string|list<string>|null>> */
+/** @return list<array<string, int|string|bool|list<string>|null>> */
 function list_nodes_public_data(): array
 {
     return list_nodes_gateway_data();

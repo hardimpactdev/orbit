@@ -979,12 +979,10 @@ The `ai-router-model-forwarder.yml` playbook, including its numeric packet-count
 
 The container playbook preserves agent settings outside Orbit's managed JSON keys and Git workspace trust, and applies the [per-Instance limits](/reference/development-containers#inside-a-container). It writes the shared [container PHP settings](/reference/php-runtime#container-php): the memory limit and PHP Data Bridge.
 
-Development container [mail setup](/reference/development-containers#development-mail) runs in the Instance lifecycle. It installs the bridge helper and admits the SMTP endpoint additively; a Gateway release does not need a Node converge before those Instance Operations can apply mail. The shared NIC allowance remains limited to its existing proxies.
+Development container [mail setup](/reference/development-containers#development-mail) runs in the Instance lifecycle. It calls the shared bridge helper additively and batches the mail preflight and unit installation into at most two guest commands; a Gateway release does not need a Node converge before those Instance Operations can apply mail. The shared NIC allowance remains limited to its existing proxies.
 
-Development mail repair uses the Node’s existing Python prerequisite through fixed Incus argv. The container needs only its stock shell and coreutils for atomic replacement. It needs no Project PHP runtime or new image digest; see [development mail](/reference/development-containers#development-mail). The shared rule preserves matching quotes around `log` and `smtp`.
+Development mail repair uses the Node’s existing Python prerequisite through fixed Incus argv. The container needs only its stock shell and coreutils for atomic replacement. It needs no Project PHP runtime or new image digest; see [development mail](/reference/development-containers#development-mail). The shared rule preserves matching quotes around `log` and `smtp`; its guard accepts only whole lines on the shared whitelist and reports the first refused line as `guard_line`.
 
 Container migration reuses this [development mail phase](/reference/development-containers#development-mail) after copying the workspace. It requires no Node converge.
-
-Checkout destroy admission has one [read-only SSH exception](/reference/remote-programs#remote-programs) for live Git dependencies, before Schedule withdrawal. It uses the existing Node account and identity with a short timeout. Containers and unmaterialized sources skip that read; source removal rechecks the owner’s Git registry and recorded checkout paths through the shared Ansible helper. It never traverses checkout contents.
 
 Instance migration checks selected environment services before downtime. Its mail check uses the admitted [development mail endpoint](/reference/development-containers#development-mail), so the preflight and mail setup share one eligibility decision.

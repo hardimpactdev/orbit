@@ -9,7 +9,6 @@ use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceDestroyKind;
-use App\Domain\Instances\InstanceDestroyWorktrees;
 use App\Domain\Instances\InstanceLifecycleInput;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceSourceLayout;
@@ -62,7 +61,6 @@ final readonly class StartInstanceDestroyAction
         }
         app(ContainerInstanceDestroy::class)->assertAvailable($instance, $force);
         $snapshot = $this->snapshot($instance, $force);
-        $snapshot['checkout_instances'] = app(InstanceDestroyWorktrees::class)->assertAvailable($instance);
         // A native Schedule fires from its own workflow on serve, not from the Node; it stops before the Instance goes.
         $members = array_column(is_array($snapshot['members'] ?? null) ? $snapshot['members'] : [], 'instance_id');
         app(NativeSchedules::class)->removeForInstances($members === [] ? [$instance->id] : ValidatedData::integerList($members));

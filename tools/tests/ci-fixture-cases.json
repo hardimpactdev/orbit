@@ -1344,7 +1344,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "9cdbd041c4e7839dddf776c3f1a1ed95adebb8ef93e9bcf1a3dfb07ed11cea78",
+    "source_sha256": "828211680eff46bc36892579e433bf811bfd285f81edc53c3178f312bfe4ee55",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1357,6 +1357,8 @@
       "test_unreadable_remote_fails_without_creating_a_branch",
       "test_unreachable_frozen_commit_fails_without_using_current_tip",
       "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
+      "test_clone_launch_applies_mail_without_another_playbook",
+      "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful",
       "test_clone_uses_the_admitted_common_acl_name",
       "test_clone_refuses_unsafe_effective_nics_before_start",
       "test_guest_and_node_command_names_stay_in_sync",
@@ -1874,22 +1876,29 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_test.py": {
-    "source_sha256": "76abb617947c85a43acf0ea6f5391621b4137cffb2860f9f280fe30935af5d6a",
+    "source_sha256": "d81d218f68bd558ec8ab79da40f21cf77beb77ecd539b41400b0eff863e22e5e",
     "cases": [
-      "test_migrate_selected_smtp_passes_real_preflight_and_installs_forwarders",
       "test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes",
+      "test_new_admission_metadata_and_incus_empty_fields_are_unchanged",
       "test_failed_unit_write_keeps_network_path_and_a_retry_completes_it",
       "test_failure_after_one_successful_service_write_finishes_pending_activation",
       "test_failure_after_all_writes_before_reload_finishes_pending_activation",
       "test_foreign_listener_or_unit_skips_both_ports_without_mutation",
-      "test_stopped_missing_binary_or_path_failure_never_changes_guest"
+      "test_stopped_missing_binary_or_path_failure_never_changes_guest",
+      "test_migrate_selected_smtp_passes_real_preflight_and_installs_forwarders",
+      "test_active_owned_socket_with_missing_enable_link_is_repaired",
+      "test_failed_guest_entry_preserves_only_exact_public_codes_at_subprocess_boundary",
+      "test_real_default_launch_continues_after_mail_failure",
+      "test_no_endpoint_does_no_work",
+      "test_create_launches_share_the_mail_step_and_receipt"
     ]
   },
   "swamp/tests/ansible_instance_mail_line_test.py": {
-    "source_sha256": "2e01ce293092ce498f393f9ae2e65f0d800753fe0a6131b92801fa03ef956434",
+    "source_sha256": "4a237bffa8bfd61632dcd7eab655cde451b89593d774e83e0fc66c1e2669a8ca",
     "cases": [
       "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte",
       "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved",
+      "test_prefix_whitelist_accepts_only_safe_whole_lines_and_reports_first_refusal",
       "test_missing_key_missing_file_symlink_and_already_smtp_write_nothing",
       "test_atomic_replacement_preserves_owner_group_and_mode_without_backup",
       "test_real_incus_missing_delete_contract_and_first_run",
@@ -1905,7 +1914,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "f05d13d13a39e49f96d7264df8f04bb4d9cbaac94334045aeb147d45378c539c",
+    "source_sha256": "e0cea7c4856c72351dd3c4d77e5076f76f5ac6ddc37a3aa3e6f3e4d0a3a7eb45",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -1932,26 +1941,25 @@
       "missing or malformed successful mail receipts become advisory warnings"
     ]
   },
-  "swamp/tests/instance_destroy_git_test.py": {
-    "source_sha256": "6b1f3fe00bf47319e43adffe3548bc2a65b3966d3ddd259758fe9c2aea999fac",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {
+    "source_sha256": "766c8a4602e80721efc68bf018c2b8681d5274b9798ef727a5f1e045baf1050b",
     "cases": [
-      "test_owner_refuses_for_both_force_values_and_lying_layout_records",
-      "test_dependent_removal_unregisters_only_it_and_preserves_owner_git_and_work",
-      "test_unowned_worktree_blocks_with_its_path",
-      "test_standalone_checkout_and_absent_repeat_are_removed",
-      "test_unreadable_git_and_failed_unregister_never_fall_back_to_rm",
-      "test_moved_worktree_is_found_from_recorded_path_at_admission_and_removal",
-      "test_deleted_prunable_registration_is_nonblocking",
-      "test_checkout_contents_are_never_walked_during_inspection",
-      "test_real_ansible_phase_refuses_owner_removes_dependent_then_owner"
-    ]
-  },
-  "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts": {
-    "source_sha256": "432c00148c29ef9792162658cf8696e50e8e0692be4ec76f28e5394b29a506fa",
-    "cases": [
-      "the files Orbit renders do not count as unpushed work, at any depth",
-      "any other change is still work that is not pushed",
-      "every destroy Ansible step enables failed task stderr"
+      "create returns only the commit when every step finished",
+      "create names the first unfinished phase",
+      "a Project without setup steps runs no setup phase",
+      "a web-serving create needs its Route; a Project without one skips it",
+      "an already active create reports ready without step evidence",
+      "VP preparation uses stock CLI environment installation and discrete official SSH effects",
+      "a create that copies the default database needs that copy; others skip it",
+      "a Route certificate that failed is the Route's failure, not the setup it skipped",
+      "a failed setup wins over the Route it skipped",
+      "the Route is not finished until every certificate step succeeded",
+      "a container default takes its commit from the workspace and finishes after the seed snapshot",
+      "a clone finishes only with its registered T3 server, which the receipt carries; it has no deploy step or seed",
+      "readiness records only timestamps from the T3 checks and the Route TLS probe",
+      "container mail skips retain their reason and missing mail observations stay advisory",
+      "default and clone finish workspace T3 and registration despite bounded mail failure",
+      "a Node without the main Mailpit gets no mail warning or failure"
     ]
   }
 }

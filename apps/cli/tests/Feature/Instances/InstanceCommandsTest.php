@@ -814,23 +814,6 @@ describe('instance:show', function (): void {
 });
 
 describe('instance:destroy', function (): void {
-    it('keeps typed worktree refusal details in human and JSON output', function (bool $json): void {
-        $details = ['dependents' => [['id' => 69, 'name' => 'default', 'project_id' => 12]],
-            'other_dependents' => 2, 'unowned_paths' => ['/work/unowned tree']];
-        MockClient::global([DestroyInstanceRequest::class => MockResponse::make(['error' => [
-            'code' => 'instance.worktree_dependents', 'message' => 'Other worktrees depend on Git data in this checkout.',
-            'details' => $details, 'request_id' => instance_request_id(),
-        ]], 409, ['X-Orbit-Request-Id' => instance_request_id()])]);
-        expect(Artisan::call('instance:destroy', ['instance' => '5', '--yes' => true, '--force' => true, '--json' => $json]))->toBe(1);
-        if ($json) {
-            $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
-            expect($output['error']['details'])->toBe($details)->and($output['error']['code'])->toBe('instance.worktree_dependents');
-        } else {
-            expect(instance_source_text(Artisan::output()))->toContain('default (#69, Project #12)',
-                'other_dependents: 2', '/work/unowned tree', instance_request_id());
-        }
-    })->with([false, true]);
-
     it('removes an Instance in normal mode by default', function (): void {
         $mockClient = MockClient::global(instance_operation_responses(DestroyInstanceRequest::class, 'instance.destroy'));
 

@@ -34,16 +34,36 @@ it('preserves every typed role assignment and its recorded failure in both Node 
     'recorded Ubuntu requirement' => ['converge:Require supported Ubuntu', 'role.os_unsupported'],
 ]);
 
-it('normalizes non-assignment values to the canonical empty assignment list', function (mixed $assignments): void {
-    $node = NodeResponse::fromGatewayData(node_response_gateway_data(['assignments' => $assignments]), 'request-id');
+it('rejects malformed assignment containers and items with the request ID', function (mixed $assignments): void {
+    $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
 
-    expect($node->assignments)->toBe([])
-        ->and($node->toArray()['assignments'])->toBe([]);
+    try {
+        NodeResponse::fromGatewayData(node_response_gateway_data(['assignments' => $assignments]), $requestId);
+        $this->fail('Expected malformed assignments to be refused.');
+    } catch (GatewayApiException $exception) {
+        expect($exception->requestId())->toBe($requestId)
+            ->and($exception->errorCode())->toBeNull()
+            ->and($exception->getMessage())->toContain('node role assignment');
+    }
 })->with([
-    'scalar' => 'invalid',
+    'scalar' => ['invalid'],
     'object instead of list' => [['role' => 'app-dev']],
     'scalar item' => [[42]],
+    'explicit null' => [null],
 ]);
+
+it('preserves missing and explicitly empty assignments as an empty list', function (bool $present): void {
+    $data = node_response_gateway_data();
+    if ($present) {
+        $data['assignments'] = [];
+    }
+    $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+    $node = NodeResponse::fromGatewayData($data, $requestId);
+
+    expect($node->assignments)->toBe([])
+        ->and($node->toArray()['assignments'])->toBe([])
+        ->and($node->requestId)->toBe($requestId);
+})->with(['missing' => false, 'empty' => true]);
 
 it('rejects malformed nested role assignments', function (): void {
     NodeResponse::fromGatewayData(node_response_gateway_data(['assignments' => [['id' => 0]]]), 'request-id');
@@ -332,6 +352,7 @@ function node_response_gateway_data(array $overrides = []): array
         'wireguard_ip' => '10.44.0.3',
         'lan_ip' => '10.0.0.3',
         'reboot_hold' => false,
+        'image_refresh_hold' => false,
         'roles' => ['app-dev'],
     ], $overrides);
 }
@@ -353,6 +374,7 @@ function node_response_public_data(): array
         'wireguard_ip' => '10.44.0.3',
         'lan_ip' => '10.0.0.3',
         'reboot_hold' => false,
+        'image_refresh_hold' => false,
         'wireguard_public_key' => null,
         'dns_server_override' => null,
         'ssh_host_fingerprint' => null,

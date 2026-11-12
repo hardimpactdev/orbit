@@ -43,6 +43,7 @@
                 }
             ],
             "reboot_hold": false,
+            "image_refresh_hold": true,
             "access": {
                 "can_access": [],
                 "accessible_by": []

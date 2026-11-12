@@ -102,7 +102,7 @@ The checks table also defines CLI Pest inputs. Required checks requires the job 
 
 The Swamp gate production-lints the observer preparation play. Its fixture tests install the candidate pin on all three nested Nodes and reject checksum and download failures. Gateway tests require new presence versions and host facts after a controlled restart. Runner tests require preparation before every batch and direct case, including old workflow calls without setup, and give preparation and batch setup separate bounded budgets.
 
-The mail phase is one unsliced Python fixture unit, declared at 120 seconds within the 150-second lane. Its registry regression checks both planning and the runner command. It exercises two IPv4 socket proxies, exact own-ACL admission, additive Docker DNAT persistence and refresh, foreign-resource skips, unchanged repeats, and retry after a failed unit write, after one successful service rewrite, and after all writes before reload.
+The mail phase runs as one fast, unsliced Python fixture in the Required PR path. It calls the shipped converger through unprivileged host and guest tool boundaries, rather than launching a playbook for every case. It exercises two IPv4 socket proxies, exact own-ACL admission, the real additive Docker DNAT resolver and refresh, foreign-resource skips, and unchanged repeats with new admission timestamps. It also retries after a failed unit write, after one successful service rewrite, and after all writes before reload. Its registry regression checks both Required selection and the runner command.
 
 The fixture for the mailer rule reproduces the Incus error when deletion finds no file: exit 1, even with `--force`. Its real replacement shell proves distinct source ACL and user-xattr preservation after rename; three Ansible launches also check safe failure text.
 
@@ -710,8 +710,8 @@ The development mail-line fixture runs unprivileged. It executes the shipped byt
 
 The migration mail fixture also checks the phase order: copy first, bounded mail attempt second, application starts last. A failed attempt retains the copied file and produces a warning receipt.
 
-The destroy dependency fixture uses real Git in private temporary directories. It runs unprivileged, includes three Ansible phase launches, and proves refusal, registration removal and preservation of the owner’s Git data. It covers moved worktrees and prunable registrations without scanning checkout contents. Gateway tests bind a deterministic remote-program fake by default, so admission cannot reach real SSH; tests of the boundary replace it explicitly. Inventory and named cost keys are collected together.
-
 Clone branch fixtures use unprivileged local Git repositories and run without an Ansible playbook. Their registered case names and conservative costs change together in `tools/tests/ci-fixture-cases.json` and `.github/ci/checks.toml`; collect names with `bin/ci-units collect --file swamp/tests/instance_clone_test.py`.
 
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise.
+
+The mail fixture executes the production prefix whitelist, the reviewed bare-CR and comment-grouping regressions, and a realistic thirty-line file. It preserves `lines` beside `guard_line` and uses three Ansible launches. Gateway tests compare every admitted shape with installed phpdotenv; Swamp fixtures need no PHP or Composer installation.

@@ -50,7 +50,7 @@ Placement commands create, adopt, inspect, and remove an Instance on one Node. I
 | [`instance:node-service:attach`](/cli/instance/node-service-attach) | Record an explicit standalone Node service target before migration, without network or environment changes. |
 | [`instance:node-service:list`](/cli/instance/node-service-list) | List the selected Instance's recorded Node service attachments, without environment values or credentials. |
 | [`instance:node-service:detach`](/cli/instance/node-service-detach) | Delete one attachment record, including after successful migration, and return a completed Operation without network, environment or runtime changes. |
-| [`instance:destroy`](/cli/instance/destroy) | Remove an Instance and its owned Processes, Schedules, and Route; refuse Git data needed by another worktree. |
+| [`instance:destroy`](/cli/instance/destroy) | Remove an Instance and its owned Processes, Schedules, and Route. |
 | [`instance:logs`](/cli/instance/logs) | Return the application log tail, or follow new lines. |
 
 `instance:migrate` reports `moved` and `restored` in its Operation result. Human output also shows the mailer outcome or advisory mail warning. A mail warning does not block cutover or retirement. A failure after cutover can leave the container serving.

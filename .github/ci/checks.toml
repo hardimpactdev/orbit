@@ -1574,7 +1574,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 34
+cost = 38
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1599,12 +1599,14 @@ inputs = [
   "test_unreadable_remote_fails_without_creating_a_branch" = 2
   "test_unreachable_frozen_commit_fails_without_using_current_tip" = 2
   "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start" = 2
+  "test_clone_launch_applies_mail_without_another_playbook" = 2
   "test_clone_uses_the_admitted_common_acl_name" = 2
   "test_clone_refuses_unsafe_effective_nics_before_start" = 2
   "test_guest_and_node_command_names_stay_in_sync" = 2
   "test_preserves_only_the_guest_command_and_exit_code" = 2
   "test_rejects_private_or_mismatched_guest_diagnostics" = 2
   "test_node_command_failure_names_executable_and_exit_without_output" = 2
+  "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful" = 2
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_native_faults_test.ts"
@@ -2584,33 +2586,36 @@ default = []
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_mail_test.py"
-after_merge = true
-reason = "over the 180 s ceiling, follow-up"
-cost = 135
-# Per-case estimates; real Ansible executes only against fake Incus and Docker boundaries.
+cost = 15
+# Batched production converger with unprivileged host/guest tool boundaries; no playbook per case.
 slices = false
 inputs = [
-  "swamp/ansible/library/orbit_migrate_env.py",
-  "swamp/ansible/tasks/instance-migrate-env-check.yml",
-  "apps/gateway/app/Domain/Instances/DevelopmentMail.php",
-  "swamp/ansible/tasks/instance-mail.yml",
-  "swamp/ansible/tasks/instance-bridge-rules.yml",
-  "swamp/ansible/instance_bridge.py",
   "swamp/ansible/requirements.txt",
-  "swamp/ansible/requirements.yml",
+  "swamp/ansible/instance_mail.py",
+  "swamp/ansible/tasks/instance-mail.yml",
+  "swamp/ansible/tasks/instance-container-phase.yml",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/scripts/instance_clone.py",
+  "swamp/workflows/workflow-operation-instance-create.yaml",
 ]
 [fixture.case_costs]
-"test_migrate_selected_smtp_passes_real_preflight_and_installs_forwarders" = 15
-"test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes" = 14
-"test_foreign_listener_or_unit_skips_both_ports_without_mutation" = 6
-"test_stopped_missing_binary_or_path_failure_never_changes_guest" = 6
-"test_failed_unit_write_keeps_network_path_and_a_retry_completes_it" = 14
-"test_failure_after_one_successful_service_write_finishes_pending_activation" = 40
-"test_failure_after_all_writes_before_reload_finishes_pending_activation" = 40
+"test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes" = 1
+"test_new_admission_metadata_and_incus_empty_fields_are_unchanged" = 1
+"test_failed_unit_write_keeps_network_path_and_a_retry_completes_it" = 1
+"test_failure_after_one_successful_service_write_finishes_pending_activation" = 1
+"test_failure_after_all_writes_before_reload_finishes_pending_activation" = 1
+"test_foreign_listener_or_unit_skips_both_ports_without_mutation" = 1
+"test_stopped_missing_binary_or_path_failure_never_changes_guest" = 1
+"test_no_endpoint_does_no_work" = 1
+"test_create_launches_share_the_mail_step_and_receipt" = 1
+"test_migrate_selected_smtp_passes_real_preflight_and_installs_forwarders" = 1
+"test_active_owned_socket_with_missing_enable_link_is_repaired" = 1
+"test_failed_guest_entry_preserves_only_exact_public_codes_at_subprocess_boundary" = 1
+"test_real_default_launch_continues_after_mail_failure" = 3
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_mail_line_test.py"
-cost = 47
+cost = 57
 slices = false
 inputs = [
   "swamp/ansible/library/orbit_migrate_env.py",
@@ -2623,8 +2628,9 @@ inputs = [
   "swamp/ansible/requirements.yml",
 ]
 [fixture.case_costs]
-"test_migrate_log_loopback_passes_source_check_then_becomes_smtp" = 3
+"test_migrate_log_loopback_passes_source_check_then_becomes_smtp" = 1
 "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte" = 5
+"test_prefix_whitelist_accepts_only_safe_whole_lines_and_reports_first_refusal" = 12
 "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved" = 7
 "test_missing_key_missing_file_symlink_and_already_smtp_write_nothing" = 2
 "test_atomic_replacement_preserves_owner_group_and_mode_without_backup" = 2
@@ -2671,34 +2677,23 @@ inputs = [
 "missing or malformed successful mail receipts become advisory warnings" = 1
 
 [[fixture]]
-file = "swamp/tests/instance_destroy_git_test.py"
-cost = 15
-slices = false
-inputs = [
-  "swamp/ansible/instance/destroy-git.py",
-  "swamp/ansible/instance-checkout-destroy.yml",
-  "swamp/workflows/workflow-operation-instance-destroy.yaml",
-]
+file = "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts"
+cost = 16
+inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts", "swamp/workflows/workflow-operation-instance-create.yaml"]
 [fixture.case_costs]
-"test_owner_refuses_for_both_force_values_and_lying_layout_records" = 1
-"test_dependent_removal_unregisters_only_it_and_preserves_owner_git_and_work" = 1
-"test_unowned_worktree_blocks_with_its_path" = 1
-"test_standalone_checkout_and_absent_repeat_are_removed" = 1
-"test_unreadable_git_and_failed_unregister_never_fall_back_to_rm" = 1
-"test_real_ansible_phase_refuses_owner_removes_dependent_then_owner" = 7
-"test_moved_worktree_is_found_from_recorded_path_at_admission_and_removal" = 1
-"test_deleted_prunable_registration_is_nonblocking" = 1
-"test_checkout_contents_are_never_walked_during_inspection" = 1
-
-[[fixture]]
-file = "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts"
-cost = 3
-inputs = [
-  "swamp/ansible/instance/destroy-git.py",
-  "swamp/ansible/instance-checkout-destroy.yml",
-  "swamp/workflows/workflow-operation-instance-destroy.yaml",
-]
-[fixture.case_costs]
-"the files Orbit renders do not count as unpushed work, at any depth" = 1
-"any other change is still work that is not pushed" = 1
-"every destroy Ansible step enables failed task stderr" = 1
+"create returns only the commit when every step finished" = 1
+"create names the first unfinished phase" = 1
+"a Project without setup steps runs no setup phase" = 1
+"a web-serving create needs its Route; a Project without one skips it" = 1
+"an already active create reports ready without step evidence" = 1
+"VP preparation uses stock CLI environment installation and discrete official SSH effects" = 1
+"a create that copies the default database needs that copy; others skip it" = 1
+"a Route certificate that failed is the Route's failure, not the setup it skipped" = 1
+"a failed setup wins over the Route it skipped" = 1
+"the Route is not finished until every certificate step succeeded" = 1
+"a container default takes its commit from the workspace and finishes after the seed snapshot" = 1
+"a clone finishes only with its registered T3 server, which the receipt carries; it has no deploy step or seed" = 1
+"readiness records only timestamps from the T3 checks and the Route TLS probe" = 1
+"container mail skips retain their reason and missing mail observations stay advisory" = 1
+"default and clone finish workspace T3 and registration despite bounded mail failure" = 1
+"a Node without the main Mailpit gets no mail warning or failure" = 1
