@@ -38,7 +38,10 @@ export async function storeInspection(
 ) {
     const input = InspectionArgs.parse(args);
     const value = await Deno.readTextFile(input.directory + "/result.json");
-    const observed = z.object({ state: z.string().max(32), output: z.string(), truncated: z.boolean().optional() }).strict().parse(
+    const observed = z.object({ state: z.string().max(32), output: z.string(), truncated: z.boolean().optional(),
+        last_run_at: z.iso.datetime({offset: true}).nullable().optional(),
+        last_run_status: z.enum(["success", "error"]).nullable().optional(),
+        error_code: z.literal("schedule.target_inactive").optional() }).strict().parse(
         JSON.parse(value),
     );
     const spec = "inspection";

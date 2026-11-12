@@ -992,3 +992,5 @@ Checkout destroy admission has one [read-only SSH exception](/reference/remote-p
 Instance migration checks selected environment services before downtime. Its mail check uses the admitted [development mail endpoint](/reference/development-containers#development-mail), so the preflight and mail setup share one eligibility decision.
 
 Route site publication batches certificate, link, account-copy, trust and Caddy file work in one Node module. It uses the Node’s existing Python and Caddy prerequisites; see [Route publication](/reference/routes). Instance create shares admitted input with its site child, which retains a separate scratch folder and cleanup.
+
+A [migrated Schedule](/reference/schedules#container-timers) uses the same existing SSH account and Incus access to read its container journal and timer state. Its local timer runs only while the container runs, without a Node trigger or a new credential.

@@ -9,6 +9,7 @@ enum ScheduleTrigger: string
 {
     case Swamp = 'swamp';
     case Node = 'node';
+    case Container = 'container';
 
     /** The calendar's form picks the trigger: a cron expression is native; a systemd calendar keeps the Node timer. */
     public static function forCalendar(string $calendar): self

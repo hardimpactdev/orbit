@@ -146,7 +146,7 @@
   block:
     - name: Read the units that start at boot, the Process units and the Process folders
       ansible.builtin.command: { argv: [incus, query, "--", "{{ files_route }}{{ item }}"] }
-      loop: [/etc/systemd/system/multi-user.target.wants, /etc/systemd/system, /etc/orbit/processes]
+      loop: [/etc/systemd/system/multi-user.target.wants, /etc/systemd/system, /etc/orbit/processes, /etc/systemd/system/timers.target.wants, /etc/orbit/schedules]
       register: copy_read
       changed_when: false
       failed_when: copy_read.rc != 0 and 'not found' not in (copy_read.stderr | lower)
@@ -160,7 +160,13 @@
                | map('regex_replace', '^', '/etc/systemd/system/') | list)
              + ((copy_read.results[2].stdout | default('[]', true) | from_json)
                | reject('in', container.processes | default([]) | map(attribute='id') | map('string') | list)
-               | map('regex_replace', '^', '/etc/orbit/processes/') | list) }}
+               | map('regex_replace', '^', '/etc/orbit/processes/') | list)
+             + ((copy_read.results[1].stdout | default('[]', true) | from_json) | select('match', '^orbit-schedule-.*[.](service|timer)$')
+               | map('regex_replace', '^', '/etc/systemd/system/') | list)
+             + ((copy_read.results[3].stdout | default('[]', true) | from_json) | select('match', '^orbit-schedule-.*[.]timer$')
+               | map('regex_replace', '^', '/etc/systemd/system/timers.target.wants/') | list)
+             + ((copy_read.results[4].stdout | default('[]', true) | from_json) | select('match', '^.*[.](sh|complete)$')
+               | map('regex_replace', '^', '/etc/orbit/schedules/') | list) }}
     - name: Keep the default's units from starting in the copy
       when: copy_remove | length > 0
       ansible.builtin.command:
@@ -571,6 +577,16 @@
       when: foreign_units | length > 0
       ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'daemon-reload'] }}" }
       changed_when: true
+
+# A migrated Schedule is installed disabled only after the workspace copy, before any application Process starts.
+- name: Install carried container Schedules disabled
+  tags: [processes]
+  when: phase == 'processes' and intent.migrate is defined
+  ansible.builtin.include_tasks:
+    file: tasks/instance-migrate-schedules.yml
+    apply: { tags: [processes] }
+  vars:
+    migrate: "{{ intent.migrate }}"
 
 # FrankenPHP and the Project's other development Processes are `orbit-*` units, so a runtime folder update restarts them too. A
 # Process's environment file is named by the digest of its content, so a changed value is a new file and a changed unit.

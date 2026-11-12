@@ -159,7 +159,7 @@ When the restore itself fails, the task names the failed step and Orbit keeps th
 
 The retirement of the checkout is the last step. When only that step fails, the Instance stays in its container, the task fails with `instance.migrate_retire_failed`, and the source or retained checkout stays on the Node. A retirement check that finds a new blocker reports its refusal code with the same outcome, leaving the source untouched.
 
-Schedule timers stop before copying. A rollback restores their exact captured enabled and active states after the failed container is gone. Success replaces only the moved Schedules’ checkout-dependent services; their UUID timers stay on the Node.
+Schedule timers stop before copying. A rollback restores their exact captured enabled and active states after the failed container is gone. Success activates their container pairs and removes the host pairs. The source timezone is made explicit in the container timer; the stored calendar stays unchanged.
 
 The command starts a task and follows it until it ends, as [`instance:deploy`](/cli/instance/deploy) does. Ctrl-C stops following, not the move, and exits 130.
 
@@ -198,6 +198,8 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `schedule.container_trigger_unsupported` | A named Schedule uses a native workflow with fixed placement. Only registered Node timers move. |
 | `schedule.container_state_unsupported` | A named Schedule is not active on this Node or has an unfinished Operation. |
 | `schedule.container_account_unsupported` | A named Schedule’s recorded host account is unavailable. Container execution maps explicitly to `orbit`. |
+| `schedule.container_timezone_unsupported` | The source timer timezone cannot be read safely; nothing has stopped yet. |
+| `schedule.container_command_unavailable` | The captured private Schedule command is missing or changed. Repeat migration after the Gateway and workflow upgrade together; nothing has stopped yet. |
 | `schedule.container_shell_unsupported` | A named Schedule’s shell is not `/bin/bash`. |
 | `schedule.container_path_unsupported` | A named Schedule’s working directory is missing, outside the checkout, has dot segments or uses a symlink. |
 | `schedule.container_command_unsupported` | A named Schedule’s command is outside the supported literal invocation form, references an external path or missing PHP build, or uses a symlink. See [Schedule migration](/reference/schedules#checkout-migration). |

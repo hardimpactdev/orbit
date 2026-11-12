@@ -1,5 +1,5 @@
 ---
-# A Node timer remains the Schedule's Gateway trigger. Its command enters the container through task-command-run.
+# Registered Node timers become local container timers at cutover.
 # Capture ALL timers before stopping ANY writer. Rollback restores observed activation, not just desired intent.
 - name: Check and capture every Schedule before downtime
   when: phase == 'quiesce' and schedule_phase == 'check' and migrate.schedules | default([]) | length > 0
@@ -50,34 +50,34 @@
        | default('[]', true) | from_json }}
   loop_control: { label: "{{ item.schedule.id }}:{{ item.schedule.name }}" }
 
-# The container is now the Instance. Replace only these services; keep timer UUIDs/calendar and the host journal.
-- name: Replace the moved Schedule services
-  when: phase == 'retire'
-  ansible.builtin.copy:
-    content: "{{ (lookup('ansible.builtin.template', '../templates/instance-migrate-schedule.j2') | from_json).service }}"
-    dest: "/etc/systemd/system/{{ schedule.service }}"
-    owner: root
-    group: root
-    mode: "0644"
+# A failed install is before cutover: the normal restore removes the container then resumes the captured host timers.
+- name: Install the container Schedules disabled
+  when: phase == 'processes'
+  ansible.builtin.include_tasks:
+    file: instance-migrate-schedule-check.yml
+    apply: { tags: [always] }
   loop: "{{ migrate.schedules | default([]) }}"
   loop_control: { loop_var: schedule, label: "{{ schedule.id }}:{{ schedule.name }}" }
-  notify: Reload the retired Process units
 
-- name: Remove only the moved Schedules' obsolete command and callback files
+# Cutover already happened. No Schedule error can fail retirement or invoke restore.
+- name: Activate and retire each carried Schedule
   when: phase == 'retire'
-  ansible.builtin.file: { path: "/etc/orbit/schedules/{{ item.0.id }}{{ item.1 }}", state: absent }
-  loop: "{{ (migrate.schedules | default([])) | product(['.sh', '.complete']) | list }}"
-  loop_control: { label: "{{ item.0.id }}{{ item.1 }}" }
-
-- name: Load the replacement Schedule services
-  when: phase == 'retire' and migrate.schedules | default([]) | length > 0
-  ansible.builtin.meta: flush_handlers
-
-- name: Resume the moved Schedule timers
-  when: phase == 'retire'
-  ansible.builtin.systemd_service:
-    name: "{{ item.timer }}"
-    state: "{{ 'started' if item.desired == 'enabled' else 'stopped' }}"
-    enabled: "{{ item.desired == 'enabled' }}"
+  ansible.builtin.include_tasks:
+    file: instance-migrate-schedule-check.yml
+    apply: { tags: [always] }
   loop: "{{ migrate.schedules | default([]) }}"
-  loop_control: { label: "{{ item.id }}:{{ item.name }}" }
+  loop_control: { loop_var: schedule, label: "{{ schedule.id }}:{{ schedule.name }}" }
+
+- name: Keep the named Schedule outcomes
+  when: phase == 'retire'
+  ansible.builtin.copy:
+    content: "{{ {'schedules': schedule_outcomes | default([])} | to_json }}"
+    dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/schedule-result.json"
+    mode: "0600"
+  failed_when: false
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"

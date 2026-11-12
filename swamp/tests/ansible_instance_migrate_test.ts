@@ -40,6 +40,9 @@ type MigrationSchedule = {
   container_user: string;
   container_home: string;
   container_shell: string;
+  path: string;
+  environment_file: string;
+  fixture_command: string;
 };
 
 /** Ownership needs root; the modes stay. UFW rules live in a file of the fixture, one JSON line each: added, and removed again. */
@@ -72,6 +75,7 @@ function transform(task: Task): Task {
 
 /** Only the Schedule task's host paths are remapped; container paths and shared unit contracts stay literal. */
 function scheduleHostPaths(value: unknown): unknown {
+  if (typeof value === "string" && (value.startsWith("{{ incus_project") || value.startsWith("{{ as_root"))) return value;
   if (typeof value === "string") return value
     .replaceAll("/etc/systemd/system/", "{{ lookup('ansible.builtin.env', 'HOST_FIXTURE') }}/host/systemd/")
     .replaceAll("/etc/orbit/schedules/", "{{ lookup('ansible.builtin.env', 'HOST_FIXTURE') }}/host/schedules/");
@@ -123,7 +127,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({"network-acls": [{name: "orbitinst0-egress", egress: [], ingress: []}]}));
   Deno.writeTextFileSync(
     `${folder}/bin/incus`,
-    `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-migrate-incus.ts", import.meta.url).pathname}' "$@"\n`,
+    `#!/bin/sh\ncase " $* " in *" systemd-analyze verify "*) exit 0;; esac\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-migrate-incus.ts", import.meta.url).pathname}' "$@"\n`,
   );
   Deno.chmodSync(`${folder}/bin/incus`, 0o755);
   Deno.copyFileSync(new URL("instance_migrate_files.py", root), `${folder}/instance_migrate_files.py`);
@@ -298,6 +302,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
           "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/${playbook}`],
         env: {
           HOST_FIXTURE: folder,
+          ORBIT_SCHEDULE_COMMANDS: JSON.stringify({schedule_commands: Object.fromEntries(migrate.schedules.map((row) => [row.id, (row as MigrationSchedule).fixture_command]))}),
           ORBIT_PROCESS_ENVIRONMENTS: Deno.readTextFileSync(`${folder}/process-environments.json`),
           PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
           ANSIBLE_NOCOLOR: "1",
@@ -319,9 +324,10 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     },
     /** The phases of a move up to the copied files. */
     build() {
-      for (const phase of ["container", "quiesce", "workspace", "files"]) {
-        const result = this.run(phase);
-        assert(result.ok, `${phase}: ${result.output}`);
+      this.buildBatched();
+      if (migrate.schedules.length) {
+        const schedules = this.run("processes");
+        assert(schedules.ok, schedules.output);
       }
     },
     state: () => JSON.parse(Deno.readTextFileSync(`${folder}/state.json`)),
@@ -1130,6 +1136,9 @@ function migrationSchedules(f: ReturnType<typeof fixture>, desired: "enabled" | 
     container_user: "orbit",
     container_home: "/home/orbit",
     container_shell: "/bin/bash",
+    path: "/usr/bin:/bin",
+    environment_file: "/srv/workspace/.env",
+    fixture_command: command.replaceAll(f.checkout, "/srv/workspace"),
   };
   const input = {
     id,
@@ -1206,16 +1215,17 @@ for (const [desired, kind] of [["enabled", "current"], ["disabled", "agent"], ["
         assert(exists(f.checkout));
         const retired = f.run("retire");
         assert(retired.ok, retired.output);
-        const service = Deno.readTextFileSync(schedules.servicePath);
-        assert(service !== schedules.service);
-        assert(!service.includes(f.checkout));
-        assert(service.includes("WorkingDirectory=/\n"));
-        assert(service.includes(`/schedules/${schedules.schedule.id}/run`));
-        assert(service.includes(schedules.schedule.mapped_command_hash));
-        assertEquals(Deno.readTextFileSync(schedules.timerPath), schedules.timer);
+        assert(!exists(schedules.servicePath));
+        assert(!exists(schedules.timerPath));
+        const service = Deno.readTextFileSync(f.rootfs + "/etc/systemd/system/" + schedules.schedule.service);
+        const timer = Deno.readTextFileSync(f.rootfs + "/etc/systemd/system/" + schedules.schedule.timer);
+        assert(service.includes("User=orbit\n"));
+        assert(service.includes('WorkingDirectory="/srv/workspace"\n'));
+        assert(timer.includes("Persistent=false\n"));
+        assert(timer.includes("OnCalendar=" + schedules.schedule.calendar));
         assert(!exists(schedules.scriptPath));
         assert(!exists(schedules.callbackPath));
-        assertEquals(schedules.host()[schedules.schedule.timer], { state: desired === "enabled" ? "started" : "stopped", enabled: desired === "enabled" });
+        assertEquals(schedules.host()[schedules.schedule.timer], {state: "stopped", enabled: false});
         assert(!exists(f.checkout));
         schedules.assertUnrelated();
       } finally { f.cleanup(); }
@@ -1267,11 +1277,12 @@ Deno.test({
       assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
       assertEquals(f.result().preflight_refused, false);
       assertEquals(f.state().containers["instance-7"].status, "Running");
-      assertEquals(schedules.host()[schedules.schedule.timer], { state: "started", enabled: true });
-      const service = Deno.readTextFileSync(schedules.servicePath);
-      assert(service.includes("WorkingDirectory=/\n"));
+      assertEquals(schedules.host()[schedules.schedule.timer], { state: "stopped", enabled: false });
+      assert(!exists(schedules.servicePath));
+      assert(!exists(schedules.timerPath));
+      const service = Deno.readTextFileSync(f.rootfs + "/etc/systemd/system/" + schedules.schedule.service);
+      assert(service.includes("User=orbit\n"));
       assert(!service.includes(f.checkout));
-      assertEquals(Deno.readTextFileSync(schedules.timerPath), schedules.timer);
       assert(!exists(schedules.scriptPath));
       assert(!exists(schedules.callbackPath));
       assertEquals(Deno.readTextFileSync(`${f.checkout}/index.php`), "late edit kept for recovery\n");

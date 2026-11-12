@@ -265,3 +265,32 @@ Deno.test("invalid or incomplete copied-file receipts do not claim a count", asy
         await Deno.remove(folder, { recursive: true });
     }
 });
+
+Deno.test("carried Schedule activation failures and missing receipts warn without failing completed migration", async () => {
+    const schedule = {id: "11111111-1111-4111-8111-000000000001", name: "laravel-scheduler"};
+    const intent = {...defaultIntent, migrate: {schedules: [schedule]}};
+    const folder = await Deno.makeTempDir();
+    try {
+        for (const receipt of [
+            {...schedule, outcome: "activated"},
+            {...schedule, outcome: "disabled"},
+            {...schedule, outcome: "not_activated", cause: "schedule.container_activation_failed"},
+            {...schedule, outcome: "not_activated"},
+            {id: "invalid", name: schedule.name, outcome: "activated"},
+        ]) {
+            await Deno.writeTextFile(folder + "/schedule-result.json", JSON.stringify({schedules: [receipt]}));
+            const observed = result(intent, moved, workspace, null, await writtenFailure(folder));
+            assertEquals(observed.ready, true);
+            assertEquals(observed.moved, true);
+            assertEquals(observed.restored, false);
+            assertEquals(observed.schedules[0].id, schedule.id);
+            assertEquals(observed.schedules[0].name, schedule.name);
+            if (receipt.id === schedule.id && ["activated", "disabled"].includes(receipt.outcome)) {
+                assertEquals(observed.warnings, undefined);
+            } else {
+                assertEquals(observed.schedules[0].outcome, "not_activated");
+                assertEquals(observed.warnings[0].code.startsWith("schedule.container_"), true);
+            }
+        }
+    } finally { await Deno.remove(folder, {recursive: true}); }
+});

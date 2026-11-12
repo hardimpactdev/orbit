@@ -80,8 +80,8 @@ sequenceDiagram
     %%> Result:
     %%> - the shared path status and exact-line result, with line numbers only; conflicts skip the line rule
   end
-  %%> - installs carried Schedule service/timer pairs disabled inside the container, after the workspace copy; services run as orbit
   SW->>C: Start the container<br/>Processes · T3 · seed
+  %%> - first installs carried Schedule pairs disabled, after the workspace copy and before application Processes start; services run as orbit
   %%> - container units use `network.target` and nonblocking starts; reads all moved desired-running Processes active with no pending job, waits 5 seconds once for the whole set, then requires each still active with the same positive MainPID and NRestarts; failure names the Process with `instance.migrate_processes_failed` and restores before cutover
   %%> What it does:
   %%> - starts FrankenPHP and the Instance's existing Processes as `orbit`, with the same ids and desired states; their environment files come through the vault

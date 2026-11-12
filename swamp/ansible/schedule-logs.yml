@@ -26,12 +26,13 @@
       orbit_schedule_journal:
         schedule_id: "{{ intent.schedule.id }}"
         lines: "{{ intent.read.lines | int }}"
+        container: "{{ {'project': intent.container.project, 'name': intent.container.name} if intent.container is defined else omit }}"
       register: schedule_journal
       changed_when: false
       no_log: true
     - name: Keep the bounded read private
       ansible.builtin.copy:
-        content: "{{ {'state': 'active', 'output': schedule_journal.output, 'truncated': schedule_journal.truncated} | to_json(ensure_ascii=false) }}"
+        content: "{{ {'state': 'active', 'output': schedule_journal.output, 'truncated': schedule_journal.truncated} | combine(schedule_journal.observation) | to_json(ensure_ascii=false) }}"
         dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
         mode: "0600"
       delegate_to: localhost

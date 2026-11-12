@@ -11,4 +11,40 @@
   {%- endfor -%}
   {{- output.text -}}
 {%- endmacro -%}
-{{ {'service': render(templates.service, '/', mapped=true), 'timer': render(templates.timer, schedule.source_directory), 'callback': render(templates.callback, schedule.source_directory), 'source_services': [render(templates.service, schedule.source_directory), render(templates.agentService, schedule.source_directory), render(templates.directService, schedule.source_directory, direct=true)]} | to_json }}
+{%- set container_service -%}
+[Unit]
+Description=Orbit Schedule {{ schedule.id }}
+X-Orbit-Schedule-ID={{ schedule.id }}
+After=network.target
+
+[Service]
+Type=oneshot
+User=orbit
+Group=orbit
+UMask=0007
+WorkingDirectory="{{ schedule.directory | replace('\\', '\\\\') | replace('"', '\\"') | replace('%', '%%') }}"
+Environment=HOME=/home/orbit
+Environment=PATH={{ schedule.path | default('') | replace('%', '%%') }}
+EnvironmentFile=-"{{ schedule.environment_file | default('') | replace('\\', '\\\\') | replace('"', '\\"') | replace('%', '%%') }}"
+ExecStart=/bin/bash /etc/orbit/schedules/{{ schedule.id }}.sh
+TimeoutStartSec={{ schedule.timeout_seconds }}
+TimeoutStopSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=orbit-schedule-{{ schedule.id }}
+{% endset -%}
+{%- set container_timer -%}
+[Unit]
+Description=Orbit Schedule timer {{ schedule.id }}
+X-Orbit-Schedule-ID={{ schedule.id }}
+
+[Timer]
+OnCalendar={{ container_calendar | default(schedule.calendar) | replace('%', '%%') }}
+Persistent=false
+DeferReactivation=true
+Unit={{ schedule.service }}
+
+[Install]
+WantedBy=timers.target
+{% endset -%}
+{{ {'container_service': container_service, 'container_timer': container_timer, 'service': render(templates.service, '/', mapped=true), 'timer': render(templates.timer, schedule.source_directory), 'callback': render(templates.callback, schedule.source_directory), 'source_services': [render(templates.service, schedule.source_directory), render(templates.agentService, schedule.source_directory), render(templates.directService, schedule.source_directory, direct=true)]} | to_json }}

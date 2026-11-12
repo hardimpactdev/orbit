@@ -13,7 +13,7 @@ sequenceDiagram
     CLI->>GW: schedule:logs <schedule>
     alt migrated Instance Schedule
       Note over GW: Stopped container refuses<br/>schedule.target_inactive · no wake
-      GW->>SW: Read the container Schedule journal<br/>shared runtime inspection
+      GW->>SW: Read container journal<br/>shared runtime inspection
       SW->>N: Read Schedule logs<br/>Ansible · schedule-logs
       N-->>SW: Bounded journal read
       %%> Limits:

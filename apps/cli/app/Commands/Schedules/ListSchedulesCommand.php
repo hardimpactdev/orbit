@@ -82,7 +82,7 @@ final class ListSchedulesCommand extends ScheduleCommand
                 $schedule->name,
                 $schedule->calendar,
                 $schedule->desiredTimerState,
-                $schedule->status,
+                $schedule->timerState ?? $schedule->status,
                 $schedule->lastRunStatus ?? 'never',
             ];
         }
@@ -95,7 +95,7 @@ final class ListSchedulesCommand extends ScheduleCommand
         }
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['UUID', 'Target', 'Name', 'Calendar', 'Desired timer', 'Lifecycle', 'Last run'],
+            ['UUID', 'Target', 'Name', 'Calendar', 'Desired timer', 'State', 'Last run'],
             $rows,
         ));
         $this->writeHumanMessage("Request ID: {$response->requestId}");
