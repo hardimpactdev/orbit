@@ -51,7 +51,9 @@ sequenceDiagram
   %%> - the repository is private, and only the Gateway holds the GitHub App key
   %%> - `.env` can hold secrets, which travel only through the vault
   %%> What it does:
-  %%> - mints a read token for this one repository, valid 1 hour
+  %%> - mints a read token for this one repository, valid 1 hour; confirmed public repositories remain readable anonymously
+  %%> - credential preparation refuses source.github_app_denied before writing the fetch credential, naming the App and owner/repository; install the App or add the repository
+  %%> - source.github_unavailable means GitHub could not supply a credential; it never becomes an empty credential
   %%> - pushes the token and the rendered `.env` into Swamp's vault
   %%> Result:
   %%> - the run reads both with `vault.get`; no step calls the Gateway back

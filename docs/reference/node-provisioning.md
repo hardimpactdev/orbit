@@ -14,13 +14,17 @@ covers:
 
 # Node provisioning
 
-An [Instance container](/reference/development-containers#processes) runs FrankenPHP and development workers as `orbit-*` units inside the container. Its web configuration follows the [container proxy trust rules](/reference/development-containers#php). Container units order after `network.target` and use nonblocking starts with bounded readiness checks. Migration adds a [Process stability check before cutover](/cli/instance/migrate); other lifecycle and direct Process operations keep their own readiness checks. A shared runtime folder update restarts those units in each running container.
+An [Instance container](/reference/development-containers#processes) runs FrankenPHP and development workers as `orbit-*` units inside the container. Its web configuration follows the [container proxy trust rules](/reference/development-containers#php). Container units order after `network.target` and use nonblocking starts with bounded readiness checks.
 
-Private Node-store conversion belongs to launch or explicit default-deploy seed capture, as the app user; Node convergence does not convert stores. The [clone copy](/reference/development-containers#lifecycle) supplies its complete root disk device, including when the seed inherited it from the Node's profile.
+Migration reads only [application and unit-named environment files](/cli/instance/migrate#before-you-start) in its service preflight. Migration adds a [Process stability check before cutover](/cli/instance/migrate); other lifecycle and direct Process operations keep their own readiness checks. A shared runtime folder update restarts those units in each running container. The [clone copy](/reference/development-containers#lifecycle) supplies its complete root disk device, including when the seed inherited it from the Node's profile.
 
-Migrate and clone launch copy the recipe Node into a private writable store and fetch pins as the app user. This release changes no image, boot unit, startup hook or converge task. Fresh default creates retain the stock shared store and report that pins are not prepared. Existing stores are unchanged by converge.
+Private Node-store conversion belongs to launch or explicit default-deploy seed capture, as the app user; Node convergence does not convert stores.
+
+Migrate and clone launch copy the recipe Node into a private writable store and fetch pins as the app user. This release changes no image, boot unit, startup hook or converge task. Fresh default creates start from the stock shared store and report that pins are not prepared for their first Process start; seed capture can then prepare the store for clones. Existing stores are unchanged by converge.
 
 Preparing an `app-dev` Node for [Instance containers](/reference/development-containers#prepare-a-node) keeps its existing checkout Instances. Each checkout moves only through [`instance:migrate`](/cli/instance/migrate), after the container host is ready. The role installs the profile's default-reject NIC policy from the admitted common ACL name. Before starting an image builder or clone probe, it uses the same [effective-NIC gate](/reference/development-containers#network) as Instance starts. It also replaces old bridge union ACL references on existing NICs with the common NIC ACL, retaining their reject defaults. Its read-only end check repeats the audit, including stopped containers. One converge applies this to an existing host without restarting its containers.
+
+Migration checks remote source access before quiesce using the Node's existing Git transport. Its temporary fetch credential is mode 0600 and is removed after success, refusal or timeout; no source token enters the container.
 
 Container Process journal and state reads use this Node’s existing SSH account and Incus access, under the [transport exception](/reference/node-agent#commands). They add no account, group membership or sudo rule. The Node already requires `python3` for the container host’s effective-NIC gate and bridge reader.
 
@@ -973,7 +977,7 @@ For a web-serving Project, its `checkout` phase also gives Caddy its access to t
 
 The withdrawal playbook `route-withdraw.yml` keeps its remote tasks few, because each costs about 0.4 s: one command checks every file it will replace, and one removes every certificate folder.
 
-The Route playbooks `route-create-site.yml` and `route-withdraw.yml` work the same way. The withdrawal has two phases, `read` and `apply`: between them Swamp composes the result and writes `read.json` and `plan.json` into the run folder, because a Caddyfile is too large for a step output or an environment value.
+The Route playbooks `route-create-site.yml` and `route-withdraw.yml` work the same way. Route access rows distinguish optional Laravel storage paths from required web roots. The site phase stats optional paths and grants only those present; it never creates checkout folders. The withdrawal has two phases, `read` and `apply`: between them Swamp composes the result and writes `read.json` and `plan.json` into the run folder, because a Caddyfile is too large for a step output or an environment value.
 
 Task VM host preparation belongs to the [base refresh](/reference/compute-drivers#prepare-an-incus-host). Its shared Ansible phase prepares both native-ZFS and loop-backed pools; loop hosts receive a 2 GiB ARC cap to retain memory for their own services. Before the first guest boot, it opens catalog-owned DHCP input on the task bridge and DNS input to the bridge address, as well as forwarding. Settings removal and reachable Node removal withdraw the three input rules through the same Ansible phase. This lets a guest obtain its address and resolve package servers on a host with default-deny input.
 

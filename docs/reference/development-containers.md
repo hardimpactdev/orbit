@@ -433,6 +433,8 @@ For a new development container on a Node with the main Mailpit, the normal envi
 
 The migration environment preflight uses this same admitted mail endpoint. Selected SMTP on `127.0.0.1` or `localhost` at port 1025 or 2525 passes when the move will apply the mail path. Without an eligible main Mailpit endpoint, it refuses with the reason. Other hosts and ports retain the ordinary endpoint check. Direct `::1` refuses because no IPv6 listener exists. The stock image keeps Ubuntu's localhost entries for IPv4 and IPv6; PHP tries the IPv6 address first and can fall back to IPv4.
 
+Both environment checks read only the application directory’s `.env`, each Process working directory’s `.env` inside the checkout, the environment files named by the Instance’s Process units, and each Schedule’s source working directory `.env`. The application directory uses the same root/subfolder rule as the container. They never walk dependency trees for `.env` fixtures. This selector is not a containment guard: explicitly named absolute paths and symlink targets are followed.
+
 Both environment checks read the source checkout before the copy. A `log` mailer is not selected there. No selector check runs after the mailer changes. Migration applies the same path and exact-line rule after copying `.env` and before starting application Processes. A mail failure records `instance.mail_update_failed` in `warnings` and does not fail or roll back an otherwise successful move. Run [`instance:mail:update`](/cli/instance/mail-update) to repair it. A listener or unit conflict succeeds with its named skip and never changes the mailer.
 
 ## Model access
@@ -692,6 +694,8 @@ The next request to its Route, a Conn connection, a task turn or a deployment wa
 The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/sleep.mmd) and [wake](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/wake.mmd) charts have the steps. A container never prunes its dependencies: a stopped clone shares most of its blocks with the default Instance.
 
 ### Migrate a checkout Instance
+
+Before downtime, migration resolves the [deploy credential](/reference/github-app#instance-source-credentials) and makes one read of the Project's default branch with a 30-second limit. The Instance's local branch need not be pushed; its existing retirement checks still apply. Projects using `gh_cli` skip this App preflight. An unreadable source or timeout leaves the checkout serving. The local checkout still supplies the migration's mirror and files.
 
 [`orbit instance:migrate INSTANCE`](/cli/instance/migrate) moves one existing checkout Instance into a container on its Node, with its code. A default Instance moves first, and a non-default Instance before its default refuses with `instance.default_not_migrated`. The command is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
 

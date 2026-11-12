@@ -2,9 +2,22 @@
 # A Route's access on one Node: Caddy denied the checkout and granted the served roots (one command for each kind of path, in order),
 # and the URL line of the served directories' .env. The importing play sets `access` (the Route intent with `acl` and `url_lines`)
 # and `node_ids` (the Node, as a number and as text); each row names its Node.
+# Older admitted rows have no optional paths and keep their original strict argv.
+- name: Read optional Route access paths
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: true
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  register: optional_route_paths
+  become: true
+  loop: "{{ access.acl | default([]) | selectattr('node_id', 'in', node_ids) | map(attribute='optional_paths', default=[]) | flatten | unique | list }}"
 - name: Grant Caddy access to the served roots
   ansible.builtin.command:
-    argv: "{{ ['timeout', '120'] + item.argv }}"
+    argv: "{{ ['timeout', '120'] + (item.argv | reject('in', missing_optional_paths) | list) }}"
+  vars:
+    missing_optional_paths: "{{ optional_route_paths.results | default([]) | selectattr('stat.exists', 'equalto', false) | map(attribute='item') | list }}"
   register: acl
   become: true
   loop: "{{ access.acl | default([]) | selectattr('node_id', 'in', node_ids) | list }}"

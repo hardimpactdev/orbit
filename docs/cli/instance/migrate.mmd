@@ -41,12 +41,18 @@ sequenceDiagram
   %%> - a non-default Instance's placeholder model key goes to the vault
   GW->>SW: Start run, full intent<br/>operation-instance-migrate
   GW-->>CLI: 202 Accepted<br/>task ID
+  SW->>SW: Write source credential<br/>source-credential
+  %%> What it does:
+  %%> - resolves the same repository-scoped Contents read credential as deploy; a confirmed public repository uses anonymous HTTPS
+  %%> - source.github_app_denied names the App and repository; source.github_unavailable distinguishes a GitHub failure; no refused credential is written
+  %%> - gh_cli keeps the existing local-copy migration without this GitHub App preflight
   SW->>N: Launch, probe container<br/>Ansible · tags container
   %%> What it does:
+  %%> - makes one HTTPS read of the Project default branch with the deploy credential; the Instance branch stays local for copying and retirement, before any Node change or quiesce; its 30-second bound allows slow successful reads; source.read_timed_out says the source could not be reached in 30 s, source.head_unavailable names missing refs or network failures; Git authentication refusal names the App and repository with source.github_app_denied
   %%> - before any Node change, checks the recorded branch and every planned retirement; a refusal leaves prior resources untouched
   %%> - checks checkout symlinks and dependency package links before creating the container, skipping `.git` and installed package contents; broken links or targets outside the checkout refuse with `instance.migrate_symlink_unsupported`, naming every path and target
   %%> - retirement preflight refuses tracked staged or unstaged changes, other worktrees, unpushed local branches or detached HEAD and stashes, with their existing named errors; ordinary untracked files, ignored or not, do not block; submodule changes, including untracked submodule files, still refuse because the parent archive cannot preserve them; it reads local refs only
-  %%> - checks service hosts selected by cache, session, queue, broadcasting, database or mail drivers (never by Redis client or endpoint declarations alone) in the checkout and nested app `.env` files before any probe or Node change; direct services require an exact endpoint from the shared container access plan; unsupported endpoints refuse with `instance.migrate_env_service_unreachable`, naming the file, key and host:port without credentials; unreadable syntax names only the file and line, and traversal/read failures name only the path
+  %%> - checks service hosts selected by cache, session, queue, broadcasting, database or mail drivers (never by Redis client or endpoint declarations alone) in the primary application `.env`, each Process working-directory `.env` inside the checkout, and environment files named by its Processes or Schedules before any probe or Node change; direct services require an exact endpoint from the shared container access plan; unsupported endpoints refuse with `instance.migrate_env_service_unreachable`, naming the file, key and host:port without credentials; unreadable syntax names only the file and line, and file read failures name only the path
   %%> - selected SMTP on 127.0.0.1 or localhost, port 1025 or 2525, is satisfied by the same admitted main Mailpit endpoint used by the mail phase; absent mail explains the missing forwarder, and direct ::1 refuses because listeners are IPv4 only; both selector checks read the source before the copy and mailer rule
   %%> - deletes a container that an earlier failed move left, then creates and starts the new container through the shared container phase; discard leaves shared bridge endpoint rules for host reconciliation
   %%> - each attached target gets an exact TCP allow in both the bridge and NIC ACLs; both keep default reject. Endpoint adds reread on ETag conflict, at most five attempts with a one-second delay

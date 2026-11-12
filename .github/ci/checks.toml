@@ -2133,6 +2133,7 @@ inputs = [
   "swamp/extensions/behaviors/operations/instance-vp-command/requirements.ts",
   "swamp/extensions/behaviors/operations/instance-vp-command/steps.ts",
   "swamp/workflows/workflow-operation-instance-create.yaml",
+  "swamp/workflows/workflow-operation-instance-migrate.yaml",
   "swamp/workflows/workflow-operation-instance-deploy-direct.yaml",
   "swamp/workflows/workflow-operation-process-container.yaml",
   "swamp/workflows/workflow-route-withdraw.yaml",
@@ -2159,7 +2160,7 @@ inputs = [
 [[fixture]]
 file = "swamp/tests/instance_migrate_env_test.py"
 cost = 1
-inputs = ["swamp/ansible/library/orbit_migrate_env.py", "swamp/tests/fixtures/migrate-env-services.json"]
+inputs = ["swamp/ansible/library/orbit_migrate_env.py", "swamp/ansible/tasks/instance-migrate-env-check.yml", "swamp/tests/fixtures/migrate-env-services.json"]
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_dotenv_test.py"
@@ -2734,9 +2735,11 @@ inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts"
 
 [[fixture]]
 file = "swamp/tests/ansible_route_site_test.py"
-cost = 15
+cost = 23
 slices = false
 inputs = [
+  "swamp/tests/fixtures/route-access.json",
+  "apps/gateway/app/Domain/Routes/RouteWebRootCommands.php",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/library/orbit_route_site.py",
   "swamp/ansible/route-create-site.yml",
@@ -2758,6 +2761,9 @@ inputs = [
 
 "test_site_publish_renames_the_validated_inode_with_final_metadata_before_interruption" = 1
 
+"test_real_site_phase_skips_missing_optional_storage_but_requires_the_web_root" = 7
+"test_route_ansible_failures_reach_stderr_and_module_diagnostics_never_expose_content" = 1
+
 [[fixture]]
 file = "swamp/tests/instance_destroy_git_test.py"
 cost = 18
@@ -2778,7 +2784,7 @@ inputs = [
 "test_target_directory_marker_resolve_and_git_failures_keep_path_and_cause" = 4
 "test_alternates_dependency_and_symlinked_candidate_are_confirmed" = 1
 "test_inspect_never_walks_checkout_contents_or_accepts_a_remove_action" = 1
-"test_workflow_and_source_removal_are_identical_to_the_pre_reland_main" = 1
+"test_source_removal_stays_unchanged_and_workflow_never_checks_dependencies" = 1
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts"
@@ -2838,3 +2844,38 @@ inputs = [
 "test_ansible_bootstrap_swamp_front" = 6
 "test_validated_inode_has_final_metadata_at_interrupted_rename" = 6
 "test_shape_live_proof_stages_validates_and_renames" = 1
+
+[[fixture]]
+file = "swamp/tests/instance_destroy_routeless_test.ts"
+cost = 2
+slices = false
+inputs = ["swamp/workflows/workflow-operation-instance-destroy.yaml"]
+[fixture.case_costs]
+"destroy skips withdrawal without publications including old admission without mutation keys" = 1
+"Route-less checkout and linked worktree skip the child and still remove the real source" = 1
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_route_withdraw_test.ts"
+cost = 12
+slices = false
+inputs = [
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/route-withdraw.yml",
+  "swamp/ansible/tasks/caddy-publish.yml",
+  "swamp/workflows/workflow-operation-instance-destroy.yaml",
+]
+[fixture.case_costs]
+"pending Route withdrawal removes partial publication and CSR residue or accepts an absent site with real Ansible" = 12
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_migrate_source_test.ts"
+cost = 16
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-migrate-phase.yml",
+  "swamp/ansible/tasks/instance-migrate-retirement-check.yml",
+]
