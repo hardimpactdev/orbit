@@ -66,3 +66,5 @@ The Gateway refuses removal with `route.target_conflict` while an active Instanc
 | `operation.target_busy` | Another task holds the Route. |
 | `http.404` | The Route is unknown. |
 | `node_access.required` | The caller has no access grant to the Node the Route is scoped to, or, for a Cluster-scoped Route, to any member Node; for a public custom proxy Route, to its Ingress and Process Nodes. |
+
+Orbit removes private DNS only after site withdrawal and cleanup checks pass. If publication refuses before changing the site, the site remains served and resolvable. A failure after withdrawal starts records the Route as `retiring`; completed work stays for the next attempt.

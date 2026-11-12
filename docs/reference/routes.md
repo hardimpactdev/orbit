@@ -62,16 +62,15 @@ A failure before the cutover leaves the old Route serving: a domain replacement 
 
 Caddy convergence starts `operation-route-caddy` after intent commits. It reads the current public render through the bound Operation GET. Swamp validates the candidate and runs the filesystem swap and Caddy service commands locally with sudo, then reports the result. The Node agent only observes; it does not publish Caddy. The Gateway neither executes Caddy nor exposes a Caddy publication primitive. The shared `swamp.direct_writers` setting accepts only `direct` for this kind; selecting the removed writer refuses admission. Rollback is a revert PR.
 
-Route destroy and withdrawal follow the chart [`route/destroy.mmd`](/cli/route). Admission captures every Node the Route touches and renders each one's whole Caddyfile without the Route. The run removes private DNS outside the TLD and waits the DNS grace. Then each Node gets that Caddyfile and loses the Route's certificate scopes, and development pools converge. LAN tuples and public ports that no published Route needs close last.
+Route destroy and withdrawal follow the chart [`route/destroy.mmd`](/cli/route). Admission captures every Node the Route touches and renders each one's whole Caddyfile without the Route. Each Node first gets that Caddyfile and loses the Route's certificate scopes, then development pools converge. LAN tuples and public ports that no published Route needs close next. After the removal checks pass, private DNS records and the catalog leave last. There is no DNS grace wait because removal deletes the name rather than moving it.
 
 The end check uses the `check` of the same official behaviors and a native assertion that each result is compliant: no site, scope or rule of the Route is left. A successful check command with a `non_compliant` result fails the removal.
 
-With `--offline`, the run first tries each Node once. A Node that does not answer is skipped by every later step and keeps residue for `node:converge`; a VPN Node is never skipped. On success the Gateway deletes the captured Route rows; a withdrawal keeps them. A failed removal leaves the Route as it was, and its Operation records the failed step:
+With `--offline`, the run first tries each Node once. A Node that does not answer is skipped by every later step and keeps residue for `node:converge`; a VPN Node is never skipped. On success the Gateway deletes the captured Route rows; a withdrawal keeps them. A failure before site withdrawal leaves the Route unchanged. Once withdrawal starts, a failed removal records the Route as `retiring`, with its failed step and error. Confirmed site withdrawal clears its publication flag; an incomplete child keeps the previous flag because some Nodes may still serve it. Completed work stays for the next removal attempt. DNS remains until every earlier step passes, so a refusal before publication leaves the site served and resolvable. The Operation records the failure:
 
 | Error code | Step |
 | --- | --- |
 | `private_dns.publication_failed` | `Remove private DNS` |
-| `route.dns_grace_failed` | `Wait the DNS grace` |
 | `route.withdraw_failed` | `Withdraw site, remove cert` |
 | `route.pool_converge_failed` | `Converge PHP-FPM pools` |
 | `route.lan_firewall_failed` | `Remove unused LAN rules` |
