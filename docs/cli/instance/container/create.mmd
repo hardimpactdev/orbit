@@ -59,12 +59,11 @@ sequenceDiagram
       %%> - MySQL: a dump of the default database restored into the new one
       %%> Runs beside the clone step: Swamp starts both at once.
     end
-    SW->>C: Prepare the private Node store<br/>clone-node-store<br/>tags node-store
-    %%> - preserves downloaded runtimes from the seed, converts an old shared-store link as orbit, and copies the current recipe; workspace preparation fetches a changed branch pin before starting Processes
     SW->>C: Prepare the workspace<br/>native clone-workspace
     %%> What it does:
     %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
     %%> - writes `.env` for `orbit` with group `work`; it keeps the default's `APP_KEY`, because the cloned data is encrypted with it
+    %%> - before Process start, prepares and fetches Node as orbit in this same phase; an inherited private recipe is kept, an old store is converted once, and no Node/Vite consumer leaves the store untouched
     %%> No setup steps:
     %%> - the default Instance installed the dependencies and migrated; a later lockfile change is installed in the workspace
     SW->>C: Prepare the agent<br/>native clone-agent
