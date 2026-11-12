@@ -38,6 +38,8 @@ The command takes the commit and nothing else. The calling Node needs an access 
 
 Built so far: the trust check, the case selection, the run in a task VM and the verdict of each case. The CI job `proof-run` is part of Required checks. A failed case or missing verdict fails it. Capacity waits never pass as a proof. Not built yet: the receipt store.
 
+The CI wrapper waits up to 270 minutes, covering the two-hour admission budget and two-hour execution budget with 30 minutes of margin. Its Actions jobs allow 275 minutes. See [CI time budgets](/reference/implementation-loop) for the separate fast-check limits.
+
 The proof CI summary states the [remaining base-refresh limit](/reference/command-development-pipeline#2-development-environment), including when a run passes.
 
 ## Which commits Orbit proves
