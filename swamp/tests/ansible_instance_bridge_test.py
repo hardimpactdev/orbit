@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -614,7 +615,7 @@ class BridgePolicy(unittest.TestCase):
         with self.assertRaisesRegex(bridge.PolicyError, 'instance.container_endpoint_unresolved'):
             bridge.resolve([endpoint], wildcard + explicit)
 
-    def test_address_change_adds_new_tuple_until_host_reconcile_removes_the_old(self):
+    def test_address_refresh_waits_for_later_confirmation_before_removal(self):
         current = {'description': 'boundary', 'config': {}, 'egress': [], 'ingress': []}
         calls = []
 
@@ -639,6 +640,9 @@ class BridgePolicy(unittest.TestCase):
             with patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.9')):
                 bridge.apply(root, None)
                 self.assertEqual([r['destination'] for r in current['egress']], ['172.17.0.2/32', '172.17.0.9/32'])
+                bridge.apply(root, None)
+                self.assertEqual([r['destination'] for r in current['egress']], ['172.17.0.9/32'])
+                self.assertEqual(bridge.apply(root, None), 0)
                 bridge.apply(root, {**intent, 'admitted_at': 1800000000000001}, True)
                 self.assertEqual([r['destination'] for r in current['egress']], ['172.17.0.9/32'])
             # A successful subset attach cannot clear the refresh unit's failure for another endpoint.
@@ -652,6 +656,233 @@ class BridgePolicy(unittest.TestCase):
                 self.assertEqual(json.loads((root / 'health.json').read_text()), {
                     'error_code': None, 'warnings': [{'code': 'instance.container_endpoint_unresolved', 'host': '10.44.0.7', 'port': 3306}],
                 })
+
+    def test_refresh_of_readmitted_publication_removes_old_address_then_is_unchanged(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=Incus().api) as api:
+            root = Path(directory)
+            docker = {**intent(1), 'endpoints': [{'host': '10.44.0.7', 'port': 3306, 'docker': True}]}
+            with patch.object(bridge.subprocess, 'check_output', return_value=nat()):
+                bridge.apply(root, docker, True)
+            with patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.9')):
+                bridge.apply(root, {**docker, 'admitted_at': 1800000000000002})
+                self.assertEqual(len(list((root / 'endpoints').glob('*.json'))), 2)
+                bridge.apply(root, None)
+                before = {str(p): p.read_bytes() for p in root.rglob('*.json')}
+                api.reset_mock()
+                self.assertEqual(bridge.apply(root, None), 0)
+                self.assertTrue(all(call.args[1] is None if len(call.args) > 1 else True for call in api.call_args_list))
+                self.assertEqual(before, {str(p): p.read_bytes() for p in root.rglob('*.json')})
+
+    def test_refresh_remembers_interrupted_adds_even_when_nat_changes_again(self):
+        for interrupt in ('before_put', 'after_put', 'record_commit'):
+            with self.subTest(interrupt=interrupt), tempfile.TemporaryDirectory() as directory:
+                root, incus = Path(directory), Incus()
+                docker = {**intent(1), 'endpoints': [{'host': '10.44.0.7', 'port': 3306, 'docker': True}]}
+                with patch.object(bridge, 'api', side_effect=incus.api), patch.object(bridge.subprocess, 'check_output', return_value=nat()):
+                    bridge.apply(root, docker, True)
+                record = next((root / 'endpoints').glob('*.json'))
+                state_file = bridge.state_file
+
+                def api(name, value=None, etag=None, deadline=None, incus=incus, interrupt=interrupt):
+                    adding = value is not None and any(row['destination'] == '172.17.0.9/32' for row in value['egress'])
+                    if adding and interrupt == 'before_put':
+                        raise KeyboardInterrupt('writer lost before PUT')
+                    result = incus.api(name, value, etag, deadline)
+                    if adding and interrupt == 'after_put':
+                        raise KeyboardInterrupt('writer lost after PUT')
+                    return result
+
+                def commit(root, kind, value=None, state_file=state_file, interrupt=interrupt, **kwargs):
+                    if (interrupt == 'record_commit' and kind == 'endpoint' and value is not None
+                            and value['translated']['host'] == '172.17.0.9'):
+                        raise KeyboardInterrupt('writer lost before confirmed record commit')
+                    return state_file(root, kind, value, **kwargs)
+
+                with patch.object(bridge, 'api', side_effect=api), patch.object(bridge, 'state_file', side_effect=commit),                         patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.9')), self.assertRaises(KeyboardInterrupt):
+                    bridge.apply(root, None)
+                saved = json.loads(record.read_text())
+                self.assertEqual(saved['translated']['host'], '172.17.0.2')
+                self.assertEqual({row['destination'] for row in saved['translations']}, {'172.17.0.2/32', '172.17.0.9/32'})
+                # Another Docker restart happened before the next timer run.
+                with patch.object(bridge, 'api', side_effect=incus.api), patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.10')):
+                    bridge.apply(root, None)
+                    bridge.apply(root, None)
+                    self.assertEqual([row['destination'] for row in incus.current['egress']], ['172.17.0.10/32'])
+                    self.assertEqual(json.loads(record.read_text())['translated']['host'], '172.17.0.10')
+                    self.assertNotIn('translations', json.loads(record.read_text()))
+                    self.assertEqual(bridge.apply(root, None), 0)
+
+    def test_refresh_tracks_an_ambiguous_add_when_readback_is_unavailable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, incus = Path(directory), Incus()
+            docker = {**intent(1), 'endpoints': [{'host': '10.44.0.7', 'port': 3306, 'docker': True}]}
+            with patch.object(bridge, 'api', side_effect=incus.api), patch.object(bridge.subprocess, 'check_output', return_value=nat()):
+                bridge.apply(root, docker, True)
+            ambiguous = False
+
+            def api(name, value=None, etag=None, deadline=None):
+                nonlocal ambiguous
+                if ambiguous:
+                    raise subprocess.TimeoutExpired('curl', 5)
+                result = incus.api(name, value, etag, deadline)
+                if value is not None:
+                    ambiguous = True
+                    raise subprocess.TimeoutExpired('curl', 5)
+                return result
+
+            with (
+                patch.object(bridge, 'api', side_effect=api),
+                patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.9')),
+                self.assertRaisesRegex(bridge.PolicyError, 'instance.bridge_state_unresolved'),
+            ):
+                bridge.apply(root, None)
+            saved = json.loads(next((root / 'endpoints').glob('*.json')).read_text())
+            self.assertEqual(saved['translated']['host'], '172.17.0.2')
+            self.assertEqual({row['destination'] for row in saved['translations']}, {'172.17.0.2/32', '172.17.0.9/32'})
+            with patch.object(bridge, 'api', side_effect=incus.api), patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.10')):
+                bridge.apply(root, None)
+                bridge.apply(root, None)
+            self.assertEqual([row['destination'] for row in incus.current['egress']], ['172.17.0.10/32'])
+            # Existing unresolved-health policy still requires authoritative convergence.
+            self.assertEqual(json.loads((root / 'health.json').read_text())['error_code'], 'instance.bridge_state_unresolved')
+
+    def test_refresh_keeps_history_until_failed_removal_is_confirmed_absent(self):
+        root_context = tempfile.TemporaryDirectory()
+        self.addCleanup(root_context.cleanup)
+        root, incus = Path(root_context.name), Incus()
+        docker = {**intent(1), 'endpoints': [{'host': '10.44.0.7', 'port': 3306, 'docker': True}]}
+        with patch.object(bridge, 'api', side_effect=incus.api), patch.object(bridge.subprocess, 'check_output', return_value=nat()):
+            bridge.apply(root, docker, True)
+
+        def refuse_removal(name, value=None, etag=None, deadline=None):
+            if value is not None and all(row['destination'] != '172.17.0.2/32' for row in value['egress']):
+                raise bridge.PolicyError('instance.container_bridge_write_failed')
+            return incus.api(name, value, etag, deadline)
+
+        with patch.object(bridge, 'api', side_effect=refuse_removal),                 patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.9')), self.assertRaises(bridge.PolicyError):
+            bridge.apply(root, None)
+            bridge.apply(root, None)
+        record = next((root / 'endpoints').glob('*.json'))
+        saved = json.loads(record.read_text())
+        self.assertEqual(saved['translated']['host'], '172.17.0.9')
+        self.assertEqual([row['destination'] for row in saved['translations']], ['172.17.0.2/32'])
+        with patch.object(bridge, 'api', side_effect=incus.api), patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.10')):
+            bridge.apply(root, None)
+            bridge.apply(root, None)
+            self.assertEqual([row['destination'] for row in incus.current['egress']], ['172.17.0.10/32'])
+            self.assertNotIn('translations', json.loads(record.read_text()))
+
+    def test_refresh_preserves_shared_tuples_mail_database_baseline_and_unknown_rules(self):
+        for shared, newer in [(True, False), (False, True), (False, False)]:
+            with self.subTest(shared=shared, newer=newer), tempfile.TemporaryDirectory() as directory:
+                root, incus = Path(directory), Incus()
+                docker = {'host': '10.44.0.7', 'port': 3306, 'docker': True}
+                others = [{'host': '10.253.0.1', 'port': 1025, 'docker': False},
+                          {'host': '10.44.0.8', 'port': 5434, 'docker': False}]
+                if shared:
+                    others.append({'host': '172.17.0.2', 'port': 3306, 'docker': False})
+                admitted = {**intent(1), 'endpoints': [docker, *others],
+                            'baseline': {'egress': [{'action': 'reject', 'protocol': 'udp', 'state': 'enabled'}]}}
+                with patch.object(bridge, 'api', side_effect=incus.api), patch.object(bridge.subprocess, 'check_output', return_value=nat()):
+                    bridge.apply(root, admitted, True)
+                if newer:
+                    next(row for row in incus.current['egress'] if row.get('destination') == '172.17.0.2/32')['description'] = 'orbit:endpoint:1800000000000009'
+                manual = {**bridge.endpoint_rule('172.17.0.2', 3306, admitted['cidr'], admitted['admitted_at']), 'description': 'manual'}
+                incus.current['egress'].append(manual)
+                protected = [dict(row) for row in incus.current['egress']
+                             if row.get('destination') in ('10.253.0.1/32', '10.44.0.8/32') or row.get('protocol') == 'udp']
+                with patch.object(bridge, 'api', side_effect=incus.api), patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.9')):
+                    bridge.apply(root, None)
+                    bridge.apply(root, None)
+                for rule in [manual, *protected]:
+                    self.assertIn(rule, incus.current['egress'])
+                old = [row for row in incus.current['egress'] if row.get('destination') == '172.17.0.2/32' and row.get('description') != 'manual']
+                self.assertEqual(bool(old), shared or newer)
+
+    def test_address_flap_during_add_defers_retirement_until_a_later_unchanged_run(self):
+        for returned in ('172.17.0.2', '172.17.0.10'):
+            with self.subTest(returned=returned), tempfile.TemporaryDirectory() as directory:
+                root, incus = Path(directory), Incus()
+                table, flipped, writes = [nat()], [False], []
+                docker = {**intent(1), 'endpoints': [{'host': '10.44.0.7', 'port': 3306, 'docker': True}]}
+
+                def api(name, value=None, etag=None, deadline=None, incus=incus, returned=returned, table=table, flipped=flipped, writes=writes):
+                    result = incus.api(name, value, etag, deadline)
+                    if value is not None:
+                        writes.append({row['destination'] for row in value['egress']})
+                        if not flipped[0] and '172.17.0.9/32' in writes[-1]:
+                            # Exactly the reviewer's window: Docker moves after ADD's PUT.
+                            flipped[0] = True
+                            table[0] = nat(returned)
+                    return result
+
+                with patch.object(bridge, 'api', side_effect=api), patch.object(bridge.subprocess, 'check_output', side_effect=lambda *_args, table=table, **_kwargs: table[0]) as read:
+                    bridge.apply(root, docker, True)
+                    writes.clear()
+                    table[0] = nat('172.17.0.9')
+                    read.reset_mock()
+                    bridge.apply(root, None)
+                    self.assertEqual(read.call_count, 1)
+                    self.assertEqual(writes, [{'172.17.0.2/32', '172.17.0.9/32'}])
+                    self.assertEqual({row['destination'] for row in incus.current['egress']}, {'172.17.0.2/32', '172.17.0.9/32'})
+                    bridge.apply(root, None)  # A or C differs from the record's B: retain history again.
+                    self.assertIn('172.17.0.9/32', {row['destination'] for row in incus.current['egress']})
+                    self.assertIn(returned + '/32', {row['destination'] for row in incus.current['egress']})
+                    bridge.apply(root, None)  # Only now is A/C confirmed by a later unchanged observation.
+                    self.assertEqual([row['destination'] for row in incus.current['egress']], [returned + '/32'])
+                    self.assertEqual(bridge.apply(root, None), 0)
+
+    def test_stable_publication_cannot_retire_an_unstable_publications_shared_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, incus = Path(directory), Incus()
+            publications = [{'host': '10.44.0.7', 'port': port, 'docker': True} for port in (3306, 3307)]
+            first, second = nat(), nat().replace('--dport 3306 ', '--dport 3307 ')
+            with patch.object(bridge, 'api', side_effect=incus.api):
+                with patch.object(bridge.subprocess, 'check_output', return_value=first + second):
+                    bridge.apply(root, {**intent(1), 'endpoints': publications}, True)
+                with patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.9') + second):
+                    bridge.apply(root, None)
+                # First publication now confirms B, while the second just moved from A to C.
+                with patch.object(bridge.subprocess, 'check_output', return_value=nat('172.17.0.9') + second.replace('172.17.0.2', '172.17.0.10')):
+                    bridge.apply(root, None)
+                    self.assertEqual({row['destination'] for row in incus.current['egress']}, {'172.17.0.2/32', '172.17.0.9/32', '172.17.0.10/32'})
+                    bridge.apply(root, None)
+                    self.assertEqual({row['destination'] for row in incus.current['egress']}, {'172.17.0.9/32', '172.17.0.10/32'})
+
+    def test_sixty_record_refresh_reports_lock_cost_and_one_nat_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, incus = Path(directory), Incus()
+            publications = [{'host': '10.253.0.1', 'port': 24000 + i, 'docker': True} for i in range(60)]
+
+            def table(network):
+                return ''.join('-A DOCKER -d 10.253.0.1/32 -p tcp --dport ' + str(row['port']) +
+                               ' -j DNAT --to-destination ' + network + '.' + str(i + 2) + ':3306\n'
+                               for i, row in enumerate(publications))
+
+            counts = {'get': 0, 'put': 0}
+
+            def api(name, value=None, etag=None, deadline=None):
+                counts['get' if value is None else 'put'] += 1
+                return incus.api(name, value, etag, deadline)
+
+            with patch.object(bridge, 'api', side_effect=api):
+                with patch.object(bridge.subprocess, 'check_output', return_value=table('172.18.0')):
+                    bridge.apply(root, {**intent(1), 'endpoints': publications}, True)
+                with patch.object(bridge.subprocess, 'check_output', return_value=table('172.19.0')) as read:
+                    for phase in ('add', 'confirm', 'steady'):
+                        counts.update(get=0, put=0)
+                        read.reset_mock()
+                        started = time.perf_counter()
+                        changed = bridge.apply(root, None)
+                        elapsed = time.perf_counter() - started
+                        print('BRIDGE-60', phase, 'seconds=' + format(elapsed, '.4f'), 'nat_reads=' + str(read.call_count),
+                              'gets=' + str(counts['get']), 'puts=' + str(counts['put']))
+                        self.assertEqual(read.call_count, 1)
+                        self.assertEqual(counts, {'get': 1 if phase == 'steady' else 61, 'put': 0 if phase == 'steady' else 60})
+                        if phase == 'steady':
+                            self.assertEqual(changed, 0)
+                    self.assertEqual(len(incus.current['egress']), 60)
+                    self.assertTrue(all(row['destination'].startswith('172.19.0.') for row in incus.current['egress']))
 
     def test_dead_publication_warns_without_blocking_live_refresh_and_returns_automatically(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=Incus().api) as calls:

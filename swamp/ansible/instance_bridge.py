@@ -3,7 +3,7 @@
 
 One nonblocking attempt only; a busy writer refuses without applying intent.
 Every writer holds the same lock while reading and replacing records and ACL rules.
-Refresh revokes saved translations it cannot resolve. Reconciliation removes endpoint intent.
+Refresh isolates unresolved intent and retires translations after a later confirmation.
 """
 import argparse
 import fcntl
@@ -262,7 +262,16 @@ def confirm_records(root, current, staged, retiring, resolved, config):
         wanted = endpoint_rule(target['host'], target['port'], config['cidr'], endpoint['admitted_at'])
         if any(owned_endpoint(rule, config['cidr']) and same_endpoint(rule, wanted)
                and rule_admission(rule) >= endpoint['admitted_at'] for rule in current.get('egress', [])):
-            changed += state_file(root, 'endpoint', endpoint, host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'])
+            confirmed = dict(endpoint)
+            history = [old for old in endpoint.get('translations', [])
+                       if (old['destination'].removesuffix('/32'), int(old['destination_port'])) not in resolved
+                       and any(owned_endpoint(rule, config['cidr']) and same_endpoint(rule, old)
+                               and rule_admission(rule) == rule_admission(old) for rule in current.get('egress', []))]
+            if history:
+                confirmed['translations'] = history
+            else:
+                confirmed.pop('translations', None)
+            changed += state_file(root, 'endpoint', confirmed, host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'])
     for path, endpoint, target in retiring:
         if not path.exists():
             continue
@@ -350,6 +359,39 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
                 target = previous['translated']
                 obsolete.append(endpoint_rule(target['host'], target['port'], config['cidr'], previous['admitted_at']))
                 obsolete.extend(previous.get('translations', []))
+        deferred = []
+        for endpoint in endpoints:
+            if not endpoint['docker']:
+                continue
+            history = []
+            for _, previous in records:
+                if (previous['host'], previous['port']) != (endpoint['host'], endpoint['port']):
+                    continue
+                target = previous['translated']
+                known = [endpoint_rule(target['host'], target['port'], config['cidr'], previous['admitted_at']),
+                         *previous.get('translations', [])]
+                for rule in known:
+                    if rule not in history:
+                        history.append(rule)
+            target = endpoint['translated']
+            wanted = endpoint_rule(target['host'], target['port'], config['cidr'], endpoint['admitted_at'])
+            previous = recorded[(endpoint['host'], endpoint['port'])]
+            if previous['translated'] == target:
+                # Only a later invocation that confirms the recorded address may
+                # retire its old rules. An address change retains every known path.
+                obsolete.extend(history)
+            else:
+                deferred.extend(history)
+                if wanted not in history:
+                    history.append(wanted)
+                endpoint['translations'] = history
+                # Persist attempted rules before PUT, while translated still names the
+                # last confirmed address. A crash cannot orphan a successful new allow.
+                changed += state_file(root, 'endpoint', {**previous, 'translations': history},
+                                      host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'])
+        # An unstable publication can share a formerly resolved tuple with a
+        # stable one. Do not let the stable publication retire the shared rule.
+        obsolete = [rule for rule in obsolete if not any(same_endpoint(rule, held) for held in deferred)]
     # Stage outside the inventory. Only confirmed ACL tuples become refresh input.
     staged = []
     try:

@@ -34,7 +34,7 @@ Migration checks remote source access before quiesce using the Node's existing G
 
 Clone creation stages its release's helpers once in a private folder for the run. Later phases run the launcher by path, keeping scripts and intent off the SSH command. Cleanup removes the folder even when staging or the first clone phase fails.
 
-The Instance bridge refresh isolates unresolved publications: their saved allows are withdrawn, their host and port remain as warnings in health.json, and other endpoints still refresh. A stopped live publication regains its allow on the next timer run that resolves it. Write failures still fail the service and reach doctor through the existing health fact.
+The Instance bridge refresh isolates unresolved publications: their saved allows are withdrawn, their host and port remain as warnings in health.json, and other endpoints still refresh. A stopped live publication regains its allow on the next timer run that resolves it. Write failures still fail the service and reach doctor through the existing health fact. For a resolved Docker address change, refresh adds its new allow first and retires the recorded old rule only after a later invocation confirms the new translation unchanged.
 
 Each argument of an Ansible command must parse as a string. One shared test reads every literal `argv` list. It fails on a YAML mapping, a number or a boolean.
 
