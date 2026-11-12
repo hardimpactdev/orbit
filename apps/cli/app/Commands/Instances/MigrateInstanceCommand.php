@@ -41,7 +41,7 @@ HELP;
     {
         $copied = $operation->result['untracked_files_copied'] ?? null;
         if (is_int($copied) && $copied >= 0) {
-            $this->writeHumanMessage('Copied '.$copied.' untracked files (including ignored files).');
+            $this->writeHumanMessage('Copied '.$copied.' untracked files that Git does not ignore.');
         }
         $mail = $operation->result['mail'] ?? null;
         $mailer = $operation->result['mailer'] ?? null;
