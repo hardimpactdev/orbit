@@ -1,0 +1,12 @@
+{
+  "env": "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3308\nCACHE_STORE=redis\nREDIS_HOST=localhost\nSESSION_DRIVER=memcached\nMEMCACHED_HOST=127.0.0.1\nREPORT_DB_CONNECTION=pgsql\nREPORT_DB_HOST=10.44.0.5\nBROADCAST_CONNECTION=pusher\nPUSHER_HOST=localhost\nPUSHER_PORT=6001\nREVERB_HOST=localhost\nREVERB_PORT=8080\nSERVICE_CONNECTION=sqlsrv\nSERVICE_HOST=203.0.113.8\nCATALOG_MAIL_MAILER=smtp\nCATALOG_MAIL_HOST=localhost\nCATALOG_MAIL_PORT=1025\n",
+  "refusals": [
+    ".env: DB_HOST=127.0.0.1:3308: the host belongs to the Node or container loopback and has no exact attached target. Attach the exact target, correct the .env, or use a non-network driver.",
+    ".env: REDIS_HOST=localhost:6379: the host belongs to the Node or container loopback and has no exact attached target. Attach the exact target, correct the .env, or use a non-network driver.",
+    ".env: MEMCACHED_HOST=127.0.0.1:11211: the host belongs to the Node or container loopback and has no exact attached target. Attach the exact target, correct the .env, or use a non-network driver.",
+    ".env: REPORT_DB_HOST=10.44.0.5:5432: the host belongs to the Node or container loopback and has no exact attached target. Attach the exact target, correct the .env, or use a non-network driver.",
+    ".env: PUSHER_HOST=localhost:6001: the host belongs to the Node or container loopback and has no exact attached target. Attach the exact target, correct the .env, or use a non-network driver.",
+    ".env: SERVICE_HOST=203.0.113.8:1433: the direct service has no exact endpoint admitted by the container access plan. Attach the exact target, correct the .env, or use a non-network driver.",
+    ".env: CATALOG_MAIL_HOST=localhost:1025: the host belongs to the Node or container loopback and has no exact attached target. Attach the exact target, correct the .env, or use a non-network driver."
+  ]
+}

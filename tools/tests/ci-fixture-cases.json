@@ -1761,8 +1761,13 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "acb358406096a7d792cbc5234680e23c9ccece08ee516fc7978fae857b388cd4",
+    "source_sha256": "e12a031c865034f2731e29f80d0f7ec4dc909644e418187aad64f9c4116906ec",
     "cases": [
+      "test_development_mail_satisfies_only_the_ipv4_forwarded_endpoints",
+      "test_ipv6_mail_is_refused_even_with_the_development_mail_path",
+      "test_mail_outside_the_forwarded_tuple_keeps_the_original_verdict",
+      "test_log_mail_is_unselected_with_or_without_an_admitted_mail_path",
+      "test_other_services_keep_the_main_refusal_bytes",
       "test_servauto_mysql_requires_exact_attached_endpoint",
       "test_mailpit_and_old_fleet_mail_are_refused",
       "test_unused_mail_and_sqlite_hosts_are_skipped",
@@ -1774,14 +1779,17 @@
       "test_every_copied_nested_env_is_checked_including_ignored_and_symlinked_apps",
       "test_node_addresses_and_unspecified_hosts_are_refused_even_inside_allowed_ranges",
       "test_direct_services_require_exact_admission_even_for_fleet_and_wireguard_addresses",
-      "test_nonredis_defaults_cannot_establish_that_redis_is_unused",
-      "test_conflicting_cache_aliases_do_not_skip_redis",
+      "test_bare_stock_hosts_and_nonredis_or_unknown_selectors_do_not_select_a_service",
+      "test_current_stock_laravel_environment_passes_without_attached_targets",
+      "test_real53_unused_redis_client_and_endpoint_declarations_do_not_select_redis",
+      "test_client_libraries_and_endpoint_settings_alone_never_select_services",
+      "test_primary_cache_selector_wins_over_an_unselected_legacy_alias",
       "test_mapped_node_addresses_are_normalized_for_local_detection",
-      "test_unknown_driver_missing_port_and_generic_host_port_pairs",
+      "test_unknown_driver_and_generic_host_port_declarations_do_not_select_a_service",
       "test_secrets_and_substitutions_are_never_returned",
       "test_malformed_private_quoting_cannot_hide_service_keys",
-      "test_broadcast_and_other_redis_consumers_keep_the_host_check",
-      "test_sqlite_does_not_hide_other_selected_database_connections",
+      "test_named_env_redis_selectors_keep_the_endpoint_check",
+      "test_only_selected_database_consumers_add_network_connection_requirements",
       "test_public_http_publishers_use_the_supplied_proxy_policy",
       "test_known_listeners_and_browser_settings_are_not_outbound_services",
       "test_active_mail_requires_explicit_port_instead_of_guessing_the_app_default",
@@ -1856,8 +1864,9 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_test.py": {
-    "source_sha256": "e28d22f20cc0da839133b07cf6eaf2eda4d923c91c53a0fb60f70626bfd5cfb4",
+    "source_sha256": "76abb617947c85a43acf0ea6f5391621b4137cffb2860f9f280fe30935af5d6a",
     "cases": [
+      "test_migrate_selected_smtp_passes_real_preflight_and_installs_forwarders",
       "test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes",
       "test_failed_unit_write_keeps_network_path_and_a_retry_completes_it",
       "test_failure_after_one_successful_service_write_finishes_pending_activation",
@@ -1867,7 +1876,7 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_line_test.py": {
-    "source_sha256": "554ef8c1c6e01c2d239b9c15fd474aef45677f5d369cfba01163848dc039a41f",
+    "source_sha256": "2e01ce293092ce498f393f9ae2e65f0d800753fe0a6131b92801fa03ef956434",
     "cases": [
       "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte",
       "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved",
@@ -1881,6 +1890,7 @@
       "test_failed_transfer_preserves_file_and_returns_only_a_code",
       "test_interruption_after_staging_cleans_the_fixed_name_even_with_stopped_guest",
       "test_next_run_removes_a_leftover_before_even_inspecting_a_stopped_guest",
+      "test_migrate_log_loopback_passes_source_check_then_becomes_smtp",
       "test_migrate_orders_advisory_mail_after_copy_and_before_application_start"
     ]
   },
