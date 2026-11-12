@@ -643,7 +643,7 @@
     ]
   },
   "swamp/tests/ansible_command_output_test.py": {
-    "source_sha256": "eebc0ab434bef6592eced0996664e43e5b80758cc3d2eca444a569262ed36406",
+    "source_sha256": "f10de64195b1b74768a7e56d851edde65035dfd6fff03be6d6ed69bb68e37ae7",
     "cases": [
       "test_every_regex_is_exercised_or_classified_without_command_output",
       "test_unclassified_native_regex_tests_fail_coverage",

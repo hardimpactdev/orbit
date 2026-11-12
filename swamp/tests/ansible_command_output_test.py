@@ -194,13 +194,15 @@ class ConvergeTaskNamesTest(unittest.TestCase):
         self.assertTrue(names)
         # One rule: the reporter withholds a name outside this pattern, so every converge task name must fit it.
         reporter = (ROOT.parent / 'extensions/behaviors/operations/ansible-input/converge_result.ts').read_text()
-        pattern = re.search(r'const TaskName = /(.+)/;', reporter).group(1)
+        pattern = re.search(r'const TaskName = /\^(.+)\$/;', reporter).group(1)
+        token = re.search(r'const LongToken = /(.+)/;', reporter).group(1)
         for path, name in names:
             with self.subTest(file=str(path.relative_to(ROOT)), name=name):
                 self.assertIsInstance(name, str)
                 self.assertNotIn('{{', name)
                 self.assertNotIn('{%', name)
-                self.assertRegex(name, pattern)
+                self.assertIsNotNone(re.fullmatch(pattern, name))
+                self.assertIsNone(re.search(token, name))
 
 
 if __name__ == '__main__':

@@ -758,6 +758,7 @@ inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_result.ts",
   "swamp/tests/fixtures/command-output/**",
   "swamp/workflows/workflow-operation-node-converge-direct.yaml",
 ]

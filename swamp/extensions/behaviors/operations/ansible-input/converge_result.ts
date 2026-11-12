@@ -25,12 +25,13 @@ const Fields = z.record(z.string(), z.unknown());
 const Play = z.object({ tasks: z.array(z.unknown()) });
 const Task = z.object({ task: Fields, hosts: z.record(z.string(), Fields) });
 
-// The characters of a converge task name. The static-name test reads this pattern and holds every task name to it.
+// The characters of a converge task name. The static-name test reads both patterns and holds every task name to them.
 const TaskName = /^[A-Za-z0-9 ,'+-]{1,120}$/;
+const LongToken = /[A-Za-z0-9+-]{16,}/;
 
 /** A name outside the pattern, or with a long token, could be a path or a rendered value: it is withheld. */
 function safeText(value: unknown): string | null {
-    return typeof value === "string" && TaskName.test(value) && !/[A-Za-z0-9+-]{16,}/.test(value) ? value : null;
+    return typeof value === "string" && TaskName.test(value) && !LongToken.test(value) ? value : null;
 }
 
 function hidden(value: Record<string, unknown>): boolean {
