@@ -6,6 +6,8 @@
 # downtime; all untracked files pass, copy into the container and report the count of untracked files that Git does not ignore (selected nested repository leaves included, no paths/content).
 # Empty untracked/ignored directories, including nested trees and storage/app/public mode 3775, are carried with their modes.
 # Copy prediction and the final symlink guard share their resolver; missing or excluded targets refuse before quiesce.
+# Git metadata prediction permits only paths created by init/fetch/checkout; revision -> .git/HEAD passes, .git/local-only refuses.
+# Mode restoration runs as orbit from protected stdin data. Symlink components, absolute paths and ../ entries fail without touching outside targets.
 # Thirteen empty directories outside dependencies survive; absolute links from ignored storage/framework/testing trees
 # into tracked database/migrations files resolve in the workspace. A missing ignored-link target refuses before quiesce.
 # The directory scan excludes .git metadata and tracked submodule contents; selected nested-repository archives stay unchanged.

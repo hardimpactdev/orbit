@@ -1,10 +1,12 @@
 """Plan the migration overlay and links; rewrite only the copied workspace."""
 
 import argparse
+import base64
 import json
 import os
 import stat
 import subprocess
+import sys
 import tarfile
 from collections import deque
 from pathlib import Path
@@ -48,6 +50,18 @@ class CopyLayout:
             if name not in existing and not self.in_archived_tree(name):
                 self.directories.append((name, stat.S_IMODE(parent.stat().st_mode)))
         self.present_directories = existing | {name for name, _mode in self.directories}
+        # These paths come from init --shared=group, the branch fetch and checkout -B.
+        # Template files, reflogs and object filenames are deliberately not promised.
+        head = self.git('rev-parse', '--symbolic-full-name', 'HEAD')[0].rstrip(b'\n')
+        files = {b'.git/HEAD', b'.git/config', b'.git/index', b'.git/FETCH_HEAD'}
+        if head.startswith(b'refs/heads/'):
+            branch = head.removeprefix(b'refs/heads/')
+            files.update({b'.git/' + head, b'.git/refs/remotes/origin/' + branch})
+        directories = {b'.git', b'.git/objects', b'.git/objects/info', b'.git/objects/pack'}
+        for name in files:
+            directories.update(self.parents(name))
+        self.git_metadata = {name: stat.S_IFREG for name in files}
+        self.git_metadata.update({name: stat.S_IFDIR for name in directories})
 
     @staticmethod
     def unreadable(error):
@@ -80,12 +94,20 @@ class CopyLayout:
         if self.in_archived_tree(name):
             return not stat.S_ISSOCK(path.lstat().st_mode)
         if name == b'.git' or name.startswith(b'.git/'):
-            # The workspace generates its own metadata. Keep the existing source check for these
-            # targets; only the final resolver can inspect the generated repository's exact contents.
-            return True
+            return name in self.git_metadata
         if any(name.startswith(tree + b'/') for tree in self.gitlinks):
             return False
         return name in self.tracked or name in self.files or name in self.present_directories
+
+    def mode(self, path):
+        name = os.fsencode(path.relative_to(self.root))
+        if name == b'.git' or name.startswith(b'.git/'):
+            if name not in self.git_metadata:
+                raise UnsupportedLink('broken')
+            return self.git_metadata[name]
+        if not self.contains(path):
+            raise UnsupportedLink('broken')
+        return path.lstat().st_mode
 
     def archive(self, prefix):
         for suffix, values in (('.list', self.files), ('.untracked', self.untracked),
@@ -102,15 +124,40 @@ class CopyLayout:
         with tarfile.open(prefix + '.tar', 'a', encoding='utf-8', errors='surrogateescape') as archive:
             for name, _mode in self.directories:
                 archive.add(self.root / os.fsdecode(name), arcname=os.fsdecode(name), recursive=False, filter=inspectable)
-        Path(prefix + '.directories').write_text(json.dumps([
-            {'path': os.fsdecode(name), 'mode': mode} for name, mode in self.directories]))
-        return {'directories_copied': len(self.directories)}
+        manifest = json.dumps([{'path': os.fsdecode(name), 'mode': mode} for name, mode in self.directories])
+        # The Node returns this through Ansible's protected result, never an app-writable container file.
+        return {'directories_copied': len(self.directories),
+                'directory_modes': base64.b64encode(manifest.encode()).decode('ascii')}
 
 
-def restore_directories(root, manifest):
-    entries = json.loads(Path(manifest).read_text())
-    for entry in sorted(entries, key=lambda item: len(Path(item['path']).parts), reverse=True):
-        (root / entry['path']).chmod(entry['mode'])
+def restore_directories(root, encoded):
+    entries = json.loads(base64.b64decode(encoded.strip(), validate=True))
+    if not isinstance(entries, list):
+        raise TypeError('Invalid directory manifest')
+    paths = []
+    for entry in entries:
+        name, mode = entry['path'], entry['mode']
+        parts = name.split('/')
+        if os.path.isabs(name) or any(part in {'', '.', '..'} for part in parts):
+            raise ValueError('Invalid directory path')
+        if type(mode) is not int or not 0 <= mode <= 0o7777:
+            raise ValueError('Invalid directory mode')
+        paths.append((parts, mode))
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    root_fd = os.open(root, flags)
+    try:
+        for parts, mode in sorted(paths, key=lambda item: len(item[0]), reverse=True):
+            directory_fd = os.dup(root_fd)
+            try:
+                for part in parts:
+                    child_fd = os.open(part, flags, dir_fd=directory_fd)
+                    os.close(directory_fd)
+                    directory_fd = child_fd
+                os.fchmod(directory_fd, mode)
+            finally:
+                os.close(directory_fd)
+    finally:
+        os.close(root_fd)
 
 
 class UnsupportedLink(Exception):
@@ -170,9 +217,7 @@ def resolve(link, root, old_checkout, layout=None):
             continue
         candidate = root.joinpath(*resolved, part)
         try:
-            if layout is not None and not layout.contains(candidate):
-                raise UnsupportedLink('broken')
-            mode = candidate.lstat().st_mode
+            mode = candidate.lstat().st_mode if layout is None else layout.mode(candidate)
             if stat.S_ISLNK(mode):
                 followed += 1
                 if followed > 40:
@@ -233,12 +278,12 @@ if __name__ == '__main__':
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument('--predict-copy', action='store_true')
     modes.add_argument('--archive-prefix')
-    modes.add_argument('--restore-directories')
+    modes.add_argument('--restore-directories', action='store_true')
     args = parser.parse_args()
     if args.archive_prefix:
         print(json.dumps(CopyLayout(Path(os.path.abspath(args.checkout))).archive(args.archive_prefix)))
     elif args.restore_directories:
-        restore_directories(Path(args.checkout), args.restore_directories)
+        restore_directories(Path(args.checkout), sys.stdin.read())
     else:
         result = plan(args.checkout, args.old_checkout, args.rewrite, args.predict_copy)
         # Display text escapes invalid UTF-8; rewrite and archive paths stay in this filesystem process.

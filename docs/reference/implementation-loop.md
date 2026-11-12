@@ -731,7 +731,7 @@ Clone branch fixtures use unprivileged local Git repositories and run without an
 
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise. The Ansible structure test also checks parsed command argument types before module validation can coerce them.
 
-Migration copy fixtures use real Git trees and filesystem modes. They cover empty link targets, nested ignored directories, excluded Git/submodule paths and prediction before downtime. The final check inspects the copied tree and catches changes made after prediction.
+Migration copy fixtures use real Git trees and filesystem modes. They cover empty link targets, nested ignored directories, excluded Git/submodule paths and prediction before downtime. The final check inspects the copied tree and catches changes made after prediction. Tests also cover guaranteed Git metadata and refusal of metadata left behind, plus safe mode restoration with protected stdin data and directory descriptors.
 
 The migration source fixture runs one unprivileged Ansible play, fakes Git and timeout without network calls or sleeps, and checks credential removal on success and refusal. Migration fixtures check that untracked files survive copying and retirement, counting only files Git does not ignore. Tracked changes, unpushed commits in protected refs, owner stashes and owner dependencies keep their refusal codes.
 

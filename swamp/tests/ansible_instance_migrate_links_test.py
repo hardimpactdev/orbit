@@ -1,5 +1,6 @@
 """Exercise the shipped read-only planner on actual filesystem links."""
 
+import base64
 import json
 import os
 import runpy
@@ -209,6 +210,9 @@ class MigrationLinksTest(unittest.TestCase):
         self.initialize_git()
         target = self.root / 'storage/app/public'
         target.chmod(0o3775)
+        for name, mode in [('private-empty', 0o700), ('readonly-empty', 0o555)]:
+            (self.root / name).mkdir()
+            (self.root / name).chmod(mode)
         (self.root / 'public/storage').symlink_to(target)
         nested = self.root / 'ignored/empty/nested'
         nested.mkdir(parents=True)
@@ -229,14 +233,18 @@ class MigrationLinksTest(unittest.TestCase):
             (self.root / f'runtime-empty/slot-{index}').mkdir(parents=True)
         self.assertEqual(self.plan(None, '--predict-copy')['refused'], [])
         prefix = str(self.root.parent / 'overlay')
-        self.plan(None, '--archive-prefix', prefix)
+        archive_result = self.plan(None, '--archive-prefix', prefix)
         copied = self.root.parent / 'workspace'
         subprocess.run(['git', 'clone', '--quiet', str(self.root), str(copied)], check=True)
         subprocess.run(['tar', '-xf', prefix + '.tar', '--no-same-owner', '-C', str(copied)], check=True)
         self.assertEqual(self.plan(copied, '--old-checkout', str(self.root), '--rewrite')['refused'], [])
         subprocess.run(['chmod', '-R', 'g+rwX,o-rwx', str(copied)], check=True)
-        subprocess.run([sys.executable, str(PLANNER), str(copied), '--restore-directories', prefix + '.directories'], check=True)
+        subprocess.run([sys.executable, str(PLANNER), str(copied), '--restore-directories'], input=archive_result['directory_modes'], text=True, check=True)
         self.assertEqual(stat.S_IMODE((copied / 'storage/app/public').stat().st_mode), 0o3775)
+        self.assertNotEqual(os.geteuid(), 0, 'The fixture must restore as an unprivileged owner')
+        self.assertEqual(stat.S_IMODE((copied / 'private-empty').stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE((copied / 'readonly-empty').stat().st_mode), 0o555)
+        self.assertFalse(Path(prefix + '.directories').exists())
         self.assertEqual(stat.S_IMODE((copied / 'ignored/empty/nested').stat().st_mode), 0o2711)
         self.assertTrue(os.path.isdir(os.fsencode(copied) + b'/empty-\xff'))
         self.assertEqual((copied / 'public/storage').resolve(strict=True), copied / 'storage/app/public')
@@ -252,15 +260,90 @@ class MigrationLinksTest(unittest.TestCase):
 
     def test_prediction_keeps_existing_validation_for_links_into_generated_git_metadata(self):
         self.initialize_git()
+        self.git('branch', '-m', 'topic/nested')
         (self.root / 'revision').symlink_to('.git/HEAD')
+        guaranteed = ['.git', '.git/HEAD', '.git/config', '.git/index', '.git/FETCH_HEAD',
+                      '.git/refs', '.git/refs/heads', '.git/refs/heads/topic',
+                      '.git/refs/heads/topic/nested', '.git/refs/remotes', '.git/refs/remotes/origin',
+                      '.git/refs/remotes/origin/topic', '.git/refs/remotes/origin/topic/nested',
+                      '.git/objects', '.git/objects/info', '.git/objects/pack']
+        for index, path in enumerate(guaranteed):
+            (self.root / f'metadata-{index}').symlink_to(path)
         self.assertEqual(self.plan(None, '--predict-copy')['refused'], [])
         prefix = str(self.root.parent / 'overlay')
         self.plan(None, '--archive-prefix', prefix)
         copied = self.root.parent / 'workspace'
-        subprocess.run(['git', 'clone', '--quiet', str(self.root), str(copied)], check=True)
+        # Execute the production init/fetch/checkout sequence, without cloning template or source metadata.
+        self.git('bundle', 'create', prefix + '.bundle', 'refs/heads/topic/nested')
+        subprocess.run(['git', 'init', '--quiet', '--shared=group', '--initial-branch', 'topic/nested', str(copied)], check=True)
+        subprocess.run(['git', '-C', str(copied), 'fetch', '--quiet', prefix + '.bundle',
+                        '+refs/heads/topic/nested:refs/remotes/origin/topic/nested'], check=True)
+        subprocess.run(['git', '-C', str(copied), 'checkout', '--quiet', '-B', 'topic/nested',
+                        'refs/remotes/origin/topic/nested'], check=True)
         subprocess.run(['tar', '-xf', prefix + '.tar', '--no-same-owner', '-C', str(copied)], check=True)
         self.assertEqual(self.plan(copied)['refused'], [])
         self.assertEqual((copied / 'revision').resolve(strict=True), copied / '.git/HEAD')
+        for index, path in enumerate(guaranteed):
+            self.assertEqual((copied / f'metadata-{index}').resolve(strict=True), copied / path)
+
+    def test_prediction_refuses_source_only_git_metadata_before_the_copy(self):
+        self.initialize_git()
+        (self.root / '.git/local-only').write_text('source-only metadata')
+        (self.root / 'metadata-link').symlink_to('.git/local-only')
+        self.assertEqual(self.plan()['refused'], [])
+        self.assertEqual(self.plan(None, '--predict-copy')['refused'], [
+            {'path': 'metadata-link', 'target': '.git/local-only', 'reason': 'broken'},
+        ])
+        self.assertEqual((self.root / '.git/local-only').read_text(), 'source-only metadata')
+        self.assertEqual((self.root / 'metadata-link').readlink(), Path('.git/local-only'))
+
+    def prepare_restore(self):
+        self.initialize_git()
+        (self.root / 'carried/nested').mkdir(parents=True)
+        (self.root / 'carried/nested').chmod(0o3775)
+        prefix = str(self.root.parent / 'overlay')
+        result = self.plan(None, '--archive-prefix', prefix)
+        copied = self.root.parent / 'workspace'
+        subprocess.run(['git', 'clone', '--quiet', str(self.root), str(copied)], check=True)
+        subprocess.run(['tar', '-xf', prefix + '.tar', '--no-same-owner', '-C', str(copied)], check=True)
+        self.assertEqual(self.plan(copied)['refused'], [])
+        outside = self.root.parent / 'outside'
+        (outside / 'nested').mkdir(parents=True)
+        outside.chmod(0o700)
+        (outside / 'nested').chmod(0o700)
+        (outside / 'sentinel').write_text('untouched')
+        return copied, outside, result['directory_modes']
+
+    def restore(self, copied, encoded):
+        return subprocess.run([sys.executable, str(PLANNER), str(copied), '--restore-directories'],
+                              input=encoded, text=True, capture_output=True, check=False)
+
+    def test_restore_refuses_a_symlink_directory_component_and_leaves_outside_untouched(self):
+        copied, outside, encoded = self.prepare_restore()
+        for name in ['carried/nested', 'carried']:
+            with self.subTest(path=name):
+                directory = copied / name
+                shutil.rmtree(directory)
+                directory.symlink_to(outside, target_is_directory=True)
+                result = self.restore(copied, encoded)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('NotADirectoryError', result.stderr)
+                self.assertEqual(stat.S_IMODE(outside.stat().st_mode), 0o700)
+                self.assertEqual(stat.S_IMODE((outside / 'nested').stat().st_mode), 0o700)
+                self.assertEqual((outside / 'sentinel').read_text(), 'untouched')
+                directory.unlink()
+                directory.mkdir()
+
+    def test_restore_rejects_absolute_and_parent_manifest_paths_without_touching_outside(self):
+        copied, outside, _encoded = self.prepare_restore()
+        for name in [str(outside), '../outside', 'carried/../../outside']:
+            with self.subTest(path=name):
+                encoded = base64.b64encode(json.dumps([{'path': name, 'mode': 0o3775}]).encode()).decode()
+                result = self.restore(copied, encoded)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Invalid directory path', result.stderr)
+                self.assertEqual(stat.S_IMODE(outside.stat().st_mode), 0o700)
+                self.assertEqual((outside / 'sentinel').read_text(), 'untouched')
 
     def test_added_unreadable_directory_can_be_inspected_before_exact_mode_restoration(self):
         self.initialize_git()
@@ -274,12 +357,12 @@ class MigrationLinksTest(unittest.TestCase):
         with patch('os.walk', return_value=iter(walked)):
             layout = module['CopyLayout'](self.root)
         prefix = str(self.root.parent / 'overlay')
-        layout.archive(prefix)
+        archive_result = layout.archive(prefix)
         copied = self.root.parent / 'workspace'
         subprocess.run(['git', 'clone', '--quiet', str(self.root), str(copied)], check=True)
         subprocess.run(['tar', '-xf', prefix + '.tar', '--no-same-owner', '-C', str(copied)], check=True)
         self.assertEqual(self.plan(copied)['refused'], [])
-        module['restore_directories'](copied, prefix + '.directories')
+        module['restore_directories'](copied, archive_result['directory_modes'])
         self.assertEqual(stat.S_IMODE((copied / 'sealed').stat().st_mode), 0o111)
         (copied / 'sealed').chmod(0o755)
 

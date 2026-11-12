@@ -347,6 +347,8 @@
         stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py') }}"
       environment:
         ORBIT_CHECKOUT: "{{ migrate.checkout }}"
+      register: migrate_archive
+      no_log: true
       changed_when: true
     - name: Count archived untracked leaves that Git does not ignore
       ansible.builtin.command:
@@ -360,7 +362,7 @@
         argv: >-
           {{ incus_project + ['file', 'push', '--uid', '1000', '--gid', '2760', '--mode', '0640',
               node_archive ~ item, container.name ~ container_archive ~ item] }}
-      loop: [".tar", ".deleted", ".directories"]
+      loop: [".tar", ".deleted"]
       changed_when: true
     - name: Extract the archive in the workspace
       ansible.builtin.command:
@@ -388,19 +390,22 @@
       changed_when: true
     - name: Restore the added directories' exact modes including special bits
       ansible.builtin.command:
-        argv: "{{ as_root + ['python3', '-', container.workspace, '--restore-directories', container_archive ~ '.directories'] }}"
+        argv: >-
+          {{ as_orbit + ['python3', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py'),
+              container.workspace, '--restore-directories'] }}
         expand_argument_vars: false
-        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py') }}"
+        stdin: "{{ (migrate_archive.stdout | from_json).directory_modes }}"
+      no_log: true
       changed_when: true
   always:
     - name: Remove the archive on the Node
       ansible.builtin.file: { path: "{{ node_archive }}{{ item }}", state: absent }
-      loop: [".tar", ".list", ".untracked", ".counted", ".deleted", ".directories"]
+      loop: [".tar", ".list", ".untracked", ".counted", ".deleted"]
     - name: Remove the archive in the container
       ansible.builtin.command:
         argv: >-
           {{ as_root + ['rm', '-f', '--', container_archive ~ '.tar',
-              container_archive ~ '.deleted', container_archive ~ '.directories'] }}
+              container_archive ~ '.deleted'] }}
       changed_when: false
       failed_when: false
 

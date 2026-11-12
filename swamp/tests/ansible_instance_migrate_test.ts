@@ -2479,8 +2479,12 @@ Deno.test({
       Deno.mkdirSync(`${f.checkout}/${ignored}`, { recursive: true });
       for (let i = 0; i < 3; i++) Deno.symlinkSync(`${f.checkout}/database/migrations/file-${i}.php`, `${f.checkout}/${ignored}/file-${i}.php`);
       for (let i = 0; i < 12; i++) Deno.mkdirSync(`${f.checkout}/runtime-empty/slot-${i}`, { recursive: true });
+      Deno.chmodSync(`${f.checkout}/runtime-empty/slot-0`, 0o700);
+      Deno.chmodSync(`${f.checkout}/runtime-empty/slot-1`, 0o555);
       f.buildBatched();
       const copied = `${f.rootfs}/srv/workspace`;
+      assertEquals(Deno.statSync(`${copied}/runtime-empty/slot-0`).mode! & 0o7777, 0o700);
+      assertEquals(Deno.statSync(`${copied}/runtime-empty/slot-1`).mode! & 0o7777, 0o555);
       assertEquals(Deno.statSync(`${copied}/storage/app/public`).mode! & 0o7777, 0o3775);
       assertEquals(Deno.statSync(`${copied}/vendor/empty/nested`).mode! & 0o7777, 0o2711);
       assertEquals(Deno.readLinkSync(`${copied}/public/storage`), "../storage/app/public");
@@ -2512,6 +2516,8 @@ Deno.test({
       Deno.writeTextFileSync(`${f.checkout}/submodule/file`, "omitted content\n");
       Deno.symlinkSync("submodule/file", `${f.checkout}/valid-on-source`);
       Deno.symlinkSync("missing", `${f.checkout}/dangling`);
+      Deno.writeTextFileSync(`${f.checkout}/.git/local-only`, "source metadata\n");
+      Deno.symlinkSync(".git/local-only", `${f.checkout}/metadata-link`);
       Deno.writeTextFileSync(`${f.checkout}/.git/info/exclude`, "storage/framework/testing/\n");
       Deno.mkdirSync(`${f.checkout}/storage/framework/testing/migrations`, { recursive: true });
       Deno.symlinkSync(`${f.checkout}/database/missing.php`, `${f.checkout}/storage/framework/testing/migrations/missing`);
@@ -2524,7 +2530,7 @@ Deno.test({
         assertEquals(f.result().error_code, "instance.migrate_symlink_unsupported");
         assertEquals(f.result().preflight_refused, phase === "container");
         assert(!exists(`${f.folder}/run/quiesced`));
-        for (const name of ["valid-on-source", "dangling", "storage/framework/testing/migrations/missing"]) assert(f.result().error_message.includes(name), f.result().error_message);
+        for (const name of ["valid-on-source", "dangling", "metadata-link", "storage/framework/testing/migrations/missing"]) assert(f.result().error_message.includes(name), f.result().error_message);
         assertEquals(JSON.stringify(f.state()), before);
         assertEquals(Deno.statSync(f.migrate.awake.path).mtime?.getTime(), marker);
         assertEquals(git(f.checkout, "rev-parse", "HEAD"), head);
@@ -2578,4 +2584,20 @@ Deno.test({
       f.cleanup();
     }
   },
+});
+
+Deno.test("directory modes stay in the protected result and restore through the workspace owner", () => {
+  const phase = parse(Deno.readTextFileSync(new URL("tasks/instance-migrate-phase.yml", root))) as Task[];
+  const copy = phase.find(task => task.name === "Copy the checkout's files into the workspace")!;
+  const tasks = copy.block as Task[];
+  const archive = tasks.find(task => task.register === "migrate_archive")!;
+  assertEquals(archive.no_log, true);
+  const restore = tasks.find(task => task.name === "Restore the added directories' exact modes including special bits")!;
+  const command = restore["ansible.builtin.command"] as Task;
+  assert((command.argv as string).startsWith("{{ as_orbit +"));
+  assert((command.argv as string).includes("--restore-directories"));
+  assertEquals(command.stdin, "{{ (migrate_archive.stdout | from_json).directory_modes }}");
+  assertEquals(restore.no_log, true);
+  const push = tasks.find(task => task.name === "Push the archive and the deleted files into the container")!;
+  assertEquals(push.loop, [".tar", ".deleted"]);
 });

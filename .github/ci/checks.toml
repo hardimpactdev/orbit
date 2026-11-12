@@ -20,13 +20,13 @@ default = ["swamp/tests/ansible_inputs_test.py"]
 [[fixture]]
 file = "swamp/tests/ansible_instance_migrate_test.ts"
 after_merge = true
-reason = "113 retained cases need 7645 declared seconds including startup, above the six-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963. Changed cases use individually measured local times rounded up plus one second. All migration cases run after merge until their work is reduced or selection is narrowed."
-cost = 6967
+reason = "114 retained cases need 7653 declared seconds including startup, above the six-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963. Changed cases use individually measured local times rounded up plus one second. All migration cases run after merge until their work is reduced or selection is narrowed."
+cost = 6969
 # 159.019s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (120s); these are estimates, not completed measurements.
-slices = 113
+slices = 114
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -53,6 +53,7 @@ inputs = [
 ]
 
 [fixture.case_costs]
+  "directory modes stay in the protected result and restore through the workspace owner" = 2 # local completed 4ms, rounded up plus one second
   "stock unused MySQL passes both real preflights and its warning survives the completed move" = 120 # UNMEASURED conservative fixture estimate
   "linked retirement interrupted before unregister fails explicitly on repeat" = 11 # measured 9.348s locally; rounded up plus 1s
   "linked worktree preflight refuses nested without touching its active owner or sibling" = 7 # measured 5.081s locally; rounded up plus 1s
