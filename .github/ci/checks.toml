@@ -1574,7 +1574,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 34
+cost = 36
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1599,6 +1599,7 @@ inputs = [
   "test_unreadable_remote_fails_without_creating_a_branch" = 2
   "test_unreachable_frozen_commit_fails_without_using_current_tip" = 2
   "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start" = 2
+  "test_clone_launch_applies_mail_without_another_playbook" = 2
   "test_clone_uses_the_admitted_common_acl_name" = 2
   "test_clone_refuses_unsafe_effective_nics_before_start" = 2
   "test_guest_and_node_command_names_stay_in_sync" = 2
