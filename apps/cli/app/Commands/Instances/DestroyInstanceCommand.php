@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Instances;
 
 use App\Commands\Concerns\FollowsOperations;
+use App\Commands\Concerns\RendersCheckoutWarnings;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
@@ -17,6 +18,7 @@ use Orbit\Sdk\Responses\Operations\OperationResponse;
 final class DestroyInstanceCommand extends GatewayCommand
 {
     use FollowsOperations;
+    use RendersCheckoutWarnings;
 
     #[\Override]
     protected $signature = 'instance:destroy
@@ -31,20 +33,7 @@ final class DestroyInstanceCommand extends GatewayCommand
 
     protected function writeOperationResult(OperationResponse $operation): void
     {
-        $warnings = $operation->result['warnings'] ?? [];
-        foreach (array_slice(is_array($warnings) ? $warnings : [], 0, 20) as $warning) {
-            if (is_array($warning) && ($warning['code'] ?? null) === 'instance.checkout_unknown') {
-                $details = GatewayFailureRenderer::checkoutDetails($warning);
-                if (isset($details['path'], $details['cause'])) {
-                    $this->writeHumanMessage('Warning: instance.checkout_unknown. '.$details['path']
-                        .(($details['instance_ids'] ?? []) === [] ? '' : ' (Instance #'.implode(', #', $details['instance_ids']).')').': '.$details['cause'].'.');
-                }
-            }
-        }
-        $remaining = $operation->result['other_warnings'] ?? null;
-        if (is_int($remaining) && $remaining > 0) {
-            $this->writeHumanMessage('Additional unknown checkouts: '.$remaining);
-        }
+        $this->writeCheckoutWarnings($operation);
         $details = $operation->result['details'] ?? null;
         if (is_array($details) && in_array($operation->errorCode, ['instance.remove_refused', 'instance.worktree_dependents'], true)) {
             GatewayFailureRenderer::write($this, $operation->errorCode, is_string($operation->result['error_message'] ?? null)
