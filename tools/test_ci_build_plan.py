@@ -1,4 +1,8 @@
 """Fast CI scope selection protects downstream consumers and explicit skips."""
+import contextlib
+import json
+import subprocess
+import tempfile
 import importlib.machinery
 import importlib.util
 from pathlib import Path
@@ -316,6 +320,141 @@ class BuildPlanTest(unittest.TestCase):
         self.assertFalse(plan.select(['apps/gateway/app/Domain/Operations/OperationIntent.php'])['proof_run'])
         self.assertNotIn('proof_run', plan.select(['swamp/proof/selection.txt'])['jobs'])
         self.assertNotIn('proof-run', plan.JOBS)
+
+
+class RegistryFastSelectionTest(unittest.TestCase):
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(self.scratch.cleanup)
+        self.root = Path(self.scratch.name)
+        self.git('init', '-q')
+        self.git('config', 'user.name', 'CI test')
+        self.git('config', 'user.email', 'ci@example.test')
+        self.table = self.root / plan.TABLE
+        self.table.parent.mkdir(parents=True)
+        self.initial = ('[budget]\ndefault_cost = 30\n[fixtures]\ndefault = []\n'
+                        '[[fixture]]\nfile = "swamp/example.ts"\ncost = 40\n'
+                        '[check.pi]\ninputs = ["apps/pi-server/**"]\ncost = 11\n'
+                        '[check.docs]\ninputs = ["docs/**"]\ncost = 70\n'
+                        '[check.swamp]\ninputs = []\ncost = 117\n')
+        self.base = self.commit(self.initial)
+
+    def git(self, *args):
+        return subprocess.check_output(['git', *args], cwd=self.root, text=True,
+                                       stderr=subprocess.PIPE, timeout=60).strip()
+
+    def commit(self, text):
+        self.table.write_text(text)
+        self.git('add', '.')
+        self.git('commit', '-qm', 'table')
+        return self.git('rev-parse', 'HEAD')
+
+    def run_plan(self, base=None, head='HEAD', main=False):
+        output = self.root / '.git/plan-output'
+        output.unlink(missing_ok=True)
+        args = ['python3', loader.path, '--base', base or self.base, '--head', head,
+                '--github-output', str(output)]
+        if main:
+            args.append('--main')
+        result = json.loads(subprocess.check_output(args, cwd=self.root, text=True, timeout=60))
+        emitted = dict(line.split('=', 1) for line in output.read_text().splitlines())
+        self.assertEqual(result['jobs'], json.loads(emitted['jobs']))
+        self.assertEqual(result['gateway_release'], json.loads(emitted['gateway_release']))
+        return result
+
+    def jobs(self, **args):
+        return {name for name, enabled in self.run_plan(**args)['jobs'].items() if enabled}
+
+    def test_fixture_metadata_selects_no_fast_jobs_or_pr_release_inputs(self):
+        self.commit(self.initial.replace('cost = 40', 'cost = 45'))
+        self.assertEqual(self.jobs(), set())
+        self.assertFalse(self.run_plan()['gateway_release'])
+        self.assertFalse(self.run_plan()['proof_run'])
+        self.assertEqual(self.jobs(main=True), {'web'})
+        self.assertTrue(self.run_plan(main=True)['gateway_release'])
+
+    def test_each_changed_fast_check_selects_itself_including_removed_rules(self):
+        for old, new, expected in (
+            ('cost = 11\n', 'cost = 12\n', {'pi'}),
+            ('apps/pi-server/**', 'apps/pi-server/src/**', {'pi'}),
+            ('cost = 70', 'cost = 71', {'docs'}),
+            ('[check.pi]\ninputs = ["apps/pi-server/**"]\ncost = 11\n', '', {'pi'}),
+        ):
+            with self.subTest(expected=expected, old=old):
+                self.commit(self.initial.replace(old, new))
+                self.assertEqual(self.jobs(), expected)
+        self.commit(self.initial + '\n[check.cli-static]\ninputs = []\ncost = 5\n')
+        self.assertEqual(self.jobs(), {'cli-static'})
+
+    def test_aggregate_swamp_change_runs_its_three_checks(self):
+        self.commit(self.initial.replace('cost = 117', 'cost = 118'))
+        result = self.run_plan()
+        self.assertEqual(self.jobs(), {'swamp'})
+        self.assertTrue(all(result['swamp_checks'].values()))
+
+    def test_shared_and_unknown_sections_select_all_fast_jobs(self):
+        for text in (
+            self.initial.replace('default_cost = 30', 'default_cost = 31'),
+            self.initial.replace('default = []', 'default = ["swamp/example.ts"]'),
+            self.initial + '\n[all-checks]\ninputs = []\n',
+            self.initial + '\n[ignored]\ninputs = []\n',
+            self.initial + '\n[roots.example]\ninputs = ["example/**"]\ndefault = []\n',
+            self.initial + '\n[new-shared-rule]\nenabled = true\n',
+        ):
+            with self.subTest(text=text):
+                self.commit(text)
+                self.assertEqual(self.jobs(), set(plan.JOBS))
+
+    def test_formatting_fixture_additions_and_removals_select_no_fast_jobs(self):
+        for text in (
+            self.initial + '\n# comment\n',
+            self.initial.replace('cost = 40', 'cost=40'),
+            self.initial.replace('swamp/example.ts', 'swamp/replacement.ts'),
+            self.initial.replace('[[fixture]]\nfile = "swamp/example.ts"\ncost = 40\n', ''),
+        ):
+            with self.subTest(text=text):
+                self.commit(text)
+                self.assertEqual(self.jobs(), set())
+
+    def test_other_files_keep_their_normal_selection_and_shared_machinery_runs_all(self):
+        path = self.root / 'apps/pi-server/src/example.ts'
+        path.parent.mkdir(parents=True)
+        path.write_text('// source\n')
+        self.commit(self.initial.replace('cost = 40', 'cost = 45'))
+        self.assertEqual(self.jobs(), {'pi'})
+        workflow = self.root / '.github/workflows/ci.yml'
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text('# changed workflow\n')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'workflow')
+        self.assertEqual(self.jobs(), set(plan.JOBS))
+
+    def test_swamp_only_change_plus_fixture_metadata_keeps_release_inputs_off(self):
+        path = self.root / 'swamp/ansible/tasks/example.yml'
+        path.parent.mkdir(parents=True)
+        path.write_text('[]\n')
+        self.commit(self.initial.replace('cost = 40', 'cost = 45'))
+        expected = plan.select(['swamp/ansible/tasks/example.yml'])
+        self.assertEqual(self.run_plan(), expected)
+
+    def test_merge_base_excludes_main_only_fast_check_and_shared_rule_edits(self):
+        self.git('checkout', '-qb', 'topic')
+        topic = self.commit(self.initial.replace('cost = 40', 'cost = 45'))
+        self.git('checkout', '-qb', 'main-side', self.base)
+        main = self.commit(self.initial.replace('cost = 11', 'cost = 12')
+                           .replace('default_cost = 30', 'default_cost = 31'))
+        self.assertEqual(self.jobs(base=main, head=topic), set())
+
+    def test_first_table_introduction_runs_shared_checks_and_bad_toml_fails(self):
+        self.table.unlink()
+        self.git('add', '-u')
+        self.git('commit', '-qm', 'before table')
+        missing = self.git('rev-parse', 'HEAD')
+        self.commit(self.initial)
+        self.assertEqual(self.jobs(base=missing), set(plan.JOBS))
+        self.commit('[invalid')
+        with contextlib.chdir(self.root), self.assertRaises(plan.tomllib.TOMLDecodeError):
+            plan.registry_check_changes(self.base, 'HEAD')
 
 
 SELECTION = """

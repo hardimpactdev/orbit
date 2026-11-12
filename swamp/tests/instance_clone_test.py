@@ -18,8 +18,106 @@ SCRIPT = Path(__file__).parents[1] / "scripts/instance_clone.py"
 NETWORK_CHECK = SCRIPT.parents[1] / "ansible/instance_network.py"
 
 
+class BranchSelectionTest(unittest.TestCase):
+    """Real, unprivileged Git: source tips differ from the cloned default seed."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.root = Path(self.folder.name)
+        self.remote = self.root / "remote"
+        self.mirror = self.root / "mirror"
+        self.git("init", "--quiet", "--initial-branch=main", str(self.remote))
+        self.git("-C", str(self.remote), "config", "user.email", "fixture@example.test")
+        self.git("-C", str(self.remote), "config", "user.name", "Fixture")
+        (self.remote / "source").write_text("seed")
+        self.git("-C", str(self.remote), "add", "source")
+        self.git("-C", str(self.remote), "commit", "--quiet", "-m", "seed")
+        self.seed = self.git("-C", str(self.remote), "rev-parse", "HEAD").stdout.strip()
+        self.git("-C", str(self.remote), "switch", "--quiet", "-c", "release")
+        (self.remote / "source").write_text("base tip")
+        self.git("-C", str(self.remote), "commit", "--quiet", "-am", "base tip")
+        self.tip = self.git("-C", str(self.remote), "rev-parse", "HEAD").stdout.strip()
+        self.git("init", "--quiet", "--bare", str(self.mirror))
+    def git(self, *args, check=True):
+        return subprocess.run(["git", *args], check=check, capture_output=True, text=True,
+                              env=dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_TERMINAL_PROMPT="0"), timeout=5)
+
+    def prepare(self, mode="new", target="fix-login", base="release", sha=None, legacy=False):
+        overrides = {"repository": str(self.remote), "mirror": str(self.mirror), "protocols": ["file"], "branch": target,
+                     "clone": {"source": "instance-1", "snapshot": "seed", "t3": {"device": "t3"},
+                               "seed_commit": self.seed, "source_mirror": str(self.remote / ".git")}}
+        if not legacy:
+            overrides["branch_selection"] = {"mode": mode, "target": target, "base": base, "source_sha": sha or self.tip}
+        _, _, error = CloneTest().clone(overrides=overrides, real_git=True)
+        if error:
+            raise RuntimeError(error.strip())
+
+    def checkout(self, branch):
+        # The same mirror bundle and checkout used by clone-workspace's guest.
+        bundle = self.root / "workspace.bundle"
+        workspace = self.root / "workspace"
+        self.git("-C", str(self.mirror), "bundle", "create", str(bundle), "refs/heads/" + branch)
+        self.git("init", "--quiet", str(workspace))
+        self.git("-C", str(workspace), "fetch", "--quiet", str(bundle), "refs/heads/" + branch)
+        self.git("-C", str(workspace), "checkout", "--quiet", "-B", branch, "FETCH_HEAD")
+        return self.git("-C", str(workspace), "rev-parse", "HEAD").stdout.strip(), self.git("-C", str(workspace), "branch", "--show-current").stdout.strip()
+
+    def test_legacy_new_branch_still_uses_seed_without_selection(self):
+        self.prepare(legacy=True)
+        self.assertEqual(self.checkout("fix-login"), (self.seed, "fix-login"))
+
+    def test_legacy_existing_remote_branch_still_uses_its_tip(self):
+        self.prepare(target="release", legacy=True)
+        self.assertEqual(self.checkout("release"), (self.tip, "release"))
+
+    def test_new_branch_uses_fetched_base_tip_not_seed(self):
+        self.assertNotEqual(self.seed, self.tip)
+        self.prepare()
+        self.assertEqual(self.checkout("fix-login"), (self.tip, "fix-login"))
+
+    def test_existing_branch_uses_its_remote_tip(self):
+        self.prepare(mode="existing", target="release", base=None)
+        self.assertEqual(self.checkout("release"), (self.tip, "release"))
+
+    def test_resume_keeps_admitted_commit_when_remote_advances(self):
+        self.prepare()
+        (self.remote / "source").write_text("later tip")
+        self.git("-C", str(self.remote), "commit", "--quiet", "-am", "later")
+        self.prepare()
+        self.assertEqual(self.checkout("fix-login"), (self.tip, "fix-login"))
+
+    def test_deleted_existing_branch_never_falls_back_to_seed_or_local_ref(self):
+        self.prepare(mode="existing", target="release", base=None)
+        self.git("-C", str(self.remote), "switch", "--quiet", "main")
+        self.git("-C", str(self.remote), "branch", "-D", "release")
+        with self.assertRaisesRegex(RuntimeError, "instance.clone_branch_not_found"):
+            self.prepare(mode="existing", target="release", base=None)
+
+    def test_deleted_base_is_not_a_new_branch_at_seed(self):
+        self.git("-C", str(self.remote), "switch", "--quiet", "main")
+        self.git("-C", str(self.remote), "branch", "-D", "release")
+        with self.assertRaisesRegex(RuntimeError, "instance.clone_branch_not_found"):
+            self.prepare()
+
+    def test_target_created_after_admission_is_not_silently_reused(self):
+        self.git("-C", str(self.remote), "branch", "fix-login")
+        with self.assertRaisesRegex(RuntimeError, "instance.clone_branch_exists"):
+            self.prepare()
+
+    def test_unreadable_remote_fails_without_creating_a_branch(self):
+        self.remote.rename(self.root / "gone")
+        with self.assertRaisesRegex(RuntimeError, "instance.clone_source_unavailable"):
+            self.prepare()
+        self.assertNotEqual(self.git("-C", str(self.mirror), "rev-parse", "--verify", "refs/heads/fix-login", check=False).returncode, 0)
+
+    def test_unreachable_frozen_commit_fails_without_using_current_tip(self):
+        with self.assertRaisesRegex(RuntimeError, "instance.clone_source_unavailable"):
+            self.prepare(sha="f" * 40)
+
+
 class CloneTest(unittest.TestCase):
-    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None):
+    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False):
         calls = []
         real_run = subprocess.run
         with tempfile.TemporaryDirectory() as folder:
@@ -46,11 +144,14 @@ class CloneTest(unittest.TestCase):
                     "t3": {"device": "t3"},
                 },
             }
+            container.update(overrides or {})
             read = None
 
             def command(argv, **kwargs):
                 nonlocal read
                 calls.append(argv)
+                if real_git and argv[0] in {"git", "timeout"}:
+                    return real_run(argv, **kwargs)
                 if argv[:2] == ["python3", "-c"]:
                     return real_run(argv, **kwargs)
                 output, status = "", 0
@@ -124,9 +225,22 @@ class CloneTest(unittest.TestCase):
         self.assertLess(check, calls.index(start))
 
     def test_clone_launch_applies_mail_without_another_playbook(self):
-        calls, _, error = self.clone(mail={"port": 1025})
-        self.assertEqual(error, "")
-        self.assertFalse(any("ansible-playbook" in call for call in calls))
+        fixture = BranchSelectionTest()
+        fixture.setUp()
+        try:
+            selected = {"repository": str(fixture.remote), "mirror": str(fixture.mirror), "protocols": ["file"], "branch": "mail-branch",
+                        "branch_selection": {"mode": "new", "target": "mail-branch", "base": "release", "source_sha": fixture.tip}}
+            for selection in [None, selected]:
+                with self.subTest(branch_selection=selection is not None):
+                    calls, _, error = self.clone(mail={"port": 1025}, overrides=selection, real_git=selection is not None)
+                    self.assertEqual(error, "")
+                    self.assertFalse(any("ansible-playbook" in call for call in calls))
+                    mail_call = next(i for i, call in enumerate(calls) if call[:2] == ["python3", "-c"] and '"status":"unchanged"' in call[2])
+                    start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+                    self.assertLess(start, mail_call)
+            self.assertEqual(fixture.git("-C", str(fixture.mirror), "rev-parse", "refs/heads/mail-branch").stdout.strip(), fixture.tip)
+        finally:
+            fixture.doCleanups()
 
     def test_clone_uses_the_admitted_common_acl_name(self):
         _, read, error = self.clone(nic_acl="admitted-proxy")

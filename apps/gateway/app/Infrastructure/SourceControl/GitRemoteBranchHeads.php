@@ -64,6 +64,12 @@ final readonly class GitRemoteBranchHeads implements RemoteBranchHeads
     /** @return list<string> All remote heads, bounded by a ten-second read and 4 MiB of output. */
     public function names(Project $project, ?RepositoryReadContext $context = null): array
     {
+        return array_map(strval(...), array_keys($this->heads($project, $context)));
+    }
+
+    /** @return array<string,string> Remote branch names and observed SHAs, within the same credentialed ten-second budget. */
+    public function heads(Project $project, ?RepositoryReadContext $context = null): array
+    {
         $deadline = new ReadDeadline(10.0);
         try {
             $environment = $this->access->for($project->repository_url, $project->source_access, $deadline, $context);
@@ -80,20 +86,20 @@ final readonly class GitRemoteBranchHeads implements RemoteBranchHeads
             if (! $result->succeeded() || $result->truncated) {
                 throw new \UnexpectedValueException;
             }
-            $names = [];
+            $heads = [];
             foreach (explode("\n", rtrim($result->stdout, "\n")) as $line) {
                 if ($line === '' && $result->stdout === '') {
                     continue;
                 }
-                if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\trefs\/heads\/(.+)\z/D', $line, $matches) !== 1 || ! GitBranchName::isValidSyntax($matches[1])) {
+                if (preg_match('/\A([0-9a-f]{40}(?:[0-9a-f]{24})?)\trefs\/heads\/(.+)\z/D', $line, $matches) !== 1 || ! GitBranchName::isValidSyntax($matches[2])) {
                     throw new \UnexpectedValueException;
                 }
-                $names[] = $matches[1];
+                $heads[$matches[2]] = $matches[1];
             }
 
             $deadline->remaining();
 
-            return array_values(array_unique($names));
+            return $heads;
         } catch (Throwable $exception) {
             throw $this->failure($project, null, $exception);
         }

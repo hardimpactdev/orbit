@@ -93,6 +93,8 @@ Analytics commands publish the tracking hosts that send visits to the [analytics
 
 On a Node of the build list, a Project's first `default` Instance runs in a container, and every other Instance of the Project is a [clone](/reference/development-containers#create) of it, with its own T3 server. See [the default Instance](/reference/development-containers#the-default-instance).
 
+Conn can also [create a thread clone on a selected branch](/reference/conn#threads-in-an-orbit-project). That optional API selection reserves a branch before creation and freezes its source commit. The CLI keeps its existing create rules.
+
 ## Related
 
 - [`project`](/cli/project) owns the repository and source defaults that an Instance inherits.

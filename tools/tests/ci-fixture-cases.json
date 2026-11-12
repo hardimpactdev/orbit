@@ -1344,8 +1344,18 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "14e692d1b42705f7df573a5e883524b473d4c143ee84c507d6fa734a88976a2d",
+    "source_sha256": "a1abe1492d10288a20dc23af8e2b25592c4614e723547f9b67bccbb5a0fbfc1e",
     "cases": [
+      "test_legacy_new_branch_still_uses_seed_without_selection",
+      "test_legacy_existing_remote_branch_still_uses_its_tip",
+      "test_new_branch_uses_fetched_base_tip_not_seed",
+      "test_existing_branch_uses_its_remote_tip",
+      "test_resume_keeps_admitted_commit_when_remote_advances",
+      "test_deleted_existing_branch_never_falls_back_to_seed_or_local_ref",
+      "test_deleted_base_is_not_a_new_branch_at_seed",
+      "test_target_created_after_admission_is_not_silently_reused",
+      "test_unreadable_remote_fails_without_creating_a_branch",
+      "test_unreachable_frozen_commit_fails_without_using_current_tip",
       "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
       "test_clone_launch_applies_mail_without_another_playbook",
       "test_clone_uses_the_admitted_common_acl_name",

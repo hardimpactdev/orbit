@@ -15,6 +15,7 @@ use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlan;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\Deployment\DevelopmentDeploySteps;
+use App\Domain\Instances\DevelopmentInstanceBranchAdmission;
 use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\InstanceContainer;
@@ -70,7 +71,11 @@ final readonly class StartDevelopmentInstanceCreateAction
             app(CaptureProjectSourceFactsAction::class)->execute($project);
         }
 
-        return DB::transaction(function () use ($data, $caller, $requestId): Operation {
+        $observed = $project;
+        $selection = $data->branchSelection === null ? null
+            : app(DevelopmentInstanceBranchAdmission::class)->prepare($project, $data->name, $data->branchSelection, $caller);
+
+        return DB::transaction(function () use ($data, $caller, $requestId, $selection, $observed): Operation {
             $project = Project::query()->findOrFail($data->projectId);
             $this->admission->assertSourceAccess($project);
             $node = Node::query()->findOrFail($data->nodeId);
@@ -78,6 +83,8 @@ final readonly class StartDevelopmentInstanceCreateAction
             $root = $data->root === null ? null : ProjectRoot::validate($data->root, $project->type);
             $name = DefaultInstanceName::resolve($project, $data->name);
             $instance = Instance::query()->where('project_id', $project->id)->where('name', $name)->lockForUpdate()->first();
+            $selection = $selection === null ? null
+                : app(DevelopmentInstanceBranchAdmission::class)->reserve($project, $observed, $selection, $instance, $caller);
             $created = ! $instance instanceof Instance;
             // A container Instance is the Project's default, or a clone of that default ($source).
             [$container, $source] = $this->container($project, $node, $name, $instance, $data);
@@ -158,6 +165,9 @@ final readonly class StartDevelopmentInstanceCreateAction
                 'setup_digest' => $digest(LifecyclePhase::Setup), 'teardown_digest' => $digest(LifecyclePhase::Teardown),
                 'php_version' => $project->php_version, 'laravel' => $project->is_laravel === true,
             ];
+            if ($selection !== null) {
+                $input['branch_selection'] = $selection->toArray();
+            }
             $input['ssh_execution'] = app(SwampSshExecutionInput::class)->forNode($node);
             // A web-serving Project gets its Route, the derived <name>.<project-slug>.<tld> or --domain. It is reserved
             // before the environment and the Processes are captured, because its domain changes both.
@@ -202,6 +212,9 @@ final readonly class StartDevelopmentInstanceCreateAction
                 'server_database' => $server['input'] ?? null, 'container' => $steps === null ? null
                     : $this->containerIntent($instance, $node, $steps, $source, $server['connection'] ?? null,
                         ValidatedData::string(ValidatedData::object($provisioning['resolve'])['branch']), $route?->domain)];
+            if ($selection !== null && is_array($input['direct_provisioning']['container'])) {
+                $input['direct_provisioning']['container']['branch_selection'] = $selection->toArray();
+            }
             if ($steps !== null) {
                 // F8: no container create has run yet, so the run starts at 30 minutes, plus the deploy step timeouts. A clone runs
                 // no deploy step but adds its database copy and its T3 start.

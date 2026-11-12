@@ -14,6 +14,43 @@ from pathlib import Path
 GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "systemctl", "t3")
 
 
+
+def select_branch(container, git, remote_git, run):
+    """Populate the mirror from the admitted source; never use the seed for explicit selection."""
+    selection = container["branch_selection"]
+    target = "refs/heads/" + selection["target"]
+    source = "refs/heads/" + (selection["base"] or selection["target"])
+    remote = run(
+        remote_git + ["ls-remote", "--heads", "--", container["repository"], source, target],
+        check=False,
+    )
+    if remote.returncode:
+        raise RuntimeError("instance.clone_source_unavailable")
+    heads = {}
+    for line in remote.stdout.splitlines():
+        fields = line.split("\t")
+        if len(fields) != 2 or not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", fields[0]):
+            raise RuntimeError("instance.clone_source_unavailable")
+        heads[fields[1]] = fields[0]
+    if selection["mode"] == "new" and target in heads:
+        raise RuntimeError("instance.clone_branch_exists")
+    if source not in heads:
+        raise RuntimeError("instance.clone_branch_not_found")
+    fetched = run(
+        remote_git + ["fetch", "--quiet", "--no-tags", "--", container["repository"],
+                      "+" + source + ":refs/orbit/clone-source"],
+        check=False,
+    )
+    if fetched.returncode:
+        raise RuntimeError("instance.clone_source_unavailable")
+    # Fetch the named source, then retain the exact observed commit even when it advanced since admission.
+    commit = selection["source_sha"]
+    observed = run(git + ["cat-file", "-e", commit + "^{commit}"], check=False)
+    if observed.returncode:
+        raise RuntimeError("instance.clone_source_unavailable")
+    run(git + ["update-ref", target, commit])
+
+
 def main():
     container = json.loads(sys.argv[1])
     guest = sys.argv[2]
@@ -342,42 +379,45 @@ def main():
                     "protocol." + container["protocols"][0] + ".allow=always",
                 ]
             )
-            branch = "refs/heads/" + container["branch"]
-            remote = run(
-                remote_git
-                + ["ls-remote", "--heads", "--", container["repository"], branch]
-            ).stdout.strip()
-            before = run(
-                git + ["rev-parse", "--verify", "--quiet", branch], check=False
-            )
-            if remote:
-                run(
+            if "branch_selection" in container:
+                select_branch(container, git, remote_git, run)
+            else:
+                branch = "refs/heads/" + container["branch"]
+                remote = run(
                     remote_git
-                    + [
-                        "fetch",
-                        "--quiet",
-                        "--no-tags",
-                        "--",
-                        container["repository"],
-                        "+" + branch + ":" + branch,
-                    ]
+                    + ["ls-remote", "--heads", "--", container["repository"], branch]
+                ).stdout.strip()
+                before = run(
+                    git + ["rev-parse", "--verify", "--quiet", branch], check=False
                 )
-            elif before.returncode:
-                run(
-                    git
-                    + [
-                        "fetch",
-                        "--quiet",
-                        "--no-tags",
-                        "--",
-                        container["clone"]["source_mirror"],
-                        "+refs/heads/*:refs/seed/*",
-                    ]
-                )
-                change(
-                    git
-                    + ["branch", container["branch"], container["clone"]["seed_commit"]]
-                )
+                if remote:
+                    run(
+                        remote_git
+                        + [
+                            "fetch",
+                            "--quiet",
+                            "--no-tags",
+                            "--",
+                            container["repository"],
+                            "+" + branch + ":" + branch,
+                        ]
+                    )
+                elif before.returncode:
+                    run(
+                        git
+                        + [
+                            "fetch",
+                            "--quiet",
+                            "--no-tags",
+                            "--",
+                            container["clone"]["source_mirror"],
+                            "+refs/heads/*:refs/seed/*",
+                        ]
+                    )
+                    change(
+                        git
+                        + ["branch", container["branch"], container["clone"]["seed_commit"]]
+                    )
         finally:
             credential.unlink(missing_ok=True)
     elif phase == "workspace":
