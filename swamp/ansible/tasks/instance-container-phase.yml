@@ -908,6 +908,21 @@
   vars:
     t3_url: "http://127.0.0.1:{{ container.clone.t3.internal_port }}"
   block:
+    - name: Check the units before recording sessions
+      ansible.builtin.command:
+        argv: "{{ as_root + ['python3', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/../scripts/instance_clone_guest.py'), 'process-check', container | to_json] }}"
+      register: session_units
+      changed_when: false
+      failed_when: false
+    - name: Retain the public unit refusal
+      when: session_units.rc != 0
+      ansible.builtin.set_fact:
+        migrate_process_failure: "{{ session_units.stdout | from_json }}"
+    - name: Require running units before recording sessions
+      ansible.builtin.assert:
+        that: session_units.rc == 0
+        fail_msg: instance.container_process_inactive
+        quiet: true
     - name: Read the served environment
       ansible.builtin.command: { argv: "{{ as_agent + ['curl', '--fail', '--silent', '--max-time', '5', t3_url ~ '/.well-known/t3/environment'] }}" }
       register: t3_environment

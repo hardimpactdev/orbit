@@ -160,14 +160,14 @@ class CloneGuestTest(unittest.TestCase):
 
             self.assertNotIn("private", output.getvalue())
 
-    def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=False):
+    def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=False, inactive=False):
         container = {
             "workspace": "/srv/workspace",
             "branch": "proof",
             "expected_commit": "abc123",
             "php": php,
             "units": [],
-            "processes": [],
+            "processes": [{"name": "orbit-process-vp-dev.service", "id": 19, "desired": "running"}] if inactive else [],
             "clone": {
                 "seed_commit": "abc123",
                 "t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"},
@@ -188,11 +188,15 @@ class CloneGuestTest(unittest.TestCase):
                 stdout = json.dumps(
                     {"environmentId": "proof", "serverVersion": "0.1.7"}
                 )
+            if actual[:2] == ['systemctl', 'is-active'] and inactive:
+                code = 1
+            if actual[:2] == ['systemctl', 'show']:
+                stdout = 'ActiveState=failed\nSubState=failed\nResult=exit-code\nExecMainStatus=1\nNRestarts=5\n'
             if actual[0] == "git":
                 stdout = "proof\n" if "symbolic-ref" in actual else "abc123\n"
             if actual[0] == "/opt/agent/bin/t3":
                 stdout = actual[actual.index("--label") + 1] + "-PRIVATE-TOKEN\n"
-            return subprocess.CompletedProcess(argv, code, stdout, "PRIVATE-STDERR")
+            return subprocess.CompletedProcess(argv, code, stdout, "token=ghp_SUPER_PRIVATE_TOKEN_12345678901234567890")
 
         sessions = {
             key: {"token": key + "-PRIVATE-TOKEN"} for key in ["gateway", "swamp"]
@@ -234,6 +238,16 @@ class CloneGuestTest(unittest.TestCase):
                 GUEST.phase_main(phase, json.dumps(container))
         self.assertNotIn("PRIVATE", error.getvalue())
         return commands, output.getvalue(), error.getvalue()
+
+    def test_inactive_process_names_unit_states_and_exit_without_private_log(self):
+        commands, output, error = self.readiness('sessions', entrypoint=True, inactive=True)
+        receipt = json.loads(output)
+        self.assertEqual(receipt, {'error_code': 'instance.container_process_inactive', 'process_failure': {
+            'unit': 'orbit-process-vp-dev.service', 'process_id': 19, 'ActiveState': 'failed',
+            'SubState': 'failed', 'Result': 'exit-code', 'ExecMainStatus': 1, 'NRestarts': 5}})
+        self.assertEqual(error, 'instance.container_process_inactive\n')
+        self.assertNotIn('PRIVATE', output + error)
+        self.assertFalse(any(argv[0] == 'journalctl' for argv in commands))
 
     def test_non_php_sessions_keep_both_authenticated_sessions_without_php(self):
         for existing in [False, True]:

@@ -1352,10 +1352,11 @@
     ]
   },
   "swamp/tests/instance_clone_guest_test.py": {
-    "source_sha256": "9b728ffbdc1418099924c930302d57368c222ba285c713975cd67e7995443207",
+    "source_sha256": "fcf3231fcc8b9db76e0a455858f541d758d814c5921bd0ecd51a9b22294f7a6b",
     "cases": [
       "test_sessions_check_only_loopback_t3_and_reject_http_and_scope_failures",
       "test_workspace_forwards_one_json_vault_value_without_printing_secrets",
+      "test_inactive_process_names_unit_states_and_exit_without_private_log",
       "test_non_php_sessions_keep_both_authenticated_sessions_without_php",
       "test_non_php_check_has_no_php_probe",
       "test_php_readiness_still_checks_the_project_runtime",
@@ -1367,7 +1368,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "cd6fd017b0f76e9c39a4bd05ebd3f48e787d4db3a3747c757858dc1477edd7ea",
+    "source_sha256": "523a14c53f195c3f0f98a930d19f25af62c22008706a5d6bf726a60b599ee7a0",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1388,6 +1389,7 @@
       "test_clone_uses_the_admitted_common_acl_name",
       "test_clone_refuses_unsafe_effective_nics_before_start",
       "test_guest_and_node_command_names_stay_in_sync",
+      "test_structured_process_failure_reaches_create_and_migrate_terminal_receipts",
       "test_preserves_only_the_guest_command_and_exit_code",
       "test_rejects_private_or_mismatched_guest_diagnostics",
       "test_node_command_failure_names_executable_and_exit_without_output"

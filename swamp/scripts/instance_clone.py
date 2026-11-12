@@ -114,6 +114,23 @@ def main():
         payload = ["python3", "-c", guest, member, json.dumps(container)]
         result = run(project + ["exec", name, "--"] + payload, private, check=False)
         if result.returncode:
+            if member == 'sessions':
+                try:
+                    evidence = json.loads(result.stdout)
+                except (ValueError, TypeError):
+                    evidence = {}
+                if isinstance(evidence, dict) and evidence.get('error_code') in {
+                    'instance.container_process_inactive', 'instance.container_sessions_failed'
+                } and (isinstance(evidence.get('process_failure'), dict) or evidence.get('reason') in {
+                    'session_scope_missing', 'sessions_not_distinct', 'branch_mismatch', 'commit_mismatch'
+                }):
+                    # Only the guest's structured public receipt crosses; never its stderr.
+                    public = {key: evidence[key] for key in ('error_code', 'process_failure', 'reason') if key in evidence}
+                    private_folder()
+                    receipt = folder / 't3.json'
+                    receipt.write_text(json.dumps(public))
+                    receipt.chmod(0o600)
+                    raise RuntimeError(public['error_code'])
             # Only the guest's complete, output-free diagnostic may cross this boundary.
             diagnostic = result.stderr.strip()
             if re.fullmatch(
