@@ -13,7 +13,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "route-dns-grace" }}'
+      behaviorName: route-dns-grace
       methodName: execute
       inputs:
         run: /usr/bin/sleep 31
