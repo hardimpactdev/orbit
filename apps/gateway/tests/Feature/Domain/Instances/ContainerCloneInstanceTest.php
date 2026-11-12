@@ -6,6 +6,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
@@ -33,6 +34,7 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\ProjectDevelopmentDeployStep;
+use App\Models\Route;
 use App\Support\ValidatedData;
 use Dotenv\Dotenv;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -331,7 +333,10 @@ describe('the clone\'s create result', function (): void {
             ->assertOk()->assertJsonPath('data.error_code', 'instance.create_register_failed')
             ->assertJsonPath('data.error.code', 'instance.create_register_failed')
             ->assertJsonPath('data.error.detail', 'exec failed on 1/1 host(s): target (exit 1: '.$diagnostic.')')
-            ->assertJsonPath('data.failed_step', 'clone-sessions');
+            ->assertJsonPath('data.failed_step', 'clone-sessions')
+            ->assertJsonPath('data.result.recovery.state', 'retained_for_retry')
+            ->assertJsonPath('data.result.recovery.retry.command', 'instance:create')
+            ->assertJsonPath('data.result.recovery.destroy.command', 'instance:destroy');
     });
 
     it('records the T3 server from the run\'s result: its Node, its Instance and the Gateway session from the vault', function (): void {
@@ -736,3 +741,67 @@ it('renders database removal fence recovery with PostgreSQL boolean keywords', f
         ->toContain("format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', d.datname, CASE WHEN j.allow_connections THEN 'true' ELSE 'false' END)")
         ->not->toContain("format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', d.datname, j.allow_connections)");
 });
+
+it('names retained create resources and proves the advertised recovery paths', function (bool $clone, string $phase, bool $hasCommit): void {
+    $node = containerDefaultNode();
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
+    if ($clone) {
+        $seed = containerCreate($project, $node);
+        $seed->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'seed-run']])->save();
+        app(DevelopmentInstanceCreateProjection::class)->apply($seed, [
+            'status' => 'succeeded', 'run_id' => 'seed-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+            'result' => ['instance_id' => $seed->target_id, 'ready' => true, 'commit' => str_repeat('c', 40)],
+        ]);
+    }
+    $name = $clone ? 'retry-feature' : 'default';
+    $operation = containerCreate($project, $node, $name);
+    $instance = Instance::query()->findOrFail($operation->target_id);
+    $routeId = $operation->input['route_id'];
+    $runtime = $instance->runtime()->firstOrFail();
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'failure-run']])->save();
+    $native = ['instance_id' => $instance->id, 'ready' => false, 'failed_step' => $phase];
+    if ($hasCommit) {
+        $native['commit'] = str_repeat('a', 40);
+    }
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
+        'status' => 'failed', 'run_id' => 'failure-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'instance.create_'.$phase.'_failed',
+        'result' => $native,
+    ]);
+    $recovery = $operation->refresh()->result['recovery'];
+    expect($recovery)->toBe([
+        'state' => 'retained_for_retry',
+        'retry' => ['command' => 'instance:create', 'project_id' => $project->id, 'node_id' => $node->id, 'name' => $name,
+            'reuse_original_options' => true, 'new_idempotency_key' => true],
+        'destroy' => ['command' => 'instance:destroy', 'instance_id' => $instance->id,
+            'available' => $clone, 'options' => ['yes' => true, 'force' => true],
+            ...($clone ? [] : ['error_code' => 'operation.kind_unavailable', 'reason' => 'container_default_destroy_unavailable'])],
+    ])->and($instance->fresh()->status)->toBe($hasCommit ? InstanceState::SourceResolved : InstanceState::Reserved)
+        ->and($instance->fresh()->failed_step)->toBe($phase)
+        ->and(Route::query()->findOrFail($routeId)->status->value)->toBe('pending');
+
+    // The command is a real new admission: it reuses the exact reservation, Route and runtime.
+    $repeat = containerCreate($project, $node, $name);
+    expect($repeat->id)->not->toBe($operation->id)
+        ->and($repeat->target_id)->toBe($instance->id)
+        ->and($repeat->input['route_id'])->toBe($routeId)
+        ->and($instance->runtime()->firstOrFail()->id)->toBe($runtime->id);
+    expect(containerRefusal(fn () => app(ContainerInstanceDestroy::class)->assertAvailable($instance->fresh(), true)))
+        ->toBe($clone ? 'admitted' : 'operation.kind_unavailable');
+})->with([
+    'clone-input' => [true, 'clone', false],
+    'clone-container' => [true, 'clone', false],
+    'clone-workspace' => [true, 'workspace', false],
+    'clone-agent' => [true, 'agent', true],
+    'clone-t3' => [true, 't3', true],
+    'clone-sessions' => [true, 'register', true],
+    'clone-register' => [true, 'register', true],
+    'default-container' => [false, 'container', false],
+    'default-workspace' => [false, 'workspace', false],
+    'default-deploy' => [false, 'deploy', true],
+    'default-processes' => [false, 'processes', true],
+    'default-route' => [false, 'route', true],
+    'default-seed' => [false, 'seed', true],
+]);

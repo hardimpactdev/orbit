@@ -50,6 +50,9 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             if ((ValidatedData::object($operation->input['direct_provisioning'] ?? [])['already_active'] ?? false) === true) {
                 return $this->direct->project($operation, $data, $result);
             }
+            if ($container !== null && in_array($data['status'], ['failed', 'cancelled'], true)) {
+                $result['recovery'] = $this->recovery($operation, ValidatedData::object($container));
+            }
             if ($data['status'] === 'succeeded' && (($result['ready'] ?? false) !== true || ($result['instance_id'] ?? null) !== $instance->id || ! is_string($result['commit'] ?? null))) {
                 throw new ResourceOperationException('instance.result_invalid', 'Native creation did not prove its complete terminal result.');
             }
@@ -97,6 +100,32 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
 
             return $this->direct->project($operation, $data, $result);
         });
+    }
+
+    /**
+     * The reservation is intentional; name the existing recovery paths without claiming physical cleanup.
+     *
+     * @param  array<string, mixed>  $container
+     * @return array<string, mixed>
+     */
+    private function recovery(Operation $operation, array $container): array
+    {
+        $input = $operation->input;
+        $clone = ($container['clone'] ?? null) !== null;
+
+        return [
+            'state' => 'retained_for_retry',
+            'retry' => [
+                'command' => 'instance:create',
+                'project_id' => $input['project_id'], 'node_id' => $input['node_id'], 'name' => $input['name'],
+                'reuse_original_options' => true, 'new_idempotency_key' => true,
+            ],
+            'destroy' => [
+                'command' => 'instance:destroy', 'instance_id' => $operation->target_id,
+                'available' => $clone, 'options' => ['yes' => true, 'force' => true],
+                ...($clone ? [] : ['error_code' => 'operation.kind_unavailable', 'reason' => 'container_default_destroy_unavailable']),
+            ],
+        ];
     }
 
     /**

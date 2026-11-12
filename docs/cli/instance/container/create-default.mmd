@@ -76,7 +76,8 @@ sequenceDiagram
   else a step fails or the budget ends
     SW--xGW: Run failed<br/>failed step, error_code
     %%> What stays:
-    %%> - the stopped container with its workspace, marked failed; the same command resumes it
+    %%> - the reservation and any stopped container, workspace and database remain for retry
+    %%> - the failure result names retained_for_retry and the same create command with a new idempotency key; default destroy stays unavailable
     Note over GW: Record the failure
   end
   loop every 2 s until terminal

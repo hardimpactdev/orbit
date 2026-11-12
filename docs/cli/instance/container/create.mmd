@@ -115,7 +115,8 @@ sequenceDiagram
     %%> - only when the run published it
     SW->>N: Stop the container<br/>incus stop
     %%> What stays:
-    %%> - the stopped container, its database and its runtime record, marked failed; `instance:destroy` removes them
+    %%> - the reservation, database and runtime record remain for retry; a container that exists is stopped
+    %%> - the failure result names retained_for_retry, the same create command with a new idempotency key, and forced destroy
     %%> Cleanup:
     %%> - remove the private clone folder after success or failure, even if staging or the first launch failed
     SW--xGW: Run failed<br/>failed step, error_code
