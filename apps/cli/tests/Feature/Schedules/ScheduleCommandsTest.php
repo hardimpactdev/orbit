@@ -766,3 +766,18 @@ function schedule_definition_cli_json(): string
         'request_id' => schedule_cli_request_id(),
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }
+
+it('shows an inactive container timer in human and JSON Schedule reads', function (string $command, bool $json): void {
+    $data = ['timer_state' => 'inactive', 'desired_timer_state' => 'enabled'];
+    $listed = schedule_cli_payload($data);
+    unset($listed['command']);
+    MockClient::global([
+        ListSchedulesRequest::class => MockResponse::make(['data' => [$listed], 'meta' => ['request_id' => schedule_cli_request_id()]]),
+        ShowScheduleRequest::class => schedule_cli_response($data),
+    ]);
+    [$exit, $output] = schedule_cli_display($command, [
+        ...($command === 'schedule:show' ? ['schedule' => schedule_cli_uuid()] : []),
+        ...($json ? ['--json' => true] : []),
+    ]);
+    expect($exit)->toBe(Command::SUCCESS)->and($output)->toContain('inactive', 'enabled');
+})->with(['schedule:list', 'schedule:show'])->with([false, true]);

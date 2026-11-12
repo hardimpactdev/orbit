@@ -160,6 +160,14 @@ class CloneTest(unittest.TestCase):
                         output = json.dumps([{"name": "seed"}])
                     elif "sockets.target.wants" in argv[2]:
                         output = json.dumps(["orbit-mail-1025.socket", "orbit-mail-2525.socket", "project.socket"])
+                    elif "timers.target.wants" in argv[2]:
+                        if container.get("fixture_schedule_listing_error"):
+                            return subprocess.CompletedProcess(argv, 1, "", "Error: Permission denied")
+                        output = json.dumps(["orbit-schedule-default.timer", "project.timer"])
+                    elif argv[2].endswith("/etc/systemd/system"):
+                        output = json.dumps(["orbit-schedule-default.timer", "orbit-schedule-default.service"])
+                    elif argv[2].endswith("/etc/orbit/schedules"):
+                        output = json.dumps(["default.sh", "default.complete"])
                     elif "network-acls?" in argv[2] or "files?" in argv[2]:
                         output = "[]"
                     else:
@@ -209,6 +217,11 @@ class CloneTest(unittest.TestCase):
                 transcript.append(output.getvalue())
             return calls, read, error.getvalue()
 
+    def test_schedule_cleanup_listing_error_refuses_before_clone_boot(self):
+        calls, _, error = self.clone(overrides={"fixture_schedule_listing_error": True})
+        self.assertNotEqual(error, "")
+        self.assertFalse(any(call[:4] == ["incus", "--project", "orbit-instances", "start"] for call in calls))
+
     def test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start(self):
         calls, read, error = self.clone()
         self.assertEqual(error, "")
@@ -222,6 +235,11 @@ class CloneTest(unittest.TestCase):
         self.assertIn('instance-7/etc/systemd/system/sockets.target.wants/orbit-mail-1025.socket', deleted)
         self.assertIn('instance-7/etc/systemd/system/sockets.target.wants/orbit-mail-2525.socket', deleted)
         self.assertNotIn('instance-7/etc/systemd/system/sockets.target.wants/project.socket', deleted)
+        for path in ["systemd/system/timers.target.wants/orbit-schedule-default.timer",
+                     "systemd/system/orbit-schedule-default.timer", "systemd/system/orbit-schedule-default.service",
+                     "orbit/schedules/default.sh", "orbit/schedules/default.complete"]:
+            self.assertIn("instance-7/etc/" + path, deleted)
+        self.assertNotIn("instance-7/etc/systemd/system/timers.target.wants/project.timer", deleted)
         self.assertLess(calls.index(deleted), calls.index(start))
         check = next(i for i, call in enumerate(calls) if call[:2] == ["python3", "-c"])
         self.assertLess(check, calls.index(start))

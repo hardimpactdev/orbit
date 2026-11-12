@@ -24,6 +24,16 @@ options:
     description: The journal reader executable.
     type: path
     default: /usr/bin/journalctl
+  incus:
+    description: The Node's Incus executable.
+    type: path
+    default: /usr/bin/incus
+  container_project:
+    description: Recorded Incus project; supplied together with container_name for a container read.
+    type: str
+  container_name:
+    description: Recorded Instance container name; absent for a host journal read.
+    type: str
 author: Orbit
 '''
 EXAMPLES = ''
@@ -57,8 +67,8 @@ def format_entry(record):
     return f"{timestamp:%Y-%m-%dT%H:%M:%S%z} {record.get('_HOSTNAME', 'unknown')} {identifier}: {message}\n"
 
 
-def read_entries(executable, schedule_id, lines):
-    argv = [executable, f'_SYSTEMD_UNIT=orbit-schedule-{schedule_id}.service', '+',
+def read_entries(executable, schedule_id, lines, prefix=None):
+    argv = (prefix or []) + [executable, f'_SYSTEMD_UNIT=orbit-schedule-{schedule_id}.service', '+',
             f'SYSLOG_IDENTIFIER=orbit-schedule-{schedule_id}', '--lines', str(lines), '--reverse',
             '--output=json', '--all', '--output-fields=__REALTIME_TIMESTAMP,_HOSTNAME,SYSLOG_IDENTIFIER,_COMM,SYSLOG_PID,_PID,MESSAGE',
             '--no-pager', '--quiet']
@@ -99,17 +109,48 @@ def read_entries(executable, schedule_id, lines):
     return ''.join(reversed(entries)), truncated
 
 
+
+def container_observation(incus, container, schedule_id):
+    """A stopped container is inspected, never started. Keep errors and service output private."""
+    raw = subprocess.run([incus, 'query', '--', '/1.0/instances/' + container['name'] + '?project=' + container['project']],
+                         check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
+    if json.loads(raw.stdout)['status'] != 'Running':
+        return {'state': 'inactive', 'last_run_at': None, 'last_run_status': None,
+                'error_code': 'schedule.target_inactive'}, []
+    prefix = [incus, 'exec', '--project', container['project'], '--env', 'LC_ALL=C', '--env', 'TZ=UTC', container['name'], '--']
+    timer = subprocess.run(prefix + ['systemctl', 'show', '--property=ActiveState', '--value', '--',
+                                    'orbit-schedule-' + schedule_id + '.timer'],
+                           check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
+    raw = subprocess.run(prefix + ['systemctl', 'show', '--property=Result', '--property=ExecMainExitTimestamp',
+                                  '--property=ActiveState', '--', 'orbit-schedule-' + schedule_id + '.service'],
+                         check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
+    properties = dict(line.split('=', 1) for line in raw.stdout.decode().splitlines() if '=' in line)
+    timestamp = properties.get('ExecMainExitTimestamp', '')
+    last_run = None
+    if timestamp and timestamp != 'n/a':
+        last_run = datetime.datetime.strptime(timestamp, '%a %Y-%m-%d %H:%M:%S %Z').replace(tzinfo=datetime.UTC).isoformat()
+    return {'state': timer.stdout.decode().strip() or 'unknown', 'last_run_at': last_run,
+            'last_run_status': ('success' if properties.get('Result') == 'success' else 'error') if last_run else None}, prefix
+
 def main():
     module = AnsibleModule(argument_spec={
         'schedule_id': {'type': 'str', 'required': True},
         'lines': {'type': 'int', 'required': True},
         'journalctl': {'type': 'path', 'default': '/usr/bin/journalctl'},
-    }, supports_check_mode=True)
+        'incus': {'type': 'path', 'default': '/usr/bin/incus'},
+        'container_project': {'type': 'str', 'default': None},
+        'container_name': {'type': 'str', 'default': None},
+    }, required_together=[['container_project', 'container_name']], supports_check_mode=True)
     try:
-        output, truncated = read_entries(module.params['journalctl'], module.params['schedule_id'], module.params['lines'])
+        observed, prefix = ({'state': 'active'}, [])
+        if module.params['container_name'] is not None:
+            observed, prefix = container_observation(module.params['incus'],
+                {'project': module.params['container_project'], 'name': module.params['container_name']}, module.params['schedule_id'])
+        output, truncated = ('', False) if 'error_code' in observed else read_entries(
+            module.params['journalctl'], module.params['schedule_id'], module.params['lines'], prefix)
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
         module.fail_json(msg='The Schedule journal could not be read.')
-    module.exit_json(changed=False, output=output, truncated=truncated)
+    module.exit_json(changed=False, output=output, truncated=truncated, observation=observed)
 
 
 if __name__ == '__main__':

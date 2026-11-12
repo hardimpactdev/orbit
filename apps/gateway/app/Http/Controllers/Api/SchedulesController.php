@@ -138,7 +138,7 @@ final class SchedulesController extends Controller
         $this->rememberForActivity($request, $schedule);
 
         return response()->json([
-            'data' => ScheduleData::fromModel($schedule)->toArray(),
+            'data' => ScheduleData::fromModel($schedule, observe: true)->toArray(),
             'meta' => $this->meta($request),
         ]);
     }
