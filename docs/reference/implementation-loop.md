@@ -161,6 +161,8 @@ The fixture table in `.github/ci/checks.toml` maps changed inputs to files and d
 
 Measured container and fleet files declare costs by exact case name, with run IDs for completed measurements and explicit estimates for unmeasured cases. Their file cost equals the retained case total. Packing includes six seconds of startup per slice. Slice counts never exceed the retained case count.
 
+Fleet fixture costs use hosted timings as well as local measurements. Host-clean uses per-case hosted maxima with a 25% allowance, rounded up plus one second; its smaller slices retain all sixteen cases. A shard cut-off is only a lower bound on runtime. The grants fixture reserves a whole planning lane after two shard cut-offs; its 150-second cost is a conservative estimate, not a completed measurement. Runtime ceilings stay unchanged.
+
 Container host preparation uses one case per unit. Each declared body cost uses its largest completed observation, rounded up plus one second; paired cases must not receive an equal share of the file total. Deadline cuts are censored observations, not completed measurements.
 
 Direct input matches take priority when work exceeds that limit, then fixture table order decides admission. A file runs with all its slices or is deferred whole; the plan names deferred units, their cases and unmapped Swamp paths in its summary. A file that cannot fit even an otherwise empty six-shard plan, or contains a unit above the lane budget, makes Required checks fail; admitted files still run. Unmapped paths select the table’s default checks.
