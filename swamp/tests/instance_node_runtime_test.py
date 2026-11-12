@@ -217,6 +217,26 @@ class NodeRuntimeTest(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, '.nvmrc pins Node 22: .*' + reason):
                     self.fetch()
 
+    def test_shasums_download_failures_are_transport_errors_not_verification_errors(self):
+        runtime.prepare(self.home, self.shared)
+        self.environment['FAKE_NODE_FAIL'] = '1'
+        url = 'https://nodejs.org/dist/v999.0.0/SHASUMS256.txt.asc'
+        diagnostics = [
+            ('Failed to download SHASUMS256.txt.asc: HTTP status client error (404 Not Found) for url (' + url + ')', 'HTTP 404'),
+            ('Failed to download SHASUMS256.txt.asc: HTTP status server error (503 Service Unavailable) for url (' + url + ')', 'HTTP 503'),
+            ('Failed to download SHASUMS256.txt.asc: error sending request for url (' + url + '): dns error: failed to lookup address information', 'network failure'),
+            ('SHASUMS256.txt.asc: checksum mismatch', 'checksum verification failed'),
+            ('SHASUMS256.txt.asc: signature verification failed', 'signature verification failed'),
+            ('Failed to prepare Node: invalid checksum', 'checksum verification failed'),
+            ('Failed to prepare Node: invalid signature', 'signature verification failed'),
+        ]
+        for diagnostic, reason in diagnostics:
+            with self.subTest(diagnostic=diagnostic):
+                self.environment['FAKE_NODE_REASON'] = diagnostic
+                with self.assertRaisesRegex(RuntimeError, '.nvmrc pins Node 22: .*' + reason) as caught:
+                    self.fetch()
+                self.assertNotIn(url, str(caught.exception))
+
     def test_non_vite_projects_do_not_resolve_or_download_unused_pins(self):
         for command in (None, '/usr/bin/php artisan queue:work', '/usr/bin/python3 worker.py node'):
             with self.subTest(command=command):

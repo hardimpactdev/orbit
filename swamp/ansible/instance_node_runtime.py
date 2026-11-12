@@ -100,25 +100,28 @@ def unit_contexts(container):
 def tool_failure(stderr, status):
     """Closed, public diagnostics: never return raw tool output, URLs or environment values."""
     text = stderr.lower()
-    if 'checksum' in text or 'hash mismatch' in text or 'shasums' in text:
-        return 'checksum verification failed'
-    if 'signature' in text:
-        return 'signature verification failed'
     if 'no space left' in text or 'os error 28' in text or 'disk quota' in text:
         return 'not enough disk space for Node'
     if 'read-only file system' in text or 'os error 30' in text:
         return 'the runtime store is read-only'
     if 'permission denied' in text or 'os error 13' in text:
         return 'permission denied while writing the runtime store'
-    if 'invalid' in text and any(word in text for word in ('version', 'node', 'lts', 'alias')):
-        return 'invalid Node version'
-    if any(word in text for word in ('no matching', 'no version matching', 'no version found', 'unknown version', 'unknown lts', 'version not found')) or re.search(r'version[^\n]*not found', text):
-        return 'unknown Node version'
     http = re.search(r'(?:http[^\n]*?|status[^\n]*?)\b([45][0-9]{2})\b', text)
     if http:
         return 'Node download failed with HTTP ' + http[1]
     if any(word in text for word in ('network', 'dns', 'resolve host', 'connection', 'connect error', 'timed out', 'timeout', 'proxy', 'request', 'tls', 'handshake', 'certificate')):
         return 'network failure while resolving or downloading Node'
+    verification_failed = any(word in text for word in (
+        'mismatch', 'verification failed', 'verification error', 'failed to verify',
+        'does not match', 'invalid checksum', 'invalid signature'))
+    if verification_failed and ('checksum' in text or 'hash mismatch' in text):
+        return 'checksum verification failed'
+    if verification_failed and 'signature' in text:
+        return 'signature verification failed'
+    if 'invalid' in text and any(word in text for word in ('version', 'node', 'lts', 'alias')):
+        return 'invalid Node version'
+    if any(word in text for word in ('no matching', 'no version matching', 'no version found', 'unknown version', 'unknown lts', 'version not found')) or re.search(r'version[^\n]*not found', text):
+        return 'unknown Node version'
     return 'Vite+ exited with status ' + str(status) + ' while preparing Node'
 
 
