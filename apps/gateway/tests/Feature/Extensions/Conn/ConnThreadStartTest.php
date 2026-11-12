@@ -18,6 +18,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\TaskVms\TaskVmModelRoute;
@@ -709,28 +710,26 @@ describe('the reachable Project directory', function (): void {
                 ->and(Operation::query()->count())->toBe($operations)
                 ->and(Instance::query()->count())->toBe($instances);
         }
-    })->with(['253 characters still exceed the live CSR limit' => [56, false], '254 characters exceed DNS' => [57, false]]);
+    })->with(['253 characters' => [56, true], '254 characters exceed DNS' => [57, false]]);
 
-    it('refuses a 65 character domain at the name check and all create boundaries before any Operation', function (): void {
+    it('admits domains over 64 characters through the DNS limit after the producer release', function (int $nameLength, string $tld, int $domainLength): void {
         $default = threadDefault($this->beast, 'tool');
         $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5']);
-        $this->beast->update(['tld' => 'test']);
-        $name = str_repeat('n', 55);
-        expect(strlen($name.'.tool.test'))->toBe(65);
-        $operations = Operation::query()->count();
-        $instances = Instance::query()->count();
+        $this->beast->update(['tld' => $tld]);
+        $name = str_repeat('n', $nameLength);
+        $domain = $name.'.tool.'.$tld;
+        expect(strlen($domain))->toBe($domainLength);
 
         threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name={$name}")
-            ->assertOk()->assertJsonPath('data', ['name' => $name, 'available' => false, 'reason' => 'domain_invalid', 'domain' => null]);
-        threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => $name])
-            ->assertUnprocessable()->assertJsonPath('error.code', 'route.domain_invalid');
-        $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
-            ->postJson('/api/v1/instances', ['project_id' => $default->project_id, 'node_id' => $this->beast->id, 'name' => $name])
-            ->assertUnprocessable()->assertJsonPath('error.code', 'route.domain_invalid');
-        expect(containerRefusal(fn () => containerCreate($default->project, $this->beast, $name)))->toBe('route.domain_invalid')
-            ->and(Operation::query()->count())->toBe($operations)
-            ->and(Instance::query()->count())->toBe($instances);
-    });
+            ->assertOk()->assertJsonPath('data', ['name' => $name, 'available' => true, 'reason' => null, 'domain' => $domain]);
+        Node::query()->whereHas('roles', static fn (Builder $query) => $query->where('role', RoleName::Swamp))
+            ->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-control-key']);
+        $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('admission-root-certificate');
+        $operation = threadCreate($this->phone, $default->project, $name);
+        expect($operation->input['route_domain'])->toBe($domain);
+        $this->assertDatabaseHas('routes', ['domain' => $domain]);
+    })->with(['65 character domain' => [55, 'test', 65],
+        '253 character domain with a 63 character name' => [63, str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 56), 253]]);
 
     it('admits a 64 character domain with the installed-client response and records its Route before the Operation', function (): void {
         $default = threadDefault($this->beast, 'tool');
@@ -1516,16 +1515,18 @@ describe('Route certificate producer compatibility', function (): void {
         $this->signer = new GatewayLeafCertificateSigner($this->processes);
     });
 
-    it('signs the unchanged production old-form CSR at the live 64 character domain limit', function (string $workflow): void {
-        $domain = str_repeat('n', 54).'.tool.test';
-        expect(strlen($domain))->toBe(64);
+    it('makes and signs the real production CSR for a 63 character name at the 253 character domain limit', function (string $workflow): void {
+        $name = str_repeat('n', 63);
+        $tld = str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 56);
+        $domain = app(RouteStateResolver::class)->generatedDomain('tool', $name, $tld);
+        expect(strlen($domain))->toBe(253);
 
         $result = $this->processes->run(routeSanRequest($workflow, $this->directory, $domain));
 
         expect($result->exitCode)->toBe(0, $result->stderr)
-            ->and(openssl_csr_get_subject($result->stdout)['CN'])->toBe($domain);
+            ->and(openssl_csr_get_subject($result->stdout)['CN'])->toBe('Orbit');
         $certificate = expectRouteSanLeaf($domain, $result->stdout);
-        expect(openssl_x509_parse($certificate)['subject']['CN'])->toBe($domain);
+        expect(openssl_x509_parse($certificate)['subject']['CN'])->toBe('Orbit');
     })->with(['workflow-route-create-csr', 'workflow-route-certificate-publish', 'workflow-node-role-certificate-publish']);
 
     it('accepts the future producer form before any producer changes, including after switch-back', function (string $domain): void {
@@ -1563,4 +1564,10 @@ describe('Route certificate producer compatibility', function (): void {
             ->toThrow(ResourceOperationException::class, 'The CSR must be an RSA 2048 request for the admitted domain only.');
     })->with(['missing SAN' => null, 'different DNS name' => 'DNS:other.test', 'extra DNS name' => 'DNS:tool.test,DNS:other.test']);
 
+    it('keeps a real CSR failure diagnostic visible without RSA progress dots', function (string $workflow): void {
+        $result = $this->processes->run(routeSanRequest($workflow, $this->directory.'/missing', 'tool.test'));
+
+        expect($result->exitCode)->not->toBe(0)
+            ->and($result->stderr)->toContain('No such file or directory')->not->toMatch('/[.+*]{20}/');
+    })->with(['workflow-route-create-csr', 'workflow-route-certificate-publish', 'workflow-node-role-certificate-publish']);
 });

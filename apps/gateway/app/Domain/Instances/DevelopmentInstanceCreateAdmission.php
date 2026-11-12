@@ -6,7 +6,6 @@ namespace App\Domain\Instances;
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectSourceAccess;
-use App\Domain\Routes\RouteDomain;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
@@ -21,16 +20,6 @@ use App\Models\Project;
 /** Read-only create conditions. Host bridge and shared-folder readiness remain in InstanceContainer::reserve(). */
 final readonly class DevelopmentInstanceCreateAdmission
 {
-    public function assertRouteDomain(string $domain): void
-    {
-        $domain = RouteDomain::validate($domain);
-        // The live Node CSR still puts this domain in the common name.
-        if (strlen($domain) > 64) {
-            throw new ResourceOperationException('route.domain_invalid',
-                'The Instance Route domain exceeds the live CSR common-name limit of 64 characters.', 422);
-        }
-    }
-
     public function assertSourceAccess(Project $project): void
     {
         if ($project->source_access === ProjectSourceAccess::GhCli) {
