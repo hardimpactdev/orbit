@@ -12,6 +12,8 @@ covers:
 
 `ai-router` is an optional Gateway extension. It collects CLIProxyAPI account quota into one snapshot in shared Valkey. The Orbit web app, the CLI, MCP, and CodexBar read provider pools from that snapshot.
 
+The bridge address read passes `-4` as a string under the [Ansible command argument rule](/reference/node-provisioning).
+
 ## Switch and setup
 
 The extension has one switch and one fleet setup. They are separate.

@@ -119,6 +119,20 @@ class ModuleArgumentsTest(unittest.TestCase):
         init_plugin_loader()
         module_loader.add_directory(str(ANSIBLE / 'library'))
 
+    def test_every_command_argv_element_is_a_string_after_yaml_parsing(self):
+        failures = []
+        for file in FILES:
+            for task, module, arguments in calls(yaml.safe_load(file.read_text()) or []):
+                if module not in {'ansible.builtin.command', 'ansible.legacy.command', 'command'}:
+                    continue
+                argv = arguments.get('argv')
+                if isinstance(argv, list):
+                    failures += [f'{file.relative_to(ANSIBLE)}: {task}: argv[{index}] is {type(value).__name__}: {value!r}'
+                                 for index, value in enumerate(argv) if not isinstance(value, str)]
+                elif argv is not None and not isinstance(argv, str):
+                    failures.append(f'{file.relative_to(ANSIBLE)}: {task}: argv is {type(argv).__name__}')
+        self.assertEqual(failures, [])
+
     def test_every_module_call_passes_the_real_argument_spec(self):
         specs, checked, failures = {}, set(), []
         for file in FILES:

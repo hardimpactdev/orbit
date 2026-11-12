@@ -20,7 +20,7 @@
 # The Gateway gives each Node a unique /24 of 10.253.0.0/16, but it does not see the bridges an operator made, such as a CI bridge.
 # A range that another interface of the Node holds already refuses before any change.
 - name: Read the Node's IPv4 addresses
-  ansible.builtin.command: { argv: [ip, -4, -o, addr, show] }
+  ansible.builtin.command: { argv: [ip, "-4", -o, addr, show] }
   register: instance_node_addresses
   changed_when: false
 
