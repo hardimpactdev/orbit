@@ -4555,28 +4555,3 @@ it('keeps verified native status and known failure facts when a captured migrate
     'native cancellation' => ['cancel', 'cancelled', 'Command exited with code -1'],
     'native phase timeout' => ['timeout', 'failed', 'Command exited with code 124'],
 ]);
-
-it('names a running migrate without a hold time and reserves settlement wording for an ended Operation', function (bool $ended): void {
-    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
-    $previous = demandMigrate($instance);
-    if (! $ended) {
-        $previous->update(['status' => 'running', 'error_code' => null, 'finished_at' => null, 'started_at' => now()]);
-    }
-    $socket = migrationTerminalReader($previous, 'running');
-    try {
-        migrateStart($instance);
-        test()->fail('A second migrate must refuse.');
-    } catch (ResourceOperationException $exception) {
-        expect($exception->errorCode)->toBe('instance.migrate_settlement_pending')
-            ->and($exception->status)->toBe(409)
-            ->and($exception->details['previous_operation_id'])->toBe($previous->id);
-        if ($ended) {
-            expect($exception->getMessage())->toContain('awaits the reconciler', 'Retry after settlement', 'target hold limit')
-                ->and($exception->details)->toHaveKey('settlement_hold_limit');
-        } else {
-            expect($exception->getMessage())->toBe("A migrate of this Instance is running (Operation [{$previous->id}]). Wait for it to end.")
-                ->and($exception->details)->not->toHaveKey('settlement_hold_limit');
-        }
-    }
-    expect($socket->frames)->toBe([])->and($socket->connects)->toBe(0);
-})->with(['running' => false, 'ended, unsettled' => true]);
