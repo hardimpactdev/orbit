@@ -41,11 +41,14 @@ final class ShowGatewayStatusRequest extends GatewayRequest
         );
     }
 
-    /** @return array{collected_at: ?string, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>}|null */
+    /** @return array{collected_at: ?string, last_run_ms: int|float|null, hidden_nodes: int, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>}|null */
     private function doctor(mixed $value): ?array
     {
         if (! is_array($value) || ! array_key_exists('collected_at', $value)
             || ($value['collected_at'] !== null && ! is_string($value['collected_at']))
+            || ! is_int($value['hidden_nodes'] ?? null) || $value['hidden_nodes'] < 0
+            || ! array_key_exists('last_run_ms', $value)
+            || ($value['last_run_ms'] !== null && (! is_int($value['last_run_ms']) && ! is_float($value['last_run_ms']) || $value['last_run_ms'] < 0))
             || ! is_array($value['issues'] ?? null) || ! array_is_list($value['issues'])) {
             return null;
         }
@@ -68,7 +71,7 @@ final class ShowGatewayStatusRequest extends GatewayRequest
                 'resource' => $resource === null ? null : ['type' => $resource['type'], 'id' => $resource['id']]];
         }
 
-        return ['collected_at' => $value['collected_at'], 'issues' => $issues];
+        return ['collected_at' => $value['collected_at'], 'last_run_ms' => $value['last_run_ms'], 'hidden_nodes' => $value['hidden_nodes'], 'issues' => $issues];
     }
 
     /** A malformed desired state is left out rather than shown with invented values. */

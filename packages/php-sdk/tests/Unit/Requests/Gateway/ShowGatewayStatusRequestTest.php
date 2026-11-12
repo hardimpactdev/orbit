@@ -97,6 +97,7 @@ it('preserves the grouped Doctor field from the recorded Gateway response', func
     $connector->withMockClient(new MockClient([ShowGatewayStatusRequest::class => MockResponse::make($fixture['body'])]));
     $response = $connector->send(new ShowGatewayStatusRequest)->dto();
     expect($response->doctor)->toBe($fixture['body']['data']['doctor'])->and($response->toArray()['doctor'])->toBe($response->doctor)
+        ->and($response->doctor['hidden_nodes'])->toBe(0)->and($response->doctor['last_run_ms'])->toBe(650)
         ->and($response->doctor['issues'][0]['count'])->toBe(2)->and($response->doctor['issues'][0]['resource'])->toBeNull()
         ->and($response->doctor['issues'][1]['resource'])->toBe(['type' => 'process', 'id' => '24']);
 });
@@ -111,5 +112,17 @@ it('does not turn malformed Doctor data into a healthy report', function (mixed 
     'not an object' => [false],
     'missing timestamp' => [['issues' => []]],
     'bad timestamp type' => [['collected_at' => 12, 'issues' => []]],
+    'negative hidden count' => [['collected_at' => null, 'last_run_ms' => null, 'hidden_nodes' => -1, 'issues' => []]],
+    'string duration' => [['collected_at' => null, 'last_run_ms' => '650', 'hidden_nodes' => 0, 'issues' => []]],
+    'negative duration' => [['collected_at' => null, 'last_run_ms' => -1, 'hidden_nodes' => 0, 'issues' => []]],
     'invalid group' => [['collected_at' => null, 'issues' => [['node_id' => '1']]]],
 ]);
+
+it('preserves the hidden Node count and nullable or fractional duration', function (int|float|null $duration): void {
+    $doctor = ['collected_at' => '2026-11-12T12:00:00Z', 'last_run_ms' => $duration, 'hidden_nodes' => 2, 'issues' => []];
+    $connector = new GatewayConnector('https://10.70.0.1');
+    $connector->withMockClient(new MockClient([ShowGatewayStatusRequest::class => MockResponse::make([
+        'data' => ['doctor' => $doctor], 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+    ])]));
+    expect($connector->send(new ShowGatewayStatusRequest)->dto()->doctor)->toBe($doctor);
+})->with([null, 0, 650.25]);

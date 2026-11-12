@@ -743,6 +743,8 @@ A signal that passes the source tests above increments `occurrences` only when t
 
 The signal time is the time on the signal, not the time the collector reads the source. A log record uses the bracketed timestamp at the start of its header, read in the Gateway application timezone. An Activity row uses its `created_at`. Doctor and assistance use the collector clock when it accepts the signal. A release alert uses the Gateway clock when the alert is raised. The block uses that time in UTC.
 
+Each row remembers the last 288 windows it counted, in arrival order. A late signal for a window that has already been evicted is counted again and increments `occurrences`.
+
 Readiness counts these occurrences and their times. It does not count log lines. Many log lines in one block are one occurrence. The sample keeps the newest 20.
 
 ### When a fingerprint is ready

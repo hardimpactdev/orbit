@@ -11,6 +11,7 @@ use App\Data\Gateway\GatewayStatusData;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayVersion;
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Problems\ProblemSource;
 use App\Models\Node;
 use App\Models\ProblemCollectorState;
@@ -29,13 +30,14 @@ final readonly class ShowGatewayStatusAction
         private DesiredFleetState $fleet,
         private ShowGatewayReleaseAutomationAction $releases,
         private GatewayReleaseAutomation $automation,
+        private NodeAccessAuthorizer $access,
     ) {}
 
     /**
      * The desired fleet state is shown only to an active WireGuard peer, as the release endpoint does, and only
      * from the cache: a status request never waits for Git or GitHub, because release verification calls it.
      */
-    public function handle(bool $authenticated): GatewayStatusData
+    public function handle(?Node $consumer): GatewayStatusData
     {
         [$release, $sha] = $this->releases->current();
 
@@ -45,16 +47,16 @@ final readonly class ShowGatewayStatusAction
             version: GatewayVersion::current(),
             phpVersion: PHP_VERSION,
             laravelVersion: Application::VERSION,
-            desiredFleetState: $authenticated ? $this->desiredFleetState() : null,
+            desiredFleetState: $consumer !== null ? $this->desiredFleetState() : null,
             release: $release,
             releaseSha: $sha,
-            autoRelease: $authenticated ? $this->autoRelease() : null,
-            doctor: $authenticated ? $this->doctor() : null,
+            autoRelease: $consumer !== null ? $this->autoRelease() : null,
+            doctor: $consumer !== null ? $this->doctor($consumer) : null,
         );
     }
 
-    /** @return array{collected_at: ?string, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>} */
-    private function doctor(): array
+    /** @return array{collected_at: ?string, last_run_ms: int|float|null, hidden_nodes: int, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>} */
+    private function doctor(Node $consumer): array
     {
         $rows = ProblemFingerprint::query()->where('source', ProblemSource::Doctor)->whereNull('evidence->resolved_at')->orderBy('id')->get();
         $nodes = Node::query()->whereIn('id', $rows->map(fn (ProblemFingerprint $row): mixed => $row->evidence['doctor_node'] ?? null))->get()->keyBy('id');
@@ -83,13 +85,33 @@ final readonly class ShowGatewayStatusAction
                 unset($group);
             }
         }
-        $issues = array_values($groups);
-        usort($issues, static fn (array $left, array $right): int => strcmp($right['newest_since'] ?? '', $left['newest_since'] ?? '')
-            ?: [$left['node_id'], $left['code']] <=> [$right['node_id'], $right['code']]);
         $observation = ProblemCollectorState::query()->orderBy('id')->first()?->observation;
         $collectedAt = $observation['doctor_collected_at'] ?? null;
+        $collectedAt = is_string($collectedAt) ? $collectedAt : null;
+        $duration = $observation['doctor_duration_ms'] ?? null;
+        $duration = is_int($duration) || is_float($duration) ? $duration : null;
+        if ($duration !== null && $duration > 1000 && $collectedAt !== null) {
+            $gateway = Node::query()->find($this->access->activeGatewayId());
+            if ($gateway instanceof Node) {
+                $groups['slow'] = ['node_id' => $gateway->id, 'node_name' => $gateway->name, 'code' => 'gateway.doctor_collection_slow',
+                    'count' => 1, 'since' => $collectedAt, 'newest_since' => $collectedAt, 'resource' => null];
+            }
+        }
+        // Status explicitly includes the caller's own Node; other commands keep the shared grant rule.
+        $visibleIds = array_fill_keys([$consumer->id, ...$this->access->accessibleNodeIds($consumer)], true);
+        $hidden = [];
+        $issues = [];
+        foreach ($groups as $group) {
+            if (isset($visibleIds[$group['node_id']])) {
+                $issues[] = $group;
+            } else {
+                $hidden[$group['node_id']] = true;
+            }
+        }
+        usort($issues, static fn (array $left, array $right): int => strcmp($right['newest_since'] ?? '', $left['newest_since'] ?? '')
+            ?: [$left['node_id'], $left['code']] <=> [$right['node_id'], $right['code']]);
 
-        return ['collected_at' => is_string($collectedAt) ? $collectedAt : null, 'issues' => $issues];
+        return ['collected_at' => $collectedAt, 'last_run_ms' => $duration, 'hidden_nodes' => count($hidden), 'issues' => $issues];
     }
 
     /** A release that has no agent manifest has no desired fleet state; status still answers. */

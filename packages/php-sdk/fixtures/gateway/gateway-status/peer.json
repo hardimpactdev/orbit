@@ -57,6 +57,8 @@
             },
             "doctor": {
                 "collected_at": null,
+                "last_run_ms": null,
+                "hidden_nodes": 0,
                 "issues": []
             }
         },

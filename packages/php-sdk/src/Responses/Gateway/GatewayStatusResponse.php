@@ -24,7 +24,7 @@ final readonly class GatewayStatusResponse
         public ?string $release = null,
         public ?string $releaseSha = null,
         public ?array $autoRelease = null,
-        /** @var array{collected_at: ?string, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>}|null */
+        /** @var array{collected_at: ?string, last_run_ms: int|float|null, hidden_nodes: int, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>}|null */
         public ?array $doctor = null,
     ) {}
 

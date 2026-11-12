@@ -26,7 +26,7 @@ use Throwable;
  */
 final readonly class ProblemCollector
 {
-    /** Five-minute windows remembered per episode: one day. */
+    /** The last 288 windows counted per episode, in arrival order. */
     private const int CountedBlocks = 288;
 
     public function __construct(
@@ -423,9 +423,9 @@ final readonly class ProblemCollector
     }
 
     /**
-     * The display sample keeps the newest 20 windows. counted_blocks keeps the newest day of windows,
-     * including one the sample has dropped, so a late signal in that block is not counted again.
-     * The bound stops a finding that a schedule sees every five minutes from growing its row without end.
+     * The display sample keeps the newest 20 windows. counted_blocks keeps the last 288 windows counted,
+     * in arrival order. A late signal for an evicted window is counted again and increments occurrences.
+     * A signal for a retained window adds no occurrence, even when it has left the display sample.
      *
      * @param  array<string, mixed>  $evidence
      * @param  list<string>  $times

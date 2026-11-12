@@ -5,6 +5,9 @@ declare(strict_types=1);
 use App\Actions\Doctor\RunDoctorAction;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\Firewall\FirewallInspectionInput;
+use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\Nodes\NodeAccessAuthorizer;
+use App\Domain\Problems\ProblemCollector;
 use App\Domain\Problems\ProblemGroupSnapshot;
 use App\Domain\Problems\ProblemSource;
 use App\Domain\Tasks\TaskExtensionState;
@@ -29,6 +32,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
 
 uses(LazilyRefreshDatabase::class);
@@ -103,7 +107,7 @@ it('collects every five minutes with Tasks disabled, records recovery and leaves
     expect($problem->occurrences)->toBe(1)->and($problem->evidence)->not->toHaveKey('resolved_at')
         ->and($state->fresh()->only(['activity_cursor', 'log_path', 'log_inode', 'log_offset']))
         ->toBe(['activity_cursor' => 42, 'log_path' => '/unchanged', 'log_inode' => 17, 'log_offset' => 99])
-        ->and($state->fresh()->observation)->toBe(['other' => 'preserved', 'doctor_collected_at' => '2026-11-12T12:00:00.000000Z'])
+        ->and($state->fresh()->observation)->toMatchArray(['other' => 'preserved', 'doctor_collected_at' => '2026-11-12T12:00:00.000000Z'])
         ->and($assist->fresh()->getAttributes())->toBe($assist->getAttributes())
         ->and(ProblemFingerprint::query()->whereIn('source', ['log', 'activity'])->count())->toBe(0);
     $this->travel(5)->minutes();
@@ -130,6 +134,7 @@ it('skips an overlapping scheduled collection and releases its lock after comple
 
 it('rolls back failed writes and reports a failing collection once until it succeeds', function (): void {
     Exceptions::fake();
+    Log::spy();
     $node = scheduledDoctorNode();
     scheduledDoctorFacts($node, 'instance.container_bridge_write_failed');
     $state = ProblemCollectorState::query()->create(['observation' => ['doctor_collected_at' => '2026-11-11T12:00:00Z']]);
@@ -154,6 +159,7 @@ it('rolls back failed writes and reports a failing collection once until it succ
     $this->travel(5)->minutes();
     $event->run(app());
     Exceptions::assertReportedCount(2);
+    Log::shouldHaveReceived('info')->with('Doctor collection ran.', Mockery::type('array'))->times(4);
 });
 
 it('uses the same Doctor step from observation collection without treating Horizon-only reads as a full collection', function (): void {
@@ -222,31 +228,38 @@ it('keeps the group link of an auto-closed Doctor finding that recurs', function
     expect($row->fresh()->task_group_id)->toBe($group->id);
 });
 
-it('bounds the windows one finding remembers when the schedule sees it for longer than a day', function (): void {
+it('evicts the oldest counted arrival while retaining 288 windows', function (): void {
     $node = scheduledDoctorNode();
     $start = new DateTimeImmutable('2026-11-12T12:00:00Z');
-    for ($run = 0; $run < 300; $run++) {
-        // An exact clock per run: one run per five-minute window, however long the loop takes.
-        $this->travelTo($start->modify('+'.($run * 5).' minutes'));
-        scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
-        app(RunDoctorAction::class)->scheduled();
-    }
+    $this->travelTo($start);
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+    app(RunDoctorAction::class)->scheduled();
     $row = ProblemFingerprint::query()->where('source', ProblemSource::Doctor)->where('evidence->doctor_code', 'node.instance_bridge_unhealthy')->sole();
-    expect($row->occurrences)->toBe(300)->and($row->evidence['counted_blocks'])->toHaveCount(288)
-        ->and($row->evidence['observation_times'])->toHaveCount(20);
+    $current = intdiv($start->getTimestamp(), 300);
+    $blocks = range($current - 287, $current);
+    $row->update(['occurrences' => 288, 'evidence' => [...$row->evidence, 'counted_blocks' => $blocks]]);
+
+    $this->travelTo($start->modify('+5 minutes'));
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+    app(RunDoctorAction::class)->scheduled();
+    $row->refresh();
+    expect($row->occurrences)->toBe(289)->and($row->evidence['counted_blocks'])->toBe(range($current - 286, $current + 1))
+        ->toHaveCount(288)->not->toContain($blocks[0])->toContain($current + 1)
+        ->and(count($row->evidence['observation_times']))->toBeLessThanOrEqual(20);
 });
 
 it('shows three open groups with both first-seen bounds, a single resource and newest-first sorting only to peers', function (): void {
     $beast = scheduledDoctorNode();
     $shark = scheduledDoctorNode('shark', 8);
+    $beast->accessibleNodes()->attach($shark);
     scheduledDoctorProblem($beast, 'process.state_mismatch', '21', '2026-11-01T00:00:00Z');
     scheduledDoctorProblem($beast, 'process.state_mismatch', '22', '2026-11-12T11:00:00Z');
     scheduledDoctorProblem($beast, 'process.crash_loop', '23', '2026-11-09T00:00:00Z');
     scheduledDoctorProblem($shark, 'process.state_mismatch', '24', '2026-11-10T00:00:00Z');
     scheduledDoctorProblem($shark, 'process.crash_loop', '25', '2026-11-12T11:59:00Z', ['resolved_at' => now()->toISOString()]);
     ProblemFingerprint::query()->create(['source' => ProblemSource::Log, 'fingerprint' => 'log|exception|frame', 'evidence' => []]);
-    ProblemCollectorState::query()->create(['observation' => ['doctor_collected_at' => '2026-11-12T12:00:00.000000Z']]);
-    $doctor = ['collected_at' => '2026-11-12T12:00:00.000000Z', 'issues' => [
+    ProblemCollectorState::query()->create(['observation' => ['doctor_collected_at' => '2026-11-12T12:00:00.000000Z', 'doctor_duration_ms' => 650]]);
+    $doctor = ['collected_at' => '2026-11-12T12:00:00.000000Z', 'last_run_ms' => 650, 'hidden_nodes' => 0, 'issues' => [
         ['node_id' => $beast->id, 'node_name' => 'beast', 'code' => 'process.state_mismatch', 'count' => 2,
             'since' => '2026-11-01T00:00:00.000000Z', 'newest_since' => '2026-11-12T11:00:00.000000Z', 'resource' => null],
         ['node_id' => $shark->id, 'node_name' => 'shark', 'code' => 'process.state_mismatch', 'count' => 1,
@@ -270,9 +283,9 @@ it('shows three open groups with both first-seen bounds, a single resource and n
 it('distinguishes a healthy full collection from one that has never run', function (): void {
     $node = scheduledDoctorNode();
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])->getJson('/api/v1/gateway/status')->assertOk()
-        ->assertJsonPath('data.doctor', ['collected_at' => null, 'issues' => []]);
+        ->assertJsonPath('data.doctor', ['collected_at' => null, 'last_run_ms' => null, 'hidden_nodes' => 0, 'issues' => []]);
     ProblemCollectorState::query()->create(['observation' => ['doctor_collected_at' => '2026-11-12T12:00:00Z']]);
-    $this->getJson('/api/v1/gateway/status')->assertOk()->assertJsonPath('data.doctor', ['collected_at' => '2026-11-12T12:00:00Z', 'issues' => []]);
+    $this->getJson('/api/v1/gateway/status')->assertOk()->assertJsonPath('data.doctor', ['collected_at' => '2026-11-12T12:00:00Z', 'last_run_ms' => null, 'hidden_nodes' => 0, 'issues' => []]);
 });
 
 it('succeeds and lists a Node whose agent is silent or has never answered', function (bool $seen): void {
@@ -328,6 +341,116 @@ it('records the peer status fixture from the real API with its cached desired fl
         file_put_contents($path, json_encode($fixture, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
     }
     $recorded = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
-    expect($body['data']['doctor'])->toBe(['collected_at' => null, 'issues' => []])
+    expect($body['data']['doctor'])->toBe(['collected_at' => null, 'last_run_ms' => null, 'hidden_nodes' => 0, 'issues' => []])
         ->and($recorded['body']['data']['doctor'])->toBe($body['data']['doctor']);
+});
+
+it('reports one monotonic run cost and commits its stored timing with the findings', function (): void {
+    Log::spy();
+    $node = scheduledDoctorNode();
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+    ProblemCollectorState::saving(function (): void {
+        // A wall-clock jump during the run must not become a multi-year duration.
+        test()->travelTo(new DateTimeImmutable('2030-11-12T12:00:00Z'));
+    });
+    app(RunDoctorAction::class)->scheduled();
+    $stored = ProblemCollectorState::query()->sole()->observation;
+    expect($stored)->toHaveKeys(['doctor_collected_at', 'doctor_duration_ms', 'doctor_write_ms'])
+        ->and($stored['doctor_duration_ms'])->toBeFloat()->toBeGreaterThanOrEqual(0)->toBeLessThan(1000)
+        ->and($stored['doctor_write_ms'])->toBeFloat()->toBeGreaterThanOrEqual(0)->toBeLessThanOrEqual($stored['doctor_duration_ms']);
+    $logged = null;
+    Log::shouldHaveReceived('info')->once()->with('Doctor collection ran.', Mockery::on(function (array $cost) use (&$logged, $stored): bool {
+        $logged = $cost;
+
+        return array_keys($cost) === ['duration_ms', 'write_ms', 'nodes', 'issues']
+            && $cost['duration_ms'] >= $stored['doctor_duration_ms'] && $cost['duration_ms'] < 1000
+            && $cost['write_ms'] >= $stored['doctor_write_ms'] && $cost['write_ms'] <= $cost['duration_ms']
+            && $cost['nodes'] === 1 && $cost['issues'] === 1;
+    }));
+    fwrite(STDOUT, "\n".json_encode(['message' => 'Doctor collection ran.', 'context' => $logged], JSON_THROW_ON_ERROR)."\n");
+});
+
+it('reveals only the number of hidden affected Nodes to a peer without an edge', function (): void {
+    $peer = scheduledDoctorNode('peer', 9);
+    $beast = scheduledDoctorNode('beast', 7);
+    $shark = scheduledDoctorNode('shark', 8);
+    scheduledDoctorProblem($beast, 'process.state_mismatch', '21', '2026-11-01T00:00:00Z');
+    scheduledDoctorProblem($beast, 'process.crash_loop', '22', '2026-11-02T00:00:00Z');
+    scheduledDoctorProblem($shark, 'process.state_mismatch', '23', '2026-11-03T00:00:00Z');
+    ProblemCollectorState::query()->create(['observation' => ['doctor_collected_at' => '2026-11-12T12:00:00Z', 'doctor_duration_ms' => 650]]);
+    $this->withServerVariables(['REMOTE_ADDR' => $peer->wireguard_ip])->getJson('/api/v1/gateway/status')->assertOk()
+        ->assertJsonPath('data.doctor', ['collected_at' => '2026-11-12T12:00:00Z', 'last_run_ms' => 650, 'hidden_nodes' => 2, 'issues' => []]);
+
+    $queries = [];
+    DB::listen(function (QueryExecuted $query) use (&$queries): void {
+        $queries[] = $query->sql;
+    });
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])->getJson('/api/v1/gateway/status')->assertOk()->assertJsonPath('data.doctor', null);
+    expect(array_filter($queries, fn (string $query): bool => str_contains($query, 'problem_')))->toBe([]);
+});
+
+it('includes the caller own Node only as a status exception to the shared grant rule', function (): void {
+    $peer = scheduledDoctorNode();
+    scheduledDoctorProblem($peer, 'process.state_mismatch', '21', '2026-11-01T00:00:00Z');
+    $access = app(NodeAccessAuthorizer::class);
+    expect($access->allows($peer, $peer))->toBeFalse()->and($access->accessibleNodeIds($peer))->toBe([]);
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $peer->wireguard_ip])->getJson('/api/v1/gateway/status')->assertOk();
+    expect(array_column($response->json('data.doctor.issues'), 'node_id'))->toBe([$peer->id])
+        ->and($response->json('data.doctor.hidden_nodes'))->toBe(0);
+});
+
+it('shows every Node and the synthetic slow group with Gateway or control-plane authority', function (): void {
+    $gateway = scheduledDoctorNode('gateway', 1);
+    $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
+    $beast = scheduledDoctorNode('beast', 7);
+    $shark = scheduledDoctorNode('shark', 8);
+    scheduledDoctorProblem($beast, 'process.state_mismatch', '21', '2026-11-11T00:00:00Z');
+    scheduledDoctorProblem($shark, 'process.crash_loop', '22', '2026-11-10T00:00:00Z');
+    ProblemCollectorState::query()->create(['observation' => ['doctor_collected_at' => '2026-11-12T12:00:00Z', 'doctor_duration_ms' => 1500]]);
+    $expected = ['collected_at' => '2026-11-12T12:00:00Z', 'last_run_ms' => 1500, 'hidden_nodes' => 0, 'issues' => [
+        ['node_id' => $gateway->id, 'node_name' => 'gateway', 'code' => 'gateway.doctor_collection_slow', 'count' => 1,
+            'since' => '2026-11-12T12:00:00Z', 'newest_since' => '2026-11-12T12:00:00Z', 'resource' => null],
+        ['node_id' => $beast->id, 'node_name' => 'beast', 'code' => 'process.state_mismatch', 'count' => 1,
+            'since' => '2026-11-11T00:00:00.000000Z', 'newest_since' => '2026-11-11T00:00:00.000000Z', 'resource' => ['type' => 'process', 'id' => '21']],
+        ['node_id' => $shark->id, 'node_name' => 'shark', 'code' => 'process.crash_loop', 'count' => 1,
+            'since' => '2026-11-10T00:00:00.000000Z', 'newest_since' => '2026-11-10T00:00:00.000000Z', 'resource' => ['type' => 'process', 'id' => '22']],
+    ]];
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])->getJson('/api/v1/gateway/status')->assertOk()->assertJsonPath('data.doctor', $expected);
+    $peer = scheduledDoctorNode('operator', 9);
+    $peer->accessibleNodes()->attach($gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $peer->wireguard_ip])->getJson('/api/v1/gateway/status')->assertOk()->assertJsonPath('data.doctor', $expected);
+    $peer->accessibleNodes()->detach();
+    app(GatewayServingHost::class)->remember($peer);
+    $this->getJson('/api/v1/gateway/status')->assertOk()->assertJsonPath('data.doctor', $expected);
+    expect(ProblemFingerprint::query()->count())->toBe(2);
+});
+
+it('applies Node access and the strict duration threshold to the slow group without storing a fingerprint', function (int $duration): void {
+    $gateway = scheduledDoctorNode('gateway', 1);
+    $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
+    $peer = scheduledDoctorNode('peer', 9);
+    $state = ProblemCollectorState::query()->create(['observation' => ['doctor_collected_at' => '2026-11-12T12:00:00Z', 'doctor_duration_ms' => $duration]]);
+    $this->withServerVariables(['REMOTE_ADDR' => $peer->wireguard_ip])->getJson('/api/v1/gateway/status')->assertOk()
+        ->assertJsonPath('data.doctor', ['collected_at' => '2026-11-12T12:00:00Z', 'last_run_ms' => $duration, 'hidden_nodes' => $duration > 1000 ? 1 : 0, 'issues' => []]);
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])->getJson('/api/v1/gateway/status')->assertOk();
+    expect($response->json('data.doctor.issues'))->toHaveCount($duration > 1000 ? 1 : 0);
+    $state->update(['observation' => ['doctor_collected_at' => '2026-11-12T12:05:00Z', 'doctor_duration_ms' => 900]]);
+    $this->getJson('/api/v1/gateway/status')->assertOk()->assertJsonPath('data.doctor.issues', []);
+    expect(ProblemFingerprint::query()->count())->toBe(0);
+})->with([999, 1000, 1001]);
+
+it('counts a late signal again after its window was evicted, retaining arrival order', function (): void {
+    $collector = app(ProblemCollector::class);
+    $signals = ['activity_cursor_before' => null, 'activity_cursor_after' => 0, 'open_assistance_ids' => [], 'assistance' => [],
+        'activities' => [['key' => 'node:converge|gateway.unhandled', 'seen_at' => now()->toISOString(), 'observation' => []]]];
+    $collector->recordSignals($signals);
+    $row = ProblemFingerprint::query()->where('source', ProblemSource::Activity)->sole();
+    $current = intdiv(now()->getTimestamp(), 300);
+    $blocks = range($current - 287, $current);
+    $row->update(['occurrences' => 288, 'evidence' => [...$row->evidence, 'counted_blocks' => $blocks]]);
+    $signals['activity_cursor_before'] = 0;
+    $signals['activities'][0]['seen_at'] = now()->subSeconds(500 * 300)->toISOString();
+    $collector->recordSignals($signals);
+    $row->refresh();
+    expect($row->occurrences)->toBe(289)->and($row->evidence['counted_blocks'])->toBe([...array_slice($blocks, 1), $current - 500]);
 });

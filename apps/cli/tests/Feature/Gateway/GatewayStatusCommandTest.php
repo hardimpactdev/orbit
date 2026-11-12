@@ -269,7 +269,7 @@ it('renders the recorded Doctor groups and transports the same JSON through the 
 it('prints only the Doctor health and collection time for an empty list', function (?string $at, string $line): void {
     app(GatewayConfigRepository::class)->add(new GatewayProfile(name: 'test', url: 'https://10.70.0.1'));
     MockClient::global([ShowGatewayStatusRequest::class => MockResponse::make([
-        'data' => ['doctor' => ['collected_at' => $at, 'issues' => []]],
+        'data' => ['doctor' => ['collected_at' => $at, 'last_run_ms' => null, 'hidden_nodes' => 0, 'issues' => []]],
         'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
     ])]);
     Artisan::call('gateway:status');
@@ -278,3 +278,19 @@ it('prints only the Doctor health and collection time for an empty list', functi
     ['2026-11-12T12:00:00Z', 'Doctor: healthy, collected 2026-11-12T12:00:00Z'],
     [null, 'Doctor: not collected yet'],
 ]);
+
+it('shows only the hidden-Node notice and the run duration when no groups are visible', function (int $hidden, string $notice): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(name: 'test', url: 'https://10.70.0.1'));
+    MockClient::global([ShowGatewayStatusRequest::class => MockResponse::make([
+        'data' => ['doctor' => ['collected_at' => '2026-11-12T12:00:00Z', 'last_run_ms' => 650, 'hidden_nodes' => $hidden, 'issues' => []]],
+        'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+    ])]);
+    Artisan::call('gateway:status');
+    $output = Artisan::output();
+    expect($output)->toContain('last run 650 ms')->not->toContain('×');
+    if ($hidden > 0) {
+        expect(substr_count($output, $notice))->toBe(1);
+    } else {
+        expect($output)->not->toContain('issues you cannot see');
+    }
+})->with([[0, ''], [1, '1 more Node has issues you cannot see'], [2, '2 more Nodes have issues you cannot see']]);
