@@ -100,7 +100,9 @@ The checks table also defines CLI Pest inputs. Required checks requires the job 
 
 The Swamp gate production-lints the observer preparation play. Its fixture tests install the candidate pin on all three nested Nodes and reject checksum and download failures. Gateway tests require new presence versions and host facts after a controlled restart. Runner tests require preparation before every batch and direct case, including old workflow calls without setup, and give preparation and batch setup separate bounded budgets.
 
-The mail phase is one unsliced Python fixture unit, declared at 40 seconds within the 150-second lane. Its registry regression checks both planning and the runner command. It exercises two IPv4 socket proxies, exact own-ACL admission, additive Docker DNAT persistence and refresh, foreign-resource skips, unchanged repeats, and retry after a failed unit write. It preserves a workspace canary and permits no guest PHP or application Process restart.
+The mail phase is one unsliced Python fixture unit, declared at 120 seconds within the 150-second lane. Its registry regression checks both planning and the runner command. It exercises two IPv4 socket proxies, exact own-ACL admission, additive Docker DNAT persistence and refresh, foreign-resource skips, unchanged repeats, and retry after a failed unit write, after one successful service rewrite, and after all writes before reload.
+
+It runs without root; fixture paths and ownership stay with the fixture user, while assertions preserve the production root/0644 contract. It preserves a workspace canary and permits no guest PHP or application Process restart.
 
 The gate also runs the real Ansible readiness tasks against sockets, checking that the Instance proxy and model forwarder observe their exact listeners without opening host TCP connections. Private dpkg databases prove that installed Incus packages stay untouched with or without a hold, while removed packages are installed.
 

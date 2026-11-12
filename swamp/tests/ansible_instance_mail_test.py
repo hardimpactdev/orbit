@@ -35,7 +35,7 @@ if name == 'python3':
             path.write_text(json.dumps(old))
         return old, 'fixture-etag'
     bridge.api = api
-    bridge.subprocess.check_output = lambda *args, **kwargs: '-A DOCKER -d ' + incoming['endpoints'][0]['host'] + '/32 -p tcp -m tcp --dport ' + str(incoming['endpoints'][0]['port']) + ' -j DNAT --to-destination ' + state['docker'] + ':1025\n'
+    bridge.subprocess.check_output = lambda *args, **kwargs: ''.join('-A DOCKER -d ' + incoming['endpoints'][0]['host'] + '/32 -p tcp -m tcp --dport ' + str(port) + ' -j DNAT --to-destination ' + state['docker'] + ':1025\n' for port in state.get('publications', [1025]))
     if state.get('path_failed'):
         print(json.dumps({'error_code': 'instance.container_endpoint_unresolved'}))
         sys.exit(1)
@@ -55,9 +55,10 @@ elif 'file' in a and 'push' in a:
     target = a[-1].removeprefix('instance-7')
     assert target.startswith('/etc/systemd/system/orbit-mail-')
     assert a[a.index('--uid') + 1] == a[a.index('--gid') + 1] == '0'
+    assert a[a.index('--mode') + 1] == '0644'
     path = root / 'guest' / target.lstrip('/')
     path.parent.mkdir(parents=True, exist_ok=True)
-    if state.get('push_failed'): sys.exit(1)
+    if state.get('push_failed') or path.name == state.get('fail_unit'): sys.exit(1)
     path.write_text(sys.stdin.read())
     path.chmod(0o644)
 elif a[0] == 'exec':
@@ -84,7 +85,15 @@ elif a[0] == 'exec':
         state['sockets'][port] = True
     elif c[:2] == ['systemctl', 'try-restart']:
         assert c[-1] in ['orbit-mail-1025.service', 'orbit-mail-2525.service']
-    elif c != ['systemctl', 'daemon-reload']:
+        if c[-1] in state.get('services', {}):
+            state['services'][c[-1]] = state['loaded_services'][c[-1]]
+    elif c == ['systemctl', 'daemon-reload']:
+        if state.get('reload_failed'): sys.exit(1)
+        state['loaded_services'] = {}
+        for unit in (root / 'guest/etc/systemd/system').glob('*.service'):
+            target = next(line.split()[-1] for line in unit.read_text().splitlines() if line.startswith('ExecStart='))
+            state['loaded_services'][unit.name] = target
+    else:
         raise AssertionError(c)
 else:
     raise AssertionError(a)
@@ -110,7 +119,18 @@ class MailPhase(unittest.TestCase):
             file.chmod(0o755)
         (self.root / 'bridge-acl.json').write_text(json.dumps({'description': 'bridge', 'egress': [], 'ingress': [], 'config': {}}))
         for name in ['instance-mail.yml', 'instance-bridge-rules.yml']:
-            content = (ROOT / 'swamp/ansible/tasks' / name).read_text().replace('/usr/local/libexec/orbit-instance-bridge', str(self.root / 'bridge-program')).replace('/var/lib/orbit/instance-bridge', str(self.root / 'bridge-state'))
+            content = (ROOT / 'swamp/ansible/tasks' / name).read_text()
+            if name == 'instance-bridge-rules.yml':
+                # Keep the production privilege contract asserted, but perform local fixture writes as the fixture user.
+                self.assertIn('owner: root', content)
+                self.assertIn('group: root', content)
+                self.assertIn("mode: '0755'", content)
+            content = content.replace('/usr/local/libexec/orbit-instance-bridge', str(self.root / 'bridge-program'))
+            content = content.replace('/usr/local/libexec', str(self.root / 'libexec'))
+            content = content.replace('/var/lib/orbit/instance-bridge', str(self.root / 'bridge-state'))
+            content = content.replace('/var/lib/orbit/instance-mail', str(self.root / 'activation'))
+            content = content.replace('owner: root', 'owner: "' + str(os.getuid()) + '"')
+            content = content.replace('group: root', 'group: "' + str(os.getgid()) + '"')
             (self.root / name).write_text(content)
         shutil.copy(ROOT / 'swamp/ansible/instance_bridge.py', self.root / 'instance_bridge.py')
         self.endpoint = {'host': '10.253.0.1', 'port': 1025, 'docker': True}
@@ -134,7 +154,8 @@ class MailPhase(unittest.TestCase):
                            {'ansible.builtin.copy': {'dest': str(self.root / 'result.json'), 'content': '{{ mail_result | to_json }}', 'mode': '0600'}}]}]
         (self.root / 'play.json').write_text(json.dumps(play))
         env = {**os.environ, 'MAIL_FIXTURE_ROOT': str(self.root), 'PATH': str(self.root / 'bin') + ':' + os.environ['PATH'],
-               'ANSIBLE_STDOUT_CALLBACK': 'default', 'ANSIBLE_COLLECTIONS_PATH': str(self.root / 'empty'), 'ANSIBLE_NOCOLOR': '1'}
+               'ANSIBLE_STDOUT_CALLBACK': 'default', 'ANSIBLE_COLLECTIONS_PATH': str(self.root / 'empty'), 'ANSIBLE_NOCOLOR': '1',
+               'ANSIBLE_LOCAL_TEMP': str(self.root / 'ansible-local'), 'ANSIBLE_REMOTE_TEMP': str(self.root / 'ansible-remote')}
         done = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(self.root / 'play.json')], env=env, capture_output=True, text=True)
         self.assertEqual(done.returncode == 0, success, done.stdout + done.stderr)
         self.state = json.loads((self.root / 'state.json').read_text())
@@ -197,6 +218,45 @@ class MailPhase(unittest.TestCase):
         self.assertEqual(len(self.state['acl']['egress']), 1)
         self.assertEqual(self.state['sockets'], {'1025': True, '2525': True})
         self.assertEqual(self.run_phase()['status'], 'unchanged')
+
+    def activation_retry(self, failure):
+        self.assertEqual(self.run_phase()['status'], 'applied')
+        services = ['orbit-mail-1025.service', 'orbit-mail-2525.service']
+        self.state['services'] = {name: '10.253.0.1:1025' for name in services}
+        # Both publications exist during the endpoint transition; the unchanged helper stays additive.
+        self.state['publications'] = [1025, 2025]
+        self.endpoint['port'] = 2025
+        self.units = [{**unit, 'content': unit['content'].replace('10.253.0.1:1025', '10.253.0.1:2025')} for unit in self.units]
+        if failure == 'write':
+            self.state['fail_unit'] = 'orbit-mail-2525.service'
+        else:
+            self.state['reload_failed'] = True
+        self.save()
+        self.run_phase(success=False)
+        pending = self.root / 'activation/instance-7/activation.json'
+        self.assertEqual(json.loads(pending.read_text()), services)
+        first = self.root / 'guest/etc/systemd/system/orbit-mail-1025.service'
+        self.assertIn('10.253.0.1:2025', first.read_text())
+        self.assertEqual(self.state['services'], {name: '10.253.0.1:1025' for name in services})
+        self.state.pop('fail_unit', None)
+        self.state.pop('reload_failed', None)
+        self.save()
+        calls = (self.root / 'calls.jsonl').read_text()
+        self.assertEqual(self.run_phase()['status'], 'applied')
+        self.assertEqual(self.state['services'], {name: '10.253.0.1:2025' for name in services})
+        new_calls = (self.root / 'calls.jsonl').read_text()[len(calls):]
+        for name in services:
+            self.assertIn('"try-restart", "' + name + '"', new_calls)
+        self.assertFalse(pending.exists())
+        calls = (self.root / 'calls.jsonl').read_text()
+        self.assertEqual(self.run_phase()['status'], 'unchanged')
+        self.assertNotIn('try-restart', (self.root / 'calls.jsonl').read_text()[len(calls):])
+
+    def test_failure_after_one_successful_service_write_finishes_pending_activation(self):
+        self.activation_retry('write')
+
+    def test_failure_after_all_writes_before_reload_finishes_pending_activation(self):
+        self.activation_retry('reload')
 
     def test_foreign_listener_or_unit_skips_both_ports_without_mutation(self):
         for kind in ['port', 'unit']:

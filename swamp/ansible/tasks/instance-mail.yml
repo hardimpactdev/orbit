@@ -55,6 +55,7 @@
   ansible.builtin.set_fact:
     mail_skip: ''
     mail_changed_units: []
+    mail_state: "/var/lib/orbit/instance-mail/{{ container.name }}"
 
 - name: Keep a foreign unit file
   when: >-
@@ -132,6 +133,45 @@
       register: mail_acl_written
       changed_when: true
 
+    - name: Name every unit that needs writing before the first write
+      when: item.rc != 0 or item.stdout ~ '\n' != item.item.content
+      ansible.builtin.set_fact:
+        mail_changed_units: "{{ mail_changed_units + [item.item.name] }}"
+      loop: "{{ mail_files.results }}"
+      loop_control: {label: "{{ item.item.name }}"}
+
+    - name: Read pending mail activation metadata
+      ansible.builtin.stat:
+        path: "{{ mail_state }}/activation.json"
+        get_checksum: false
+        get_mime: false
+      register: mail_pending_file
+
+    - name: Read the pending unit names
+      when: mail_pending_file.stat.exists
+      ansible.builtin.slurp: {src: "{{ mail_state }}/activation.json"}
+      register: mail_pending_read
+
+    - name: Keep earlier activation work together with this attempt
+      ansible.builtin.set_fact:
+        mail_activation_units: >-
+          {{ (((mail_pending_read.content | default('W10=') | b64decode | from_json) + mail_changed_units)
+              | intersect(container.mail_units | map(attribute='name') | list)) | unique | sort }}
+
+    - name: Create this Instance's Node-owned activation state
+      when: mail_activation_units | length > 0
+      ansible.builtin.file: {path: "{{ mail_state }}", state: directory, owner: root, group: root, mode: '0700'}
+
+    # Persist before any unit write: a failed later write or reload must not lose the earlier activation work.
+    - name: Retain pending activation before writing any unit
+      when: mail_activation_units | length > 0
+      ansible.builtin.copy:
+        content: "{{ mail_activation_units | to_json }}"
+        dest: "{{ mail_state }}/activation.json"
+        owner: root
+        group: root
+        mode: '0600'
+
     - name: Write only changed mail units as root
       when: item.rc != 0 or item.stdout ~ '\n' != item.item.content
       ansible.builtin.command:
@@ -145,20 +185,15 @@
       register: mail_written
       changed_when: true
 
-    - name: Name the changed mail units
-      ansible.builtin.set_fact:
-        mail_changed_units: >-
-          {{ mail_written.results | selectattr('changed', 'defined') | selectattr('changed') | map(attribute='item.item.name') | list }}
-
     - name: Reload changed mail units
-      when: mail_changed_units | length > 0
+      when: mail_activation_units | length > 0
       ansible.builtin.command:
         argv: "{{ as_root + ['systemctl', 'daemon-reload'] }}"
       changed_when: true
 
     # try-restart leaves an idle socket-activated proxy inactive; systemd retains the listening descriptor.
     - name: Restart only changed active mail proxies
-      when: item in mail_changed_units
+      when: item in mail_activation_units
       ansible.builtin.command:
         argv: "{{ as_root + ['systemctl', 'try-restart', item] }}"
       loop: [orbit-mail-1025.service, orbit-mail-2525.service]
@@ -192,11 +227,15 @@
       loop: "{{ mail_checked.results }}"
       loop_control: {label: "{{ item.item }}"}
 
+    - name: Clear activation only after reload restarts and socket checks complete
+      when: mail_activation_units | length > 0
+      ansible.builtin.file: {path: "{{ mail_state }}/activation.json", state: absent}
+
     - name: Report the mail path result
       ansible.builtin.set_fact:
         mail_result:
           status: >-
-            {{ 'applied' if mail_changed_units | length > 0 or mail_acl_written.changed | default(false)
+            {{ 'applied' if mail_activation_units | length > 0 or mail_acl_written.changed | default(false)
                 or bridge_rule_write.changed | default(false)
                 or mail_enabled.results | selectattr('changed', 'defined') | selectattr('changed') | list | length > 0 else 'unchanged' }}
 

@@ -45,10 +45,15 @@ Deno.test({
                 "retained commit",
             );
             const retainedCommit = git("-C", retained, "rev-parse", "HEAD");
-            Deno.copyFileSync(
-                new URL("instance-container-destroy.yml", root),
+            Deno.writeTextFileSync(
                 `${folder}/instance-container-destroy.yml`,
+                Deno.readTextFileSync(new URL("instance-container-destroy.yml", root))
+                    .replaceAll("/var/lib/orbit/instance-mail", `${folder}/mail-state`),
             );
+            for (const name of ["instance-7", "instance-8"]) {
+                Deno.mkdirSync(`${folder}/mail-state/${name}`, {recursive: true});
+                Deno.writeTextFileSync(`${folder}/mail-state/${name}/activation.json`, "[]");
+            }
             Deno.copyFileSync(
                 new URL("tasks/address-node.yml", root),
                 `${folder}/tasks/address-node.yml`,
@@ -152,6 +157,9 @@ Deno.test({
                 Deno.readTextFileSync(`${folder}/state.json`),
             );
             assertEquals(Object.keys(state.containers), ["instance-8"]);
+            assert(!Deno.statSync(`${folder}/mail-state`).isFile);
+            assertEquals([...Deno.readDirSync(`${folder}/mail-state`)].map((entry) => entry.name), ["instance-8"]);
+            assertEquals(Deno.readTextFileSync(`${folder}/mail-state/instance-8/activation.json`), "[]");
             assertEquals(state["network-acls"].filter((acl: {name: string}) => acl.name !== "orbitinst0-egress"), [{ name: "instance-8", egress: [smtp] }]);
             assert(!state["network-acls"].some((acl: {name: string}) => acl.name === "instance-7"));
             assertEquals(state["network-acls"].find((acl: {name: string}) => acl.name === "orbitinst0-egress").egress[1].destination, "172.17.0.2/32");

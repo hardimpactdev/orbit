@@ -55,7 +55,7 @@ sequenceDiagram
       %%> Runs beside the clone step: Swamp starts both at once.
     end
     opt Node runs the main Mailpit
-      SW->>C: Apply mail path and listeners<br/>Ansible mail phase
+      SW->>C: Apply mail setup<br/>clone-mail<br/>tags mail
       %%> Why:
       %%> - the exact own-ACL SMTP rule and additive bridge endpoint reach Mailpit without a Node converge
       %%> When:

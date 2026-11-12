@@ -705,7 +705,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_destroy_test.ts": {
-    "source_sha256": "d74b5054cae1fcaac7483f6bc5ebda3eab279caecf1fb98f545609f80338a7ac",
+    "source_sha256": "882818bddf25747a64d43894cc7cfd3ca7fa2aa5bf6807fb1563bf1ea85708f1",
     "cases": [
       "migrated container cleanup keeps retained Git while removing its container, volume, ACL, rules and mirror; a retry changes nothing"
     ]
@@ -1852,10 +1852,12 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_test.py": {
-    "source_sha256": "501cc9d034c0354463ff230fcc5bac02e935496a8a16dad267edcd22570dd89b",
+    "source_sha256": "e28d22f20cc0da839133b07cf6eaf2eda4d923c91c53a0fb60f70626bfd5cfb4",
     "cases": [
       "test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes",
       "test_failed_unit_write_keeps_network_path_and_a_retry_completes_it",
+      "test_failure_after_one_successful_service_write_finishes_pending_activation",
+      "test_failure_after_all_writes_before_reload_finishes_pending_activation",
       "test_foreign_listener_or_unit_skips_both_ports_without_mutation",
       "test_stopped_missing_binary_or_path_failure_never_changes_guest"
     ]

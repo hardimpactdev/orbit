@@ -2563,7 +2563,7 @@ default = []
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_mail_test.py"
-cost = 40
+cost = 120
 # Per-case estimates; real Ansible executes only against fake Incus and Docker boundaries.
 slices = false
 inputs = [
@@ -2579,3 +2579,5 @@ inputs = [
 "test_foreign_listener_or_unit_skips_both_ports_without_mutation" = 6
 "test_stopped_missing_binary_or_path_failure_never_changes_guest" = 6
 "test_failed_unit_write_keeps_network_path_and_a_retry_completes_it" = 14
+"test_failure_after_one_successful_service_write_finishes_pending_activation" = 40
+"test_failure_after_all_writes_before_reload_finishes_pending_activation" = 40

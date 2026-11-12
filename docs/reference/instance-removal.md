@@ -50,6 +50,8 @@ Publication captures include the full site catalogs so unrelated Routes, PHP poo
 
 A container Instance follows the [container destroy flow](/reference/development-containers#destroy). A non-default container Instance, cloned or migrated, requires `--force`, skips work checks and teardown, and deletes the container with its Processes and owned network state. The Instance named `default` stays unavailable. Conn removes its environment and pairing records after the T3 server is gone. Destroy also deletes migration execution copies and the owned database’s create copies, which hold its server and owner logins. The runtime row stays until success, so its address and port stay reserved during a failed removal.
 
+Destroy removes the Instance's folder for pending mail activation from the Node, `/var/lib/orbit/instance-mail/<container>`. Its shared bridge endpoint stays for ordinary host reconciliation, as database endpoints do.
+
 ## Retry and ownership
 
 The Gateway captures the run budget at admission from the teardown timeouts, the Routes it withdraws and its owned databases; see [Instance setup](/reference/instance-setup#run-setup). Before it removes the source, the run removes each member's [hibernation](/reference/app-dev-runtime-hibernation) files: its awake marker, cold marker and Caddy access log. A failed or cancelled run retains its removal intent. Start a fresh normal `instance:destroy` Operation with a new idempotency key to converge the same admitted removal. Repeating the old key returns the old Operation. This workflow does not depend on `workflow resume`: pinned e459 loses inline official SSH global arguments when resuming a failed run.
