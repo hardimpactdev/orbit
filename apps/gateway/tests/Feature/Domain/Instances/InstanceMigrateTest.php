@@ -94,6 +94,7 @@ use App\Models\Project;
 use App\Models\Route;
 use App\Models\Schedule;
 use App\Support\ValidatedData;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -486,7 +487,7 @@ describe('migration target ownership', function (): void {
         'cancel with deleted Schedule' => ['cancelled', 'deleted'], 'expire with deleted Schedule' => ['expired', 'deleted'],
     ]);
 
-    it('blocks forced destroy after migration expiry but admits migration recovery with its reservation', function (): void {
+    it('blocks forced destroy and names owner recovery after unproven migration expiry', function (): void {
         $node = containerDefaultNode();
         $project = containerDefaultProject();
         migrateMovedDefault($project, $node);
@@ -507,9 +508,7 @@ describe('migration target ownership', function (): void {
         $this->travel(61)->minutes();
         migrationTerminalReader($expired, 'running');
         app()->call([new ReconcileSwampOperations, 'handle']);
-        $retry = migrateStart($instance);
-        expect($retry->status)->toBe(OperationStatus::Queued)
-            ->and($retry->input['had_runtime_reservation'])->toBeTrue()
+        expect(containerRefusal(fn () => migrateStart($instance)))->toBe('instance.migrate_recovery_required')
             ->and($instance->runtime()->firstOrFail()->id)->toBe($reservation);
     });
 
@@ -2181,7 +2180,7 @@ it('refuses migrate without a remote read until the job records its previous res
         ->and($reads)->toBe(1);
 });
 
-it('ends unavailable migrate recovery at the existing sixty minute hold limit and permits admission', function (): void {
+it('ends unavailable migrate recovery at the existing sixty minute hold limit and names owner recovery', function (): void {
     $this->freezeTime();
     $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
     $old = migrateStart($instance);
@@ -2212,10 +2211,9 @@ it('ends unavailable migrate recovery at the existing sixty minute hold limit an
     expect($old->fresh()->error_code)->toBe('instance.migrate_result_unavailable')
         ->and($old->fresh()->lock_key)->toBeNull()
         ->and($old->fresh()->result)->not->toHaveKey('restored');
-    $next = migrateStart($instance);
-    expect($next->status)->toBe(OperationStatus::Queued)
+    expect(containerRefusal(fn () => migrateStart($instance)))->toBe('instance.migrate_recovery_required')
         ->and($instance->runtime()->sole()->id)->toBe($runtimeId)
-        ->and($instance->runtime()->sole()->operation_id)->toBe($next->id);
+        ->and($instance->runtime()->sole()->operation_id)->toBe($old->id);
 });
 
 it('keeps a polled migrate preflight refusal code and message through the real projection', function (): void {
@@ -2242,7 +2240,7 @@ it('keeps a polled migrate preflight refusal code and message through the real p
         ->and($reads)->toBe(1);
 });
 
-it('does not renew a migrate hold limit when invalid late output repeatedly reopens expiry', function (): void {
+it('does not reopen or renew expiry after invalid late output ends with a named unavailable result', function (): void {
     $this->freezeTime();
     $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
     $old = demandMigrate($instance);
@@ -2254,14 +2252,14 @@ it('does not renew a migrate hold limit when invalid late output repeatedly reop
         $this->travel($minutes)->minutes();
         app()->call([new ReconcileSwampOperations, 'handle']);
         expect($old->fresh()->state['migrate_settlement_hold_limit'])->toBe($limit)
-            ->and($old->fresh()->error_code)->toBe('operation.timed_out');
+            ->and($old->fresh()->error_code)->toBe('instance.migrate_result_unavailable');
     }
-    expect(containerRefusal(fn () => migrateStart($instance)))->toBe('instance.migrate_settlement_pending');
+    expect(containerRefusal(fn () => migrateStart($instance)))->toBe('instance.migrate_recovery_required');
     $this->travel(2)->minutes();
     app()->call([new ReconcileSwampOperations, 'handle']);
     expect($old->fresh()->error_code)->toBe('instance.migrate_result_unavailable')
         ->and($old->fresh()->lock_key)->toBeNull()
-        ->and(migrateStart($instance)->status)->toBe(OperationStatus::Queued);
+        ->and(containerRefusal(fn () => migrateStart($instance)))->toBe('instance.migrate_recovery_required');
 });
 
 it('returns the stored overdue migrate when the shared read allowance is empty', function (): void {
@@ -2693,7 +2691,11 @@ describe('migrate registered Schedule timers', function (): void {
             }
             app(SwampConnection::class)->release();
             migrateVault();
-            expect(migrateStart($instance)->input['had_runtime_reservation'])->toBeTrue();
+            if ($migration->fresh()->error_code === 'instance.migrate_result_unavailable') {
+                expect(containerRefusal(fn () => migrateStart($instance)))->toBe('instance.migrate_recovery_required');
+            } else {
+                expect(migrateStart($instance)->input['had_runtime_reservation'])->toBeTrue();
+            }
         }
     })->with([
         'success' => ['success', true], 'rollback' => ['rollback', true], 'failure' => ['failure', false],
@@ -4316,4 +4318,195 @@ it('keeps a completed migration successful when a carried Schedule was not activ
     expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($operation->result['schedules'])->toBe([$outcome])
         ->and($schedule->refresh()->trigger->value)->toBe('container');
+});
+
+/**
+ * The success history is DERIVED from Operation 18776's STORED run record, not a captured WebSocket reply.
+ * Mapping: jobs.jobName -> name, steps.stepName -> name, native status/times unchanged.
+ * Root identity and commit are scrubbed. Inputs bind to this admission. The finish stdout selects the five
+ * public identity/outcome fields from stored im-finish/migrate v100; all other outputs, inputs, plans,
+ * provenance, hosts, names and vault references are omitted. The three other files are the pinned captures.
+ */
+function unavailableMigrateTransport(Operation $operation, string $capture, bool $empty = false): object
+{
+    $file = $capture === 'success' ? 'stored-success' : 'pinned-'.$capture;
+    $history = json_decode((string) file_get_contents(base_path('tests/Fixtures/instance-migrate/'.$file.'.json')), true, flags: JSON_THROW_ON_ERROR);
+    $offset = now()->getTimestampMs() - CarbonImmutable::parse($history['completedAt'])->getTimestampMs();
+    foreach (['startedAt', 'completedAt'] as $field) {
+        $history[$field] = CarbonImmutable::parse($history[$field])->addMilliseconds($offset)->toISOString();
+    }
+    foreach ($history['jobs'][0]['steps'] as &$step) {
+        foreach (['startedAt', 'completedAt'] as $field) {
+            if (isset($step[$field])) {
+                $step[$field] = CarbonImmutable::parse($step[$field])->addMilliseconds($offset)->toISOString();
+            }
+        }
+        if ($step['name'] === 'finish') {
+            $receipt = $step['outputs']['stdout'];
+            $step['outputs'] = $empty ? ['stdout' => ''] : [];
+        }
+    }
+    unset($step);
+    $history['workflowName'] = 'operation-instance-migrate';
+    $history['inputs'] = ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'instance.migrate'];
+    $operation->update(['status' => 'running', 'attempts' => 1, 'started_at' => $history['startedAt'],
+        'state' => ['swamp_run_id' => $history['id']]]);
+    $transport = (object) ['history' => $history, 'receipt' => $receipt, 'frames' => []];
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect', 'close')->andReturnNull();
+    $socket->shouldReceive('isConnected')->andReturnTrue();
+    $frame = [];
+    $socket->shouldReceive('send')->andReturnUsing(function (array $message) use (&$frame, $transport): void {
+        $frame = $message;
+        $transport->frames[] = $message;
+    });
+    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame, $transport): array {
+        $value = $frame['type'] === 'workflow.history.get' ? $transport->history : ['results' => []];
+
+        return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => $value]]];
+    });
+    app(SwampConnection::class)->release();
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'fixture-read-token']);
+
+    return $transport;
+}
+
+it('releases a proven rollback with lost finish output through only the job after the grace', function (string $capture, bool $empty): void {
+    $this->freezeTime();
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $operation = migrateStart($instance);
+    $transport = unavailableMigrateTransport($operation, $capture, $empty);
+    $before = $instance->refresh()->getAttributes();
+    $this->travel(61)->seconds();
+
+    app()->call([new ReconcileSwampOperations, 'handle']);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe('instance.migrate_result_unavailable')
+        ->and($operation->result['restored'])->toBeTrue()->and($operation->result['moved'])->toBeFalse()
+        ->and($operation->result['recovery']['runtime_reservation'])->toBe('released')
+        ->and($operation->result['recovery']['operation_id'])->toBe($operation->id)
+        ->and($instance->runtime()->exists())->toBeFalse()
+        ->and($instance->refresh()->getAttributes())->toBe($before)
+        ->and(array_column($transport->frames, 'type'))->toContain('workflow.history.get')
+        ->and(migrateStart($instance)->status)->toBe(OperationStatus::Queued);
+})->with([
+    'failure absent' => ['failure', false], 'failure empty' => ['failure', true],
+    'timeout absent' => ['timeout', false], 'timeout empty' => ['timeout', true],
+    'cancel absent' => ['cancel', false], 'cancel empty' => ['cancel', true],
+]);
+
+it('keeps the normal receipt when it arrives inside the missing output grace', function (string $capture): void {
+    $this->freezeTime();
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $operation = migrateStart($instance);
+    $transport = unavailableMigrateTransport($operation, $capture);
+    if ($capture === 'cancel') {
+        $operation->update(['cancel_requested_at' => now()->subSecond()]);
+    }
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($instance->runtime()->exists())->toBeTrue();
+    $this->travel(20)->seconds();
+    foreach ($transport->history['jobs'][0]['steps'] as &$step) {
+        if ($step['name'] === 'finish') {
+            $step['outputs']['stdout'] = $transport->receipt;
+        }
+    }
+    unset($step);
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    $expectedStatus = match ($capture) {
+        'success' => OperationStatus::Succeeded,
+        'cancel' => OperationStatus::Cancelled,
+        default => OperationStatus::Failed,
+    };
+    expect($operation->refresh()->status)->toBe($expectedStatus)
+        ->and($operation->error_code)->toBe(in_array($capture, ['success', 'cancel'], true) ? null : 'instance.migrate_processes_failed')
+        ->and($operation->result)->toBe(json_decode($transport->receipt, true, flags: JSON_THROW_ON_ERROR))
+        ->and($instance->runtime()->exists())->toBe($capture === 'success');
+})->with(['failure', 'timeout', 'cancel', 'success']);
+
+it('keeps unproven rollback or completed cutover unchanged and names owner recovery at the deadline', function (string $case, string $evidence): void {
+    $this->freezeTime();
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $operation = migrateStart($instance);
+    $transport = unavailableMigrateTransport($operation, $case === 'completed cutover' ? 'success' : 'failure');
+    foreach ($transport->history['jobs'][0]['steps'] as &$step) {
+        if ($case === 'failed restore' && $step['name'] === 'restore') {
+            $step['status'] = 'failed';
+        } elseif ($case === 'uncertain route' && $step['name'] === 'route') {
+            $step['status'] = 'succeeded';
+        } elseif ($case === 'retirement began' && $step['name'] === 'retire') {
+            $step['status'] = 'failed';
+            $step['startedAt'] = $transport->history['startedAt'];
+        } elseif ($case === 'preflight no-op' && $step['name'] === 'container') {
+            $step['status'] = 'failed';
+        }
+    }
+    unset($step);
+    $instanceBefore = $instance->refresh()->getAttributes();
+    $runtime = $instance->runtime()->sole();
+    $runtimeBefore = $runtime->getAttributes();
+    $this->travel(61)->seconds();
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running);
+    $this->travelTo(OperationRunBudgets::deadline($operation)->addSecond());
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe('instance.migrate_result_unavailable')
+        ->and($operation->result['restored'])->toBeNull()
+        ->and($operation->result['missing_evidence'])->toContain('finish_output', $evidence)
+        ->and($operation->result['recovery']['runtime_reservation'])->toBe('retained')
+        ->and($operation->result['error_message'])->toContain("Operation [{$operation->id}]", $evidence, 'owner', 'No Orbit command')
+        ->and($instance->refresh()->getAttributes())->toBe($instanceBefore)
+        ->and($runtime->refresh()->getAttributes())->toBe($runtimeBefore);
+    try {
+        migrateStart($instance);
+        test()->fail('A missing rollback or cutover receipt must name owner recovery.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('instance.migrate_recovery_required')
+            ->and($exception->status)->toBe(409)
+            ->and($exception->details['previous_operation_id'])->toBe($operation->id)
+            ->and($exception->getMessage())->toContain("Operation [{$operation->id}]", $evidence, 'No Orbit command');
+    }
+})->with([
+    'failed restore' => ['failed restore', 'checkout_restored'],
+    'uncertain Route' => ['uncertain route', 'route_restored'],
+    'started retirement' => ['retirement began', 'retirement_not_started'],
+    'preflight did not change resources' => ['preflight no-op', 'container_preparation'],
+    'stored successful run' => ['completed cutover', 'retirement_not_started'],
+]);
+
+it('caps the output grace at the original migrate deadline', function (): void {
+    $this->freezeTime();
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $operation = migrateStart($instance);
+    $transport = unavailableMigrateTransport($operation, 'failure');
+    $operation->update(['started_at' => now()->subSeconds(5690)]);
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running);
+    $this->travel(11)->seconds();
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    expect($operation->refresh()->error_code)->toBe('instance.migrate_result_unavailable')
+        ->and($operation->result['restored'])->toBeTrue()
+        ->and($instance->runtime()->exists())->toBeFalse();
+});
+
+it('treats an empty JSON report as lost finish output instead of a generic failure', function (): void {
+    $this->freezeTime();
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $operation = migrateStart($instance);
+    $transport = unavailableMigrateTransport($operation, 'failure');
+    foreach ($transport->history['jobs'][0]['steps'] as &$step) {
+        if ($step['name'] === 'finish') {
+            $step['outputs']['stdout'] = '{}';
+        }
+    }
+    unset($step);
+    $this->travel(61)->seconds();
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    expect($operation->refresh()->error_code)->toBe('instance.migrate_result_unavailable')
+        ->and($operation->result['restored'])->toBeTrue()
+        ->and($instance->runtime()->exists())->toBeFalse();
 });

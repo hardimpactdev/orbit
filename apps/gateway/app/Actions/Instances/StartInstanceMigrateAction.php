@@ -68,6 +68,17 @@ final readonly class StartInstanceMigrateAction
             $instance = Instance::query()->with(['project', 'node'])->lockForUpdate()->findOrFail($instance->id);
             $previous = Operation::query()->where('kind', InstanceMigration::Kind)->where('target_type', 'instance')
                 ->where('target_id', $instance->id)->latest('id')->first();
+            $recovery = $previous?->result['recovery'] ?? null;
+            if ($previous?->error_code === 'instance.migrate_result_unavailable'
+                && is_array($recovery) && ($recovery['runtime_reservation'] ?? null) === 'retained'
+                && $instance->runtime()->where('operation_id', $previous->id)->exists()) {
+                throw new ResourceOperationException('instance.migrate_recovery_required',
+                    ValidatedData::nullableString($previous->result['error_message'] ?? null)
+                        ?? "Operation [{$previous->id}] has no verified terminal receipt. The owner must recover its receipt or reconcile rollback or cutover. No Orbit command repairs this evidence gap.",
+                    409, details: ['previous_operation_id' => $previous->id,
+                        'missing_evidence' => $previous->result['missing_evidence'] ?? ['finish_output'],
+                        'repair_command' => null]);
+            }
             if ($previous !== null && (! $previous->status->terminal() || InstanceMigrateProjection::unsettled($previous))) {
                 $limit = InstanceMigrateProjection::settlementLimit($previous)?->toISOString();
                 $when = $limit === null ? 'Its run deadline starts when its wait ends; the hold limit is 60 minutes after expiry.'

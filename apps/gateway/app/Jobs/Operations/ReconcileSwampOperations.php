@@ -21,6 +21,7 @@ use App\Domain\Tasks\TaskVmAdmission;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Infrastructure\Swamp\ReadNativeRunFailure;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampTerminalOutputUnavailable;
 use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
 use App\Models\Operation;
 use Carbon\CarbonImmutable;
@@ -219,6 +220,8 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         $atDeadline = $deadline !== null && ! $deadline->isFuture();
         try {
             $step->projectTerminal($operation, ['id' => $run], $selector, $atDeadline, $onTerminal);
+        } catch (SwampTerminalOutputUnavailable $exception) {
+            app(InstanceMigrateProjection::class)->missingOutput($operation, $exception->run);
         } catch (SwampTerminalReadUnavailable) {
             // The run has not ended in the history yet, or serve did not answer: the next pass reads again.
             $this->expireAtDeadline($operation, $atDeadline, $expire);
