@@ -73,6 +73,7 @@ use App\Http\Requests\ProjectDefinitions\ProcessDefinitionRequest;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
@@ -88,6 +89,7 @@ use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\ProblemCollectorState;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Project;
@@ -4510,3 +4512,71 @@ it('treats an empty JSON report as lost finish output instead of a generic failu
         ->and($operation->result['restored'])->toBeTrue()
         ->and($instance->runtime()->exists())->toBeFalse();
 });
+
+it('keeps the terminal observer on the missing output path before settlement can finish', function (): void {
+    $this->freezeTime();
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $operation = migrateStart($instance);
+    $transport = unavailableMigrateTransport($operation, 'failure');
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    $observation = ProblemCollectorState::query()->sole()->observation;
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($observation['operation_settlement_count'])->toBe(1)
+        ->and($observation['operation_settlement_oldest_completed_at'])->toBe($transport->history['completedAt']);
+    $this->travel(61)->seconds();
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    $observation = ProblemCollectorState::query()->sole()->observation;
+    expect($operation->refresh()->error_code)->toBe('instance.migrate_result_unavailable')
+        ->and($observation['operation_settlement_count'])->toBe(0)
+        ->and($observation['operation_settlement_oldest_completed_at'])->toBeNull();
+});
+
+it('keeps verified native status and known failure facts when a captured migrate receipt is lost', function (string $capture, string $nativeStatus, string $detail): void {
+    $this->freezeTime();
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $operation = migrateStart($instance);
+    $transport = unavailableMigrateTransport($operation, $capture);
+    $this->travel(61)->seconds();
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    $operation->refresh();
+    expect($operation->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe('instance.migrate_result_unavailable')
+        ->and($operation->state['native_failure']['failed_step'] ?? null)->toBe('container-processes')
+        ->and($operation->state['native_failure']['detail'] ?? null)->toBe($detail)
+        ->and($operation->state['native_failure']['stderr_recorded'] ?? null)->toBeFalse()
+        ->and($operation->failed_step)->toBe('container-processes')
+        ->and($operation->result['native_status'] ?? null)->toBe($nativeStatus)
+        ->and($operation->result)->not->toHaveKey('commit');
+    if ($capture === 'cancel') {
+        // Other callers retain the existing cancelled-root policy unless they opt in.
+        expect(app(NativeStepFailure::class)->fromRun($transport->history, $operation))->toBeNull();
+    }
+})->with([
+    'native cancellation' => ['cancel', 'cancelled', 'Command exited with code -1'],
+    'native phase timeout' => ['timeout', 'failed', 'Command exited with code 124'],
+]);
+
+it('names a running migrate without a hold time and reserves settlement wording for an ended Operation', function (bool $ended): void {
+    $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+    $previous = demandMigrate($instance);
+    if (! $ended) {
+        $previous->update(['status' => 'running', 'error_code' => null, 'finished_at' => null, 'started_at' => now()]);
+    }
+    $socket = migrationTerminalReader($previous, 'running');
+    try {
+        migrateStart($instance);
+        test()->fail('A second migrate must refuse.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('instance.migrate_settlement_pending')
+            ->and($exception->status)->toBe(409)
+            ->and($exception->details['previous_operation_id'])->toBe($previous->id);
+        if ($ended) {
+            expect($exception->getMessage())->toContain('awaits the reconciler', 'Retry after settlement', 'target hold limit')
+                ->and($exception->details)->toHaveKey('settlement_hold_limit');
+        } else {
+            expect($exception->getMessage())->toBe("A migrate of this Instance is running (Operation [{$previous->id}]). Wait for it to end.")
+                ->and($exception->details)->not->toHaveKey('settlement_hold_limit');
+        }
+    }
+    expect($socket->frames)->toBe([])->and($socket->connects)->toBe(0);
+})->with(['running' => false, 'ended, unsettled' => true]);

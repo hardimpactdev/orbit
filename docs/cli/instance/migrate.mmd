@@ -145,7 +145,7 @@ sequenceDiagram
     %%> - an independent phase failure keeps its code; deadline abort stays failed/`operation.timed_out`, user abort stays cancelled
     %%> - a native finish supplies step statuses and times, even when no events streamed
     %%> - missing finish output gets 60 seconds from the native end, capped by the original deadline
-    %%> - verified end and rollback then release the runtime reservation with instance.migrate_result_unavailable
+    %%> - verified end and rollback then release the runtime reservation with instance.migrate_result_unavailable; the result keeps native status and known failure facts
     %%> - otherwise the deadline ends result recovery; the reservation and Instance runtime stay
     %%> - retained reservations block another migrate; the result names missing evidence and owner recovery
     %%> - no Orbit command repairs missing cutover or rollback proof

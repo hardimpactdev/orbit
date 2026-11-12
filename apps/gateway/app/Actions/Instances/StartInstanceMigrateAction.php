@@ -80,6 +80,16 @@ final readonly class StartInstanceMigrateAction
                         'repair_command' => null]);
             }
             if ($previous !== null && (! $previous->status->terminal() || InstanceMigrateProjection::unsettled($previous))) {
+                if (! $previous->status->terminal()) {
+                    $status = match ($previous->status) {
+                        OperationStatus::Running => 'running',
+                        OperationStatus::Queued => 'queued',
+                        default => 'waiting',
+                    };
+                    throw new ResourceOperationException('instance.migrate_settlement_pending',
+                        "A migrate of this Instance is {$status} (Operation [{$previous->id}]). Wait for it to end.",
+                        409, details: ['previous_operation_id' => $previous->id, 'retryable' => true]);
+                }
                 $limit = InstanceMigrateProjection::settlementLimit($previous)?->toISOString();
                 $when = $limit === null ? 'Its run deadline starts when its wait ends; the hold limit is 60 minutes after expiry.'
                     : "Its target hold limit is {$limit}; the reconciler closes an unavailable result on its first pass after that limit.";

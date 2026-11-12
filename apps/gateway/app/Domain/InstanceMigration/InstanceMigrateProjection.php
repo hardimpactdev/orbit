@@ -137,7 +137,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
     public function missingOutput(Operation $operation, array $run): void
     {
         $completed = CarbonImmutable::parse(ValidatedData::string($run['completedAt']));
-        $failure = app(NativeStepFailure::class)->fromRun($run, $operation);
+        $failure = app(NativeStepFailure::class)->fromRun($run, $operation, includeCancelled: true);
         DB::transaction(function () use ($operation, $run, $completed, $failure): void {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $this->direct->assertRun($current, ValidatedData::string($run['id']));
@@ -161,7 +161,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
             $this->apply($current, [
                 'run_id' => $run['id'], 'status' => 'failed', 'started_at' => $run['startedAt'],
                 'finished_at' => $run['completedAt'], 'native_run' => $run,
-                'result' => [...$result, 'ready' => false, 'moved' => $restored ? false : null, 'restored' => $restored ? true : null],
+                'result' => [...$result, 'native_status' => $run['status'], 'ready' => false, 'moved' => $restored ? false : null, 'restored' => $restored ? true : null],
                 'failure' => $failure,
             ]);
         });

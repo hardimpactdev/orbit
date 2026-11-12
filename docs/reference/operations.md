@@ -155,6 +155,8 @@ A run can beat its expiry. For example, Swamp's start reply arrives after the 60
 
 A deadline-triggered abort remains `failed` with `operation.timed_out`; a user abort remains `cancelled`. An independent phase failure keeps its own code. Orbit chooses the cause from native history and the locked expiry audit. A late success remains a success. Runtime changes apply only while that migrate Operation still owns the Instance's reservation. Private vault reads precede the write transaction. A new migrate can take ownership of an already-settled stale reservation. A result that names missing rollback or cutover evidence instead requires owner recovery. Other kinds keep the expiry behavior above.
 
+A missing-output migrate keeps its verified root status in `result.native_status`, including cancellation. Known failed-step diagnostics keep their shared redaction. The Operation still uses the named unavailable-result failure.
+
 A migrate with missing finish output gets 60 seconds from the verified native end, capped by its original run deadline. A normal late receipt keeps its normal result. After the grace, proven rollback releases the owned runtime reservation and records `instance.migrate_result_unavailable`.
 
 A completed move or uncertain rollback stays pending until the deadline. Missing output then ends with the same code and keeps the reservation and Instance runtime. The result names missing evidence and owner recovery. Another migrate refuses with `instance.migrate_recovery_required`. No Orbit command repairs that evidence gap. The full 60-minute target hold still applies when the native end itself is unproven.
