@@ -114,3 +114,5 @@ For CI or CLI release workflow changes, run `apps/cli/tests/Feature/CliReleaseCo
 CI metadata preflights share one API deadline and run only for selected work. Ineligibility skips; an API error fails. A runtime trust refusal skips only with explicit admission failure and no case evidence; preserve interrupted and completed failures. Keep report-only checks outside Required dependencies.
 
 Child-process timeout tests must observe the PID returned by spawn, not require a startup log that the deadline may prevent. Keep a silent-child regression and assert real process termination.
+
+A shared CI registry needs semantic selection for both fixture units and fast jobs. Compare entries at the same merge base, keep unrelated paths active, and exercise the CLI output in a diverged-history regression.

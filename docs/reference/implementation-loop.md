@@ -92,6 +92,8 @@ Gateway bootstrap tests supply a fixed RSA key at the process boundary. The key 
 
 The [checks table](https://github.com/hardimpactdev/orbit/blob/main/.github/ci/checks.toml) defines the inputs of Gateway Pest and every other build check. `bin/ci-build-plan` interprets it. An input selects a check when it matches an include and no exclusion. `**` crosses directories; `*` and `?` stay within one name.
 
+Registry edits compare parsed entries against the merge base: each changed `check` entry selects its own job, while fixture-only edits and formatting select no extra fast jobs. Shared sections (including budgets, defaults, roots and selection rules) select all fast jobs. Changes to other files still select their usual checks. Fixture-only registry edits do not select Gateway release inputs on a PR; main keeps its release inputs.
+
 The job depends on input selection; only an explicit false selection skips it. Required checks has a static dependency on the job and validates the exact selection keys and boolean values before accepting the results. A selected failure, cancellation or unexpected skip fails the gate independently of `ORBIT_SLOW_CHECKS_BLOCKING`.
 
 The CLI Pest job installs `apps/cli` dev Composer dependencies with the shared PHP 8.5 action and coverage disabled. It runs the complete suite in one process with a 1 GiB memory limit and uploads JUnit results even after a failure.

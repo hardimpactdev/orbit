@@ -147,13 +147,37 @@ def check_source_roots(paths):
             raise ValueError(f'Unknown CI source root: {path}. Add [roots."{path.split("/")[0]}"] with inputs and default checks to {TABLE}.')
 
 
-def selected_checks(paths):
+def registry_check_changes(base, head):
+    """Compare fast-check definitions at the same merge base as changed paths."""
+    def read(revision):
+        # Revisions belong to the caller's repository, as in changed_inputs.
+        present = subprocess.check_output(['git', 'ls-tree', '--name-only', revision, '--', TABLE],
+                                          text=True, timeout=60).strip()
+        if not present:
+            return {}
+        return tomllib.loads(subprocess.check_output(
+            ['git', 'show', f'{revision}:{TABLE}'], text=True, timeout=60))
+    before, after = read(base), read(head)
+    # Fixture bodies have their own semantic selector in ci-units. Everything
+    # else outside an individual check is shared policy, including new sections.
+    def shared(table):
+        return {key: value for key, value in table.items() if key not in ('fixture', 'check')}
+    if shared(before) != shared(after):
+        return set(check_table()[1])
+    old, new = before.get('check', {}), after.get('check', {})
+    return {name for name in old.keys() | new.keys() if old.get(name) != new.get(name)}
+
+
+def selected_checks(paths, registry_checks=None):
     """Interpret only table data; return selected names and unclaimed paths for the summary."""
     table, checks, roots = check_table()
     shared = input_rules(table['all-checks']['inputs'])
     ignored = input_rules(table['ignored']['inputs'])
     selected, unclaimed = set(), []
     for path in paths:
+        if path == TABLE and registry_checks is not None:
+            selected.update(registry_checks)
+            continue
         claimed = {name for name, rules in checks.items() if matches(path, rules)}
         if matches(path, shared):
             claimed.update(checks)
@@ -167,20 +191,22 @@ def selected_checks(paths):
     return selected, unclaimed
 
 
-def select(paths, main=False, selection=None):
+def select(paths, main=False, selection=None, registry_checks=None):
     """`selection` is the text of the proof list; omitted, read this checkout's list."""
     paths = [path for path in paths if path]
     check_source_roots(paths)
-    selected, _ = selected_checks(paths)
+    selected, _ = selected_checks(paths, registry_checks)
     jobs = {name: name in selected for name in JOBS}
-    swamp_checks = {name: 'swamp-' + name in selected for name in SWAMP_CHECKS}
+    swamp_checks = {name: 'swamp-' + name in selected or 'swamp' in selected for name in SWAMP_CHECKS}
     jobs['swamp'] = any(swamp_checks.values())
     jobs['web'] |= main
     docs_only = selected == {'docs'}
-    swamp_only = bool(paths) and all(path.startswith('swamp/') for path in paths)
+    scope_paths = [path for path in paths if path != TABLE or registry_checks is None or registry_checks]
+    swamp_only = bool(scope_paths) and all(path.startswith('swamp/') for path in scope_paths)
+    registry_only = bool(paths) and not scope_paths
     if selection is None and (ROOT / SELECTION).is_file():
         selection = (ROOT / SELECTION).read_text()
-    return {'jobs': jobs, 'swamp_checks': swamp_checks, 'gateway_release': main or (not swamp_only and not docs_only),
+    return {'jobs': jobs, 'swamp_checks': swamp_checks, 'gateway_release': main or (not swamp_only and not docs_only and not registry_only),
             'proof_run': proof_run(paths, selection)}
 
 
@@ -217,8 +243,9 @@ def main():
     p.add_argument('--swamp-base', action='store_true', help='Resolve the retained source for the first history import')
     a = p.parse_args()
     base, paths = changed_inputs(a.base, a.head)
-    result = select(paths, a.main)
-    _, unclaimed = selected_checks([path for path in paths if path])
+    registry_checks = registry_check_changes(base, a.head) if TABLE in paths else None
+    result = select(paths, a.main, registry_checks=registry_checks)
+    _, unclaimed = selected_checks(paths, registry_checks)
     if unclaimed:
         import sys
         lines = [f'Unclaimed CI input: {path}; root {root} defaults: {", ".join(default) or "none"}'
