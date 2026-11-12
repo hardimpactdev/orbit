@@ -2309,6 +2309,17 @@ inputs = [
 cost = 16
 ceiling = 120
 
+[check.sdk-tests]
+inputs = [
+  "packages/php-sdk/**",
+  "!packages/php-sdk/**/*.md",
+  "!packages/php-sdk/**/*.mdx",
+]
+# Local baseline: 1,250 cases in 0.581s Pest / 0.77s wall; repaired suite has 1,255 cases.
+# Conservative estimate includes PHP setup, dev Composer install and JUnit upload; hosted cost is unproven.
+cost = 60
+ceiling = 120
+
 [check.e2e-static]
 inputs = [
   "apps/e2e/**",
@@ -2557,7 +2568,7 @@ default = ["web"]
 
 [roots."packages/php-sdk"]
 inputs = ["packages/php-sdk/**"]
-default = ["sdk-static", "cli-static"]
+default = ["sdk-static", "sdk-tests", "cli-static"]
 
 [roots."docs"]
 inputs = ["docs/**"]
