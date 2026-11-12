@@ -59,7 +59,7 @@ except BrokenPipeError:
           const writer = done.stdin.getWriter();
           await writer.write(new TextEncoder().encode(JSON.stringify({ANSIBLE_MODULE_ARGS: {
             schedule_id: id, lines, journalctl: folder + "/journalctl",
-            ...(intent.container ? {container: intent.container, incus: folder + "/incus"} : {}),
+            ...(intent.container ? {container_project: intent.container.project, container_name: intent.container.name, incus: folder + "/incus"} : {}),
           }})));
           await writer.close();
           const run = await done.output();
@@ -70,8 +70,12 @@ except BrokenPipeError:
           return result;
         })();
       }
-      const params = (tasks[0].orbit_schedule_journal as Record<string, unknown>);
-      try { Deno.statSync(folder + "/incus"); params.incus = folder + "/incus"; } catch { /* host read */ }
+      for (const task of tasks) {
+        const params = task.orbit_schedule_journal as Record<string, unknown> | undefined;
+        if (!params) continue;
+        params.journalctl = folder + "/journalctl";
+        try { Deno.statSync(folder + "/incus"); params.incus = folder + "/incus"; } catch { /* host read */ }
+      }
       Deno.writeTextFileSync(folder + "/read.yml", stringify([play]));
       const run = new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/read.yml`],

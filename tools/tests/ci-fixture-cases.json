@@ -1844,7 +1844,7 @@
     ]
   },
   "swamp/tests/ansible_schedule_logs_test.ts": {
-    "source_sha256": "d2402298f7cce7c069c92063f72a441362796b39e9798dc6d405fcbbd58ad06b",
+    "source_sha256": "9c19465180c4136985405ec46e404fcf4300416398a821d148a8bfdcc0fd9a85",
     "cases": [
       "migrated Schedule logs combine unit and command entries privately, in time order, with whole multiline messages",
       "Schedule journal byte cap retains complete multibyte entries and excludes the first entry that cannot fit",

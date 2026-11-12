@@ -28,18 +28,12 @@ options:
     description: The Node's Incus executable.
     type: path
     default: /usr/bin/incus
-  container:
-    description: The recorded container identity; absent for retained host journal reads.
-    type: dict
-    suboptions:
-      project:
-        description: Incus project of the Instance.
-        type: str
-        required: true
-      name:
-        description: Recorded Instance container name.
-        type: str
-        required: true
+  container_project:
+    description: Recorded Incus project; supplied together with container_name for a container read.
+    type: str
+  container_name:
+    description: Recorded Instance container name; absent for a host journal read.
+    type: str
 author: Orbit
 '''
 EXAMPLES = ''
@@ -144,13 +138,14 @@ def main():
         'lines': {'type': 'int', 'required': True},
         'journalctl': {'type': 'path', 'default': '/usr/bin/journalctl'},
         'incus': {'type': 'path', 'default': '/usr/bin/incus'},
-        'container': {'type': 'dict', 'default': None, 'options': {
-            'project': {'type': 'str', 'required': True}, 'name': {'type': 'str', 'required': True}}},
-    }, supports_check_mode=True)
+        'container_project': {'type': 'str', 'default': None},
+        'container_name': {'type': 'str', 'default': None},
+    }, required_together=[['container_project', 'container_name']], supports_check_mode=True)
     try:
         observed, prefix = ({'state': 'active'}, [])
-        if module.params['container'] is not None:
-            observed, prefix = container_observation(module.params['incus'], module.params['container'], module.params['schedule_id'])
+        if module.params['container_name'] is not None:
+            observed, prefix = container_observation(module.params['incus'],
+                {'project': module.params['container_project'], 'name': module.params['container_name']}, module.params['schedule_id'])
         output, truncated = ('', False) if 'error_code' in observed else read_entries(
             module.params['journalctl'], module.params['schedule_id'], module.params['lines'], prefix)
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):

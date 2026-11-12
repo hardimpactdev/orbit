@@ -26,7 +26,8 @@
       orbit_schedule_journal:
         schedule_id: "{{ intent.schedule.id }}"
         lines: "{{ intent.read.lines | int }}"
-        container: "{{ {'project': intent.container.project, 'name': intent.container.name} if intent.container is defined else omit }}"
+        container_project: "{{ intent.container.project | default(omit) }}"
+        container_name: "{{ intent.container.name | default(omit) }}"
       register: schedule_journal
       changed_when: false
       no_log: true
