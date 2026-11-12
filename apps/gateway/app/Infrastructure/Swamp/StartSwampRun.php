@@ -32,16 +32,17 @@ final readonly class StartSwampRun
     /** @param (Closure():float)|null $clock */
     public function __construct(private WebSocketClient $socket, ?Closure $clock = null)
     {
-        $this->clock = $clock ?? static fn (): float => microtime(true);
+        $this->clock = $clock ?? static fn (): float => hrtime(true) / 1_000_000_000;
     }
 
     public function start(Operation $operation, ?float $jobStarted = null): void
     {
-        $started = microtime(true);
+        $jobStarted ??= microtime(true);
+        $started = ($this->clock)();
         $outcome = 'unavailable';
         $accepted = false;
         $submitted = false;
-        $phases = $payload = [];
+        $phases = [];
         try {
             if (! $this->begin($operation)) {
                 return;
@@ -56,21 +57,21 @@ final readonly class StartSwampRun
                 'inputs' => app(DirectOperation::class)->workflowInputs($operation),
                 'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
             ];
-            $phases['inputs_ms'] = self::milliseconds($started);
+            $phases['inputs_ms'] = $this->milliseconds($started);
             $response = $this->request($endpoint, $payload, $submitted, $phases);
             $accepted = true;
-            $binding = microtime(true);
+            $binding = ($this->clock)();
             $this->bind($operation, $response['run_id']);
-            $phases['bind_ms'] = self::milliseconds($binding);
+            $phases['bind_ms'] = $this->milliseconds($binding);
             if ($response['failed']) {
                 throw new ResourceOperationException('operation.native_dispatch_failed', 'The native workflow ended before its start completed.', 503);
             }
             $outcome = 'started';
-            $broadcasting = microtime(true);
+            $broadcasting = ($this->clock)();
             if (app(DirectOperation::class)->usesNativeTerminal($operation)) {
                 app(OperationBroadcaster::class)->changed($operation, true);
             }
-            $phases['broadcast_ms'] = self::milliseconds($broadcasting);
+            $phases['broadcast_ms'] = $this->milliseconds($broadcasting);
         } catch (Throwable $exception) {
             $safe = $exception instanceof ResourceOperationException
                 ? $exception : ($accepted ? $this->uncertain()
@@ -79,14 +80,19 @@ final readonly class StartSwampRun
             $this->fail($operation, $safe, notSubmitted: ! $submitted);
             throw new ResourceOperationException($safe->errorCode, $safe->getMessage(), $safe->status, details: ['operation_id' => $operation->id]);
         } finally {
-            $context = ['operation_id' => $operation->id,
-                'outcome' => $outcome, 'duration_ms' => (int) round((microtime(true) - $started) * 1000)];
             if ($outcome === 'started') {
-                $context += ['kind' => $operation->kind, ...$phases,
-                    'queue_wait_ms' => self::queueWaitMilliseconds($operation, $jobStarted ?? $started),
-                    'payload_bytes' => self::payloadBytes($payload)];
+                try {
+                    Log::info('Swamp direct start', ['operation_id' => $operation->id,
+                        'outcome' => $outcome, 'duration_ms' => (int) round((($this->clock)() - $started) * 1000),
+                        'kind' => $operation->kind, ...$phases,
+                        'queue_wait_ms' => self::queueWaitMilliseconds($operation, $jobStarted)]);
+                } catch (Throwable) {
+                    // A diagnostic failure must not fail an already bound start.
+                }
+            } else {
+                Log::info('Swamp direct start', ['operation_id' => $operation->id,
+                    'outcome' => $outcome, 'duration_ms' => (int) round((($this->clock)() - $started) * 1000)]);
             }
-            Log::info('Swamp direct start', $context);
         }
     }
 
@@ -198,17 +204,17 @@ final readonly class StartSwampRun
         $shared = false;
         $socket = $this->socket;
         try {
-            $connecting = microtime(true);
+            $connecting = ($this->clock)();
             [$socket, $shared] = $dispatch->socket($endpoint, 15, $this->socket);
-            $phases['connect_ms'] = self::milliseconds($connecting);
+            $phases['connect_ms'] = $this->milliseconds($connecting);
             $stage = 'send';
-            $sending = microtime(true);
+            $sending = ($this->clock)();
             // Once sending begins, failure can no longer disprove submission.
             $submitted = true;
             $socket->send(['type' => 'workflow.run', 'id' => $id, 'payload' => $payload]);
-            $phases['send_ms'] = self::milliseconds($sending);
+            $phases['send_ms'] = $this->milliseconds($sending);
             $stage = 'receive';
-            $receiving = microtime(true);
+            $receiving = ($this->clock)();
             // Observed pre-dispatch setup took 32.7s and 55.3s; worker dispatch follows started.
             $deadline = ($this->clock)() + self::ConfirmationSeconds;
             while ($socket->isConnected() && ($remaining = $deadline - ($this->clock)()) > 0) {
@@ -246,7 +252,7 @@ final readonly class StartSwampRun
                     }
                 }
                 if ($confirmed !== null) {
-                    $phases['first_event_ms'] = self::milliseconds($receiving);
+                    $phases['first_event_ms'] = $this->milliseconds($receiving);
 
                     return $confirmed;
                 }
@@ -274,35 +280,16 @@ final readonly class StartSwampRun
         }
     }
 
-    private static function milliseconds(float $started, ?float $finished = null): int
+    private function milliseconds(float $started): int
     {
-        return max(0, (int) floor((($finished ?? microtime(true)) - $started) * 1000));
+        return max(0, (int) floor((($this->clock)() - $started) * 1000));
     }
 
-    /** Diagnostics must never turn an accepted start into a failure. */
     private static function queueWaitMilliseconds(Operation $operation, float $jobStarted): int
     {
-        try {
-            $created = $operation->created_at;
+        $created = $operation->created_at;
 
-            return $created === null ? 0 : self::milliseconds((float) $created->format('U.u'), $jobStarted);
-        } catch (Throwable) {
-            return 0;
-        }
-    }
-
-    /** Only the byte count leaves this method; encoding matches the socket's JSON flags.
-     * @param  array<string,mixed>  $payload
-     */
-    private static function payloadBytes(array $payload): int
-    {
-        try {
-            $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES);
-
-            return is_string($encoded) ? strlen($encoded) : 0;
-        } catch (Throwable) {
-            return 0;
-        }
+        return $created === null ? 0 : max(0, (int) floor(($jobStarted - (float) $created->format('U.u')) * 1000));
     }
 
     private function uncertain(): ResourceOperationException

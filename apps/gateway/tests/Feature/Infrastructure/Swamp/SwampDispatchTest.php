@@ -6,6 +6,7 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\Operations\StartAdmittedSwampRun;
@@ -229,7 +230,7 @@ it('keeps the target held when cancellation arrives while native start confirmat
         ->and($operation->lock_key)->toBe('instance:'.$operation->target_id);
 });
 
-it('logs only start phase numbers and payload byte count while preserving the socket sequence', function (): void {
+it('logs only start phase numbers while preserving the socket sequence', function (): void {
     $node = SwampNodeFixture::ensure();
     config(['swamp.run_token' => 'phase-log-private-token', 'swamp.address' => 'swamp.test', 'swamp.ca_path' => '/test/ca.pem']);
     $marker = 'private-payload-marker/☃';
@@ -284,18 +285,17 @@ it('logs only start phase numbers and payload byte count while preserving the so
         'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
     ]);
     expect($operation->fresh()->state['swamp_run_id'])->toBe($run);
-    Log::shouldHaveReceived('info')->once()->with('Swamp direct start', Mockery::on(function (array $context) use ($operation, $frames): bool {
+    Log::shouldHaveReceived('info')->once()->with('Swamp direct start', Mockery::on(function (array $context) use ($operation): bool {
         $phases = ['inputs_ms', 'connect_ms', 'send_ms', 'first_event_ms', 'bind_ms', 'broadcast_ms'];
-        expect(array_keys($context))->toBe(['operation_id', 'outcome', 'duration_ms', 'kind', ...$phases, 'queue_wait_ms', 'payload_bytes']);
+        expect(array_keys($context))->toBe(['operation_id', 'outcome', 'duration_ms', 'kind', ...$phases, 'queue_wait_ms']);
         expect($context['operation_id'])->toBe($operation->id)
             ->and($context['kind'])->toBe('proof.verify')
             ->and($context['outcome'])->toBe('started');
-        foreach (['duration_ms', ...$phases, 'queue_wait_ms', 'payload_bytes'] as $key) {
+        foreach (['duration_ms', ...$phases, 'queue_wait_ms'] as $key) {
             expect($context[$key])->toBeInt()->toBeGreaterThanOrEqual(0);
         }
         expect(array_sum(array_intersect_key($context, array_flip($phases))))->toBeLessThanOrEqual($context['duration_ms']);
         expect($context['queue_wait_ms'])->toBeGreaterThanOrEqual(30_000)->toBeLessThan(33_000);
-        expect($context['payload_bytes'])->toBe(strlen(json_encode($frames[0]['payload'], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)));
         expect(json_encode($context))->not->toContain('private-payload-marker', 'phase-log-private-token', 'workflowIdOrName', 'execution_secrets');
 
         return true;
@@ -347,4 +347,55 @@ it('keeps failed start and receive failure diagnostics unchanged', function (): 
 
         return true;
     }));
+});
+
+it('keeps the queued job successful and bound when success logging throws, with monotonic phase times', function (): void {
+    $node = SwampNodeFixture::ensure();
+    config(['swamp.run_token' => 'test-token', 'swamp.address' => 'swamp.test', 'swamp.ca_path' => '/test/ca.pem']);
+    $operation = Operation::query()->create(['kind' => 'proof.verify', 'target_type' => 'task', 'target_id' => 42,
+        'node_id' => $node->id, 'input' => [], 'status' => OperationStatus::Queued]);
+    $frames = $context = [];
+    $run = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect', 'close')->once()->andReturnNull();
+    $socket->shouldReceive('send')->once()->andReturnUsing(function (array $frame) use (&$frames): void {
+        $frames[] = $frame;
+    });
+    $socket->shouldReceive('isConnected')->once()->andReturnTrue();
+    $socket->shouldReceive('receive')->once()->andReturnUsing(function () use (&$frames, $run): array {
+        $this->travel(-1)->hours();
+
+        return [['type' => 'event', 'id' => $frames[0]['id'], 'event' => ['kind' => 'started',
+            'workflowName' => 'proof-fleet-verify', 'runId' => $run]]];
+    });
+    $tick = 0.0;
+    app()->instance(StartSwampRun::class, new StartSwampRun($socket, static function () use (&$tick): float {
+        return $tick += 0.125;
+    }));
+    Log::spy();
+    Log::shouldReceive('info')->once()->with('Swamp direct start', Mockery::type('array'))
+        ->andReturnUsing(function (string $message, array $logged) use (&$context): never {
+            $context = $logged;
+            throw new RuntimeException('log-write-failed');
+        });
+    Bus::dispatch(new StartAdmittedSwampRun($operation->id));
+
+    $this->artisan('queue:work', ['connection' => 'gateway', '--queue' => 'operations', '--once' => true, '--tries' => 1])->assertSuccessful();
+    app()->call([new StartAdmittedSwampRun($operation->id), 'handle']);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($operation->state['swamp_run_id'])->toBe($run)
+        ->and($operation->error_code)->toBeNull();
+    $this->assertDatabaseCount('failed_jobs', 0);
+    expect(array_column($frames, 'type'))->toBe(['workflow.run']);
+    $phases = ['inputs_ms', 'connect_ms', 'send_ms', 'first_event_ms', 'bind_ms', 'broadcast_ms'];
+    foreach ($phases as $key) {
+        expect($context[$key])->toBeInt()->toBeGreaterThanOrEqual(125);
+    }
+    expect($context['duration_ms'])->toBe(1875)
+        ->and(array_sum(array_intersect_key($context, array_flip($phases))))->toBeLessThanOrEqual($context['duration_ms']);
+    expect($context['queue_wait_ms'])->toBeInt()->toBeGreaterThanOrEqual(0);
+    expect($context)->not->toHaveKey('payload_bytes');
+    Log::shouldNotHaveReceived('warning');
+    $this->travelBack();
 });
