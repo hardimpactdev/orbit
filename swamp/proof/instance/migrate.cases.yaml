@@ -37,6 +37,7 @@ sources: [gateway]
 baseline: [operations]
 
 uncovered:
+  "code:instance.migrate_env_service_unused": "Real-file fixtures cover stock MySQL with no listener, local listeners, private/public classification, bounded probes and redaction; Ansible and result fixtures retain the generic warning before downtime. The release owner proves a stock checkout moves with the warning and an answering unattached endpoint refuses before quiesce."
   "code:source.github_app_denied": "Pest covers missing installation, excluded repository and no vault copy; Ansible covers later Git authentication refusal with the same safe App/repository message and no raw diagnostics."
   "code:source.github_unavailable": "Faked HTTP tests distinguish GitHub 5xx and timeout from missing installation; no live credential faults are injected."
   "code:source.read_timed_out": "One unprivileged Ansible fixture fakes timeout exit 124 with no sleep, proves the 30-second command bound and credential removal before any checkout change."

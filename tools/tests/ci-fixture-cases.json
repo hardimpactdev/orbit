@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "cb89a46b3a1c0709b1b152a90f8c52f97d96513f563d93e31418126e16e664ca",
+    "source_sha256": "c3528213ebb7bd5cc3c50e535a64cfc2feb9e711dc9fb4467f191c8dcad1cff2",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -112,7 +112,8 @@
       "stock selector preflight: real53",
       "stock selector preflight: selected Redis",
       "stock selector preflight: attached Redis",
-      "stock selector preflight: wrong Redis port"
+      "stock selector preflight: wrong Redis port",
+      "stock unused MySQL passes both real preflights and its warning survives the completed move"
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
@@ -1787,8 +1788,22 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "8bfd53d7c1b377b6dd85a1fe33ca5811e27170a67fbaef4c9da1f0adbcab50f4",
+    "source_sha256": "63332a033ba507a0bc37a27eb252e5d0127c031fa92a6325db2fd7af5a1973d9",
     "cases": [
+      "test_stock_mysql_without_a_host_listener_warns_instead_of_refusing",
+      "test_answering_unattached_loopback_service_retains_the_refusal",
+      "test_attached_services_and_public_answers_are_never_connected_to",
+      "test_private_dns_resolution_connects_only_after_every_address_is_private",
+      "test_unused_redis_mail_and_memcached_follow_the_same_probe_and_redaction_rule",
+      "test_only_explicit_connection_refusal_becomes_an_unused_warning",
+      "test_timeouts_and_every_unreachable_errno_keep_the_refusal",
+      "test_unexpected_connect_or_socket_creation_errors_stay_loud_and_redacted",
+      "test_live_service_with_a_saturated_accept_queue_is_not_unused",
+      "test_all_private_addresses_must_explicitly_refuse_before_warning",
+      "test_mysql_and_mariadb_host_sockets_override_tcp_and_attached_targets",
+      "test_missing_mysql_socket_permits_tcp_observation_but_uninspectable_paths_refuse",
+      "test_postgres_socket_directory_and_redis_socket_forms_never_become_tcp_warnings",
+      "test_probe_cache_and_limit_bound_total_network_waiting",
       "test_loopback_requires_exact_attached_key_pair_and_port",
       "test_database_urls_refuse_without_exposing_credentials_or_bypassing_attached_keys",
       "test_development_mail_satisfies_only_the_ipv4_forwarded_endpoints",
@@ -1959,7 +1974,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "f7c89e168f3a4e06db343d7842deeffd40ee1cf4138edd0c6a69f4d1584b813e",
+    "source_sha256": "c3c10c8a173e3f531893f6bbaa5cd86a3a216eb0911dbb6ad016e7bb8630035d",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -1987,7 +2002,8 @@
       "Node preparation fails before quiesce with its pin reason and restores only the new container",
       "the copied untracked count includes zero, excludes paths and survives later failure",
       "invalid or incomplete copied-file receipts do not claim a count",
-      "carried Schedule activation failures and missing receipts warn without failing completed migration"
+      "carried Schedule activation failures and missing receipts warn without failing completed migration",
+      "environment warning receipts survive later phase results and remain generic"
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {

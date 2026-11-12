@@ -7,7 +7,7 @@
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
 import { createHash } from "node:crypto";
-import { migrateResult } from "../extensions/behaviors/operations/instance-dev-command/migrate_result.ts";
+import { migrateResult, writtenFailure } from "../extensions/behaviors/operations/instance-dev-command/migrate_result.ts";
 import {
   legacyScheduleUnits,
   renderScheduleUnits,
@@ -2272,11 +2272,13 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
+    const listener = Deno.listen({hostname:"127.0.0.1",port:0});
+    const port = (listener.addr as Deno.NetAddr).port;
     try {
       Deno.mkdirSync(`${f.checkout}/apps/mail`, { recursive: true });
       git(f.checkout, "config", "core.excludesFile", "/dev/null");
       Deno.writeTextFileSync(`${f.checkout}/.env`, "DB_CONNECTION=mysql\nDB_HOST=' 127.0.0.1 '\nDB_PORT=3308\nDB_PASSWORD=private-db-password\n");
-      Deno.writeTextFileSync(`${f.checkout}/apps/mail/.env`, "MAIL_MAILER=smtp\nMAIL_HOST=10.6.0.7\nMAIL_PORT=1025\nMAIL_PASSWORD=private-mail-password\n");
+      Deno.writeTextFileSync(`${f.checkout}/apps/mail/.env`, `MAIL_MAILER=smtp\nMAIL_HOST=127.0.0.1\nMAIL_PORT=${port}\nMAIL_PASSWORD=private-mail-password\n`);
       git(f.checkout, "add", "--force", "apps/mail/.env");
       git(f.checkout, "commit", "--quiet", "-m", "nested app");
       git(f.checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
@@ -2294,12 +2296,12 @@ Deno.test({
       const primaryEnvironment = Deno.readTextFileSync(`${f.checkout}/.env`);
       const sourceContent = Deno.readTextFileSync(sourceUnit);
       Deno.writeTextFileSync(`${f.checkout}/.env`, "DB_CONNECTION=sqlite\nMAIL_MAILER=log\n");
-      Deno.writeTextFileSync(`${f.checkout}/second/.env`, "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n");
+      Deno.writeTextFileSync(`${f.checkout}/second/.env`, `DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=${port}\n`);
       Deno.writeTextFileSync(sourceUnit, `[Service]\nWorkingDirectory=${f.checkout}/second\nEnvironmentFile=-${f.checkout}/.env\nExecStart=/bin/true\n`);
       const secondRefused = f.run("container");
       assert(!secondRefused.ok, secondRefused.output);
       assertEquals(f.result().error_code, "instance.migrate_env_service_unreachable");
-      assert(f.result().error_message.includes("second/.env: DB_HOST=127.0.0.1:3306"));
+      assert(f.result().error_message.includes(`second/.env: DB_HOST=127.0.0.1:${port}`));
       assert(!exists(`${f.folder}/calls`), "a second application refusal precedes every probe");
       assert(!exists(`${f.folder}/run/quiesced`));
       assertEquals(Deno.readTextFileSync(`${f.folder}/host-processes.json`), before);
@@ -2314,7 +2316,7 @@ Deno.test({
       assertEquals(f.result().error_code, "instance.migrate_env_service_unreachable");
       assertEquals(f.result().preflight_refused, true);
       assert(f.result().error_message.includes("DB_HOST=127.0.0.1:3308"));
-      assert(f.result().error_message.includes("apps/mail/.env: MAIL_HOST=10.6.0.7:1025"));
+      assert(f.result().error_message.includes(`apps/mail/.env: MAIL_HOST=127.0.0.1:${port}`));
       const output = refused.output + JSON.stringify(f.result());
       assert(!output.includes("private-db-password"));
       assert(!output.includes("private-mail-password"));
@@ -2331,7 +2333,7 @@ Deno.test({
       assert(!exists(`${f.folder}/calls`), "an environment refusal must precede every container command and reach probe");
       assert(!exists(`${f.folder}/run/quiesced`));
 
-      f.migrate.environment.targets.push({ host: "127.0.0.1", port: 3308 }, { host: "10.6.0.7", port: 1025 });
+      f.migrate.environment.targets.push({ host: "127.0.0.1", port: 3308 }, { host: "127.0.0.1", port });
       f.migrate.databases = [];
       f.write();
       const allowed = f.run("container");
@@ -2353,6 +2355,7 @@ Deno.test({
       assert(quiesce.ok, quiesce.output);
       assert(!exists(f.migrate.awake.path));
     } finally {
+      listener.close();
       f.cleanup();
     }
   },
@@ -2406,6 +2409,8 @@ for (const scenario of ["stock Laravel", "real53", "selected Redis", "attached R
     ignore: !hasAnsible,
     fn() {
       const f = fixture();
+      const listener = Deno.listen({hostname:"127.0.0.1",port:0});
+      const port = (listener.addr as Deno.NetAddr).port;
       for (const name of [
         "vendor/nunomaduro/collision/tests/LaravelApp/.env",
         "vendor/vlucas/phpdotenv/tests/fixtures/env/.env",
@@ -2422,9 +2427,9 @@ for (const scenario of ["stock Laravel", "real53", "selected Redis", "attached R
         const text = scenario === "stock Laravel"
           ? Deno.readTextFileSync(new URL("fixtures/laravel-stock.env.example", import.meta.url))
           : real53Environment.replace("CACHE_STORE=database", selected ? "CACHE_STORE=redis" : "CACHE_STORE=database");
-        Deno.writeTextFileSync(`${f.checkout}/.env`, text);
+        Deno.writeTextFileSync(`${f.checkout}/.env`, text.replace("REDIS_PORT=6379", `REDIS_PORT=${port}`));
         if (scenario === "attached Redis" || scenario === "wrong Redis port") {
-          f.migrate.environment.targets.push({ host: "127.0.0.1", port: scenario === "attached Redis" ? 6379 : 6380 });
+          f.migrate.environment.targets.push({ host: "127.0.0.1", port: scenario === "attached Redis" ? port : port + 1 });
         }
         f.write();
         const before = f.state();
@@ -2434,16 +2439,60 @@ for (const scenario of ["stock Laravel", "real53", "selected Redis", "attached R
         if (refused) {
           assertEquals(f.result().error_code, "instance.migrate_env_service_unreachable");
           assertEquals(f.result().preflight_refused, true);
-          assert(f.result().error_message.includes("REDIS_HOST=127.0.0.1:6379"));
+          assert(f.result().error_message.includes(`REDIS_HOST=127.0.0.1:${port}`));
           assertEquals(f.state(), before);
           assert(!exists(`${f.folder}/calls`), "refuse before any container command or probe");
         } else {
           assert(exists(`${f.folder}/calls`), "pass the real preflight and prepare the container");
         }
-        assertEquals(Deno.readTextFileSync(`${f.checkout}/.env`), text);
+        assertEquals(Deno.readTextFileSync(`${f.checkout}/.env`), text.replace("REDIS_PORT=6379", `REDIS_PORT=${port}`));
         assert(exists(f.migrate.awake.path));
         assert(!exists(`${f.folder}/run/quiesced`));
-      } finally { f.cleanup(); }
+      } finally { listener.close(); f.cleanup(); }
     },
   });
 }
+
+Deno.test({
+  name: "stock unused MySQL passes both real preflights and its warning survives the completed move",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = fixture();
+    const holder = new Deno.Command("python3", {
+      args:["-u","-c","import socket,sys; s=socket.socket(); s.bind(('127.0.0.1',3306)); print('reserved',flush=True); sys.stdin.read()"],
+      stdin:"piped", stdout:"piped", stderr:"inherit",
+    }).spawn();
+    try {
+      const reader = holder.stdout.getReader();
+      const ready = await reader.read();
+      reader.releaseLock();
+      assert(new TextDecoder().decode(ready.value).includes("reserved"));
+      const text = "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE=laravel\n";
+      Deno.writeTextFileSync(`${f.checkout}/.env`, text);
+      const prepared = f.run("container");
+      assert(prepared.ok, prepared.output);
+      assert(!exists(`${f.folder}/run/quiesced`));
+      assertEquals(Deno.readTextFileSync(`${f.checkout}/.env`),text);
+      f.build();
+      for (const phase of ["processes","seed"]) {
+        const done = f.run(phase);
+        assert(done.ok,done.output);
+      }
+      const retired = f.run("retire");
+      assert(retired.ok,retired.output);
+      const commit = f.workspace("rev-parse","HEAD");
+      const phases = {container:"succeeded",quiesce:"succeeded",workspace:"succeeded",files:"succeeded",
+        agent:"skipped",processes:"succeeded",seed:"succeeded",t3:"skipped",register:"skipped",route:"succeeded",
+        retire:"succeeded",restore_route:"skipped",restore:"skipped"};
+      const receipt = JSON.parse(migrateResult({instance_id:53,container:f.container,migrate:f.migrate,route_mutations:{}},
+        phases,{status:"succeeded",outputs:{stdout:"orbit-commit="+commit}},null,await writtenFailure(`${f.folder}/run`)).stdout);
+      assertEquals(receipt.ready,true);
+      assertEquals(receipt.warnings,[{code:"instance.migrate_env_service_unused",
+        message:".env: DB_HOST=127.0.0.1:3306: no TCP service answered on the Node."}]);
+    } finally {
+      await holder.stdin.getWriter().close();
+      await holder.status;
+      f.cleanup();
+    }
+  },
+});
