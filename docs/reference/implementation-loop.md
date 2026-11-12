@@ -711,3 +711,5 @@ The migration mail fixture also checks the phase order: copy first, bounded mail
 Clone branch fixtures use unprivileged local Git repositories and run without an Ansible playbook. Their registered case names and conservative costs change together in `tools/tests/ci-fixture-cases.json` and `.github/ci/checks.toml`; collect names with `bin/ci-units collect --file swamp/tests/instance_clone_test.py`.
 
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise.
+
+Private Node-runtime fixtures use the shipped conversion and fetch helper with a fake Vite+ command; network verification remains a post-release live proof.

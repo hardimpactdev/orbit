@@ -53,6 +53,10 @@ sequenceDiagram
   %%> - probes every attached target from inside the container before downtime, else `instance.database_unreachable`
   %%> - checks mapped Process executables inside the container, then repeats before quiesce; unavailable paths report `instance.migrate_process_binary_unavailable` naming every Process and path, leaving the checkout serving
   %%> - fetches the branch from the checkout into the Node's mirror, including commits never pushed
+  SW->>C: Prepare Node runtimes<br/>Ansible · tags node-runtime
+  %%> What it does:
+  %%> - while the checkout still serves, mounts its source read-only in the new container, converts an inherited shared store to a private copy, and lets Vite+ resolve and install each Process's Node; the mount is removed on success and failure
+  %%> - this phase is bounded at 150 seconds; Vite+ resolution and verified download share 90 seconds; failure names the pin and reason with instance.node_runtime_prepare_failed and restores without downtime
   SW->>N: Check and stop<br/>Ansible · tags quiesce
   %%> What it does:
   %%> - repeats the branch and retirement checks

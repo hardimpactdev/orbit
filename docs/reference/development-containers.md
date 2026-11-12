@@ -1125,3 +1125,13 @@ Two spikes on Beast on 2026-11-09 ran the user and agent layout in one container
 | `orbit` user | Could not run `t3`, `claude` or `codex`, read `/home/agent`, reach the model route or T3's port, or see agent processes |
 | Shared workspace | Each user edited the other's files; Git was clean for both |
 | Egress | Only DNS and the guard; no turn failed |
+
+## Private Node runtimes
+
+Each Instance keeps a writable `VP_HOME/js_runtime` directory. The recipe Node is copied from the verified shared home once, using a reflink when supported. Additional pins are resolved and downloaded by Vite+ as `orbit`, through the Instance proxy, with its signature and checksum verification. Resolution uses `vp env current node --json`; only a missing resolved executable runs `vp env install VERSION`. Orbit does not implement Node pin precedence.
+
+Migration prepares Node in the new container before quiesce. It mounts the serving checkout read-only for this phase and removes the mount even after failure. The phase has a 150-second bound; tool resolution and downloads share 90 seconds. Failure records `instance.node_runtime_prepare_failed` with the pin and reason while the checkout keeps serving. Create and clone prepare before Process starts; an old seed's link is converted, and cached versions in a seed are retained. A different branch can fetch another version.
+
+A private copy survives shared-home pruning and recipe upgrades. The existing runtime-upgrade hook adds a new recipe Node to already-private stores before its normal Process restart sweep; it does not convert legacy containers as a fleet action. Per-Instance conversion itself restarts nothing. A running Process keeps its executable mapping and MainPID; the owner restarts a crashed or outdated vp-dev explicitly.
+
+Budget about 200 MB per extra Node version per Instance. Clones initially share the store through the seed snapshot. There is no automatic cleanup.

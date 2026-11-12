@@ -61,6 +61,8 @@ sequenceDiagram
       %%> When:
       %%> - two IPv4 loopback sockets forward 1025 and 2525; a foreign listener skips setup without stopping its Process
     end
+    SW->>C: Prepare the private Node store<br/>clone-node-store<br/>tags node-store
+    %%> - preserves downloaded runtimes from the seed, converts an old shared-store link, and fetches a changed branch pin before starting Processes
     SW->>C: Prepare the workspace<br/>native clone-workspace
     %%> What it does:
     %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone

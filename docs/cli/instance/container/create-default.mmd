@@ -56,6 +56,7 @@ sequenceDiagram
   %%> What it does:
   %%> - the Project's development deploy steps, as `orbit`, in list order: they install dependencies and migrate
   %%> - the runtime folder supplies `php`, `composer`, Node and Bun; dependency downloads use the container egress model
+  %%> - the private Node store is seeded from the recipe without a download; Vite+ resolves and fetches any missing pinned Node before Process start, within the phase budget
   SW->>C: Start Processes<br/>Ansible · tags processes
   %%> What it does:
   %%> - FrankenPHP starts as the `orbit` unit `orbit-frankenphp.service` on port 8080 of the bridge address
