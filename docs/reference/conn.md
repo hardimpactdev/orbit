@@ -292,6 +292,8 @@ Conn maps these stable container-clone step names to stage detail, in this order
 
 A server of an Instance names its `instance_id` and the container's `power_state`, `running` or `stopped`. Other servers have `null` for both. Conn shows a `stopped` server as asleep.
 
+`GET /environments?include=git` adds `git` only to rows backed by an Instance. Without that query, the response keeps its existing fields. Container Git observations are not available yet, so each requested Instance row answers `{"state": "unknown", "reason": "not_observed"}`. Orbit reads no container or remote service while listing. Future observations over ten minutes old or from an offline agent use the same unknown response.
+
 ## Pairing and revocation
 
 A device asks the Gateway for a pairing link to one registered T3 server. The native Swamp pairing step sends `POST <url>/api/auth/pairing-token` with its admin session, a unique label, such as `phone via Orbit k3j9x0qa`, and T3's administrative scopes (see below). T3 gives the session paired from that link the same client label. The Gateway records the pairing: the Node, the server, the T3 link id, the label, and the link's expiry.
@@ -316,7 +318,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `GET /projects` | — | list of project |
 | `GET /projects/{id}/instances/check` | `name` query string | name, available, reason, domain |
 | `POST /projects/{id}/instances` | `{"name": "fix-login-k3j9"}` | Operation (202) |
-| `GET /environments` | — | list of environment |
+| `GET /environments` | optional `include=git` | list of environment |
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |
 | `GET /environments/{environment_id}/pairings` | — | list of pairing, newest first |
 | `POST /environments/{environment_id}/pairings` | — | Operation (202) |
