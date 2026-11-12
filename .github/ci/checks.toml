@@ -2129,18 +2129,6 @@ inputs = [
   "swamp/bin/lint-workflow-placement.ts",
 ]
 
-[[fixture]]
-file = "swamp/tests/writes_declared_test.ts"
-cost = 4
-inputs = [
-  "bin/swamp-shape-gate",
-  "swamp/ansible/ansible.cfg",
-  "swamp/ansible/requirements.txt",
-  "swamp/ansible/requirements.yml",
-  "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/tests/writes-reviewed.json",
-]
-
 # CI check inputs. Includes are ORed; any !exclude wins, regardless of order.
 # ** crosses directories; * and ? stay within one name (selection_regex).
 # Costs are pull_request median wall seconds from ci-speed.md (2026-11-11).

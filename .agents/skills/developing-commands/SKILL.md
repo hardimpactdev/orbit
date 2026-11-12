@@ -41,6 +41,8 @@ The release ([stage 5](../../../docs/reference/pipeline/5-automatic-release.mmd)
 
 ## Lessons
 
+When promoting a fast read-only audit into CI controls, remove it from fixture discovery, the registry and the case inventory. Prove that its input paths select the control job, that it runs once in the full gate, and that a failing audit fails the control run. Measure the audit and report existing source failures separately.
+
 When a deployment captures source metadata, test an older pinned commit after the branch advances. A branch-head fake alone cannot prove that the selected runtime and the checked-out commit agree. Check recorded lifecycle refusals before reading remote metadata. Read it before opening any admission write transaction, including an automatic caller’s outer transaction; recheck lifecycle, source settings and idempotency under ownership before recording the result.
 
 Task parents that can use a ready VM capture resume only for a parked VM. Keep `task_vm_id` separate from the optional resume intent, and let the next workflow step follow either a succeeded or skipped resume.

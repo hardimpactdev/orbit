@@ -63,6 +63,8 @@ DENO_UNIT_TESTS = (
     ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/validate-swamp-workflows_test.ts'),
     ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/check-swamp-base-policy_test.ts'),
 )
+# Fast read-only audits run serially with the controls, outside fixture scheduling.
+DENO_CONTROL_TESTS = ('tests/writes_declared_test.ts',)
 # The file names `deno test` takes from a directory.
 DENO_TEST_FILE = re.compile(r'(.*[._])?test\.(ts|tsx|mts|js|mjs|jsx)')
 # Not in the shape group: the validation group runs the enrollment trust test, the firewall test stays out until it passes,
@@ -84,7 +86,7 @@ def deno_test_files():
     grouped = {file for group in INSTANCE_HOST_TEST_GROUPS for file in group}
     files = sorted(str(path.relative_to(SWAMP)) for path in (SWAMP / 'tests').rglob('*') if DENO_TEST_FILE.fullmatch(path.name))
     return [('-A', *group) for group in INSTANCE_HOST_TEST_GROUPS] + [
-        ('-A', file) for file in files if file not in DENO_TESTS_ELSEWHERE and file not in grouped]
+        ('-A', file) for file in files if file not in DENO_TESTS_ELSEWHERE and file not in grouped and file not in DENO_CONTROL_TESTS]
 
 
 class Step:
@@ -117,6 +119,7 @@ def plan(base, reports, cache, collections):
     steps.append(Step('shape', 'ruff', ['ruff', 'check', 'ansible/build_vars.py', 'ansible/instance_bridge.py', 'ansible/instance_migrate_links.py', 'ansible/library/orbit_artifact.py', 'ansible/library/orbit_migrate_env.py', 'tests/_support/fixture_supervisor.py',
                                         *ANSIBLE_TESTS], parallel=True))
     steps += [deno_step(arguments) for arguments in (*DENO_UNIT_TESTS, *deno_files[len(INSTANCE_HOST_TEST_GROUPS):])]
+    steps += [Step('shape', 'deno test ' + file, ['deno', 'test', '--allow-read', file]) for file in DENO_CONTROL_TESTS]
     steps += [
         Step('shape', 'check-swamp-shape', ['deno', 'run', '--allow-env', '--allow-read', f'--allow-write={shape_report}', '--allow-run',
                                             'bin/check-swamp-shape.ts', '--base', base, '--report', str(shape_report)]),

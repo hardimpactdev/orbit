@@ -186,6 +186,10 @@ class BuildPlanTest(unittest.TestCase):
             'swamp/bin/swamp-shape-relocations.ts': {'shape', 'tests'},
             'swamp/ansible/task-vm-runtime.yml': {'shape', 'tests'},
             'swamp/workflows/workflow-operation-firewall-direct.yaml': {'shape', 'validate', 'tests'},
+            'swamp/workflows/workflow-operation-instance-mail-update.yaml': {'shape', 'validate', 'tests'},
+            'swamp/models/@nckrtl/orbit-gateway/orbit-gateway.yaml': {'shape', 'validate', 'tests'},
+            'swamp/tests/writes-reviewed.json': {'shape', 'tests'},
+            'swamp/tests/writes_declared_test.ts': {'shape', 'tests'},
             'swamp/config/serve-grants.json': {'shape', 'validate', 'tests'},
             'swamp/extensions/behaviors/node-worker/config.ts': {'shape', 'validate', 'tests'},
             'swamp/extensions/behaviors/_lib/public_output.ts': {'shape', 'validate', 'tests'},
@@ -197,11 +201,12 @@ class BuildPlanTest(unittest.TestCase):
             'apps/gateway/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php': {'shape', 'validate', 'tests'},
         }
         for path, expected in cases.items():
-            with self.subTest(path=path):
-                result = plan.select([path])
-                checks = {name for name, value in result['swamp_checks'].items() if value}
-                self.assertEqual(expected, checks)
-                self.assertEqual(bool(expected), result['jobs']['swamp'])
+            for main in (False, True):
+                with self.subTest(path=path, main=main):
+                    result = plan.select([path], main)
+                    checks = {name for name, value in result['swamp_checks'].items() if value}
+                    self.assertEqual(expected, checks)
+                    self.assertEqual(bool(expected), result['jobs']['swamp'])
 
     def test_shared_ci_changes_run_all_builds(self):
         self.assertEqual(set(plan.JOBS), self.selected(['.github/workflows/ci.yml']))
