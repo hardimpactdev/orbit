@@ -1765,7 +1765,7 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "64a4e075f4be9e007e31a3cb649bb8bd6854bb450b3dd3c1b94e5dcdf2a6b9d1",
+    "source_sha256": "2136a422685e3d09900524fd138244f1f5fb5d18c9f290ea5f4be7dd102700dd",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
@@ -1788,7 +1788,7 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "ffdcec7966b24dc40d70bd4ae936b7d44ef0d40ff8d81ea543fad7fdaa73db22",
+    "source_sha256": "63332a033ba507a0bc37a27eb252e5d0127c031fa92a6325db2fd7af5a1973d9",
     "cases": [
       "test_stock_mysql_without_a_host_listener_warns_instead_of_refusing",
       "test_answering_unattached_loopback_service_retains_the_refusal",
@@ -1852,7 +1852,7 @@
       "test_partial_write_retries_activation_and_disabled_active_socket_is_repaired",
       "test_failed_target_is_fatal_and_retry_keeps_pending",
       "test_detach_keeps_shared_port_then_removes_only_owned_access_without_dnat",
-      "test_kernel_probe_reads_only_established_sockets_owned_by_the_proxy",
+      "test_kernel_probe_reads_all_connection_states_owned_by_the_proxy",
       "test_failed_proxy_refuses_before_quiesce_with_public_identity_and_retains_pending",
       "test_effective_vendor_runtime_fragments_and_dropins_are_not_shadowed",
       "test_exact_incus_type_wide_dropin_is_allowed_but_modified_content_refuses",
@@ -1861,7 +1861,13 @@
       "test_failed_socket_enable_names_target_in_create_and_migrate_receipts",
       "test_failed_service_restart_names_target_in_create_and_migrate_receipts",
       "test_inactive_socket_names_target_in_create_and_migrate_receipts",
-      "test_real_create_and_migrate_failure_receipts_keep_target_and_block_later_work",
+      "test_upstream_appearing_after_delay_passes_with_one_client",
+      "test_never_established_refuses_after_whole_probe_bound",
+      "test_accepted_client_closed_after_upstream_refusal_keeps_cause_in_both_receipts",
+      "test_every_probe_reason_names_condition_and_public_unit_states",
+      "test_unit_jobs_and_socket_enable_lag_settle_within_same_bound",
+      "test_foreign_or_ambiguous_connections_never_prove_this_probe",
+      "test_guest_boundary_redacts_diagnostic_fields_and_keeps_public_states",
       "test_no_attachment_is_noop_and_phase_before_application_work"
     ]
   },
