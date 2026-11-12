@@ -14,6 +14,8 @@ additionalFiles:
   - ansible/proof-observer-facts.php
   - ansible/tasks/proof-gateway-release.yml
   - proof/cli-release.json
+  - ansible/library/orbit_caddy_publish.py
+  - ansible/module_utils/orbit_caddy_publish.py
   - ansible/library/orbit_route_site.py
   - ansible/library/orbit_artifact.py
   - ansible/library/orbit_schedule_journal.py

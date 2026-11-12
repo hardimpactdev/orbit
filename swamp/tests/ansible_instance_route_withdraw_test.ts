@@ -157,16 +157,25 @@ Deno.test({
             (apply.vars as Record<string, unknown>).ansible_python_interpreter =
                 "/usr/bin/python3";
             (apply.vars as Record<string, unknown>).caddy_group = gid;
-            const caddyTasks = adapt(
-                parse(
-                    await Deno.readTextFile(
-                        `${ROOT}/ansible/tasks/caddy-publish.yml`,
-                    ),
-                ),
+            await Deno.mkdir(root + "/library");
+            await Deno.mkdir(root + "/module_utils");
+            await Deno.writeTextFile(
+                root + "/library/orbit_caddy_publish.py",
+                (await Deno.readTextFile(
+                    ROOT + "/ansible/library/orbit_caddy_publish.py",
+                ))
+                    .replace('gid=grp.getgrnam("caddy").gr_gid', "gid=" + gid),
             );
             await Deno.writeTextFile(
-                `${root}/tasks/caddy-publish.yml`,
-                stringify(caddyTasks),
+                root + "/module_utils/orbit_caddy_publish.py",
+                (await Deno.readTextFile(
+                    ROOT + "/ansible/module_utils/orbit_caddy_publish.py",
+                ))
+                    .replace(
+                        'live=Path("/etc/caddy/Caddyfile")',
+                        'live=Path("' + root + '/etc/caddy/Caddyfile")',
+                    )
+                    .replace("uid=0, gid=0", "uid=" + uid + ", gid=0"),
             );
             await Deno.writeTextFile(
                 `${root}/apply.yml`,
@@ -179,7 +188,8 @@ Deno.test({
             );
             const dnsWithout = await dnsState(["kept.test"]),
                 dnsPossible = await dnsState(["kept.test", "made.test"]);
-            for (const siteSucceeded of [true, false]) {
+            for (const scenario of ["published", "partial", "stale"]) {
+                const siteSucceeded = scenario !== "partial";
                 const live = siteSucceeded ? possible.content : without.content;
                 // DNS may have finished independently even when access failed before site publication.
                 const plan = await composeWithdrawal({
@@ -227,6 +237,16 @@ Deno.test({
                         "fixture residue",
                     );
                 }
+                const stale = scenario === "stale";
+                const caddyPath = root + "/etc/caddy/Caddyfile";
+                if (stale) {
+                    // An old writer publishes after the read/composition and before apply.
+                    await Deno.writeTextFile(
+                        caddyPath,
+                        config(block("kept", "a"), block("other-writer", "b")),
+                    );
+                }
+                const before = await Deno.readTextFile(caddyPath);
                 const run = root + "/run";
                 await Deno.mkdir(run, { recursive: true });
                 await Deno.writeTextFile(
@@ -238,12 +258,39 @@ Deno.test({
                     env: {
                         PATH: binary + ":" + Deno.env.get("PATH"),
                         ORBIT_RUN: run,
+                        ANSIBLE_LIBRARY: root + "/library",
+                        ANSIBLE_MODULE_UTILS: root + "/module_utils",
                         ANSIBLE_STDOUT_CALLBACK: "default",
                         ANSIBLE_DISPLAY_FAILED_STDERR: "1",
                         ANSIBLE_COLLECTIONS_PATH: root + "/empty",
                     },
                 });
                 const result = await command.output();
+                if (stale) {
+                    assertEquals(result.success, false);
+                    const diagnostic = new TextDecoder().decode(result.stdout) +
+                        new TextDecoder().decode(result.stderr);
+                    assertEquals(
+                        diagnostic.includes(
+                            "caddy.composed_from_live_mismatch",
+                        ),
+                        true,
+                        diagnostic,
+                    );
+                    assertEquals(
+                        diagnostic.includes("composed_from_sha256"),
+                        true,
+                        diagnostic,
+                    );
+                    assertEquals(
+                        diagnostic.includes("live_sha256"),
+                        true,
+                        diagnostic,
+                    );
+                    assertEquals(await Deno.readTextFile(caddyPath), before);
+                    assertEquals(before.includes("other-writer.test"), true);
+                    continue;
+                }
                 assertEquals(
                     result.success,
                     true,

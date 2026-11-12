@@ -87,6 +87,8 @@ Unused Gateway-local bootstrap and standalone PHP-package writer scaffolds are r
 
 `node:add` inspects the Mac tunnel inside its own enrollment workflow on 209, using the admitted SSH host keys and an execution-copy bootstrap key. It checks no agent, account, package or runtime ownership on the Mac.
 
+Route withdrawal ships a Node helper that checks its composed-from Caddyfile checksum under a local file lock. The [publication rule](/reference/routes#coordinate-publication) defines its scope, wait bound and failure behavior.
+
 ## Add a Node
 
 A new Node needs a public SSH host and an approved SSH host key fingerprint, `--host-key-fingerprint`. Without the fingerprint, the Gateway refuses with `node.ssh_host_fingerprint_required`. An `app-dev` Node needs a TLD or an active Cluster TLD. A Node with Instances cannot be enrolled again, including for a TLD change.

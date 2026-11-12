@@ -605,10 +605,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 \u2192 v5.12.0",
-      "exact script output: v5.42.0 \u2192 v5.43.0",
-      "exact script output: v5.49.0 \u2192 v5.50.0",
-      "exact script output: v5.50.0 \u2192 v5.50.1",
+      "exact script output: v5.11.0 → v5.12.0",
+      "exact script output: v5.42.0 → v5.43.0",
+      "exact script output: v5.49.0 → v5.50.0",
+      "exact script output: v5.50.0 → v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -2083,7 +2083,7 @@
     ]
   },
   "swamp/tests/caddy_candidate_test.py": {
-    "source_sha256": "2d345a6c3d9576df6477b274b7da45b4cbfa660e8b35c3dd115690fd42315aa2",
+    "source_sha256": "ad328444d166af6d3c81ad5f7360cb289b7acef1a75d885246833a8c1de62935",
     "cases": [
       "test_native_whole_node_caddy_publication",
       "test_native_delta_used_by_all_three_migrate_caddy_passes",
@@ -2125,7 +2125,7 @@
     ]
   },
   "swamp/tests/ansible_instance_route_withdraw_test.ts": {
-    "source_sha256": "01d908556d2e655a2da703663973a5329a7d31969e2e6b903a01414602050eb5",
+    "source_sha256": "0ebd27b8025548d3ed6dac8edc09df2c4ec66f829712084937be372e527743dd",
     "cases": [
       "pending Route withdrawal removes partial publication and CSR residue or accepts an absent site with real Ansible"
     ]
@@ -2159,6 +2159,20 @@
       "test_other_container_retains_shared_bridge_endpoint_but_not_this_containers_forward_rule",
       "test_remote_destroy_and_failed_migrate_restore_remove_only_their_owned_path",
       "test_previous_gateway_local_intent_has_no_new_required_fields"
+    ]
+  },
+  "swamp/tests/caddy_publish_test.py": {
+    "source_sha256": "697f557a1ef9a249b0d5551d8979810628e249003801863be00976d5e22f3859",
+    "cases": [
+      "test_same_checksum_publishes_exact_validated_inode_and_reloads",
+      "test_old_writer_between_read_and_apply_refuses_with_both_checksum_origins",
+      "test_two_interleaved_writers_preserve_the_first_site_and_refuse_the_second",
+      "test_invalid_candidate_keeps_live_bytes_metadata_and_skips_reload",
+      "test_reload_failure_retains_validated_publication_and_frees_lock",
+      "test_missing_and_empty_composed_bases_are_checked_not_unconditional",
+      "test_lock_wait_uses_five_second_bound_and_busy_refusal_keeps_live_file",
+      "test_holder_death_closes_the_descriptor_and_releases_the_lock",
+      "test_invalid_lock_or_checksum_refuses_without_touching_live_file"
     ]
   }
 }
