@@ -81,12 +81,12 @@ Deno.test("dotless, integer and passed-in names are valid", () => {
 });
 
 Deno.test("one behavior name used with two behavior types fails", () => {
-    const workflow = (type: string) => ({
+    const workflow = (type: string, name = '${{ "result" }}') => ({
         jobs: [{
             name: "main",
             steps: [{
                 name: "r",
-                task: { behaviorType: type, behaviorName: '${{ "result" }}' },
+                task: { behaviorType: type, behaviorName: name },
             }],
         }],
     });
@@ -96,6 +96,13 @@ Deno.test("one behavior name used with two behavior types fails", () => {
             b: workflow("command/shell"),
         }),
         [],
+    );
+    assertEquals(
+        sharedAcrossTypes({
+            a: workflow("command/shell"),
+            b: workflow("@nckrtl/network-command", "result"),
+        }).length,
+        1,
     );
     assertEquals(
         sharedAcrossTypes({
