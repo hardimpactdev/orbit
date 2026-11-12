@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "1797975f1aa79462d7edbf30ff9c3cb06c924dcfeb01e82dd28dcf3daa1e6190",
+    "source_sha256": "cb89a46b3a1c0709b1b152a90f8c52f97d96513f563d93e31418126e16e664ca",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -21,7 +21,6 @@
       "linked worktree preflight refuses unstaged without touching its active owner or sibling",
       "linked worktree preflight refuses staged without touching its active owner or sibling",
       "linked worktree preflight refuses unpushed without touching its active owner or sibling",
-      "linked worktree preflight refuses stash without touching its active owner or sibling",
       "linked worktree preflight refuses identity without touching its active owner or sibling",
       "linked worktree preflight refuses nested without touching its active owner or sibling",
       "linked retirement interrupted before unregister fails explicitly on repeat",
@@ -2102,6 +2101,15 @@
     "cases": [
       "migration source preflight distinguishes failure and timeout before changing the checkout",
       "a never-pushed branch at a pushed commit passes source and retirement checks and copies locally"
+    ]
+  },
+  "swamp/tests/instance_migrate_git_scope_test.py": {
+    "source_sha256": "18a19d2a13dcefa717c0b4363cd63c5f5984e1517d88de4e0559641f3eabda22",
+    "cases": [
+      "test_linked_child_passes_preflight_and_retirement_with_other_branch_and_shared_stashes",
+      "test_child_own_unpushed_branch_refuses_before_downtime_and_names_only_that_branch",
+      "test_owner_still_checks_every_branch_and_shared_stash_after_the_child_leaves",
+      "test_linked_detached_unpushed_head_refuses_before_downtime"
     ]
   },
   "swamp/tests/instance_restore_test.py": {
