@@ -41,6 +41,9 @@ sequenceDiagram
     %%> - the container's ACL lets the Node's Caddy reach port 8080, WireGuard peers reach port 3773, and the container reach its database server's port
     %%> - UFW: a route rule admits WireGuard peers to T3, below a deny for the task VM range; a rule admits the container to its database server's port
     %%> - starts the copy: nftables, `hidepid` and the image's units start; T3 does not, because `/etc/orbit/instance` does not exist yet
+    %%> Mail:
+    %%> - the same launch applies the exact SMTP path before the four root-owned mail units; no separate mail playbook or step
+    %%> - two IPv4 loopback sockets forward 1025 and 2525; foreign units or listeners skip setup without stopping their Process
     %%> Branch:
     %%> - fetches the Instance's branch into the Node's mirror with the read token, or creates it at the seed commit; the token stays on the Node
     opt database on a Database server
@@ -53,13 +56,6 @@ sequenceDiagram
       %%> - a cleanup that always runs allows connections to the default database again
       %%> - MySQL: a dump of the default database restored into the new one
       %%> Runs beside the clone step: Swamp starts both at once.
-    end
-    opt Node runs the main Mailpit
-      SW->>C: Apply mail setup<br/>clone-mail<br/>tags mail
-      %%> Why:
-      %%> - the exact own-ACL SMTP rule and additive bridge endpoint reach Mailpit without a Node converge
-      %%> When:
-      %%> - two IPv4 loopback sockets forward 1025 and 2525; a foreign listener skips setup without stopping its Process
     end
     SW->>C: Prepare the workspace<br/>native clone-workspace
     %%> What it does:
