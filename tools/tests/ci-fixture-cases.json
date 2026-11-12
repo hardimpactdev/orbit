@@ -1961,5 +1961,30 @@
       "default and clone finish workspace T3 and registration despite bounded mail failure",
       "a Node without the main Mailpit gets no mail warning or failure"
     ]
+  },
+  "swamp/tests/instance_destroy_git_test.py": {
+    "source_sha256": "495ea0b4710cbedf82049fc82b888741bdd00cc4da9266014a5fc34ac20519fa",
+    "cases": [
+      "test_confirmed_registered_and_moved_dependents_are_found_even_with_force",
+      "test_existing_owner_registration_refuses_without_reading_candidate_git",
+      "test_prunable_gone_registration_and_independent_checkouts_do_not_block",
+      "test_broken_gitdir_and_commondir_into_target_are_confirmed",
+      "test_unreadable_candidate_shapes_are_named_unknown_and_never_veto",
+      "test_unreadable_parent_in_mixed_inventory_warns_including_the_moved_worktree_limit",
+      "test_candidate_timeouts_share_one_allowance_and_warn",
+      "test_malformed_rows_cannot_poison_other_candidates_and_diagnostics_are_bounded",
+      "test_target_directory_marker_resolve_and_git_failures_keep_path_and_cause",
+      "test_alternates_dependency_and_symlinked_candidate_are_confirmed",
+      "test_inspect_never_walks_checkout_contents_or_accepts_a_remove_action",
+      "test_workflow_and_source_removal_are_identical_to_the_pre_reland_main"
+    ]
+  },
+  "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts": {
+    "source_sha256": "65b450caf23a54ac6dc5cce5e6c345e1406561a2a8815cdc508c0ddb4752323c",
+    "cases": [
+      "the files Orbit renders do not count as unpushed work, at any depth",
+      "any other change is still work that is not pushed",
+      "every destroy Ansible step enables failed task stderr"
+    ]
   }
 }

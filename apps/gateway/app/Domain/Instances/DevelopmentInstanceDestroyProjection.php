@@ -80,7 +80,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation->refresh();
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
-            [$code, $result] = $this->outcome($data);
+            [$code, $result] = $this->outcome($data, $operation);
             if ($data['status'] === 'succeeded') {
                 $result = [...$result, ...Arr::only($operation->input, ['retained_git_path', 'retained_git_at'])];
             }
@@ -91,6 +91,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
                 } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
                     InstanceRemoval::query()->whereKey($operation->input['removal_id'])->update(['status' => InstanceRemovalStatus::Failed,
                         'error_code' => $data['error_code'] ?? 'operation.cancelled', 'current_step' => $this->failedStep($result), 'failed_step' => $this->failedStep($result)]);
+
                 }
             }
 
@@ -102,15 +103,17 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
      * @param  array<string,mixed>  $data
      * @return array{0:?string,1:array<string,mixed>}
      */
-    private function outcome(array $data): array
+    private function outcome(array $data, Operation $operation): array
     {
+        $run = ValidatedData::object($data['result'] ?? []);
+        $warnings = is_array($operation->input['checkout_warnings'] ?? null) ? $operation->input['checkout_warnings'] : [];
+        $diagnostics = $warnings === [] ? [] : ['warnings' => $warnings];
         if (($data['status'] ?? null) === 'succeeded') {
-            return [null, ['removed' => true]];
+            return [null, ['removed' => true, ...$diagnostics]];
         }
         if (! in_array($data['status'] ?? null, ['failed', 'interrupted'], true)) {
-            return [ValidatedData::nullableString($data['error_code'] ?? null), []];
+            return [ValidatedData::nullableString($data['error_code'] ?? null), $diagnostics];
         }
-        $run = ValidatedData::object($data['result'] ?? []);
         $withdrawal = $run['withdrawal'] ?? null;
         if (is_array($withdrawal) && ($withdrawal['ready'] ?? null) === false) {
             return ['route.withdrawal_failed', ['removed' => false, 'failed_step' => 'Withdraw the Route', 'error_code' => 'route.withdrawal_failed']];
