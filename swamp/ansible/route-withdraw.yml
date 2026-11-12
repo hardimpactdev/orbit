@@ -144,17 +144,10 @@
         - name: Publish the Caddyfile
           when: plan.caddy is not none
           block:
-            - name: Write the Caddyfile
-              ansible.builtin.copy:
-                content: "{{ plan.caddy.content }}"
-                dest: /etc/caddy/Caddyfile
-                owner: root
-                group: caddy
-                mode: "0640"
-            - name: Validate the Caddyfile
-              ansible.builtin.command:
-                argv: [timeout, "60", runuser, -u, caddy, --, caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
-              changed_when: false
+            - name: Validate and publish the withdrawn Caddyfile
+              ansible.builtin.import_tasks: tasks/caddy-publish.yml
+              vars:
+                caddy_content: "{{ plan.caddy.content }}"
             - name: Reload Caddy
               ansible.builtin.command:
                 argv: [timeout, "60", systemctl, reload, caddy]

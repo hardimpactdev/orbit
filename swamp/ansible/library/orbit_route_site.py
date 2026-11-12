@@ -169,24 +169,52 @@ def converge(
     sites = selected("caddy")
     if sites:
         caddy_gid = group_lookup("caddy").gr_gid
-        for site in sites:
-            file("/etc/caddy/Caddyfile", site["content"], 0, caddy_gid, 0o640)
-        run(
-            [
-                "timeout",
-                "60",
-                "runuser",
-                "-u",
-                "caddy",
-                "--",
-                "caddy",
-                "validate",
-                "--config",
-                str(path("/etc/caddy/Caddyfile")),
-                "--adapter",
-                "caddyfile",
-            ]
-        )
+        live = path("/etc/caddy/Caddyfile")
+        fd, name = tempfile.mkstemp(prefix=".orbit-candidate-", dir=live.parent)
+        os.close(fd)
+        candidate = Path(name)
+        try:
+            for site in sites:
+                file(
+                    "/etc/caddy/" + candidate.name, site["content"], 0, caddy_gid, 0o640
+                )
+            run(
+                [
+                    "timeout",
+                    "60",
+                    "runuser",
+                    "-u",
+                    "caddy",
+                    "--",
+                    "caddy",
+                    "validate",
+                    "--config",
+                    str(candidate),
+                    "--adapter",
+                    "caddyfile",
+                ]
+            )
+            # Keep unchanged live files, but never repair metadata on the live path.
+            # A changed publication renames the exact validated inode with its final metadata.
+            matches = False
+            try:
+                current = live.lstat()
+            except FileNotFoundError:
+                current = None
+            if current is not None and stat.S_ISREG(current.st_mode):
+                with os.fdopen(
+                    os.open(live, os.O_RDONLY | os.O_NOFOLLOW), "rb"
+                ) as stream:
+                    current = os.fstat(stream.fileno())
+                    matches = stream.read() == sites[-1]["content"].encode() and (
+                        current.st_uid,
+                        current.st_gid,
+                        current.st_mode & 0o7777,
+                    ) == (0, caddy_gid, 0o640)
+            if not matches:
+                os.replace(candidate, live)
+        finally:
+            candidate.unlink(missing_ok=True)
         run(["timeout", "60", "systemctl", "reload", "caddy"])
         changed = True
     for marker in selected("awake"):

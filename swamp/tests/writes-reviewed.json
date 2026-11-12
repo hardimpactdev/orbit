@@ -1,5 +1,5 @@
 {
- "maxUnreviewed": 218,
+ "maxUnreviewed": 216,
  "nativeDataMethods": {
   "@nckrtl/analytics-runtime#observe": "Compares supplied container observations and writes only Swamp metadata.",
   "@nckrtl/analytics-runtime#plan": "Builds runtime intents and argv as Swamp metadata without executing them.",
@@ -489,15 +489,13 @@
   },
   "operation-route-caddy": {
    "Check the Caddyfile": "idempotent",
-   "Check the connection": "read-only",
-   "Validate the Caddyfile": "unreviewed"
+   "Check the connection": "read-only"
   },
   "operation-route-caddy-delta": {
    "apply-config": "unreviewed",
    "read-current": "read-only",
    "reload": "idempotent",
-   "result": "read-only",
-   "validate": "read-only"
+   "result": "read-only"
   },
   "operation-route-create": {
    "Probe the site over TLS": "unreviewed"
@@ -673,9 +671,6 @@
   },
   "route-create-csr": {
    "sign": "idempotent"
-  },
-  "route-create-ingress": {
-   "caddy-validate": "unreviewed"
   },
   "route-create-sign": {
    "sign": "idempotent"
