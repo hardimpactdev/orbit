@@ -149,6 +149,8 @@ final readonly class ProofChildStarts
             if ($child->status->terminal()) {
                 continue;
             }
+            // Queue availability is an integer timestamp; round up so delivery cannot precede the stored due time.
+            $notBefore = $notBefore->ceilSecond();
             $this->mark($child, ['not_before' => $notBefore->toISOString()]);
             DB::afterCommit(fn () => $this->enqueue($child, $notBefore));
 
@@ -168,7 +170,6 @@ final readonly class ProofChildStarts
             Log::warning('Swamp start could not be queued', ['operation_id' => $child->id, 'exception_type' => $exception::class]);
             app(StartSwampRun::class)->refuse($child, new ResourceOperationException(
                 'swamp.start_enqueue_failed', 'The native workflow start could not be queued.', 503));
-            // The claimed successor is never queued twice. Remaining holds belong to the lost-child watchdog.
         }
     }
 

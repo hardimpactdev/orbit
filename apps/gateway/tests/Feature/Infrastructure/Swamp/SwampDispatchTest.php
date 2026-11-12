@@ -229,6 +229,7 @@ it('keeps the target held when cancellation arrives while native start confirmat
 });
 
 it('queues only the first proof child after all copies while unrelated Operations start immediately', function (): void {
+    $this->freezeSecond();
     Queue::fake([StartAdmittedSwampRun::class]);
     $node = SwampNodeFixture::ensure();
     $proof = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $node->id,

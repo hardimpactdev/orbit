@@ -34,7 +34,7 @@ sequenceDiagram
   %%> Keep unrelated Operations able to start while this proof hands over its children. Execution copies must all succeed before the first start is queued.
   loop each admitted child, in order
     GW->>SW: Start one run per VM
-    %%> Queue only the first start, then queue its successor 20 seconds after its answer, including refusal or definite job failure. A lost confirmation never permits resubmission. Before submission, an ended or cancelled parent cancels the child through normal cancellation and group cleanup.
+    %%> Queue only the first start, then queue its successor 20 seconds after its answer, including refusal or definite job failure. A lost confirmation never permits resubmission. Its successor waits until recovery binds the run or the child ends, bounded by the released child's 600-second admission deadline. The next start is due 20 seconds after that resolution. Before submission, an ended or cancelled parent cancels the child through normal cancellation and group cleanup.
     %%> A held child has no native admission deadline. Release starts its normal 600-second admission budget and preserves its captured execution budget. A lost successor uses the existing watchdog: after the parent's allowance, all children quiet for 300 seconds makes unstarted children fail with proof.admission_interrupted and cleans up their groups.
   end
   SW->>VM: Claim a place

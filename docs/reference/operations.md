@@ -538,11 +538,13 @@ After the admission commits and its execution copies are acknowledged, `SwampDis
 
 The start job makes one attempt. A connection failure or native refusal fails the Operation with `swamp.start_unavailable` or `swamp.start_refused`. A queue submission failure fails it with `swamp.start_enqueue_failed`. A job that fails before submission records `swamp.start_job_failed`. Cancellation or admission expiry before the job runs prevents submission.
 
-The children of one `proof.run` share a start sequence. After execution copies succeed, only the first start is queued. Each answer queues the next start with a 20-second delay, including a refusal or definite job failure. Database state serializes the sequence across workers. Other Operation kinds, including `proof.verify`, keep their normal dispatch.
+The children of one `proof.run` share a start sequence. After execution copies succeed, only the first start is queued. Each answer queues the next start with a 20-second delay, including a refusal or definite job failure. The stored due time rounds up to a whole second and is the exact timestamp passed to the queue. Database state serializes the sequence across workers. Other Operation kinds, including `proof.verify`, keep their normal dispatch.
 
 A child records `state.proof_child_start` with `not_before`, `released_at` and `advanced_at`. A null `released_at` marks a deliberate hold, with no native admission deadline. The delayed job checks the parent before submission: an ended or cancelled parent cancels the child through normal cancellation and group cleanup. Otherwise it records `released_at` and starts the normal 600-second admission budget from that release. The captured execution budget stays unchanged. `advanced_at` prevents repeated answers or failure handlers from queuing another successor.
 
-A lost successor leaves held children for the proof watchdog. Once the parent exceeds its admission allowance and every child has been quiet for 300 seconds, it fails unstarted children with `proof.admission_interrupted` and cancels their groups. An uncertain start keeps its existing native recovery path and is never resubmitted.
+A lost successor leaves held children for the proof watchdog. Once the parent exceeds its admission allowance and every child has been quiet for 300 seconds, it fails unstarted children with `proof.admission_interrupted` and cancels their groups.
+
+An uncertain start is never resubmitted. Its successor waits until recovery binds the native run or the child becomes terminal, including expiry or cancellation. The released child's 600-second admission deadline bounds that wait. Resolution queues the successor with the same 20-second delay.
 
 The existing reconciler ends an unstarted admission at its 600-second budget with `operation.timed_out`, including a lost job or an unavailable worker. Deliberately held proof children use the proof watchdog until release.
 

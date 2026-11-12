@@ -15,11 +15,14 @@ use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampDispatch;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use App\Models\Operation;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -90,7 +93,7 @@ function proofStartAnswer(int $seconds = 0, bool $refuse = false, ?Closure $wait
 }
 
 it('spaces the successor from a slow answer and lets unrelated work run before it', function (): void {
-    $this->freezeTime();
+    $this->freezeSecond();
     Queue::fake();
     [, $records] = proofPendingStarts();
     [[$first], [$second], [$third]] = $records;
@@ -131,7 +134,7 @@ it('spaces the successor from a slow answer and lets unrelated work run before i
 });
 
 it('continues after a definite job failure once and releases the failed provision through its existing projection', function (): void {
-    $this->freezeTime();
+    $this->freezeSecond();
     Queue::fake();
     [, $records] = proofPendingStarts();
     [[$first, $group, $vm], [$second], [$third]] = $records;
@@ -160,7 +163,7 @@ it('continues after a definite job failure once and releases the failed provisio
 });
 
 it('continues after an explicit native refusal even when the failure handler also advances', function (): void {
-    $this->freezeTime();
+    $this->freezeSecond();
     Queue::fake();
     [, $records] = proofPendingStarts(2);
     [[$first], [$second]] = $records;
@@ -179,6 +182,7 @@ it('continues after an explicit native refusal even when the failure handler als
 });
 
 it('never resubmits an uncertain start or treats its missing answer as permission to advance', function (): void {
+    $this->freezeSecond();
     Queue::fake();
     [, $records] = proofPendingStarts(2);
     [[$first], [$second]] = $records;
@@ -198,7 +202,7 @@ it('never resubmits an uncertain start or treats its missing answer as permissio
 });
 
 it('cancels deferred children through normal cancellation when the parent ends before their turn', function (string $end): void {
-    $this->freezeTime();
+    $this->freezeSecond();
     Queue::fake();
     [$proof, $records] = proofPendingStarts();
     [[$first], [$second], [$third]] = $records;
@@ -223,7 +227,7 @@ it('cancels deferred children through normal cancellation when the parent ends b
 })->with(['cancelled', 'failed']);
 
 it('holds the admission clock until release and preserves the captured execution budget', function (): void {
-    $this->freezeTime();
+    $this->freezeSecond();
     Queue::fake();
     [, $records] = proofPendingStarts(2);
     [[$first], [$second]] = $records;
@@ -246,8 +250,8 @@ it('holds the admission clock until release and preserves the captured execution
     expect($second->input['run_budget_seconds'])->toBe(2700);
 });
 
-it('leaves a lost enqueue for the existing watchdog without queuing a successor twice', function (): void {
-    $this->freezeTime();
+it('ends an undelivered successor with the watchdog after an earlier enqueue fails', function (): void {
+    $this->freezeSecond();
     Queue::fake();
     [$proof, $records] = proofPendingStarts();
     [[$first], [$second], [$third]] = $records;
@@ -265,6 +269,135 @@ it('leaves a lost enqueue for the existing watchdog without queuing a successor 
     expect(app(ProofRunWatch::class)->sweep())->toBe(1);
     expect($third->refresh()->error_code)->toBe('proof.admission_interrupted');
     expect($proof->refresh()->status)->toBe(OperationStatus::Failed);
-    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $third->id);
     Queue::assertPushed(CancelProofGroup::class, fn ($job): bool => $job->operationId === $third->id);
+});
+
+/** A released first child whose worker lost confirmation; the next child remains held. */
+function proofUncertainStarts(): array
+{
+    [$proof, $records] = proofPendingStarts(2);
+    $first = $records[0][0]->refresh();
+    app(ProofChildStarts::class)->release($first);
+    $first->update(['status' => OperationStatus::Running, 'started_at' => now()]);
+    (new StartAdmittedSwampRun($first->id))->failed(new RuntimeException('confirmation lost'));
+
+    return [$proof, $records];
+}
+
+/** Native recovery evidence, followed by a still-running history in the reconcile pass. */
+function proofRecoveryAnswer(Operation $child): void
+{
+    config(['swamp.read_token' => 'read-token', 'swamp.address' => 'swamp.test', 'swamp.ca_path' => '/test/ca.pem']);
+    $frame = [];
+    $inputs = ['operation_id' => $child->id, 'node_id' => $child->node_id, 'kind' => $child->kind];
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect', 'close')->andReturnNull();
+    $socket->shouldReceive('isConnected')->andReturnTrue();
+    $socket->shouldReceive('send')->andReturnUsing(function (array $sent) use (&$frame): void {
+        expect($sent['type'])->toBeIn(['workflow.run.search', 'workflow.history.get']);
+        $frame = $sent;
+    });
+    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame, $inputs, $child): array {
+        $payload = match ($frame['type']) {
+            'workflow.run.search' => ['total' => 1, 'data' => ['results' => [[
+                'runId' => PROOF_RUN_ID, 'workflowName' => 'operation-proof-run', 'inputs' => $inputs,
+                'tags' => ['orbit_start_key' => 'operation:'.$child->id],
+            ]]]],
+            'workflow.history.get' => ['data' => ['id' => PROOF_RUN_ID, 'workflowName' => 'operation-proof-run', 'status' => 'running', 'inputs' => $inputs]],
+        };
+
+        return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => $payload]];
+    });
+    app()->instance(WebSocketClient::class, $socket);
+}
+
+it('starts a delayed child delivered at the database queues whole-second precision', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-13T12:00:00Z'));
+    $nativeQueue = Queue::connection('gateway');
+    Queue::fake();
+    [, $records] = proofPendingStarts(2);
+    [[$first], [$second]] = $records;
+    $this->travelTo(CarbonImmutable::parse('2026-11-13T12:00:00.900000Z'));
+    (new StartAdmittedSwampRun($first->id))->failed(new RuntimeException('first answered'));
+    $job = Queue::pushed(StartAdmittedSwampRun::class)->first(fn ($job): bool => $job->operationId === $second->id);
+    $id = $nativeQueue->later($job->delay, $job, queue: 'operations');
+    // Laravel uses getTimestamp(), discarding fractions, for the native queue's available_at.
+    $this->travelTo(CarbonImmutable::createFromTimestamp($job->delay->getTimestamp())->addMicroseconds(100000));
+    $delivered = $nativeQueue->pop('operations');
+    expect($delivered)->not->toBeNull();
+    expect($delivered->getJobId())->toBe($id);
+    proofStartAnswer();
+    $delivered->fire();
+
+    expect($second->refresh()->status)->toBe(OperationStatus::Running);
+    expect($second->state['proof_child_start']['not_before'])->toBe('2026-11-13T12:00:21.000000Z');
+    expect($job->delay->toISOString())->toBe($second->state['proof_child_start']['not_before']);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+});
+
+it('resumes the siblings twenty seconds after recovery binds an uncertain start', function (): void {
+    $this->freezeSecond();
+    Queue::fake();
+    [, $records] = proofUncertainStarts();
+    [[$first], [$second]] = $records;
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+    $this->travel(180)->seconds();
+    proofRecoveryAnswer($first);
+    app()->call([new ReconcileSwampOperations, 'handle']);
+
+    expect($first->refresh()->state['swamp_run_id'])->toBe(PROOF_RUN_ID);
+    expect($first->status)->toBe(OperationStatus::Running);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $second->id && $job->delay->equalTo(now()->addSeconds(20)));
+    expect($first->state['proof_child_start']['advanced_at'])->toBe(now()->toISOString());
+});
+
+it('resumes the siblings twenty seconds after an uncertain start reaches its admission deadline', function (): void {
+    $this->freezeSecond();
+    Queue::fake();
+    [, $records] = proofUncertainStarts();
+    [[$first], [$second]] = $records;
+    $this->travel(600)->seconds();
+    app(ExpireOperationAction::class)->execute($first->refresh());
+
+    expect($first->refresh()->error_code)->toBe('operation.timed_out');
+    expect($first->status)->toBe(OperationStatus::Failed);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $second->id && $job->delay->equalTo(now()->addSeconds(20)));
+    expect($first->state)->not->toHaveKey('swamp_run_id');
+});
+
+it('advances once when recovery and the original start job both resolve the same child', function (): void {
+    $this->freezeSecond();
+    Queue::fake();
+    [, $records] = proofUncertainStarts();
+    [[$first], [$second]] = $records;
+    $this->travel(180)->seconds();
+    proofRecoveryAnswer($first);
+    app(SwampCommandStep::class)->recoverUnbound($first->refresh());
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+    $resolved = now()->toImmutable();
+    $this->travel(10)->seconds();
+    $job = new StartAdmittedSwampRun($first->id);
+    app()->call([$job, 'handle']);
+    $job->failed(new RuntimeException('late failure notification'));
+    app(SwampCommandStep::class)->recoverUnbound($first->refresh());
+
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $second->id && $job->delay->equalTo($resolved->addSeconds(20)));
+    expect($first->refresh()->state['proof_child_start']['advanced_at'])->toBe($resolved->toISOString());
+});
+
+it('resumes the siblings when cancellation ends an unstarted child without its start job running', function (): void {
+    $this->freezeSecond();
+    Queue::fake();
+    [, $records] = proofPendingStarts(2);
+    [[$first], [$second]] = $records;
+    app(CancelOperationAction::class)->execute($first->refresh());
+
+    expect($first->refresh()->status)->toBe(OperationStatus::Cancelled);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $second->id && $job->delay->equalTo(now()->addSeconds(20)));
 });
