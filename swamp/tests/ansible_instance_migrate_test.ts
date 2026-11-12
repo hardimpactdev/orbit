@@ -609,6 +609,33 @@ os.execv("/usr/bin/tar", ["tar", *sys.argv[1:]])
   });
 }
 
+for (const count of [0, 1]) {
+  Deno.test({
+    name: `migration counts ${count} files that Git does not ignore beside a large ignored tree`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        Deno.mkdirSync(`${f.checkout}/vendor/generated`);
+        for (let i = 0; i < 1000; i++) Deno.writeTextFileSync(`${f.checkout}/vendor/generated/file-${i}`, "ignored dependency\n");
+        if (count === 1) Deno.writeTextFileSync(`${f.checkout}/draft.txt`, "not ignored\n");
+        assertEquals(git(f.checkout, "ls-files", "--others", "--exclude-standard"), count === 1 ? "draft.txt" : "");
+        f.buildBatched();
+        const receipt = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/untracked-files.json`));
+        assertEquals(receipt, { untracked_files_copied: count });
+        // The ignored tree, .env and SQLite still enter the unchanged inclusive archive.
+        assertEquals(f.read("vendor/generated/file-999"), "ignored dependency\n");
+        assertEquals(f.read("database/database.sqlite"), "sqlite\n");
+        assert(f.read(".env").includes("APP_KEY="));
+        if (count === 1) assertEquals(f.read("draft.txt"), "not ignored\n");
+        assertEquals([...Deno.readDirSync(`${f.folder}/mirror`)].map((entry) => entry.name), ["7.git"]);
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
+}
+
 Deno.test({
   name: "untracked non-ignored files and nested repository leaves migrate with an exact archived file count",
   ignore: !hasAnsible,
@@ -630,7 +657,7 @@ Deno.test({
       assertEquals(f.read("database/database.sqlite"), "sqlite\n");
       for (let i = 0; i < 31; i++) assertEquals(f.read(`nested/file-${i}`), `nested ${i}\n`);
       const receipt = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/untracked-files.json`));
-      assertEquals(receipt.untracked_files_copied, 4 + nestedLeaves);
+      assertEquals(receipt.untracked_files_copied, 1 + nestedLeaves);
       const completed = f.run("retire");
       assert(completed.ok, completed.output);
       assert(exists(f.migrate.awake.path));

@@ -24,6 +24,7 @@ sequenceDiagram
   Note over GW: Hold the Route Nodes
   %%> What it does:
   %%> - holds each Node that serves this Route's site (Caddy and PHP) from admission to the terminal state
+  %%> - validates a same-directory candidate before atomic publication; invalid bytes never replace the live file
   %%> - a second Route write on one of those Nodes waits (task status `waiting`) and starts when the Node is free, oldest first
   %%> Not held:
   %%> - the DNS Node: its records are keyed, and the apply phase refuses a file that changed since the read

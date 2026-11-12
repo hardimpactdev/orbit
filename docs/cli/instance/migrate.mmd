@@ -70,7 +70,7 @@ sequenceDiagram
   %%> - a non-default checkout is a linked worktree, so its `.git` is never copied
   SW->>C: Copy the files<br/>Ansible · tags files
   %%> What it does:
-  %%> - copies every file that differs from the commit, every untracked file and every ignored file, `.env` among them; the result counts archived untracked leaf entries, including ignored files, nested repository contents and symlinks, without paths or contents
+  %%> - copies every file that differs from the commit, every untracked file and every ignored file, `.env` among them; the result counts untracked files that Git does not ignore, expanding selected nested repositories to archived leaf entries, without paths or contents
   %%> - untracked files enter the default's seed and every clone, as ignored build output already does; a later branch tracking those paths can refuse checkout in a clone or deploy; forgotten credentials travel into the seed like `.env`
   %%> - removes the tracked files that the checkout deleted, and rewrites the checkout's path in `.env` to `/srv/workspace`
   %%> - checks the exact copied tree inside the container, maps old-checkout targets into the workspace and rewrites absolute internal links there; broken or external links fail with the same code before any Process starts, relative links keep their targets, and source links never change

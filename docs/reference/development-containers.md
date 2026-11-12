@@ -740,7 +740,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 
 All untracked files enter the default's seed snapshot and every clone, as ignored build output already does. A branch that later tracks one of those paths can refuse checkout in a clone or deploy. Forgotten credentials files travel into the seed like `.env` does.
 
-Migration reports `untracked_files_copied` as archived untracked leaf entries, including ignored files, nested repository contents and symlinks; directories do not count. It exposes no new paths or file contents. Submodule changes still refuse because the parent archive cannot preserve them.
+Migration reports `untracked_files_copied` as the count of untracked files that Git does not ignore, using `git ls-files --others --exclude-standard -z` at archive time. Selected nested repositories contribute their archived leaf files; directories do not count and symlinks count once. Ignored files are still copied. It exposes no new paths or file contents. Submodule changes still refuse because the parent archive cannot preserve them.
 
 The runtime reservation belongs to its admitting Operation. A late receipt cannot change a newer owner. Settlement reads private material before taking the Instance lock, then checks ownership and records the runtime and receipt atomically. An already-settled stale runtime is not repaired: inspections keep selecting it until a new migrate reuses and owns that reservation.
 
@@ -757,7 +757,7 @@ The runtime reservation belongs to its admitting Operation. A late receipt canno
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
 | After a failed restore | The reservation and deployment hold remain. Inspect the site and failed recovery step; deployments refuse with `instance.lifecycle_busy` until the move has run again |
 
-The whole-run budget is 5,100 seconds. A lower-bound test checks it against the declared phase and child timeouts, including restoration and cleanup, with 600 seconds of margin. A deadline or confirmed cancel still projects the native end state. A lost worker with no final result reports an unknown state and retains its reservation.
+The whole-run budget is 5,400 seconds. A lower-bound test checks it against the declared phase and child timeouts, including restoration and cleanup, with 600 seconds of margin. A deadline or confirmed cancel still projects the native end state. A lost worker with no final result reports an unknown state and retains its reservation.
 
 Restore changes host Process states and the awake marker only when quiesce began. A target probe failure leaves both untouched.
 

@@ -987,10 +987,12 @@ Development mail repair uses the Node’s existing Python prerequisite through f
 
 Container migration reuses this [development mail phase](/reference/development-containers#development-mail) after copying the workspace. It requires no Node converge.
 
-Instance migration permits untracked files during retirement and counts all copied untracked files, including ignored files. Tracked changes, other worktrees, unpushed commits and stashes still block; [migration](/cli/instance/migrate) explains the seed and checkout consequences.
+Instance migration permits untracked files during retirement and counts copied untracked files that Git does not ignore; ignored files are still copied. Tracked changes, other worktrees, unpushed commits and stashes still block; [migration](/cli/instance/migrate) explains the seed and checkout consequences.
 
 Checkout destroy admission has one [read-only SSH exception](/reference/remote-programs#remote-programs) for live Git dependencies, before Schedule withdrawal. It uses the existing Node account and identity with a short timeout. Containers and unmaterialized sources skip that read. The workflow and its source-removal command do not recheck dependencies, including on a retry. It never traverses checkout contents. A failed read of another checkout falls back to bounded, non-blocking Git pointer reads; unknown unrelated checkouts produce named Operation warnings.
 
 Instance migration checks selected environment services before downtime. Its mail check uses the admitted [development mail endpoint](/reference/development-containers#development-mail), so the preflight and mail setup share one eligibility decision.
 
 Route site publication batches certificate, link, account-copy, trust and Caddy file work in one Node module. It uses the Node’s existing Python and Caddy prerequisites; see [Route publication](/reference/routes). Instance create shares admitted input with its site child, which retains a separate scratch folder and cleanup.
+
+Caddy publication validates a candidate before it replaces the live file, including the bootstrap Swamp front. Validation failure keeps the live bytes and skips reload; see [Caddy publication](/reference/caddy-configuration#native-publication).

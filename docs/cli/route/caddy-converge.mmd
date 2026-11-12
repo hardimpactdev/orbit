@@ -25,10 +25,10 @@ sequenceDiagram
   SW->>N: Check the connection
   SW->>N: Write the Caddyfile
   %%> What it does:
-  %%> - converges `/etc/caddy/Caddyfile` to the rendered bytes, `root:caddy`, mode 0640, replacing a symlink
+  %%> - writes the rendered bytes to a run-scoped candidate beside `/etc/caddy/Caddyfile`, `root:caddy`, mode 0640
   SW->>N: Validate the Caddyfile
   %%> Why:
-  %%> - `caddy validate` runs as the `caddy` user; a failed validation skips the reload
+  %%> - `caddy validate` runs as the `caddy` user against the candidate, then atomic rename publishes it; failure leaves the live file unchanged and skips reload
   SW->>N: Reload Caddy
   SW->>N: Check the Caddyfile
   Note over SW: Check the publication
@@ -39,7 +39,7 @@ sequenceDiagram
     SW--xGW: Run failed<br/>error_code, failed step
     Note over GW: Record the failure
     %%> On the Node:
-    %%> - the new bytes stay, also when the end check fails; there is no rollback
+    %%> - validation failure removes the candidate and keeps the live file; after publication, reload or end-check failure leaves the validated new file
     %%> Retry:
     %%> - fix the cause and run `orbit:caddy-build NODE` again; a Caddyfile that fails validation needs the stored intent corrected first
   end

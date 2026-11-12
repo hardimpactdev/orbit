@@ -82,7 +82,7 @@ sequenceDiagram
     SW->>N: Install certs, publish<br/>child route-create-site · Ansible
     %%> What it does:
     %%> - installs the signed certificates next to their keys and writes the Router site list with `@swamp/cfgmgmt/file`, in one step as `route:create` does
-    %%> - validates the full Router site list, then reloads the running Caddy; no restart
+    %%> - validates the full Router site list in a same-directory candidate, atomically publishes it, then reloads the running Caddy; no restart
     SW->>GW: Release the Route Nodes<br/>operation:direct:route-release
     %%> What it does:
     %%> - gives the Nodes back as soon as the Route step ends, whatever its result; the Route writes that wait for them then start
