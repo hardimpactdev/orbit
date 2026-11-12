@@ -258,7 +258,7 @@ The check creates no records, including Activity rows. A later create can still 
 
 The optional `branch` object selects another source: `{"mode":"new","from":"release"}` creates the Instance-named branch at the fetched tip of `release`; `{"mode":"existing","name":"feature/login"}` checks out that remote branch. New mode requires `from` and forbids `name`; existing mode requires `name` and forbids `from`. Extra keys, null, and invalid Git branch names fail with `validation.failed` (422). With no `branch`, admission makes no remote read and preserves the existing create, result and retry behavior.
 
-`branch.name` and `branch.from` take short branch names. Values starting with `refs/` or `heads/` fail with `validation.failed` (422) on that field.
+`branch.name` and `branch.from` take short branch names. Values starting with `refs/` fail with `validation.failed` (422) on that field. Names such as `heads/x` are valid.
 
 A request that sends `branch` reserves one branch per Project inside create's transaction. Every Instance on every Node and in every state holds its recorded or intended branch until deleted. The default holds the Project's default branch. The client must not offer the default branch as a target. Old requests without `branch` and core create retain their existing rules.
 

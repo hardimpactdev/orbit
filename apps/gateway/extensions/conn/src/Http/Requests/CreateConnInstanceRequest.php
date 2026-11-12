@@ -71,8 +71,8 @@ final class CreateConnInstanceRequest extends FormRequest
                     $required = $mode === 'new' ? 'from' : 'name';
                     $forbidden = $mode === 'new' ? 'name' : 'from';
                     if (! is_string($branch[$required] ?? null) || ! GitBranchName::isValid($branch[$required])
-                        || str_starts_with($branch[$required], 'refs/') || str_starts_with($branch[$required], 'heads/')) {
-                        $validator->errors()->add('branch.'.$required, 'A short Git branch name without refs/ or heads/ is required.');
+                        || str_starts_with($branch[$required], 'refs/')) {
+                        $validator->errors()->add('branch.'.$required, 'A short Git branch name without refs/ is required.');
                     }
                     if (array_key_exists($forbidden, $branch)) {
                         $validator->errors()->add('branch.'.$forbidden, 'This field is not allowed in this mode.');
