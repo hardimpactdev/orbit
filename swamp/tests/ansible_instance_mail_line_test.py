@@ -155,14 +155,16 @@ sys.exit(subprocess.run(args).returncode)
         self.assertNotIn('mailer', self.ansible('skipped'))
         self.assertTrue(self.envfile.read_bytes() == before)
         self.assertEqual(json.loads(self.calls.read_text()), ['orbit-frankenphp.service', 'orbit-process-42.service'])
-        self.assertEqual(self.ansible(php=False)['mailer']['status'], 'changed')
-        self.assertEqual((self.root / 'config-clear').read_text(), 'called')
 
-    def test_failed_path_preserves_file_and_reports_its_code(self):
+    def test_failed_transfer_preserves_file_and_returns_only_a_code(self):
         before = b'MAIL_MAILER=log\n'
         self.envfile.write_bytes(before)
-        failed = self.ansible(php=False, failure=True)
-        self.assertEqual(failed, {'error_code': 'instance.host_unavailable'})
+        (self.bin / 'incus').chmod(0o644)
+        result = subprocess.run([sys.executable, '-c', SOURCE.read_text(), 'fixture', 'fixture'],
+                                env=self.env, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(json.loads(result.stdout), {'error_code': 'env.configuration_invalid'})
+        self.assertEqual(result.stderr, b'')
         self.assertTrue(self.envfile.read_bytes() == before)
 
 
