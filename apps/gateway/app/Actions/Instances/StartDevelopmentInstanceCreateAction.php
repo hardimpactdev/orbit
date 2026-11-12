@@ -174,7 +174,7 @@ final readonly class StartDevelopmentInstanceCreateAction
             }
             $provisioning = app(NativeInstanceProvisioningIntent::class)->create($instance, $input);
             // An already active Instance runs no phase, so admission records no environment or Process for it.
-            $input['environment_keys'] = $input['members'] = [];
+            $input['environment_keys'] = $input['mail_keys_set'] = $input['members'] = [];
             $database = $copy = $server = null;
             if ($provisioning['already_active'] !== true) {
                 // The Instance's own database is attached under DB before .env renders, so .env already names it: a
@@ -185,6 +185,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 $database = $copy['intent'] ?? null;
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
                 $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? $server['connection'] ?? null, $source);
+                $input['mail_keys_set'] = app(DevelopmentCreateEnvironment::class)->mailKeys($instance);
                 // A rerun after a failed create checks the Processes its first run already started.
                 $input['members'] = $container ? [] : app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions', includeActive: true)['members'];
             }

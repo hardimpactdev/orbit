@@ -1861,5 +1861,16 @@
       "test_foreign_listener_or_unit_skips_both_ports_without_mutation",
       "test_stopped_missing_binary_or_path_failure_never_changes_guest"
     ]
+  },
+  "swamp/tests/ansible_instance_mail_line_test.py": {
+    "source_sha256": "597dbc3860de3c07a37059fe996913bc59c2c4636cc42c50edaef049d3e2e93a",
+    "cases": [
+      "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte",
+      "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved",
+      "test_missing_key_missing_file_symlink_and_already_smtp_write_nothing",
+      "test_atomic_replacement_preserves_owner_group_and_mode_without_backup",
+      "test_real_ansible_step_refreshes_only_changed_file_and_skips_conflict",
+      "test_failed_path_preserves_file_and_reports_its_code"
+    ]
   }
 }
