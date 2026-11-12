@@ -68,7 +68,7 @@ sequenceDiagram
       SW--xGW: Run failed<br/>error_code, failed step
       Note over GW: Record the failure<br/>Route pending · failed step
       %%> On the Nodes:
-      %%> - a failed validation leaves the candidate Caddyfile and stops the reload; other changes stay; there is no rollback
+      %%> - a failed validation leaves the live Caddyfile unchanged, removes the candidate and skips reload; other changes stay; there is no rollback
       %%> Retry:
       %%> - fix the cause and run the same command again; it resumes the pending Route
       %%> - `route:destroy` removes the Route and its files

@@ -92,7 +92,7 @@ sequenceDiagram
       SW--xGW: Run failed<br/>error_code, failed step
       Note over GW: Mark the change failed<br/>rerun resumes
       %%> Result before the cutover:
-      %%> - the old Route stays authoritative and the replacement is `failed`; a failed Caddy validation leaves the candidate file and stops the reload
+      %%> - the old Route stays authoritative and the replacement is `failed`; a failed Caddy validation leaves the live file unchanged, removes the candidate and skips reload
       %%> Result after the cutover:
       %%> - a failure in the DNS grace or the old site's withdrawal leaves the replacement authoritative and the old Route `retiring`; a rerun finishes the withdrawal
       %%> What `route:show` shows:
