@@ -26,6 +26,9 @@ use Throwable;
  */
 final readonly class ProblemCollector
 {
+    /** The last 288 windows counted per episode, in arrival order. */
+    private const int CountedBlocks = 288;
+
     public function __construct(
         private ProblemEvidence $evidence,
         private ProblemSuppression $suppression,
@@ -156,24 +159,79 @@ final readonly class ProblemCollector
         });
     }
 
+    /** Doctor keeps its bounded history, but writes unchanged observations in one SQLite update. */
     public function recordDoctor(DoctorReportData $report, Carbon $startedAt): void
     {
         $issues = $this->doctorIssues($report);
         DB::transaction(function () use ($issues, $report, $startedAt): void {
+            $rows = ProblemFingerprint::query()->where('source', ProblemSource::Doctor)->lockForUpdate()->get()->keyBy('fingerprint');
+            $presence = $this->recovery->doctorResourcePresence($issues);
+            $seenAt = Carbon::now()->utc();
+            $updates = [];
             foreach ($issues as $issue) {
-                $this->record($issue['fingerprint'], ProblemSource::Doctor, [
-                    'expected' => $issue['expected'],
-                    'observed' => $issue['observed'],
-                    'summary' => $issue['summary'],
-                    'doctor_node' => $issue['doctor_node'],
-                    'doctor_family' => $issue['doctor_family'],
-                    'doctor_code' => $issue['doctor_code'],
-                    'doctor_resource' => $issue['doctor_resource'],
-                    'doctor_resource_present' => $this->recovery->resourceExists($issue['doctor_family'], $issue['doctor_resource'], (int) $issue['doctor_node']),
-                    'doctor_observed_at' => $startedAt->toISOString(),
+                $fingerprint = $issue['fingerprint'];
+                unset($issue['fingerprint']);
+                $observation = [...$issue, 'doctor_resource_present' => $presence[$fingerprint], 'doctor_observed_at' => $startedAt->toISOString()];
+                if ($this->suppression->suppressesSignal($fingerprint, $observation)) {
+                    continue;
+                }
+                $row = $rows->get($fingerprint) ?? new ProblemFingerprint([
+                    'fingerprint' => $fingerprint, 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => [],
                 ]);
+                $evidence = $row->evidence;
+                unset($evidence['resolved_at'], $evidence['resolution']);
+                $occurrences = $row->occurrences;
+                $settled = $this->evidence->legacyEpisode($evidence, ProblemSource::Doctor);
+                if ($settled !== null) {
+                    $evidence = $settled['evidence'];
+                    $occurrences = $settled['occurrences'];
+                }
+                $times = $this->observationTimes($evidence);
+                $counts = $this->observationCounts($evidence, count($times));
+                $blocks = $this->countedBlocks($evidence, $times);
+                $block = intdiv($seenAt->getTimestamp(), 300);
+                if (! in_array($block, $blocks, true)) {
+                    $blocks = array_slice([...$blocks, $block], -self::CountedBlocks);
+                    $occurrences++;
+                    $times[] = $seenAt->format('Y-m-d\TH:i:s.u\Z');
+                    $counts[] = $issue['doctor_issue_count'];
+                    [$times, $counts] = $this->trimSample($times, $counts);
+                } else {
+                    $index = $this->sampleIndex($times, $block);
+                    if ($index !== null) {
+                        $counts[$index] += $issue['doctor_issue_count'];
+                    }
+                }
+                $stored = $this->evidence->apply($evidence, $observation);
+                $stored['doctor_issue_count'] = $issue['doctor_issue_count'];
+                $history = ['observation_times' => $times, 'observation_counts' => $counts, 'counted_blocks' => $blocks];
+                $stored = [...$stored, ...$history];
+                $unchanged = $row->exists && $row->first_seen !== null && ! isset($row->evidence['resolved_at'])
+                    && array_all(array_diff_key($observation, ['doctor_observed_at' => true]),
+                        static fn (mixed $value, string $key): bool => array_key_exists($key, $row->evidence) && $row->evidence[$key] === $stored[$key]);
+                $row->occurrences = $occurrences;
+                $row->first_seen ??= $seenAt;
+                $row->last_seen = $seenAt;
+                $row->evidence = $stored;
+                if ($unchanged) {
+                    $updates[$row->id] = ['occurrences' => $occurrences, 'evidence' => [...$history, 'doctor_observed_at' => $startedAt->toISOString()]];
+                } else {
+                    $row->save();
+                }
+                $rows->put($fingerprint, $row);
             }
-            $this->recovery->doctor($report, $startedAt);
+            if ($updates !== []) {
+                // A JSON input table avoids one statement and many bound parameters per fingerprint.
+                DB::update(<<<'SQL'
+                    update problem_fingerprints
+                    set last_seen = ?, updated_at = ?,
+                        occurrences = json_extract(observation.value, '$.occurrences'),
+                        evidence = json_patch(problem_fingerprints.evidence, json_extract(observation.value, '$.evidence'))
+                    from json_each(?) as observation
+                    where problem_fingerprints.id = cast(observation.key as integer)
+                    SQL, [$seenAt->toDateTimeString(), $seenAt->toDateTimeString(), json_encode($updates, JSON_THROW_ON_ERROR)]);
+            }
+            $this->recovery->doctor($report, $startedAt, $rows);
         });
     }
 
@@ -218,7 +276,7 @@ final readonly class ProblemCollector
         });
     }
 
-    /** @return list<array{fingerprint: string, expected: bool|string|null, observed: bool|string|null, summary: string, doctor_node: string, doctor_family: string, doctor_code: string, doctor_resource: string|null}> */
+    /** @return list<array{fingerprint: string, expected: bool|string|null, observed: bool|string|null, summary: string, doctor_node: string, doctor_family: string, doctor_code: string, doctor_resource: string|null, doctor_issue_count: int}> */
     private function doctorIssues(DoctorReportData $report): array
     {
         $issues = [];
@@ -231,8 +289,11 @@ final readonly class ProblemCollector
                         continue;
                     }
 
-                    $issues[] = [
-                        'fingerprint' => $this->doctorFingerprint($issue),
+                    $fingerprint = $this->doctorFingerprint($issue);
+                    $count = ($issues[$fingerprint]['doctor_issue_count'] ?? 0) + 1;
+                    $issues[$fingerprint] = [
+                        'fingerprint' => $fingerprint,
+                        'doctor_issue_count' => $count,
                         'expected' => $issue->expected,
                         'observed' => $issue->observed,
                         'summary' => $issue->summary,
@@ -245,9 +306,9 @@ final readonly class ProblemCollector
             }
         }
 
-        usort($issues, static fn (array $left, array $right): int => strcmp($left['fingerprint'], $right['fingerprint']));
+        ksort($issues);
 
-        return $issues;
+        return array_values($issues);
     }
 
     private function doctorFingerprint(DoctorIssueData $issue): string
@@ -331,7 +392,8 @@ final readonly class ProblemCollector
         }
 
         $evidence = $row->evidence;
-        if (isset($evidence['auto_closed'])) {
+        // A Doctor row is never filed again, so a recurrence keeps the link to its closed group.
+        if (isset($evidence['auto_closed']) && $source !== ProblemSource::Doctor) {
             $row->task_group_id = null;
             unset($evidence['generated_group_hash'], $evidence['auto_closed']);
         }
@@ -355,7 +417,7 @@ final readonly class ProblemCollector
         $block = intdiv($seenAt->getTimestamp(), 300);
 
         if (! in_array($block, $blocks, true)) {
-            $blocks[] = $block;
+            $blocks = array_slice([...$blocks, $block], -self::CountedBlocks);
             $occurrences++;
             $times[] = $seenAt->format('Y-m-d\TH:i:s.u\Z');
             $counts[] = 1;
@@ -419,8 +481,9 @@ final readonly class ProblemCollector
     }
 
     /**
-     * The display sample keeps the newest 20 windows. counted_blocks keeps every window in the episode,
-     * including one the sample has dropped, so a late signal in that block is not counted again.
+     * The display sample keeps the newest 20 windows. counted_blocks keeps the last 288 windows counted,
+     * in arrival order. A late signal for an evicted window is counted again and increments occurrences.
+     * A signal for a retained window adds no occurrence, even when it has left the display sample.
      *
      * @param  array<string, mixed>  $evidence
      * @param  list<string>  $times

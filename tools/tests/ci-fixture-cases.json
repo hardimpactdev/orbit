@@ -674,7 +674,7 @@
     ]
   },
   "swamp/tests/ansible_gateway_swamp_grants_test.py": {
-    "source_sha256": "86401f91d724e0bff859f07369bf835dff78c850e0485f6ee2bfc53b8538e5e3",
+    "source_sha256": "e65082ef2239b950247725ae95fba5250f4ce825d5471fd1daeec5d025e9272f",
     "cases": [
       "test_proof_release_setup_repairs_a_restored_gateway_and_is_idempotent",
       "test_restored_grants_are_replaced_from_the_candidate_and_a_failed_reload_is_retried",
@@ -949,7 +949,7 @@
     ]
   },
   "swamp/tests/ansible_task_vm_fleet_build_test.ts": {
-    "source_sha256": "955a4f08f760e17b989b7b45bf3207cb4f37276397e195b9edb17fc0bf84812c",
+    "source_sha256": "5849b616aa352cec579e249341e7363b18bdfef7ce87af5640d5bec83b7a8f16",
     "cases": [
       "a blank seed gets the network, then the containers, the Gateway bootstrap and the nested Orbit steps in order, then the operator join",
       "a half-made fleet starts from nothing: its containers go first",

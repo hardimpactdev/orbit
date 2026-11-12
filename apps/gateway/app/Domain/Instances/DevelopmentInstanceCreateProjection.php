@@ -11,6 +11,7 @@ use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
+use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
@@ -45,6 +46,13 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             }
             if ($data['status'] === 'succeeded') {
                 $result['mail_keys_set'] = ValidatedData::stringList($operation->input['mail_keys_set'] ?? []);
+            }
+            if ($container !== null && in_array($data['status'], ['failed', 'cancelled'], true)) {
+                $recovery = $this->recovery($operation, ValidatedData::object($container));
+                if ($recovery === null) {
+                    return $this->direct->project($operation, $data, $result);
+                }
+                $result['recovery'] = $recovery;
             }
             $instance = app(InstanceLifecycleState::class)->instance($operation);
             if ((ValidatedData::object($operation->input['direct_provisioning'] ?? [])['already_active'] ?? false) === true) {
@@ -97,6 +105,39 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
 
             return $this->direct->project($operation, $data, $result);
         });
+    }
+
+    /**
+     * The reservation is intentional; name the existing recovery paths without claiming physical cleanup.
+     *
+     * @param  array<string, mixed>  $container
+     * @return array<string, mixed>|null
+     */
+    public function recovery(Operation $operation, array $container): ?array
+    {
+        $input = $operation->input;
+        $retained = Instance::query()->whereKey($operation->target_id)->where('id', $input['instance_id'])
+            ->where('project_id', $input['project_id'])->where('node_id', $input['node_id'])->where('node_id', $operation->node_id)
+            ->where('name', $input['name'])->where('source_prepare_id', $input['prepare_id'])
+            ->whereIn('status', [InstanceState::Reserved, InstanceState::SourceResolved])->lockForUpdate()->first();
+        if ($retained === null) {
+            return null;
+        }
+        $clone = ($container['clone'] ?? null) !== null;
+
+        return [
+            'state' => 'retained_for_retry',
+            'retry' => [
+                'command' => 'instance:create',
+                'project_id' => $input['project_id'], 'node_id' => $input['node_id'], 'name' => $input['name'],
+                'reuse_original_options' => true, 'new_idempotency_key' => true,
+            ],
+            'destroy' => [
+                'command' => 'instance:destroy', 'instance_id' => $operation->target_id,
+                'available' => $clone, 'options' => ['yes' => true, 'force' => true],
+                ...($clone ? [] : ['error_code' => 'operation.kind_unavailable', 'reason' => 'container_default_destroy_unavailable']),
+            ],
+        ];
     }
 
     /**

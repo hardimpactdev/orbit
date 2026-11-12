@@ -385,7 +385,7 @@ The Gateway prepares the runtime, certificates, Caddy sites, and firewall rules 
 
 ### Certificate request forms
 
-The live Node workflows still put the domain in the common name. Development Instance create therefore has a 64-character domain limit, checked before an Operation starts with `route.domain_invalid`. DNS labels remain limited to 63 characters, and a full DNS name to 253. The signer accepts longer DNS names in the new request form so the accepting Gateway can release before the producers change.
+The Node workflows use the fixed short common name `Orbit` with exactly one DNS SAN equal to the admitted domain. Instance create and the name check keep their 64-character domain limit while this producer release becomes the rollback target. The domain rule and existing responses are unchanged.
 
 The Gateway accepts two CSR forms: common name equal to the admitted domain, with either no SAN or exactly that DNS SAN; or the fixed short common name `Orbit` with exactly one DNS SAN equal to the admitted domain. It always signs the admitted domain into the leaf SAN. Caddy, TLS probes and certificate reuse check SAN, so existing leaves remain valid.
 

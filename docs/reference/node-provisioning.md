@@ -493,6 +493,8 @@ The wait for a nested fleet is not a phase of the role: it is the task file `swa
 
 The nested guests are Incus system containers. The role serves them nothing: each gets the checkout of its task as an Incus disk device, and a restore of `base` is a plain restore and a reboot (see [compute drivers](/reference/compute-drivers)).
 
+The fleet phase reconciles the checkout’s scoped Swamp grants before candidate operations. It uses the existing serve-driver credential; token renewal is separate. [Fleet apply](/reference/compute-drivers#apply-and-check-the-nested-fleet) also reconciles grants after restore.
+
 Before starting a base VM, the host playbook converges its [firmware boot setting](/reference/compute-drivers#incus-provider). Task copies inherit it from the base snapshot, so the OVMF menu adds no delay.
 
 A host without a recorded base snapshot first discards any unpromoted base VM and seed and builds from stock. This also removes the cached cloud-init state of a failed first boot, whose one-shot package installation does not run again on a restart. Recorded bases are preserved unless the refresh requests `--from-stock`.

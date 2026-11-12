@@ -128,7 +128,7 @@ Keep outer command inputs under distinct names in `-e @vars.yml`. Extra vars out
 
 An extraction `creates` guard proves only that a path exists. Once a live version check selects repair, unpack the verified archive again so a stale extracted binary cannot be published back.
 
-A restored proof Gateway keeps the base image's installed collections and generated grants. Prepare both from the candidate checkout before cases; a new callback or vault key pattern must not depend on rebuilding the image.
+A restored proof Gateway keeps the base image's installed collections and generated grants. Prepare both from the candidate checkout before cases; a new callback or vault key pattern must not depend on rebuilding the image. Fleet reconciliation also reloads candidate grants with the existing serve-driver credential; token renewal is separate. A grant-file change must retake refresh snapshots even when Gateway code is unchanged.
 
 `command` expands `~user` even with `argv`. Set `expand_argument_vars: false` for literal arguments such as DNS routing domain `~orbit`; otherwise it becomes the account's home path and drifts on every run. Test with a domain that names an existing account and read back the arguments before checking a zero-change repeat.
 

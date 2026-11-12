@@ -38,6 +38,8 @@ The command takes the commit and nothing else. The calling Node needs an access 
 
 Built so far: the trust check, the case selection, the run in a task VM and the verdict of each case. The CI job `proof-run` is part of Required checks. A failed case or missing verdict fails it. Capacity waits never pass as a proof. Not built yet: the receipt store.
 
+The proof CI summary states the [remaining base-refresh limit](/reference/command-development-pipeline#2-development-environment), including when a run passes.
+
 ## Which commits Orbit proves
 
 Orbit proves only code that it can trust. The commit must be the head of a branch of the Orbit repository. A commit from a pull request from elsewhere is accepted only when it is the head of that open pull request, the pull request carries the label `run-proofs`, and a maintainer approved exactly that commit. A new push needs a new approval. Orbit fetches the commit itself, so a caller cannot change what runs.

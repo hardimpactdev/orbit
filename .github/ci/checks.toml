@@ -796,7 +796,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_gateway_swamp_grants_test.py"
-cost = 18
+cost = 65 # 40.628s locally, including reload and partial-snapshot recovery; no ceiling change.
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -807,6 +807,9 @@ inputs = [
   "swamp/ansible/tasks/gateway-ansible-collections.yml",
   "swamp/ansible/tasks/gateway-swamp-grants.yml",
   "swamp/ansible/tasks/proof-gateway-release.yml",
+  "swamp/ansible/tasks/task-vm-fleet.yml",
+  "swamp/ansible/task-vm-role.yml",
+  "swamp/workflows/workflow-task-nested-apply.yaml",
   "swamp/proof/cli-release.json",
 ]
 
