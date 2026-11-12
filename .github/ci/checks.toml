@@ -796,7 +796,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_task_vm_fleet_base_test.py"
-cost = 10 # 3.716s locally through real Ansible; Incus and the CLI boundary are faked.
+cost = 25 # 16.742s locally through real Ansible, including updater waits and failure paths; external boundaries are faked.
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",

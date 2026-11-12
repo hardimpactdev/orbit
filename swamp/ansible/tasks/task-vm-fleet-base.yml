@@ -29,6 +29,30 @@
     fail_msg: "The nested fleet must contain exactly one gateway, app-dev and app-prod Node before base convergence."
     quiet: true
 
+# Stop only the timers: an inherited update transaction must finish normally.
+- name: Prevent new periodic updates in the nested fleet
+  ansible.builtin.command:
+    argv: [timeout, "30", incus, exec, "{{ intent.fleet.guests[item.name] }}", --, systemctl, stop, apt-daily.timer, apt-daily-upgrade.timer]
+  loop: "{{ fleet_base_nodes }}"
+  loop_control: { label: "{{ item.name }}" }
+  changed_when: true
+
+- name: Wait for inherited update services to finish before base convergence
+  ansible.builtin.command:
+    argv: [timeout, "5", incus, exec, "{{ intent.fleet.guests[item.name] }}", --, systemctl, show, --property=ActiveState, --value,
+           apt-daily.service, apt-daily-upgrade.service]
+  register: fleet_base_update_services
+  vars:
+    update_states: "{{ fleet_base_update_services.stdout_lines | reject('equalto', '') | list }}"
+    updates_idle: "{{ update_states | length == 2 and update_states | difference(['inactive', 'failed']) | length == 0 }}"
+  until: fleet_base_update_services.rc != 0 or updates_idle
+  retries: "{{ fleet_base_update_retries | default(29) }}"
+  delay: "{{ fleet_base_update_delay | default(5) }}"
+  failed_when: fleet_base_update_services.rc != 0 or not updates_idle
+  changed_when: false
+  loop: "{{ fleet_base_nodes }}"
+  loop_control: { label: "{{ item.name }}" }
+
 # An include per Node stops the host on a failed command; a command loop could continue with the next Node after a failure.
 - name: Converge each nested Node base before snapshots
   ansible.builtin.include_tasks: task-vm-fleet-base-node.yml

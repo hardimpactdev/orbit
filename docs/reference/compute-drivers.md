@@ -1330,6 +1330,8 @@ The earlier standalone fleet build took 1,840 s (Operation 11816), so a new host
 
 ##### Nested Node base state
 
+Before any base converge, the refresh stops the daily apt timers on all three nested Nodes and waits for their running update services to finish. It checks both services up to 30 times per Node, five seconds apart, with a five-second limit on each read. A busy service at the limit or an unreadable state fails the refresh before convergence and snapshots. It never stops an update service or kills a package-manager process. The real base phase then disables periodic updates for the nested fleet.
+
 Before taking the three snapshots, every image refresh runs the real `node:converge --base` through the nested fleet's operator CLI for Gateway, app-dev and app-prod. Each must succeed before the next starts. This applies kernel and update policy, agent configuration and binary, and the managed CLI state. It selects no role or Tool work, so it does not build Instance images or configure an AI router.
 
 A failed or interrupted converge fails the refresh before snapshots or promotion. The last promoted base remains available. Task starts do not repeat these converges. A later refresh reads and repairs the Node state again; a checkout digest does not skip that work. Bases made before this change must complete a refresh before they have this guarantee.

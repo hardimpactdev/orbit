@@ -57,6 +57,7 @@ sequenceDiagram
   %%> - the tools phase prepares `orbit`'s Incus client config with one serial read before the fleet phase; task copies inherit it, so parallel Incus calls never race on first use
   %%> - every fleet reconcile renders the candidate checkout's scoped Swamp grants and reloads them with the existing serve-driver credential; token renewal is separate
   %%> - a grant-file change also retakes the nested base snapshots, even when Gateway code is unchanged; record the grants digest only after all three snapshots succeed, so a failed reload or snapshot remains due on retry
+  %%> - before any nested base converge, stop both daily apt timers on all three Nodes and wait for their active update services to finish naturally; an exhausted wait or unreadable state fails before convergence and snapshots, without stopping services or killing package-manager processes
   %%> - after checkout, grants and migrations, the refresh runs the real `node:converge --base` through its operator CLI for gateway, app-dev and app-prod, in that order; each must reach terminal success before the next starts
   %%> - this applies current kernel/update policy, agent and managed CLI state without selecting app-dev or other role work; any failure prevents snapshots and promotion
   %%> - only refresh does this: task starts do not run extra base converges; every successful refresh snapshots the three reconciled Nodes

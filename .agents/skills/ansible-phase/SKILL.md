@@ -59,6 +59,8 @@ A Jinja decision template is read with `lookup('ansible.builtin.template', 'name
 
 ## Pitfalls from the trial
 
+- Stopping an apt timer leaves its running update service active. Before nested fleet base convergence, stop both timers and wait for both services on every Node; never kill dpkg. An `until` task with `failed_when` must also fail on an exhausted state check, not only a nonzero command exit. Prove that exhaustion prevents snapshots with real Ansible.
+
 - A new task file must be listed in `swamp/manifest.yaml` `additionalFiles`. Otherwise the playbook fails on the worker in about a second, before any task runs, and the step records no stderr. `swamp/bin/source_test.ts` checks every file under `swamp/ansible/`.
 - Disambiguate a task import when a top-level playbook shares its basename. Nested runtime includes can resolve the playbook first; use the `tasks/` path and keep the colliding playbook in the include regression fixture.
 - `incus query` takes the Project in the URL (`?project=...`), not `--project`.
