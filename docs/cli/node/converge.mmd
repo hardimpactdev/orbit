@@ -136,6 +136,8 @@ sequenceDiagram
       SW--xGW: Run failed<br/>error_code · failed step
       %%> Result:
       %%> - stop at the failed phase and mark the Operation failed; later phases do not run
+      %%> - the result names the first failed task in the failed phase: bounded task and role, inventory alias (`target` or `hub`), and a fixed reason; hidden tasks expose neither name nor role
+      %%> - missing, malformed or task-free failure reports leave `failure` absent; private callback output never leaves the run folder
       %%> - unreachable targets fail here, not at a live admission check
       %%> On the Node:
       %%> - completed and partial changes remain; no rollback and no Instance or assignment change

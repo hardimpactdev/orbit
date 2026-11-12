@@ -47,6 +47,21 @@ A repeat starts a new Operation and applies all phases again; it is not skipped 
 
 A failed phase leaves the Operation failed with its failed step and error code. Completed and partial changes stay on the Node; nothing is rolled back. A new attempt starts at input and safely reapplies every phase. Temporary files are removed when work stops after success or failure; an interruption does not prove cleanup completed, and incomplete cleanup is reported without hiding the original failure.
 
+The Operation's `result.failure`, shown by `orbit operation:show`, identifies the first failed task in the failed phase. It contains `task` and `role` (nullable, at most 120 printable ASCII characters each), `host` (`target` or `hub`, never an address), and `reason`. A role is present only when the task record provides it. Hidden tasks return null names and `reason: "hidden"`. Missing, malformed or task-free failure reports leave `failure` absent. Successful results have no `failure`. Task output, messages, commands, arguments and loop values stay private.
+
+Reasons are selected in this order:
+
+| Reason | Evidence |
+| --- | --- |
+| `hidden` | The task or result has `no_log`, `_ansible_no_log` or censored output, including a hidden loop result. |
+| `unreachable` | The host result marks the host unreachable. |
+| `timeout` | The host result has return code 124. |
+| `assertion` | The action is `assert` or `fail`, or the result has `assertion` or `evaluated_to`. |
+| `command_failed` | The result has a nonzero integer return code; `rc` records it within signed 32-bit bounds. |
+| `module_failed` | Any other failed result. |
+
+The failed phase remains in `result.failed_phase`. The Operation's error detail keeps its existing native failure summary.
+
 <div className="flow-at" data-chart="node/converge"></div>
 
 ## Errors
