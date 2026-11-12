@@ -1994,5 +1994,18 @@
       "any other change is still work that is not pushed",
       "every destroy Ansible step enables failed task stderr"
     ]
+  },
+  "swamp/tests/instance_transfer_retirement_test.ts": {
+    "source_sha256": "5c4ab039733d5790cf61f05893665032f693a7391470b0f1f44805432ee266a0",
+    "cases": [
+      "transfer retirement refuses a real worktree added after archive",
+      "transfer retirement removes an independent source"
+    ]
+  },
+  "swamp/tests/instance_transfer_retirement_native_test.ts": {
+    "source_sha256": "da7c3089af730ba701de670276bf35020cdb3d60a227248837ac1401f871911b",
+    "cases": [
+      "pinned native transfer keeps cutover and both Git trees when a late worktree blocks retirement"
+    ]
   }
 }

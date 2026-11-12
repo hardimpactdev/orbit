@@ -2741,3 +2741,32 @@ inputs = [
 "the files Orbit renders do not count as unpushed work, at any depth" = 1
 "any other change is still work that is not pushed" = 1
 "every destroy Ansible step enables failed task stderr" = 1
+
+[[fixture]]
+file = "swamp/tests/instance_transfer_retirement_test.ts"
+cost = 6
+inputs = [
+  "swamp/tests/_support/transfer_retirement.ts",
+  "swamp/workflows/workflow-operation-instance-transfer.yaml",
+  "swamp/ansible/instance-checkout-destroy.yml",
+  "swamp/ansible/instance/destroy-git.py",
+  "swamp/extensions/behaviors/node-worker/config.ts",
+]
+[fixture.case_costs]
+"transfer retirement refuses a real worktree added after archive" = 3
+"transfer retirement removes an independent source" = 3
+
+[[fixture]]
+file = "swamp/tests/instance_transfer_retirement_native_test.ts"
+cost = 18
+after_merge = true
+reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned release; ordinary real-Git retirement cases remain in the fixture job."
+inputs = [
+  "swamp/tests/_support/transfer_retirement.ts",
+  "swamp/workflows/workflow-operation-instance-transfer.yaml",
+  "swamp/ansible/instance-checkout-destroy.yml",
+  "swamp/ansible/instance/destroy-git.py",
+  "swamp/extensions/behaviors/node-worker/config.ts",
+]
+[fixture.case_costs]
+"pinned native transfer keeps cutover and both Git trees when a late worktree blocks retirement" = 18

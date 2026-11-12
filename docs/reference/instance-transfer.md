@@ -46,7 +46,9 @@ At root terminal, the Gateway changes the Instance placement, relocates Process 
 
 Workload access, PHP, environment URLs, Caddy and DNS use the prospective placements captured during admission. Route environment material uses named vault execution copies. No step reads intent or reports progress through a Gateway callback. Certificate signing remains the scoped Gateway primitive.
 
-After destination publication, Swamp removes unused source certificate and LAN artifacts, then deletes the recorded source checkout. Linked worktree removal prunes only its entry and preserves the common repository and sibling worktrees. The Gateway then retires only the replaced primary Route and records completion. Other web-root Route IDs remain unchanged.
+After destination publication, Swamp removes unused source certificate and LAN artifacts, then deletes the recorded source checkout. Immediately before removal, the shared destroy phase rechecks the owner’s Git registry and recorded checkout paths without traversing checkout contents. The [known removal limits](/reference/instance-removal) also apply. A dependent added after archiving stops retirement and leaves the source intact; the destination stays authoritative. Linked worktree removal unregisters only that tree through Git and preserves the common repository and sibling worktrees. A refused check or unregister failure has no recursive-delete fallback.
+
+The Gateway then retires only the replaced primary Route and records completion. Other web-root Route IDs remain unchanged.
 
 ## Failure and cancellation
 

@@ -139,9 +139,13 @@ sequenceDiagram
   %%> - the end check before the source is retired; a failure keeps the source for repair
   alt destination published
     SW->>S: Remove source Processes<br/>process child · forEach
-    SW->>S: Retire the source<br/>@swamp/ssh exec · rm -rf
+    Note over SW: Prepare source retirement
+    %%> Why:
+    %%> - hand the admitted source path and SSH pins to the shared removal phase
+    SW->>S: Retire the source<br/>Ansible · tags remove
     %%> What it does:
-    %%> - deletes the checkout and prunes a linked worktree's entry; the common repository stays
+    %%> - the shared destroy guard checks live Git dependencies immediately before removal; a late worktree keeps the source intact
+    %%> - removes a linked worktree through Git, with no rm fallback on refusal or unregister failure
     %%> If it fails:
     %%> - Node 15 stays authoritative; the Gateway keeps the placement and marks the task failed
     SW-->>GW: Run succeeded<br/>terminal event
@@ -162,6 +166,9 @@ sequenceDiagram
     %%> Result:
     %%> - Instance 42 stays on Node 12; a run that only restored also fails (`instance.transfer_failed`)
   end
+  Note over SW: Clean retirement files
+  %%> When:
+  %%> - after preparation and retirement settle, also on failure
   SW->>S: Remove the source archive<br/>@swamp/ssh exec · rm
   SW->>D: Remove the copied archive<br/>@swamp/ssh exec · rm
   Note over SW: Remove the 209 archive<br/>rm · always
