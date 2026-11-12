@@ -17,62 +17,6 @@
     stdin_add_newline: false
   changed_when: true
 
-- name: Read the installed Node-store boot unit
-  ansible.builtin.command:
-    argv: "{{ as_root + ['cat', '/etc/systemd/system/orbit-node-runtime.service'] }}"
-  register: node_boot_unit
-  changed_when: false
-  failed_when: node_boot_unit.rc not in [0, 1]
-
-- name: Install the Node-store boot unit when changed
-  when: node_boot_unit.rc != 0 or node_boot_unit.stdout != lookup('ansible.builtin.file', playbook_dir ~ '/instance-node-runtime.service')
-  ansible.builtin.command:
-    argv: >-
-      {{ incus_project + ['file', 'push', '--create-dirs', '--uid', '0', '--gid', '0', '--mode', '0644',
-          '-', container.name ~ '/etc/systemd/system/orbit-node-runtime.service'] }}
-    stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance-node-runtime.service') }}"
-    stdin_add_newline: false
-  register: node_boot_install
-  changed_when: true
-
-- name: Read the private-store unit startup hook
-  ansible.builtin.command:
-    argv: "{{ as_root + ['cat', '/etc/systemd/system/orbit-.service.d/10-node-runtime.conf'] }}"
-  register: node_start_hook
-  changed_when: false
-  failed_when: node_start_hook.rc not in [0, 1]
-
-- name: Install the private-store unit startup hook when changed
-  when: node_start_hook.rc != 0 or node_start_hook.stdout != lookup('ansible.builtin.file', playbook_dir ~ '/instance-node-runtime.conf')
-  ansible.builtin.command:
-    argv: >-
-      {{ incus_project + ['file', 'push', '--create-dirs', '--uid', '0', '--gid', '0', '--mode', '0644',
-          '-', container.name ~ '/etc/systemd/system/orbit-.service.d/10-node-runtime.conf'] }}
-    stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance-node-runtime.conf') }}"
-    stdin_add_newline: false
-  register: node_start_install
-  changed_when: true
-
-# The enable below needs the new definition now, within this same phase.
-- name: Load the changed boot unit without starting or restarting it # noqa no-handler
-  when: node_boot_install is changed or node_start_install is changed
-  ansible.builtin.command:
-    argv: "{{ as_root + ['systemctl', 'daemon-reload'] }}"
-  changed_when: true
-
-- name: Read the boot unit enablement
-  ansible.builtin.command:
-    argv: "{{ as_root + ['systemctl', 'is-enabled', 'orbit-node-runtime.service'] }}"
-  register: node_boot_enabled
-  changed_when: false
-  failed_when: node_boot_enabled.rc not in [0, 1]
-
-- name: Enable preparation at the next boot without starting any unit
-  when: node_boot_enabled.rc == 1
-  ansible.builtin.command:
-    argv: "{{ as_root + ['systemctl', 'enable', 'orbit-node-runtime.service'] }}"
-  changed_when: true
-
 - name: Prepare the private store and requested Node versions
   block:
     - name: Mount the serving source read-only for Node resolution
@@ -87,8 +31,8 @@
     - name: Prepare Node as the app user without starting any Process
       ansible.builtin.command:
         argv: >-
-          {{ as_root + ['python3', '/usr/local/libexec/orbit-instance-node-runtime.py',
-              'fetch' if node_fetch | default(false) else 'prepare', container | to_json] }}
+          {{ as_orbit + ['python3', '/usr/local/libexec/orbit-instance-node-runtime.py',
+              ('launch-fetch' if phase == 'node-runtime' else 'fetch') if node_fetch | default(false) else 'prepare', container | to_json] }}
         stdin: "{{ lookup('ansible.builtin.env', 'ORBIT_PROCESS_ENVIRONMENTS') | default('{}', true) }}"
         stdin_add_newline: false
       no_log: true

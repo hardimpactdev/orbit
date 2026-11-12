@@ -12,6 +12,7 @@ import {
     PROXY_HTTP_MOVE,
     type SourceMove,
 } from "./swamp-shape-relocations.ts";
+import { resolveConstantName } from "./constant-name.ts";
 
 export const SCHEMA = 1;
 export const BASELINE = "config/swamp-shape-baseline.json";
@@ -1564,7 +1565,8 @@ export function analyzeYaml(
             Object.keys(task).sort().join() ===
                 "behaviorName,behaviorType,inputs,methodName,type" &&
             task.type === "behavior" && task.behaviorType === "command/shell" &&
-            task.behaviorName === "route-dns-grace" &&
+            typeof task.behaviorName === "string" &&
+            resolveConstantName(task.behaviorName) === "route-dns-grace" &&
             task.methodName === "execute" &&
             Object.keys(inputs).join() === "run" &&
             inputs.run === "/usr/bin/sleep 31";
@@ -1973,22 +1975,18 @@ export function analyzeYaml(
                     result.unknown = true;
                 }
                 if (task.type === "workflow") {
-                    const constant = typeof task.workflowIdOrName === "string"
-                        ? /^\$\{\{\s*"([\w.-]+)"\s*\}\}$/.exec(task.workflowIdOrName)
-                        : null;
+                    const target = typeof task.workflowIdOrName === "string"
+                        ? resolveConstantName(task.workflowIdOrName)
+                        : "";
                     // Both destinations are statically known; inspect each child's full graph.
                     const choices = typeof task.workflowIdOrName === "string"
                         ? /^\$\{\{\s*(?:inputs|self)\.[\w.]+\s*(?:==|!=)\s*"[^"\\]*"\s*\?\s*"([\w.-]+)"\s*:\s*"([\w.-]+)"\s*\}\}$/
                             .exec(task.workflowIdOrName)
                         : null;
                     if (
-                        typeof task.workflowIdOrName === "string" &&
-                        task.workflowIdOrName.length > 0 &&
-                        !/\$\{\{|\}\}/.test(task.workflowIdOrName)
+                        target.length > 0 && !/\$\{\{|\}\}/.test(target)
                     ) {
-                        result.workflowRefs.push(task.workflowIdOrName);
-                    } else if (constant) {
-                        result.workflowRefs.push(constant[1]);
+                        result.workflowRefs.push(target);
                     } else if (choices) {
                         result.workflowRefs.push(choices[1], choices[2]);
                     } else {

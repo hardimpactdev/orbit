@@ -54,7 +54,7 @@ sequenceDiagram
   %%> What it does:
   %%> - the Project's development deploy steps, as `orbit`, in list order: they install dependencies and migrate
   %%> - the runtime folder supplies `php`, `composer`, Node and Bun; dependency downloads use the container egress model
-  %%> - the boot helper links the current recipe into the private store before services or deployment; Vite+ resolves and fetches any missing pinned Node before Process start, within the phase budget
+  %%> - stock images retain the shared read-only Node store; the result reports node_pin.status=not_prepared and reason=container_from_stock_image (pin not served); this advisory does not fail the Operation
   SW->>C: Start Processes<br/>Ansible · tags processes
   %%> What it does:
   %%> - FrankenPHP starts as the `orbit` unit `orbit-frankenphp.service` on port 8080 of the bridge address

@@ -17,6 +17,8 @@ The read is read-only, has a ten-second outer timeout and three seconds per Git 
 
 An unreachable Node or outer SSH timeout refuses with `instance.host_unavailable`; a Git error in the target refuses with `instance.remove_refused`. Other checkout failures use bounded, non-blocking pointer reads inside the same call, without a tree scan or retry. Only confirmed dependents use `instance.worktree_dependents`. The check is admission only; an admitted retry or workflow dispatch never repeats it after removal has started.
 
+Transfer uses this same Instance-only reader before admitting a new host-checkout transfer, for the same intact-refusal boundary. It adds no generic execution entry, identity or capability. An admitted transfer retry skips the read.
+
 The follow-up moves this check and Schedule withdrawal together into Swamp. This fix keeps the synchronous refusal small instead of moving that lifecycle boundary. No other new caller is allowed by this exception.
 
 ## Program files

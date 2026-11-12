@@ -60,7 +60,7 @@ sequenceDiagram
       %%> Runs beside the clone step: Swamp starts both at once.
     end
     SW->>C: Prepare the private Node store<br/>clone-node-store<br/>tags node-store
-    %%> - preserves downloaded runtimes from the seed, converts an old shared-store link, and links the current recipe; workspace preparation fetches a changed branch pin before starting Processes
+    %%> - preserves downloaded runtimes from the seed, converts an old shared-store link as orbit, and copies the current recipe; workspace preparation fetches a changed branch pin before starting Processes
     SW->>C: Prepare the workspace<br/>native clone-workspace
     %%> What it does:
     %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone

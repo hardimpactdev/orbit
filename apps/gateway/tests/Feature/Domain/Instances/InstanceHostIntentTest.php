@@ -263,13 +263,9 @@ describe('the Instance image', function (): void {
             "install -d -o agent -g work -m 2770 {$home}\n",
             "d:g:work:rwX,d:o::--- {$home}\n",
             "install -d -o agent -g work -m 2770 {$home}/cache\n",
-            "install -d -o agent -g work -m 2770 {$home}/js_runtime {$home}/js_runtime/node\n",
-            'for part in bin node_modules recipe config.json; do',
+            'for part in bin js_runtime node_modules recipe config.json; do',
             'ln -s /opt/orbit-runtime/current/vite-plus-home/$part '.$home.'/$part',
-        )->not->toContain('cp -a');
-        $files = array_column(InstanceImage::for('10.253.0.1')['files'], 'content', 'path');
-        expect($files['/etc/systemd/system/orbit-node-runtime.service'])->toContain('Before=basic.target', ' refresh {}')
-            ->and($files['/usr/local/libexec/orbit-instance-node-runtime.py'])->toBe(file_get_contents(base_path('../../swamp/ansible/instance_node_runtime.py')));
+        );
     });
 
     it('removes cloud-init\'s group lxd, which holds the gid of orbit, before it makes the groups', function (): void {
@@ -289,7 +285,7 @@ describe('the Instance image', function (): void {
         expect($finish)->toContain(['truncate', '--size', '0', '/etc/machine-id'])
             ->and(array_filter($finish, static fn (array $command): bool => in_array('/etc/machine-id', $command, true) && in_array($command[0], ['rm', 'unlink'], true)))->toBe([])
             ->and(array_search(['truncate', '--size', '0', '/etc/machine-id'], $finish, true))
-            ->toBeGreaterThan(array_search(['systemctl', 'enable', 'nftables.service', 't3.service', 'orbit-node-runtime.service'], $finish, true));
+            ->toBeGreaterThan(array_search(['systemctl', 'enable', 'nftables.service', 't3.service'], $finish, true));
     });
 
     it('gives every unit, login shell and apt the egress proxy, and takes no DNS server', function (): void {

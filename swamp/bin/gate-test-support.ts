@@ -31,10 +31,7 @@ export type Flow = {
     }[];
 };
 export const ROOT = root.replace(/\/$/, "");
-/** Resolve the constant CEL workflow target recognized by check-swamp-shape. */
-export function resolveWorkflowTarget(target: string): string {
-    return /^\$\{\{\s*"([\w.-]+)"\s*\}\}$/.exec(target)?.[1] ?? target;
-}
+export { resolveConstantName as resolveWorkflowTarget } from "./constant-name.ts";
 /** Inspect a tracked workflow without starting the Swamp runtime. */
 export function trackedStep(workflow: string, name: string) {
     const value = parse(
@@ -125,6 +122,7 @@ export async function commit(path: string, message: string) {
 }
 export const policyFiles = [
     "check-swamp-shape.ts",
+    "constant-name.ts",
     "bounded-phase-scripts.ts",
     "swamp-shape-relocations.ts",
     "workflow-placement.ts",

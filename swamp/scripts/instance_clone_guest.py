@@ -21,13 +21,14 @@ def phase_main(phase, raw):
     root = pathlib.Path
     private = sys.stdin.read()
 
-    def run(argv, check=True, agent=False, orbit=False, timeout=40):
+    def run(argv, check=True, agent=False, orbit=False, timeout=40, private_input=None):
         command = argv
         if agent or orbit:
             argv = ["runuser", "-u", "agent" if agent else "orbit", "--"] + argv
         r = subprocess.run(
             argv,
             check=False,
+            input=private_input,
             capture_output=True,
             text=True,
             env=dict(
@@ -158,7 +159,7 @@ def phase_main(phase, raw):
         if web_config is not None:
             write(web_config["path"], web_config["content"])
         web_config_changed = len(changes) > before_web_config
-        node = run(["python3", "/usr/local/libexec/orbit-instance-node-runtime.py", "fetch", json.dumps(c)], timeout=100)
+        node = run(["python3", "/usr/local/libexec/orbit-instance-node-runtime.py", "fetch", json.dumps(c)], orbit=True, timeout=100, private_input=json.dumps(inputs.get("processes", {})))
         if json.loads(node.stdout)["status"] == "converted":
             changes.append("node-runtime")
         desired = c["units"] + c["processes"]

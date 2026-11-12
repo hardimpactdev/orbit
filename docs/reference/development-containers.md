@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
-  - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance-node-runtime.*,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
+  - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network}.py,extensions/behaviors/operations/instance-dev-command/result.ts}
   - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/{notes/**,frankenphp.Caddyfile}}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
@@ -730,13 +730,17 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
 | Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
 | While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
-| Retirement check | Before downtime and before retention, planned retirements need no other worktrees, uncommitted changes, unpushed commits or stashes. `instance.migrate_retirement_blocked` names up to 20 worktrees and files with total counts |
+| Retirement check | Before downtime and retention, blocks tracked changes, other worktrees, unpushed commits and stashes. Untracked files do not block. `instance.migrate_retirement_blocked` names up to 20 worktrees and files with total counts |
 | Branch | The mirror fetches the recorded branch from the checkout itself. A retained checkout can carry commits that were never pushed; retirement refuses them. The move needs no token |
 | Files | One archive of the paths of `git diff HEAD` and `git ls-files --others`, extracted as `orbit`. Tracked files that the checkout deleted are removed |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace`, and the Gateway rewrites its stored values the same way |
 | Database server | The NIC ACL and the Node's firewall rule to every attached target. The container phase checks every port from inside before quiesce, else `instance.database_unreachable`, with zero downtime |
 | SQLite | The file moves with the files. The Gateway drops the connection record of a SQLite file inside the checkout |
 | Route | The same Route, domain and certificate. One publication replaces the checkout's site and PHP-FPM pool with the container's site |
+
+All untracked files enter the default's seed snapshot and every clone, as ignored build output already does. A branch that later tracks one of those paths can refuse checkout in a clone or deploy. Forgotten credentials files travel into the seed like `.env` does.
+
+Migration reports `untracked_files_copied` as archived untracked leaf entries, including ignored files, nested repository contents and symlinks; directories do not count. It exposes no new paths or file contents. Submodule changes still refuse because the parent archive cannot preserve them.
 
 The runtime reservation belongs to its admitting Operation. A late receipt cannot change a newer owner. Settlement reads private material before taking the Instance lock, then checks ownership and records the runtime and receipt atomically. An already-settled stale runtime is not repaired: inspections keep selecting it until a new migrate reuses and owns that reservation.
 
@@ -1144,12 +1148,16 @@ Two spikes on Beast on 2026-11-09 ran the user and agent layout in one container
 
 ## Private Node runtimes
 
-New create, clone and migrated containers keep a writable `VP_HOME/js_runtime` directory. The recipe Node is linked through the current read-only shared home; only additional pinned versions occupy private runtime disk. Additional pins are resolved and downloaded by Vite+ as `orbit`, through the Instance proxy, with its signature and checksum verification. Resolution uses `vp env current node --json`; only a missing resolved executable runs `vp env install VERSION`. Orbit does not implement Node pin precedence.
+Migrate and clone prepare a writable `VP_HOME/js_runtime/node` directory in the new container. The launch phase copies the recipe Node once, with no download. A real copy avoids dangling version links when the Node replaces and retires its shared runtime folder: Vite+ 1.4.0 cannot install over a dangling version symlink. Unpinned Projects initially use the same recipe binary contents.
 
-Migration prepares Node in the new container before quiesce. It mounts the serving checkout read-only for this phase and removes the mount even after failure. The phase has a 150-second bound; tool resolution and downloads share 90 seconds. Failure records `instance.node_runtime_prepare_failed` with the pin and reason while the checkout keeps serving. Create and clone prepare before Process starts; an old seed's link is converted, and cached versions in a seed are retained. A different branch can fetch another version.
+Vite+ resolves and downloads additional pins as `orbit`, through the Instance proxy, with its own signature and checksum verification. Resolution uses `vp env current node --json`; only a missing resolved executable runs `vp env install VERSION`. Orbit does not implement Node pin precedence. Each other pin on the Process-directory-to-workspace path is also checked in isolation by Vite+, so a malformed child cannot silently fall back to a valid parent.
 
-A boot helper links the current recipe before basic services start, so a new-style store created from a reused image sees the current recipe without a download. A startup hook on its Orbit service units refreshes those links before the next Process start, including an existing runtime restart sweep. Both hooks remove obsolete recipe links and retain private downloaded versions. An old recipe requested by a pin is downloaded privately after its obsolete link is removed.
+Migration prepares Node before quiesce. It mounts the serving checkout read-only for this phase and removes the mount even after failure. The phase has a 150-second bound; tool resolution and downloads share 90 seconds. Failure records `instance.node_runtime_prepare_failed` with the pin and a specific malformed-pin, network, HTTP, checksum, disk or unknown-version reason while the checkout keeps serving.
 
-When Node convergence runs, it installs no helper and changes no existing store. This release installs the hooks only in new create/clone/migrate containers; an existing shared-store symlink keeps its current behavior. Updating existing containers is a separate per-Instance action.
+Clone converts an old seed's whole-store link as the app user, retains private downloaded versions from new-style seeds, and fetches the selected branch's pin before starting Processes. No privileged command traverses or changes the private store. The launch phase installs a root-owned helper outside the store, but runs all conversion, copy, validation and downloads as `orbit`.
 
-The linked recipe Node uses no private binary disk. Budget about 200 MB per extra downloaded Node version per Instance. Clones initially share downloaded versions through the seed snapshot. There is no automatic cleanup.
+This release needs only the Gateway/Swamp release for migrate and clone. It changes no image or converge tasks and installs no boot unit or Process startup hook. Fresh default creates keep the stock image behavior: their typed result includes `node_pin: {status: "not_prepared", reason: "container_from_stock_image"}` (pin not served: container from the stock image). This advisory does not fail the Operation. An existing container's store is not converted by converge or deploy; deploy fetches only into an already-private store.
+
+After a runtime upgrade, the private recipe copy remains valid. If the shared Vite+ default changes to a version absent from the private store, Vite+ downloads it as the app user on the next start. A pin already cached needs no download. With no network, a start needing an uncached version fails with Vite+'s download error; this release adds no automatic recovery or Process restart.
+
+Budget about 200 MB per private Node version per Instance, including the launch recipe copy. Clones initially share cached versions through the seed snapshot. There is no automatic cleanup.

@@ -20,27 +20,29 @@ default = ["swamp/tests/ansible_inputs_test.py"]
 [[fixture]]
 file = "swamp/tests/ansible_instance_migrate_test.ts"
 after_merge = true
-reason = "92 retained cases need 6350 declared seconds including startup: 12 hosted shards, above the six-shard PR limit (runs 43010311414 and 43013527963; 23 case costs remain estimates). All migration cases run after merge until their work is reduced or selection is narrowed."
-cost = 6398
+reason = "100 retained cases need 7165 declared seconds including startup, above the six-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963; unmeasured cases remain estimates. All migration cases run after merge until their work is reduced or selection is narrowed."
+cost = 6565
 # 159.019s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (120s); these are estimates, not completed measurements.
-slices = 92
+slices = 100
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
-  "swamp/ansible/instance-node-runtime.service", "swamp/ansible/instance-node-runtime.conf",
   "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance-container.yml",
   "swamp/ansible/instance-migrate.yml",
   "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_migrate_files.py",
   "swamp/ansible/instance_migrate_links.py",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
   "swamp/ansible/tasks/address-node.yml",
   "swamp/ansible/tasks/instance-bridge-rules.yml",
   "swamp/ansible/tasks/instance-container-*.yml",
@@ -51,11 +53,14 @@ inputs = [
 ]
 
 [fixture.case_costs]
-"stock selector preflight: wrong Redis port" = 120
-"stock selector preflight: stock Laravel" = 120
-"stock selector preflight: selected Redis" = 120
-"stock selector preflight: real53" = 120
-"stock selector preflight: attached Redis" = 120
+  "stock selector preflight: stock Laravel" = 120 # UNMEASURED estimate; registration refreshed from current source
+  "stock selector preflight: real53" = 120 # UNMEASURED estimate; registration refreshed from current source
+  "stock selector preflight: selected Redis" = 120 # UNMEASURED estimate; registration refreshed from current source
+  "stock selector preflight: attached Redis" = 120 # UNMEASURED estimate; registration refreshed from current source
+  "stock selector preflight: wrong Redis port" = 120 # UNMEASURED estimate; registration refreshed from current source
+  "untracked non-ignored files and nested repository leaves migrate with an exact archived file count" = 80 # local completed 36s; conservative runner allowance
+  "late ignored and non-ignored files do not refuse a move and remain in the retained checkout" = 80 # conservative estimate; includes processes and seed before retirement
+  "untracked files inside a tracked submodule retain the named retirement refusal even when Git config ignores it" = 7 # local completed 2s; conservative runner allowance
   "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links" = 62 # completed, run 43002948719
   "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources" = 8 # completed, run 43002948719
   "broken symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources" = 6 # completed, run 43005032403
@@ -72,7 +77,7 @@ inputs = [
   "a checkout on another branch than the recorded one is refused before anything changes" = 10 # completed, run 43002948719
   "a database server that the container cannot reach refuses the move, and the copy leaves nothing behind" = 40 # completed, run 43002948719
   "a database server that listens is reached from the container" = 63 # completed, run 43005032403
-  "preflight names linked and detached worktrees and every tracked or untracked change before any Node change" = 23 # completed, run 43005032403
+  "preflight names linked and detached worktrees and every tracked change before any Node change" = 23 # completed, run 43005032403
   "retirement error lists stop at 20 entries with total counts" = 7 # completed, run 43002948719
   "retirement rechecks changes created after preflight and leaves the container and source intact" = 67 # completed, run 43005032403
   "retirement rechecks worktree created after preflight and leaves the container and source intact" = 67 # completed, run 43005032403
@@ -160,7 +165,6 @@ after_merge_cases = ["a clone copies the seed, takes its own address, ACL, firew
 slices = 23
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
-  "swamp/ansible/instance-node-runtime.service", "swamp/ansible/instance-node-runtime.conf",
   "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -414,6 +418,7 @@ cost = 20
 after_merge = true
 reason = "Repository scanner fixtures create dynamic source inventories; their complete input closure needs a separate mapping."
 inputs = [
+  "swamp/bin/constant-name.ts",
   "swamp/bin/bounded-phase-scripts.ts",
   "swamp/bin/check-swamp-base-policy.py",
   "swamp/bin/check-swamp-shape.ts",
@@ -435,6 +440,7 @@ cost = 14
 after_merge = true
 reason = "Repository scanner fixtures create dynamic source inventories; their complete input closure needs a separate mapping."
 inputs = [
+  "swamp/bin/constant-name.ts",
   "swamp/bin/bounded-phase-scripts.ts",
   "swamp/bin/check-swamp-shape.ts",
   "swamp/bin/gate-test-support.ts",
@@ -453,6 +459,7 @@ inputs = [
 file = "swamp/bin/lint-behavior-names_test.ts"
 cost = 3
 inputs = [
+  "swamp/bin/constant-name.ts",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
@@ -465,6 +472,7 @@ inputs = [
 file = "swamp/bin/source_test.ts"
 cost = 2
 inputs = [
+  "swamp/bin/constant-name.ts",
   "bin/swamp-shape-gate",
   "swamp/ansible/**",
   "swamp/bin/gate-test-support.ts",
@@ -1574,7 +1582,6 @@ file = "swamp/tests/instance_clone_guest_test.py"
 cost = 30
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
-  "swamp/ansible/instance-node-runtime.service", "swamp/ansible/instance-node-runtime.conf",
   "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -2660,16 +2667,14 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts"
-cost = 24
+cost = 26
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
-  "swamp/ansible/instance-node-runtime.service", "swamp/ansible/instance-node-runtime.conf",
   "swamp/ansible/tasks/instance-node-runtime.yml",
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
   "swamp/workflows/workflow-operation-instance-migrate.yaml",
 ]
 [fixture.case_costs]
-"Node preparation fails before quiesce with its pin reason and restores only the new container" = 1
 "a default that moved reports its commit and no T3 server" = 1
 "a non-default Instance that moved reports its T3 server, and needs its registration" = 1
 "a move that failed and restored names the failed phase with its own refusal, and says restored" = 1
@@ -2693,6 +2698,9 @@ inputs = [
 "mail failure is an advisory warning and cannot fail or restore a completed migration" = 1
 "migration retains each exact-line outcome and the named path conflict without values" = 1
 "missing or malformed successful mail receipts become advisory warnings" = 1
+"the copied untracked count includes zero, excludes paths and survives later failure" = 1
+"invalid or incomplete copied-file receipts do not claim a count" = 1
+"Node preparation fails before quiesce with its pin reason and restores only the new container" = 1
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts"
@@ -2749,19 +2757,19 @@ inputs = [
 "the files Orbit renders do not count as unpushed work, at any depth" = 1
 "any other change is still work that is not pushed" = 1
 "every destroy Ansible step enables failed task stderr" = 1
-
 [[fixture]]
 file = "swamp/tests/instance_node_runtime_test.py"
-cost = 14
-inputs = ["swamp/ansible/instance-node-runtime.service", "swamp/ansible/instance-node-runtime.conf", "swamp/ansible/instance_node_runtime.py", "swamp/ansible/tasks/instance-node-runtime.yml", "swamp/workflows/workflow-operation-instance-migrate.yaml"]
+cost = 16
 [fixture.case_costs]
 "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat" = 1
-"test_recipe_upgrade_and_seed_copy_keep_downloaded_versions_after_shared_pruning" = 1
+"test_recipe_copy_survives_current_flip_and_shared_pruning_and_seed_keeps_download" = 1
+"test_cloned_user_planted_links_never_change_their_external_target" = 1
 "test_vite_alone_resolves_and_fetches_once_as_the_app_user" = 1
 "test_recipe_pin_and_unpinned_projects_need_no_install" = 1
 "test_download_integrity_and_timeout_failures_name_the_pin" = 1
-"test_production_phase_removes_read_only_source_mount_after_failure_without_downtime" = 5
 "test_malformed_and_ambiguous_pins_refuse_instead_of_using_the_default" = 1
 "test_download_failures_keep_specific_safe_reasons" = 1
 "test_non_vite_projects_do_not_resolve_or_download_unused_pins" = 1
-"test_boot_refresh_never_converts_an_existing_legacy_store" = 1
+"test_deploy_fetch_refuses_legacy_store_even_with_a_helper" = 1
+"test_nested_ignored_pin_refuses_even_when_a_parent_pin_is_selected" = 1
+"test_production_phase_removes_read_only_source_mount_after_failure_without_downtime" = 5

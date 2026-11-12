@@ -1,6 +1,5 @@
 """Private Instance Node stores and Vite+-owned resolution/downloads. No Process actions."""
 import ctypes
-import grp
 import json
 import os
 import pwd
@@ -24,49 +23,39 @@ def versions(home):
                   if re.fullmatch(r'[0-9]+[.][0-9]+[.][0-9]+', p.name) and (p / 'bin/node').is_file())
 
 
-def prepare(home=HOME, shared=SHARED, owner=None, convert=True):
-    """Link the current verified recipe; never copy binaries or discard private downloads."""
+def private_store(home):
+    store = Path(home) / 'js_runtime'
+    return not store.is_symlink() and store.is_dir() and not (store / 'node').is_symlink() and (store / 'node').is_dir()
+
+
+def prepare(home=HOME, shared=SHARED):
+    """Launch only, as the app user. Copy the recipe once; retain private downloads."""
     home, shared = Path(home), Path(shared)
     store = home / 'js_runtime'
-    if not convert and store.is_symlink():
-        return False
     home.mkdir(parents=True, exist_ok=True)
-    changed = False
     stage = None
+    changed = False
     if store.is_symlink():
+        # A snapshot may contain app-controlled links. Never traverse the inherited store.
         stage = Path(tempfile.mkdtemp(prefix='.node-store-', dir=home))
-        target = stage
-    else:
-        target = store
+        stage.chmod(0o2770)
+    elif store.exists() and not private_store(home):
+        raise RuntimeError('the private Node store must contain a real js_runtime/node directory')
+    target = stage if stage is not None else store
     try:
         if not target.exists():
             target.mkdir(mode=0o2770)
             changed = True
         node = target / 'node'
         node.mkdir(mode=0o2770, exist_ok=True)
-        recipe = versions(shared)
-        for path in node.iterdir():
-            if path.is_symlink() and path.readlink().parent == shared / 'js_runtime/node' and path.name not in recipe:
-                path.unlink()
-                changed = True
-        for version in recipe:
+        for version in versions(shared):
             path = node / version
-            if path.is_symlink() and not path.is_dir():
+            if path.is_symlink():
                 path.unlink()
             if not path.exists():
-                path.symlink_to(shared / 'js_runtime/node' / version)
+                shutil.copytree(shared / 'js_runtime/node' / version, path, symlinks=True)
                 changed = True
-        if owner is not None:
-            for directory in (target, node):
-                metadata = directory.stat()
-                if (metadata.st_uid, metadata.st_gid) != owner:
-                    os.chown(directory, *owner)
-                    changed = True
-                if metadata.st_mode & 0o7777 != 0o2770:
-                    os.chmod(directory, 0o2770)
-                    changed = True
         if stage is not None:
-            # Readers always see either the old link or the complete private directory.
             libc = ctypes.CDLL(None, use_errno=True)
             if libc.renameat2(-100, os.fsencode(stage), -100, os.fsencode(store), 2) != 0:
                 errno = ctypes.get_errno()
@@ -169,13 +158,13 @@ def pin_candidates(directory, workspace):
 
 def node_environment(context, base, private_environments):
     environment = dict(base)
-    # Read systemd's environment files as root; only the Node override is needed by this tool.
+    # Root-only environment files arrive through private standard input.
     for line in context.get('content', '').splitlines():
         if line.startswith('EnvironmentFile='):
             for name in shlex.split(line.split('=', 1)[1]):
                 path = Path(name.removeprefix('-'))
                 contents = private_environments.get(str(path))
-                if contents is None and path.is_file():
+                if contents is None and path.is_file() and os.access(path, os.R_OK):
                     contents = path.read_text()
                 if contents is not None:
                     for entry in contents.splitlines():
@@ -211,8 +200,8 @@ def fetch(container, home=HOME, vp=VP, app_user='orbit', private_environments=No
         if environment.get('VP_NODE_VERSION'):
             candidates.insert(0, ('VP_NODE_VERSION', environment['VP_NODE_VERSION']))
         label = ', '.join(source + ' pins Node ' + value.replace(chr(10), r'\n') for source, value in candidates) or 'the runtime default'
-        def invoke(arguments, seconds, context=context, environment=environment, label=label):
-            result = subprocess.run([str(vp), *arguments], cwd=context['directory'], env=environment,
+        def invoke(arguments, seconds, context=context, environment=environment, label=label, directory=None):
+            result = subprocess.run([str(vp), *arguments], cwd=directory or context['directory'], env=environment,
                                     capture_output=True, text=True, check=False, timeout=max(0.001, min(seconds, deadline - time.monotonic())), umask=0o002, **identity)
             diagnostic = result.stderr.lower()
             if result.returncode or ('invalid' in diagnostic and ('version' in diagnostic or 'node' in diagnostic)):
@@ -220,14 +209,37 @@ def fetch(container, home=HOME, vp=VP, app_user='orbit', private_environments=No
             return result.stdout
         try:
             node = json.loads(invoke(['env', 'current', 'node', '--json'], 30))['node']
-            if node.get('source') == 'default' and candidates:
-                ambiguous = any(source.endswith('.nvmrc') and len([
-                    line.split('#', 1)[0].strip() for line in value.splitlines()
-                    if line.split('#', 1)[0].strip() and '=' not in line.split('#', 1)[0]
-                ]) > 1 for source, value in candidates)
-                reason = ('ambiguous .nvmrc: more than one version declaration' if ambiguous else
-                          'Vite+ ignored the requested pin as invalid or unsupported')
-                raise RuntimeError(label + ': ' + reason)
+            selected = node.get('source_path', node.get('source')) if node.get('source') != 'default' else None
+            if selected and node.get('source_path') and Path(selected).is_relative_to(container['workspace']):
+                selected = str(Path(selected).relative_to(container['workspace']))
+                if node['source'] in ('engines.node', 'devEngines.runtime'):
+                    selected += ':' + node['source']
+            # Ask Vite+ about each unselected candidate in isolation. A malformed child
+            # must not fall back to a valid parent; valid lower-priority pins remain valid.
+            for source, value in candidates:
+                if source == 'VP_NODE_VERSION' or source == selected:
+                    continue
+                isolated_environment = dict(environment)
+                isolated_environment.pop('VP_NODE_VERSION', None)
+                with tempfile.TemporaryDirectory(prefix='pin-check-', dir=home / 'cache') as scratch:
+                    scratch = Path(scratch)
+                    if source.endswith(':engines.node'):
+                        (scratch / 'package.json').write_text(json.dumps({'engines': {'node': value}}))
+                    elif source.endswith(':devEngines.runtime'):
+                        (scratch / 'package.json').write_text(json.dumps({'devEngines': {'runtime': {'name': 'node', 'version': value}}}))
+                    elif Path(source).name in ('.nvmrc', '.node-version'):
+                        (scratch / Path(source).name).write_text(value)
+                    else:
+                        raise RuntimeError(source + ': unreadable Node pin manifest')
+                    checked = json.loads(invoke(['env', 'current', 'node', '--json'], 30,
+                        environment=isolated_environment, label=source + ' pins Node ' + value.replace(chr(10), r'\n'),
+                        directory=str(scratch)))['node']
+                    if checked.get('source') == 'default' or not Path(checked.get('source_path', '/')).is_relative_to(scratch):
+                        reason = 'Vite+ ignored the requested pin as invalid or unsupported'
+                        if source.endswith('.nvmrc') and len([line for line in value.splitlines()
+                                if line.split('#', 1)[0].strip() and '=' not in line.split('#', 1)[0]]) > 1:
+                            reason = 'ambiguous .nvmrc: more than one version declaration'
+                        raise RuntimeError(source + ' pins Node ' + value.replace(chr(10), r'\n') + ': ' + reason)
             binary = Path(node['bin_path'])
             if not binary.is_relative_to(home / 'js_runtime'):
                 raise RuntimeError(label + ': Vite+ selected a Node outside the private store')
@@ -254,10 +266,16 @@ def main():
     action = sys.argv[1]
     container = json.loads(sys.argv[2])
     try:
-        owner = (pwd.getpwnam('agent').pw_uid, grp.getgrnam('work').gr_gid) if os.geteuid() == 0 else None
-        changed = prepare(owner=owner, convert=action != 'refresh')
+        os.umask(0o002)
+        if os.geteuid() == 0:
+            raise RuntimeError('Node store preparation must run as the app user')
+        if action not in ('prepare', 'fetch', 'launch-fetch'):
+            raise RuntimeError('unknown Node preparation action')
+        if action == 'fetch' and not private_store(HOME):
+            raise RuntimeError('fetch requires an existing private Node store; legacy stores are not converted')
+        changed = prepare() if action in ('prepare', 'launch-fetch') else False
         pins = []
-        if action == 'fetch':
+        if action in ('fetch', 'launch-fetch'):
             fetched, pins = fetch(container, private_environments=json.loads(sys.stdin.read() or '{}'))
             changed = changed or fetched
         print(json.dumps({'status': 'converted' if changed else 'unchanged', 'versions': versions(HOME), 'pins': pins}))

@@ -26,7 +26,14 @@ version=os.environ.get('FAKE_NODE_VERSION','22.23.5')
 binary=home/'js_runtime/node'/version/'bin/node'
 if sys.argv[1:]==['env','current','node','--json']:
  if os.environ.get('FAKE_NODE_WARNING'):print(os.environ['FAKE_NODE_WARNING'],file=sys.stderr)
- print(json.dumps({'node':{'version':version,'source':os.environ.get('FAKE_NODE_SOURCE','.nvmrc' if (Path.cwd()/'.nvmrc').exists() else 'default'),'source_path':str(Path.cwd()/'.nvmrc'),'bin_path':str(binary)}}))
+ source='default';source_path=''
+ for directory in [Path.cwd(),*Path.cwd().parents]:
+  if (directory/'.node-version').is_file():
+   source='.node-version';source_path=str(directory/'.node-version');break
+  if (directory/'.nvmrc').is_file():
+   values=[line for line in (directory/'.nvmrc').read_text().splitlines() if line.strip() and not line.startswith('#')]
+   if len(values)==1:source='.nvmrc';source_path=str(directory/'.nvmrc');break
+ print(json.dumps({'node':{'version':version,'source':os.environ.get('FAKE_NODE_SOURCE',source),'source_path':source_path,'bin_path':str(binary)}}))
 else:
  assert sys.argv[1:]==['env','install',version]
  if os.environ.get('FAKE_NODE_FAIL'):
@@ -48,6 +55,7 @@ if 'device' in args:
  if 'add' in args: assert 'readonly=true' in args and 'shift=true' in args
  sys.exit()
 args=args[args.index('--')+1:]
+if args[0]=='runuser':args=args[args.index('--')+1:]
 if args[0]=='cat':
  p=root/'guest'/args[1].lstrip('/')
  if not p.exists():sys.exit(1)
@@ -101,44 +109,52 @@ class NodeRuntimeTest(unittest.TestCase):
             self.assertEqual(process.pid, pid)
             self.assertIsNone(process.poll())
             self.assertEqual(executable.resolve(), before)
-            runtime.prepare(self.home, self.shared, owner=(os.getuid(), os.getgid()))
+            runtime.prepare(self.home, self.shared)
             before_metadata = [(path.stat().st_ctime_ns, path.stat().st_mode) for path in [self.home / 'js_runtime', self.home / 'js_runtime/node']]
-            self.assertFalse(runtime.prepare(self.home, self.shared, owner=(os.getuid(), os.getgid())))
+            self.assertFalse(runtime.prepare(self.home, self.shared))
             self.assertEqual(before_metadata, [(path.stat().st_ctime_ns, path.stat().st_mode) for path in [self.home / 'js_runtime', self.home / 'js_runtime/node']])
             self.assertEqual(binary.read_bytes(), (self.shared / 'js_runtime/node/24.22.1/bin/node').read_bytes())
         finally:
             process.terminate()
             process.wait(timeout=2)
 
-    def test_recipe_upgrade_and_seed_copy_keep_downloaded_versions_after_shared_pruning(self):
+    def test_recipe_copy_survives_current_flip_and_shared_pruning_and_seed_keeps_download(self):
         runtime.prepare(self.home, self.shared)
         self.fetch()
-        old_home = self.root / 'old'
-        self.shared.rename(old_home)
-        self.shared.symlink_to(old_home)
-        next_home = self.root / 'next'
-        self.seed(next_home, '26.0.0')
-        self.shared.unlink()
-        self.shared.symlink_to(next_home)
-        shutil.rmtree(old_home)
-        # A stopped root and an image built against the old recipe both use this same boot refresh.
-        self.assertTrue(runtime.prepare(self.home, self.shared, convert=False))
-        self.assertEqual(runtime.versions(self.home), ['22.23.5', '26.0.0'])
+        shutil.rmtree(self.shared)
+        self.seed(self.shared, '26.0.0')
         self.assertFalse((self.home / 'js_runtime/node/24.22.1').is_symlink())
-        self.assertTrue((self.home / 'js_runtime/node/26.0.0').is_symlink())
+        self.assertTrue((self.home / 'js_runtime/node/24.22.1/bin/node').is_file())
+        self.assertEqual(runtime.versions(self.home), ['22.23.5', '24.22.1'])
         copy = self.root / 'clone'
         shutil.copytree(self.home, copy, symlinks=True)
         with patch.dict(os.environ, self.environment):
-            self.assertEqual(runtime.fetch(self.container, copy, self.vp, pwd.getpwuid(os.getuid()).pw_name)[0], False)
-        self.assertFalse(runtime.prepare(self.home, self.shared))
-        image = self.root / 'stale-image'
-        self.assertTrue(runtime.prepare(image, self.shared, convert=False))
-        self.assertEqual(runtime.versions(image), ['26.0.0'])
-        self.assertEqual((image / 'js_runtime/node/26.0.0').readlink(), self.shared / 'js_runtime/node/26.0.0')
-        unit = (ROOT / 'swamp/ansible/instance-node-runtime.service').read_text()
-        self.assertIn('Before=basic.target', unit)
-        self.assertIn(' refresh {}', unit)
-        self.assertIn('ExecStartPre=+', (ROOT / 'swamp/ansible/instance-node-runtime.conf').read_text())
+            self.assertFalse(runtime.fetch(self.container, copy, self.vp, pwd.getpwuid(os.getuid()).pw_name)[0])
+        self.assertFalse(any((ROOT / 'swamp/ansible').glob('instance-node-runtime.*')))
+
+    def test_cloned_user_planted_links_never_change_their_external_target(self):
+        external = self.root / 'external'
+        external.mkdir(mode=0o700)
+        marker = external / 'keep'
+        marker.write_text('keep')
+        mode = external.stat().st_mode
+        (self.home / 'js_runtime').symlink_to(external)
+        self.assertTrue(runtime.prepare(self.home, self.shared))
+        self.assertEqual(list(external.iterdir()), [marker])
+        self.assertEqual(external.stat().st_mode, mode)
+        node = self.home / 'js_runtime/node'
+        shutil.rmtree(node)
+        node.symlink_to(external)
+        with self.assertRaisesRegex(RuntimeError, 'real js_runtime/node'):
+            runtime.prepare(self.home, self.shared)
+        self.assertEqual(external.stat().st_mode, mode)
+        node.unlink()
+        node.mkdir()
+        (node / '24.22.1').symlink_to(external)
+        runtime.prepare(self.home, self.shared)
+        self.assertEqual(list(external.iterdir()), [marker])
+        self.assertEqual(external.stat().st_mode, mode)
+        self.assertFalse((node / '24.22.1').is_symlink())
 
     def test_vite_alone_resolves_and_fetches_once_as_the_app_user(self):
         runtime.prepare(self.home, self.shared)
@@ -210,10 +226,28 @@ class NodeRuntimeTest(unittest.TestCase):
                     self.assertEqual(runtime.fetch(container, self.home, self.vp), (False, []))
         self.assertFalse((self.home / 'calls').exists())
 
-    def test_boot_refresh_never_converts_an_existing_legacy_store(self):
+    def test_deploy_fetch_refuses_legacy_store_even_with_a_helper(self):
         (self.home / 'js_runtime').symlink_to(self.shared / 'js_runtime')
-        self.assertFalse(runtime.prepare(self.home, self.shared, convert=False))
+        self.assertFalse(runtime.private_store(self.home))
+        source = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
+        helper = self.root / 'helper.py'
+        helper.write_text(source)
+        result = subprocess.run([sys.executable, str(helper), 'fetch', json.dumps(self.container)], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('legacy stores are not converted', result.stdout)
         self.assertTrue((self.home / 'js_runtime').is_symlink())
+
+    def test_nested_ignored_pin_refuses_even_when_a_parent_pin_is_selected(self):
+        runtime.prepare(self.home, self.shared)
+        child = self.checkout / 'child'
+        child.mkdir()
+        (child / '.nvmrc').write_text('22\n24\n')
+        (self.checkout / '.node-version').write_text('24.22.1')
+        self.container['processes'][0]['content'] = 'WorkingDirectory=' + str(child) + '\nExecStart=vp dev'
+        self.environment['FAKE_NODE_VERSION'] = '24.22.1'
+        with self.assertRaisesRegex(RuntimeError, r'child/.nvmrc pins Node 22.*ambiguous'):
+            self.fetch()
+        self.assertNotIn('"install"', (self.home / 'calls').read_text())
 
     @unittest.skipUnless(shutil.which('ansible-playbook'), 'pinned Ansible required')
     def test_production_phase_removes_read_only_source_mount_after_failure_without_downtime(self):
@@ -224,8 +258,6 @@ class NodeRuntimeTest(unittest.TestCase):
         script = script.replace("app_user=\'orbit\'", "app_user=" + repr(pwd.getpwuid(os.getuid()).pw_name))
         script = script.replace("VP = '/opt/orbit-runtime/current/bin/vp'", 'VP = ' + repr(str(self.vp)))
         (self.root / 'instance_node_runtime.py').write_text(script)
-        shutil.copy(ROOT / 'swamp/ansible/instance-node-runtime.service', self.root)
-        shutil.copy(ROOT / 'swamp/ansible/instance-node-runtime.conf', self.root)
         (self.root / 'tasks').mkdir()
         shutil.copy(ROOT / 'swamp/ansible/tasks/instance-node-runtime.yml', self.root / 'tasks')
         incus = self.root / 'incus'
@@ -237,6 +269,7 @@ class NodeRuntimeTest(unittest.TestCase):
                           'intent': {'migrate': {'checkout': str(self.checkout)}},
                           'phase': 'node-runtime', 'node_fetch': True,
                           'as_root': [str(incus), 'exec', '--project', 'fixture', 'fixture', '--'],
+                          'as_orbit': [str(incus), 'exec', '--project', 'fixture', 'fixture', '--', 'runuser', '-u', 'orbit', '--'],
                           'incus_project': [str(incus), '--project', 'fixture']},
                  'tasks': [{'ansible.builtin.include_tasks': 'tasks/instance-node-runtime.yml'}]}]
         path = self.root / 'play.yml'

@@ -110,6 +110,9 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
                 throw $this->conflict();
             }
             $result = $this->outcome($transfer, ValidatedData::object($data['result'] ?? []));
+            if (is_array($operation->input['checkout_warnings'] ?? null) && $operation->input['checkout_warnings'] !== []) {
+                $result['warnings'] = $operation->input['checkout_warnings'];
+            }
             $status = OperationStatus::from(ValidatedData::string($data['status']));
             // A run that ends without moving the Instance, such as a restored publication, failed the transfer.
             if ($status === OperationStatus::Succeeded && ! $result['cutover']) {

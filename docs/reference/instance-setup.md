@@ -331,4 +331,4 @@ CI artifacts are repository data. The Gateway already owns the GitHub App, so it
 
 On a container Node with the main Mailpit, create and development clone apply [mail setup](/reference/development-containers#development-mail) within their container launch, before preparing the workspace. They reuse the existing launch instead of dispatching a separate `mail` or `clone-mail` step. It admits the SMTP path and enables two loopback listeners, without a Node converge.
 
-Container create seeds its [private Node store](/reference/development-containers#private-node-runtimes) before deployment steps and prepares pinned Node versions before application Processes start. A seed clone retains downloaded versions.
+Clone launch prepares its [private Node store](/reference/development-containers#private-node-runtimes) as the app user and fetches the selected branch pin before application Processes start. A seed with a private store keeps its cached versions. Fresh default creates still use the stock image and report node_pin.status=not_prepared (container_from_stock_image), without a new failure.
