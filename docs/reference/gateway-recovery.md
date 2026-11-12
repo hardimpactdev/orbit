@@ -923,3 +923,5 @@ Converging Nodes in parallel is faster, but a bad release would break many Nodes
 Each pass starts again at the first Node in risk order that the commit has not converged. So a retry visits the failed Node first, and later Nodes stay untouched until it converges. That keeps the halt without a halt record, and the Operations and Swamp's run history are the only record of the rollout.
 
 A closed window or a busy publication lock defers a Node instead of failing it. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing. The rollout is off by default, so a Gateway release does not reach Nodes before an operator prepared them.
+
+Development [`instance:mail:update`](/cli/instance/mail-update) also holds the release idle guard until its Operation settles.

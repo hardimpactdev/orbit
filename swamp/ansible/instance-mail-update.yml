@@ -1,0 +1,64 @@
+---
+- name: Address the Instance Node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: mail_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Apply development mail to the named Instance
+  hosts: mail_node
+  become: true
+  gather_facts: false
+  tags: [mail]
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    container: "{{ intent.container }}"
+    mail_refresh: "{{ intent.mail_refresh }}"
+    as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
+    as_orbit: "{{ ['incus', 'exec', '--project', container.project, container.name, '--user', '1000', '--group', '1000', '--'] }}"
+  tasks:
+    - name: Apply and check mail
+      block:
+        - name: Prepare the shared mail path
+          ansible.builtin.import_tasks: tasks/instance-mail.yml
+        - name: Apply the exact line only with a ready mail path
+          when: mail_result.status in ['applied', 'unchanged']
+          ansible.builtin.include_tasks: tasks/instance-mail-line.yml
+        - name: Write the public result
+          ansible.builtin.copy:
+            content: >-
+              {{ {'mail': mail_result | combine({'ports': [1025, 2525]})}
+                 | combine({'mailer': mailer_result} if mailer_result is defined else {}) | to_json }}
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            mode: '0600'
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: &local
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      rescue:
+        - name: Write the failure result
+          ansible.builtin.copy:
+            content: >-
+              {{ {'error_code': ansible_failed_result.msg if ansible_failed_result.msg | default('') in
+                  ['process.target_inactive', 'instance.host_unavailable', 'env.configuration_invalid'] else 'instance.mail_update_failed'} | to_json }}
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            mode: '0600'
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: *local
+        - name: Fail the mail phase
+          ansible.builtin.fail:
+            msg: instance.mail_update_failed

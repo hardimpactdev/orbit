@@ -15,6 +15,8 @@ final class OperationBudgetTable
      * kind owner's measured 14-day p95 of successful runs, rounded up to the next five minutes, unless a row states another basis.
      */
     public const array SecondsByKind = [
+        // Bounded shared path and one-line phase (90 s), plus input, result and cleanup. No live sample yet.
+        'instance.mail_update' => 120,
         'instance.create' => 'run_budget_seconds',
         // The removal steps, teardown timeouts, withdrawn Routes and owned databases, captured at admission.
         'instance.destroy' => 'run_budget_seconds',

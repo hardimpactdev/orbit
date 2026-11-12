@@ -32,6 +32,7 @@ Deno.test("workflow queue bounds have measured per-kind budgets", async () => {
             "operation-task-vm-sweep": 60,
             "operation-task-vm-dispatch": 60,
             "operation-instance-create": 10,
+            "operation-instance-mail-update": 10,
             "task-command-run": 300,
             "swamp-credential-monitor": 120,
             "operation-gateway-swamp-load": 120,

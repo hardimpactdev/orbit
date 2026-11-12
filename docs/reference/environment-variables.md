@@ -290,3 +290,7 @@ Production deploy commands receive the rendered environment through private SSH 
 An operator may set `APP_ENV` to `local` or `staging` on a production Instance. If `APP_ENV` decided the layout or the Unix user, that edit would turn off release layout or user isolation. So the Node role decides them, and `APP_ENV` stays an application setting.
 
 The Instance environment comes from its Node role.
+
+## Development mail
+
+The development renderer projects a parsed `log` mailer to `smtp` only for an eligible new container. Stored values stay unchanged. Existing files use the separate [exact-line mail rule](/reference/development-containers#development-mail), through [`instance:mail:update`](/cli/instance/mail-update).

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Environment;
 
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
+use App\Domain\Instances\DevelopmentMail;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Models\DatabaseConnection;
 use App\Models\Instance;
@@ -65,7 +66,19 @@ final readonly class DevelopmentCreateEnvironment
     {
         $instance->loadMissing(['node', 'project']);
 
-        return $this->renderer->render($this->context($instance), $this->store->values($instance), $this->capturedReferences($instance));
+        $values = $this->store->values($instance);
+        if ($this->mailKeys($instance) !== []) {
+            $values['MAIL_MAILER'] = 'smtp';
+        }
+
+        return $this->renderer->render($this->context($instance), $values, $this->capturedReferences($instance));
+    }
+
+    /** @return list<string> Owned only in the newly rendered file; stored values and the Project template stay unchanged. */
+    public function mailKeys(Instance $instance): array
+    {
+        return ($this->store->values($instance)['MAIL_MAILER'] ?? null) === 'log'
+            && app(DevelopmentMail::class)->forInstance($instance) !== null ? ['MAIL_MAILER'] : [];
     }
 
     /** @return array<string, string> Provenance is used only while creating the initial development files. */

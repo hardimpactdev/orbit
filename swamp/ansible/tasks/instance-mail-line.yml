@@ -1,0 +1,40 @@
+---
+# Node Python is already required by Ansible. No guest PHP or Python is used for the byte rule.
+- name: Apply the exact stock mailer line
+  ansible.builtin.command:
+    argv: [python3, -c, "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_mail_line.py') }}", "{{ container.project }}", "{{ container.name }}"]
+    expand_argument_vars: false
+  register: mail_line_exec
+  no_log: true
+  failed_when: false
+  changed_when: mail_line_exec.rc == 0 and (mail_line_exec.stdout | from_json).status == 'changed'
+
+- name: Require a safe mailer result
+  ansible.builtin.assert:
+    that: mail_line_exec.rc == 0
+    fail_msg: env.configuration_invalid
+    quiet: true
+
+- name: Keep only the public mailer result
+  ansible.builtin.set_fact:
+    mailer_result: "{{ mail_line_exec.stdout | from_json }}"
+
+- name: Refresh only after the exact line changed
+  when: mailer_result.status == 'changed'
+  block:
+    - name: Clear existing Laravel configuration when PHP and artisan exist
+      when: mail_refresh.php is not none
+      ansible.builtin.command:
+        argv: >-
+          {{ as_orbit + ['sh', '-c', 'if [ -x "$1" ] && [ -f "$2/artisan" ]; then cd -- "$2" && "$1" artisan config:clear >/dev/null 2>&1; fi',
+              'sh', mail_refresh.php, mail_refresh.application] }}
+        expand_argument_vars: false
+      no_log: true
+      changed_when: false
+      failed_when: false
+
+    - name: Restart only active PHP and PHP worker units
+      ansible.builtin.command:
+        argv: "{{ as_root + ['systemctl', 'try-restart', item] }}"
+      loop: "{{ mail_refresh.units }}"
+      changed_when: true
