@@ -90,6 +90,9 @@ final readonly class ProblemFiler
                     if ($reason !== null) {
                         $this->recovery->resolve($locked, $reason);
                     }
+                    if ($this->suppression->blocksFiling($locked)) {
+                        return;
+                    }
                     $group = $locked->task_group_id === null ? null : Task::topLevel()->lockForUpdate()->find($locked->task_group_id);
                     if (! $group instanceof Task || ! $this->snapshots->unchanged($group, $locked->evidence['generated_group_hash'] ?? null)) {
                         return;
@@ -210,7 +213,8 @@ final readonly class ProblemFiler
                 return;
             }
 
-            if ($this->suppression->isUnrecoverable($row)) {
+            // A Doctor row is never filed, so an ended group it is still linked to mutes and clears nothing.
+            if ($row->source === ProblemSource::Doctor || $this->suppression->isUnrecoverable($row)) {
                 return;
             }
 

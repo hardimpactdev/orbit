@@ -71,15 +71,13 @@ These commands stay in the scheduler and never go to the queue, also while it is
 | `project-documents:probes:reconcile` | minute | 10 minutes |
 | `project-documents:cleanup:work` | 5 minutes | 60 minutes |
 
-Observation is explicitly admitted through the configured control-plane peer. Fleet collection and the Horizon health admission use the native Doctor workflow. All reads run on Node 209 through official `@swamp/ssh` and the stored target host key. Each read has a 10-second connect timeout and a 60-second limit. A stopped or stalled Node fails only its own reads, which become unverifiable Doctor issues, and the pass still completes. The existing shared terminal subscriber records one typed result.
+The Gateway collects Doctor findings for every Node every five minutes, from the facts the agents already reported. A failing Node check must show without anyone asking. This local scheduled action uses an overlap lock, makes no network call, and runs even while Tasks or the queue is disabled. Findings, recovery, and the last successful full collection time commit together in the existing Problems store. A failed collection rolls back and is reported once until a collection succeeds.
 
-The observation family is read-only. It does not reset Redis counters, publish Horizon snapshots or prune records; the Gateway self-maintenance commands above do that. The Node agent observer reports host and Horizon state, so no separate maintenance or retention observation exists.
+Each scheduled run logs `Doctor collection ran.` at info level with `duration_ms`, `write_ms`, `nodes`, and `issues`. Monotonic timing measures the whole run and its write transaction. The same state write stores the durations measured before that write; no second write records timing.
 
-Fleet collection and Horizon health have no schedule. `observation:plan` and `observation:health` run Doctor from the agents' facts at once, then record its findings, the Gateway's logs and the activity and assistance signals as Problems.
+Logs, Activity, assistance signals, and the Horizon-only collection have no schedule. `observation:plan` and `observation:health` still collect Doctor findings, the Gateway's logs, and Activity and assistance signals on request, only while Tasks is enabled. The first signal collection begins at the current Activity cursor; assistance retains its 200-task sample and removes closed references.
 
-No Gateway observation scheduler or family poller is added. `problems:file` retains its separate hourly schedule and lock.
-
-Doctor collects Activity and assistance signals from admitted redacted metadata, then returns fingerprints and cursors for normal state projection. The first collection begins at the current Activity cursor. Assistance retains its 200-task sample and removes closed references. Native liveness comparisons belong to Doctor and the owning operational families.
+[`gateway:status`](/cli/gateway/status) shows the last successful full Doctor collection and the open findings to an active WireGuard peer. `problems:file` retains its separate hourly schedule and lock; [filing eligibility](/reference/tasks#when-a-fingerprint-is-ready) applies to every collection path.
 
 ### Without a queue
 
@@ -238,7 +236,7 @@ Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
 
 Doctor does not report an old `last_tick_at` yet. Until it does, check [`orbit task:status`](/cli/task/status) when task groups stop moving.
 
-A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. The native Horizon health cadence records that issue; `problems:file` requires two qualifying observations before filing it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
+A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. The scheduled Doctor collection records that issue for [`gateway:status`](/cli/gateway/status). A Horizon stopped with `orbit process:stop` is not drift and is not reported.
 
 The collector rebuilds its quota snapshot in Valkey; quota reads never poll the upstream provider.
 
@@ -246,15 +244,7 @@ The collector rebuilds its quota snapshot in Valkey; quota reads never poll the 
 
 The scheduler used to run its work, and the task VM workers, as foreground commands. A foreground command holds the scheduler's run for that minute, so a slow tick or a VM job could hold a publish for minutes. With dispatch, the scheduler's run takes milliseconds, and each queue's workers decide when a job starts.
 
-Fleet and Horizon health collection use native Doctor on Node 209. The Gateway publishes a public context at observer startup and after each terminal tick, so collector cursors, Activity and assistance signals refresh once per tick. A committed fleet, placement or Process change publishes a context only when the channel's expectations hash changes. A commit that changes only Activity, assistance or a collector cursor publishes nothing. Fleet updates use a coalesced metadata job on the existing `problems` queue when configured.
-
-Horizon context uses a bounded public metadata notification directly, so its monitoring does not depend on Horizon workers. Fleet uses that same notification when the queue is absent. It waits for no worker or start confirmation and submits no host work. Notification failures are logged and never fail committed API writes; a failed native tick requests fresh context.
-
-Each channel keeps one context record, and its newest version is the one a tick reads. The capture step skips a revision older than the stored one, so delayed publication cannot replace a newer revision. Unchanged captures are reused for up to 30 minutes. Native context is unavailable after one hour without a refresh.
-
-Native ticks reject missing or expired context; the Gateway rejects changed expectations before recording recovery. Registry commits that keep the expectations hash do not replace the context; Activity, assistance and cursor commits leave in-flight host reads valid. Results carry their original log cursor for the existing cursor comparison. Fleet and Horizon have separate replay markers.
-
-The automatic cadence reads native service and runtime facts; stored agent-view freshness stays in explicit Doctor reads. Each marker, its fingerprints and collector cursors commit together. Cursor changes republish the next public context. An unavailable context never becomes a healthy observation.
+Scheduled fleet health collection compares stored agent facts and liveness with Gateway intent. Missing facts remain unverifiable findings, and a silent agent remains an issue. The collection time and the existing fingerprints commit together, so an unsuccessful collection cannot look healthy or fresh. The comparison is local and bounded by the fleet's stored records, so it runs in the scheduler without depending on a queue worker.
 
 Horizon needs Redis. The fleet already runs Valkey on the `database` role, so the Gateway uses that registered connection instead of a second server on its own host. Orbit's records keep its address, as for every other Database connection.
 

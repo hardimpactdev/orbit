@@ -79,6 +79,27 @@ final class GatewayStatusCommand extends GatewayCommand
             'Request ID' => $status->requestId,
         ]));
 
+        if ($status->doctor !== null) {
+            $doctor = $status->doctor;
+            $health = $doctor['issues'] === [] ? ($doctor['collected_at'] === null ? 'not collected yet' : 'healthy') : 'issues';
+            $lines = ['Doctor: '.$health.($doctor['collected_at'] === null ? '' : ', collected '.$doctor['collected_at'])];
+            if ($doctor['last_run_ms'] !== null) {
+                $lines[0] .= ', last run '.$doctor['last_run_ms'].' ms';
+            }
+            foreach ($doctor['issues'] as $issue) {
+                $since = $issue['since'] === null ? 'unknown' : substr($issue['since'], 0, 10);
+                $newest = $issue['newest_since'] === $issue['since'] ? '' : ', newest since '.substr($issue['newest_since'] ?? '', 0, 10);
+                $resource = $issue['resource'];
+                $suffix = $resource === null ? '' : ' ('.$resource['type'].' '.($resource['id'] ?? 'unknown').')';
+                $lines[] = "  {$issue['node_name']} {$issue['code']} ×{$issue['count']} since {$since}{$newest}{$suffix}";
+            }
+            if ($doctor['hidden_nodes'] > 0) {
+                $noun = $doctor['hidden_nodes'] === 1 ? 'Node has' : 'Nodes have';
+                $lines[] = "{$doctor['hidden_nodes']} more {$noun} issues you cannot see";
+            }
+            ConsoleWriter::write($this->output, implode("\n", $lines)."\n");
+        }
+
         return self::SUCCESS;
     }
 

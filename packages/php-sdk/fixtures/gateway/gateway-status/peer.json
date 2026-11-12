@@ -8,8 +8,8 @@
             "name": "orbit-gateway",
             "status": "ok",
             "version": "1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d",
-            "php_version": "8.5.0",
-            "laravel_version": "13.0.0",
+            "php_version": "8.5.12",
+            "laravel_version": "13.42.0",
             "desired_fleet_state": {
                 "commit": "1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d",
                 "cli": {
@@ -54,6 +54,12 @@
                 "paused": false,
                 "last_checked_at": null,
                 "last_result": null
+            },
+            "doctor": {
+                "collected_at": null,
+                "last_run_ms": null,
+                "hidden_nodes": 0,
+                "issues": []
             }
         },
         "meta": {

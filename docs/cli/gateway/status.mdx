@@ -12,4 +12,14 @@ Human output is a detail tree with the profile URL, the Gateway name, status, Or
 
 When this machine is an active WireGuard peer, the Gateway also returns its [desired fleet state](/reference/self-update#desired-fleet-state), as last resolved. It is absent until the Gateway resolves it. Human output then adds `CLI release`, the version of the Gateway's CLI release or why it is unavailable, and `Agent version`, the pinned agent. JSON carries the whole state as `desired_fleet_state`, which is null for any other caller. [`self-update`](/cli/self-update) installs that state.
 
+For an active WireGuard peer, `doctor` holds `collected_at`, the last successful full fleet collection time, `last_run_ms`, its stored duration, and `issues`, the open Doctor fingerprints grouped by Node and issue code. `collected_at` is null before the first collection; `last_run_ms` is null until cost has been recorded. An anonymous caller gets `doctor: null`.
+
+The list follows [Node access](/cli/node#authority): it includes the caller's own Node and Nodes it has a direct grant to. Gateway and control-plane authority see every Node. Own-Node visibility is specific to this status read; it does not grant access to other commands. `hidden_nodes` counts other Nodes with issues, without exposing their names, codes, or issue counts.
+
+Each group has `node_id`, `node_name`, `code`, `count`, `since` (oldest first seen), and `newest_since` (newest first seen). A single-row group also has `resource`, with its `type` and `id`; larger groups have a null resource. Groups sort by newest `newest_since` first. A new resource with an old issue code increases the count and advances `newest_since`.
+
+Human output shows the collection time, the last run duration when known, and one line per group, including the count, first-seen date, and single resource. An empty visible list says Doctor is healthy when a collection has succeeded, or has not run when its time is null. When `hidden_nodes` is positive, one extra line says how many more Nodes have issues the caller cannot see. Collection runs [every five minutes](/reference/gateway-queue#scheduled-work); the status request reads stored findings and starts no check.
+
+A last run longer than 1,000 ms adds `gateway.doctor_collection_slow` for the Gateway Node, with count 1, the collection time as `since` and `newest_since`, and a null resource. It follows the same Node access and disappears after a run at or below that limit. This group comes from collection state; it creates no fingerprint or task.
+
 The command fails with `gateway.profile_missing` when no profile is active and with `gateway.unreachable` when the Gateway does not answer. A Gateway response without an error code uses `gateway.request_failed`; transport failures use `gateway.unreachable`.

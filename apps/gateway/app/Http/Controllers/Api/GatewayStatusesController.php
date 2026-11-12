@@ -15,7 +15,7 @@ final class GatewayStatusesController extends Controller
     public function show(Request $request, ShowGatewayStatusAction $action): JsonResponse
     {
         return response()->json([
-            'data' => $action->handle(authenticated: RequireActiveWireGuardPeer::activePeer($request) !== null)->toArray(),
+            'data' => $action->handle(consumer: RequireActiveWireGuardPeer::activePeer($request))->toArray(),
             'meta' => [
                 'request_id' => $request->attributes->getString('orbit.request_id'),
             ],

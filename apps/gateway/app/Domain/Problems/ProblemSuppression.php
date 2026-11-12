@@ -39,7 +39,7 @@ final readonly class ProblemSuppression
 
     public function blocksFiling(ProblemFingerprint $row): bool
     {
-        return $this->isSuppressed($row) || $this->isUnrecoverable($row);
+        return $row->source === ProblemSource::Doctor || $this->isSuppressed($row) || $this->isUnrecoverable($row);
     }
 
     /**
