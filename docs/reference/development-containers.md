@@ -1181,7 +1181,7 @@ Remote withdrawal uses the runtime's captured endpoint and applied bridge and NI
 
 The same-Node socket proxy runs with a dynamic unprivileged user; its unit files stay root-owned. Orbit refuses foreign effective vendor/runtime fragments and drop-ins before changing the network. Readiness opens the container's loopback port and checks that the active proxy owns both that accepted connection and a new established connection to the exact upstream. This sends no application bytes.
 
-Orbit waits up to three seconds per target for unit readiness and both connections, polling every 50 ms. The probe’s systemd reads and loopback connect share that deadline. Refusals retain the [reason and unit states](/reference/processes-and-schedules#node-service-target-records) in the Operation. A missing forwarding connection refuses rather than accepting a listener backlog. Target failures are fatal, unlike advisory development mail.
+Orbit waits up to three seconds per target for unit readiness and both connections, polling every 50 ms. The probe’s systemd reads and loopback connect share that deadline. A nonblocking peek at the probe’s client detects EOF or a reset between kernel samples. Refusals retain the [reason and unit states](/reference/processes-and-schedules#node-service-target-records) in the Operation. A missing forwarding connection refuses rather than accepting a listener backlog. Target failures are fatal, unlike advisory development mail.
 
 Pending activation remains after failure, so a later attempt reloads and probes again. Clone attachment records remain independent; inherited target units and enable links are removed before boot. Existing environment files stay unchanged.
 
