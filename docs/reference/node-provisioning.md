@@ -14,7 +14,9 @@ covers:
 
 # Node provisioning
 
-An [Instance container](/reference/development-containers#processes) runs FrankenPHP and development workers as `orbit-*` units inside the container. Its web configuration follows the [container proxy trust rules](/reference/development-containers#php). Container units order after `network.target` and use nonblocking starts with bounded readiness checks. Migration adds a [Process stability check before cutover](/cli/instance/migrate); other lifecycle and direct Process operations keep their own readiness checks. A shared runtime folder update restarts those units in each running container. The [clone copy](/reference/development-containers#lifecycle) supplies its complete root disk device, including when the seed inherited it from the Node's profile.
+An [Instance container](/reference/development-containers#processes) runs FrankenPHP and development workers as `orbit-*` units inside the container. Its web configuration follows the [container proxy trust rules](/reference/development-containers#php). Container units order after `network.target` and use nonblocking starts with bounded readiness checks. Migration adds a [Process stability check before cutover](/cli/instance/migrate); other lifecycle and direct Process operations keep their own readiness checks. A shared runtime folder update restarts those units in each running container.
+
+Private Node-store conversion belongs to launch or explicit default-deploy seed capture, as the app user; Node convergence does not convert stores. The [clone copy](/reference/development-containers#lifecycle) supplies its complete root disk device, including when the seed inherited it from the Node's profile.
 
 Migrate and clone launch copy the recipe Node into a private writable store and fetch pins as the app user. This release changes no image, boot unit, startup hook or converge task. Fresh default creates retain the stock shared store and report that pins are not prepared. Existing stores are unchanged by converge.
 

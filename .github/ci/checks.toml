@@ -184,6 +184,7 @@ inputs = [
 ]
 
 [fixture.case_costs]
+  "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary" = 51 # completed local four-worker fixture, 2026-11-12
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 114 # completed body 84.962s, run 43010311414; larger completed history retained
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses" = 141 # completed body 86.635s, run 43010311414; larger completed history retained
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP" = 51 # completed body 36.925s, run 43010311414; larger completed history retained
@@ -2794,6 +2795,9 @@ inputs = [
 file = "swamp/tests/instance_node_runtime_test.py"
 cost = 17
 [fixture.case_costs]
+  "test_clone_without_processes_leaves_a_legacy_store_and_unused_pin_untouched" = 1 # completed local fixture, 2026-11-12
+  "test_opaque_process_commands_still_prepare_a_writable_clone_store" = 1 # completed local fixture, 2026-11-12
+  "test_seed_refresh_pending_survives_conversion_until_snapshot_completion" = 1 # completed local fixture, 2026-11-12
 "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat" = 1
 "test_recipe_copy_survives_current_flip_and_shared_pruning_and_seed_keeps_download" = 1
 "test_cloned_user_planted_links_never_change_their_external_target" = 1

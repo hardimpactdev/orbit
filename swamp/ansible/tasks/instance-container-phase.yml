@@ -937,6 +937,17 @@
         ansible_connection: local
         ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
+# An explicit default deploy prepares its seed, not every running container.
+# The app-user conversion is atomic and never restarts a Process itself.
+- name: Prepare Node for the default seed without starting or stopping Processes
+  tags: [seed]
+  when: phase == 'seed' and intent.migrate is not defined
+  ansible.builtin.include_tasks:
+    file: tasks/instance-node-runtime.yml
+    apply: {tags: [seed]}
+  vars:
+    node_fetch: false
+
 # A clone copies the seed snapshot, so it is taken with the Processes stopped: no file is half written in it.
 - name: Take the seed snapshot
   tags: [seed]
@@ -957,20 +968,27 @@
         seed_name: "seed-{{ seed_head.stdout | trim }}"
         seed_names: "{{ seed_snapshots.stdout | from_json | map(attribute='name') | select('match', '^seed-') | list }}"
     - name: Snapshot the container with the Processes stopped
-      when: seed_name not in seed_names
+      when: seed_name not in seed_names or (node_runtime_result | default({})).get('seed_refresh_required', false)
       block:
         - name: Stop the Processes
           when: units | length > 0
           ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'stop', '--'] + units }}" }
           changed_when: true
         - name: Snapshot the container
-          ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'create', container.name, seed_name] }}" }
+          ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'create', container.name, seed_name] + (['--reuse'] if seed_name in seed_names else []) }}" }
           changed_when: true
       always:
         - name: Start the Processes again
           when: units | length > 0
           ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'start', '--'] + units }}" }
           changed_when: false
+    - name: Clear the captured Node-store refresh marker as the app user
+      when: intent.migrate is not defined and (node_runtime_result | default({})).get('seed_refresh_required', false)
+      ansible.builtin.command:
+        argv: >-
+          {{ as_orbit + ['python3', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_node_runtime.py'),
+              'seed-complete', container | to_json] }}
+      changed_when: true
     # A clone made from an older seed does not need it: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them. A
     # clone admitted for an older seed and not copied yet refuses with instance.default_seed_moved, and its next create takes the new one.
     - name: Delete the older seeds

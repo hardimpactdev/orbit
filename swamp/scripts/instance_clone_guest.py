@@ -159,7 +159,7 @@ def phase_main(phase, raw):
         if web_config is not None:
             write(web_config["path"], web_config["content"])
         web_config_changed = len(changes) > before_web_config
-        node = run(["python3", "/usr/local/libexec/orbit-instance-node-runtime.py", "fetch", json.dumps(c)], orbit=True, timeout=100, private_input=json.dumps(inputs.get("processes", {})))
+        node = run(["python3", "/usr/local/libexec/orbit-instance-node-runtime.py", "clone-fetch", json.dumps(c)], orbit=True, timeout=100, private_input=json.dumps(inputs.get("processes", {})))
         if json.loads(node.stdout)["status"] == "converted":
             changes.append("node-runtime")
         desired = c["units"] + c["processes"]

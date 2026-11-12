@@ -126,6 +126,7 @@ class CloneGuestTest(unittest.TestCase):
                         "network-check-source",
                         "orbit",
                         folder,
+                        json.dumps({"node": "node-helper-source"}),
                         "workspace",
                     ],
                 ),
@@ -140,6 +141,12 @@ class CloneGuestTest(unittest.TestCase):
                 json.loads(content) for argv, content in calls if "exec" in argv
             ]
             self.assertEqual(delivered, [payload])
+            installed = [(argv, content) for argv, content in calls if "file" in argv and "push" in argv and argv[-1].endswith("/usr/local/libexec/orbit-instance-node-runtime.py")]
+            self.assertEqual(len(installed), 1)
+            self.assertEqual(installed[0][1], "node-helper-source")
+            self.assertIn("/usr/local/libexec/orbit-instance-node-runtime.py", installed[0][0][-1])
+            self.assertLess(calls.index(installed[0]), next(i for i, (argv, _) in enumerate(calls) if "exec" in argv))
+
             self.assertNotIn("private", output.getvalue())
 
     def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=False):

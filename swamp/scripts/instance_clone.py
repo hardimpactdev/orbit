@@ -100,6 +100,12 @@ def main():
         return owner
 
     def inside(member, private=""):
+        if member == "workspace":
+            # Install the shipped helper outside the app-owned store. Its only store
+            # entry runs as orbit inside the existing workspace launch below.
+            change(project + ["file", "push", "--create-dirs", "--uid", "0", "--gid", "0",
+                              "--mode", "0755", "-", name + "/usr/local/libexec/orbit-instance-node-runtime.py"],
+                   json.loads(sys.argv[6])["node"])
         payload = ["python3", "-c", guest, member, json.dumps(container)]
         result = run(project + ["exec", name, "--"] + payload, private, check=False)
         if result.returncode:

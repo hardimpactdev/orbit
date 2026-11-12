@@ -246,6 +246,47 @@ class NodeRuntimeTest(unittest.TestCase):
                     self.assertEqual(runtime.fetch(container, self.home, self.vp), (False, []))
         self.assertFalse((self.home / 'calls').exists())
 
+    def test_clone_without_processes_leaves_a_legacy_store_and_unused_pin_untouched(self):
+        (self.home / 'js_runtime').symlink_to(self.shared / 'js_runtime')
+        (self.checkout / '.nvmrc').write_text('22')
+        source = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
+        helper = self.root / 'helper.py'
+        helper.write_text(source)
+        for action in ('clone-fetch', 'seed-prepare'):
+            result = subprocess.run([sys.executable, str(helper), action,
+                                     json.dumps({**self.container, 'processes': []})], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertEqual(json.loads(result.stdout)['reason'], 'no_processes')
+            self.assertTrue((self.home / 'js_runtime').is_symlink())
+            self.assertFalse((self.home / 'cache').exists())
+        self.assertFalse((self.home / 'calls').exists())
+
+    def test_opaque_process_commands_still_prepare_a_writable_clone_store(self):
+        (self.home / 'js_runtime').symlink_to(self.shared / 'js_runtime')
+        source = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
+        source = source.replace("Path('/opt/orbit-runtime/current/vite-plus-home')", 'Path(' + repr(str(self.shared)) + ')')
+        helper = self.root / 'helper.py'
+        helper.write_text(source)
+        container = {**self.container, 'processes': [{'content': 'ExecStart=/bin/sh -c "exec vp dev"'}]}
+        result = subprocess.run([sys.executable, str(helper), 'clone-fetch', json.dumps(container)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertTrue(runtime.private_store(self.home))
+        self.assertFalse((self.home / 'calls').exists())
+
+    def test_seed_refresh_pending_survives_conversion_until_snapshot_completion(self):
+        (self.home / 'js_runtime').symlink_to(self.shared / 'js_runtime')
+        self.assertTrue(runtime.prepare(self.home, self.shared, seed=True))
+        marker = self.home / '.seed-refresh-required'
+        self.assertTrue(marker.exists())
+        self.assertFalse(runtime.prepare(self.home, self.shared, seed=True))
+        self.assertTrue(marker.exists(), 'an interrupted capture must still retake its old seed')
+        source = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
+        helper = self.root / 'helper.py'
+        helper.write_text(source)
+        result = subprocess.run([sys.executable, str(helper), 'seed-complete', json.dumps(self.container)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertFalse(marker.exists())
+
     def test_deploy_fetch_refuses_legacy_store_even_with_a_helper(self):
         (self.home / 'js_runtime').symlink_to(self.shared / 'js_runtime')
         self.assertFalse(runtime.private_store(self.home))

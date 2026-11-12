@@ -160,6 +160,7 @@ export const behavior = {
                     JSON.stringify({
                         mail: await Deno.readTextFile(ctx.extensionFile("ansible/instance_mail.py")),
                         bridge: await Deno.readTextFile(ctx.extensionFile("ansible/instance_bridge.py")),
+                        node: await Deno.readTextFile(ctx.extensionFile("ansible/instance_node_runtime.py")),
                     }),
                 ] : [];
                 const value = Output.parse({
