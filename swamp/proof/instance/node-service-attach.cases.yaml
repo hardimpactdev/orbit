@@ -1,0 +1,21 @@
+command: instance:node-service:attach
+chart: instance/node-service-attach
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+uncovered:
+  main: "Release fixture: attach a remote Docker Process ID; migrate the checkout; curl and the application HTTP client use its unchanged raw URL with managed NO_PROXY."
+  isolation: "An adjacent port and an unattached container stay denied; detach removes NIC, unused bridge endpoint, forward rule and NO_PROXY host."
+  refusals: "Remote wrong port, non-Docker Process, public or wildcard bind and missing service-Node authority refuse without Process changes."
+cases:
+  - id: invalid-id
+    batch: fresh-fleet
+    covers: []
+    summary: Reject an invalid Instance locally.
+    act:
+      - cli:
+          run: [instance:node-service:attach, invalid]
+          forms: [json, human]
+          expect: {exit: 1, code: instance.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
