@@ -2731,3 +2731,25 @@ inputs = [
 "the files Orbit renders do not count as unpushed work, at any depth" = 1
 "any other change is still work that is not pushed" = 1
 "every destroy Ansible step enables failed task stderr" = 1
+
+[[fixture]]
+file = "swamp/tests/caddy_candidate_test.py"
+cost = 21
+slices = false
+inputs = [
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/tasks/caddy-publish.yml",
+  "swamp/ansible/tasks/gateway-swamp.yml",
+  "swamp/ansible/route-create-site.yml",
+  "swamp/ansible/route-withdraw.yml",
+  "swamp/workflows/workflow-operation-route-caddy.yaml",
+  "swamp/workflows/workflow-operation-route-caddy-delta.yaml",
+  "swamp/workflows/workflow-route-create-ingress.yaml",
+]
+[fixture.case_costs]
+"test_native_whole_node_caddy_publication" = 1
+"test_native_delta_used_by_all_three_migrate_caddy_passes" = 1
+"test_native_ingress_publication" = 1
+"test_ansible_route_site" = 6
+"test_ansible_route_withdrawal" = 6
+"test_ansible_bootstrap_swamp_front" = 6

@@ -25,12 +25,13 @@ jobs:
       behaviorType: '@swamp/cfgmgmt/file'
       behaviorName: '${{ ("route-ingress-caddyfile-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: apply
-      globalArgs: {path: /etc/caddy/Caddyfile, content: '${{ self.site.content }}', owner: root, group: caddy, mode: '0640', ensure: present,
+      globalArgs: {path: '${{ "/etc/caddy/.orbit-candidate-" + run.id + "-" + string(self._index) }}', content: '${{ self.site.content }}', owner: root, group: caddy, mode: '0640', ensure: present,
         nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
         nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
       inputs: {}
     # caddy validate before the reload.
   - name: 'caddy-validate'
+    writes: true
     labels: {role: swamp}
     dependsOn:
     - {step: 'caddyfile', condition: {type: always}}
@@ -55,7 +56,19 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '60', runuser, -u, caddy, --, caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+        argv:
+        - timeout
+        - '70'
+        - /bin/sh
+        - -eu
+        - -c
+        - |-
+          trap 'rm -f -- "$1"' EXIT
+          timeout 60 runuser -u caddy -- /usr/bin/caddy validate --config "$1" --adapter caddyfile
+          mv -Tf -- "$1" "$2"
+        - orbit-caddy
+        - '${{ "/etc/caddy/.orbit-candidate-" + run.id + "-" + string(self._index) }}'
+        - /etc/caddy/Caddyfile
         timeoutSec: 70
     # A reload keeps open connections.
   - name: 'caddy-reload'

@@ -153,20 +153,13 @@
     - name: Publish the Caddy site
       when: intent.caddy | default([]) | selectattr('node_id', 'in', node_ids) | list | length > 0
       block:
-        - name: Write the Caddyfile
-          ansible.builtin.copy:
-            content: "{{ item.content }}"
-            dest: /etc/caddy/Caddyfile
-            owner: root
-            group: caddy
-            mode: "0640"
+        - name: Validate and publish each Caddyfile
+          ansible.builtin.include_tasks: tasks/caddy-publish.yml
+          vars:
+            caddy_content: "{{ item.content }}"
           loop: "{{ intent.caddy | selectattr('node_id', 'in', node_ids) | list }}"
           loop_control:
             label: /etc/caddy/Caddyfile
-        - name: Validate the Caddyfile
-          ansible.builtin.command:
-            argv: [timeout, "60", runuser, -u, caddy, --, caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
-          changed_when: false
         - name: Reload Caddy
           ansible.builtin.command:
             argv: [timeout, "60", systemctl, reload, caddy]

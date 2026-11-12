@@ -94,6 +94,7 @@ additionalFiles:
   - ansible/tasks/address-node.yml
   - ansible/tasks/incus-project-clean.yml
   - ansible/tasks/route-access.yml
+  - ansible/tasks/caddy-publish.yml
   - ansible/tasks/instance-create-setup-step.yml
   - ansible/operation-node-add.yml
   - ansible/gateway-bootstrap.yml

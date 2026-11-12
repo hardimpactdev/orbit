@@ -1,0 +1,37 @@
+---
+# Validate beside the live file so relative imports use exactly the live directory.
+- name: Allocate the Caddy candidate beside the live file
+  ansible.builtin.tempfile:
+    state: file
+    path: /etc/caddy
+    prefix: .orbit-candidate-
+  register: caddy_candidate
+- name: Validate and publish the Caddy candidate
+  block:
+    - name: Write the restricted Caddy candidate
+      ansible.builtin.copy:
+        dest: "{{ caddy_candidate.path }}"
+        content: "{{ caddy_content }}"
+        owner: root
+        group: "{{ caddy_group | default('caddy') }}"
+        mode: "{{ caddy_mode | default('0640') }}"
+    - name: Validate the Caddy candidate
+      ansible.builtin.command:
+        argv: [timeout, "60", runuser, -u, caddy, --, caddy, validate, --config, "{{ caddy_candidate.path }}", --adapter, caddyfile]
+      changed_when: false
+    # remote_src copy uses Ansible's atomic move; its source is the validated regular file.
+    - name: Atomically publish the validated Caddyfile
+      ansible.builtin.copy:
+        src: "{{ caddy_candidate.path }}"
+        remote_src: true
+        dest: /etc/caddy/Caddyfile
+        owner: root
+        group: "{{ caddy_group | default('caddy') }}"
+        mode: "{{ caddy_mode | default('0640') }}"
+        follow: false
+      notify: "{{ caddy_notify | default([]) }}"
+  always:
+    - name: Remove this Caddy candidate
+      ansible.builtin.file:
+        path: "{{ caddy_candidate.path }}"
+        state: absent

@@ -126,7 +126,7 @@ jobs:
         nodePort: '${{ inputs.intent.caddy_publication.connection.nodePort }}'
         nodeIdentityFile: '${{ inputs.intent.caddy_publication.connection.nodeIdentityFile }}'
         become: true
-        path: /etc/caddy/Caddyfile
+        path: '${{ "/etc/caddy/.orbit-candidate-" + run.id }}'
         ensure: present
         content: '${{ steps["Read the input"].outputs.caddy.content }}'
         owner: root
@@ -134,6 +134,7 @@ jobs:
         mode: '0640'
       inputs: {}
   - name: Validate the Caddyfile
+    writes: true
     labels: {role: swamp}
     dependsOn: [{step: Write the Caddyfile, condition: {type: succeeded}}]
     task:
@@ -144,7 +145,20 @@ jobs:
       globalArgs: *ssh
       inputs:
         hosts: 'name:target'
-        argv: [timeout, '60', sudo, -u, caddy, /usr/bin/caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+        sudo: true
+        argv:
+        - timeout
+        - '70'
+        - /bin/sh
+        - -eu
+        - -c
+        - |-
+          trap 'rm -f -- "$1"' EXIT
+          timeout 60 runuser -u caddy -- /usr/bin/caddy validate --config "$1" --adapter caddyfile
+          mv -Tf -- "$1" "$2"
+        - orbit-caddy
+        - '${{ "/etc/caddy/.orbit-candidate-" + run.id }}'
+        - /etc/caddy/Caddyfile
   - name: Reload Caddy
     labels: {role: swamp}
     writes: true
@@ -167,7 +181,7 @@ jobs:
       behaviorType: '@swamp/cfgmgmt/file'
       behaviorName: '${{ ("caddy-file-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
       methodName: check
-      globalArgs: *file
+      globalArgs: {<<: *file, path: /etc/caddy/Caddyfile}
       inputs: {}
   - name: Check the publication
     labels: {role: swamp}

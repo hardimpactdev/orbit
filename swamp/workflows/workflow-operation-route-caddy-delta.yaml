@@ -161,7 +161,7 @@ jobs:
           /usr/bin/install -m 0640 -o root -g caddy /dev/null "$1"
           /usr/bin/cat > "$1"
         - route-file
-        - /etc/caddy/Caddyfile
+        - '${{ "/etc/caddy/.orbit-candidate-" + run.id }}'
         stdin: ${{ steps.compose.outputs.caddy.content }}
         sudo: true
     dependsOn:
@@ -169,6 +169,7 @@ jobs:
       condition:
         type: succeeded
   - name: validate
+    writes: true
     labels: {role: swamp}
     task:
       type: behavior
@@ -178,11 +179,20 @@ jobs:
       globalArgs: *id001
       inputs:
         hosts: name:target
+        sudo: true
         argv:
-        - env
+        - timeout
+        - '70'
         - /bin/sh
+        - -eu
         - -c
-        - sudo -u caddy /usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+        - |-
+          trap 'rm -f -- "$1"' EXIT
+          timeout 60 runuser -u caddy -- /usr/bin/caddy validate --config "$1" --adapter caddyfile
+          mv -Tf -- "$1" "$2"
+        - orbit-caddy
+        - '${{ "/etc/caddy/.orbit-candidate-" + run.id }}'
+        - /etc/caddy/Caddyfile
     dependsOn:
     - step: apply-config
       condition:

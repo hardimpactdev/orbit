@@ -1986,5 +1986,16 @@
       "any other change is still work that is not pushed",
       "every destroy Ansible step enables failed task stderr"
     ]
+  },
+  "swamp/tests/caddy_candidate_test.py": {
+    "source_sha256": "ffaa2db28df8007e3e5ad6951719272320ad42e092340fd3c93522bce4ccf03f",
+    "cases": [
+      "test_native_whole_node_caddy_publication",
+      "test_native_delta_used_by_all_three_migrate_caddy_passes",
+      "test_native_ingress_publication",
+      "test_ansible_route_site",
+      "test_ansible_route_withdrawal",
+      "test_ansible_bootstrap_swamp_front"
+    ]
   }
 }

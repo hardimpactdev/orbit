@@ -988,3 +988,5 @@ Container migration reuses this [development mail phase](/reference/development-
 Checkout destroy admission has one [read-only SSH exception](/reference/remote-programs#remote-programs) for live Git dependencies, before Schedule withdrawal. It uses the existing Node account and identity with a short timeout. Containers and unmaterialized sources skip that read. The workflow and its source-removal command do not recheck dependencies, including on a retry. It never traverses checkout contents. A failed read of another checkout falls back to bounded, non-blocking Git pointer reads; unknown unrelated checkouts produce named Operation warnings.
 
 Instance migration checks selected environment services before downtime. Its mail check uses the admitted [development mail endpoint](/reference/development-containers#development-mail), so the preflight and mail setup share one eligibility decision.
+
+Caddy publication validates a candidate before it replaces the live file, including the bootstrap Swamp front. Validation failure keeps the live bytes and skips reload; see [Caddy publication](/reference/caddy-configuration#native-publication).
