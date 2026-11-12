@@ -292,7 +292,11 @@ Conn maps these stable container-clone step names to stage detail, in this order
 
 A server of an Instance names its `instance_id` and the container's `power_state`, `running` or `stopped`. Other servers have `null` for both. Conn shows a `stopped` server as asleep.
 
-`GET /environments?include=git` adds `git` only to rows backed by an Instance. Without that query, the response keeps its existing fields. Container Git observations are not available yet, so each requested Instance row answers `{"state": "unknown", "reason": "not_observed"}`. Orbit reads no container or remote service while listing. Future observations over ten minutes old or from an offline agent use the same unknown response.
+`GET /environments?include=git` adds `git` only to rows backed by an Instance. Without that query, the response keeps its existing fields. Other `include` values are ignored, as before. Container Git observations and their storage are not available yet, so each requested Instance row answers `{"state": "unknown", "reason": "not_observed"}`. The list reads only stored records and never probes a Node, container or remote service.
+
+The agent change will add an observation per Instance: `{"state":"known","branch":null,"uncommitted":0,"unpushed":0,"has_upstream":true,"read_at":"2026-11-12T23:00:00Z"}`. `branch` may be a name or null. Counts are nonnegative integers; `uncommitted` counts changed and untracked files, and `unpushed` counts commits ahead of upstream. No upstream gives an unpushed count of zero, which does not prove safe removal. The shared Git-state boundary will read these observations once storage exists. Facts over ten minutes old or from an offline agent will answer `unknown/not_observed`; exactly ten minutes is still fresh. Other allowed unknown reasons are `stopped`, `unreadable` and `timeout`.
+
+Future removal policy belongs at the same boundary: uncommitted work, unpushed commits or no upstream means dirty. Until trustworthy observations exist, removal state stays unknown. This list change does not alter destroy admission.
 
 ## Pairing and revocation
 
