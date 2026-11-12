@@ -20,7 +20,11 @@ The Gateway validates Route changes and records intent as an Operation. Each ava
 
 Route creation and updates use Node phases and pinned SSH argv commands. Their TLS probes run on 209 over the captured SSH connection, verify the hostname and Orbit CA, and ignore the application HTTP status. A failed Caddy validation stops the reload and leaves the candidate for convergence; there is no rollback.
 
-The site phase converges certificates, their current links and account copies, root trust and the Caddyfile in one Node call. Private keys are copied only within their Node. Workspace access, `APP_URL`, shared environment links and PHP-FPM pool publication keep their existing order. Caddy validation precedes reload; the TLS probe still runs afterwards. A failed validation leaves the candidate file and stops the reload. A repeated publication retains the existing account-copy and Caddy reload behavior, so a retry completes activation even when its files already match.
+The site phase converges certificates, their current links and account copies, root trust and the Caddyfile in one Node call. Private keys are copied only within their Node. Workspace access, `APP_URL`, shared environment links and PHP-FPM pool publication keep their existing order. Caddy validation precedes reload; the TLS probe still runs afterwards.
+
+As on main before this change, the candidate replaces the live Caddyfile before validation; a failed validation stops reload but leaves invalid candidate bytes on disk. Running Caddy retains its loaded configuration, but a later start may fail. This inherited behavior needs the separate candidate-publication fix. A repeated publication retains the existing account-copy and Caddy reload behavior, so a retry completes activation even when its files already match.
+
+This site module is an accepted exception to rule 22 because it batches the stock modules’ Node round trips. On Beast, the isolated site phase fell from 3.260–3.308 seconds to 1.067–1.272 seconds. This includes Ansible startup and real Caddy validation/reload. This is not a general pattern: another custom module needs the same measurement.
 
 An Instance create shares its already-written Route intent and shipped assets with the site child. The child reads that input and keeps its own scratch folder, SSH pins and cleanup. It cannot remove the parent's input. Standalone Route calls and other callers prepare their own child input. Both entry forms run the same site phase.
 

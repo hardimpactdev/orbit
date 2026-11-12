@@ -1963,10 +1963,11 @@
     ]
   },
   "swamp/tests/ansible_route_site_test.py": {
-    "source_sha256": "14c7f2556ab1a9829f7782f88c71326580650a0f7682e4fdc5ba975a58924863",
+    "source_sha256": "9ebdb0ecbc366af2030d46d6f17c87b19f54424ff98c2d1be5340c74a47c68ee",
     "cases": [
       "test_certificate_links_account_copy_modes_and_literal_caddy_text",
       "test_existing_file_mode_drift_clears_unwanted_special_bits",
+      "test_same_content_destination_symlinks_are_replaced_without_touching_targets",
       "test_failed_validation_keeps_candidate_but_never_reloads_or_marks_awake",
       "test_retry_after_reload_failure_completes_without_rewriting_public_files",
       "test_php_only_publication_needs_no_caddy_group",

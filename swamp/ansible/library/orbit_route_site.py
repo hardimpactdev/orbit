@@ -4,6 +4,7 @@
 import grp
 import os
 import pwd
+import stat
 import tempfile
 from pathlib import Path
 
@@ -54,29 +55,37 @@ def converge(
         nonlocal changed
         dest = path(value)
         data = content.encode()
-        if not dest.exists() or dest.read_bytes() != data:
-            fd, temporary = tempfile.mkstemp(dir=dest.parent)
-            try:
-                with os.fdopen(fd, "wb") as stream:
-                    os.fchown(stream.fileno(), uid, gid)
-                    os.fchmod(stream.fileno(), mode)
-                    stream.write(data)
-                os.replace(temporary, dest)
-            finally:
-                Path(temporary).unlink(missing_ok=True)
-            changed = True
-            return True
-        current = dest.stat()
-        drift = (current.st_uid, current.st_gid, current.st_mode & 0o7777) != (
-            uid,
-            gid,
-            mode,
-        )
-        if drift:
-            os.chown(dest, uid, gid)
-            os.chmod(dest, mode)
-            changed = True
-        return drift
+        try:
+            current = dest.lstat()
+        except FileNotFoundError:
+            current = None
+        # copy's default is to replace destination links, including matching-content links.
+        # A descriptor opened without following links also keeps metadata repair off a link target.
+        if current is not None and stat.S_ISREG(current.st_mode):
+            with os.fdopen(os.open(dest, os.O_RDONLY | os.O_NOFOLLOW), "rb") as stream:
+                if stream.read() == data:
+                    current = os.fstat(stream.fileno())
+                    drift = (
+                        current.st_uid,
+                        current.st_gid,
+                        current.st_mode & 0o7777,
+                    ) != (uid, gid, mode)
+                    if drift:
+                        os.fchown(stream.fileno(), uid, gid)
+                        os.fchmod(stream.fileno(), mode)
+                        changed = True
+                    return drift
+        fd, temporary = tempfile.mkstemp(dir=dest.parent)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                os.fchown(stream.fileno(), uid, gid)
+                os.fchmod(stream.fileno(), mode)
+                stream.write(data)
+            os.replace(temporary, dest)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+        changed = True
+        return True
 
     def link(value, target, uid):
         nonlocal changed

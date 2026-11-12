@@ -2700,7 +2700,7 @@ inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts"
 
 [[fixture]]
 file = "swamp/tests/ansible_route_site_test.py"
-cost = 13
+cost = 14
 slices = false
 inputs = [
   "swamp/ansible/requirements.txt",
@@ -2720,3 +2720,4 @@ inputs = [
 "test_real_production_phase_keeps_access_app_url_php_links_and_reload" = 5
 "test_reused_input_is_read_only_and_child_cleanup_keeps_its_own_folder" = 1
 "test_existing_file_mode_drift_clears_unwanted_special_bits" = 1
+"test_same_content_destination_symlinks_are_replaced_without_touching_targets" = 1

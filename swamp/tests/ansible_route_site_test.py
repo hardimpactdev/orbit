@@ -98,7 +98,9 @@ class RouteSiteTest(unittest.TestCase):
             patch.object(
                 SITE.os,
                 "chown",
-                side_effect=lambda p, uid, gid: self.owners.append((uid, gid)),
+                side_effect=AssertionError(
+                    "metadata repair must use a no-follow descriptor"
+                ),
             ),
             patch.object(
                 SITE.os,
@@ -166,19 +168,77 @@ class RouteSiteTest(unittest.TestCase):
         self.apply()
         caddy = self.root / "etc/caddy/Caddyfile"
         caddy.chmod(0o4640)
-        real_stat = Path.stat
-
-        def owned(path, *args, **kwargs):
-            info = real_stat(path, *args, **kwargs)
-            if path == caddy:
-                fields = list(info)
-                fields[4], fields[5] = 0, 123
-                return os.stat_result(fields)
-            return info
-
-        with patch.object(Path, "stat", owned):
-            self.apply()
+        self.apply()
         self.assertEqual(caddy.stat().st_mode & 0o7777, 0o640)
+
+    def test_same_content_destination_symlinks_are_replaced_without_touching_targets(
+        self,
+    ):
+        self.apply()
+        paths = {
+            "certs/v1/cert.pem": (0o644, (0, 123)),
+            "etc/caddy/Caddyfile": (0o640, (0, 123)),
+            "usr/local/share/ca-certificates/orbit-managed-root-ca.crt": (
+                0o644,
+                (0, 0),
+            ),
+            "awake": (0o644, (0, 0)),
+            "home/orbit/.orbit/certificates/speed/v1/key.pem": (0o600, None),
+            "home/orbit/.orbit/certificates/speed/v1/cert.pem": (0o600, None),
+        }
+        outside = self.root / "outside"
+        outside.mkdir()
+        originals = {}
+        for index, (name, (mode, _)) in enumerate(paths.items()):
+            managed = self.root / name
+            target = outside / str(index)
+            target.write_bytes(managed.read_bytes())
+            target.chmod(0o600)
+            originals[target] = (target.read_bytes(), target.stat())
+            managed.unlink()
+            managed.symlink_to(target)
+
+        original_run = self.tool_run
+
+        def real_install(argv):
+            if "install" not in argv:
+                return original_run(argv)
+            # Exercise GNU install's destination-link replacement, preserving its production flags.
+            self.assertEqual(argv[argv.index("-m") + 1], "0600")
+            self.assertEqual(argv[argv.index("-o") + 1], "orbit")
+            self.assertEqual(argv[argv.index("-g") + 1], str(self.user.pw_gid))
+            args = list(argv)
+            for flag in ["-o", "-g"]:
+                index = args.index(flag)
+                del args[index : index + 2]
+            subprocess.run(args, check=True, capture_output=True, timeout=5)
+
+        with patch.object(self, "tool_run", side_effect=real_install):
+            self.apply()
+        for name, (mode, owner) in paths.items():
+            with self.subTest(path=name):
+                managed = self.root / name
+                self.assertFalse(managed.is_symlink())
+                self.assertTrue(managed.is_file())
+                self.assertEqual(managed.stat().st_mode & 0o7777, mode)
+                self.assertEqual(managed.stat().st_uid, os.getuid())
+                self.assertEqual(managed.stat().st_gid, os.getgid())
+                if owner is not None:
+                    self.assertIn(
+                        owner, self.owners
+                    )  # Production root/caddy requests are checked unprivileged.
+        for target, (data, metadata) in originals.items():
+            self.assertEqual(target.read_bytes(), data)
+            current = target.stat()
+            self.assertEqual(
+                (current.st_uid, current.st_gid, current.st_mode, current.st_mtime_ns),
+                (
+                    metadata.st_uid,
+                    metadata.st_gid,
+                    metadata.st_mode,
+                    metadata.st_mtime_ns,
+                ),
+            )
 
     def test_failed_validation_keeps_candidate_but_never_reloads_or_marks_awake(self):
         self.failure = "validate"
@@ -219,29 +279,25 @@ class RouteSiteTest(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_production_workspace_app_url_links_and_php_tasks_are_unchanged(self):
-        before = yaml.safe_load(
-            subprocess.check_output(
-                ["git", "show", "origin/main:swamp/ansible/route-create-site.yml"],
-                cwd=ROOT,
-                text=True,
-            )
-        )
-        after = yaml.safe_load(
+        play = yaml.safe_load(
             (ROOT / "swamp/ansible/route-create-site.yml").read_text()
+        )[1]
+        # Fixed production order; CI checkouts need no Git history or remote refs.
+        self.assertEqual(
+            [task["name"] for task in play["tasks"]],
+            [
+                "Read the account",
+                "Set the Route access on this Node",
+                "Link the shared environment files",
+                "Write the PHP-FPM pool files",
+                "Test the PHP-FPM configuration",
+                "Reload PHP-FPM",
+                "Converge certificate links trust and Caddy files",
+                "Remove the run folder",
+            ],
         )
-        original = {t["name"]: t for t in before[1]["tasks"]}
-        current = {t["name"]: t for t in after[1]["tasks"]}
-        for name in [
-            "Read the account",
-            "Set the Route access on this Node",
-            "Link the shared environment files",
-            "Write the PHP-FPM pool files",
-            "Test the PHP-FPM configuration",
-            "Reload PHP-FPM",
-        ]:
-            self.assertEqual(current[name], original[name])
-        self.assertEqual(after[1]["become"], before[1]["become"])
-        self.assertEqual(after[1]["gather_facts"], False)
+        self.assertTrue(play["become"])
+        self.assertFalse(play["gather_facts"])
 
     def test_csr_action_owns_folder_and_key_before_public_request_returns(self):
         flow = yaml.safe_load(
