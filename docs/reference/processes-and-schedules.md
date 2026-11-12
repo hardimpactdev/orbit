@@ -477,7 +477,7 @@ Container targets use `orbit-node-service-PORT.socket` and `.service`. Sockets b
 
 The probe polls every 50 ms for up to three seconds per target, including unit readiness and the connection to the Node. `instance.node_service_unreachable` retains the target identity, `reason`, `waited_ms` and each unit’s `ActiveState`, `SubState`, `UnitFileState` and `Result` in the Operation.
 
-An observed acceptance stays recorded if the proxy closes its client before the upstream connects; the reason remains `upstream_not_established` and `client_closed` is true. Values are public classes; no command output or connection content is retained.
+An observed acceptance stays recorded if the proxy closes its client before the upstream connects; the reason remains `upstream_not_established` and `client_closed` is true. The probe also checks its own client with a nonblocking peek: EOF or a reset records the same refusal even if the accepted socket closed between kernel samples. Values are public classes; no command output or connection content is retained.
 
 Clone does not inherit attachment records and strips inherited target units before boot. The shared bridge helper persists and refreshes Docker translations; destroy removes the Instance own ACL, while shared tuples follow host reconciliation as database/mail endpoints do.
 

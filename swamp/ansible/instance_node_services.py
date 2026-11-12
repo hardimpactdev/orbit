@@ -236,6 +236,13 @@ def probe_proxy(target, root, run, connect, clock=time.monotonic, pause=lambda s
             try:
                 rows = socket_rows(run, [port], timeout=max(0.001, deadline - clock()))
                 reason = proxy_reason(rows, port)
+                if client is not None:
+                    try:
+                        client_closed |= client.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT) == b''
+                    except BlockingIOError:
+                        pass
+                    except (ConnectionResetError, ConnectionAbortedError):
+                        client_closed = True
                 if reason is None:
                     current_pid = service_pid(rows, port)
                     if client is None:
@@ -244,6 +251,7 @@ def probe_proxy(target, root, run, connect, clock=time.monotonic, pause=lambda s
                         before = tcp_sockets(pid, root)
                         reason = 'connect_failed'
                         client = stack.enter_context(connect(('127.0.0.1', port), timeout=max(0.001, min(2, deadline - clock()))))
+                        client.setblocking(False)
                         # Re-read systemd after connecting, before accepting kernel evidence.
                         reason = 'accept_not_seen'
                         continue
@@ -268,10 +276,12 @@ def probe_proxy(target, root, run, connect, clock=time.monotonic, pause=lambda s
                         upstream = {inode for inode, (_, peer, state) in fresh.items()
                                     if peer == (target['host'], port) and state == '01'}
                         reason = 'upstream_not_established' if accepted_seen else 'accept_not_seen'
-                        if not ambiguous and len(accepted) == len(upstream) == 1 and set(fresh) == accepted | upstream:
+                        if not client_closed and not ambiguous and len(accepted) == len(upstream) == 1 and set(fresh) == accepted | upstream:
                             return
             except (OSError, subprocess.SubprocessError):
                 reason = reason or 'upstream_not_established'
+            if client_closed:
+                reason = 'upstream_not_established'
             remaining = deadline - clock()
             if remaining > 0:
                 pause(min(0.05, remaining))

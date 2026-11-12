@@ -979,7 +979,7 @@ A readiness phase waits up to 60 seconds for a newly started Analytics Process b
 
 The `swamp` role installs a pinned Ansible environment under `/opt/orbit/ansible`. The `@nckrtl/ansible-input` behavior delivers the playbooks and writes the whole intent to a private run folder. The input builder writes inventory, variables and pinned `known_hosts` there. The readiness of a nested fleet uses the same input, as the kind `task_vm.nested_ready`. The behavior also reads the private Ansible callback reports of a [fleet reboot](/reference/gateway-recovery#one-node-of-the-pass) on the controller. That reference defines its safe read retries and the unknown outcomes of an interrupted root.
 
-The shared phase for [Node service targets](/reference/processes-and-schedules#node-service-target-records) waits up to three seconds to probe each target and retains public failure classes.
+The shared phase for [Node service targets](/reference/processes-and-schedules#node-service-target-records) waits up to three seconds to probe each target and retains public failure classes, including closure of the probe’s own client.
 
 The development create playbook has no builder: it reads the intent file by lookup, pins the admitted host keys in the run folder and addresses the Node itself, and it takes its secrets from the environment of the phase. Separate guarded steps write vault values to mode `0600` files. The builder consumes and removes those files. A completed-run cleanup removes the folder after success or failure. No credential enters the run inputs or command arguments.
 

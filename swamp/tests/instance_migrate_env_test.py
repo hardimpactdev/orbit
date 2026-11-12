@@ -841,6 +841,12 @@ class NodeServiceTest(unittest.TestCase):
             def __exit__(self, *_):
                 fixture.connection_open = False
 
+            def setblocking(self, value):
+                assert value is False
+
+            def recv(self, *_):
+                raise BlockingIOError
+
             def getsockname(self):
                 return ('127.0.0.1', 40000)
 
@@ -1104,6 +1110,12 @@ class NodeServiceTest(unittest.TestCase):
                 nonlocal opened
                 opened = False
 
+            def setblocking(self, value):
+                assert value is False
+
+            def recv(self, *_):
+                raise BlockingIOError
+
             def getsockname(self):
                 return ('127.0.0.1', 40000)
 
@@ -1191,6 +1203,12 @@ class NodeServiceTest(unittest.TestCase):
             def __exit__(self, *_):
                 descriptor.unlink(missing_ok=True)
 
+            def setblocking(self, value):
+                assert value is False
+
+            def recv(self, *_):
+                raise BlockingIOError
+
             def getsockname(self):
                 return ('127.0.0.1', 40000)
 
@@ -1211,6 +1229,39 @@ class NodeServiceTest(unittest.TestCase):
         self.assertIs(evidence['node_service_target']['client_closed'], True)
         self.assertEqual(evidence['node_service_target']['waited_ms'], 3000)
         self.assert_failure_receipts(evidence)
+
+    def test_immediate_proxy_eof_and_reset_keep_upstream_reason_in_both_receipts(self):
+        import socket
+        import struct
+        self.active = {'orbit-node-service-3308.socket', 'orbit-node-service-3308.service'}
+        self.enabled = {'orbit-node-service-3308.socket'}
+        original_root = self.root
+        for reset in (False, True):
+            with self.subTest(reset=reset), socket.socket() as listener:
+                self.root = original_root / ('reset' if reset else 'eof')
+                self.root.mkdir()
+                self.now = 0
+                listener.bind(('127.0.0.1', 0))
+                listener.listen(1)
+
+                def connect(address, timeout, reset=reset, listener=listener):
+                    self.assertEqual(address, ('127.0.0.1', 3308))
+                    client = socket.create_connection(listener.getsockname(), timeout=timeout)
+                    peer, _ = listener.accept()
+                    if reset:
+                        peer.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
+                    peer.close()  # Closed before the helper can observe any proxy-owned accepted socket.
+                    return client
+
+                with patch.object(TARGETS, 'tcp_sockets', return_value={}), self.assertRaises(TARGETS.TargetFailure) as error:
+                    TARGETS.probe_proxy(self.target, self.guest, self.guest_run, connect,
+                                        clock=lambda: self.now, pause=self.advance)
+                evidence = error.exception.evidence()
+                self.assertEqual(evidence['node_service_target']['reason'], 'upstream_not_established')
+                self.assertIs(evidence['node_service_target']['client_closed'], True)
+                self.assertEqual(evidence['node_service_target']['waited_ms'], 3000)
+                self.assert_failure_receipts(evidence)
+        self.root = original_root
 
     def test_every_probe_reason_names_condition_and_public_unit_states(self):
         for reason in sorted(TARGETS.REASONS):
