@@ -76,7 +76,9 @@ final readonly class RunDoctorAction
                     $measured = hrtime(true);
                     // Stored durations end before this state save: collection start to here, and transaction start to here.
                     // The log below measures the whole scheduled call and the transaction through its commit or rollback.
+                    // doctor_started_at equals the doctor_observed_at this run wrote on every finding it saw.
                     $state->observation = [...($state->observation ?? []), 'doctor_collected_at' => Carbon::now()->toISOString(),
+                        'doctor_started_at' => $at->toISOString(),
                         'doctor_duration_ms' => round(($measured - $started) / 1_000_000, 3),
                         'doctor_write_ms' => round(($measured - $writeStarted) / 1_000_000, 3)];
                     $state->save();
