@@ -145,6 +145,6 @@ final readonly class ProofRunWatch
     private static function neverHandedOver(Operation $child): bool
     {
         return ! $child->status->terminal() && ! isset($child->state['swamp_run_id']) && $child->attempts === 0
-            && $child->error_code !== 'swamp.start_uncertain' && ! isset($child->state['swamp_start']) && ! isset($child->input['capacity_request']);
+            && $child->error_code !== 'swamp.start_uncertain' && (! isset($child->state['swamp_start']) || ProofChildStarts::held($child)) && ! isset($child->input['capacity_request']);
     }
 }

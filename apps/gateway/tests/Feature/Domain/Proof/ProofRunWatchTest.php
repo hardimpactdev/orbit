@@ -404,3 +404,24 @@ it('leaves an operator proof in task admission to its capacity budget instead of
         ->and($waiting->refresh()->status)->toBe(OperationStatus::Waiting);
     Queue::assertNotPushed(CancelProofGroup::class);
 });
+
+it('ends held children after a lost successor only when the proof is old and every child has been quiet', function (): void {
+    $this->freezeTime();
+    Queue::fake();
+    $proof = watchProof(watchNode(), ProofRunWatch::AdmissionSeconds + 1);
+    $answered = watchRun($proof, 'firewall:allow', OperationStatus::Failed, 'swamp.start_job_failed');
+    $held = watchRun($proof, 'firewall:list', OperationStatus::Queued);
+    $held->update(['state' => ['swamp_start' => ['key' => 'operation:'.$held->id, 'workflow' => 'operation-proof-run'],
+        'proof_child_start' => ['not_before' => null, 'released_at' => null, 'advanced_at' => null]]]);
+    watchAged($held, 900, 299);
+    expect(app(ProofRunWatch::class)->sweep())->toBe(0);
+    expect(OperationRunBudgets::deadline($held))->toBeNull();
+    $this->travel(2)->seconds();
+
+    expect(app(ProofRunWatch::class)->sweep())->toBe(1);
+    expect($held->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($held->error_code)->toBe('proof.admission_interrupted');
+    expect($proof->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and(array_column($proof->result['cases'], 'verdict'))->toBe(['unrun', 'unrun']);
+    Queue::assertPushed(CancelProofGroup::class, fn ($job): bool => $job->operationId === $held->id);
+});

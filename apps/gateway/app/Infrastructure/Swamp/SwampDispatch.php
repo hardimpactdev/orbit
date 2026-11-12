@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Swamp;
 
+use App\Domain\Proof\ProofChildStarts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
@@ -101,7 +102,7 @@ final class SwampDispatch
                 throw $first === false ? $error
                     : new ResourceOperationException($error->errorCode, $error->getMessage(), $error->status, details: ['operation_id' => $first->id]);
             }
-            foreach ($starts as $operation) {
+            foreach (app(ProofChildStarts::class)->queue($starts) as $operation) {
                 try {
                     Bus::dispatch(new StartAdmittedSwampRun($operation->id));
                 } catch (Throwable $exception) {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Domain\InstanceMigration\DeferredMigrationScheduleRuns;
+use App\Domain\Proof\ProofChildStarts;
 use App\Domain\Tasks\TaskVmAdmission;
 use App\Models\Operation;
 use Carbon\CarbonImmutable;
@@ -103,16 +104,17 @@ final class OperationRunBudgets
         return $seconds;
     }
 
-    /** A held Route write or a deferred Schedule fire starts its budget when admission reopens. */
+    /** Held writes, Schedule fires and proof children start their clocks when released. */
     public static function deadline(Operation $operation): ?CarbonImmutable
     {
-        if (RoutePublicationHolds::waitsForNodes($operation) || DeferredMigrationScheduleRuns::waiting($operation)) {
+        if (RoutePublicationHolds::waitsForNodes($operation) || DeferredMigrationScheduleRuns::waiting($operation) || ProofChildStarts::held($operation)) {
             return null;
         }
         if ($operation->status === OperationStatus::Waiting && isset($operation->input['capacity_request'])) {
             return $operation->created_at === null ? null : CarbonImmutable::instance($operation->created_at)->addSeconds(TaskVmAdmission::WaitSeconds);
         }
-        $start = $operation->started_at ?? $operation->created_at;
+        $release = ! isset($operation->state['swamp_run_id']) && $operation->attempts === 0 ? ProofChildStarts::releasedAt($operation) : null;
+        $start = $release ?? $operation->started_at ?? $operation->created_at;
 
         return $start === null ? null : CarbonImmutable::instance($start)->addSeconds(self::seconds($operation));
     }
