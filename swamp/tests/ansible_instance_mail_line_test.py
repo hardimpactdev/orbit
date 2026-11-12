@@ -423,6 +423,21 @@ sys.exit(result.returncode)
         self.assertEqual(list(self.root.glob('.env.*')), [])
 
 
+
+    def test_migrate_log_loopback_passes_source_check_then_becomes_smtp(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('guard', ROOT / 'swamp/ansible/library/orbit_migrate_env.py')
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        before = b'MAIL_MAILER="log"\nMAIL_HOST="127.0.0.1"\nMAIL_PORT="1025"\n'
+        self.envfile.write_bytes(before)
+        self.assertEqual(guard.inspect_environment(str(self.root), [], [],
+                         development_mail={'host': '10.253.0.1', 'port': 1025}), [])
+        result = self.ansible(migrate=True)
+        self.assertEqual(result, {'mail': {'status': 'applied', 'ports': [1025, 2525]},
+                                  'mailer': {'status': 'changed', 'lines': [1]}})
+        self.assertTrue(self.envfile.read_bytes() == before.replace(b'"log"', b'"smtp"'))
+
     def test_migrate_orders_advisory_mail_after_copy_and_before_application_start(self):
         import yaml
         workflow = yaml.safe_load((ROOT / 'swamp/workflows/workflow-operation-instance-migrate.yaml').read_text())

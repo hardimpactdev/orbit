@@ -25,6 +25,9 @@ options:
     type: list
     elements: dict
     required: true
+  development_mail:
+    description: The same admitted endpoint used by the container development mail phase, or null when ineligible.
+    type: dict
   node_addresses:
     description: Addresses belonging to the source Node.
     type: list
@@ -272,7 +275,7 @@ def env_files(checkout):
             yield os.path.join(directory, '.env')
 
 
-def inspect_environment(checkout, targets, node_addresses, proxy_policy=None):
+def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, development_mail=None):
     """Safe refusal lines, with no environment contents except validated host and numeric port."""
     attached = {(canonical_host(str(target['host']))[0], int(target['port'])) for target in targets}
     local = set()
@@ -315,6 +318,14 @@ def inspect_environment(checkout, targets, node_addresses, proxy_policy=None):
                 reason = 'the service port is missing or is not a literal port'
             elif (host, port) in attached:
                 continue
+            elif key == 'MAIL_HOST' and host in ('127.0.0.1', 'localhost', '::1') and port in (1025, 2525):
+                if development_mail is None:
+                    reason = ('this Instance has no eligible main Mailpit on its Node, so the container will have no '
+                              f'mail forwarder on {display}:{port}')
+                elif host == '::1':
+                    reason = 'the development mail forwarder listens only on 127.0.0.1, so ::1 cannot reach it'
+                else:
+                    continue
             else:
                 try:
                     address = ipaddress.ip_address(host)
@@ -344,6 +355,7 @@ def main():
         'targets': {'type': 'list', 'elements': 'dict', 'required': True},
         'node_addresses': {'type': 'list', 'elements': 'str', 'required': True},
         'proxy_policy': {'type': 'dict', 'required': True},
+        'development_mail': {'type': 'dict'},
     }, supports_check_mode=True)
     try:
         refusals = inspect_environment(**module.params)

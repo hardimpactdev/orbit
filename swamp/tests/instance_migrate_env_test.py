@@ -1,8 +1,9 @@
 """The actual Node-side parser and endpoint policy; no Ansible installation is needed."""
 import importlib.util
-from pathlib import Path
+import json
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 MODULE = Path(__file__).resolve().parents[1] / 'ansible/library/orbit_migrate_env.py'
@@ -23,7 +24,52 @@ class InstanceMigrateEnvTest(unittest.TestCase):
         env.write_text(text)
         return guard.inspect_environment(str(self.root), targets, options.get('node_addresses', ['10.44.0.5']),
                                          options.get('proxy_policy', {'private_v4': ['10.0.0.0/8', '127.0.0.0/8'],
-                                                                      'private_domains': ['orbit', 'private.test']}))
+                                                                      'private_domains': ['orbit', 'private.test']}),
+                                         development_mail=options.get('development_mail'))
+
+
+    def test_development_mail_satisfies_only_the_ipv4_forwarded_endpoints(self):
+        endpoint = {'host': '10.253.0.1', 'port': 2025, 'docker': True}
+        for host in ('127.0.0.1', 'localhost'):
+            for port in (1025, 2525):
+                for quote in ('', "'", '"'):
+                    with self.subTest(host=host, port=port, quote=quote):
+                        text = f'MAIL_MAILER={quote}smtp{quote}\nMAIL_HOST={quote}{host}{quote}\nMAIL_PORT={quote}{port}{quote}\n'
+                        self.assertEqual(self.inspect(text, development_mail=endpoint), [])
+                        refused = self.inspect(text)
+                        self.assertEqual(len(refused), 1)
+                        self.assertIn('no eligible main Mailpit on its Node', refused[0])
+                        self.assertIn(f'no mail forwarder on {host}:{port}', refused[0])
+
+    def test_ipv6_mail_is_refused_even_with_the_development_mail_path(self):
+        for port in (1025, 2525):
+            text = f'MAIL_MAILER=smtp\nMAIL_HOST="::1"\nMAIL_PORT="{port}"\n'
+            refused = self.inspect(text, development_mail={'host': '10.253.0.1', 'port': 1025})
+            self.assertEqual(len(refused), 1)
+            self.assertIn('listens only on 127.0.0.1, so ::1 cannot reach it', refused[0])
+            self.assertIn('no eligible main Mailpit', self.inspect(text)[0])
+
+    def test_mail_outside_the_forwarded_tuple_keeps_the_original_verdict(self):
+        endpoint = {'host': '10.253.0.1', 'port': 1025}
+        for host, port in [('127.0.0.1', 587), ('localhost', 587), ('::1', 587),
+                           ('127.0.0.2', 1025), ('mail.example.test', 1025), ('127.0.0.1:1025', 1025)]:
+            text = f'MAIL_MAILER=smtp\nMAIL_HOST="{host}"\nMAIL_PORT="{port}"\n'
+            self.assertEqual(self.inspect(text, development_mail=endpoint), self.inspect(text))
+            self.assertEqual(self.inspect(text, [{'host': host, 'port': port}], development_mail=endpoint),
+                             self.inspect(text, [{'host': host, 'port': port}]))
+        text = 'MAIL_MAILER=smtp\nMAIL_URL=smtp://private@example.test:1025\n'
+        self.assertEqual(self.inspect(text, development_mail=endpoint), self.inspect(text))
+
+    def test_log_mail_is_unselected_with_or_without_an_admitted_mail_path(self):
+        for quote in ('', "'", '"'):
+            text = f'MAIL_MAILER={quote}log{quote}\nMAIL_HOST="127.0.0.1"\nMAIL_PORT="1025"\n'
+            for endpoint in (None, {'host': '10.253.0.1', 'port': 1025}):
+                self.assertEqual(self.inspect(text, development_mail=endpoint), [])
+
+    def test_other_services_keep_the_main_refusal_bytes(self):
+        fixture = json.loads((Path(__file__).parent / 'fixtures/migrate-env-services.json').read_text())
+        for endpoint in (None, {'host': '10.253.0.1', 'port': 1025}):
+            self.assertEqual(self.inspect(fixture['env'], development_mail=endpoint), fixture['refusals'])
 
     def test_servauto_mysql_requires_exact_attached_endpoint(self):
         text = 'DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3308\nDB_PASSWORD=never-show-this\n'

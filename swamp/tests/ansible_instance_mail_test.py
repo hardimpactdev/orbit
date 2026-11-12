@@ -144,7 +144,7 @@ class MailPhase(unittest.TestCase):
     def save(self):
         (self.root / 'state.json').write_text(json.dumps(self.state))
 
-    def run_phase(self, success=True):
+    def run_phase(self, success=True, migrate=False):
         plan = {'project': 'orbit-instances', 'name': 'instance-7', 'acl': 'instance-7', 'network': 'orbitinst0',
                 'bridge_cidr': '10.253.0.0/24', 'bridge_admitted_at': 1800000000000000, 'mail': self.endpoint, 'mail_units': self.units}
         play = [{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
@@ -152,14 +152,31 @@ class MailPhase(unittest.TestCase):
                           'as_root': ['incus', 'exec', '--project', 'orbit-instances', 'instance-7', '--']},
                  'tasks': [{'ansible.builtin.include_tasks': str(self.root / 'instance-mail.yml')},
                            {'ansible.builtin.copy': {'dest': str(self.root / 'result.json'), 'content': '{{ mail_result | to_json }}', 'mode': '0600'}}]}]
+        if migrate:
+            shutil.copy(ROOT / 'swamp/ansible/tasks/instance-migrate-env-check.yml', self.root)
+            play[0]['vars']['migrate'] = {'checkout': str(self.root / 'source'),
+                                         'environment': {'targets': [], 'node_addresses': [], 'proxy_policy': {}}}
+            play[0]['tasks'].insert(0, {'ansible.builtin.include_tasks': str(self.root / 'instance-migrate-env-check.yml')})
+            play[0]['tasks'][-1]['ansible.builtin.copy']['content'] = "{{ {'mail': mail_result | combine({'ports': [1025, 2525]})} | to_json }}"
         (self.root / 'play.json').write_text(json.dumps(play))
         env = {**os.environ, 'MAIL_FIXTURE_ROOT': str(self.root), 'PATH': str(self.root / 'bin') + ':' + os.environ['PATH'],
                'ANSIBLE_STDOUT_CALLBACK': 'default', 'ANSIBLE_COLLECTIONS_PATH': str(self.root / 'empty'), 'ANSIBLE_NOCOLOR': '1',
+               'ANSIBLE_LIBRARY': str(ROOT / 'swamp/ansible/library'),
                'ANSIBLE_LOCAL_TEMP': str(self.root / 'ansible-local'), 'ANSIBLE_REMOTE_TEMP': str(self.root / 'ansible-remote')}
         done = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(self.root / 'play.json')], env=env, capture_output=True, text=True)
         self.assertEqual(done.returncode == 0, success, done.stdout + done.stderr)
         self.state = json.loads((self.root / 'state.json').read_text())
         return json.loads((self.root / 'result.json').read_text()) if success else done.stdout
+
+
+    def test_migrate_selected_smtp_passes_real_preflight_and_installs_forwarders(self):
+        source = self.root / 'source'
+        source.mkdir()
+        (source / '.env').write_text('MAIL_MAILER="smtp"\nMAIL_HOST="127.0.0.1"\nMAIL_PORT="1025"\n')
+        result = self.run_phase(migrate=True)
+        self.assertEqual(result, {'mail': {'status': 'applied', 'ports': [1025, 2525]}})
+        self.assertEqual(self.state['sockets'], {'1025': True, '2525': True})
+        self.assertEqual(self.state['acl']['egress'][0]['destination_port'], '1025')
 
     def test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes(self):
         before = (self.root / 'guest/srv/workspace/.env').read_bytes()
