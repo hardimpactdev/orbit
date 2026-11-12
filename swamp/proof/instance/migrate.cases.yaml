@@ -18,12 +18,13 @@
 # Schedule fixtures cover enabled/paused registered timers, current/agent/direct source units, exact observed activation
 # rollback after container removal, and replacing only the admitted checkout-dependent services after cutover. The same UUID
 # host timer remains as a Gateway trigger; real timer firing, Incus command execution and journald retention need fleet proof.
-# Unpushed local branches and detached HEADs refuse with every name and commit count; stashes refuse with their count.
+# Linked retirement refuses only its own unpushed branch or detached HEAD; other branches and shared stashes stay with the owner.
+# Owner retirement checks every local branch and detached HEAD and refuses shared stashes with their count.
 # Tag-only commits, an expired stash reflog, submodules/nested repositories and a worktree added after the final listing
 # retain their Git data after retirement. Linked retirement renames all files, makes an independent Git recovery copy,
 # verifies its objects/index/refs/reflogs without alternates, then removes only its matching owner registration.
 # Real-Git fixtures migrate one child of an active owner with two siblings, retain untracked/ignored files, and prove
-# owner HEAD/index/store and the other sibling's registration are unchanged. Dirty/staged, unpushed and stash refusals
+# owner HEAD/index/store and the other sibling's registration are unchanged. Dirty/staged, scoped unpushed and owner stash refusals
 # leave both owner and child untouched; owner migration remains blocked until its final dependent leaves.
 # Both path lists are bounded to 20 entries with total counts. New changes or worktrees after preflight refuse final retirement,
 # keep every source intact, and leave the container serving. Late additions after the final listing are retained. A retained checkout (retire: []) is not deleted or checked.
@@ -58,8 +59,8 @@ uncovered:
   "code:instance.migrate_symlink_unsupported": "The proof fleet lacks the Instance pool/image. Python and Ansible fixtures cover absolute in-checkout rewrites, exact relative-link preservation, dependency package links, unchanged installed package contents, non-UTF-8 names and targets, and named external/broken-link refusals before downtime and after archive-time changes without changing the source."
   "code:instance.migrate_retirement_blocked": "The proof fleet lacks the Instance pool/image. Ansible fixtures cover dirty tracked files, owner dependencies (including same-batch worktrees), linked identity checks, bounded named errors, and blockers added after preflight. Live proof uses owned clean fixtures and separate blocker fixtures when the pool is available."
 
-  "code:instance.migrate_unpushed_commits": "Ansible fixtures cover every local branch and a detached HEAD, counts against all local remote-tracking refs, and source preservation. Live proof needs the Instance pool/image."
-  "code:instance.migrate_stashes_present": "Ansible fixtures cover multiple stash entries, their count and source preservation. Live proof needs the Instance pool/image."
+  "code:instance.migrate_unpushed_commits": "Real-Git fixtures cover only the linked checkout's own branch/detached HEAD, every owner branch, counts against all local remote-tracking refs, and source preservation. Live proof needs the Instance pool/image."
+  "code:instance.migrate_stashes_present": "Real-Git fixtures prove shared stashes do not block a linked checkout and still block owner retirement, including stash counts and source preservation. Live proof needs the Instance pool/image."
 
 cases:
   - id: invalid-id
