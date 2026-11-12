@@ -403,6 +403,7 @@ cost = 20
 after_merge = true
 reason = "Repository scanner fixtures create dynamic source inventories; their complete input closure needs a separate mapping."
 inputs = [
+  "swamp/bin/constant-name.ts",
   "swamp/bin/bounded-phase-scripts.ts",
   "swamp/bin/check-swamp-base-policy.py",
   "swamp/bin/check-swamp-shape.ts",
@@ -424,6 +425,7 @@ cost = 14
 after_merge = true
 reason = "Repository scanner fixtures create dynamic source inventories; their complete input closure needs a separate mapping."
 inputs = [
+  "swamp/bin/constant-name.ts",
   "swamp/bin/bounded-phase-scripts.ts",
   "swamp/bin/check-swamp-shape.ts",
   "swamp/bin/gate-test-support.ts",
@@ -442,6 +444,7 @@ inputs = [
 file = "swamp/bin/lint-behavior-names_test.ts"
 cost = 3
 inputs = [
+  "swamp/bin/constant-name.ts",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
@@ -454,6 +457,7 @@ inputs = [
 file = "swamp/bin/source_test.ts"
 cost = 2
 inputs = [
+  "swamp/bin/constant-name.ts",
   "bin/swamp-shape-gate",
   "swamp/ansible/**",
   "swamp/bin/gate-test-support.ts",

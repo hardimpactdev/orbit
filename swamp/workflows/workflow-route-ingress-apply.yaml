@@ -58,7 +58,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/route-update-result'
-          behaviorName: route-ingress-result
+          behaviorName: '${{ "route-ingress-result" }}'
           methodName: firewall
           inputs:
             ready: '${{ steps.converge.outputs.result.ready }}'

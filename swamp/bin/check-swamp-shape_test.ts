@@ -964,6 +964,11 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
     };
     const source = JSON.stringify(workflow);
     assertEquals(analyzeYaml(file, source).findings, []);
+    for (const name of ['${{ "route-dns-grace" }}', '${{  "route-dns-grace"  }}']) {
+        const constant = structuredClone(workflow);
+        constant.jobs[0].steps[0].task.behaviorName = name;
+        assertEquals(analyzeYaml(file, JSON.stringify(constant)).findings, []);
+    }
     const labelsOnly = JSON.parse(source);
     const targetOnly = JSON.parse(source);
     delete targetOnly.jobs[0].steps[0].labels;
@@ -976,6 +981,15 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
             ),
             `${path}: ${source}`,
         );
+    for (const name of [
+        '${{ "other" }}',
+        '${{ inputs.name }}',
+        '${{ "route-" + "dns-grace" }}',
+    ]) {
+        const computed = structuredClone(workflow);
+        computed.jobs[0].steps[0].task.behaviorName = name;
+        rejected(file, JSON.stringify(computed));
+    }
     const unplaced = structuredClone(labelsOnly);
     delete unplaced.jobs[0].steps[0].labels;
     rejected(file, JSON.stringify(unplaced));

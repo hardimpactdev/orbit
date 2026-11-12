@@ -568,7 +568,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-update-result'
-      behaviorName: route-mutation-phase
+      behaviorName: '${{ "route-mutation-phase" }}'
       methodName: phase
       inputs:
         mode: forward

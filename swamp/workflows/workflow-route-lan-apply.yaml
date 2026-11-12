@@ -73,7 +73,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: route-lan-changes
+      behaviorName: '${{ "route-lan-changes" }}'
       methodName: lanChanges
       inputs: {plan: '${{ inputs.intent.rule }}', current: '${{ steps["observe-before"].outputs.stdout }}'}
   - name: apply
@@ -98,7 +98,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: route-lan-applied
+      behaviorName: '${{ "route-lan-applied" }}'
       methodName: lanApplied
       inputs: {plan: '${{ inputs.intent.rule }}', outcomes: '${{ steps }}'}
   - name: result
@@ -107,6 +107,6 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: route-lan-result
+      behaviorName: '${{ "route-lan-result" }}'
       methodName: lanResult
       inputs: {plan: '${{ inputs.intent.rule }}', outcomes: '${{ steps }}'}
