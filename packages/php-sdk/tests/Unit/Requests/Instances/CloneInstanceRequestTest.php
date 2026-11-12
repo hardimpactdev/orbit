@@ -5,7 +5,10 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Instances\CloneInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Orbit\Sdk\Responses\Instances\InstanceResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -13,7 +16,12 @@ use Saloon\Http\Faking\MockResponse;
 describe(CloneInstanceRequest::class, function (): void {
     it('posts the exact clone request and maps the target and sole preview Route', function (): void {
         $mock = new MockClient([
-            CloneInstanceRequest::class => MockResponse::make(clone_instance_envelope(), 201),
+            CloneInstanceRequest::class => MockResponse::make([
+                'data' => ['id' => 901, 'kind' => 'instance.clone', 'target_type' => 'instance',
+                    'target_id' => 29, 'status' => 'queued', 'sequence' => 1, 'steps' => []],
+                'meta' => ['request_id' => clone_instance_request_id()],
+            ], 202),
+            ShowInstanceRequest::class => MockResponse::make(clone_instance_envelope()),
         ]);
         $connector = clone_instance_connector($mock);
         $request = new CloneInstanceRequest(
@@ -25,8 +33,23 @@ describe(CloneInstanceRequest::class, function (): void {
             sqliteSourcePath: '/srv/candidate/database.sqlite',
         );
 
-        $response = $connector->send($request)->dto();
+        $operation = $connector->send($request)->dto();
         $pending = $mock->getLastPendingRequest();
+
+        expect($operation)->toBeInstanceOf(OperationResponse::class)
+            ->and($operation->id)->toBe(901)
+            ->and($operation->kind)->toBe('instance.clone')
+            ->and($operation->targetType)->toBe('instance')
+            ->and($operation->targetId)->toBe(29)
+            ->and($operation->status)->toBe('queued')
+            ->and($operation->terminal())->toBeFalse()
+            ->and($operation->requestId)->toBe(clone_instance_request_id());
+
+        $read = new ShowInstanceRequest($operation->targetId);
+        $response = $connector->send($read)->dto();
+        expect($read->getMethod())->toBe(Method::GET)
+            ->and($read->resolveEndpoint())->toBe('/api/v1/instances/29')
+            ->and($read)->not->toBeInstanceOf(HasBody::class);
 
         expect($request->getMethod())
             ->toBe(Method::POST)
