@@ -3,8 +3,6 @@
 
 import grp
 
-from ansible.module_utils.orbit_caddy_publish import PublicationFailure, publish
-
 DOCUMENTATION = r"""
 module: orbit_caddy_publish
 short_description: Refuse a stale Caddyfile base before publishing on its Node
@@ -38,6 +36,9 @@ def main():
         "content": {"type": "str", "required": True},
         "composed_from_sha256": {"type": "str", "required": True},
     })
+    # Validate arguments before loading the Node's publication implementation.
+    from ansible.module_utils.orbit_caddy_publish import PublicationFailure, publish
+
     try:
         result = publish(module.params["content"], module.params["composed_from_sha256"],
                          module.run_command, gid=grp.getgrnam("caddy").gr_gid)
