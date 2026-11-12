@@ -704,7 +704,7 @@ Before downtime, migration resolves the [deploy credential](/reference/github-ap
 - **Database.** A database on a Database server stays where it is, and the container gets its own way to it. A SQLite file in the checkout moves with the files.
 - **Start.** FrankenPHP starts as `orbit`. A non-default Instance gets its T3 server, registered as in [Create](#create). A default gets its first seed snapshot.
 - **Route.** Orbit points the Route at FrankenPHP in the container.
-- **Retirement.** Orbit moves the whole old checkout to retention and records its path and time. A linked checkout gets an independent Git recovery copy and loses only its matching owner registration. An owner keeps its checkout until its last dependent leaves.
+- **Retirement.** Orbit retains the whole checkout and records its path and time. Linked retirement keeps an independent Git copy and removes its matching registration. Owner retirement waits for the last dependent.
 
 Registered Schedule timers keep their UUID, calendar, timeout and enabled or paused state. Their timers and commands run inside the container as `orbit`, only while it runs, without catch-up. [Schedule migration](/reference/schedules#checkout-migration) defines refusals, rollback and retained logs.
 
@@ -734,7 +734,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
 | Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
 | While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
-| Retirement check | Before downtime and retention, checks canonical Git identity and blocks tracked changes, other worktrees of an owner repository, unpushed commits and stashes. Untracked files do not block. `instance.migrate_retirement_blocked` names up to 20 worktrees and files with total counts |
+| Retirement check | Checks Git identity before downtime and retention. Blocks tracked changes, owner dependencies, unpushed commits and stashes. Untracked files pass; errors name 20 paths and total counts |
 | Branch | The mirror fetches the recorded branch from the checkout itself. A retained checkout can carry commits that were never pushed; retirement refuses them. The move needs no token |
 | Files | One archive of the paths of `git diff HEAD` and `git ls-files --others`, extracted as `orbit`. Tracked files that the checkout deleted are removed |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace`, and the Gateway rewrites its stored values the same way |
@@ -753,8 +753,8 @@ The runtime reservation belongs to its admitting Operation. A late receipt canno
 | Seed | A default takes `seed-<commit>` with its units stopped. Its Project's other Instances can be clones from then on |
 | T3 | A non-default Instance gets the proxy device `t3`, the agent's files and its T3 server. The Conn layer records the server from the run's result |
 | Runtime | A Route that serves the container makes the container the Instance's runtime: the workspace becomes its checkout path |
-| Retained Git | The whole old checkout moves under `<checkout>.orbit-retired-git/<sha256 of original path>`. The Instance records `retained_git_path` and `retained_git_at`; no files or Git metadata are deleted |
-| Linked checkout | All files stay through rename. An independent Git copy keeps common objects/refs/reflogs and the selected worktree's HEAD, index and private metadata, with alternates materialized. After verification, only its identity-matched, now-missing owner registration is removed; owner and sibling metadata stay untouched |
+| Retained Git | The whole old checkout moves under `<checkout>.orbit-retired-git/<sha256 of original path>`. The Instance records `retained_git_path` and `retained_git_at`; files and Git recovery data stay there |
+| Linked checkout | Retains all files and independent Git data. Removes only its matching, now-missing owner registration after verification; keeps owner and sibling metadata untouched |
 | Last worktree | The default's old checkout is a retirement candidate. Any other registered worktree blocks owner retirement, including a path in the same batch |
 | Failed removal | The container stays the Instance. The run fails with `instance.migrate_retire_failed` (or the retirement refusal code for a new blocker), and the source or retained checkout stays on the Node |
 | Failure | Restore puts back a moved Route, then removes the container, its ACL, firewall rules and mirror |
@@ -1069,7 +1069,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node. Also when the Project's default runs on another Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
 | `instance.migrate_unsupported` | 409 | `instance:migrate` of an Instance that is not an active development checkout on a Node of the build list |
-| `instance.migrate_retirement_blocked` | 409 | A planned owner retirement has other registered worktrees, or a checkout has changed Git identity or uncommitted changes. The error lists up to 20 worktree paths and changed files with total counts |
+| `instance.migrate_retirement_blocked` | 409 | An owner has other worktrees, or a checkout has changed Git identity or tracked files. Names 20 paths and total counts |
 | `instance.migrate_unpushed_commits` | 409 | Local branches or detached HEAD have commits unreachable from all local remote-tracking refs. The error names each and its commit count; no fetch or source changes |
 | `instance.migrate_stashes_present` | 409 | A planned retirement has stashes. The error names the count and leaves the source untouched |
 | `instance.migrate_branch_changed` | 409 | The checkout is not on the branch that Orbit records for the Instance |

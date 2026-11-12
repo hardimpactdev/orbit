@@ -1,6 +1,5 @@
 ---
-# Move the whole old checkout out of the live path. Never delete or prune any of its Git metadata: even a worktree created
-# after preflight, tag-only commits, submodule repositories and nested Git directories must remain recoverable.
+# Retain every checkout file. Linked worktrees get independent Git recovery metadata before their exact registration goes.
 - name: Check retirement before retaining the checkout
   ansible.builtin.include_tasks:
     file: instance-migrate-retirement-check.yml
@@ -56,16 +55,100 @@
       - -c
       - |
         import hashlib
+        import json
         import os
+        import shutil
+        import subprocess
         import sys
+        import tempfile
         from pathlib import Path
 
         source, root = Path(sys.argv[1]), Path(sys.argv[2])
+        identity = json.loads(sys.argv[3])
         destination = root / hashlib.sha256(os.fsencode(source)).hexdigest()
         if destination.exists():
             raise FileExistsError(f"Retained checkout already exists: {destination}")
-        # Same-filesystem rename only. Never copy-and-delete or traverse the checkout.
-        source.rename(destination)
+
+        def git(directory, *args):
+            return subprocess.run(
+                ['git', '-c', 'safe.directory=*', '-c', 'core.hooksPath=/dev/null',
+                 '-c', 'core.fsmonitor=false', '-C', str(directory), *args],
+                env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0'},
+                check=True, capture_output=True, text=True).stdout.strip()
+
+        private = Path(identity['git_dir'])
+        common = Path(identity['common_dir'])
+        def check_identity():
+            if (Path(git(source, 'rev-parse', '--absolute-git-dir')).resolve() != private
+                    or Path(git(source, 'rev-parse', '--path-format=absolute', '--git-common-dir')).resolve() != common):
+                raise ValueError('Git identity changed before retirement')
+            if identity['linked'] and (private / 'gitdir').read_text().strip() != str(source.resolve() / '.git'):
+                raise ValueError('Worktree registration changed before retirement')
+
+        check_identity()
+        if not identity['linked']:
+            # Same-filesystem rename keeps all owner metadata, including any late addition.
+            source.rename(destination)
+        else:
+            # Git has no command to detach a worktree while retaining every ignored/untracked file,
+            # its private index/reflogs and all recovery objects. Build and verify a private Git copy.
+            temporary = tempfile.mkdtemp(prefix='.recovery-', dir=root)
+            try:
+                recovery = Path(temporary) / '.git'
+                shutil.copytree(common, recovery, ignore=lambda path, names: ['worktrees'] if Path(path) == common else [])
+                for item in private.iterdir():
+                    if item.name in ('commondir', 'gitdir'):
+                        continue
+                    target = recovery / item.name
+                    if item.is_dir():
+                        shutil.copytree(item, target, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(item, target)
+                # Bind this copied metadata to a temporary worktree for verification, without checkout/reset.
+                for config in ('config', 'config.worktree'):
+                    path = recovery / config
+                    if path.exists():
+                        for key in ('core.worktree', 'core.bare'):
+                            result = subprocess.run(['git', 'config', '--file', str(path), '--unset-all', key],
+                                                    check=False, capture_output=True)
+                            if result.returncode not in (0, 5):
+                                raise ValueError('Cannot make recovery config independent')
+                # Repack all objects, including reflog-only and unreachable recovery objects, from any alternates.
+                objects = git(source, 'cat-file', '--batch-all-objects', '--batch-check=%(objectname)').splitlines()
+                object_list = Path(temporary) / 'objects'
+                object_list.write_text(''.join(oid + '\n' for oid in objects))
+                pack = Path(temporary) / 'objects.pack'
+                with object_list.open('rb') as entries, pack.open('wb') as output:
+                    subprocess.run(['git', '-c', 'safe.directory=*', '-C', str(source), 'pack-objects', '--stdout'],
+                                   stdin=entries, stdout=output, check=True, stderr=subprocess.PIPE)
+                (recovery / 'objects/info').mkdir(exist_ok=True)
+                (recovery / 'objects/info/alternates').write_text(str(common / 'objects') + '\n')
+                with pack.open('rb') as entries:
+                    subprocess.run(['git', '--git-dir=' + str(recovery), 'index-pack', '--stdin'],
+                                   stdin=entries, check=True, capture_output=True)
+                for name in ('alternates', 'http-alternates'):
+                    (recovery / 'objects/info' / name).unlink(missing_ok=True)
+                subprocess.run(['git', '--git-dir=' + str(recovery), 'fsck', '--full'],
+                               check=True, capture_output=True)
+                if git(source, 'rev-parse', 'HEAD') != git(temporary, 'rev-parse', 'HEAD'):
+                    raise ValueError('Recovery HEAD changed')
+                if (private / 'index').read_bytes() != (recovery / 'index').read_bytes():
+                    raise ValueError('Recovery index changed')
+                check_identity()
+                # Retain the complete original tree before replacing its gitfile with the verified private store.
+                source.rename(destination)
+                (destination / '.git').unlink()
+                recovery.rename(destination / '.git')
+                # The only removed owner metadata is this now-missing registration, matched in both directions.
+                pointer = (private / 'gitdir').read_text().strip()
+                if source.exists() or pointer != str(source.resolve() / '.git'):
+                    raise ValueError('Refusing to unregister a changed or existing worktree')
+                shutil.rmtree(private)
+            finally:
+                # Before rename it is disposable; after rename it is recovery data until .git is installed.
+                if source.exists() or (destination / '.git').is_dir():
+                    shutil.rmtree(temporary)
       - "{{ retired.path }}"
       - "{{ migrate.checkout }}.orbit-retired-git"
+      - "{{ retirement_identity.stdout }}"
   changed_when: true

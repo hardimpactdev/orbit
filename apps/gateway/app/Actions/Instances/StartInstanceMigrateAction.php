@@ -74,8 +74,8 @@ final readonly class StartInstanceMigrateAction
             $instance = Instance::query()->with(['project', 'node'])->lockForUpdate()->findOrFail($instance->id);
             $node = $instance->node;
             $this->assertCheckout($instance, $node);
-            // Null for the Project's default itself; every other Instance moves after it.
-            $default = $instance->name === 'default' ? null : $this->movedDefault($instance);
+            // Naming decides default behavior; migration never consumes the default's seed.
+            $default = $instance->name === 'default' ? null : $this->projectDefault($instance);
             if ($instance->processes()->where(static fn (Builder $query): Builder => $query
                 ->where('status', LifecycleStatus::Removing)->orWhereNotNull('retired_runtime'))->exists()
                 || Operation::query()->where('target_type', 'process')->whereIn('target_id', $instance->processes()->select('id'))
@@ -117,7 +117,7 @@ final readonly class StartInstanceMigrateAction
                 'route_id' => $route?->id, 'route_publication' => $publication,
                 'sqlite_connection_ids' => $databases['sqlite'], 'had_runtime_reservation' => $hadReservation,
                 'migrate' => [
-                    'checkout' => $instance->checkout_path, 'branch' => $branch, 'default' => $default === null,
+                    'checkout' => $instance->checkout_path, 'branch' => $branch, 'default' => $instance->name === 'default',
                     'application' => ApplicationDirectory::resolve($instance->checkout_path, $instance->root ?? $instance->project->root),
                     'awake' => ['directory' => RuntimeHibernation::MarkerDirectory, 'path' => RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id))],
                     'environment' => [
@@ -156,18 +156,12 @@ final readonly class StartInstanceMigrateAction
         }
     }
 
-    /**
-     * A non-default Instance moves after its Project's default: every other Instance of a Project lives on the default's Node, and a
-     * non-default checkout is a worktree of the default's repository. It runs T3, so it needs what a clone needs.
-     */
-    private function movedDefault(Instance $instance): Instance
+    /** A non-default keeps its Project placement and T3 prerequisites, without consuming a default snapshot. */
+    private function projectDefault(Instance $instance): Instance
     {
         $default = Instance::query()->where('project_id', $instance->project_id)->where('name', 'default')->first();
-        $runtime = $default?->runtime()->first();
-        // A default whose own move has not reached its container has a reserved row, but no seed.
-        if (! $default instanceof Instance || $runtime === null || $default->status !== InstanceState::Active || $runtime->seed_commit === null
-            || InstanceMigration::pending($default)) {
-            throw new ResourceOperationException('instance.default_not_migrated', 'Move the Project\'s default Instance into a container first.', 409);
+        if (! $default instanceof Instance) {
+            throw new ResourceOperationException('instance.default_missing', 'The Project has no default Instance.', 409);
         }
         if ($default->node_id !== $instance->node_id) {
             throw new ResourceOperationException('instance.default_missing',

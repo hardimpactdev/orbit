@@ -592,30 +592,57 @@ describe('the PHP version of a web-serving Project', function (): void {
     });
 });
 
-describe('the default-first rule', function (): void {
-    it('refuses a non-default Instance before its default has moved', function (Closure $arrange): void {
+describe('migration without a default seed', function (): void {
+    it('admits a non-default before its host default moves without giving it default behavior', function (): void {
         $node = containerDefaultNode();
         $project = containerDefaultProject();
-        $arrange($project, $node);
+        $default = migrateCheckout($project, $node);
         $feature = migrateCheckout($project, $node, 'feature');
 
-        expect(containerRefusal(fn () => migrateStart($feature)))->toBe('instance.default_not_migrated')
-            ->and(InstanceRuntime::query()->where('instance_id', $feature->id)->exists())->toBeFalse();
-    })->with([
-        'no default' => [fn (): null => null],
-        'a checkout default' => [fn (Project $project, Node $node): Instance => migrateCheckout($project, $node)],
-        'a default whose own move still runs' => [function (Project $project, Node $node): Operation {
-            $operation = migrateStart(migrateCheckout($project, $node));
-            $operation->forceFill(['status' => 'running', 'finished_at' => null])->save();
+        $operation = migrateStart($feature);
 
-            return $operation;
-        }],
-    ]);
+        expect($operation->input['migrate'])->toMatchArray([
+            'default' => false, 'checkout' => $feature->checkout_path,
+            'retire' => [['path' => $feature->checkout_path, 'mirror' => InstanceContainer::mirror($feature)]],
+        ]);
+        expect($operation->input['container']['clone']['t3']['port'])->toBe(3800);
+        expect($feature->runtime()->firstOrFail()->only(['bridge_address', 't3_port', 'clone_source_instance_id']))
+            ->toBe(['bridge_address' => '10.253.0.2', 't3_port' => 3800, 'clone_source_instance_id' => null]);
+        expect($default->runtime()->exists())->toBeFalse();
+
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'commit' => str_repeat('e', 40), 't3' => migrateServer($feature)]);
+        expect(migrateStart($default)->input['migrate']['retire'])
+            ->toBe([['path' => $default->checkout_path, 'mirror' => InstanceContainer::mirror($default)]]);
+    });
+
+    it('refuses a non-default without a default on the same Node before reserving', function (bool $missing): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        if (! $missing) {
+            migrateCheckout($project, containerDefaultNode('other', '10.44.0.8'));
+        }
+        $feature = migrateCheckout($project, $node, 'feature');
+
+        expect(containerRefusal(fn () => migrateStart($feature)))->toBe('instance.default_missing')
+            ->and($feature->runtime()->exists())->toBeFalse();
+    })->with(['missing' => true, 'another Node' => false]);
+
+    it('keeps the model-router prerequisite before the host default moves', function (): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        migrateCheckout($project, $node);
+        $feature = migrateCheckout($project, $node, 'feature');
+        app()->forgetInstance(TaskVmModelRoute::class);
+        app()->offsetUnset(TaskVmModelRoute::class);
+
+        expect(containerRefusal(fn () => migrateStart($feature)))->toBe('operation.kind_unavailable')
+            ->and($feature->runtime()->exists())->toBeFalse();
+    });
 
     it('refuses a non-default move while Conn is disabled before reserving its runtime', function (): void {
         $node = containerDefaultNode();
         $project = containerDefaultProject();
-        migrateMovedDefault($project, $node);
+        migrateCheckout($project, $node);
         $feature = migrateCheckout($project, $node, 'feature');
         app(ExtensionStore::class)->set('conn', false);
 

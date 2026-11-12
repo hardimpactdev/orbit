@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "edee53732e9a864b8cedd39c46d42f6ae57b10e9c847fc604408e6beefc0d141",
+    "source_sha256": "b7101c8210690f9041039ff197764ecd968770a44aec6774bea3029b936ca943",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -17,7 +17,14 @@
       "late ignored and non-ignored files do not refuse a move and remain in the retained checkout",
       "untracked files inside a tracked submodule retain the named retirement refusal even when Git config ignores it",
       "a retained default copies its unpushed commit and changed, staged, untracked, deleted and ignored files",
-      "a linked checkout refuses retirement even when the default is in the same retirement batch",
+      "a linked worktree migrates before its active owner and preserves every file and sibling registration",
+      "linked worktree preflight refuses unstaged without touching its active owner or sibling",
+      "linked worktree preflight refuses staged without touching its active owner or sibling",
+      "linked worktree preflight refuses unpushed without touching its active owner or sibling",
+      "linked worktree preflight refuses stash without touching its active owner or sibling",
+      "linked worktree preflight refuses identity without touching its active owner or sibling",
+      "linked worktree quiesce rechecks new tracked changes before stopping any writer",
+      "an owner refuses retirement while its child is in the same retirement batch",
       "a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact",
       "a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was",
       "a move starts with a new container: one that an earlier failed move left goes first",
