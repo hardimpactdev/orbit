@@ -71,8 +71,8 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
     }
 
     /**
-     * One git credential-store line under `$key`, for a fetch that reads a 0600 credential file. A public origin, or one
-     * the App is not installed on, gets an empty line and fetches anonymously.
+     * One git credential-store line under `$key`, for a fetch that reads a 0600 credential file. Only a confirmed
+     * public GitHub repository gets an empty line and fetches anonymously.
      *
      * @return array{vault:string,key:string}
      */
@@ -91,15 +91,44 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
         }
     }
 
-    /** A repository-scoped Contents read token, or null for a public origin or one the App is not installed on. */
+    /** Safe diagnosis shared by credential preparation and the Node's later authentication refusal. */
+    public static function accessDeniedMessage(string $app, GitHubRepository $repository): string
+    {
+        return "The GitHub App {$app} cannot read {$repository->owner}/{$repository->name}: install it for that organisation or add the repository.";
+    }
+
+    /** A fresh Contents read token, or anonymous access for a confirmed public repository. */
     private function mint(string $origin): ?GitHubAccessToken
     {
         $repository = GitHubRepository::fromOrigin($origin);
-        $credentials = $this->store->credentials();
+        if ($repository === null) {
+            return null;
+        }
+        $name = $repository->owner.'/'.$repository->name;
+        try {
+            $credentials = $this->store->credentials();
+            $app = $credentials->slug ?? '(not configured)';
+            if ($credentials !== null && $this->github->repositoryInstallation($credentials, $repository) !== null) {
+                try {
+                    return $this->github->scopedRepositoryToken($credentials,
+                        GitHubTokenGrant::from(['repository' => $name, 'permissions' => ['contents' => 'read']]));
+                } catch (ResourceOperationException $exception) {
+                    if ($exception->errorCode !== 'dependency_token.refused') {
+                        throw $exception;
+                    }
+                    // An installation may exist without covering this repository or the requested permission.
+                }
+            }
+            if ($this->github->repositoryIsPublic($repository)) {
+                return null;
+            }
+        } catch (\Throwable $exception) {
+            throw new ResourceOperationException('source.github_unavailable',
+                "GitHub could not supply a source credential for {$name}.", 502, $exception);
+        }
 
-        return $repository !== null && $credentials !== null && $this->github->repositoryInstallation($credentials, $repository) !== null
-            ? $this->github->scopedRepositoryToken($credentials, GitHubTokenGrant::from(['repository' => $repository->owner.'/'.$repository->name, 'permissions' => ['contents' => 'read']]))
-            : null;
+        throw new ResourceOperationException('source.github_app_denied',
+            self::accessDeniedMessage($app, $repository), 403);
     }
 
     /**

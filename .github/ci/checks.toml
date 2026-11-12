@@ -2132,6 +2132,7 @@ inputs = [
   "swamp/extensions/behaviors/operations/instance-vp-command/requirements.ts",
   "swamp/extensions/behaviors/operations/instance-vp-command/steps.ts",
   "swamp/workflows/workflow-operation-instance-create.yaml",
+  "swamp/workflows/workflow-operation-instance-migrate.yaml",
   "swamp/workflows/workflow-operation-instance-deploy-direct.yaml",
   "swamp/workflows/workflow-operation-process-container.yaml",
   "swamp/workflows/workflow-route-withdraw.yaml",
@@ -2834,3 +2835,16 @@ inputs = [
 "test_ansible_bootstrap_swamp_front" = 6
 "test_validated_inode_has_final_metadata_at_interrupted_rename" = 6
 "test_shape_live_proof_stages_validates_and_renames" = 1
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_migrate_source_test.ts"
+cost = 16
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-migrate-phase.yml",
+  "swamp/ansible/tasks/instance-migrate-retirement-check.yml",
+]

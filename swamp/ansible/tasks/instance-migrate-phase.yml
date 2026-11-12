@@ -9,6 +9,101 @@
      | default('{}', true) | from_json).get('preflight_refused', false)
   ansible.builtin.meta: end_host
 
+# The deploy HTTPS transport, before any retirement check or resource change.
+# Older Gateway inputs have no source key during release overlap.
+- name: Check remote deployment access before any Node change
+  when: phase == 'container' and migrate.get('source') is not none
+  block:
+    - name: Reserve a private temporary source credential
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: orbit-migrate-source-
+      register: migrate_source_private
+    - name: Read the remote with the deploy credential
+      block:
+        - name: Write the temporary fetch credential
+          ansible.builtin.copy:
+            content: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/source-credential', rstrip=false) }}"
+            dest: "{{ migrate_source_private.path }}/credential"
+            mode: "0600"
+          no_log: true
+        - name: Read the remote branch once within thirty seconds
+          ansible.builtin.command:
+            argv:
+              - timeout
+              - --kill-after=1
+              - "30"
+              - git
+              - -c
+              - core.hooksPath=/dev/null
+              - -c
+              - core.fsmonitor=false
+              - -c
+              - credential.helper=
+              - -c
+              - "credential.helper=store --file={{ migrate_source_private.path }}/credential"
+              - -c
+              - protocol.allow=never
+              - -c
+              - protocol.https.allow=always
+              - -c
+              - http.followRedirects=false
+              - -c
+              - url.https://github.com/.insteadOf=git@github.com:
+              - -c
+              - url.https://github.com/.insteadOf=ssh://git@github.com/
+              - -C
+              - /
+              - ls-remote
+              - --exit-code
+              - --heads
+              - --
+              - "{{ migrate.source.repository }}"
+              - "{{ 'refs/heads/' ~ migrate.source.branch }}"
+            expand_argument_vars: false
+          environment:
+            LC_ALL: C
+            LANG: C
+            GIT_TERMINAL_PROMPT: "0"
+            GIT_CONFIG_NOSYSTEM: "1"
+            GIT_CONFIG_GLOBAL: /dev/null
+            GIT_ALLOW_PROTOCOL: https
+          register: migrate_source_read
+          changed_when: false
+          failed_when: false
+          no_log: true
+      always:
+        - name: Remove the temporary fetch credential
+          ansible.builtin.file: {path: "{{ migrate_source_private.path }}", state: absent}
+    - name: Classify authentication diagnostics privately
+      ansible.builtin.set_fact:
+        migrate_source_auth_denied: >-
+          {{ migrate_source_read.rc not in [0, 2, 124, 137]
+             and migrate.source.get('access_denied_message') is not none
+             and ('authentication failed' in (migrate_source_read.stderr | lower)
+                  or 'could not read username' in (migrate_source_read.stderr | lower)
+                  or 'repository not found' in (migrate_source_read.stderr | lower)
+                  or 'requested url returned error: 401' in (migrate_source_read.stderr | lower)
+                  or 'requested url returned error: 403' in (migrate_source_read.stderr | lower)) }}
+      no_log: true
+    - name: Name a failed source read without remote output
+      when: migrate_source_read.rc != 0
+      ansible.builtin.set_fact:
+        migrate_refusal_code: >-
+          {{ 'source.read_timed_out' if migrate_source_read.rc in [124, 137] else
+             'source.github_app_denied' if migrate_source_auth_denied else 'source.head_unavailable' }}
+        migrate_refusal_message: >-
+          {{ 'Could not reach the source in 30 s: ' ~ migrate.source.repository ~ '.'
+             if migrate_source_read.rc in [124, 137] else
+             migrate.source.access_denied_message if migrate_source_auth_denied else
+             'The remote branch ' ~ migrate.source.branch ~ ' does not exist in ' ~ migrate.source.repository ~ '.'
+             if migrate_source_read.rc == 2 else 'Could not reach the source: ' ~ migrate.source.repository ~ '.' }}
+    - name: Require the remote branch to be readable
+      ansible.builtin.assert:
+        that: migrate_source_read.rc == 0
+        fail_msg: source.head_unavailable
+        quiet: true
+
 - name: Name the commands
   ansible.builtin.set_fact:
     incus_project: [incus, --project, "{{ container.project }}"]
