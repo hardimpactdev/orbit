@@ -5,6 +5,7 @@ const root = new URL("../../../", import.meta.url);
 const workflow = parse(Deno.readTextFileSync(new URL("swamp/workflows/workflow-operation-instance-transfer.yaml", root))) as any;
 const steps = workflow.jobs[0].steps;
 const retirement = steps.find((step: any) => step.name === "Retire the source");
+const preparation = steps.find((step: any) => step.name === "Prepare source retirement");
 const archive = steps.find((step: any) => step.name === "Archive the checkout");
 const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
@@ -20,6 +21,8 @@ function fixture() {
     const folder = Deno.makeTempDirSync({prefix: "orbit-transfer-retire-"});
     const source = folder + "/owner";
     const linked = folder + "/late";
+    const moved = folder + "/moved";
+    const inventory = [{id:23,path:moved}];
     git(folder, "init", "-q", source);
     Deno.writeTextFileSync(source + "/work", "preserve owner work");
     git(source, "add", ".");
@@ -32,13 +35,14 @@ function fixture() {
     const phase = (parse(Deno.readTextFileSync(new URL("swamp/ansible/instance-checkout-destroy.yml", root))) as any[])[1];
     phase.hosts = "localhost";
     phase.connection = "local";
-    phase.vars = {run: state, intent: {source_paths: [source], checkout_instances: []}, ansible_python_interpreter: "/usr/bin/python3"};
+    phase.vars = {...phase.vars, run: state, ansible_python_interpreter: "/usr/bin/python3"};
+    Deno.writeTextFileSync(state + "/intent.json", JSON.stringify({source_paths:[source],checkout_instances:inventory}));
     Deno.writeTextFileSync(assets + "/instance-checkout-destroy.yml", stringify([phase]));
-    const env = {ORBIT_RUN: state, ORBIT_ANSIBLE: assets, ANSIBLE_DISPLAY_FAILED_STDERR: "1", ANSIBLE_STDOUT_CALLBACK: "default", ANSIBLE_COLLECTIONS_PATH: folder + "/collections"};
+    const env = {ORBIT_CHECKOUT_INVENTORY: "1", ORBIT_RUN: state, ORBIT_ANSIBLE: assets, ANSIBLE_DISPLAY_FAILED_STDERR: "1", ANSIBLE_STDOUT_CALLBACK: "default", ANSIBLE_COLLECTIONS_PATH: folder + "/collections"};
     const command = retirement.task.inputs.run.replace("/opt/orbit/ansible/venv/bin/ansible-playbook", "ansible-playbook");
     const archiveArgs = [...archive.task.inputs.argv];
     archiveArgs.splice(-3, 3, source, folder + "/archive.tar", ".env");
-    return {folder, source, linked, assets, state, env, command, archiveArgs};
+    return {folder, source, linked, moved, inventory, assets, state, env, command, archiveArgs};
 }
 
-export {workflow, retirement, archive, text, quote, run, git, fixture};
+export {workflow, retirement, preparation, archive, text, quote, run, git, fixture};

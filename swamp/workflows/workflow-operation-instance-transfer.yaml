@@ -641,7 +641,7 @@ jobs:
         intent:
           ssh_execution: ${{ inputs.intent.source.ssh_execution }}
           source_paths: ${{ [inputs.intent.source.source] }}
-          checkout_instances: []
+          checkout_instances: '${{ "checkout_instances" in inputs.intent ? inputs.intent.checkout_instances : [] }}'
         path: ${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}
   - name: Retire the source
     labels:
@@ -668,10 +668,20 @@ jobs:
       behaviorName: ${{ "itr-retire-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags remove "$ORBIT_ANSIBLE/instance-checkout-destroy.yml"
+        run: |-
+          if [ "$ORBIT_CHECKOUT_INVENTORY" != 1 ]; then
+            printf '%s\n' '{"outcome":"refused","data":{"error_code":"instance.remove_refused","reason":"checkout_inventory_missing"}}' > "$ORBIT_RUN/source-result.json"
+            cat "$ORBIT_RUN/source-result.json"
+            exit 1
+          fi
+          status=0
+          timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags remove "$ORBIT_ANSIBLE/instance-checkout-destroy.yml" >&2 || status=$?
+          if [ -f "$ORBIT_RUN/source-result.json" ]; then cat "$ORBIT_RUN/source-result.json"; fi
+          exit "$status"
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_ANSIBLE: ${{ steps["Prepare source retirement"].outputs.assets }}
+          ORBIT_CHECKOUT_INVENTORY: '${{ "checkout_instances" in inputs.intent ? "1" : "0" }}'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
           ANSIBLE_SSH_ARGS: ${{ "-o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts -o StrictHostKeyChecking=yes" }}
     writes: true
@@ -692,7 +702,9 @@ jobs:
       behaviorName: ${{ "itr-retire-clean-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 10 rm -rf -- "$ORBIT_RUN"
+        run: |-
+          if [ -f "$ORBIT_RUN/source-result.json" ]; then cat "$ORBIT_RUN/source-result.json"; fi
+          timeout 10 rm -rf -- "$ORBIT_RUN"
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
   - name: Remove the source archive

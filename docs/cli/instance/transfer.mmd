@@ -141,13 +141,13 @@ sequenceDiagram
     SW->>S: Remove source Processes<br/>process child · forEach
     Note over SW: Prepare source retirement
     %%> Why:
-    %%> - hand the admitted source path and SSH pins to the shared removal phase
+    %%> - hand the source path, SSH pins and host-only source Node checkout inventory to the shared removal phase
     SW->>S: Retire the source<br/>Ansible · tags remove
     %%> What it does:
     %%> - the shared destroy guard checks live Git dependencies immediately before removal; a late worktree keeps the source intact
     %%> - removes a linked worktree through Git, with no rm fallback on refusal or unregister failure
     %%> If it fails:
-    %%> - Node 15 stays authoritative; the Gateway keeps the placement and marks the task failed
+    %%> - Node 15 stays authoritative; retain the domain refusal and dependent paths/IDs before cleanup; mark the task failed
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader reads the run's steps and the Route child's ready result

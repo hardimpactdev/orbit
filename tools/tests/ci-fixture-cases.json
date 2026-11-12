@@ -1996,16 +1996,17 @@
     ]
   },
   "swamp/tests/instance_transfer_retirement_test.ts": {
-    "source_sha256": "5c4ab039733d5790cf61f05893665032f693a7391470b0f1f44805432ee266a0",
+    "source_sha256": "f067efd691b381690809f1cb48e0db761877fc34fc2843bec41b30b9619475d5",
     "cases": [
-      "transfer retirement refuses a real worktree added after archive",
-      "transfer retirement removes an independent source"
+      "transfer retirement refuses a recorded worktree moved after archive",
+      "transfer retirement removes an independent source",
+      "transfer without the new inventory key refuses safely before any source removal"
     ]
   },
   "swamp/tests/instance_transfer_retirement_native_test.ts": {
-    "source_sha256": "da7c3089af730ba701de670276bf35020cdb3d60a227248837ac1401f871911b",
+    "source_sha256": "f6e398bfe7634ae54402e886bd09e34702165a42ad35d2f96f64b60933ca4fd2",
     "cases": [
-      "pinned native transfer keeps cutover and both Git trees when a late worktree blocks retirement"
+      "pinned native transfer keeps cutover and both Git trees when a moved worktree blocks retirement"
     ]
   }
 }

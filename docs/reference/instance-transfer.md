@@ -2,7 +2,7 @@
 title: "Instance transfer"
 description: "Move a development Instance through one native Swamp workflow."
 covers:
-  - apps/gateway/app/Domain/Instances/NativeInstanceTransferProjection.php
+  - apps/gateway/app/Domain/Instances/{NativeInstanceTransferProjection,NativeInstanceTransferIntent,direct-operations}.php
   - swamp/{workflows/workflow-operation-instance-transfer.yaml,extensions/behaviors/operations/instance-source-command/**}
 ---
 
@@ -46,7 +46,11 @@ At root terminal, the Gateway changes the Instance placement, relocates Process 
 
 Workload access, PHP, environment URLs, Caddy and DNS use the prospective placements captured during admission. Route environment material uses named vault execution copies. No step reads intent or reports progress through a Gateway callback. Certificate signing remains the scoped Gateway primitive.
 
-After destination publication, Swamp removes unused source certificate and LAN artifacts, then deletes the recorded source checkout. Immediately before removal, the shared destroy phase rechecks the owner’s Git registry and recorded checkout paths without traversing checkout contents. The [known removal limits](/reference/instance-removal) also apply. A dependent added after archiving stops retirement and leaves the source intact; the destination stays authoritative. Linked worktree removal unregisters only that tree through Git and preserves the common repository and sibling worktrees. A refused check or unregister failure has no recursive-delete fallback.
+After destination publication, Swamp removes unused source certificate and LAN artifacts, then deletes the recorded source checkout. The Gateway captures and refreshes the source Node’s host-only checkout inventory with the same selection as destroy.
+
+Immediately before removal, the shared destroy phase rechecks the owner’s Git registry and recorded checkout paths without traversing checkout contents. The [known removal limits](/reference/instance-removal) also apply. A dependent added after archiving stops retirement and leaves the source intact; the destination stays authoritative. Linked worktree removal unregisters only that tree through Git and preserves the common repository and sibling worktrees. A refused check or unregister failure has no recursive-delete fallback.
+
+The retirement command retains its bounded public receipt before cleanup. The Operation exposes the refusal’s domain code and dependent paths/Instance IDs, and preserves unknown-checkout warnings. A workflow loaded before its inventory producer refuses retirement safely rather than deleting without the inventory; it never evaluates a missing intent key.
 
 The Gateway then retires only the replaced primary Route and records completion. Other web-root Route IDs remain unchanged.
 
@@ -55,5 +59,7 @@ The Gateway then retires only the replaced primary Route and records completion.
 Before cutover, the native DAG restores source publication, drops reserved destination Route intent and discards only a proven destination checkout. Failed cleanup remains visible as failure. It never authorizes deletion of an unproven replacement.
 
 After successful physical forward publication, the destination is authoritative. A later retirement failure or cancellation preserves its placement result and source residue for repair. Failure before successful forward publication restores source publication and runtime before discarding the proven destination. Failed recovery retains residue and refuses to guess that cleanup succeeded. Cancellation uses native cancellation; an acknowledgment is not terminal evidence.
+
+Native workflow resume cannot retry retirement after cleanup removes the run’s intent file. After a post-cutover refusal there is currently no supported retirement-only command; the destination keeps serving and the source must stay retained. A fresh identical transfer is not a proven retirement-only recovery entry. A follow-up must add re-preparation and a scoped retry entry.
 
 No transfer action calls orbit-agent. The agent remains frozen.

@@ -2744,7 +2744,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_transfer_retirement_test.ts"
-cost = 6
+cost = 7
 inputs = [
   "swamp/tests/_support/transfer_retirement.ts",
   "swamp/workflows/workflow-operation-instance-transfer.yaml",
@@ -2753,8 +2753,9 @@ inputs = [
   "swamp/extensions/behaviors/node-worker/config.ts",
 ]
 [fixture.case_costs]
-"transfer retirement refuses a real worktree added after archive" = 3
+"transfer retirement refuses a recorded worktree moved after archive" = 3
 "transfer retirement removes an independent source" = 3
+"transfer without the new inventory key refuses safely before any source removal" = 1
 
 [[fixture]]
 file = "swamp/tests/instance_transfer_retirement_native_test.ts"
@@ -2769,4 +2770,4 @@ inputs = [
   "swamp/extensions/behaviors/node-worker/config.ts",
 ]
 [fixture.case_costs]
-"pinned native transfer keeps cutover and both Git trees when a late worktree blocks retirement" = 18
+"pinned native transfer keeps cutover and both Git trees when a moved worktree blocks retirement" = 18

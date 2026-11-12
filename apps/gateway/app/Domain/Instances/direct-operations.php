@@ -23,7 +23,8 @@ return [
         // Retire ends a moved transfer and Discard a restored one; the Route children's results say which happened.
         'terminal_result' => ['job' => 'transfer', 'step' => 'Retire the source', 'alternatives' => ['Discard the destination'], 'native' => true,
             'captures' => ['forward' => ['job' => 'transfer', 'step' => 'Publish the Route', 'field' => 'result'],
-                'restore' => ['job' => 'transfer', 'step' => 'Restore the Route', 'field' => 'result']]],
+                'restore' => ['job' => 'transfer', 'step' => 'Restore the Route', 'field' => 'result'],
+                'source_removal' => ['job' => 'transfer', 'step' => 'Clean retirement files', 'field' => 'stdout']]],
         'projection' => NativeInstanceTransferProjection::class],
     'instance.clone' => ['workflow' => 'operation-instance-clone', 'workflow_inputs' => true,
         'github_token_issuer' => InstanceGitHubReadTokens::class,
