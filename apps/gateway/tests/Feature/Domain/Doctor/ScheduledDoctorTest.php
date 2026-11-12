@@ -20,6 +20,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Node;
 use App\Models\NodeFact;
 use App\Models\ProblemCollectorState;
@@ -674,4 +675,19 @@ it('reads a relative sample time once per trim', function (): void {
     // 'now' is 12:00:00 for the whole trim, so it sorts between the two absolute times whatever the sort compares first.
     expect($trim->invoke(app(ProblemCollector::class), ['2026-11-12T11:50:00Z', 'now', '2026-11-12T12:00:01Z'], [10, 20, 30]))
         ->toBe([['2026-11-12T11:50:00Z', 'now', '2026-11-12T12:00:01Z'], [10, 20, 30]]);
+});
+
+it('preserves the reconcile pass facts when scheduled Doctor rewrites collection state', function (): void {
+    $node = scheduledDoctorNode();
+    scheduledDoctorFacts($node);
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    $facts = ProblemCollectorState::query()->sole()->observation;
+    expect($facts)->toMatchArray(['operation_reconcile_finished_at' => '2026-11-12T12:00:00.000000Z',
+        'operation_settlement_oldest_completed_at' => null, 'operation_settlement_count' => 0])->toHaveKey('operation_reconcile_duration_ms');
+
+    app(RunDoctorAction::class)->scheduled();
+
+    expect(ProblemCollectorState::query()->sole()->observation)->toMatchArray([
+        ...$facts, 'doctor_collected_at' => '2026-11-12T12:00:00.000000Z', 'doctor_started_at' => '2026-11-12T12:00:00.000000Z',
+    ]);
 });

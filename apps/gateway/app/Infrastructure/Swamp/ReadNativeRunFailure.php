@@ -8,6 +8,8 @@ use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Operation;
+use Carbon\CarbonImmutable;
+use Closure;
 use Throwable;
 
 /** One authenticated history read. It never starts, resumes or hydrates native work. */
@@ -15,8 +17,10 @@ final readonly class ReadNativeRunFailure
 {
     public function __construct(private WebSocketClient $socket) {}
 
-    /** @return array{status:OperationStatus,failure:array{failed_step:string,detail:string,stderr_recorded:bool}|null,finished_at:?string}|null */
-    public function read(Operation $operation, string $workflow, string $runId): ?array
+    /**
+     * @param  Closure(CarbonImmutable):void|null  $onTerminal
+     * @return array{status:OperationStatus,failure:array{failed_step:string,detail:string,stderr_recorded:bool}|null,finished_at:?string}|null */
+    public function read(Operation $operation, string $workflow, string $runId, ?Closure $onTerminal = null): ?array
     {
         $token = config('swamp.read_token');
         $address = config('swamp.address');
@@ -45,6 +49,10 @@ final readonly class ReadNativeRunFailure
                         return null;
                     }
 
+                    if ($onTerminal !== null && in_array($run['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)
+                        && ($completedAt = NativeRunTimestamp::parse($run['completedAt'] ?? null)) !== null) {
+                        $onTerminal($completedAt);
+                    }
                     $status = match ($run['status'] ?? null) {
                         'failed' => OperationStatus::Failed,
                         'interrupted' => OperationStatus::Interrupted,

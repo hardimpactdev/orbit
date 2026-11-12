@@ -18,6 +18,8 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Carbon\CarbonImmutable;
+use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -104,8 +106,9 @@ final readonly class SwampCommandStep
     /** Called by the shared native terminal subscriber, never by a family step.
      * @param  array<string,mixed>  $terminalRun  Native event.run, or its bound id after a late attach miss.
      * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}  $selector  The fixed family terminal_result declaration.
+     * @param  Closure(CarbonImmutable):void|null  $onTerminal  Observes the existing root read before any projection can fail.
      */
-    public function projectTerminal(Operation $operation, array $terminalRun, array $selector, bool $atDeadline = false): Operation
+    public function projectTerminal(Operation $operation, array $terminalRun, array $selector, bool $atDeadline = false, ?Closure $onTerminal = null): Operation
     {
         $direct = app(DirectOperation::class);
         $runId = $terminalRun['id'] ?? null;
@@ -131,6 +134,10 @@ final readonly class SwampCommandStep
             || ($inputs['operation_id'] ?? null) !== $operation->id || ($inputs['node_id'] ?? null) !== $operation->node_id
             || ($inputs['kind'] ?? null) !== $operation->kind) {
             throw $this->unavailable();
+        }
+        if ($onTerminal !== null && in_array($run['status'], $terminalStatuses, true)
+            && ($completedAt = NativeRunTimestamp::parse($run['completedAt'] ?? null)) !== null) {
+            $onTerminal($completedAt);
         }
         $this->projectChildren($operation, $runId, $run);
         if (! in_array($run['status'], $terminalStatuses, true)) {
