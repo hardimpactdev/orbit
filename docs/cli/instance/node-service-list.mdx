@@ -25,9 +25,11 @@ orbit instance:node-service:list 12
 | `instance` | Positive numeric Instance ID. An omitted ID uses the [shared terminal selection rules](/reference/cli-ux#input-and-output-modes). |
 | `--json` | Return `targets` and `request_id` as one JSON object, following the [shared output rules](/reference/cli-ux#input-and-output-modes). |
 
-The caller needs the same [Node authority](/cli/node/access-add) as attach and detach. The API is `GET /api/v1/instances/{instance}/node-service-targets`; MCP exposes `instance-node-service-list` with numeric `instance`. The API envelope uses `data` for the records and `meta.request_id` for correlation.
+The caller needs [Node authority](/cli/node/access-add) for the Instance Node, as for detach. Attaching a remote target also requires authority for its service Node. The API is `GET /api/v1/instances/{instance}/node-service-targets`; MCP exposes `instance-node-service-list` with numeric `instance`. The API envelope uses `data` for the records and `meta.request_id` for correlation.
 
-Orbit returns only the selected Instance's attachments, ordered by attachment ID. Each record contains `id`, `instance_id`, `node_id`, `process_id`, `protocol`, `port`, `host_env_key` and `port_env_key`. These are identities and key names, never credentials or environment values. Human output shows a table, or labeled records when the terminal is too narrow, with attachment ID, Process ID, protocol, port and key names, followed by the request ID. An empty list succeeds with `targets: []` in CLI JSON or an empty-state message in human output.
+Orbit returns only the selected Instance's attachments, ordered by attachment ID. Each record contains `id`, `instance_id`, `node_id`, `process_id`, `protocol`, `port`, `host_env_key` and `port_env_key`. The record's `node_id` identifies the service Node, which can differ from the Instance Node. These are identities and key names, never credentials or environment values.
+
+Human output shows a table, or labeled records when the terminal is too narrow, with attachment ID, Process ID, protocol, port and key names, followed by the request ID. An empty list succeeds with `targets: []` in CLI JSON or an empty-state message in human output.
 
 This read uses recorded state. It contacts no Node, starts no Operation and changes no attachment, environment, network rule or Process. It does not prove that a listener is running or reachable. Use an attachment ID from this list with [detach](/cli/instance/node-service-detach).
 
