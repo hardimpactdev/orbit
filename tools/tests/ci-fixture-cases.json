@@ -2125,9 +2125,11 @@
     ]
   },
   "swamp/tests/ansible_instance_route_withdraw_test.ts": {
-    "source_sha256": "0ebd27b8025548d3ed6dac8edc09df2c4ec66f829712084937be372e527743dd",
+    "source_sha256": "8a652cb65effdf0c3971b1482d1bfaa8798263319980d8182bd38d3ce700b977",
     "cases": [
-      "pending Route withdrawal removes partial publication and CSR residue or accepts an absent site with real Ansible"
+      "withdrawal removes a published site and its CSR residue with real Ansible",
+      "withdrawal accepts an absent site and removes CSR residue with real Ansible",
+      "withdrawal refuses an old writer between composition and apply with real Ansible"
     ]
   },
   "swamp/tests/ansible_instance_migrate_source_test.ts": {

@@ -3,8 +3,6 @@
 
 import grp
 
-from ansible.module_utils.basic import AnsibleModule
-
 from ansible.module_utils.orbit_caddy_publish import PublicationFailure, publish
 
 DOCUMENTATION = r"""
@@ -34,6 +32,8 @@ published:
 
 
 def main():
+    from ansible.module_utils.basic import AnsibleModule
+
     module = AnsibleModule(argument_spec={
         "content": {"type": "str", "required": True},
         "composed_from_sha256": {"type": "str", "required": True},

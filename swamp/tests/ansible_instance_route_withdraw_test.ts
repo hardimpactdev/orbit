@@ -76,119 +76,130 @@ function composeWithdrawal(args: Record<string, unknown> & { read: string }) {
             "/tmp/orbit-ansible-00000000-0000-0000-0000-000000000000/read.json",
     }, read);
 }
-Deno.test({
-    name:
-        "pending Route withdrawal removes partial publication and CSR residue or accepts an absent site with real Ansible",
-    // CI's registered fixture installs pinned Ansible; ordinary behavior-only unit runs may omit it.
-    ignore: !(Deno.env.get("PATH") ?? "").split(":").some((path) => {
-        try {
-            return Deno.statSync(path + "/ansible-playbook").isFile;
-        } catch {
-            return false;
-        }
-    }),
-    async fn() {
-        const root = await Deno.makeTempDir({
-            prefix: "orbit-partial-withdraw-",
-        });
-        const uid = String(Deno.uid()), gid = String(Deno.gid());
-        const binary = root + "/bin";
-        const mapped = (text: string) =>
-            text.replaceAll("/etc/caddy", root + "/etc/caddy")
-                .replaceAll("/etc/dnsmasq.d", root + "/etc/dnsmasq.d")
-                .replaceAll(
-                    "/var/lib/orbit/private-dns",
-                    root + "/var/lib/orbit/private-dns",
-                );
-        const adapt = (value: unknown): unknown => {
-            if (typeof value === "string") return mapped(value);
-            if (Array.isArray(value)) return value.map(adapt);
-            if (value && typeof value === "object") {
-                return Object.fromEntries(
-                    Object.entries(value).map(([key, item]) => [
-                        mapped(key),
-                        key === "owner" && item === "root"
-                            ? uid
-                            : key === "group" && item === "root"
-                            ? gid
-                            : adapt(item),
-                    ]),
-                );
+for (
+    const [scenario, name] of Object.entries({
+        published:
+            "withdrawal removes a published site and its CSR residue with real Ansible",
+        partial:
+            "withdrawal accepts an absent site and removes CSR residue with real Ansible",
+        stale:
+            "withdrawal refuses an old writer between composition and apply with real Ansible",
+    })
+) {
+    Deno.test({
+        name,
+        // CI's registered fixture installs pinned Ansible; ordinary behavior-only unit runs may omit it.
+        ignore: !(Deno.env.get("PATH") ?? "").split(":").some((path) => {
+            try {
+                return Deno.statSync(path + "/ansible-playbook").isFile;
+            } catch {
+                return false;
             }
-            return value;
-        };
-        try {
-            for (
-                const folder of [
-                    binary,
-                    root +
-                    "/etc/caddy/orbit-certificates/route-7-router/versions/v1",
-                    root + "/etc/dnsmasq.d",
-                    root + "/var/lib/orbit/private-dns",
-                    root + "/home/.orbit/certificates/route-7-router",
-                    root + "/tasks",
-                ]
-            ) {
-                await Deno.mkdir(folder, { recursive: true });
-            }
-            const scripts: Record<string, string> = {
-                runuser: 'shift 3; exec "$@"',
-                caddy: 'test "$1" = validate && test -f "$3"',
-                systemctl: `printf '%s\\n' "$*" >> "${root}/service-calls"`,
-                dnsmasq: 'test "$1" = --test',
-                getent:
-                    `printf 'orbit:x:${uid}:${gid}::${root}/home:/bin/sh\\n'`,
+        }),
+        async fn() {
+            const root = await Deno.makeTempDir({
+                prefix: "orbit-partial-withdraw-",
+            });
+            const uid = String(Deno.uid()), gid = String(Deno.gid());
+            const binary = root + "/bin";
+            const mapped = (text: string) =>
+                text.replaceAll("/etc/caddy", root + "/etc/caddy")
+                    .replaceAll("/etc/dnsmasq.d", root + "/etc/dnsmasq.d")
+                    .replaceAll(
+                        "/var/lib/orbit/private-dns",
+                        root + "/var/lib/orbit/private-dns",
+                    );
+            const adapt = (value: unknown): unknown => {
+                if (typeof value === "string") return mapped(value);
+                if (Array.isArray(value)) return value.map(adapt);
+                if (value && typeof value === "object") {
+                    return Object.fromEntries(
+                        Object.entries(value).map(([key, item]) => [
+                            mapped(key),
+                            key === "owner" && item === "root"
+                                ? uid
+                                : key === "group" && item === "root"
+                                ? gid
+                                : adapt(item),
+                        ]),
+                    );
+                }
+                return value;
             };
-            for (const [name, body] of Object.entries(scripts)) {
+            try {
+                for (
+                    const folder of [
+                        binary,
+                        root +
+                        "/etc/caddy/orbit-certificates/route-7-router/versions/v1",
+                        root + "/etc/dnsmasq.d",
+                        root + "/var/lib/orbit/private-dns",
+                        root + "/home/.orbit/certificates/route-7-router",
+                        root + "/tasks",
+                    ]
+                ) {
+                    await Deno.mkdir(folder, { recursive: true });
+                }
+                const scripts: Record<string, string> = {
+                    runuser: 'shift 3; exec "$@"',
+                    caddy: 'test "$1" = validate && test -f "$3"',
+                    systemctl: `printf '%s\\n' "$*" >> "${root}/service-calls"`,
+                    dnsmasq: 'test "$1" = --test',
+                    getent:
+                        `printf 'orbit:x:${uid}:${gid}::${root}/home:/bin/sh\\n'`,
+                };
+                for (const [name, body] of Object.entries(scripts)) {
+                    await Deno.writeTextFile(
+                        `${binary}/${name}`,
+                        `#!/bin/sh\n${body}\n`.replaceAll("\\n", "\n"),
+                    );
+                    await Deno.chmod(`${binary}/${name}`, 0o755);
+                }
+                const apply = (parse(
+                    await Deno.readTextFile(
+                        `${ROOT}/ansible/route-withdraw.yml`,
+                    ),
+                ) as Record<string, unknown>[])[2];
+                apply.hosts = "localhost";
+                apply.connection = "local";
+                apply.become = false;
+                (apply.vars as Record<string, unknown>)
+                    .ansible_python_interpreter = "/usr/bin/python3";
+                (apply.vars as Record<string, unknown>).caddy_group = gid;
+                await Deno.mkdir(root + "/library");
+                await Deno.mkdir(root + "/module_utils");
                 await Deno.writeTextFile(
-                    `${binary}/${name}`,
-                    `#!/bin/sh\n${body}\n`.replaceAll("\\n", "\n"),
+                    root + "/library/orbit_caddy_publish.py",
+                    (await Deno.readTextFile(
+                        ROOT + "/ansible/library/orbit_caddy_publish.py",
+                    ))
+                        .replace(
+                            'gid=grp.getgrnam("caddy").gr_gid',
+                            "gid=" + gid,
+                        ),
                 );
-                await Deno.chmod(`${binary}/${name}`, 0o755);
-            }
-            const apply = (parse(
-                await Deno.readTextFile(
-                    `${ROOT}/ansible/route-withdraw.yml`,
-                ),
-            ) as Record<string, unknown>[])[2];
-            apply.hosts = "localhost";
-            apply.connection = "local";
-            apply.become = false;
-            (apply.vars as Record<string, unknown>).ansible_python_interpreter =
-                "/usr/bin/python3";
-            (apply.vars as Record<string, unknown>).caddy_group = gid;
-            await Deno.mkdir(root + "/library");
-            await Deno.mkdir(root + "/module_utils");
-            await Deno.writeTextFile(
-                root + "/library/orbit_caddy_publish.py",
-                (await Deno.readTextFile(
-                    ROOT + "/ansible/library/orbit_caddy_publish.py",
-                ))
-                    .replace('gid=grp.getgrnam("caddy").gr_gid', "gid=" + gid),
-            );
-            await Deno.writeTextFile(
-                root + "/module_utils/orbit_caddy_publish.py",
-                (await Deno.readTextFile(
-                    ROOT + "/ansible/module_utils/orbit_caddy_publish.py",
-                ))
-                    .replace(
-                        'live=Path("/etc/caddy/Caddyfile")',
-                        'live=Path("' + root + '/etc/caddy/Caddyfile")',
-                    )
-                    .replace("uid=0, gid=0", "uid=" + uid + ", gid=0"),
-            );
-            await Deno.writeTextFile(
-                `${root}/apply.yml`,
-                stringify([adapt(apply)]),
-            );
-            const without = await section(config(block("kept", "a")), true);
-            const possible = await section(
-                config(block("kept", "a"), block("made", "a")),
-                true,
-            );
-            const dnsWithout = await dnsState(["kept.test"]),
-                dnsPossible = await dnsState(["kept.test", "made.test"]);
-            for (const scenario of ["published", "partial", "stale"]) {
+                await Deno.writeTextFile(
+                    root + "/module_utils/orbit_caddy_publish.py",
+                    (await Deno.readTextFile(
+                        ROOT + "/ansible/module_utils/orbit_caddy_publish.py",
+                    ))
+                        .replace(
+                            'live=Path("/etc/caddy/Caddyfile")',
+                            'live=Path("' + root + '/etc/caddy/Caddyfile")',
+                        )
+                        .replace("uid=0, gid=0", "uid=" + uid + ", gid=0"),
+                );
+                await Deno.writeTextFile(
+                    `${root}/apply.yml`,
+                    stringify([adapt(apply)]),
+                );
+                const without = await section(config(block("kept", "a")), true);
+                const possible = await section(
+                    config(block("kept", "a"), block("made", "a")),
+                    true,
+                );
+                const dnsWithout = await dnsState(["kept.test"]),
+                    dnsPossible = await dnsState(["kept.test", "made.test"]);
                 const siteSucceeded = scenario !== "partial";
                 const live = siteSucceeded ? possible.content : without.content;
                 // DNS may have finished independently even when access failed before site publication.
@@ -289,7 +300,7 @@ Deno.test({
                     );
                     assertEquals(await Deno.readTextFile(caddyPath), before);
                     assertEquals(before.includes("other-writer.test"), true);
-                    continue;
+                    return;
                 }
                 assertEquals(
                     result.success,
@@ -329,15 +340,15 @@ Deno.test({
                     }
                     assertEquals(present, false);
                 }
+                assertEquals(
+                    (await Deno.readTextFile(root + "/service-calls")).includes(
+                        "reload caddy",
+                    ),
+                    true,
+                );
+            } finally {
+                await Deno.remove(root, { recursive: true });
             }
-            assertEquals(
-                (await Deno.readTextFile(root + "/service-calls")).includes(
-                    "reload caddy",
-                ),
-                true,
-            );
-        } finally {
-            await Deno.remove(root, { recursive: true });
-        }
-    },
-});
+        },
+    });
+}
