@@ -202,6 +202,10 @@ apps/cli/app/Commands/Instances/RestoreInstanceCommand.php instance:restore
 swamp/workflows/workflow-operation-instance-restore.yaml instance:restore
 swamp/ansible/instance-restore.yml instance:restore
 swamp/ansible/instance/restore-source.py instance:restore
+swamp/proof/instance/restore.cases.yaml instance:restore
+swamp/proof/runner/restore_fixture.py instance:restore
+tools/swamp-proof-guest/instance-removal.php instance:restore
+swamp/tests/instance_restore_test.py skip
 
 # Documentation, charts and case descriptions need no proof, also inside the directories above. This block comes last so that it wins.
 **/*.md                                          skip

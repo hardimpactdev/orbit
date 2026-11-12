@@ -251,7 +251,7 @@ def bound_names(steps, extra):
     names = set(extra)
     for step in steps:
         if step.name == 'instance_removal':
-            names.update(f"{step.args['as']}.{part}" for part in ('instance', 'slug', 'removal', 'domain', 'container'))
+            names.add(f"{step.args['as']}.instance")
         if step.name == 'node_fixture':
             names.update(f"{step.args['as']}.{part}" for part in ('id', 'name', 'cluster_name', 'tld'))
         if step.name == 'cli':

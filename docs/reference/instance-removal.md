@@ -98,7 +98,7 @@ The schema permits abandonment only from failed removal while its members still 
 
 Live members have neither `row_deleted_at` nor `abandoned_at`. Destroy admission, the Instance relation, Instance JSON and site rendering use this one rule. A later destroy captures a new removal identity and inventory.
 
-This schema change adds no command or production path that abandons a removal. Existing removing, failed and completed records keep their meaning. The migration preserves existing rows and triggers. It is forward-only: rollback refuses because the previous schema cannot represent abandoned history.
+Existing removing, failed and completed records keep their meaning. The restore command uses abandonment only after its survivor checks and publication succeed. The migration preserves existing rows and triggers. It is forward-only: rollback refuses because the previous schema cannot represent abandoned history.
 
 ## Restore a failed removal
 

@@ -48,6 +48,16 @@ def catalog(run, node, container, plan):
         f"ORDER BY rolname) FROM pg_roles WHERE rolname IN ({users})));\n"))
 
 
+
+def checkout_script(path, slug):
+    # install owns only its explicit paths, not implicit parents: Git needs the checkout too.
+    return f"""install -d -m 0755 -o orbit -g orbit {shlex.quote(path)} {shlex.quote(path + "/public")}
+runuser -u orbit -- sh -c {shlex.quote(
+    f"cd {shlex.quote(path)} && printf '%s' {slug} > public/index.html && git init -q --initial-branch=main"
+    " && git add public/index.html && git -c user.name=Fixture -c user.email=fixture@example.test commit -qm fixture"
+    f" && git remote add origin https://github.com/example/{slug}.git && git rev-parse HEAD")}"""
+
+
 def execute(run, args):
     from steps import Infra
     node, alias, phase = args['on'], args['as'], args['phase']
@@ -58,11 +68,7 @@ def execute(run, args):
             slug = 'restore-proof-' + uuid.uuid4().hex[:12]
             path = '/home/orbit/apps/' + slug
             domain = slug + '.restore.test'
-            shell = f"""install -d -o orbit -g orbit {path}/public
-runuser -u orbit -- sh -c {shlex.quote(
-    f"cd {path} && printf '%s' {slug} > public/index.html && git init -q --initial-branch=main"
-    " && git add public/index.html && git -c user.name=Fixture -c user.email=fixture@example.test commit -qm fixture"
-    f" && git remote add origin https://github.com/example/{slug}.git && git rev-parse HEAD")}"""
+            shell = checkout_script(path, slug)
             commit = must(run, node, shell)
             instance = guest(run, 'create', slug, node_id=run.fleet.nodes[node]['node_id'], commit=commit)['instance']
             port = must(run, node, "python3 -c 'import socket; s=socket.socket(); s.bind((\"127.0.0.1\",0)); print(s.getsockname()[1])'")
@@ -92,7 +98,7 @@ runuser -u orbit -- sh -c {shlex.quote(
                 raise RuntimeError('fixture destroy did not retain the failed removal')
             run.names.update({alias + '.' + key: value for key, value in {
                 'instance': instance, 'slug': slug, 'removal': failed['removal'],
-                'domain': domain, 'container': container}.items()})
+                }.items()})
             run.names[alias + '.before'] = before
             run.names[alias + '.catalog'] = catalog(run, node, container, failed['plan'])
             return []

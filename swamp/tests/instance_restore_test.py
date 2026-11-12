@@ -1,7 +1,9 @@
 """Unprivileged restore evidence and actual Ansible marker-compensation fixtures."""
 import copy
+import grp
 import json
 import os
+import pwd
 import runpy
 import shutil
 import subprocess
@@ -73,6 +75,29 @@ class InstanceRestoreTest(unittest.TestCase):
         with patch.object(self.program["subprocess"], "run", return_value=subprocess.CompletedProcess([], 1)) as call:
             self.assertEqual(self.program["source"](request)["data"]["reason"], "container_removed")
             self.assertEqual(call.call_count, 1)
+
+    def test_restore_fixture_makes_the_checkout_writable_before_git_initialization(self):
+        sys.path.insert(0, str(ROOT / "swamp/proof/runner"))
+        fixture = runpy.run_path(str(ROOT / "swamp/proof/runner/restore_fixture.py"))
+        checkout = self.folder / "fixture-checkout"
+        (checkout / "public").mkdir(parents=True)
+        checkout.chmod(0o555)
+        self.addCleanup(checkout.chmod, 0o755)
+        broken = subprocess.run(["git", "-C", str(checkout), "init", "-q"],
+                                capture_output=True, text=True, timeout=5)
+        self.assertNotEqual(broken.returncode, 0)
+        slug = "restore-proof-111111111111"
+        script = fixture["checkout_script"](str(checkout), slug)
+        # Replace only account/privilege boundaries; execute the shipped directory and Git commands.
+        user, group = pwd.getpwuid(os.getuid()).pw_name, grp.getgrgid(os.getgid()).gr_name
+        script = script.replace("-o orbit -g orbit", f"-o {user} -g {group}")
+        script = script.replace("runuser -u orbit -- ", "")
+        result = subprocess.run(["sh", "-c", script], capture_output=True, text=True, timeout=10,
+                                env={**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(result.stdout.strip()), 40)
+        self.assertEqual((checkout / "public/index.html").read_text(), slug)
+        self.assertEqual((checkout / ".git").stat().st_uid, os.getuid())
 
     def test_restore_proof_has_a_runnable_isolated_slot_fixture_and_three_cli_stages(self):
         sys.path.insert(0, str(ROOT / "swamp/proof/runner"))
