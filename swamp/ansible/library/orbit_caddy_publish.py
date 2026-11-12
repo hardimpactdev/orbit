@@ -4,6 +4,7 @@
 import grp
 
 from ansible.module_utils.basic import AnsibleModule
+
 from ansible.module_utils.orbit_caddy_publish import PublicationFailure, publish
 
 DOCUMENTATION = r"""
