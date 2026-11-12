@@ -58,7 +58,14 @@ final readonly class ShowGatewayStatusAction
     /** @return array{collected_at: ?string, last_run_ms: int|float|null, hidden_nodes: int, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>} */
     private function doctor(Node $consumer): array
     {
-        $rows = ProblemFingerprint::query()->where('source', ProblemSource::Doctor)->whereNull('evidence->resolved_at')->orderBy('id')->get();
+        $observation = ProblemCollectorState::query()->orderBy('id')->first()?->observation;
+        $startedAt = $observation['doctor_started_at'] ?? null;
+        // Only what the latest full collection saw is an open issue. A row that an older collection wrote and no
+        // later one checks again stays in the store as history and is not shown.
+        $rows = is_string($startedAt)
+            ? ProblemFingerprint::query()->where('source', ProblemSource::Doctor)->whereNull('evidence->resolved_at')
+                ->where('evidence->doctor_observed_at', '>=', $startedAt)->orderBy('id')->get()
+            : ProblemFingerprint::query()->whereRaw('0 = 1')->get();
         $nodes = Node::query()->whereIn('id', $rows->map(fn (ProblemFingerprint $row): mixed => $row->evidence['doctor_node'] ?? null))->get()->keyBy('id');
         $groups = [];
         foreach ($rows as $row) {
@@ -85,7 +92,6 @@ final readonly class ShowGatewayStatusAction
                 unset($group);
             }
         }
-        $observation = ProblemCollectorState::query()->orderBy('id')->first()?->observation;
         $collectedAt = $observation['doctor_collected_at'] ?? null;
         $collectedAt = is_string($collectedAt) ? $collectedAt : null;
         $duration = $observation['doctor_duration_ms'] ?? null;
