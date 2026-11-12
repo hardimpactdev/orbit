@@ -45,10 +45,7 @@
       rescue:
         - name: Report the public settlement refusal
           ansible.builtin.fail:
-            msg: >-
-              {{ (ansible_failed_result.stderr | default('')
-                  | regex_search('instance[.]restore_(database_identity_changed|database_admission_changed|ownership_changed)'))
-                 | default('instance.restore_evidence_missing', true) }}
+            msg: "instance.restore_database_changed: The planned database catalog or admission changed, or the administrator transaction could not finish."
 
 - name: Remove awake markers owned by this restoration
   hosts: restore_node

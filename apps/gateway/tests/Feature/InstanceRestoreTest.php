@@ -403,3 +403,18 @@ it('repeats an unstarted restore ended before native submission', function (): v
     $retry = app(StartInstanceRestoreAction::class)->execute($this->instance->fresh());
     expect($retry->id)->not->toBe($restore->id);
 });
+
+it('reports settlement failure from the native step without parsing administrator output', function (): void {
+    $restore = app(StartInstanceRestoreAction::class)->execute($this->instance);
+    $restore->update(['status' => 'running', 'state' => ['swamp_run_id' => 'settlement-failure']]);
+    $failed = app(InstanceRestoreProjection::class)->apply($restore, [
+        'run_id' => 'settlement-failure', 'status' => 'failed',
+        'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
+        'result' => ['steps' => ['Settle database fences-0' => ['status' => 'failed'],
+            'Republish the Route' => ['status' => 'skipped']]],
+    ]);
+    expect($failed->error_code)->toBe('instance.restore_database_changed')
+        ->and($failed->result['compensation_complete'])->toBeTrue()
+        ->and($this->instance->fresh()->status)->toBe(InstanceState::Removing)
+        ->and($this->removal->fresh()->status)->toBe(InstanceRemovalStatus::Failed);
+});

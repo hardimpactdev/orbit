@@ -57,11 +57,10 @@ final readonly class InstanceRestoreProjection implements DirectOperationProject
             $compensated = NativeRunResult::stepStatus($native, 'Republish the Route') === 'skipped'
                 || (array_all($markerSteps, static fn (int $index): bool => NativeRunResult::stepStatus($native, 'Compensate publication-'.$index) === 'succeeded')
                     && (ValidatedData::object($native['withdrawal'] ?? [])['ready'] ?? false) === true);
-            $settlementFailure = null;
-            $detail = ValidatedData::object($data['failure'] ?? [])['detail'] ?? '';
-            if (is_string($detail) && preg_match('/instance[.]restore_(database_identity_changed|database_admission_changed|ownership_changed|evidence_missing)/', $detail, $match) === 1) {
-                $settlementFailure = 'instance.restore_database_changed';
-            }
+            $steps = ValidatedData::object($native['steps'] ?? []);
+            $settlementFailed = array_any(array_keys($steps), static fn (string $name): bool => ($name === 'Settle database fences' || str_starts_with($name, 'Settle database fences-'))
+                && NativeRunResult::stepStatus($native, $name) === 'failed');
+            $settlementFailure = $settlementFailed ? 'instance.restore_database_changed' : null;
             $result = ['restored' => $success, 'instance_id' => $operation->target_id, 'removal_id' => $operation->input['removal_id'],
                 'route_id' => $operation->input['route_id']];
             if (! $success) {
