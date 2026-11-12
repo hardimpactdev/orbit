@@ -65,6 +65,23 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $id;
     }
 
+    /** Anonymous access requires GitHub to positively identify this repository as public. */
+    public function repositoryIsPublic(GitHubRepository $repository): bool
+    {
+        $response = $this->send(fn (): Response => $this->request()->withoutRedirecting()->timeout(5)->connectTimeout(5)
+            ->get($this->repositoryPath($repository)));
+        if ($response->status() === 404) {
+            return false;
+        }
+        $name = $response->json('full_name');
+        if (! $response->successful() || ! is_bool($response->json('private')) || ! is_string($name)
+            || strtolower($name) !== strtolower($repository->owner.'/'.$repository->name)) {
+            throw GitHubApiException::unavailable();
+        }
+
+        return $response->json('private') === false;
+    }
+
     /** Fresh, read-only credential for the Services peer; never enters the shared token cache. */
     public function dependencyReadToken(GitHubAppCredentials $credentials, GitHubRepository $repository): GitHubAccessToken
     {

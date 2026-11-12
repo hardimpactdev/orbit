@@ -50,6 +50,10 @@ It runs the Project teardown commands, passed as run inputs, one command per ste
 
 Known limits: Git data of nested or bare repositories inside the checkout with outside dependents is not scanned. A moved worktree behind an unreadable parent is unknown, so admission proceeds with its warning. No lock excludes external Git writers. A worktree created after admission is not caught: the window includes the queue wait and the entire run until source removal. An admitted retry uses the saved intent. Dispatch never checks dependencies again, even if Git facts changed. Transfer uses the same admission-only boundary in its separate PR #3451.
 
+A sole pending or failed Route always runs withdrawal before its record goes with the Instance. A first publication can install a site, certificates or DNS and then fail its TLS probe while `sites_published` stays false. Status and that flag therefore never justify skipping withdrawal. Admission captures the possible publication and its absence; the shared withdrawal removes either partial publication or nothing, while keeping unrelated sites and DNS.
+
+The Route must belong to the Project, target exactly this Instance and have safe placement. Multiple owning Routes refuse. These checks follow the worktree admission check and precede Schedule or record changes.
+
 Three cases skip work:
 
 - An Instance without a Route skips the Route withdrawal and its DNS records.
@@ -60,7 +64,7 @@ The Route child allows its own steps to fail, so destroy reads its ready result.
 
 Publication captures include the full site catalogs so unrelated Routes, PHP pools and DNS records remain present. Each native action has its own run and iteration identity. The Gateway does not supply an execution lock or recapture publication intent during the run.
 
-A container Instance follows the [container destroy flow](/reference/development-containers#destroy). A non-default container Instance, cloned or migrated, requires `--force`, skips work checks and teardown, and deletes the container with its Processes and owned network state. The Instance named `default` stays unavailable. Conn removes its environment and pairing records after the T3 server is gone. Destroy also deletes migration execution copies and the owned database’s create copies, which hold its server and owner logins. The runtime row stays until success, so its address and port stay reserved during a failed removal.
+A container Instance follows the [container destroy flow](/reference/development-containers#destroy). A non-default container Instance, cloned or migrated, requires `--force`, skips work checks and teardown, and deletes the container with its Processes and owned network state. The Instance named `default` stays unavailable. Conn removes its environment and pairing records after the T3 server is gone. Destroy also deletes migration execution copies, including the remote-read credential, and the owned database’s create copies, which hold its server and owner logins. The runtime row stays until success, so its address and port stay reserved during a failed removal.
 
 Destroy removes the Instance's folder for pending mail activation from the Node, `/var/lib/orbit/instance-mail/<container>`. Its shared bridge endpoint stays for ordinary host reconciliation, as database endpoints do.
 
@@ -76,7 +80,7 @@ The Gateway records the member set as Removing in the same admission transaction
 
 This parent supports development Instances on managed app-dev Nodes, including their native Process, Schedule and Route withdrawal children. Owned SQLite, managed server databases and registered external database records are supported. Each server child reads the server's admin login from the server's own vault key; the database intent records no password. Production Instances and TaskVM-owned workspaces return `operation.kind_unavailable` before admission. TaskVM workspace readiness belongs to the shared `task-vm-workspace` child and its owning provision parent; an ordinary development checkout has no fabricated TaskVM identity.
 
-Repository reads use a fresh scoped GitHub App credential or normal anonymous access. A configured App without an installation supplies no credential. A non-forced removal that requires `gh_cli` source access refuses before admission; forced removal needs no fetch or GitHub mint. The Gateway mints the read token when the run starts and pushes it to the vault; no step calls the Gateway for it.
+Repository reads use a fresh scoped GitHub App credential or normal anonymous access. Anonymous access requires GitHub to confirm the repository is public; otherwise credential preparation fails with the [source credential error](/reference/github-app#instance-source-credentials) naming the App and repository. A non-forced removal that requires `gh_cli` source access refuses before admission; forced removal needs no fetch or GitHub mint. The Gateway mints the read token when the run starts and pushes it to the vault; no step calls the Gateway for it.
 
 ## Processes and Schedules
 

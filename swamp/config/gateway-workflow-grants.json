@@ -12,7 +12,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^instance-git-(?:operation|credential)-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^instance-clone-environment-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^instance-migrate-(?:model|processes)-[1-9][0-9]*$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^instance-migrate-(?:model|processes|source)-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^instance-environment-(?:testing-)?[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^instance-env-import\\.content\\.[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^ai-router-(task|anchor)-key-node-[1-9][0-9]*$", "actions": ["write", "read"]},

@@ -18,7 +18,7 @@ inputs:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^instance-migrate-(?:model|processes)-[1-9][0-9]*$'}
+          key: {type: string, pattern: '^instance-migrate-(?:model|processes|source)-[1-9][0-9]*$'}
         required: [vault, key]
         additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -38,12 +38,28 @@ jobs:
           inputs:
             intent: '${{ inputs.intent }}'
             path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
-      # Preflight, prepare the container with the shared create tasks, and probe every attached target before downtime.
-      # The Node's mirror fetches from the checkout itself, so this phase gets no token.
-      - name: container
+      # Optional during release overlap: an older Gateway supplies neither this copy nor migrate.source.
+      - name: source-credential
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: input, condition: {type: succeeded}}]
+        guard: '${{ !has(inputs.intent.migrate.source) }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "im-source-credential-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: umask 077; printf '%s' "$ORBIT_SOURCE_CREDENTIAL" > "$ORBIT_RUN/source-credential"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_SOURCE_CREDENTIAL: '${{ vault.get(inputs.execution_secrets.process_environments.vault, has(inputs.intent.migrate.source) ? inputs.execution_secrets.source_credential.key : inputs.execution_secrets.process_environments.key) }}'
+      # Preflight, prepare the container with the shared create tasks, and probe every attached target before downtime.
+      # Check the remote once with the deploy credential; the mirror still fetches from the local checkout.
+      - name: container
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}, {step: source-credential, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
         task:
           type: behavior
           behaviorType: command/shell
@@ -300,7 +316,7 @@ jobs:
           - {step: t3-register, condition: {type: always}}
           - {step: retire, condition: {type: always}}
           - {step: restore-route, condition: {type: always}}
-        guard: '${{ "retire" in steps && steps.retire.status != "skipped" }}'
+        guard: '${{ ! ("container" in steps) || steps.container.status == "skipped" || ("retire" in steps && steps.retire.status != "skipped") }}'
         task:
           type: behavior
           behaviorType: command/shell

@@ -35,7 +35,7 @@ final readonly class ContainerDestroyExecutionCopies
                 }
             }
             if ($operation->kind === 'instance.migrate') {
-                foreach (['instance-migrate-model-', 'instance-migrate-processes-'] as $prefix) {
+                foreach (['instance-migrate-model-', 'instance-migrate-processes-', 'instance-migrate-source-'] as $prefix) {
                     $keys[] = $prefix.$operation->id;
                 }
             }

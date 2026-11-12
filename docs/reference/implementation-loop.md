@@ -45,7 +45,11 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same fast checks.
 
-Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units in hosted shards. [Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
+Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units in hosted shards. Route access fixtures share the admitted argv with the Gateway unit test, so hosted Ansible checks need no Gateway Composer installation. The fixture for destroy without a Route evaluates guards with the pinned CEL compiler. It runs source removal against real temporary Git trees.
+
+The migration environment fixtures cover dependency-file isolation and explicit application, Process and Schedule file selection.
+
+The retained guard fixture pins only the source-removal step and the absence of workflow dependency checks, so unrelated Route phases can change. The withdrawal fixture runs two local Ansible applications to verify cleanup after a partial publication and after an already absent site. [Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
 
 | Check | Work |
 | --- | --- |
@@ -723,7 +727,7 @@ Clone branch fixtures use unprivileged local Git repositories and run without an
 
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise.
 
-Migration fixtures check that untracked files survive copying and retirement, that the count includes only untracked files that Git does not ignore, and that tracked changes, stashes, unpushed commits and other worktrees retain their refusal codes. Batch phase plays in one Ansible invocation to keep each fixture within three playbook launches; update registered case names and costs together.
+The migration source fixture runs one unprivileged Ansible play, fakes Git and timeout without network calls or sleeps, and checks credential removal on success and refusal. Migration fixtures also check that untracked files survive copying and retirement, that the count includes only untracked files that Git does not ignore, and that tracked changes, stashes, unpushed commits and other worktrees retain their refusal codes. Batch phase plays in one Ansible invocation to keep each fixture within three playbook launches; update registered case names and costs together.
 
 The mail fixture executes the production prefix whitelist, the reviewed bare-CR and comment-grouping regressions, and a realistic thirty-line file. It preserves `lines` beside `guard_line` and uses three Ansible launches. Gateway tests compare every admitted shape with installed phpdotenv; Swamp fixtures need no PHP or Composer installation.
 

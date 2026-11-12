@@ -27,6 +27,8 @@ use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\GitHub\GitHubAppCredentials;
+use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
@@ -1167,7 +1169,7 @@ it('starts the run with the container, the checkout and the model key in the vau
     $run = app(InstanceMigrateProjection::class)->input($operation);
 
     $put = collect($vault->puts)->firstWhere('key', 'instance-migrate-model-'.$operation->id);
-    expect($run['execution_secrets'])->toBe(['process_environments' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-processes-'.$operation->id], 'model_environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-model-'.$operation->id]])
+    expect($run['execution_secrets'])->toBe(['source_credential' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-source-'.$operation->id], 'process_environments' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-processes-'.$operation->id], 'model_environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-model-'.$operation->id]])
         ->and($put['value'])->toContain("ORBIT_MODEL_KEY=placeholder-model-key\n")
         ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
         ->and(array_keys($run['intent']))->toBe(['instance_id', 'instance_name', 'ssh_execution', 'container', 'migrate', 'route_mutations'])
@@ -4112,6 +4114,64 @@ it('removes only the migrated non-default attachment on successful forced Instan
     $this->assertDatabaseHas('instance_node_service_targets', ['id' => $shared, 'instance_id' => $default->id]);
     expect($process->refresh()->getRawOriginal())->toEqual($processBefore);
     expect($default->runtime()->firstOrFail()->getRawOriginal())->toEqual($defaultRuntimeBefore);
+});
+
+it('refuses an unreadable private source before submitting migrate and releases its runtime reservation', function (): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    $project->update(['repository_url' => 'https://github.com/Platform11/servauto-app.git']);
+    $instance = migrateCheckout($project, $node);
+    $before = $instance->fresh()->getAttributes();
+    $migration = migrateStart($instance);
+    $socket = migrateVault();
+    Http::fake(['api.github.com/repos/Platform11/servauto-app' => Http::response([], 404)]);
+
+    expect(containerRefusal(fn () => (new StartAdmittedSwampRun($migration->id))->handle(
+        app(StartSwampRun::class), app(ExpireOperationAction::class),
+    )))->toBe('source.github_app_denied');
+
+    expect($socket->sentTypes)->toBe([])
+        ->and($migration->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($migration->result['error']['message'])->toContain('Platform11/servauto-app')
+        ->and($instance->runtime()->exists())->toBeFalse()
+        ->and($instance->refresh()->getAttributes())->toBe($before);
+});
+
+it('keeps a never-pushed local branch while probing the Project default for migration', function (): void {
+    $project = containerDefaultProject();
+    $node = containerDefaultNode();
+    migrateMovedDefault($project, $node);
+    $instance = migrateCheckout($project, $node, 'never-pushed');
+    $migration = migrateStart($instance);
+    openssl_pkey_export(openssl_pkey_new(['private_key_bits' => 2048]), $pem);
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'orbit-nckrtl', 'Orbit', 'nckrtl', 'user',
+        'https://github.com/apps/orbit-nckrtl', $pem));
+    Http::fake(['api.github.com/repos/nckrtl/tool/installation' => Http::response([], 404)]);
+    $run = app(InstanceMigrateProjection::class)->input($migration);
+    expect($run['intent']['migrate']['source']['access_denied_message'])->toBe('The GitHub App orbit-nckrtl cannot read nckrtl/tool: install it for that organisation or add the repository.')
+        ->and($run['intent']['migrate']['source'])->toMatchArray(['repository' => $project->repository_url, 'branch' => 'main'])
+        ->and($run['intent']['migrate']['branch'])->toBe('never-pushed')
+        ->and($run['intent']['container']['branch'])->toBe('never-pushed')
+        ->and($run['intent']['container']['repository'])->toBe($instance->checkout_path)
+        ->and($run['execution_secrets']['source_credential'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-source-'.$migration->id])
+        ->and($migration->input['migrate'])->not->toHaveKey('source');
+});
+
+it('preserves gh_cli migration without an App preflight or source credential copy', function (): void {
+    $project = containerDefaultProject();
+    $project->update(['source_access' => ProjectSourceAccess::GhCli]);
+    $instance = migrateCheckout($project, containerDefaultNode());
+    $migration = migrateStart($instance);
+    $socket = migrateVault();
+    Http::fake();
+    $run = app(InstanceMigrateProjection::class)->input($migration);
+
+    expect($run['intent']['migrate'])->not->toHaveKey('source')
+        ->and($run['intent']['migrate']['branch'])->toBe('main')
+        ->and($run['intent']['container']['repository'])->toBe($instance->checkout_path)
+        ->and($run['execution_secrets'])->not->toHaveKey('source_credential')
+        ->and(array_column($socket->puts, 'key'))->not->toContain('instance-migrate-source-'.$migration->id);
+    Http::assertNothingSent();
 });
 
 it('reports carried container timer state and latest execution without recording automatic Operations', function (): void {

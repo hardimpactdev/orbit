@@ -25,7 +25,9 @@ class InstanceMigrateEnvTest(unittest.TestCase):
         return guard.inspect_environment(str(self.root), targets, options.get('node_addresses', ['10.44.0.5']),
                                          options.get('proxy_policy', {'private_v4': ['10.0.0.0/8', '127.0.0.0/8'],
                                                                       'private_domains': ['orbit', 'private.test']}),
-                                         development_mail=options.get('development_mail'), node_services=options.get('node_services'))
+                                         development_mail=options.get('development_mail'), node_services=options.get('node_services'),
+                                         environment_files=options.get('environment_files', [str(env)]),
+                                         unit_files=options.get('unit_files', []))
 
 
     def test_loopback_requires_exact_attached_key_pair_and_port(self):
@@ -167,20 +169,80 @@ class InstanceMigrateEnvTest(unittest.TestCase):
         self.assertEqual(len(refused), 1)
         self.assertIn('DB_HOST=127.0.0.2:3308', refused[0])
 
-    def test_every_copied_nested_env_is_checked_including_ignored_and_symlinked_apps(self):
-        self.inspect('DB_CONNECTION=sqlite\n', path='.env')
-        self.inspect('MAIL_MAILER=smtp\nMAIL_HOST=localhost\nMAIL_PORT=1025\n', path='apps/private/.env')
+    def test_dependency_env_fixtures_are_never_discovered(self):
+        self.inspect('DB_CONNECTION=sqlite\nMAIL_MAILER=log\n')
+        paths = [
+            'vendor/nunomaduro/collision/tests/LaravelApp/.env',
+            'vendor/vlucas/phpdotenv/tests/fixtures/env/.env',
+            'vendor/laravel/framework/tests/Foundation/Fixtures/.env',
+            'node_modules/example/tests/.env',
+        ]
+        for name in paths:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\n'
+                            'MAIL_MAILER=smtp\nMAIL_HOST=127.0.0.1\nMAIL_PORT=1025\n')
+        self.assertEqual(guard.inspect_environment(str(self.root), [], []), [])
+
+    def test_process_named_environment_outside_the_root_is_read(self):
+        self.inspect('DB_CONNECTION=sqlite\n')
+        path = self.root / 'services' / 'worker settings%.env'
+        path.parent.mkdir()
+        path.write_text('DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\n')
+        unit = self.root / 'worker.service'
+        unit.write_text('[Service]\nEnvironmentFile=-' + str(path).replace(' ', r'\x20').replace('%', '%%') + '\n')
+        found = guard.inspect_environment(str(self.root), [], [], unit_files=[str(unit)])
+        self.assertEqual(len(found), 1)
+        self.assertIn('services/worker settings%.env: DB_HOST=127.0.0.1:3306', found[0])
+        unit.write_text('[Service]\nEnvironmentFile=-' + str(path.parent / '*.env') + '\n')
+        self.assertEqual(guard.inspect_environment(str(self.root), [], [], unit_files=[str(unit)]), found)
+        unit.write_text('[Service]\nEnvironmentFile=-' + str(path) + '\nEnvironmentFile=\n')
+        self.assertEqual(guard.inspect_environment(str(self.root), [], [], unit_files=[str(unit)]), [])
+
+
+    def test_process_working_directory_environment_is_read_only_inside_checkout(self):
+        self.inspect('DB_CONNECTION=sqlite\n')
+        directory = self.root / 'second'
+        directory.mkdir()
+        (directory / '.env').write_text('DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n')
+        unit = self.root / 'worker.service'
+        unit.write_text('[Service]\nWorkingDirectory=' + str(directory) + '\nEnvironmentFile=-' + str(self.root / '.env') + '\n')
+        found = guard.inspect_environment(str(self.root), [], [], unit_files=[str(unit)])
+        self.assertEqual(len(found), 1)
+        self.assertIn('second/.env: DB_HOST=127.0.0.1:3306', found[0])
+        external = tempfile.TemporaryDirectory()
+        self.addCleanup(external.cleanup)
+        Path(external.name, '.env').write_text('DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n')
+        unit.write_text('[Service]\nWorkingDirectory=' + external.name + '\n')
+        self.assertEqual(guard.inspect_environment(str(self.root), [], [], unit_files=[str(unit)]), [])
+
+    def test_application_and_schedule_environment_paths_are_explicit(self):
+        self.inspect('DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n')
+        application = self.root / 'server/web/.env'
+        application.parent.mkdir(parents=True)
+        application.write_text('DB_CONNECTION=sqlite\n')
+        unrelated = self.root / 'examples/.env'
+        unrelated.parent.mkdir()
+        unrelated.write_text('MAIL_MAILER=smtp\nMAIL_HOST=127.0.0.1\nMAIL_PORT=1025\n')
+        self.assertEqual(guard.inspect_environment(str(self.root), [], [], environment_files=[str(application)]), [])
+        scheduler = self.root / 'jobs/.env'
+        scheduler.parent.mkdir()
+        scheduler.write_text('REDIS_HOST=127.0.0.1\nCACHE_STORE=redis\n')
+        found = guard.inspect_environment(str(self.root), [], [], environment_files=[str(application), str(scheduler)])
+        self.assertEqual(len(found), 1)
+        self.assertIn('jobs/.env: REDIS_HOST=127.0.0.1:6379', found[0])
+
+    def test_only_explicit_symlinked_env_files_are_read_without_tree_traversal(self):
+        self.inspect('DB_CONNECTION=sqlite\n')
         external = tempfile.TemporaryDirectory()
         self.addCleanup(external.cleanup)
         Path(external.name, '.env').write_text('DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3308\n')
         self.root.joinpath('linked-app').symlink_to(external.name, target_is_directory=True)
         self.root.joinpath('cycle').symlink_to(self.root, target_is_directory=True)
-        self.root.joinpath('.git').mkdir()
-        self.root.joinpath('.git/.env').write_text('MAIL_HOST=localhost\n')
-        found = guard.inspect_environment(str(self.root), [], [])
-        self.assertEqual(len(found), 2)
-        self.assertTrue(any('apps/private/.env' in line for line in found))
-        self.assertTrue(any('linked-app/.env' in line for line in found))
+        self.assertEqual(guard.inspect_environment(str(self.root), [], []), [])
+        found = guard.inspect_environment(str(self.root), [], [], environment_files=['linked-app/.env'])
+        self.assertEqual(len(found), 1)
+        self.assertIn('linked-app/.env', found[0])
 
     def test_node_addresses_and_unspecified_hosts_are_refused_even_inside_allowed_ranges(self):
         for host in ('10.44.0.5', '::ffff:10.44.0.5', '127.34.5.6', 'localhost.', '0.0.0.0', '::'):
@@ -388,19 +450,12 @@ class InstanceMigrateEnvTest(unittest.TestCase):
                 self.assertEqual(len(self.inspect(text)), 1)
                 self.assertEqual(self.inspect(text, [{'host': '10.44.0.9', 'port': 3308}]), [])
 
-    def test_traversal_stat_and_read_errors_return_safe_preflight_refusals(self):
+    def test_named_unit_and_env_read_errors_return_safe_preflight_refusals(self):
         self.inspect('DB_CONNECTION=sqlite\n')
-        denied = str(self.root / 'apps' / 'unreadable')
-
-        def denied_walk(*args, **kwargs):
-            kwargs['onerror'](PermissionError(13, 'private-exception-secret', denied))
-
-        with patch.object(guard.os, 'walk', side_effect=denied_walk):
-            found = guard.inspect_environment(str(self.root), [], [])
-        self.assertEqual(found, [f'apps/unreadable: cannot inspect copied environments safely. {guard.RECOVERY}'])
-        with patch.object(guard.os, 'walk', return_value=iter([(denied, [], [])])):
-            found = guard.inspect_environment(str(self.root), [], [])
-        self.assertEqual(found, [f'apps/unreadable: cannot inspect copied environments safely. {guard.RECOVERY}'])
+        unit = str(self.root / 'worker.service')
+        with patch('builtins.open', side_effect=PermissionError(13, 'private-exception-secret', unit)):
+            found = guard.inspect_environment(str(self.root), [], [], unit_files=[unit])
+        self.assertEqual(found, [f'worker.service: cannot inspect copied environments safely. {guard.RECOVERY}'])
         with patch('builtins.open', side_effect=PermissionError(13, 'private-exception-secret', str(self.root / '.env'))):
             found = guard.inspect_environment(str(self.root), [], [])
         self.assertEqual(found, [f'.env: cannot read .env safely. {guard.RECOVERY}'])

@@ -333,6 +333,19 @@ Deno.test("a definite start failure releases pending intent for the next schedul
     }
 });
 
+Deno.test("credential failures stay terminal without repeated admissions", async () => {
+    for (const code of ["source.github_app_denied", "source.github_unavailable"]) {
+        const f = fixture();
+        await f.run();
+        Object.assign(f.operation, { status: "failed", attempts: 0, error_code: code,
+            result: {error: {code, message: "Source credential refused."}} });
+        await f.run();
+        await f.run();
+        assertEquals(f.starts.length, 1);
+        assertEquals((f.memory.get("development-7")?.pending as {operation_id: number}).operation_id, 100);
+    }
+});
+
 Deno.test("an uncertain or executed failure without history retains pending intent", async () => {
     for (
         const receipt of [

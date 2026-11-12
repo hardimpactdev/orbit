@@ -38,6 +38,7 @@ use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
@@ -45,6 +46,7 @@ uses(LazilyRefreshDatabase::class);
 /** The vault answers every put; without a GitHub App the origin reads as public. That is what a deployment run's start needs. */
 function deployVault(): void
 {
+    Http::fake(['api.github.com/repos/nckrtl/tool' => Http::response(['full_name' => 'nckrtl/tool', 'private' => false])]);
     app()->instance(WebSocketClient::class, new class implements WebSocketClient
     {
         /** @var list<array<string,mixed>> */

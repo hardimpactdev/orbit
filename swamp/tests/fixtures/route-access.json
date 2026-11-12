@@ -1,0 +1,115 @@
+[
+  {
+    "node_id": 9,
+    "argv": [
+      "/usr/sbin/runuser",
+      "-u",
+      "orbit",
+      "--",
+      "/usr/bin/env",
+      "-C",
+      "/",
+      "/usr/bin/find",
+      "-P",
+      "/fixture/checkout",
+      "-type",
+      "d",
+      "-exec",
+      "/usr/bin/setfacl",
+      "-m",
+      "d:u:caddy:---",
+      "--",
+      "{}",
+      "+"
+    ]
+  },
+  {
+    "node_id": 9,
+    "argv": [
+      "/usr/sbin/runuser",
+      "-u",
+      "orbit",
+      "--",
+      "/usr/bin/env",
+      "-C",
+      "/",
+      "/usr/bin/setfacl",
+      "-P",
+      "-R",
+      "-n",
+      "-m",
+      "u:caddy:---",
+      "--",
+      "/fixture/checkout"
+    ]
+  },
+  {
+    "node_id": 9,
+    "argv": [
+      "/usr/bin/setfacl",
+      "-m",
+      "u:caddy:--x",
+      "--",
+      "/fixture/checkout",
+      "/fixture",
+      "/fixture/checkout/storage/app",
+      "/fixture/checkout/storage"
+    ],
+    "optional_paths": [
+      "/fixture/checkout/storage/app",
+      "/fixture/checkout/storage"
+    ]
+  },
+  {
+    "node_id": 9,
+    "argv": [
+      "/usr/sbin/runuser",
+      "-u",
+      "orbit",
+      "--",
+      "/usr/bin/env",
+      "-C",
+      "/",
+      "/usr/bin/find",
+      "-P",
+      "/fixture/checkout/public",
+      "/fixture/checkout/storage/app/public",
+      "-type",
+      "d",
+      "-exec",
+      "/usr/bin/setfacl",
+      "-m",
+      "d:u:caddy:r-x",
+      "--",
+      "{}",
+      "+"
+    ],
+    "optional_paths": [
+      "/fixture/checkout/storage/app/public"
+    ]
+  },
+  {
+    "node_id": 9,
+    "argv": [
+      "/usr/sbin/runuser",
+      "-u",
+      "orbit",
+      "--",
+      "/usr/bin/env",
+      "-C",
+      "/",
+      "/usr/bin/setfacl",
+      "-P",
+      "-R",
+      "-n",
+      "-m",
+      "u:caddy:r-X",
+      "--",
+      "/fixture/checkout/public",
+      "/fixture/checkout/storage/app/public"
+    ],
+    "optional_paths": [
+      "/fixture/checkout/storage/app/public"
+    ]
+  }
+]

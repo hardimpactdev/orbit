@@ -54,6 +54,8 @@ sequenceDiagram
     %%> - a caller that already wrote the admitted route intent shares that read-only input and shipped assets; the site child keeps its own scratch folder
     %%> - one Node call converges certificates, their links and account copies, trust and the Caddyfile; validation, reload and TLS proof keep their order
     %%> How:
+    %%> - grant checkout access only on existing paths; missing optional Laravel storage paths are skipped, never created; a missing web root fails
+    %%> - failures record redacted Ansible stderr, never certificate keys or environment contents
     %%> - each PHP-FPM unit is reloaded and enabled; a stopped one starts (a task VM image keeps PHP-FPM off)
     opt domain outside the TLD
       SW->>V: Publish private DNS<br/>records + catalog, then restart

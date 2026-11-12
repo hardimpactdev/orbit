@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "99302ecb7d7ee6e6192e2fcc092c648f76e2fa233f602470549695b11f01bf33",
+    "source_sha256": "edee53732e9a864b8cedd39c46d42f6ae57b10e9c847fc604408e6beefc0d141",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -363,7 +363,7 @@
     ]
   },
   "swamp/extensions/behaviors/automatic-deploy/development_test.ts": {
-    "source_sha256": "966a5126d7f6d0f370047e2232dc817a5ad49365559489609e476df45366af36",
+    "source_sha256": "e6d7e729af53a5e90f7cb9ce70b4a587673553b06cf138c23babbc95fe759e1f",
     "cases": [
       "development policy admits only after Gateway ownership switches",
       "development policy returns only the final checkpoint handle",
@@ -375,6 +375,7 @@
       "interrupted development deploys settle, back off and re-admit the head",
       "interrupted development deploy without evidence backs off once then admits the current head",
       "a definite start failure releases pending intent for the next scheduled admission",
+      "credential failures stay terminal without repeated admissions",
       "an uncertain or executed failure without history retains pending intent",
       "development retries and backoff are owned by Swamp and reset after manual work",
       "pending publication uses the normal Route root before dev deployment",
@@ -591,10 +592,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 \u2192 v5.12.0",
-      "exact script output: v5.42.0 \u2192 v5.43.0",
-      "exact script output: v5.49.0 \u2192 v5.50.0",
-      "exact script output: v5.50.0 \u2192 v5.50.1",
+      "exact script output: v5.11.0 → v5.12.0",
+      "exact script output: v5.42.0 → v5.43.0",
+      "exact script output: v5.49.0 → v5.50.0",
+      "exact script output: v5.50.0 → v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -1753,10 +1754,11 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "4f3878f305667a7b8a502afbed8689adfc59a00895567ac053f2b7f1afda299b",
+    "source_sha256": "64a4e075f4be9e007e31a3cb649bb8bd6854bb450b3dd3c1b94e5dcdf2a6b9d1",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
+      "migration reads no new source key from an older Gateway input",
       "a production and a checkout deployment read no key that only a container deployment has",
       "a container process:start, stop and restart read no `read` section, which only a migrated Schedule log read has",
       "create finalization evaluates checkout, default and clone receipts with Swamp's CEL types",
@@ -1775,7 +1777,7 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "17eadc35761378727fc08b2941d80cd8671a5074ca42b1c444022552e2aa0618",
+    "source_sha256": "eb0cb4ce337db4bf017c43743f65d536cfcce0341c59098a8432623d24a26369",
     "cases": [
       "test_loopback_requires_exact_attached_key_pair_and_port",
       "test_database_urls_refuse_without_exposing_credentials_or_bypassing_attached_keys",
@@ -1792,7 +1794,11 @@
       "test_memcached_and_prefixed_mail_conventions",
       "test_ipv6_loopback_canonical_target_and_ipv4_mapped_loopback",
       "test_quotes_spaces_export_comments_and_crlf",
-      "test_every_copied_nested_env_is_checked_including_ignored_and_symlinked_apps",
+      "test_dependency_env_fixtures_are_never_discovered",
+      "test_process_named_environment_outside_the_root_is_read",
+      "test_process_working_directory_environment_is_read_only_inside_checkout",
+      "test_application_and_schedule_environment_paths_are_explicit",
+      "test_only_explicit_symlinked_env_files_are_read_without_tree_traversal",
       "test_node_addresses_and_unspecified_hosts_are_refused_even_inside_allowed_ranges",
       "test_direct_services_require_exact_admission_even_for_fleet_and_wireguard_addresses",
       "test_bare_stock_hosts_and_nonredis_or_unknown_selectors_do_not_select_a_service",
@@ -1814,7 +1820,7 @@
       "test_projected_target_address_does_not_cover_a_different_recorded_endpoint",
       "test_mixed_network_selections_cannot_use_only_the_default_drivers_port",
       "test_explicit_connection_evidence_overrides_listener_exemptions",
-      "test_traversal_stat_and_read_errors_return_safe_preflight_refusals",
+      "test_named_unit_and_env_read_errors_return_safe_preflight_refusals",
       "test_multiline_private_values_do_not_forge_service_keys",
       "test_exact_network_first_private_units_no_workspace_and_repeat",
       "test_stopped_conflict_and_failed_network_do_not_write_units",
@@ -1937,7 +1943,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "a452ae8d4ece76ed216171f8669e58e1c939efd6b5d2237b661c98c3c90ef99b",
+    "source_sha256": "f7c89e168f3a4e06db343d7842deeffd40ee1cf4138edd0c6a69f4d1584b813e",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -1990,7 +1996,7 @@
     ]
   },
   "swamp/tests/instance_destroy_git_test.py": {
-    "source_sha256": "495ea0b4710cbedf82049fc82b888741bdd00cc4da9266014a5fc34ac20519fa",
+    "source_sha256": "1010ada43464b0c71382e3daa0a80ece2b1dca68618049083684592c0a1a83ed",
     "cases": [
       "test_confirmed_registered_and_moved_dependents_are_found_even_with_force",
       "test_existing_owner_registration_refuses_without_reading_candidate_git",
@@ -2003,7 +2009,7 @@
       "test_target_directory_marker_resolve_and_git_failures_keep_path_and_cause",
       "test_alternates_dependency_and_symlinked_candidate_are_confirmed",
       "test_inspect_never_walks_checkout_contents_or_accepts_a_remove_action",
-      "test_workflow_and_source_removal_are_identical_to_the_pre_reland_main"
+      "test_source_removal_stays_unchanged_and_workflow_never_checks_dependencies"
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts": {
@@ -2015,7 +2021,7 @@
     ]
   },
   "swamp/tests/ansible_route_site_test.py": {
-    "source_sha256": "10bffda334426845865b174a4851f2011b17acbb1275ba36b607678846365bab",
+    "source_sha256": "6f4dbe4ea2789f037a25d58b772ccf044528799415da8ef4b3826c404ae1544f",
     "cases": [
       "test_certificate_links_account_copy_modes_and_literal_caddy_text",
       "test_existing_file_mode_drift_clears_unwanted_special_bits",
@@ -2027,6 +2033,8 @@
       "test_production_workspace_app_url_links_and_php_tasks_are_unchanged",
       "test_csr_action_owns_folder_and_key_before_public_request_returns",
       "test_real_production_phase_keeps_access_app_url_php_links_and_reload",
+      "test_real_site_phase_skips_missing_optional_storage_but_requires_the_web_root",
+      "test_route_ansible_failures_reach_stderr_and_module_diagnostics_never_expose_content",
       "test_reused_input_is_read_only_and_child_cleanup_keeps_its_own_folder"
     ]
   },
@@ -2059,6 +2067,26 @@
       "test_deploy_fetch_refuses_legacy_store_even_with_a_helper",
       "test_nested_ignored_pin_refuses_even_when_a_parent_pin_is_selected",
       "test_production_phase_removes_read_only_source_mount_after_failure_without_downtime"
+    ]
+  },
+  "swamp/tests/instance_destroy_routeless_test.ts": {
+    "source_sha256": "dff80fd9b009168e93fa1e938c88d503184d0b1fcb3605c18ab7788c8aabbfc4",
+    "cases": [
+      "destroy skips withdrawal without publications including old admission without mutation keys",
+      "Route-less checkout and linked worktree skip the child and still remove the real source"
+    ]
+  },
+  "swamp/tests/ansible_instance_route_withdraw_test.ts": {
+    "source_sha256": "01d908556d2e655a2da703663973a5329a7d31969e2e6b903a01414602050eb5",
+    "cases": [
+      "pending Route withdrawal removes partial publication and CSR residue or accepts an absent site with real Ansible"
+    ]
+  },
+  "swamp/tests/ansible_instance_migrate_source_test.ts": {
+    "source_sha256": "d2260a8b607e2f2b552281605f3b56dc5f8b55857ec9634301204408de247d69",
+    "cases": [
+      "migration source preflight distinguishes failure and timeout before changing the checkout",
+      "a never-pushed branch at a pushed commit passes source and retirement checks and copies locally"
     ]
   }
 }

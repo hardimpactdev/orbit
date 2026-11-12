@@ -122,10 +122,12 @@ Deno.test("retained Git is recorded after success and after a later retirement f
 Deno.test("the migration prepares and probes the container before quiesce and builds the workspace after it", async () => {
     const { parse } = await import("jsr:@std/yaml@1");
     const flow = parse(await Deno.readTextFile(new URL("../../../../workflows/workflow-operation-instance-migrate.yaml", import.meta.url))) as {
-        jobs: { steps: { name: string; dependsOn?: { step: string }[]; task: { inputs?: { run?: string } } }[] }[];
+        jobs: { steps: { name: string; dependsOn?: { step: string; condition?: unknown }[]; task: { inputs?: { run?: string } } }[] }[];
     };
     const steps = Object.fromEntries(flow.jobs[0].steps.map((step) => [step.name, step]));
-    assertEquals(steps.container.dependsOn?.map((edge) => edge.step), ["input"]);
+    assertEquals(steps.container.dependsOn?.map((edge) => edge.step), ["input", "source-credential"]);
+    assertEquals(steps.container.dependsOn?.find((edge) => edge.step === "source-credential")?.condition,
+        { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] });
     assertEquals(steps.quiesce.dependsOn?.map((edge) => edge.step), ["node-runtime"]);
     assertEquals(steps.workspace.dependsOn?.map((edge) => edge.step), ["quiesce"]);
     assertEquals(steps.container.task.inputs?.run?.includes('--tags container "$ORBIT_ANSIBLE/instance-migrate.yml"'), true);

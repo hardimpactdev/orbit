@@ -565,6 +565,71 @@ class RouteSiteTest(unittest.TestCase):
         )
         self.assertFalse(run.exists())
 
+    @unittest.skipUnless(shutil.which("ansible-playbook") and shutil.which("setfacl"), "pinned Ansible and ACL tools required")
+    def test_real_site_phase_skips_missing_optional_storage_but_requires_the_web_root(self):
+        account = pwd.getpwuid(os.getuid())
+        checkout = self.root / "checkout"
+        web = checkout / "public"
+        web.mkdir(parents=True)
+        (web / "index.php").write_text("fixture")
+        # Shared with RouteWebRootCommandsTest: execute exactly the Gateway's admitted argv without a PHP dependency in Fixtures.
+        rows = json.loads((ROOT / "swamp/tests/fixtures/route-access.json").read_text().replace("/fixture", str(self.root)))
+        for row in rows:
+            argv = row["argv"]
+            if argv[0] == "/usr/sbin/runuser":
+                argv = argv[4:]
+            # Privilege-only adaptation: use a numeric ACL identity and touch no parent outside this temp fixture.
+            row["argv"] = [arg.replace("u:caddy:", "u:65534:") for arg in argv
+                           if not (arg != "/" and arg.startswith("/") and Path(arg) in checkout.parents)]
+        tasks = self.root / "tasks"
+        tasks.mkdir()
+        access = (ROOT / "swamp/ansible/tasks/route-access.yml").read_text()
+        (tasks / "route-access.yml").write_text(access.replace("become: true", "become: false"))
+        library = self.root / "library"
+        library.mkdir()
+        (library / SOURCE.name).write_text(SOURCE.read_text())
+        play = yaml.safe_load((ROOT / "swamp/ansible/route-create-site.yml").read_text())[1]
+        play.update({"hosts": "localhost", "connection": "local", "become": False})
+        play["vars"]["ansible_python_interpreter"] = sys.executable
+        playfile = self.root / "site.json"
+        playfile.write_text(json.dumps([play]))
+        intent = self.root / "intent.json"
+        intent.write_text(json.dumps({"nodes": {"9": {"account": account.pw_name}}, "acl": rows,
+            "links": [], "php_files": [], "php_tests": [], "php_reloads": [],
+            "leaf_indexes": [], "trust": [], "caddy": [], "awake": []}))
+        def phase():
+            run = self.root / "run"
+            run.mkdir(exist_ok=True)
+            return subprocess.run(["ansible-playbook", "-i", "localhost,", str(playfile)],
+                env=os.environ | {"ORBIT_RUN": str(run), "ORBIT_INTENT_PATH": str(intent),
+                    "ORBIT_INTENT_FIELD": "", "ORBIT_NODE_ID": "9", "ORBIT_PREPARED": "", "ORBIT_SIGNED": "",
+                    "ANSIBLE_STDOUT_CALLBACK": "default", "ANSIBLE_DISPLAY_FAILED_STDERR": "1",
+                    "ANSIBLE_COLLECTIONS_PATH": str(self.root / "empty")},
+                capture_output=True, text=True, check=False, timeout=20)
+        done = phase()
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertFalse((checkout / "storage").exists(), "publication must never create optional checkout folders")
+        self.assertIn("user:65534:r-x", subprocess.check_output(["getfacl", "-cpn", str(web)], text=True))
+        shutil.rmtree(web)
+        done = phase()
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn(str(web), done.stderr)
+        self.assertIn("No such file or directory", done.stderr)
+        self.assertFalse(web.exists())
+
+    def test_route_ansible_failures_reach_stderr_and_module_diagnostics_never_expose_content(self):
+        for name in ["route-create-site", "route-withdraw-node"]:
+            flow = yaml.safe_load((ROOT / f"swamp/workflows/workflow-{name}.yaml").read_text())
+            commands = [s["task"]["inputs"] for j in flow["jobs"] for s in j["steps"]
+                        if "ansible-playbook" in s.get("task", {}).get("inputs", {}).get("run", "")]
+            self.assertTrue(commands)
+            for command in commands:
+                self.assertEqual(command["env"]["ANSIBLE_DISPLAY_FAILED_STDERR"], "1")
+        # The custom site module deliberately discards tool output; its failure text is fixed.
+        source = SOURCE.read_text()
+        self.assertIn('rc, _, _ = module.run_command(argv)', source)
+        self.assertIn('module.fail_json(msg="Route certificate or site publication failed.")', source)
+
     def test_reused_input_is_read_only_and_child_cleanup_keeps_its_own_folder(self):
         flow = yaml.safe_load(
             (ROOT / "swamp/workflows/workflow-route-create-site.yaml").read_text()

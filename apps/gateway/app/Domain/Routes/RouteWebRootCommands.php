@@ -16,7 +16,7 @@ final readonly class RouteWebRootCommands
      * kind is one command for all its paths: every command costs one Ansible task on the Node.
      *
      * @param  array<string,mixed>  $access
-     * @return list<array{node_id:int,argv:list<string>}>
+     * @return list<array{node_id:int,argv:list<string>,optional_paths?:list<string>}>
      */
     public static function access(int $nodeId, array $access, Instance $instance): array
     {
@@ -28,10 +28,13 @@ final readonly class RouteWebRootCommands
             $rows[] = ['node_id' => $nodeId, 'argv' => [...$as, '/usr/bin/find', '-P', $checkout, '-type', 'd', '-exec', '/usr/bin/setfacl', '-m', 'd:u:caddy:---', '--', '{}', '+']];
             $rows[] = ['node_id' => $nodeId, 'argv' => [...$as, '/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:---', '--', $checkout]];
         }
-        $passage = $served = [];
+        $passage = $served = $required = [];
         foreach ($sites as $site) {
             $root = rtrim(ValidatedData::string($site['checkout']), '/').'/'.trim(ValidatedData::string($site['relative_root']), '/');
             $paths = [$root];
+            for ($directory = $root; $directory !== '/' && $directory !== '.'; $directory = dirname($directory)) {
+                $required[$directory] = true;
+            }
             if ($instance->source_is_laravel && str_ends_with($root, '/public')) {
                 $paths[] = rtrim(ValidatedData::string($site['application']), '/').'/storage/app/public';
             }
@@ -48,6 +51,14 @@ final readonly class RouteWebRootCommands
             }
             $rows[] = ['node_id' => $nodeId, 'argv' => [...$as, '/usr/bin/find', '-P', ...array_keys($served), '-type', 'd', '-exec', '/usr/bin/setfacl', '-m', 'd:u:caddy:r-x', '--', '{}', '+']];
             $rows[] = ['node_id' => $nodeId, 'argv' => [...$as, '/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:r-X', '--', ...array_keys($served)]];
+        }
+
+        $optional = array_keys(array_diff_key($served + $passage, $required));
+        foreach ($rows as &$row) {
+            $paths = array_values(array_intersect($row['argv'], $optional));
+            if ($paths !== []) {
+                $row['optional_paths'] = $paths;
+            }
         }
 
         return $rows;
@@ -81,7 +92,7 @@ final readonly class RouteWebRootCommands
      * One workload phase as commands and links.
      *
      * @param  array<string,mixed>  $phase
-     * @return array{acl:list<array{node_id:int,argv:list<string>}>,links:list<array{node_id:int,path:string,owner:string,target:string}>}
+     * @return array{acl:list<array{node_id:int,argv:list<string>,optional_paths?:list<string>}>,links:list<array{node_id:int,path:string,owner:string,target:string}>}
      */
     public static function phase(int $nodeId, array $phase, Instance $instance): array
     {
