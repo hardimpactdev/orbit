@@ -42,7 +42,7 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 
 A failed removal rolls nothing back. The Route is already withdrawn, so its site stays down; the Schedule triggers stay removed; and the Instance is marked as having a failed removal. Add `--force` only after a failed non-forced removal: a rerun without `--force` after a forced one, or `--force` on a removal that has not failed, is refused with `instance.removal_conflict`.
 
-An Instance without a Route can be removed only when its Project does not serve the web, or when the Instance never got past source resolution or failed during creation. Those skip the teardown and the push check. Any other Instance without one removable Route is refused with `instance.remove_refused`.
+An Instance without a Route skips Route withdrawal. A sole pending or failed Route whose sites were never published also skips withdrawal; its record is deleted with the Instance. The recorded `sites_published` flag distinguishes it from a Route that may still serve and must be withdrawn. Multiple owning Routes, a Route of another Project, an unsafe placement or a target set other than this Instance still refuse with `instance.remove_refused`. Source checks and teardown keep their usual rules.
 
 A non-default container Instance, cloned or migrated, requires `--force` until guarded removal is built. It withdraws the Route, drops owned databases and stops and deletes the container with its Processes, T3 sessions, history, Incus storage, ACL and firewall rules. It removes Conn records and execution copies, then frees the T3 port. Container defaults remain unavailable. See [clone removal](/reference/development-containers#destroy).
 
@@ -61,7 +61,7 @@ The [container destroy chart](https://github.com/hardimpactdev/orbit/blob/main/d
 | `instance.id_invalid` | The Instance is missing or is not a positive integer, and the CLI cannot prompt. |
 | `input.confirmation_required` | The call cannot prompt and has no `--yes`. |
 | `input.cancelled` | You declined, pressed Ctrl-C, or the input ended. |
-| `instance.remove_refused` | The Instance is not active, its environment or its Route cannot be removed, it has no removable Route, its source layout is not removable, the source has dirty or unpublished work and `--force` is absent, or removing the source failed. |
+| `instance.remove_refused` | The Instance is not active, its environment or its Route cannot be removed, it has multiple owning Routes, its source layout is not removable, the source has dirty or unpublished work and `--force` is absent, or removing the source failed. |
 | `instance.container_destroy_force_required` | A non-default container Instance, cloned or migrated, requires `--force` until guarded removal is built. |
 | `instance.host_unavailable` | The Node could not be read for safe checkout removal; details distinguish unreachable, timeout or missing result. Nothing is removed. |
 | `instance.worktree_dependents` | This checkout owns Git data used by another live worktree. HTTP 409 before admission; `--force` does not override it. |

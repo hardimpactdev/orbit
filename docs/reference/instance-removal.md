@@ -52,7 +52,7 @@ Known limits: Git data of nested or bare repositories inside the checkout with o
 
 Three cases skip work:
 
-- An Instance without a Route skips the Route withdrawal and its DNS records.
+- An Instance without a Route skips the Route withdrawal and its DNS records. A sole pending or failed Route with `sites_published=false` has no publication to withdraw; its record still goes with the Instance. A Route that published and later failed keeps `sites_published=true` and is withdrawn normally. The Route must still belong to the Project, target exactly this Instance and have safe placement; multiple owning Routes refuse. These checks follow the worktree admission check and precede Schedule or record changes.
 - An Instance removal waits no DNS grace: the name goes away, so no client has a new target to move to.
 - An Instance removal applies each published Caddyfile and DNS state once: the Route withdrawal composes the captured states in order against what the Node holds and writes the result once.
 
