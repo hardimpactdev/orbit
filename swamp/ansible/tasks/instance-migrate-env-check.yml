@@ -6,9 +6,13 @@
   register: migrate_network
 
 # Parsing stays on the Node: private .env values never enter Ansible facts, arguments or output.
-- name: Inspect service hosts in every copied app environment
+- name: Inspect service hosts only in the application and unit-named environments
   orbit_migrate_env:
     checkout: "{{ migrate.checkout }}"
+    environment_files: >-
+      {{ [migrate.application ~ '/.env']
+         + (migrate.schedules | default([]) | map(attribute='source_directory') | product(['.env']) | map('path_join') | list) }}
+    unit_files: "{{ migrate.processes | map(attribute='path') | list }}"
     targets: "{{ migrate.environment.targets }}"
     development_mail: "{{ container.mail | default(none) }}"
     node_addresses: >-
