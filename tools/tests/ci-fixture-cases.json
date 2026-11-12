@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "22d5991104957ee5c6a7258e6875647da4cc782f034a3924c6e2f2f8daa2cfaa",
+    "source_sha256": "1ac8a14c90a16485e7168328a20e604f1eb9b086a5423050de4d84e8e8b2aa46",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -14,17 +14,17 @@
       "migration counts 0 files that Git does not ignore beside a large ignored tree",
       "migration counts 1 files that Git does not ignore beside a large ignored tree",
       "untracked non-ignored files and nested repository leaves migrate with an exact archived file count",
-      "late ignored and non-ignored files do not refuse a move and remain in the retained checkout",
+      "source status changes after export refuse retirement and preserve every later file",
       "untracked files inside a tracked submodule retain the named retirement refusal even when Git config ignores it",
       "a retained default copies its unpushed commit and changed, staged, untracked, deleted and ignored files",
       "a linked worktree migrates before its active owner and preserves every file and sibling registration",
-      "linked worktree preflight refuses unstaged without touching its active owner or sibling",
-      "linked worktree preflight refuses staged without touching its active owner or sibling",
-      "linked worktree preflight refuses unpushed without touching its active owner or sibling",
-      "linked worktree preflight refuses identity without touching its active owner or sibling",
-      "linked worktree preflight refuses nested without touching its active owner or sibling",
+      "linked worktree preflight handles unstaged without touching its active owner or sibling",
+      "linked worktree preflight handles staged without touching its active owner or sibling",
+      "linked worktree preflight handles unpushed without touching its active owner or sibling",
+      "linked worktree preflight handles identity without touching its active owner or sibling",
+      "linked worktree preflight handles nested without touching its active owner or sibling",
       "linked retirement interrupted before unregister fails explicitly on repeat",
-      "linked worktree quiesce rechecks new tracked changes before stopping any writer",
+      "linked worktree quiesce carries tracked changes made after the container preflight",
       "an owner refuses retirement while its child is in the same retirement batch",
       "a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact",
       "a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was",
@@ -71,15 +71,16 @@
       "Process migration restores a running vp-dev only after removing its failed container",
       "Process migration carries a stopped vp-dev through the shared units and retires only moved host files",
       "Process migration restores a stopped vp-dev only after removing its failed container",
-      "preflight names every unpushed local branch with its count against all remote-tracking refs",
-      "preflight refuses and counts every commit when no remote-tracking refs exist",
-      "preflight refuses and counts an unpushed detached HEAD",
-      "preflight refuses stashes with the full count and preserves every entry and earlier move resource",
+      "a copied tracked-file mismatch fails before cutover and rollback preserves the source Git state",
+      "migration carries every divergent unpushed local branch without changing the source",
+      "a checkout with no remote tracking refs carries every local commit",
+      "a detached selected HEAD still refuses as a changed branch",
+      "migration carries duplicate stash messages and every ordered stash entry and content",
       "a clean default with pushed commits and no stash retains all Git metadata and repeats without changes",
       "a direct repository refuses a worktree created before its final preflight",
       "a common_of repository refuses a worktree created before its final preflight",
-      "a worktree created after the final listing keeps all its Git data after retirement",
-      "a stash ref with an expired reflog still refuses before downtime",
+      "a worktree created after retirement listing refuses the source snapshot before retention",
+      "migration carries a surviving stash ref with an expired reflog without inventing entries",
       "retention keeps real Git edge cases intact",
       "a worker receipt failure leaves the source untouched and a retry reuses the prepared retention time",
       "direct bridge endpoint add with transient missing-veth failure stays before the migration probe and downtime",
@@ -2188,19 +2189,31 @@
     ]
   },
   "swamp/tests/ansible_instance_migrate_source_test.ts": {
-    "source_sha256": "7f2a38c2ea71647d83b434c6d5d836aae9b799f351fb1fd967b7a5bd0d38d616",
+    "source_sha256": "7f5918eadba2429e29d967f35b04ded5ab7ce294a17279cb2b47d695ec000571",
     "cases": [
       "migration source preflight distinguishes failure and timeout before changing the checkout",
       "a never-pushed branch at a pushed commit passes source and retirement checks and copies locally"
     ]
   },
   "swamp/tests/instance_migrate_git_scope_test.py": {
-    "source_sha256": "18a19d2a13dcefa717c0b4363cd63c5f5984e1517d88de4e0559641f3eabda22",
+    "source_sha256": "dbafcd0365e2d7cd291b8486141b724e951709e1b317f90a06f044301c25473a",
     "cases": [
       "test_linked_child_passes_preflight_and_retirement_with_other_branch_and_shared_stashes",
-      "test_child_own_unpushed_branch_refuses_before_downtime_and_names_only_that_branch",
-      "test_owner_still_checks_every_branch_and_shared_stash_after_the_child_leaves",
-      "test_linked_detached_unpushed_head_refuses_before_downtime"
+      "test_child_own_unpushed_branch_passes_without_changing_shared_git_state",
+      "test_owner_keeps_branches_and_shared_stashes_after_the_child_leaves",
+      "test_owner_with_another_worktree_still_refuses_and_keeps_everything",
+      "test_a_linked_checkout_still_refuses_changed_submodule_metadata",
+      "test_carries_divergent_local_branches_complete_stashes_and_staged_and_unstaged_changes",
+      "test_a_staged_only_deletion_keeps_the_untracked_working_file",
+      "test_surviving_stash_ref_with_expired_reflog_keeps_its_objects_without_inventing_entries",
+      "test_materializes_alternate_objects_and_keeps_a_linked_worktree_independent",
+      "test_corrupt_pack_cannot_publish_refs_and_a_repeated_import_recovers",
+      "test_branch_refs_are_atomic_when_one_expected_ref_changes",
+      "test_an_invalid_checkout_root_cannot_export_its_parent_repository",
+      "test_export_refuses_a_changed_selected_branch",
+      "test_partial_reflog_failure_is_retryable_without_source_changes",
+      "test_index_flags_cannot_hide_uncopied_tracked_bytes_from_verification",
+      "test_changed_source_and_wrong_copied_bytes_refuse_before_cutover"
     ]
   },
   "swamp/tests/instance_node_service_access_test.py": {

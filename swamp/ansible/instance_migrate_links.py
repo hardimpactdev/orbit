@@ -16,11 +16,12 @@ class CopyLayout:
     """The existing Git file overlay plus directories that it would not create."""
     def __init__(self, root):
         self.root = root
-        self.files = self.git('diff', '--name-only', '-z', '--diff-filter=d', 'HEAD')
+        self.files = self.git('diff', '--no-renames', '--name-only', '-z', '--diff-filter=d', 'HEAD')
         self.untracked = self.git('ls-files', '-z', '--others')
         self.files += self.untracked
         self.counted = self.git('ls-files', '--others', '--exclude-standard', '-z')
-        self.deleted = set(self.git('diff', '--name-only', '-z', '--diff-filter=D', 'HEAD'))
+        self.deleted = {name for name in self.git('diff', '--no-renames', '--name-only', '-z', '--diff-filter=D', 'HEAD')
+                        if not os.path.lexists(root / os.fsdecode(name))}
         entries = self.git('ls-tree', '-rz', '--full-tree', 'HEAD')
         self.tracked = set()
         self.gitlinks = set()

@@ -20,13 +20,13 @@ default = ["swamp/tests/ansible_inputs_test.py"]
 [[fixture]]
 file = "swamp/tests/ansible_instance_migrate_test.ts"
 after_merge = true
-reason = "114 retained cases need 7653 declared seconds including startup, above the six-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963. Changed cases use individually measured local times rounded up plus one second. All migration cases run after merge until their work is reduced or selection is narrowed."
-cost = 6969
+reason = "115 retained cases need 7919 declared seconds including startup, above the six-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963. Changed cases use individually measured local times rounded up plus one second. All migration cases run after merge until their work is reduced or selection is narrowed."
+cost = 7229
 # 159.019s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (120s); these are estimates, not completed measurements.
-slices = 114
+slices = 115
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -37,6 +37,7 @@ inputs = [
   "swamp/ansible/instance_bridge.py",
   "swamp/ansible/instance_migrate_files.py",
   "swamp/ansible/instance_migrate_links.py",
+  "swamp/ansible/instance_migrate_git.py",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
@@ -55,14 +56,8 @@ inputs = [
 [fixture.case_costs]
   "directory modes stay in the protected result and restore through the workspace owner" = 2 # local completed 4ms, rounded up plus one second
   "stock unused MySQL passes both real preflights and its warning survives the completed move" = 120 # UNMEASURED conservative fixture estimate
-  "linked retirement interrupted before unregister fails explicitly on repeat" = 11 # measured 9.348s locally; rounded up plus 1s
-  "linked worktree preflight refuses nested without touching its active owner or sibling" = 7 # measured 5.081s locally; rounded up plus 1s
+  "linked retirement interrupted before unregister fails explicitly on repeat" = 54 # measured locally with four workers; rounded up plus 1s
   "a linked worktree migrates before its active owner and preserves every file and sibling registration" = 36 # measured 34.095s locally; rounded up plus 1s
-  "linked worktree preflight refuses unstaged without touching its active owner or sibling" = 4 # measured 2.098s locally; rounded up plus 1s
-  "linked worktree preflight refuses staged without touching its active owner or sibling" = 4 # measured 2.15s locally; rounded up plus 1s
-  "linked worktree preflight refuses unpushed without touching its active owner or sibling" = 5 # measured 3.033s locally; rounded up plus 1s
-  "linked worktree preflight refuses identity without touching its active owner or sibling" = 3 # measured 1.887s locally; rounded up plus 1s
-  "linked worktree quiesce rechecks new tracked changes before stopping any writer" = 18 # measured 16.745s locally; rounded up plus 1s
   "migration counts 0 files that Git does not ignore beside a large ignored tree" = 80 # conservative estimate; unprivileged archive fixture
   "migration counts 1 files that Git does not ignore beside a large ignored tree" = 80 # conservative estimate; unprivileged archive fixture
   "stock selector preflight: stock Laravel" = 120 # UNMEASURED estimate; registration refreshed from current source
@@ -71,7 +66,6 @@ inputs = [
   "stock selector preflight: attached Redis" = 120 # UNMEASURED estimate; registration refreshed from current source
   "stock selector preflight: wrong Redis port" = 120 # UNMEASURED estimate; registration refreshed from current source
   "untracked non-ignored files and nested repository leaves migrate with an exact archived file count" = 80 # local completed 36s; conservative runner allowance
-  "late ignored and non-ignored files do not refuse a move and remain in the retained checkout" = 80 # conservative estimate; includes processes and seed before retirement
   "untracked files inside a tracked submodule retain the named retirement refusal even when Git config ignores it" = 7 # local completed 2s; conservative runner allowance
   "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links" = 62 # completed, run 43002948719
   "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources" = 8 # completed, run 43002948719
@@ -128,15 +122,9 @@ inputs = [
   "Process migration restores a running vp-dev only after removing its failed container" = 63 # completed, run 43005032403
   "Process migration carries a stopped vp-dev through the shared units and retires only moved host files" = 120 # UNMEASURED estimate
   "Process migration restores a stopped vp-dev only after removing its failed container" = 110 # completed, run 43005032403
-  "preflight names every unpushed local branch with its count against all remote-tracking refs" = 12 # completed, run 43002948719
-  "preflight refuses and counts every commit when no remote-tracking refs exist" = 9 # completed, run 43005032403
-  "preflight refuses and counts an unpushed detached HEAD" = 9 # completed, run 43005032403
-  "preflight refuses stashes with the full count and preserves every entry and earlier move resource" = 28 # completed, run 43005032403
   "a clean default with pushed commits and no stash retains all Git metadata and repeats without changes" = 90 # completed, run 43002948719
   "a direct repository refuses a worktree created before its final preflight" = 78 # completed, run 43002948719
   "a common_of repository refuses a worktree created before its final preflight" = 78 # completed, run 43002948719
-  "a worktree created after the final listing keeps all its Git data after retirement" = 75 # completed, run 43005032403
-  "a stash ref with an expired reflog still refuses before downtime" = 8 # completed, run 43005032403
   "retention keeps real Git edge cases intact" = 2 # completed, run 43005032403
   "a worker receipt failure leaves the source untouched and a retry reuses the prepared retention time" = 90 # completed, run 43005032403
   "direct bridge endpoint add with transient missing-veth failure stays before the migration probe and downtime" = 27 # completed, run 43002948719
@@ -167,11 +155,27 @@ inputs = [
   "an unreadable copied environment refuses before downtime and restore preserves the source" = 14 # completed, run 43002948719
   "empty untracked storage and nested ignored directories migrate with exact modes and resolving links" = 27 # local completed 26s with ignored links and 13 empty directories, plus one second
   "copy prediction refuses missing targets and omitted submodule content before quiesce without changing the checkout" = 8 # local completed 7s, plus one second
+  "source status changes after export refuse retirement and preserve every later file" = 58 # measured locally with four workers; rounded up plus 1s
+  "linked worktree preflight handles unstaged without touching its active owner or sibling" = 53 # measured locally with four workers; rounded up plus 1s
+  "linked worktree preflight handles staged without touching its active owner or sibling" = 54 # measured locally with four workers; rounded up plus 1s
+  "linked worktree preflight handles unpushed without touching its active owner or sibling" = 53 # measured locally with four workers; rounded up plus 1s
+  "linked worktree preflight handles identity without touching its active owner or sibling" = 4 # measured locally with four workers; rounded up plus 1s
+  "linked worktree preflight handles nested without touching its active owner or sibling" = 8 # measured locally with four workers; rounded up plus 1s
+  "linked worktree quiesce carries tracked changes made after the container preflight" = 36 # measured locally with four workers; rounded up plus 1s
+  "a copied tracked-file mismatch fails before cutover and rollback preserves the source Git state" = 35 # measured locally with four workers; rounded up plus 1s
+  "migration carries every divergent unpushed local branch without changing the source" = 32 # measured locally with four workers; rounded up plus 1s
+  "a checkout with no remote tracking refs carries every local commit" = 33 # measured locally with four workers; rounded up plus 1s
+  "a detached selected HEAD still refuses as a changed branch" = 4 # measured locally with four workers; rounded up plus 1s
+  "migration carries duplicate stash messages and every ordered stash entry and content" = 33 # measured locally with four workers; rounded up plus 1s
+  "a worktree created after retirement listing refuses the source snapshot before retention" = 41 # measured locally with four workers; rounded up plus 1s
+  "migration carries a surviving stash ref with an expired reflog without inventing entries" = 35 # measured locally with four workers; rounded up plus 1s
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_git_scope_test.py"
 cost = 27 # measured 25.138s locally; rounded up plus 1s
 inputs = [
+  "swamp/ansible/instance_migrate_git.py",
+  "swamp/ansible/instance_migrate_links.py",
   "swamp/ansible/tasks/instance-migrate-retirement-check.yml",
   "swamp/ansible/tasks/instance-migrate-retire.yml",
   "swamp/tests/fixtures/instance-migrate-retention.py",
@@ -2911,6 +2915,7 @@ inputs = [
 file = "swamp/tests/ansible_instance_migrate_source_test.ts"
 cost = 16
 inputs = [
+  "swamp/ansible/instance_migrate_git.py",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",

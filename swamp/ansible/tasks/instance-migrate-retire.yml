@@ -47,6 +47,31 @@
     ansible_connection: local
     ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
+- name: Recheck the moved source snapshot immediately before retirement
+  when: retired.path == migrate.checkout and (retired_worktree | bool or retired_repository | bool)
+  ansible.builtin.command:
+    argv: [python3, '-', "{{ retired.path }}", check-source, "{{ node_archive }}.git.json"]
+    stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_git.py') }}"
+  register: retirement_snapshot
+  no_log: true
+  changed_when: false
+  failed_when: false
+
+- name: Explain a changed source snapshot
+  when: retired.path == migrate.checkout and (retired_worktree | bool or retired_repository | bool) and retirement_snapshot.rc != 0
+  ansible.builtin.set_fact:
+    migrate_refusal_code: instance.migrate_git_source_changed
+    migrate_refusal_message: >-
+      The source changed after its Git state was exported. All data stays in the source or retained folder.
+      Compare it with the serving container and carry the later changes before removing any retained data.
+
+- name: Require the source Git snapshot to remain unchanged
+  when: retired.path == migrate.checkout and (retired_worktree | bool or retired_repository | bool)
+  ansible.builtin.assert:
+    that: retirement_snapshot.rc == 0
+    fail_msg: instance.migrate_git_source_changed
+    quiet: true
+
 - name: Retain the checkout without deleting any files
   when: retired_worktree | bool or retired_repository | bool
   ansible.builtin.command:

@@ -132,6 +132,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   Deno.chmodSync(`${folder}/bin/incus`, 0o755);
   Deno.copyFileSync(new URL("instance_migrate_files.py", root), `${folder}/instance_migrate_files.py`);
   Deno.copyFileSync(new URL("instance_migrate_links.py", root), `${folder}/instance_migrate_links.py`);
+  Deno.copyFileSync(new URL("instance_migrate_git.py", root), `${folder}/instance_migrate_git.py`);
   for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-process-ready.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-schedules.yml", "instance-migrate-schedule-check.yml", "instance-migrate-link-result.yml", "instance-migrate-env-check.yml"]) {
     const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => {
       const transformed = transform(structuredClone(task));
@@ -539,12 +540,11 @@ os.execv("/usr/bin/tar", ["tar", *sys.argv[1:]])
       Deno.chmodSync(`${f.folder}/bin/tar`, 0o755);
       const copied = f.run("files");
       assert(!copied.ok, copied.output);
-      assertEquals(f.result().error_code, "instance.migrate_symlink_unsupported");
-      assertEquals(f.result().preflight_refused, false);
-      assert(f.result().error_message.includes("broken"), f.result().error_message);
+      // This race changes porcelain status after the Git export; refuse it before
+      // inspecting the copied links, without losing the developer's new file.
+      assertEquals(f.result().error_code, "instance.migrate_git_source_changed");
+      assert(f.result().preflight_refused !== true);
       for (const [path, target] of targets) {
-        assert(f.result().error_message.includes(path), f.result().error_message);
-        assert(f.result().error_message.includes(target), f.result().error_message);
         assertEquals(Deno.readLinkSync(`${f.rootfs}/srv/workspace/${path}`), target);
         assertEquals(Deno.readLinkSync(`${f.checkout}/${path}`), target);
       }
@@ -634,7 +634,10 @@ for (const count of [0, 1]) {
         assertEquals(f.read("database/database.sqlite"), "sqlite\n");
         assert(f.read(".env").includes("APP_KEY="));
         if (count === 1) assertEquals(f.read("draft.txt"), "not ignored\n");
-        assertEquals([...Deno.readDirSync(`${f.folder}/mirror`)].map((entry) => entry.name), ["7.git"]);
+        const nodeFiles = [...Deno.readDirSync(`${f.folder}/mirror`)].map((entry) => entry.name);
+        assertEquals(nodeFiles.filter((name) => name.endsWith(".git")), ["7.git"]);
+        assertEquals(nodeFiles.filter((name) => name.endsWith(".git.json")).length, 1);
+        assertEquals(nodeFiles.length, 2);
       } finally {
         f.cleanup();
       }
@@ -676,7 +679,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "late ignored and non-ignored files do not refuse a move and remain in the retained checkout",
+  name: "source status changes after export refuse retirement and preserve every later file",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -693,20 +696,22 @@ Deno.test({
       Deno.mkdirSync(`${f.checkout}/cache`);
       Deno.writeTextFileSync(`${f.checkout}/cache/generated`, "late ignored cache\n");
       const completed = f.run(["processes", "seed", "retire"]);
-      assert(completed.ok, completed.output);
+      assert(!completed.ok, completed.output);
+      assertEquals(f.result().error_code, "instance.migrate_git_source_changed");
       const commit = f.workspace("rev-parse", "HEAD");
       const copied = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/untracked-files.json`));
       const projected = JSON.parse(migrateResult(
         { instance_id: f.container.instance_id, container: f.container, route_mutations: null },
         { container: "succeeded", quiesce: "succeeded", workspace: "succeeded", files: "succeeded",
           processes: "succeeded", seed: "succeeded", agent: "skipped", t3: "skipped", register: "skipped",
-          route: "skipped", retire: "succeeded", restore_route: "skipped", restore: "skipped" },
-        { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}` } }, null, copied,
+          route: "skipped", retire: "failed", restore_route: "skipped", restore: "skipped" },
+        { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}` } }, null, {...copied, ...f.result()},
       ).stdout);
-      assertEquals([projected.ready, projected.moved, projected.restored], [true, true, false]);
+      assertEquals([projected.ready, projected.moved, projected.restored], [false, true, false]);
       assertEquals(f.read("draft.txt"), "copied version\n");
       for (const path of ["late.txt", "runtime.log", "cache/generated"]) assert(!exists(`${f.rootfs}/srv/workspace/${path}`));
-      const retained = f.retained();
+      assertEquals(projected.error_code, "instance.migrate_git_source_changed");
+      const retained = f.checkout;
       assertEquals(Deno.readTextFileSync(`${retained}/draft.txt`), "late edited version\n");
       assertEquals(Deno.readTextFileSync(`${retained}/late.txt`), "late untracked work\n");
       assertEquals(Deno.readTextFileSync(`${retained}/runtime.log`), "late ignored output\n");
@@ -772,6 +777,7 @@ Deno.test({
       assertEquals(f.read("local.php"), "<?php // committed, never pushed\n");
       assertEquals(f.read("index.php"), "<?php echo 2;\n");
       assertEquals(f.read("staged.php"), "<?php // staged\n");
+      assertEquals(f.workspace("diff", "--cached", "--name-only"), git(f.checkout, "diff", "--cached", "--name-only"));
       assertEquals(f.read("note.txt"), "untracked\n");
       assertEquals(f.read("vendor/pkg/a.php"), "<?php // dependency\n");
       assertEquals(f.read("database/database.sqlite"), "sqlite\n");
@@ -786,9 +792,13 @@ Deno.test({
       assertEquals(f.state().containers["instance-7"].devices.filter((device: string) => device.startsWith("root,")), [
         "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB",
       ]);
-      // Nothing of the copy stays behind, and the checkout is as it was: a failure from here could still restore it.
+      // Container staging is removed; the private source snapshot stays until retirement or restore.
       assertEquals([...Deno.readDirSync(`${f.rootfs}/srv`)].map((entry) => entry.name), ["workspace"]);
-      assertEquals([...Deno.readDirSync(`${f.folder}/mirror`)].map((entry) => entry.name), ["7.git"]);
+      const nodeFiles = [...Deno.readDirSync(`${f.folder}/mirror`)].map((entry) => entry.name);
+      assertEquals(nodeFiles.filter((name) => name.endsWith(".git")), ["7.git"]);
+      const snapshots = nodeFiles.filter((name) => name.endsWith(".git.json"));
+      assertEquals(snapshots.length, 1);
+      assertEquals(Deno.statSync(`${f.folder}/mirror/${snapshots[0]}`).mode! & 0o777, 0o600);
       assertEquals(git(f.checkout, "status", "--porcelain"), status);
       assertEquals(Deno.readTextFileSync(`${f.checkout}/.env`), `APP_KEY=base64:kept\nDB_DATABASE=${f.checkout}/database/database.sqlite\n`);
 
@@ -869,7 +879,7 @@ Deno.test({
 
 for (const blocker of ["unstaged", "staged", "unpushed", "identity", "nested"] as const) {
   Deno.test({
-    name: "linked worktree preflight refuses " + blocker + " without touching its active owner or sibling",
+    name: "linked worktree preflight handles " + blocker + " without touching its active owner or sibling",
     ignore: !hasAnsible,
     fn() {
       const f = fixture("feature");
@@ -886,9 +896,16 @@ for (const blocker of ["unstaged", "staged", "unpushed", "identity", "nested"] a
         }
         const before = gitFiles(f.apps);
         const refused = f.run("container");
+        if (["unstaged", "staged", "unpushed"].includes(blocker)) {
+          assert(refused.ok, refused.output);
+          f.build();
+          assertEquals(f.workspace("rev-parse", "HEAD"), git(f.checkout, "rev-parse", "HEAD"));
+          if (blocker !== "unpushed") assertEquals(f.read("index.php"), "tracked edit");
+          assertEquals(gitFiles(f.apps), before);
+          return;
+        }
         assert(!refused.ok, refused.output);
-        assertEquals(f.result().error_code, blocker === "unpushed" ? "instance.migrate_unpushed_commits"
-          : "instance.migrate_retirement_blocked");
+        assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
         assertEquals(gitFiles(f.apps), before);
         assert(exists(f.migrate.awake.path));
         assertEquals(f.state().containers ?? {}, {});
@@ -914,6 +931,7 @@ Deno.test({
     const f = fixture("feature");
     try {
       const admin = git(f.checkout, "rev-parse", "--absolute-git-dir");
+      f.buildBatched();
       const file = f.folder + "/tasks/instance-migrate-retire.yml";
       const original = Deno.readTextFileSync(file);
       Deno.writeTextFileSync(file, original.replace("shutil.rmtree(private)", "raise OSError('fixture: interrupted before unregister')"));
@@ -936,7 +954,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "linked worktree quiesce rechecks new tracked changes before stopping any writer",
+  name: "linked worktree quiesce carries tracked changes made after the container preflight",
   ignore: !hasAnsible,
   fn() {
     const f = fixture("feature");
@@ -947,12 +965,12 @@ Deno.test({
       Deno.writeTextFileSync(f.checkout + "/index.php", "late tracked edit");
       const before = gitFiles(f.apps);
       const state = f.state();
-      const refused = f.run("quiesce");
-      assert(!refused.ok, refused.output);
-      assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
+      const refused = f.run(["quiesce", "workspace", "files"]);
+      assert(refused.ok, refused.output);
+      assertEquals(f.read("index.php"), "late tracked edit");
       assertEquals(gitFiles(f.apps), before);
-      assertEquals(f.state(), state);
-      assert(exists(f.migrate.awake.path));
+      assertEquals(f.state().containers["instance-8"].status, state.containers["instance-8"].status);
+      assert(!exists(f.migrate.awake.path));
     } finally { f.cleanup(); }
   },
 });
@@ -1067,7 +1085,9 @@ Deno.test({
       git(f.checkout, "checkout", "--quiet", "-b", "elsewhere");
       const quiesce = f.run("container");
       assert(!quiesce.ok);
-      assertEquals(f.result(), { error_code: "instance.migrate_branch_changed", preflight_refused: true });
+      assertEquals(f.result().error_code, "instance.migrate_branch_changed");
+      assertEquals(f.result().preflight_refused, true);
+      assert(f.result().error_message.includes("All data stays"));
       // The Route still serves, and no container was made.
       assert(exists(f.migrate.awake.path));
       assertEquals(f.state().containers ?? {}, {});
@@ -1240,10 +1260,10 @@ for (const blocker of ["changes", "worktree", "commits", "stashes"] as const) {
         const state = f.state();
         const retire = f.run("retire");
         assert(!retire.ok, retire.output);
-        const code = blocker === "commits" ? "instance.migrate_unpushed_commits" : blocker === "stashes" ? "instance.migrate_stashes_present" : "instance.migrate_retirement_blocked";
+        const code = blocker === "worktree" ? "instance.migrate_retirement_blocked" : "instance.migrate_git_source_changed";
         assertEquals(f.result().error_code, code);
         const detail = blocker === "changes" ? "index.php" : blocker === "worktree" ? path : blocker === "commits" ? '"commits": 1' : "Stashes: 1";
-        assert(f.result().error_message.includes(detail), f.result().error_message);
+        assert(f.result().error_message.includes(blocker === "worktree" ? detail : "All data stays"), f.result().error_message);
         assertEquals(git(f.checkout, "show-ref"), refs);
         assertEquals(f.result().preflight_refused, false);
         assert(exists(f.migrate.awake.path), "The container Route must serve after a retirement refusal.");
@@ -1453,7 +1473,7 @@ Deno.test({
       Deno.writeTextFileSync(`${f.checkout}/index.php`, "late edit kept for recovery\n");
       const retired = f.run("retire");
       assert(!retired.ok, retired.output);
-      assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
+      assertEquals(f.result().error_code, "instance.migrate_git_source_changed");
       assertEquals(f.result().preflight_refused, false);
       assertEquals(f.state().containers["instance-7"].status, "Running");
       assertEquals(schedules.host()[schedules.schedule.timer], { state: "stopped", enabled: false });
@@ -1694,47 +1714,69 @@ for (const presetDesired of ["running", "stopped"] as const) {
 }
 
 Deno.test({
-  name: "preflight names every unpushed local branch with its count against all remote-tracking refs",
+  name: "a copied tracked-file mismatch fails before cutover and rollback preserves the source Git state",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture("default", true);
+    try {
+      const prepared = f.run(["container", "quiesce", "workspace"]);
+      assert(prepared.ok, prepared.output);
+      const before = gitFiles(f.apps);
+      const file = f.folder + "/tasks/instance-migrate-phase.yml";
+      const tasks = parse(Deno.readTextFileSync(file)) as Task[];
+      const copy = tasks.find((task) => task.name === "Copy the checkout's files into the workspace")!;
+      const parts = copy.block as Task[];
+      const verify = parts.findIndex((task) => task.name === "Import and verify all local Git state before path rewrites");
+      parts.splice(verify, 0, {
+        name: "Fixture corrupts a copied tracked file",
+        "ansible.builtin.command": {argv: ["python3", "-c",
+          "from pathlib import Path; Path(" + JSON.stringify(f.rootfs + "/srv/workspace/index.php") + ").write_text('corrupt copy')"]},
+        changed_when: true,
+      });
+      Deno.writeTextFileSync(file, stringify(tasks));
+      const copied = f.run("files");
+      assert(!copied.ok, copied.output);
+      assertEquals(f.result().error_code, "instance.migrate_git_state_mismatch");
+      assertEquals(gitFiles(f.apps), before);
+      const restored = f.run("restore");
+      assert(restored.ok, restored.output);
+      assertEquals(f.state().containers, {});
+      assertEquals(gitFiles(f.apps), before);
+      assertEquals([...Deno.readDirSync(f.folder + "/mirror")].map((entry) => entry.name), []);
+      git(f.checkout, "fsck", "--full", "--strict");
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "migration carries every divergent unpushed local branch without changing the source",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
       const pushed = git(f.checkout, "rev-parse", "HEAD");
-      // None of these branches needs an upstream. Remote-only commits count as pushed on any remote.
-      git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "remote-only");
-      git(f.checkout, "update-ref", "refs/remotes/second/shared", "HEAD");
-      git(f.checkout, "branch", "remote-only");
       git(f.checkout, "checkout", "--quiet", "-b", "spare", pushed);
-      git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "one unpushed commit");
+      Deno.writeTextFileSync(f.checkout + "/spare-only", "local spare content");
+      git(f.checkout, "add", "spare-only");
+      git(f.checkout, "commit", "--quiet", "-m", "local spare");
       git(f.checkout, "branch", "another");
-      git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "two unpushed commits");
       git(f.checkout, "checkout", "--quiet", "main");
-      const refs = git(f.checkout, "show-ref");
-      const status = git(f.checkout, "status", "--porcelain");
-      const quiesce = f.run("container");
-      assert(!quiesce.ok, quiesce.output);
-      const receipt = f.result();
-      assertEquals(receipt.error_code, "instance.migrate_unpushed_commits");
-      assert(receipt.error_message.includes(f.checkout));
-      assert(receipt.error_message.includes('"branch": "another", "commits": 1'), receipt.error_message);
-      assert(receipt.error_message.includes('"branch": "spare", "commits": 2'), receipt.error_message);
-      assert(!receipt.error_message.includes('"branch": "main"'));
-      assert(!receipt.error_message.includes('"branch": "remote-only"'));
-      assertEquals(receipt.preflight_refused, true);
-      assert(exists(f.migrate.awake.path));
-      assertEquals(f.state().containers ?? {}, {});
-      assert(f.run("restore").ok);
-      assertEquals(git(f.checkout, "show-ref"), refs);
-      assertEquals(git(f.checkout, "status", "--porcelain"), status);
-    } finally {
-      f.cleanup();
-    }
+      git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "divergent main");
+      const refs = git(f.checkout, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/");
+      const before = gitFiles(f.apps);
+      f.build();
+      assertEquals(f.workspace("for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/"), refs);
+      assertEquals(f.workspace("show", "spare:spare-only"), "local spare content");
+      assertEquals(f.workspace("rev-parse", "HEAD"), git(f.checkout, "rev-parse", "HEAD"));
+      assertEquals(gitFiles(f.apps), before);
+      f.workspace("fsck", "--full", "--strict");
+    } finally { f.cleanup(); }
   },
 });
 
 for (const detached of [false, true]) {
   Deno.test({
-    name: detached ? "preflight refuses and counts an unpushed detached HEAD" : "preflight refuses and counts every commit when no remote-tracking refs exist",
+    name: detached ? "a detached selected HEAD still refuses as a changed branch" : "a checkout with no remote tracking refs carries every local commit",
     ignore: !hasAnsible,
     fn() {
       const f = fixture();
@@ -1742,58 +1784,42 @@ for (const detached of [false, true]) {
         if (detached) {
           git(f.checkout, "checkout", "--quiet", "--detach");
           git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "detached local commit");
-        } else git(f.checkout, "update-ref", "-d", "refs/remotes/origin/main");
-        const head = git(f.checkout, "rev-parse", "HEAD");
-        const refs = git(f.checkout, "show-ref");
-        const quiesce = f.run("container");
-        assert(!quiesce.ok, quiesce.output);
-        assertEquals(f.result().error_code, "instance.migrate_unpushed_commits");
-        const expected = detached ? '"branch": "detached HEAD", "commits": 1' : '"branch": "main", "commits": 3';
-        assert(f.result().error_message.includes(expected), f.result().error_message);
-        assert(exists(f.migrate.awake.path));
-        assertEquals(f.state().containers ?? {}, {});
-        assertEquals(git(f.checkout, "rev-parse", "HEAD"), head);
-        assertEquals(git(f.checkout, "show-ref"), refs);
-      } finally {
-        f.cleanup();
-      }
+          const result = f.run("container");
+          assert(!result.ok, result.output);
+          assertEquals(f.result().error_code, "instance.migrate_branch_changed");
+          assert(exists(f.migrate.awake.path));
+        } else {
+          git(f.checkout, "update-ref", "-d", "refs/remotes/origin/main");
+          f.build();
+          assertEquals(f.workspace("rev-parse", "HEAD"), git(f.checkout, "rev-parse", "HEAD"));
+        }
+      } finally { f.cleanup(); }
     },
   });
 }
 
 Deno.test({
-  name: "preflight refuses stashes with the full count and preserves every entry and earlier move resource",
+  name: "migration carries duplicate stash messages and every ordered stash entry and content",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
       for (const name of ["first", "second"]) {
-        Deno.writeTextFileSync(`${f.checkout}/${name}.txt`, name);
-        git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
+        Deno.writeTextFileSync(f.checkout + "/" + name + ".txt", name);
+        git(f.checkout, "stash", "push", "--quiet", "--include-untracked", "-m", "duplicate");
       }
-      const stashes = git(f.checkout, "stash", "list", "--format=%H");
-      const refs = git(f.checkout, "show-ref");
-      assert(f.run("container", true).ok);
-      const state = f.state();
-      const quiesce = f.run("container");
-      assert(!quiesce.ok, quiesce.output);
-      assertEquals(f.result().error_code, "instance.migrate_stashes_present");
-      assert(f.result().error_message.includes("Stashes: 2"));
-      assert(f.result().error_message.includes(f.checkout));
-      assertEquals(f.result().preflight_refused, true);
-      assert(exists(f.migrate.awake.path));
-      assertEquals(f.state(), state);
-      assert(f.run("restore").ok);
-      assertEquals(f.state(), state);
-      assertEquals(git(f.checkout, "show-ref"), refs);
-      assertEquals(git(f.checkout, "stash", "list", "--format=%H"), stashes);
+      const stashes = git(f.checkout, "stash", "list", "--format=%H%x00%gs");
+      const before = gitFiles(f.apps);
+      f.build();
+      assertEquals(f.workspace("stash", "list", "--format=%H%x00%gs"), stashes);
       for (const [index, name] of [[0, "second"], [1, "first"]] as const) {
-        assertEquals(git(f.checkout, "show", `stash@{${index}}^3:${name}.txt`), name);
+        assertEquals(f.workspace("show", "stash@{" + index + "}^3:" + name + ".txt"), name);
       }
-      assertEquals(git(f.checkout, "status", "--porcelain"), "");
-    } finally {
-      f.cleanup();
-    }
+      assertEquals(gitFiles(f.apps), before);
+      f.workspace("stash", "apply", "stash@{1}");
+      assertEquals(f.read("first.txt"), "first");
+      f.workspace("fsck", "--full", "--strict");
+    } finally { f.cleanup(); }
   },
 });
 
@@ -1871,7 +1897,7 @@ for (const common of [false, true]) {
 }
 
 Deno.test({
-  name: "a worktree created after the final listing keeps all its Git data after retirement",
+  name: "a worktree created after retirement listing refuses the source snapshot before retention",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1880,7 +1906,7 @@ Deno.test({
       const late = `${f.apps}/after-final-listing`;
       const file = `${f.folder}/tasks/instance-migrate-retire.yml`;
       const tasks = parse(Deno.readTextFileSync(file)) as Task[];
-      const retain = tasks.findIndex((task) => task.name === "Retain the checkout without deleting any files");
+      const retain = tasks.findIndex((task) => task.name === "Recheck the moved source snapshot immediately before retirement");
       tasks.splice(retain, 0, {
         name: "Fixture adds a late worktree after the final preflight listing",
         "ansible.builtin.command": { argv: ["git", "-C", f.checkout, "worktree", "add", "--quiet", "--detach", late] },
@@ -1889,16 +1915,13 @@ Deno.test({
       Deno.writeTextFileSync(file, stringify(tasks));
       const head = git(f.checkout, "rev-parse", "HEAD");
       const retire = f.run("retire");
-      assert(retire.ok, retire.output);
-      assert(!exists(f.checkout));
-      const retained = f.retained();
-      assert(exists(`${retained}/.git/worktrees/after-final-listing/HEAD`));
-      assertEquals(git(retained, "cat-file", "-t", head), "commit");
+      assert(!retire.ok, retire.output);
+      assertEquals(f.result().error_code, "instance.migrate_git_source_changed");
+      assert(exists(f.checkout));
+      assertEquals(git(f.checkout, "rev-parse", "HEAD"), head);
+      assertEquals(git(late, "rev-parse", "HEAD"), head);
       assertEquals(Deno.readTextFileSync(`${late}/.git`).trim(), `gitdir: ${f.checkout}/.git/worktrees/after-final-listing`);
       assert(exists(`${late}/index.php`));
-      const receipt = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/retained-git.json`));
-      assertEquals(receipt.retained_git_path, `${f.checkout}.orbit-retired-git`);
-      assertMatch(receipt.retained_git_at, /^\d{4}-\d{2}-\d{2}T/);
       assert(exists(f.migrate.awake.path));
     } finally {
       f.cleanup();
@@ -1907,26 +1930,21 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a stash ref with an expired reflog still refuses before downtime",
+  name: "migration carries a surviving stash ref with an expired reflog without inventing entries",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
-      Deno.writeTextFileSync(`${f.checkout}/expired-stash.txt`, "kept stash data\n");
+      Deno.writeTextFileSync(f.checkout + "/expired-stash.txt", "kept stash data");
       git(f.checkout, "stash", "push", "--quiet", "--include-untracked");
       const stash = git(f.checkout, "rev-parse", "refs/stash");
       git(f.checkout, "reflog", "expire", "--expire=all", "refs/stash");
-      assertEquals(git(f.checkout, "stash", "list"), "");
-      const quiesce = f.run("container");
-      assert(!quiesce.ok, quiesce.output);
-      assertEquals(f.result().error_code, "instance.migrate_stashes_present");
-      assert(f.result().error_message.includes("Stashes: 1"));
-      assertEquals(git(f.checkout, "rev-parse", "refs/stash"), stash);
-      assertEquals(git(f.checkout, "show", `${stash}^3:expired-stash.txt`), "kept stash data");
-      assert(exists(f.migrate.awake.path));
-    } finally {
-      f.cleanup();
-    }
+      f.build();
+      assertEquals(f.workspace("stash", "list"), "");
+      assertEquals(f.workspace("rev-parse", "refs/stash"), stash);
+      assertEquals(f.workspace("show", stash + "^3:expired-stash.txt"), "kept stash data");
+      f.workspace("fsck", "--full", "--strict");
+    } finally { f.cleanup(); }
   },
 });
 
@@ -2599,5 +2617,5 @@ Deno.test("directory modes stay in the protected result and restore through the 
   assertEquals(command.stdin, "{{ (migrate_archive.stdout | from_json).directory_modes }}");
   assertEquals(restore.no_log, true);
   const push = tasks.find(task => task.name === "Push the archive and the deleted files into the container")!;
-  assertEquals(push.loop, [".tar", ".deleted"]);
+  assertEquals(push.loop, [".tar", ".deleted", ".git.pack", ".git.json"]);
 });

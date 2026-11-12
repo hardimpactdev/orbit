@@ -6,7 +6,9 @@
   when: migrate_links.refused | length > 0
   ansible.builtin.set_fact:
     migrate_refusal_code: instance.migrate_symlink_unsupported
-    migrate_refusal_message: "Cannot migrate checkout {{ migrate.checkout | to_json }}. Unsupported symlinks: {{ migrate_links.refused | to_json }}."
+    migrate_refusal_message: >-
+      Cannot migrate checkout {{ migrate.checkout | to_json }}. Unsupported symlinks: {{ migrate_links.refused | to_json }}.
+      All data stays in the source or retained folder. Replace broken or external links with safe internal targets and retry.
 - name: Refuse broken or external links
   ansible.builtin.assert:
     that: migrate_links.refused | length == 0
