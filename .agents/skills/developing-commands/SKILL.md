@@ -41,6 +41,8 @@ The release ([stage 5](../../../docs/reference/pipeline/5-automatic-release.mmd)
 
 ## Lessons
 
+Before lifting admission beyond a producer limit, release the accepting side, then the capable producer with admission unchanged, then the admission lift. The retained rollback target for the lift must already contain the capable producer: full rollback loads its workflows before code handover. Test an existing resource through actual replacement issuance with the prior admission restored; checking its validation helper alone does not prove renewal. State any unsupported older rollback and what an operator sees.
+
 A proof mapping is not coverage when its cases file is absent, empty or contains only refusals. For Instance lifecycle execution changes, report the exact uncovered files in CI; once a real successful Operation case exists, preserve its selection across mapping edits and case removal. Count setup and cleanup separately before making the first live proof required.
 
 When a Docs test is aborted by PHPUnit on a shared runner, distinguish its per-test timer from assertion failures. Docs uses the existing CI job ceiling for timing and still fails risky tests and PHPUnit warnings. Keep the timer policy and its configuration test consistent.
