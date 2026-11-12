@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "cb89a46b3a1c0709b1b152a90f8c52f97d96513f563d93e31418126e16e664ca",
+    "source_sha256": "1c93fd442c1bd2625f8f81d560550c7018a7f4b03f63b306b2a4b8a024cacfab",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -112,7 +112,9 @@
       "stock selector preflight: real53",
       "stock selector preflight: selected Redis",
       "stock selector preflight: attached Redis",
-      "stock selector preflight: wrong Redis port"
+      "stock selector preflight: wrong Redis port",
+      "empty untracked storage and nested ignored directories migrate with exact modes and resolving links",
+      "copy prediction refuses missing targets and omitted submodule content before quiesce without changing the checkout"
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
@@ -742,7 +744,7 @@
     ]
   },
   "swamp/tests/ansible_instance_migrate_links_test.py": {
-    "source_sha256": "2c06767fd3066491dd28df9a3a2904ce904b64349e5657d4eec42e8d8dc7ee89",
+    "source_sha256": "a5029c3d0f50c299dadfa6be734dceffa32dd75669b87c8790e0decaf68ebcfb",
     "cases": [
       "test_rewrites_absolute_storage_and_local_package_links_without_changing_source",
       "test_keeps_relative_targets_exactly",
@@ -757,7 +759,11 @@
       "test_refuses_missing_copied_data_even_if_the_source_target_still_exists_without_partial_rewrites",
       "test_preserves_non_utf8_bytes_in_link_names_and_targets",
       "test_reports_non_utf8_refusals_as_byte_escapes_without_json_surrogates",
-      "test_resolves_parent_components_after_following_directory_links"
+      "test_resolves_parent_components_after_following_directory_links",
+      "test_archive_carries_empty_untracked_and_nested_ignored_directories_with_exact_modes",
+      "test_prediction_keeps_existing_validation_for_links_into_generated_git_metadata",
+      "test_added_unreadable_directory_can_be_inspected_before_exact_mode_restoration",
+      "test_prediction_refuses_source_valid_links_to_omitted_submodule_contents_and_missing_targets"
     ]
   },
   "swamp/tests/ansible_instance_module_args_test.py": {

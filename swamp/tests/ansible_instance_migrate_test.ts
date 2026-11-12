@@ -2447,3 +2447,86 @@ for (const scenario of ["stock Laravel", "real53", "selected Redis", "attached R
     },
   });
 }
+
+Deno.test({
+  name: "empty untracked storage and nested ignored directories migrate with exact modes and resolving links",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      Deno.mkdirSync(`${f.checkout}/public`);
+      Deno.mkdirSync(`${f.checkout}/storage/app/public`, { recursive: true });
+      Deno.writeTextFileSync(`${f.checkout}/storage/app/.gitignore`, "*\n!.gitignore\n!public/\n");
+      Deno.writeTextFileSync(`${f.checkout}/public/.gitkeep`, "");
+      Deno.writeTextFileSync(`${f.checkout}/.gitignore`, Deno.readTextFileSync(`${f.checkout}/.gitignore`) + "storage/framework/testing/\n");
+      Deno.mkdirSync(`${f.checkout}/database/migrations`);
+      for (let i = 0; i < 3; i++) Deno.writeTextFileSync(`${f.checkout}/database/migrations/file-${i}.php`, "<?php // migration\n");
+      git(f.checkout, "add", ".");
+      git(f.checkout, "commit", "--quiet", "-m", "storage shape");
+      git(f.checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
+      const storage = `${f.checkout}/storage/app/public`;
+      Deno.chmodSync(storage, 0o3775);
+      Deno.symlinkSync(storage, `${f.checkout}/public/storage`);
+      Deno.mkdirSync(`${f.checkout}/vendor/empty/nested`, { recursive: true });
+      Deno.chmodSync(`${f.checkout}/vendor/empty/nested`, 0o2711);
+      Deno.mkdirSync(`${f.checkout}/.git/empty-marker`);
+      const ignored = "storage/framework/testing/cutover-release-fixture/migrations";
+      Deno.mkdirSync(`${f.checkout}/${ignored}`, { recursive: true });
+      for (let i = 0; i < 3; i++) Deno.symlinkSync(`${f.checkout}/database/migrations/file-${i}.php`, `${f.checkout}/${ignored}/file-${i}.php`);
+      for (let i = 0; i < 12; i++) Deno.mkdirSync(`${f.checkout}/runtime-empty/slot-${i}`, { recursive: true });
+      f.buildBatched();
+      const copied = `${f.rootfs}/srv/workspace`;
+      assertEquals(Deno.statSync(`${copied}/storage/app/public`).mode! & 0o7777, 0o3775);
+      assertEquals(Deno.statSync(`${copied}/vendor/empty/nested`).mode! & 0o7777, 0o2711);
+      assertEquals(Deno.readLinkSync(`${copied}/public/storage`), "../storage/app/public");
+      assertEquals(Deno.realPathSync(`${copied}/public/storage`), `${copied}/storage/app/public`);
+      assert(!exists(`${copied}/.git/empty-marker`));
+      for (let i = 0; i < 12; i++) assert(Deno.statSync(`${copied}/runtime-empty/slot-${i}`).isDirectory);
+      for (let i = 0; i < 3; i++) {
+        assertEquals(Deno.readLinkSync(`${copied}/${ignored}/file-${i}.php`), `../../../../../database/migrations/file-${i}.php`);
+        assertEquals(Deno.realPathSync(`${copied}/${ignored}/file-${i}.php`), `${copied}/database/migrations/file-${i}.php`);
+        assertEquals(Deno.readLinkSync(`${f.checkout}/${ignored}/file-${i}.php`), `${f.checkout}/database/migrations/file-${i}.php`);
+      }
+      assertEquals(Deno.readLinkSync(`${f.checkout}/public/storage`), storage);
+      assertEquals(Deno.statSync(storage).mode! & 0o7777, 0o3775);
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "copy prediction refuses missing targets and omitted submodule content before quiesce without changing the checkout",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const commit = git(f.checkout, "rev-parse", "HEAD");
+      git(f.checkout, "update-index", "--add", "--cacheinfo", "160000", commit, "submodule");
+      git(f.checkout, "commit", "--quiet", "-m", "gitlink");
+      git(f.checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
+      Deno.mkdirSync(`${f.checkout}/submodule`);
+      Deno.writeTextFileSync(`${f.checkout}/submodule/file`, "omitted content\n");
+      Deno.symlinkSync("submodule/file", `${f.checkout}/valid-on-source`);
+      Deno.symlinkSync("missing", `${f.checkout}/dangling`);
+      Deno.writeTextFileSync(`${f.checkout}/.git/info/exclude`, "storage/framework/testing/\n");
+      Deno.mkdirSync(`${f.checkout}/storage/framework/testing/migrations`, { recursive: true });
+      Deno.symlinkSync(`${f.checkout}/database/missing.php`, `${f.checkout}/storage/framework/testing/migrations/missing`);
+      const before = JSON.stringify(f.state());
+      const marker = Deno.statSync(f.migrate.awake.path).mtime?.getTime();
+      const head = git(f.checkout, "rev-parse", "HEAD");
+      for (const phase of ["container", "quiesce"]) {
+        const result = f.run(phase);
+        assert(!result.ok, result.output);
+        assertEquals(f.result().error_code, "instance.migrate_symlink_unsupported");
+        assertEquals(f.result().preflight_refused, phase === "container");
+        assert(!exists(`${f.folder}/run/quiesced`));
+        for (const name of ["valid-on-source", "dangling", "storage/framework/testing/migrations/missing"]) assert(f.result().error_message.includes(name), f.result().error_message);
+        assertEquals(JSON.stringify(f.state()), before);
+        assertEquals(Deno.statSync(f.migrate.awake.path).mtime?.getTime(), marker);
+        assertEquals(git(f.checkout, "rev-parse", "HEAD"), head);
+        assertEquals(Deno.readLinkSync(`${f.checkout}/valid-on-source`), "submodule/file");
+        assertEquals(Deno.readLinkSync(`${f.checkout}/dangling`), "missing");
+        assertEquals(Deno.readTextFileSync(`${f.checkout}/submodule/file`), "omitted content\n");
+      }
+    } finally { f.cleanup(); }
+  },
+});

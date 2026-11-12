@@ -2,12 +2,16 @@
 
 import json
 import os
+import runpy
 import shutil
+import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 PLANNER = Path(__file__).resolve().parents[1] / 'ansible/instance_migrate_links.py'
 
@@ -186,6 +190,122 @@ class MigrationLinksTest(unittest.TestCase):
         (self.root / 'directory').symlink_to('storage/child')
         (self.root / 'public/storage').symlink_to(self.root / 'directory/../file')
         self.assertEqual(self.plan()['rewrites'], [{'path': 'public/storage', 'target': '../storage/file'}])
+
+    def git(self, *args):
+        return subprocess.check_output(
+            ['git', '-C', str(self.root), *args],
+            env={**os.environ, 'GIT_AUTHOR_NAME': 'Fixture', 'GIT_AUTHOR_EMAIL': 'fixture@example.test',
+                 'GIT_COMMITTER_NAME': 'Fixture', 'GIT_COMMITTER_EMAIL': 'fixture@example.test'})
+
+    def initialize_git(self):
+        self.git('init', '--quiet')
+        (self.root / 'storage/app/.gitignore').write_text('*\n!.gitignore\n!public/\n')
+        (self.root / '.gitignore').write_text('ignored/\n')
+        (self.root / 'public/.gitkeep').touch()
+        self.git('add', '.')
+        self.git('commit', '--quiet', '-m', 'fixture')
+
+    def test_archive_carries_empty_untracked_and_nested_ignored_directories_with_exact_modes(self):
+        self.initialize_git()
+        target = self.root / 'storage/app/public'
+        target.chmod(0o3775)
+        (self.root / 'public/storage').symlink_to(target)
+        nested = self.root / 'ignored/empty/nested'
+        nested.mkdir(parents=True)
+        nested.chmod(0o2711)
+        byte_directory = os.fsencode(self.root) + b'/empty-\xff'
+        os.mkdir(byte_directory, 0o755)
+        ignored = self.root / 'ignored/cutover-release-fixture/migrations'
+        ignored.mkdir(parents=True)
+        tracked = self.root / 'database/migrations'
+        tracked.mkdir(parents=True)
+        for index in range(3):
+            target_file = tracked / f'file-{index}.php'
+            target_file.write_text('tracked migration')
+            (ignored / target_file.name).symlink_to(target_file)
+        self.git('add', 'database')
+        self.git('commit', '--quiet', '-m', 'migration targets')
+        for index in range(12):
+            (self.root / f'runtime-empty/slot-{index}').mkdir(parents=True)
+        self.assertEqual(self.plan(None, '--predict-copy')['refused'], [])
+        prefix = str(self.root.parent / 'overlay')
+        self.plan(None, '--archive-prefix', prefix)
+        copied = self.root.parent / 'workspace'
+        subprocess.run(['git', 'clone', '--quiet', str(self.root), str(copied)], check=True)
+        subprocess.run(['tar', '-xf', prefix + '.tar', '--no-same-owner', '-C', str(copied)], check=True)
+        self.assertEqual(self.plan(copied, '--old-checkout', str(self.root), '--rewrite')['refused'], [])
+        subprocess.run(['chmod', '-R', 'g+rwX,o-rwx', str(copied)], check=True)
+        subprocess.run([sys.executable, str(PLANNER), str(copied), '--restore-directories', prefix + '.directories'], check=True)
+        self.assertEqual(stat.S_IMODE((copied / 'storage/app/public').stat().st_mode), 0o3775)
+        self.assertEqual(stat.S_IMODE((copied / 'ignored/empty/nested').stat().st_mode), 0o2711)
+        self.assertTrue(os.path.isdir(os.fsencode(copied) + b'/empty-\xff'))
+        self.assertEqual((copied / 'public/storage').resolve(strict=True), copied / 'storage/app/public')
+        for index in range(12):
+            self.assertTrue((copied / f'runtime-empty/slot-{index}').is_dir())
+        for index in range(3):
+            link = copied / 'ignored/cutover-release-fixture/migrations' / f'file-{index}.php'
+            self.assertEqual(link.resolve(strict=True), copied / 'database/migrations' / link.name)
+            self.assertFalse(link.readlink().is_absolute())
+            self.assertEqual((ignored / link.name).readlink(), tracked / link.name)
+        self.assertEqual((self.root / 'public/storage').readlink(), target)
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o3775)
+
+    def test_prediction_keeps_existing_validation_for_links_into_generated_git_metadata(self):
+        self.initialize_git()
+        (self.root / 'revision').symlink_to('.git/HEAD')
+        self.assertEqual(self.plan(None, '--predict-copy')['refused'], [])
+        prefix = str(self.root.parent / 'overlay')
+        self.plan(None, '--archive-prefix', prefix)
+        copied = self.root.parent / 'workspace'
+        subprocess.run(['git', 'clone', '--quiet', str(self.root), str(copied)], check=True)
+        subprocess.run(['tar', '-xf', prefix + '.tar', '--no-same-owner', '-C', str(copied)], check=True)
+        self.assertEqual(self.plan(copied)['refused'], [])
+        self.assertEqual((copied / 'revision').resolve(strict=True), copied / '.git/HEAD')
+
+    def test_added_unreadable_directory_can_be_inspected_before_exact_mode_restoration(self):
+        self.initialize_git()
+        sealed = self.root / 'sealed'
+        sealed.mkdir()
+        # The production source scan is root. Snapshot its directory enumeration before restricting access.
+        walked = list(os.walk(self.root))
+        sealed.chmod(0o111)
+        self.addCleanup(sealed.chmod, 0o755)
+        module = runpy.run_path(str(PLANNER))
+        with patch('os.walk', return_value=iter(walked)):
+            layout = module['CopyLayout'](self.root)
+        prefix = str(self.root.parent / 'overlay')
+        layout.archive(prefix)
+        copied = self.root.parent / 'workspace'
+        subprocess.run(['git', 'clone', '--quiet', str(self.root), str(copied)], check=True)
+        subprocess.run(['tar', '-xf', prefix + '.tar', '--no-same-owner', '-C', str(copied)], check=True)
+        self.assertEqual(self.plan(copied)['refused'], [])
+        module['restore_directories'](copied, prefix + '.directories')
+        self.assertEqual(stat.S_IMODE((copied / 'sealed').stat().st_mode), 0o111)
+        (copied / 'sealed').chmod(0o755)
+
+    def test_prediction_refuses_source_valid_links_to_omitted_submodule_contents_and_missing_targets(self):
+        self.initialize_git()
+        commit = self.git('rev-parse', 'HEAD').decode().strip()
+        self.git('update-index', '--add', '--cacheinfo', '160000', commit, 'submodule')
+        self.git('commit', '--quiet', '-m', 'gitlink')
+        (self.root / 'submodule/empty/nested').mkdir(parents=True)
+        (self.root / 'submodule/file').write_text('not copied')
+        (self.root / '.git/empty-marker').mkdir()
+        (self.root / 'public/submodule').symlink_to('../submodule/file')
+        (self.root / 'public/missing').symlink_to('../missing')
+        (self.root / 'ignored/migrations').mkdir(parents=True)
+        (self.root / 'ignored/migrations/missing').symlink_to(self.root / 'database/missing')
+        self.assertEqual([item['path'] for item in self.plan()['refused']], ['ignored/migrations/missing', 'public/missing'])
+        result = self.plan(None, '--predict-copy')
+        self.assertEqual([item['path'] for item in result['refused']], ['ignored/migrations/missing', 'public/missing', 'public/submodule'])
+        self.assertTrue(all(item['reason'] == 'broken' for item in result['refused']))
+        prefix = str(self.root.parent / 'overlay')
+        self.plan(None, '--archive-prefix', prefix)
+        with tarfile.open(prefix + '.tar') as archive:
+            names = archive.getnames()
+        self.assertFalse(any(name == '.git' or name.startswith('.git/') for name in names))
+        self.assertFalse(any(name.startswith('submodule/') for name in names))
+        self.assertEqual((self.root / 'submodule/file').read_text(), 'not copied')
 
 
 if __name__ == '__main__':

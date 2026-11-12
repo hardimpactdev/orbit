@@ -716,11 +716,11 @@ A failed move before cutover leaves the checkout Instance serving as before. The
 
 #### Migration symlinks
 
-Orbit predicts symlinks against the copied layout before downtime, using the same resolver as the final copied-tree check. After copying, it checks and rewrites the exact workspace tree inside the container, before starting any Process. This final check maps absolute targets under the old checkout to the copied workspace; it never reads the host checkout. A link changed during copying can therefore fail the move with the same error and rollback behavior.
+Orbit predicts symlinks against the copied layout before downtime, using the same resolver as the final copied-tree check. After copying, it checks and rewrites the exact workspace tree inside the container, before starting any Process. This final check maps absolute targets under the old checkout to the copied workspace; it never reads the host checkout. Links into generated Git metadata keep their existing source validation; the final check inspects the new repository's exact contents. A link changed during copying can therefore fail the move with the same error and rollback behavior.
 
 A link must have both its named target and its resolved destination inside the checkout. Broken links, including cycles, and external targets refuse with `instance.migrate_symlink_unsupported`. The error lists every offending checkout path, its original target and the reason, with invalid UTF-8 bytes shown as `\xNN`. Orbit does not choose a different data source or run project setup to repair a link.
 
-Directories absent after the Git checkout and file archive are copied too, including empty untracked and ignored trees. Added directories keep their exact modes, including setgid and sticky bits, with the normal `orbit`/`work` ownership mapping. The directory scan excludes `.git` metadata and tracked submodule contents and never follows directory links. Existing nested-repository archive behavior stays unchanged.
+Directories absent after the Git checkout and file archive are copied too, including empty untracked and ignored trees. Added directories keep their exact modes, including setgid and sticky bits, with the normal `orbit`/`work` ownership mapping. The directory scan excludes `.git` metadata and tracked submodule contents and never follows directory links. Selected nested repositories still enter the file archive as before. Absolute links in ignored directories follow the same rule, including links from `storage/framework/testing` into tracked `database/migrations` files.
 
 A target ending in `/` or `/.` requires a directory at every link hop. A regular file with either suffix is a broken target and refuses, even if removing the suffix would make it work.
 

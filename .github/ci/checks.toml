@@ -20,13 +20,13 @@ default = ["swamp/tests/ansible_inputs_test.py"]
 [[fixture]]
 file = "swamp/tests/ansible_instance_migrate_test.ts"
 after_merge = true
-reason = "110 retained cases need 7472 declared seconds including startup, above the six-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963. Changed cases use individually measured local times rounded up plus one second. All migration cases run after merge until their work is reduced or selection is narrowed."
-cost = 6812
+reason = "112 retained cases need 7519 declared seconds including startup, above the six-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963. Changed cases use individually measured local times rounded up plus one second. All migration cases run after merge until their work is reduced or selection is narrowed."
+cost = 6847
 # 159.019s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (120s); these are estimates, not completed measurements.
-slices = 110
+slices = 112
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -163,6 +163,8 @@ inputs = [
   "the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step" = 1 # completed, run 43002948719
   "an unsafe copied app service refuses before downtime and restore changes nothing" = 59 # completed, run 43002948719
   "an unreadable copied environment refuses before downtime and restore preserves the source" = 14 # completed, run 43002948719
+  "empty untracked storage and nested ignored directories migrate with exact modes and resolving links" = 27 # local completed 26s with ignored links and 13 empty directories, plus one second
+  "copy prediction refuses missing targets and omitted submodule content before quiesce without changing the checkout" = 8 # local completed 7s, plus one second
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_git_scope_test.py"
