@@ -2966,6 +2966,123 @@ describe('migrated Schedule logs', function (): void {
 });
 
 describe('migrated development Process definitions', function (): void {
+    it('migrates a second host Process against the definition captured from its default', function (bool $preset): void {
+        $project = containerDefaultProject(ProjectType::NodePackage, '8.5');
+        $node = containerDefaultNode();
+        $default = migrateCheckout($project, $node);
+        $preset ? migrationVpDev($default, name: 'vp-dev') : migrationWorker($default);
+        migrateEnd(migrateStart($default), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $definition = ProcessDefinition::query()->sole();
+        $definitionBefore = $definition->getAttributes();
+        $instance = migrateCheckout($project, $node, 'feature');
+        $process = $preset ? migrationVpDev($instance, 'stopped', name: 'vp-dev') : migrationWorker($instance, desired: 'stopped');
+        $sourceDirectory = $process->working_directory;
+        $sourceConfig = $process->runtime_config;
+
+        $operation = migrateStart($instance);
+
+        expect($process->refresh()->working_directory)->toBe($sourceDirectory)
+            ->and($process->runtime_config)->toBe($sourceConfig)
+            ->and($process->source_definition_id)->toBeNull();
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('e', 40), 't3' => migrateServer($instance)]);
+
+        expect($process->refresh()->source_definition_id)->toBe($definition->id)
+            ->and($process->working_directory)->toBe('/srv/workspace')
+            ->and($process->desired_state->value)->toBe('stopped')
+            ->and($instance->processes()->count())->toBe(1);
+        expect($definition->refresh()->getAttributes())->toBe($definitionBefore);
+        expect(ProcessDefinition::query()->count())->toBe(1);
+    })->with(['preset' => true, 'non-preset' => false]);
+
+    it('treats an unmappable definition as a non-match without changing the host Process', function (string $directory): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $process = migrationVpDev($instance, name: 'vp-dev');
+        app(InstanceContainer::class)->reserve($instance, $instance->node);
+        $attributes = [
+            'runtime' => $process->runtime, 'working_directory' => $directory,
+            'runtime_config' => [...$process->runtime_config, 'environment_file' => '/srv/workspace/.env',
+                'environment' => ['QUEUE_TOKEN' => 'migration-process-secret', 'CACHE_PATH' => '/srv/workspace/storage/cache']],
+            'keep_alive' => $process->keep_alive, 'restart_on_deploy' => $process->restart_on_deploy,
+        ];
+        $before = $process->fresh()->getAttributes();
+
+        expect(app(ContainerProcesses::class)->matchesDefinition($process, $attributes, $instance))->toBeFalse();
+
+        expect($process->refresh()->getAttributes())->toBe($before);
+        expect($instance->fresh()->checkout_path)->toBe($instance->checkout_path);
+    })->with(['external definition' => '/opt/external-app', 'traversing definition' => '/srv/workspace/../other']);
+
+    it('answers no-match for differing or unrenderable non-preset definition intent', function (array $command): void {
+        $project = containerDefaultProject();
+        $node = containerDefaultNode();
+        $default = migrateCheckout($project, $node);
+        migrationWorker($default);
+        migrateEnd(migrateStart($default), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $definition = ProcessDefinition::query()->sole();
+        $instance = migrateCheckout($project, $node, 'feature');
+        $process = migrationWorker($instance);
+        app(InstanceContainer::class)->reserve($instance, $node);
+        $target = app(ProcessTargetResolver::class)->forInspection($process);
+        $attributes = app(InstantiateProjectRuntimeDefinitionsAction::class)->attributesForDefinition($instance, $definition, $target);
+        $attributes['runtime_config']['command'] = $command;
+        $before = $process->fresh()->getAttributes();
+
+        expect(app(ContainerProcesses::class)->matchesDefinition($process, $attributes, $instance))->toBeFalse();
+
+        expect($process->refresh()->getAttributes())->toBe($before);
+        expect($instance->fresh()->checkout_path)->toBe($instance->checkout_path);
+    })->with([
+        'different command' => [['/usr/bin/env', 'node', 'other-worker.js']],
+        'unavailable definition binary' => [['php99.9', 'worker.php']],
+    ]);
+
+    it('keeps a real preset definition conflict as name_taken before admitting the move', function (): void {
+        $project = containerDefaultProject();
+        $node = containerDefaultNode();
+        $default = migrateCheckout($project, $node);
+        migrationVpDev($default, name: 'vp-dev');
+        migrateEnd(migrateStart($default), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $definition = ProcessDefinition::query()->sole();
+        $instance = migrateCheckout($project, $node, 'feature');
+        $process = migrationVpDev($instance, name: 'vp-dev');
+        $process->update(['runtime_config' => [...$process->runtime_config,
+            'environment' => [...$process->runtime_config['environment'], 'QUEUE_TOKEN' => 'different-value']]]);
+        $before = $process->fresh()->getAttributes();
+
+        try {
+            migrateStart($instance);
+            $this->fail('A differing Process was admitted against the captured definition.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe('process_definition.name_taken');
+        }
+
+        expect($process->refresh()->getAttributes())->toBe($before);
+        expect($instance->runtime()->exists())->toBeFalse();
+        expect(ProcessDefinition::query()->sole()->id)->toBe($definition->id);
+    });
+
+    it('still refuses an unsafe host preset before comparison with a captured definition', function (string $suffix): void {
+        $project = containerDefaultProject();
+        $node = containerDefaultNode();
+        $default = migrateCheckout($project, $node);
+        migrationVpDev($default, name: 'vp-dev');
+        migrateEnd(migrateStart($default), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $instance = migrateCheckout($project, $node, 'feature');
+        $process = migrationVpDev($instance, name: 'vp-dev');
+        $process->update(['working_directory' => $suffix === 'outside' ? '/opt/external-app' : $instance->checkout_path.$suffix]);
+
+        try {
+            migrateStart($instance);
+            $this->fail('An unsafe host Process was admitted.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe('process.container_path_unsupported');
+        }
+
+        expect($instance->runtime()->exists())->toBeFalse();
+        expect($process->refresh()->source_definition_id)->toBeNull();
+        expect(Operation::query()->where('target_id', $instance->id)->exists())->toBeFalse();
+    })->with(['outside checkout' => 'outside', 'parent segment' => '/../other', 'dot segment' => '/./frontend']);
+
     it('links the same Process only at proven cutover and clones its name-based command', function (string $status, bool $ready): void {
         $instance = migrateCheckout(containerDefaultProject(ProjectType::NodePackage, '8.5'), containerDefaultNode());
         $process = migrationWorker($instance);
