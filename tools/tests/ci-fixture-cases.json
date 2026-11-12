@@ -187,7 +187,7 @@
     ]
   },
   "swamp/bin/check-swamp-shape_test.ts": {
-    "source_sha256": "a1e0ce4f7e543de50d2cf1a9bcd04a1f7d13a0d094152cbd1b84a2cf5006c5ba",
+    "source_sha256": "a56a9b487c6e5c5aed60a2fd2ddf471bf8542cc8a9d1257764d14906d62a19d3",
     "cases": [
       "step inputs read one bounded data record, never a query or version history",
       "official SSH proves the shipped Incus list poll under a literal argv timeout",
@@ -291,7 +291,7 @@
     ]
   },
   "swamp/bin/lint-behavior-names_test.ts": {
-    "source_sha256": "42a1a10f052287390b5feaec50c439d40876e7b38152902a2dae6968801b1eec",
+    "source_sha256": "4d39dac8c2ce44f2dab4be0e96792fe08e58eeccaebf2edd9d98f79bb14ec427",
     "cases": [
       "a behavior named by run or Operation is reported",
       "a behavior named by target or fixed is allowed",
@@ -302,12 +302,13 @@
     ]
   },
   "swamp/bin/source_test.ts": {
-    "source_sha256": "0879d78496c83f95a3f53e3d91a0721b5ea6b7d019289f7c98900d9ba677d2aa",
+    "source_sha256": "843d0f0c542bdf4d380d632428d2b4b7768ed8a02030033d94652dda9660afa7",
     "cases": [
       "model IDs are unique",
       "workflow queue bounds have measured per-kind budgets",
       "every Ansible file ships with the ansible-input extension",
-      "runtime credentials and generated records are ignored"
+      "runtime credentials and generated records are ignored",
+      "hot workflow trees avoid literal behavior lookups and preserve constant names"
     ]
   },
   "swamp/bin/swamp-liveness_test.ts": {
