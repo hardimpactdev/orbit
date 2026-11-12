@@ -3,7 +3,7 @@
 # is the hub's lan_ip, `hub_lan.source` this Node's and `hub_lan.fingerprint` the hub's recorded SSH host key. A host that only
 # answers at the address is not enough: its host key must be the hub's. No fallback: a failed proof stops before a change.
 - name: Read the route to the hub's LAN address
-  ansible.builtin.command: { argv: [ip, -4, -j, route, get, "{{ hub_lan.address }}"] }
+  ansible.builtin.command: { argv: [ip, "-4", -j, route, get, "{{ hub_lan.address }}"] }
   register: hub_lan_route
   changed_when: false
   failed_when: false
