@@ -77,7 +77,7 @@ Each scheduled run logs `Doctor collection ran.` at info level with `duration_ms
 
 Logs, Activity, assistance signals, and the Horizon-only collection have no schedule. `observation:plan` and `observation:health` still collect Doctor findings, the Gateway's logs, and Activity and assistance signals on request, only while Tasks is enabled. The first signal collection begins at the current Activity cursor; assistance retains its 200-task sample and removes closed references.
 
-[`gateway:status`](/cli/gateway/status) shows the last successful full Doctor collection and the findings that collection saw to an active WireGuard peer. `problems:file` retains its separate hourly schedule and lock; [filing eligibility](/reference/tasks#when-a-fingerprint-is-ready) applies to every collection path.
+[`gateway:status`](/cli/gateway/status) shows the last successful full Doctor collection and the findings observed since it started to an active WireGuard peer. `problems:file` retains its separate hourly schedule and lock; [filing eligibility](/reference/tasks#when-a-fingerprint-is-ready) applies to every collection path.
 
 ### Without a queue
 
