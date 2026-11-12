@@ -1863,12 +1863,16 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_line_test.py": {
-    "source_sha256": "9e8c6100f7941afe3d02192a83119383b296d85a808ddfd32229d86efb97debe",
+    "source_sha256": "4f9d8a85bf170027f611f74492a1017810b0a29f0906f06f24a135b1a683bfb6",
     "cases": [
       "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte",
       "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved",
       "test_missing_key_missing_file_symlink_and_already_smtp_write_nothing",
       "test_atomic_replacement_preserves_owner_group_and_mode_without_backup",
+      "test_real_incus_missing_delete_contract_and_first_run",
+      "test_cleanup_rejects_every_other_delete_error_without_exposing_content",
+      "test_atomic_replacement_preserves_distinct_acl_and_user_xattr",
+      "test_workflow_reports_failed_tasks_to_stderr_and_keeps_content_private",
       "test_real_ansible_step_refreshes_only_changed_file_and_skips_conflict",
       "test_failed_transfer_preserves_file_and_returns_only_a_code",
       "test_interruption_after_staging_cleans_the_fixed_name_even_with_stopped_guest",
