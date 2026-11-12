@@ -793,6 +793,9 @@
    "account": "read-only",
    "directory": "unreviewed",
    "observe": "unreviewed"
+  },
+  "operation-instance-node-service": {
+   "result": "read-only"
   }
  }
 }

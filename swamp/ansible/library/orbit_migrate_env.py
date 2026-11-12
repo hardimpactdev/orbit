@@ -40,6 +40,11 @@ options:
   development_mail:
     description: The same admitted endpoint used by the container development mail phase, or null when ineligible.
     type: dict
+  node_services:
+    description: Admitted Node service key pairs and ports with IPv4 loopback proxies.
+    type: list
+    elements: dict
+    default: []
   node_addresses:
     description: Addresses belonging to the source Node.
     type: list
@@ -316,7 +321,7 @@ def env_files(checkout, environment_files=None, unit_files=()):
             yield path
 
 
-def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, development_mail=None, environment_files=None, unit_files=()):
+def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, development_mail=None, node_services=None, environment_files=None, unit_files=()):
     """Safe refusal lines, with no environment contents except validated host and numeric port."""
     attached = {(canonical_host(str(target['host']))[0], int(target['port'])) for target in targets}
     local = set()
@@ -345,6 +350,12 @@ def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, de
         except (OSError, UnicodeError):
             refusals.append(f'{relative}: cannot read .env safely. {RECOVERY}')
             continue
+        # URL configuration overrides HOST/PORT in Laravel. K1a admits key pairs, not URL selectors.
+        # Keep URL contents and credentials private; the first cut refuses non-SQLite selectors explicitly.
+        for key, value in values.items():
+            if (key in ('DB_URL', 'DATABASE_URL') or (key.endswith('_DB_URL') and database_drivers(values, key[:-4]))) and value and not value.startswith('sqlite:'):
+                refusals.append(f'{relative}: {key}: a database URL can override the attached host/port keys; '
+                                'use the exact attached HOST/PORT keys without a URL override. No URL value is shown.')
         for key, value in values.items():
             if not key.endswith('_HOST') or listener_or_browser_key(values, key):
                 continue
@@ -357,7 +368,10 @@ def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, de
                 reason = 'the service host is not a resolved literal'
             elif port is None:
                 reason = 'the service port is missing or is not a literal port'
-            elif (host, port) in attached:
+            elif (value in ('127.0.0.1', 'localhost') and any(
+                    key == target['host_env_key'] and port == target['port']
+                    and values.get(target['port_env_key']) == str(target['port'])
+                    for target in (node_services or []))) or (host, port) in attached:
                 continue
             elif (key == 'MAIL_HOST' and value in ('127.0.0.1', 'localhost', '::1')
                   and values.get('MAIL_PORT') in ('1025', '2525')):
@@ -400,6 +414,7 @@ def main():
         'node_addresses': {'type': 'list', 'elements': 'str', 'required': True},
         'proxy_policy': {'type': 'dict', 'required': True},
         'development_mail': {'type': 'dict'},
+        'node_services': {'type': 'list', 'elements': 'dict', 'default': []},
     }, supports_check_mode=True)
     try:
         refusals = inspect_environment(**module.params)

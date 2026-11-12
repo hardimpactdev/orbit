@@ -116,9 +116,9 @@ import os, subprocess, sys
 args = sys.argv[1:]
 assert args[:3] == ["--kill-after=1", "30", "git"]
 assert args[-4:] == ["--heads", "--", "https://github.com/owner/repo.git", "refs/heads/main"]
-# Only the HTTPS transport is faked. Real Git reads the fixed, private local origin.
+# Preserve every production config argument; only transport and origin point to the local fixture.
 env = dict(os.environ, GIT_ALLOW_PROTOCOL="file")
-result = subprocess.run(["git", "ls-remote", "--exit-code", "--heads", "--", os.environ["FIXTURE_ORIGIN"], args[-1]], env=env, capture_output=True)
+result = subprocess.run(["git", "-c", "protocol.file.allow=always", *args[3:-2], os.environ["FIXTURE_ORIGIN"], args[-1]], env=env, capture_output=True)
 sys.stdout.buffer.write(result.stdout)
 sys.stderr.buffer.write(result.stderr)
 sys.exit(result.returncode)

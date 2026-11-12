@@ -16,6 +16,8 @@ covers:
 
 This page tells an operator which WireGuard endpoint forms the Gateway accepts during bootstrap and which hub endpoint each Node gets. It also covers the hub's LAN endpoint, the address the hub sends from, and recovery from an invalid stored value. [ADR 0251](/decisions/0251-reach-the-wireguard-hub-over-the-recorded-lan) records the decision.
 
+The hub address and LAN route reads pass `-4` as a string under the [Ansible command argument rule](/reference/node-provisioning).
+
 ## Accepted endpoint forms
 
 The Gateway checks the stored endpoint before bootstrap changes anything and before it renders a peer configuration.

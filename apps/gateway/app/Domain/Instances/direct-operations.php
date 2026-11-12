@@ -13,9 +13,12 @@ use App\Domain\Instances\InstanceCloneProjection;
 use App\Domain\Instances\InstanceGitHubReadTokens;
 use App\Domain\Instances\InstanceRegisterResult;
 use App\Domain\Instances\NativeInstanceTransferProjection;
+use App\Domain\Instances\NodeServiceTargetOperation;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
 return [
+    'instance.node_service_detach' => ['workflow' => 'operation-instance-node-service', 'workflow_inputs' => true,
+        'projection' => NodeServiceTargetOperation::class, 'terminal_result' => ['job' => 'node-service', 'step' => 'result']],
     'instance.transfer' => ['workflow' => 'operation-instance-transfer', 'workflow_inputs' => true,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'],

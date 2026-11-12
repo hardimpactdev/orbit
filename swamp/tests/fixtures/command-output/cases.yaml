@@ -266,8 +266,11 @@ contexts:
     copy_read:
       results:
       - stdout: '["orbit-agent.service","ssh.service"]'
-      - stdout: '["orbit-process-1-keep.service","orbit-process-2-old.service"]'
+      - stdout: '["orbit-process-1-keep.service","orbit-process-2-old.service","orbit-schedule-default.service","orbit-schedule-default.timer","orbit-node-service-3308.service","orbit-node-service-3308.socket"]'
       - stdout: '["1","2"]'
+      - stdout: '["orbit-schedule-default.timer","project.timer"]'
+      - stdout: '["default.sh","default.complete"]'
+      - stdout: '["orbit-node-service-3308.socket","project.socket"]'
     container:
       name: copy
       processes:
@@ -1017,6 +1020,14 @@ cases:
   - /etc/systemd/system/multi-user.target.wants/orbit-agent.service
   - /etc/systemd/system/orbit-process-2-old.service
   - /etc/orbit/processes/2
+  - /etc/systemd/system/orbit-schedule-default.service
+  - /etc/systemd/system/orbit-schedule-default.timer
+  - /etc/systemd/system/timers.target.wants/orbit-schedule-default.timer
+  - /etc/orbit/schedules/default.sh
+  - /etc/orbit/schedules/default.complete
+  - /etc/systemd/system/orbit-node-service-3308.service
+  - /etc/systemd/system/orbit-node-service-3308.socket
+  - /etc/systemd/system/sockets.target.wants/orbit-node-service-3308.socket
 - file: tasks/instance-container-phase.yml
   task: Keep the default's units from starting in the copy
   field: ansible.builtin.command.argv

@@ -378,7 +378,9 @@ describe('the container PHP runtime development SSR origin', function (): void {
             $container = app(InstanceContainer::class)->intent($instance, $runtime);
             $reads = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'from "processes"'));
             expect($reads)->toHaveCount($production ? 2 : 3);
-            expect(DB::getQueryLog())->toHaveCount($production ? 15 : 18);
+            $targetReads = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'from "instance_node_service_targets"'));
+            expect($targetReads)->toHaveCount(1);
+            expect(DB::getQueryLog())->toHaveCount($production ? 16 : 19);
         } finally {
             DB::disableQueryLog();
             DB::flushQueryLog();

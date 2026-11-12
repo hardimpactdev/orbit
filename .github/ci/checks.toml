@@ -888,7 +888,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_module_args_test.py"
-cost = 4
+cost = 5
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/**",
@@ -1597,11 +1597,12 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 40
+cost = 44
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance_node_services.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
@@ -1632,6 +1633,9 @@ inputs = [
   "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful" = 2
 
 "test_schedule_cleanup_listing_error_refuses_before_clone_boot" = 2 # local completed under 2 s; conservative CI estimate
+
+  "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement" = 2
+  "test_clone_target_failure_receipt_keeps_public_identity_and_bounds_tool_output" = 2
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_native_faults_test.ts"
@@ -2159,8 +2163,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_env_test.py"
-cost = 1
-inputs = ["swamp/ansible/library/orbit_migrate_env.py", "swamp/ansible/tasks/instance-migrate-env-check.yml", "swamp/tests/fixtures/migrate-env-services.json"]
+cost = 24
+inputs = ["swamp/ansible/library/orbit_migrate_env.py", "swamp/ansible/instance_node_services.py", "swamp/ansible/tasks/instance-container-phase.yml", "swamp/ansible/instance-container.yml", "swamp/ansible/instance-migrate.yml", "swamp/ansible/tasks/instance-migrate-env-check.yml", "swamp/tests/fixtures/migrate-env-services.json"]
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_dotenv_test.py"

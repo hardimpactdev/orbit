@@ -292,7 +292,9 @@ def main():
                             or (index == 4 and item.startswith("orbit-schedule-") and item.endswith(".timer"))
                             or (index == 5 and item.endswith((".sh", ".complete")))
                             or (index == 2 and item not in own_ids)
-                            or (index == 3 and item in {"orbit-mail-1025.socket", "orbit-mail-2525.socket"})
+                            or (index == 3 and (item in {"orbit-mail-1025.socket", "orbit-mail-2525.socket"}
+                                               or item.startswith("orbit-node-service-")))
+                            or (index == 1 and item.startswith("orbit-node-service-"))
                         ):
                             remove.append(name + directory + "/" + item)
                 if remove:
@@ -348,6 +350,30 @@ def main():
                 raise RuntimeError("instance.container_network_unsafe")
             if read["status"] != "Running":
                 change(project + ["start", name])
+            if container.get("node_services"):
+                bundle = json.loads(sys.argv[6])
+                applied = run(["python3", "-c", bundle["node_services"],
+                               json.dumps(container), json.dumps(bundle)], check=False)
+                if applied.returncode:
+                    code = applied.stderr.removesuffix("\n")
+                    try:
+                        evidence = json.loads(applied.stdout)
+                        identity = evidence.get("node_service_target", {})
+                        public = {key: value for key, value in identity.items() if key in {"id", "process_id", "port"}
+                                  and type(value) is int and value > 0}
+                        process_name = identity.get("process_name", "")
+                        if isinstance(process_name, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", process_name):
+                            public["process_name"] = process_name
+                        if code in {"process.target_inactive", "instance.host_unavailable", "instance.bridge_busy",
+                                    "instance.node_service_port_in_use", "instance.node_service_unit_conflict",
+                                    "instance.node_service_unreachable"} and evidence.get("error_code") == code and public:
+                            print("orbit-node-service-failure=" + json.dumps({"error_code": code, "node_service_target": public}), file=sys.stderr)
+                    except (ValueError, TypeError, AttributeError):
+                        pass
+                    raise RuntimeError(code if code in {
+                        "process.target_inactive", "instance.host_unavailable", "instance.bridge_busy",
+                        "instance.node_service_port_in_use", "instance.node_service_unit_conflict",
+                        "instance.node_service_unreachable"} else "instance.node_service_apply_failed")
             if container.get("mail") is not None:
                 try:
                     bundle = json.loads(sys.argv[6])

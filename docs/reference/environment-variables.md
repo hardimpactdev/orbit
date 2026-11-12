@@ -16,7 +16,9 @@ covers:
 
 The Gateway owns the environment configuration of every Instance. It stores each key and value encrypted, and it writes the Instance's `.env` file only when you synchronize. A value never appears in a response, an Activity entry, an error, or a log. [`env`](/cli/env) lists the commands.
 
-[Node service target records](/reference/processes-and-schedules#node-service-target-records) reserve explicit host and port key names per Instance. Recording or removing a target leaves both stored environment values and the `.env` file unchanged.
+[Node service target records](/reference/processes-and-schedules#node-service-target-records) reserve explicit host and port key names per Instance. During create and migration, the container reaches an attached Node service at the same host and port named in `.env`, with a proxy on `127.0.0.1:<port>` for IPv4 loopback. Recording, applying or removing a target leaves both stored environment values and the `.env` file unchanged.
+
+[Migration](/cli/instance/migrate) preflight admits a selected Node service on loopback (`127.0.0.1` or `localhost`) or a Node address only when its endpoint matches an attached target. The loopback path requires the target's exact recorded host key, port key and published port. A selected Node service without that match still refuses migration.
 
 `ORBIT_DOCUMENT_CLEANUP_RUNTIME` selects the private local directory for isolated Project Document cleanup-gate fixtures when `APP_ENV=testing`; other environments ignore this override. Its default is `/run/orbit/project-documents/`. Never point it into `ORBIT_HOME`, a checkout, a web directory, or a backup. Installed Gateway services use the default runtime directory. This setting is not an Instance environment value or deletion authorization. See [the restore-time cleanup gate](/reference/project-documents#restore-time-cleanup-gate).
 

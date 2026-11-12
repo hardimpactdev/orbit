@@ -26,6 +26,8 @@ Preparing an `app-dev` Node for [Instance containers](/reference/development-con
 
 Migration checks remote source access before quiesce using the Node's existing Git transport. Its temporary fetch credential is mode 0600 and is removed after success, refusal or timeout; no source token enters the container.
 
+Each argument of an Ansible command must parse as a string. One shared test reads every literal `argv` list. It fails on a YAML mapping, a number or a boolean.
+
 Container Process journal and state reads use this Node’s existing SSH account and Incus access, under the [transport exception](/reference/node-agent#commands). They add no account, group membership or sudo rule. The Node already requires `python3` for the container host’s effective-NIC gate and bridge reader.
 
 Bridge endpoint convergence uses the [shared endpoint writer](/reference/development-containers#prepare-a-node). If another writer owns its lock, the phase refuses immediately with `instance.bridge_busy`, leaving endpoint records, ACL rules and health unchanged. Retry after that writer finishes.
@@ -1004,3 +1006,5 @@ Route site publication batches certificate, link, account-copy, trust and Caddy 
 A [migrated Schedule](/reference/schedules#container-timers) uses the same existing SSH account and Incus access to read its container journal and timer state. Its local timer runs only while the container runs, without a Node trigger or a new credential.
 
 Caddy publication validates a candidate before it replaces the live file, including the bootstrap Swamp front. Validation failure keeps the live bytes and skips reload; see [Caddy publication](/reference/caddy-configuration#native-publication).
+
+Explicit Instance Node service targets use the existing additive bridge admission path, without a role converge or helper reconciliation. Their own ACL rules and root-owned loopback proxies are applied in the container launch before application Processes. Shared translated tuples retain the database/mail host-reconciliation policy.
