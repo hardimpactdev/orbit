@@ -41,14 +41,14 @@ Deno.test("destroy skips withdrawal without publications including old admission
                 members: [{ route_id: null }],
                 route_mutations: { restore: { routes: [] } },
             },
-            {
-                members: [{ route_id: 619 }],
-                route_mutations: { restore: { routes: [] } },
-            },
         ]
     ) assertEquals(evaluate(step("Withdraw the Route").guard!, intent), true);
     for (
         const intent of [
+            {
+                members: [{ route_id: 619 }],
+                route_mutations: { restore: { routes: [] } },
+            },
             { members: [{ route_id: 1 }] },
             { members: [{ route_id: null }], additional_route_ids: [2] },
             {

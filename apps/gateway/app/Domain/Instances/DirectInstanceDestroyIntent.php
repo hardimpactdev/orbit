@@ -16,6 +16,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\ScheduleOperationAdmission;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
@@ -86,13 +87,14 @@ final readonly class DirectInstanceDestroyIntent
         }
         $routePolicy = app(NativeRouteMutationInput::class);
         $sites = app(DevelopmentSiteRepository::class);
-        $beforeSites = $sites->all();
+        $beforeSites = clone $sites->all();
         $previousRoutes = [];
         foreach ($attached as $route) {
-            if (! $route->sites_published) {
-                continue;
-            }
             $removalInventory = app(NativeRouteRemovalIntent::class)->capture($route);
+            // A first publication can reach the Node before its probe fails, without setting sites_published.
+            // Capture its possible publication as well as absence; withdrawal accepts either actual state.
+            $routeSites = $sites->routeSites($route);
+            $beforeSites->push(...$routeSites);
             $leaves = [];
             $nodeIds = [];
             foreach ($removalInventory['nodes'] as $participant) {
@@ -102,9 +104,16 @@ final readonly class DirectInstanceDestroyIntent
                     $leaves[] = app(NativeRouteCertificateInput::class)->scopeInput($target, $scope);
                 }
             }
+            foreach ($routeSites as $site) {
+                if (! $site->publicListener) {
+                    $nodeIds[] = $site->nodeId;
+                    $leaves[] = app(NativeRouteCertificateInput::class)->scopeInput(Node::query()->findOrFail($site->nodeId), $site->certificateScope ?? $site->scope);
+                }
+            }
             $previousRoutes[] = ['route_id' => $route->id, 'domain' => $route->domain,
-                'intent' => ['node_ids' => $nodeIds, 'certificates' => $leaves], 'sites' => $sites->routeSites($route), 'url_writes' => []];
+                'intent' => ['node_ids' => array_values(array_unique($nodeIds)), 'certificates' => array_values(array_unique($leaves, SORT_REGULAR))], 'sites' => $routeSites, 'url_writes' => []];
         }
+        $beforeSites = $beforeSites->unique(static fn (DevelopmentSite $site): string => $site->addressKey())->values();
         $removal = InstanceRemoval::query()->firstOrCreate(['id' => $input['removal_id']], [
             'requested_instance_id' => $input['instance_id'], 'requested_name' => $input['name'],
             'force' => $input['force'], 'inventory_digest' => $input['inventory_digest'], 'total' => count($members),

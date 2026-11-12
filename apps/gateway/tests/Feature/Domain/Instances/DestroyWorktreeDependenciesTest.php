@@ -15,6 +15,7 @@ use App\Domain\RemotePrograms\RemoteProgram;
 use App\Domain\RemotePrograms\RemoteProgramFailed;
 use App\Domain\RemotePrograms\RemoteProgramFailure;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
+use App\Domain\Routes\NativeRouteConvergenceProjection;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -294,7 +295,7 @@ it('admits a registered web checkout or worktree without a Route and projects a 
     expect($operation->fresh()->status->value)->toBe('succeeded')->and($instance->fresh())->toBeNull();
 })->with(['checkout', 'worktree']);
 
-it('admits an active Instance with one unpublished Route and removes its record without withdrawal', function (string $status): void {
+it('admits an active Instance with one pending or failed Route and always captures withdrawal', function (string $status): void {
     new LocalProcess(['git', '-C', $this->root.'/owner', 'worktree', 'remove', '--force', $this->root.'/dependent'])->mustRun();
     $route = Route::query()->create(['kind' => 'app', 'project_id' => $this->owner->project_id, 'node_id' => $this->node->id,
         'provenance' => 'explicit', 'publication' => 'private', 'domain' => 'unpublished.fixture.test', 'status' => 'pending']);
@@ -306,7 +307,7 @@ it('admits an active Instance with one unpublished Route and removes its record 
     expect($route->sites_published)->toBeFalse();
     $operation = app(StartInstanceDestroyAction::class)->execute($this->owner, true);
     expect($operation->input['members'][0]['route_id'])->toBe($route->id)
-        ->and($operation->input['native_destroy']['route_mutations']['restore']['routes'])->toBe([]);
+        ->and(array_column($operation->input['native_destroy']['route_mutations']['restore']['routes'], 'route_id'))->toBe([$route->id]);
     $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'unpublished'], 'finished_at' => null])->save();
     app(DevelopmentInstanceDestroyProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'unpublished', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => []]);
     expect($route->fresh())->toBeNull()->and($this->owner->fresh())->toBeNull();
@@ -346,3 +347,41 @@ it('keeps Route ownership target placement and multiplicity refusals before writ
         ->and($this->owner->fresh()->status)->toBe(InstanceState::Active)
         ->and(Operation::query()->count())->toBe(0)->and(InstanceRemoval::query()->count())->toBe(0);
 })->with(['multiple', 'project', 'targets', 'placement', 'state']);
+
+it('withdraws a first publication after a failed site phase or TLS probe before removing records', function (string $failedStep): void {
+    new LocalProcess(['git', '-C', $this->root.'/owner', 'worktree', 'remove', '--force', $this->root.'/dependent'])->mustRun();
+    $this->owner->update(['root' => 'public', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
+    $route = Route::query()->create(['kind' => 'app', 'project_id' => $this->owner->project_id, 'node_id' => $this->node->id,
+        'provenance' => 'explicit', 'publication' => 'private', 'domain' => 'partial.fixture.test', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $this->owner->id, 'position' => 0]);
+    $create = Operation::query()->create(['kind' => 'route.create', 'target_type' => 'route', 'target_id' => $route->id, 'node_id' => $this->node->id,
+        'status' => 'running', 'state' => ['swamp_run_id' => 'create-fixture'], 'input' => ['route_lifecycle' => ['effectful' => true, 'public_activated' => false]]]);
+    app(NativeRouteConvergenceProjection::class)->apply($create, ['status' => 'failed', 'run_id' => 'create-fixture',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'operation.native_failed',
+        'result' => ['steps' => ['Install cert, publish site-0' => ['status' => str_starts_with($failedStep, 'Probe') ? 'succeeded' : 'failed'],
+            $failedStep => ['status' => 'failed']], 'summary' => ['failed_steps' => [$failedStep]]]]);
+    expect($route->fresh()->status->value)->toBe('pending')->and($route->fresh()->sites_published)->toBeFalse();
+    $destroy = app(StartInstanceDestroyAction::class)->execute($this->owner->fresh(), true);
+    $mutations = $destroy->input['native_destroy']['route_mutations'];
+    expect(array_column($mutations['restore']['routes'], 'route_id'))->toBe([$route->id])
+        ->and($mutations['forward']['publications'])->not->toBeEmpty()
+        ->and(array_column($mutations['forward']['cleanup'], 'scope'))->toContain('app-instance-'.$this->owner->id);
+    $before = implode("\n", array_column($mutations['artifacts']['caddy'], 'content'));
+    expect($before)->toContain($route->domain);
+    $destroy->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'destroy-partial'], 'finished_at' => null])->save();
+    app(DevelopmentInstanceDestroyProjection::class)->apply($destroy, ['status' => 'succeeded', 'run_id' => 'destroy-partial',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['withdrawal' => ['ready' => true]]]);
+    expect($route->fresh())->toBeNull()->and($this->owner->fresh())->toBeNull();
+})->with(['Probe the site over TLS-0', 'Install cert, publish site-0']);
+
+it('still refuses a fresh destroy of a retiring Route without changing records', function (): void {
+    new LocalProcess(['git', '-C', $this->root.'/owner', 'worktree', 'remove', '--force', $this->root.'/dependent'])->mustRun();
+    $route = Route::query()->create(['kind' => 'app', 'project_id' => $this->owner->project_id, 'node_id' => $this->node->id,
+        'provenance' => 'explicit', 'publication' => 'private', 'domain' => 'retiring.fixture.test', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $this->owner->id, 'position' => 0]);
+    $route->update(['status' => 'retiring']);
+    $before = $route->fresh()->getAttributes();
+    expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($this->owner, true)))->toBe('instance.remove_refused')
+        ->and($route->fresh()->getAttributes())->toBe($before)->and($this->owner->fresh()->status)->toBe(InstanceState::Active)
+        ->and(Operation::query()->count())->toBe(0)->and(InstanceRemoval::query()->count())->toBe(0);
+});

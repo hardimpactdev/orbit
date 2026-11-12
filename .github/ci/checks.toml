@@ -2848,3 +2848,16 @@ inputs = ["swamp/workflows/workflow-operation-instance-destroy.yaml"]
 [fixture.case_costs]
 "destroy skips withdrawal without publications including old admission without mutation keys" = 1
 "Route-less checkout and linked worktree skip the child and still remove the real source" = 1
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_route_withdraw_test.ts"
+cost = 12
+slices = false
+inputs = [
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/route-withdraw.yml",
+  "swamp/ansible/tasks/caddy-publish.yml",
+  "swamp/workflows/workflow-operation-instance-destroy.yaml",
+]
+[fixture.case_costs]
+"pending Route withdrawal removes partial publication and CSR residue or accepts an absent site with real Ansible" = 12

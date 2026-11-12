@@ -159,7 +159,7 @@ jobs:
     - step: Prepare container removal
       condition:
         type: always
-    guard: '${{ steps.exists(k, steps[k].status == "failed") || (("route_mutations" in inputs.intent && "restore" in inputs.intent.route_mutations && "routes" in inputs.intent.route_mutations.restore) ? size(inputs.intent.route_mutations.restore.routes) == 0 : (inputs.intent.members.all(m, m.route_id == null) && (!has(inputs.intent.additional_route_ids) || size(inputs.intent.additional_route_ids) == 0))) }}'
+    guard: '${{ steps.exists(k, steps[k].status == "failed") || (inputs.intent.members.all(m, m.route_id == null) && (!has(inputs.intent.additional_route_ids) || size(inputs.intent.additional_route_ids) == 0) && (!("route_mutations" in inputs.intent && "restore" in inputs.intent.route_mutations && "routes" in inputs.intent.route_mutations.restore) || size(inputs.intent.route_mutations.restore.routes) == 0)) }}'
     task:
       type: workflow
       workflowIdOrName: ${{ "route-withdraw" }}
