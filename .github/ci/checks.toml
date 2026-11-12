@@ -2803,9 +2803,10 @@ inputs = [
 "every destroy Ansible step enables failed task stderr" = 1
 [[fixture]]
 file = "swamp/tests/instance_node_runtime_test.py"
-cost = 20
+cost = 21
 [fixture.case_costs]
-  "test_clone_without_processes_leaves_a_legacy_store_and_unused_pin_untouched" = 1 # completed local fixture, 2026-11-12
+  "test_empty_clone_prepares_store_for_a_later_process_with_an_uncached_pin" = 1 # completed local fixture, 2026-11-12
+  "test_clone_fetch_shares_sixty_seconds_across_resolution_and_install" = 1 # completed local fixture, 2026-11-12
   "test_opaque_process_commands_still_prepare_a_writable_clone_store" = 1 # completed local fixture, 2026-11-12
   "test_seed_refresh_pending_survives_conversion_until_snapshot_completion" = 1 # completed local fixture, 2026-11-12
 "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat" = 1

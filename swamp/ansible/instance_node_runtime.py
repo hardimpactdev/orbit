@@ -16,6 +16,8 @@ HOME = Path('/var/lib/orbit/vite-plus-home')
 SHARED = Path('/opt/orbit-runtime/current/vite-plus-home')
 VP = '/opt/orbit-runtime/current/bin/vp'
 CODE = 'instance.node_runtime_prepare_failed'
+FETCH_SECONDS = 90
+CLONE_FETCH_SECONDS = 60
 
 
 def versions(home):
@@ -188,7 +190,7 @@ def node_environment(context, base, private_environments):
     return environment
 
 
-def fetch(container, home=HOME, vp=VP, app_user='orbit', private_environments=None):
+def fetch(container, home=HOME, vp=VP, app_user='orbit', private_environments=None, budget_seconds=FETCH_SECONDS):
     contexts = unit_contexts(container)
     if not contexts:
         return False, []
@@ -202,7 +204,7 @@ def fetch(container, home=HOME, vp=VP, app_user='orbit', private_environments=No
                 'extra_groups': os.getgrouplist(app_user, account.pw_gid)} if os.geteuid() == 0 else {}
     pins = []
     changed = False
-    deadline = time.monotonic() + 90
+    deadline = time.monotonic() + budget_seconds
     for context in contexts:
         environment = node_environment(context, base, private_environments or {})
         candidates = pin_candidates(context['directory'], container['workspace'])
@@ -280,10 +282,9 @@ def main():
             raise RuntimeError('Node store preparation must run as the app user')
         if action not in ('prepare', 'fetch', 'launch-fetch', 'clone-fetch', 'seed-prepare', 'seed-complete'):
             raise RuntimeError('unknown Node preparation action')
-        if action in ('clone-fetch', 'seed-prepare') and not container.get('processes'):
+        if action == 'seed-prepare' and not container.get('processes'):
             result = {'status': 'unchanged', 'versions': [], 'pins': [], 'reason': 'no_processes'}
-            if action == 'seed-prepare':
-                result['seed_refresh_required'] = (HOME / '.seed-refresh-required').exists()
+            result['seed_refresh_required'] = (HOME / '.seed-refresh-required').exists()
             print(json.dumps(result))
             return
         if action == 'fetch' and not private_store(HOME):
@@ -293,7 +294,8 @@ def main():
         changed = prepare(seed=action == 'seed-prepare') if action in ('prepare', 'launch-fetch', 'clone-fetch', 'seed-prepare') else False
         pins = []
         if action in ('fetch', 'launch-fetch', 'clone-fetch'):
-            fetched, pins = fetch(container, private_environments=json.loads(sys.stdin.read() or '{}'))
+            fetched, pins = fetch(container, private_environments=json.loads(sys.stdin.read() or '{}'),
+                                  budget_seconds=CLONE_FETCH_SECONDS if action == 'clone-fetch' else FETCH_SECONDS)
             changed = changed or fetched
         result = {'status': 'converted' if changed else 'unchanged', 'versions': versions(HOME), 'pins': pins}
         if action == 'seed-prepare':

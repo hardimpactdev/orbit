@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # Mirrored by the guest emitter; the clone tests keep the two sets in sync.
@@ -63,16 +64,20 @@ def main():
     name = container["name"]
     project = ["incus", "--project", container["project"]]
     changes = []
+    workspace_deadline = time.monotonic() + 115 if phase == "workspace" else None
     secret = sys.stdin.read()
 
     def run(argv, content=None, check=True):
+        remaining = 100 if workspace_deadline is None else workspace_deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(argv, 115)
         result = subprocess.run(
             argv,
             check=False,
             input=content,
             text=True,
             capture_output=True,
-            timeout=100,
+            timeout=remaining,
             env=dict(os.environ, LC_ALL="C", GIT_TERMINAL_PROMPT="0"),
         )
         if check and result.returncode:

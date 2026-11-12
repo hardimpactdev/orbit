@@ -246,20 +246,45 @@ class NodeRuntimeTest(unittest.TestCase):
                     self.assertEqual(runtime.fetch(container, self.home, self.vp), (False, []))
         self.assertFalse((self.home / 'calls').exists())
 
-    def test_clone_without_processes_leaves_a_legacy_store_and_unused_pin_untouched(self):
+    def test_empty_clone_prepares_store_for_a_later_process_with_an_uncached_pin(self):
         (self.home / 'js_runtime').symlink_to(self.shared / 'js_runtime')
         (self.checkout / '.nvmrc').write_text('22')
         source = SOURCE.read_text().replace("Path('/var/lib/orbit/vite-plus-home')", 'Path(' + repr(str(self.home)) + ')')
+        source = source.replace("Path('/opt/orbit-runtime/current/vite-plus-home')", 'Path(' + repr(str(self.shared)) + ')')
+        source = source.replace("VP = '/opt/orbit-runtime/current/bin/vp'", 'VP = ' + repr(str(self.vp)))
+        source = source.replace("app_user='orbit'", "app_user=" + repr(pwd.getpwuid(os.getuid()).pw_name))
         helper = self.root / 'helper.py'
         helper.write_text(source)
-        for action in ('clone-fetch', 'seed-prepare'):
-            result = subprocess.run([sys.executable, str(helper), action,
-                                     json.dumps({**self.container, 'processes': []})], capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stdout)
-            self.assertEqual(json.loads(result.stdout)['reason'], 'no_processes')
-            self.assertTrue((self.home / 'js_runtime').is_symlink())
-            self.assertFalse((self.home / 'cache').exists())
+        result = subprocess.run([sys.executable, str(helper), 'clone-fetch',
+                                 json.dumps({**self.container, 'processes': []})], capture_output=True, text=True, input='{}')
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertTrue(runtime.private_store(self.home))
+        self.assertEqual(json.loads(result.stdout)['status'], 'converted')
+        self.assertFalse((self.home / 'cache').exists(), 'no consumer means no pin resolution or fetch')
         self.assertFalse((self.home / 'calls').exists())
+        with patch.dict(os.environ, self.environment):
+            result = subprocess.run([sys.executable, str(helper), 'fetch', json.dumps(self.container)],
+                                     capture_output=True, text=True, input='{}')
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertTrue((self.home / 'js_runtime/node/22.23.5/bin/node').is_file())
+        self.assertEqual(runtime.versions(self.home), ['22.23.5', '24.22.1'])
+
+    def test_clone_fetch_shares_sixty_seconds_across_resolution_and_install(self):
+        runtime.prepare(self.home, self.shared)
+        actual_run = runtime.subprocess.run
+        timeouts = []
+        def command(argv, **kwargs):
+            timeouts.append(kwargs['timeout'])
+            return actual_run(argv, **kwargs)
+        with (patch.dict(os.environ, self.environment),
+              patch.object(runtime.time, 'monotonic', side_effect=[0, 0, 29]),
+              patch.object(runtime.subprocess, 'run', side_effect=command)):
+            changed, _ = runtime.fetch(self.container, self.home, self.vp,
+                                       pwd.getpwuid(os.getuid()).pw_name,
+                                       budget_seconds=runtime.CLONE_FETCH_SECONDS)
+        self.assertTrue(changed)
+        self.assertEqual(timeouts, [30, 31])
+        self.assertEqual(runtime.FETCH_SECONDS, 90, 'migrate keeps its existing fetch budget')
 
     def test_opaque_process_commands_still_prepare_a_writable_clone_store(self):
         (self.home / 'js_runtime').symlink_to(self.shared / 'js_runtime')

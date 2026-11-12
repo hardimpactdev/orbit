@@ -1343,7 +1343,7 @@
     ]
   },
   "swamp/tests/instance_clone_guest_test.py": {
-    "source_sha256": "197fb915b896a56bb78a2bf63b879f2844a58fada390f2fb8629a14754e8eb71",
+    "source_sha256": "9b728ffbdc1418099924c930302d57368c222ba285c713975cd67e7995443207",
     "cases": [
       "test_sessions_check_only_loopback_t3_and_reject_http_and_scope_failures",
       "test_workspace_forwards_one_json_vault_value_without_printing_secrets",
@@ -2054,7 +2054,7 @@
     ]
   },
   "swamp/tests/instance_node_runtime_test.py": {
-    "source_sha256": "128b77d9b86bbb29402b4c44548215d5a16fffde6ceb9e3a22e4b818ba80b3b6",
+    "source_sha256": "989b8c8d5db8e56b27c08efa3691947ac7255f740b1dcd318655b1836bff6227",
     "cases": [
       "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat",
       "test_recipe_copy_survives_current_flip_and_shared_pruning_and_seed_keeps_download",
@@ -2066,7 +2066,8 @@
       "test_download_failures_keep_specific_safe_reasons",
       "test_shasums_download_failures_are_transport_errors_not_verification_errors",
       "test_non_vite_projects_do_not_resolve_or_download_unused_pins",
-      "test_clone_without_processes_leaves_a_legacy_store_and_unused_pin_untouched",
+      "test_empty_clone_prepares_store_for_a_later_process_with_an_uncached_pin",
+      "test_clone_fetch_shares_sixty_seconds_across_resolution_and_install",
       "test_opaque_process_commands_still_prepare_a_writable_clone_store",
       "test_seed_refresh_pending_survives_conversion_until_snapshot_completion",
       "test_deploy_fetch_refuses_legacy_store_even_with_a_helper",
