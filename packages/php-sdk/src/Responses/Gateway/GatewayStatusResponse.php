@@ -26,6 +26,8 @@ final readonly class GatewayStatusResponse
         public ?array $autoRelease = null,
         /** @var array{collected_at: ?string, last_run_ms: int|float|null, hidden_nodes: int, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>}|null */
         public ?array $doctor = null,
+        /** @var array{finished_at: ?string, last_pass_ms: int|float|null, unsettled_count: int}|null */
+        public ?array $reconcile = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -42,6 +44,7 @@ final readonly class GatewayStatusResponse
             'release_sha' => $this->releaseSha,
             'auto_release' => $this->autoRelease,
             'doctor' => $this->doctor,
+            'reconcile' => $this->reconcile,
             'request_id' => $this->requestId,
         ];
     }

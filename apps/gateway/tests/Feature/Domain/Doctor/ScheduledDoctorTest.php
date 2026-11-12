@@ -362,13 +362,17 @@ it('shows three open groups with both first-seen bounds, a single resource and n
     $beast = scheduledDoctorNode();
     $shark = scheduledDoctorNode('shark', 8);
     $beast->accessibleNodes()->attach($shark);
+    $gateway = scheduledDoctorNode('gateway', 1);
+    $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
+    $beast->accessibleNodes()->attach($gateway);
     scheduledDoctorProblem($beast, 'process.state_mismatch', '21', '2026-11-01T00:00:00Z');
     scheduledDoctorProblem($beast, 'process.state_mismatch', '22', '2026-11-12T11:00:00Z');
     scheduledDoctorProblem($beast, 'process.crash_loop', '23', '2026-11-09T00:00:00Z');
     scheduledDoctorProblem($shark, 'process.state_mismatch', '24', '2026-11-10T00:00:00Z');
     scheduledDoctorProblem($shark, 'process.crash_loop', '25', '2026-11-12T11:59:00Z', ['resolved_at' => now()->toISOString()]);
     ProblemFingerprint::query()->create(['source' => ProblemSource::Log, 'fingerprint' => 'log|exception|frame', 'evidence' => []]);
-    ProblemCollectorState::query()->create(['observation' => ['doctor_collected_at' => '2026-11-12T12:00:00.000000Z', 'doctor_duration_ms' => 650, 'doctor_started_at' => '2026-11-12T11:59:00.000000Z']]);
+    ProblemCollectorState::query()->create(['observation' => ['doctor_collected_at' => '2026-11-12T12:00:00.000000Z', 'doctor_duration_ms' => 650, 'doctor_started_at' => '2026-11-12T11:59:00.000000Z',
+        'operation_reconcile_finished_at' => '2026-11-12T12:00:00.000000Z', 'operation_reconcile_duration_ms' => 6.125, 'operation_settlement_count' => 0]]);
     $doctor = ['collected_at' => '2026-11-12T12:00:00.000000Z', 'last_run_ms' => 650, 'hidden_nodes' => 0, 'issues' => [
         ['node_id' => $beast->id, 'node_name' => 'beast', 'code' => 'process.state_mismatch', 'count' => 2,
             'since' => '2026-11-01T00:00:00.000000Z', 'newest_since' => '2026-11-12T11:00:00.000000Z', 'resource' => null],
@@ -378,6 +382,8 @@ it('shows three open groups with both first-seen bounds, a single resource and n
             'since' => '2026-11-09T00:00:00.000000Z', 'newest_since' => '2026-11-09T00:00:00.000000Z', 'resource' => ['type' => 'process', 'id' => '23']],
     ]];
     $response = $this->withServerVariables(['REMOTE_ADDR' => $beast->wireguard_ip])->getJson('/api/v1/gateway/status')->assertOk()->assertJsonPath('data.doctor', $doctor);
+    $reconcile = ['finished_at' => '2026-11-12T12:00:00.000000Z', 'last_pass_ms' => 6.125, 'unsettled_count' => 0];
+    $response->assertJsonPath('data.reconcile', $reconcile);
     $body = $response->json();
     $body['meta']['request_id'] = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
     $fixture = ['schema' => 1, 'request' => ShowGatewayStatusRequest::class, 'route' => 'GET /api/v1/gateway/status', 'status' => 200, 'body' => $body];
@@ -387,7 +393,8 @@ it('shows three open groups with both first-seen bounds, a single resource and n
     }
     expect(is_file($path))->toBeTrue();
     expect(json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR)['body']['data']['doctor'])->toBe($doctor);
-    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])->getJson('/api/v1/gateway/status')->assertOk()->assertJsonPath('data.doctor', null);
+    expect(json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR)['body']['data']['reconcile'])->toBe($reconcile);
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])->getJson('/api/v1/gateway/status')->assertOk()->assertJsonPath('data.doctor', null)->assertJsonPath('data.reconcile', null);
 });
 
 it('shows only what the latest full collection saw and keeps older open rows as history', function (): void {
@@ -483,7 +490,9 @@ it('records the peer status fixture from the real API with its cached desired fl
     }
     $recorded = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
     expect($body['data']['doctor'])->toBe(['collected_at' => null, 'last_run_ms' => null, 'hidden_nodes' => 0, 'issues' => []])
-        ->and($recorded['body']['data']['doctor'])->toBe($body['data']['doctor']);
+        ->and($recorded['body']['data']['doctor'])->toBe($body['data']['doctor'])
+        ->and($body['data']['reconcile'])->toBeNull()
+        ->and($recorded['body']['data']['reconcile'])->toBeNull();
 });
 
 it('reports one monotonic run cost and commits its stored timing with the findings', function (): void {

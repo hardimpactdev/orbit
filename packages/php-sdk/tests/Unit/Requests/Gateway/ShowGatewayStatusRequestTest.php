@@ -86,6 +86,7 @@ describe(ShowGatewayStatusRequest::class, function (): void {
             'release_sha' => null,
             'auto_release' => null,
             'doctor' => null,
+            'reconcile' => null,
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ]);
     });
@@ -126,3 +127,40 @@ it('preserves the hidden Node count and nullable or fractional duration', functi
     ])]));
     expect($connector->send(new ShowGatewayStatusRequest)->dto()->doctor)->toBe($doctor);
 })->with([null, 0, 650.25]);
+
+it('maps reconcile facts from the recorded response and preserves nullable and fractional values', function (): void {
+    $fixture = json_decode(file_get_contents(__DIR__.'/../../../../fixtures/gateway/gateway-status/doctor.json'), true, flags: JSON_THROW_ON_ERROR);
+    $connector = new GatewayConnector('https://10.70.0.1');
+    $connector->withMockClient(new MockClient([ShowGatewayStatusRequest::class => MockResponse::make($fixture['body'])]));
+
+    $response = $connector->send(new ShowGatewayStatusRequest)->dto();
+
+    expect($response->reconcile)->toBe(['finished_at' => '2026-11-12T12:00:00.000000Z', 'last_pass_ms' => 6.125, 'unsettled_count' => 0])
+        ->and($response->toArray()['reconcile'])->toBe($response->reconcile);
+});
+
+it('maps an absent or malformed reconcile object to null', function (mixed $reconcile): void {
+    $connector = new GatewayConnector('https://10.70.0.1');
+    $connector->withMockClient(new MockClient([ShowGatewayStatusRequest::class => MockResponse::make([
+        'data' => ['reconcile' => $reconcile], 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+    ])]));
+
+    expect($connector->send(new ShowGatewayStatusRequest)->dto()->reconcile)->toBeNull();
+})->with([
+    'null' => [null],
+    'not an object' => [false],
+    'missing keys' => [[]],
+    'invalid timestamp type' => [['finished_at' => [], 'last_pass_ms' => 0, 'unsettled_count' => 0]],
+    'invalid duration type' => [['finished_at' => null, 'last_pass_ms' => '6.125', 'unsettled_count' => 0]],
+    'invalid count type' => [['finished_at' => null, 'last_pass_ms' => null, 'unsettled_count' => '0']],
+]);
+
+it('preserves null and numeric reconcile durations', function (int|float|null $duration): void {
+    $reconcile = ['finished_at' => null, 'last_pass_ms' => $duration, 'unsettled_count' => 0];
+    $connector = new GatewayConnector('https://10.70.0.1');
+    $connector->withMockClient(new MockClient([ShowGatewayStatusRequest::class => MockResponse::make([
+        'data' => ['reconcile' => $reconcile], 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+    ])]));
+
+    expect($connector->send(new ShowGatewayStatusRequest)->dto()->reconcile)->toBe($reconcile);
+})->with([null, 0, 6.125]);

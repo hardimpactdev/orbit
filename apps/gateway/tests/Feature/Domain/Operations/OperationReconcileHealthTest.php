@@ -145,6 +145,8 @@ it('records one completed pass that settles everything and preserves Doctor fact
         ->and($writes)->toBe(1)->and($operation->refresh()->status)->toBe(OperationStatus::Failed)
         ->and(count(array_filter($socket->frames, fn (array $frame): bool => $frame['type'] === 'workflow.history.get')))->toBe(1)
         ->and(reconcileHealthIssues($gateway))->toBe([]);
+    Log::shouldHaveReceived('info')->once()->with('Operation reconcile pass ran.', [
+        'duration_ms' => (float) $state['operation_reconcile_duration_ms'], 'operations' => 1, 'unsettled' => 0]);
     Log::shouldNotHaveReceived('debug');
     Log::shouldNotHaveReceived('warning');
 });
@@ -168,6 +170,8 @@ it('records a terminal read despite a settlement exception then clears it after 
         ->and(ProblemCollectorState::query()->sole()->observation)->toMatchArray([
             'operation_reconcile_finished_at' => '2026-11-12T12:00:00.000000Z', 'operation_settlement_count' => 1,
             'operation_settlement_oldest_completed_at' => '2026-11-12T11:59:00.000000Z']);
+    Log::shouldHaveReceived('info')->once()->with('Operation reconcile pass ran.', [
+        'duration_ms' => (float) ProblemCollectorState::query()->sole()->observation['operation_reconcile_duration_ms'], 'operations' => 1, 'unsettled' => 1]);
     Log::shouldHaveReceived('warning')->with('Terminal Swamp runs still need Operation settlement.', [
         'count' => 1, 'oldest_completed_at' => '2026-11-12T11:59:00.000000Z'])->once();
     $this->travelTo(new DateTimeImmutable('2026-11-12T12:04:00Z'));
@@ -353,7 +357,7 @@ it('does not count a check that stays running for hosted CI unless its projectio
     $health = new OperationReconcileHealth;
 
     $health->observe($operation, CarbonImmutable::parse('2026-11-12T11:50:00Z'), $projected);
-    $health->record(hrtime(true));
+    $health->record(hrtime(true), 0);
 
     expect(ProblemCollectorState::query()->sole()->observation['operation_settlement_count'])->toBe($count);
     $this->travelTo(new DateTimeImmutable('2026-11-12T12:01:00Z'));
@@ -387,4 +391,98 @@ it('finishes the pass and counts an Operation whose settlement cannot be read', 
     expect($second->refresh()->status)->toBe(OperationStatus::Failed)->and($first->refresh()->status)->toBe(OperationStatus::Running)
         ->and(ProblemCollectorState::query()->sole()->observation)->toMatchArray(['operation_reconcile_finished_at' => '2026-11-12T12:00:00.000000Z',
             'operation_settlement_oldest_completed_at' => '2026-11-12T12:00:00.000000Z', 'operation_settlement_count' => 1]);
+});
+
+it('shows pass facts only to peers that can see the Gateway Node using one state read', function (string $caller): void {
+    $gateway = reconcileHealthNode();
+    $peer = reconcileHealthNode('peer', 9);
+    if ($caller === 'inactive') {
+        $peer->update(['status' => 'failed']);
+    }
+    if ($caller === 'granted') {
+        $peer->accessibleNodes()->attach($gateway);
+    }
+    ProblemCollectorState::query()->create(['observation' => [
+        'operation_reconcile_finished_at' => '2026-11-12T12:00:00.000000Z',
+        'operation_reconcile_duration_ms' => 6.125, 'operation_settlement_count' => 2,
+    ]]);
+    $queries = [];
+    DB::listen(function (QueryExecuted $query) use (&$queries): void {
+        if (str_contains($query->sql, 'problem_collector_state')) {
+            $queries[] = $query->sql;
+        }
+    });
+    $address = match ($caller) {
+        'gateway' => $gateway->wireguard_ip,
+        'anonymous' => '203.0.113.10',
+        default => $peer->wireguard_ip,
+    };
+
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $address])->getJson('/api/v1/gateway/status')->assertOk();
+
+    $expected = in_array($caller, ['gateway', 'granted'], true)
+        ? ['finished_at' => '2026-11-12T12:00:00.000000Z', 'last_pass_ms' => 6.125, 'unsettled_count' => 2] : null;
+    $response->assertJsonStructure(['data' => ['reconcile']])->assertJsonPath('data.reconcile', $expected);
+    expect($queries)->toHaveCount(in_array($caller, ['anonymous', 'inactive'], true) ? 0 : 1);
+    if ($caller === 'gateway') {
+        fwrite(STDOUT, "\nReconcile facts: ".json_encode($response->json('data.reconcile'), JSON_THROW_ON_ERROR)."\n");
+    }
+})->with(['gateway', 'granted', 'ungranted', 'anonymous', 'inactive']);
+
+it('returns empty pass facts for absent or malformed observations', function (?array $observation): void {
+    $gateway = reconcileHealthNode();
+    if ($observation !== null) {
+        ProblemCollectorState::query()->create(['observation' => $observation]);
+    }
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])->getJson('/api/v1/gateway/status')->assertOk()
+        ->assertJsonPath('data.reconcile', ['finished_at' => null, 'last_pass_ms' => null, 'unsettled_count' => 0]);
+})->with([
+    'no state' => [null],
+    'no keys' => [[]],
+    'wrong types' => [['operation_reconcile_finished_at' => 12, 'operation_reconcile_duration_ms' => '6.125', 'operation_settlement_count' => '2']],
+    'invalid timestamp and duration' => [['operation_reconcile_finished_at' => 'not a timestamp', 'operation_reconcile_duration_ms' => -1, 'operation_settlement_count' => 2.5]],
+    'empty timestamp' => [['operation_reconcile_finished_at' => '', 'operation_reconcile_duration_ms' => []]],
+    'invalid calendar date' => [['operation_reconcile_finished_at' => '2026-02-30T12:00:00Z']],
+    'relative time' => [['operation_reconcile_finished_at' => 'tomorrow']],
+]);
+
+it('logs one pass with the open Operations read and the stored duration', function (int $count): void {
+    Log::spy();
+    $gateway = reconcileHealthNode();
+    $runs = [];
+    for ($index = 0; $index < $count; $index++) {
+        $operation = reconcileHealthOperation($gateway, 42 + $index);
+        $runs[$operation->state['swamp_run_id']] = reconcileHealthRun($operation);
+    }
+    $closed = reconcileHealthOperation($gateway, 50);
+    $closed->update(['status' => OperationStatus::Failed]);
+    reconcileHealthSocket($runs);
+
+    reconcileHealthPass();
+
+    $state = ProblemCollectorState::query()->sole()->observation;
+    $context = null;
+    Log::shouldHaveReceived('info')->once()->with('Operation reconcile pass ran.', Mockery::on(function (array $cost) use (&$context, $state, $count): bool {
+        $context = $cost;
+
+        return $cost === ['duration_ms' => (float) $state['operation_reconcile_duration_ms'], 'operations' => $count, 'unsettled' => 0];
+    }));
+    expect($context['duration_ms'])->toBeFloat()->toBe(round($context['duration_ms'], 3));
+    Log::shouldNotHaveReceived('warning');
+    fwrite(STDOUT, "\n".json_encode(['message' => 'Operation reconcile pass ran.', 'context' => $context], JSON_THROW_ON_ERROR)."\n");
+})->with([0, 2]);
+
+it('finishes and records the pass when its info logger throws', function (): void {
+    Log::shouldReceive('info')->once()->with('Operation reconcile pass ran.', Mockery::type('array'))
+        ->andThrow(new RuntimeException('Logger unavailable'));
+    $gateway = reconcileHealthNode();
+    $operation = reconcileHealthOperation($gateway);
+    reconcileHealthSocket([$operation->state['swamp_run_id'] => reconcileHealthRun($operation)]);
+
+    reconcileHealthPass();
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and(ProblemCollectorState::query()->sole()->observation)->toMatchArray([
+            'operation_reconcile_finished_at' => '2026-11-12T12:00:00.000000Z', 'operation_settlement_count' => 0]);
 });

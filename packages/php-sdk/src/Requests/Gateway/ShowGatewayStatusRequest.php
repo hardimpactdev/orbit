@@ -38,7 +38,22 @@ final class ShowGatewayStatusRequest extends GatewayRequest
             releaseSha: is_string($data['release_sha'] ?? null) ? $data['release_sha'] : null,
             autoRelease: $this->autoRelease($data['auto_release'] ?? null),
             doctor: $this->doctor($data['doctor'] ?? null),
+            reconcile: $this->reconcile($data['reconcile'] ?? null),
         );
+    }
+
+    /** @return array{finished_at: ?string, last_pass_ms: int|float|null, unsettled_count: int}|null */
+    private function reconcile(mixed $value): ?array
+    {
+        if (! is_array($value) || ! array_key_exists('finished_at', $value)
+            || ($value['finished_at'] !== null && ! is_string($value['finished_at']))
+            || ! array_key_exists('last_pass_ms', $value)
+            || ($value['last_pass_ms'] !== null && ! is_int($value['last_pass_ms']) && ! is_float($value['last_pass_ms']))
+            || ! is_int($value['unsettled_count'] ?? null)) {
+            return null;
+        }
+
+        return ['finished_at' => $value['finished_at'], 'last_pass_ms' => $value['last_pass_ms'], 'unsettled_count' => $value['unsettled_count']];
     }
 
     /** @return array{collected_at: ?string, last_run_ms: int|float|null, hidden_nodes: int, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>}|null */

@@ -61,6 +61,7 @@ describe(GatewayStatusCommand::class, function (): void {
             'release_sha' => null,
             'auto_release' => null,
             'doctor' => null,
+            'reconcile' => null,
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -111,6 +112,7 @@ describe(GatewayStatusCommand::class, function (): void {
             'release_sha' => null,
             'auto_release' => null,
             'doctor' => null,
+            'reconcile' => null,
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -294,3 +296,26 @@ it('shows only the hidden-Node notice and the run duration when no groups are vi
         expect($output)->not->toContain('issues you cannot see');
     }
 })->with([[0, ''], [1, '1 more Node has issues you cannot see'], [2, '2 more Nodes have issues you cannot see']]);
+
+it('renders one reconcile line with the same facts as JSON', function (?array $reconcile, ?string $line): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(name: 'test', url: 'https://10.70.0.1'));
+    MockClient::global([ShowGatewayStatusRequest::class => MockResponse::make([
+        'data' => ['reconcile' => $reconcile],
+        'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+    ])]);
+
+    Artisan::call('gateway:status');
+    $output = Artisan::output();
+    if ($line === null) {
+        expect($output)->not->toContain('Reconcile:');
+    } else {
+        expect($output)->toContain($line)->and(substr_count($output, 'Reconcile:'))->toBe(1);
+    }
+    Artisan::call('gateway:status', ['--json' => true]);
+    expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['reconcile'])->toBe($reconcile);
+})->with([
+    'not visible' => [null, null],
+    'not run' => [['finished_at' => null, 'last_pass_ms' => null, 'unsettled_count' => 0], 'Reconcile: not run yet, unsettled 0'],
+    'recorded' => [['finished_at' => '2026-11-12T12:00:00Z', 'last_pass_ms' => 6.125, 'unsettled_count' => 2], 'Reconcile: finished 2026-11-12T12:00:00Z, last pass 6.125 ms, unsettled 2'],
+    'zero duration' => [['finished_at' => '2026-11-12T12:00:00Z', 'last_pass_ms' => 0, 'unsettled_count' => 0], 'Reconcile: finished 2026-11-12T12:00:00Z, last pass 0 ms, unsettled 0'],
+]);

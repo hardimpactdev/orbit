@@ -14,6 +14,10 @@ When this machine is an active WireGuard peer, the Gateway also returns its [des
 
 For an active WireGuard peer, `doctor` holds `collected_at`, the last successful full fleet collection time, `last_run_ms`, its stored duration, and `issues`, the findings observed since that collection started, grouped by Node and issue code. A finding that only an older collection recorded is not shown; it stays in the Problems store as history. `collected_at` is null before the first collection; `last_run_ms` is null until cost has been recorded. An anonymous caller gets `doctor: null`.
 
+Beside `doctor`, `reconcile` holds `finished_at`, the last completed Operation reconciliation pass time, `last_pass_ms`, its duration, and `unsettled_count`, the number of proven terminal runs still awaiting Operation settlement. A healthy Gateway completes a pass every minute and normally reports `unsettled_count: 0`. Missing or malformed facts give null times and duration, and a count of 0. The object is visible only to an active peer that is the Gateway Node or can access it under the same Node access rule as `doctor.issues`. Other callers, including anonymous callers, get `reconcile: null`.
+
+Human output adds one `Reconcile` line with the pass time, duration when known, and unsettled count. Before the first pass, it says `not run yet`.
+
 The list follows [Node access](/cli/node#authority): it includes the caller's own Node and Nodes it has a direct grant to. Gateway and control-plane authority see every Node. Own-Node visibility is specific to this status read; it does not grant access to other commands. `hidden_nodes` counts other Nodes with issues, without exposing their names, codes, or issue counts.
 
 Each group has `node_id`, `node_name`, `code`, `count`, `since` (oldest first seen), and `newest_since` (newest first seen). `count` sums the latest collection’s issues, including issues that share one stored fingerprint. A single-row group also has `resource`, with its `type` and `id`; larger groups have a null resource. Groups sort by newest `newest_since` first. A new resource with an old issue code increases the count and advances `newest_since`.

@@ -62,21 +62,23 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
     {
         $started = hrtime(true);
         $health = new OperationReconcileHealth;
-        $this->pass($step, $expire, $cancel, $store, $health);
-        $health->record($started);
+        $operations = $this->pass($step, $expire, $cancel, $store, $health);
+        $health->record($started, $operations);
     }
 
-    private function pass(SwampCommandStep $step, ExpireOperationAction $expire, CancelSwampRun $cancel, OperationStore $store, OperationReconcileHealth $health): void
+    private function pass(SwampCommandStep $step, ExpireOperationAction $expire, CancelSwampRun $cancel, OperationStore $store, OperationReconcileHealth $health): int
     {
         $kinds = array_keys(app(DirectOperation::class)->definitions());
         if ($kinds === []) {
-            return;
+            return 0;
         }
+        $operations = 0;
         $started = microtime(true);
         $cancellation = app(NativeRunCancellation::class);
-        OperationRunBudgets::duringTick(function () use ($kinds, $step, $expire, $cancel, $store, $cancellation, $started, $health): void {
+        OperationRunBudgets::duringTick(function () use ($kinds, $step, $expire, $cancel, $store, $cancellation, $started, $health, &$operations): void {
             $forward = [];
             foreach (self::open($kinds)->lazyById() as $operation) {
+                $operations++;
                 $completedAt = null;
                 $settled = true;
                 $onTerminal = static function (CarbonImmutable $at) use (&$completedAt): void {
@@ -129,6 +131,8 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             Log::warning('The proof runs could not be watched; the next pass tries again.', ['exception_type' => $exception::class]);
         }
         app(RoutePublicationHolds::class)->sweep();
+
+        return $operations;
     }
 
     /** Remote text can contain inputs: log identity and type only. */
