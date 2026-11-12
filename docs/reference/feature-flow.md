@@ -76,6 +76,15 @@ A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on 
 
 ## Choose the cases
 
+### Instance execution coverage
+
+CI reports **Instance execution proof coverage** for files executed by Nodes during `instance:create`, `instance:clone`, `instance:migrate` and `instance:destroy`. The ownership rules live in the selection list, including shared child workflows and shipped scripts. While a command has no real case, its changed execution files produce a warning: `no real proof case covers these executed files: <list>`. A skipped proof is not proof of those files. Existing refusal cases remain available when their own definitions or admission code change.
+
+A real case calls the command in an action, expects exit zero and terminal `succeeded`, and is not marked `fails_today`. Once that case exists in either the comparison base or the head, selecting none of that command’s real cases fails build-input selection. Removing the last real case or shadowing its mapping cannot return the command to warning-only coverage.
+
+An edit to the mapping checks the owners of tracked execution files before it can become a new base. This checks selection locally; it adds no fleet wait to Required. The first lifecycle proof runs as a non-required result until its measured setup, case and cleanup cost has been accepted.
+
+
 The file `swamp/proof/selection.txt` is the selection list: it maps changed paths to commands. Each line holds a path glob and the value it selects. `bin/ci-build-plan` and Orbit read the list of the tested commit.
 
 ```text
@@ -111,7 +120,9 @@ After choosing commands, choose their cases:
 3. Read the runner result in the Gateway. Validate its identity and selected case ids.
 4. Record selected case ids and reasons. Keep each case in its batch with its required setup.
 
-The runner compares canonical definitions by id. A command code change selects the whole file. Changes to the runner, selection code or selection list disable narrowing for every selected command. These tooling changes alone select no commands. Any parse error or unknown construct, including an unknown fixture key, also selects the whole file. The artifact records every considered file, including files with zero selected cases. The Gateway does not compare YAML definitions. Expired or mismatched results select whole files.
+The runner compares canonical definitions by id. A command code change selects the whole file. Changes to the runner, selection code or selection list disable narrowing for every selected command. These tooling changes alone select no commands. Any parse error or unknown construct, including an unknown fixture key, also selects the whole file. The artifact records every considered file, including files with zero selected cases.
+
+The Gateway honors a validated result for code changes too, including explicit empty entries for execution coverage gaps. An all-cases request still runs every case. The Gateway does not compare YAML definitions. Expired or mismatched results select whole files.
 
 Merge-base replay is a separate opt-in within this selection. The runner uses the same case-level comparison to find added or changed definitions, then keeps only cases with `fails_on_base: true` that belong to the admitted batch. Whole-file selection for code, tooling or uncertainty does not by itself make unchanged cases eligible. Unflagged cases never replay. A merged flag stays in the file without causing replay in later PRs. See [when to set the flag](/reference/verification-cases#opt-into-merge-base-replay).
 
