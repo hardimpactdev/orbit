@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseStatements;
@@ -16,6 +17,7 @@ use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\Projects\ProjectEnvironmentTemplateRefresh;
 use App\Domain\Projects\ProjectType;
@@ -742,7 +744,7 @@ it('renders database removal fence recovery with PostgreSQL boolean keywords', f
         ->not->toContain("format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', d.datname, j.allow_connections)");
 });
 
-it('names retained create resources and proves the advertised recovery paths', function (bool $clone, string $phase, bool $hasCommit): void {
+it('names retained create resources and proves the advertised recovery paths', function (bool $clone, string $phase, bool $hasCommit, string $status): void {
     $node = containerDefaultNode();
     $node->update(['tld' => 'beast.test']);
     Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
@@ -767,10 +769,10 @@ it('names retained create resources and proves the advertised recovery paths', f
         $native['commit'] = str_repeat('a', 40);
     }
     app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
-        'status' => 'failed', 'run_id' => 'failure-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'instance.create_'.$phase.'_failed',
+        'status' => $status, 'run_id' => 'failure-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'instance.create_'.$phase.'_failed',
         'result' => $native,
     ]);
-    $recovery = $operation->refresh()->result['recovery'];
+    $recovery = $operation->refresh()->result['recovery'] ?? null;
     expect($recovery)->toBe([
         'state' => 'retained_for_retry',
         'retry' => ['command' => 'instance:create', 'project_id' => $project->id, 'node_id' => $node->id, 'name' => $name,
@@ -791,17 +793,78 @@ it('names retained create resources and proves the advertised recovery paths', f
     expect(containerRefusal(fn () => app(ContainerInstanceDestroy::class)->assertAvailable($instance->fresh(), true)))
         ->toBe($clone ? 'admitted' : 'operation.kind_unavailable');
 })->with([
-    'clone-input' => [true, 'clone', false],
-    'clone-container' => [true, 'clone', false],
-    'clone-workspace' => [true, 'workspace', false],
-    'clone-agent' => [true, 'agent', true],
-    'clone-t3' => [true, 't3', true],
-    'clone-sessions' => [true, 'register', true],
-    'clone-register' => [true, 'register', true],
-    'default-container' => [false, 'container', false],
-    'default-workspace' => [false, 'workspace', false],
-    'default-deploy' => [false, 'deploy', true],
-    'default-processes' => [false, 'processes', true],
-    'default-route' => [false, 'route', true],
-    'default-seed' => [false, 'seed', true],
+    'clone-input' => [true, 'clone', false, 'failed'],
+    'clone-container' => [true, 'clone', false, 'failed'],
+    'clone-workspace' => [true, 'workspace', false, 'failed'],
+    'clone-agent' => [true, 'agent', true, 'failed'],
+    'clone-t3' => [true, 't3', true, 'failed'],
+    'clone-sessions' => [true, 'register', true, 'failed'],
+    'clone-register' => [true, 'register', true, 'failed'],
+    'default-container' => [false, 'container', false, 'failed'],
+    'default-workspace' => [false, 'workspace', false, 'failed'],
+    'default-deploy' => [false, 'deploy', true, 'failed'],
+    'default-processes' => [false, 'processes', true, 'failed'],
+    'default-route' => [false, 'route', true, 'failed'],
+    'default-seed' => [false, 'seed', true, 'failed'],
+    'cancelled-clone' => [true, 'register', true, 'cancelled'],
+    'cancelled-default' => [false, 'container', false, 'cancelled'],
 ]);
+
+it('names retained resources when a container create is cancelled before its run starts', function (bool $clone): void {
+    $node = containerDefaultNode();
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
+    if ($clone) {
+        $seed = containerCreate($project, $node);
+        $seed->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'seed-run']])->save();
+        app(DevelopmentInstanceCreateProjection::class)->apply($seed, [
+            'status' => 'succeeded', 'run_id' => 'seed-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+            'result' => ['instance_id' => $seed->target_id, 'ready' => true, 'commit' => str_repeat('c', 40)],
+        ]);
+    }
+    $name = $clone ? 'queued-feature' : 'default';
+    $operation = containerCreate($project, $node, $name);
+    $instance = Instance::query()->findOrFail($operation->target_id);
+    $routeId = $operation->input['route_id'];
+    $runtimeId = $instance->runtime()->firstOrFail()->id;
+    expect($operation->status)->toBe(OperationStatus::Queued)
+        ->and($operation->attempts)->toBe(0)
+        ->and($operation->state)->not->toHaveKey('swamp_run_id');
+
+    app(CancelOperationAction::class)->execute($operation);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled)
+        ->and($operation->result)->toBe(['recovery' => [
+            'state' => 'retained_for_retry',
+            'retry' => ['command' => 'instance:create', 'project_id' => $project->id, 'node_id' => $node->id, 'name' => $name,
+                'reuse_original_options' => true, 'new_idempotency_key' => true],
+            'destroy' => ['command' => 'instance:destroy', 'instance_id' => $instance->id,
+                'available' => $clone, 'options' => ['yes' => true, 'force' => true],
+                ...($clone ? [] : ['error_code' => 'operation.kind_unavailable', 'reason' => 'container_default_destroy_unavailable'])],
+        ]])
+        ->and($instance->fresh()->status)->toBe(InstanceState::Reserved)
+        ->and(Route::query()->findOrFail($routeId)->status->value)->toBe('pending')
+        ->and($instance->runtime()->firstOrFail()->id)->toBe($runtimeId);
+
+    $retry = containerCreate($project, $node, $name);
+    expect($retry->id)->not->toBe($operation->id)
+        ->and($retry->target_id)->toBe($instance->id)
+        ->and($retry->input['route_id'])->toBe($routeId)
+        ->and($instance->runtime()->firstOrFail()->id)->toBe($runtimeId);
+})->with(['clone' => true, 'default' => false]);
+
+it('keeps another Operation kind cancellation result unchanged', function (?array $result): void {
+    $operation = Operation::query()->create([
+        'kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => 1,
+        'status' => OperationStatus::Queued, 'attempts' => 0, 'state' => [],
+        'input' => ['project_id' => 1, 'node_id' => 2, 'name' => 'feature', 'direct_provisioning' => ['container' => []]],
+        'result' => $result,
+    ]);
+
+    app(CancelOperationAction::class)->execute($operation);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled)
+        ->and($operation->result)->toBe($result);
+})->with(['no result' => [null], 'existing result' => [['kept' => true]]]);

@@ -76,8 +76,10 @@ sequenceDiagram
   else a step fails or the budget ends
     SW--xGW: Run failed<br/>failed step, error_code
     %%> What stays:
-    %%> - the reservation and any stopped container, workspace and database remain for retry
-    %%> - the failure result names retained_for_retry and the same create command with a new idempotency key; default destroy stays unavailable
+    %%> - the reservation, runtime, and any container, workspace, owned databases, test databases and role stay until the owner acts; default destroy is unavailable
+    %%> - a refused retry removes none of them; stop and Route withdrawal are attempted; failed compensation leaves its step failed
+    %%> - shared service endpoint records and rules may remain until endpoint lifecycle work is live
+    %%> - failed and cancelled creates, including cancellation before work starts, report retained_for_retry and the same create command with a new idempotency key; default destroy stays unavailable
     Note over GW: Record the failure
   end
   loop every 2 s until terminal

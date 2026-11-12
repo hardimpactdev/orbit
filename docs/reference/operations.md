@@ -399,6 +399,8 @@ Reverb can lose an event, for example while the socket reconnects, so a client t
 
 `operation:cancel` asks an operation to stop. The Gateway records the request first. An operation that no workflow has started becomes `cancelled` at once and releases its target. Once a native run is bound, the Gateway asks Swamp to cancel that run. The workflow owns the end: the operation becomes `cancelled` when its terminal result says so, and a workflow may finish its running step first. A cancel request for a terminal operation changes nothing and returns the record.
 
+A cancelled container create reports `recovery.state=retained_for_retry`, even before work starts. Its result names the [retry and destroy paths](/cli/instance/create#on-a-container-node); container-default destroy remains unavailable.
+
 A cancelled deploy or rollback records its history row as `failed` with `deployment.cancelled`. Orbit never undoes the steps that ran.
 
 A parent that waits for children passes the request to every nonterminal child in the same transaction.

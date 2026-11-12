@@ -110,13 +110,15 @@ sequenceDiagram
     Note over GW: Skipped — already created<br/>instance.exists
   else a step fails or the budget ends
     C--xSW: exit ≠ 0 or timeout
-    SW->>N: Withdraw the Route<br/>child route-withdraw
+    SW->>N: Attempt Route withdrawal<br/>child route-withdraw
     %%> When:
     %%> - only when the run published it
-    SW->>N: Stop the container<br/>incus stop
+    SW->>N: Attempt container stop<br/>incus stop
     %%> What stays:
-    %%> - the reservation, database and runtime record remain for retry; a container that exists is stopped
-    %%> - the failure result names retained_for_retry, the same create command with a new idempotency key, and forced destroy
+    %%> - the reservation, runtime, and any container, workspace, owned databases, test databases and role stay until the owner acts
+    %%> - a refused retry removes none of them; stop and Route withdrawal are attempted; failed compensation leaves its step failed
+    %%> - shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live
+    %%> - failed and cancelled creates, including cancellation before work starts, report retained_for_retry, the same create command with a new idempotency key, and forced destroy
     %%> Cleanup:
     %%> - remove the private clone folder after success or failure, even if staging or the first launch failed
     SW--xGW: Run failed<br/>failed step, error_code

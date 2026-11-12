@@ -108,7 +108,7 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
      * @param  array<string, mixed>  $container
      * @return array<string, mixed>
      */
-    private function recovery(Operation $operation, array $container): array
+    public function recovery(Operation $operation, array $container): array
     {
         $input = $operation->input;
         $clone = ($container['clone'] ?? null) !== null;

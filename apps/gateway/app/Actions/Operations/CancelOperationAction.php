@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Operations;
 
+use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
@@ -35,7 +36,12 @@ final readonly class CancelOperationAction
                 && ! ($operation->status === OperationStatus::Running && isset($operation->state['swamp_start']))) {
                 $this->store->change($operation, ['cancel_requested_at' => $operation->cancel_requested_at ?? now(),
                     'status' => OperationStatus::Cancelled, 'finished_at' => now(), 'error_code' => null,
-                    'current_step' => null, 'failed_step' => null, 'lock_key' => null]);
+                    'current_step' => null, 'failed_step' => null, 'lock_key' => null,
+                    ...($operation->kind === 'instance.create'
+                        && is_array($container = $operation->input['direct_provisioning']['container'] ?? null)
+                        && ($operation->input['direct_provisioning']['already_active'] ?? false) !== true
+                        ? ['result' => [...($operation->result ?? []), 'recovery' => app(DevelopmentInstanceCreateProjection::class)->recovery($operation, $container)]]
+                        : [])]);
             } elseif ($operation->cancel_requested_at === null) {
                 $this->store->change($operation, ['cancel_requested_at' => now()]);
             }
