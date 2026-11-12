@@ -10,7 +10,9 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Data\DatabaseConnections\CreateDatabaseUserData;
 use App\Data\DatabaseConnections\CreateServerDatabaseData;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseDestroySafety;
+use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\DatabaseServers\InstanceRestoreFence;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
@@ -633,3 +635,12 @@ it('excludes earlier creates of captured names while admitting disjoint creates 
             ->and($this->reader->calls)->toBe(0);
     }
 })->with([['database.create', true], ['database.create', false], ['database_user.create', true], ['database_user.create', false]]);
+
+it('renders destroy fence restoration with boolean keywords instead of PostgreSQL boolean output', function (): void {
+    $statements = app(DatabaseStatements::class)->destroy(
+        DatabaseDriver::Pgsql, ['fixture'], ['owner'],
+    );
+    expect($statements['restore'])
+        ->toContain("format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', d.datname, CASE WHEN j.allow_connections THEN 'true' ELSE 'false' END)")
+        ->not->toContain("format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', d.datname, j.allow_connections)");
+});
