@@ -6,6 +6,7 @@ namespace App\Actions\Instances;
 
 use App\Data\Processes\AddProcessData;
 use App\Domain\Instances\ContainerProcesses;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessSpecification;
@@ -91,7 +92,14 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
      */
     public function captureForDevelopment(Instance $instance): void
     {
-        if ($instance->placedOnAppProd() || $instance->runtime_definitions_captured_at !== null) {
+        if ($instance->placedOnAppProd()) {
+            return;
+        }
+        if ($instance->runtime_definitions_captured_at !== null) {
+            if ($instance->runtime()->exists() && in_array($instance->status, [InstanceState::Reserved, InstanceState::SourceResolved], true)) {
+                $this->refreshForContainer($instance, forCreateRetry: true);
+            }
+
             return;
         }
         $definitions = ProcessDefinition::query()->where('project_id', $instance->project_id)
@@ -111,11 +119,16 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
      * Brings a container Instance's Processes up to the Project's development definitions before a deployment admits its units: a new
      * definition becomes a new record, and a changed one changes its record. The deployment installs and starts both.
      */
-    public function refreshForContainer(Instance $instance): void
+    public function refreshForContainer(Instance $instance, bool $forCreateRetry = false): void
     {
         $definitions = ProcessDefinition::query()->where('project_id', $instance->project_id)
             ->orderBy('name')->orderBy('id')->lockForUpdate()->get()
             ->filter(static fn (ProcessDefinition $definition): bool => in_array(DefinitionEnvironment::Development->value, $definition->environments, strict: true));
+        if ($forCreateRetry) {
+            // Create owns the entire Process set; active deployments retain removed definitions.
+            $instance->processes()->where(fn ($query) => $query->whereNull('source_definition_id')
+                ->orWhereNotIn('source_definition_id', $definitions->modelKeys()))->delete();
+        }
         if ($definitions->isEmpty()) {
             return;
         }
@@ -129,7 +142,11 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
                 continue;
             }
             $attributes = $this->attributesForDefinition($instance, $definition, $target);
-            if (! $this->processSpecifications->matches($record, $attributes)) {
+            if ($forCreateRetry) {
+                $record->forceFill(['name' => $definition->name, 'desired_state' => DesiredProcessState::Running,
+                    'status' => LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null]);
+            }
+            if ($record->isDirty() || ! $this->processSpecifications->matches($record, $attributes)) {
                 $record->forceFill([...$attributes, 'status' => LifecycleStatus::Provisioning])->save();
             }
         }
