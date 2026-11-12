@@ -558,6 +558,17 @@ The `Swamp execution copy unavailable` warning records the public vault and key 
 
 Operation shows return recorded state. They make no Swamp request. The terminal event and the minute sweep queue the reconciler. It reads each declared terminal result and applies the kind's projection. Fleet rollout and CLI converge have no selector and keep the bounded generic failure probe in that job.
 
+Each completed pass records its end time, duration, and the count and oldest completion time of bound runs proven terminal whose Operations still need settlement. It writes once in the existing collection state, including empty passes and passes with an individual settlement failure. Failed reads, running runs and unbound starts provide no terminal proof. A timeout or a migration settlement wait alone is no proof either.
+
+[`gateway:status`](/cli/gateway/status) adds two signals on the Gateway Node, under the usual Node access rules. Both use five minutes, allowing five scheduled passes. Before the first recorded pass, the stalled signal requires a registered native Operation in `queued`, `running` or `waiting` state for more than five minutes. With nothing open, a new installation shows no signal:
+
+| Code | Meaning | First action |
+| --- | --- | --- |
+| `gateway.operation_reconcile_stalled` | The last completed pass is more than five minutes old; `since` is its end, or null before the first pass | Check the scheduler and Horizon Processes, then the `operations` queue and failed jobs. Dispatch alone does not prove that a worker ran the pass |
+| `gateway.operation_settlement_stuck` | A pass proved a bound run terminal, but its Operation still needs settlement more than five minutes after that run completed. `since` is the oldest such completion; `count` counts these Operations | Read the Gateway reconciliation warnings and inspect the affected Operation's recorded result and terminal history. Check projection failures before retrying work |
+
+A later completed pass with no ended-but-unsettled runs clears the settlement signal. A deliberate migration settlement window stays separate: only a proven terminal run that remains unsettled is counted. A failed state write logs one warning without failing the pass; its previous timestamp can then raise the stalled signal. No signal records Operation inputs or remote text.
+
 The reconciler checks the exact run UUID, workflow name, Operation ID, kind and root Node. Missing or invalid history leaves an in-budget Operation pending. The job enforces its deadline when no terminal result is readable. Already-closed results stay as recorded; there is no backfill. Native terminal failure does not prove that every partial Node effect stopped.
 
 The internal legacy intent GET refuses kinds with full workflow inputs before calling their input builder. Submission already supplies their input through `DirectOperation::workflowInputs`. Only the two Fleet kinds still use the legacy GET; it returns stored Nodes and commit without a Swamp call.

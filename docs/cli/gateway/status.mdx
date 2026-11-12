@@ -22,4 +22,11 @@ Human output shows the collection time, the last run duration when known, and on
 
 A last run longer than 1,000 ms adds `gateway.doctor_collection_slow` for the Gateway Node, with count 1, the collection time as `since` and `newest_since`, and a null resource. It follows the same Node access and disappears after a run at or below that limit. This group comes from collection state; it creates no fingerprint or task.
 
+Two more Gateway Node groups report [Operation reconciliation health](/reference/operations#recover-a-terminal-native-result). They use the same Node access and have a null resource:
+
+| Code | Meaning |
+| --- | --- |
+| `gateway.operation_reconcile_stalled` | No pass completed within five minutes. Before the first pass, a native Operation must have been open for more than five minutes. Count is 1; `since` and `newest_since` are the last pass end, or null before the first pass |
+| `gateway.operation_settlement_stuck` | A proven terminal run remains unsettled more than five minutes after completion. Count is the number of affected Operations; `since` and `newest_since` are their oldest run completion. A later pass with none clears it |
+
 The command fails with `gateway.profile_missing` when no profile is active and with `gateway.unreachable` when the Gateway does not answer. A Gateway response without an error code uses `gateway.request_failed`; transport failures use `gateway.unreachable`.
