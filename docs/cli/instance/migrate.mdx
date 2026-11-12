@@ -41,6 +41,8 @@ Orbit first resolves the same source credential as deploy and reads the Project'
 
 The whole-run budget is 5,700 seconds. It covers the declared workflow timeouts, including Node preparation, restoration and cleanup, rounded up to five minutes, plus 600 seconds for admission and settlement.
 
+A previous migrate that awaits settlement refuses a new admission with `instance.migrate_settlement_pending` (409). The response names the previous Operation and its hold-limit time. Retry after the reconciler settles it. The existing 60-minute hold limit after expiry stays in force. At that limit, a result the reconciler still cannot read ends with `instance.migrate_result_unavailable` and releases the Gateway hold. Orbit keeps the container and address reservation; it does not claim that the move restored the checkout.
+
 The attached targets in [instance:show](/cli/instance/show) are the connections migrate reads: it grants and probes their network endpoints; SQLite files move with the checkout.
 
 ## What moves

@@ -25,6 +25,7 @@ sequenceDiagram
   %%> If it never starts:
   %%> - cancellation or admission expiry frees the new reservation and releases deferred Schedule fires under the Instance lock; an uncertain start keeps its reservation
   %%> Requirements:
+  %%> - a previous migrate must be settled by the reconciler; otherwise instance.migrate_settlement_pending (409) names its Operation and hold limit; retry after settlement
   %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
   %%> - a non-default Instance needs its Project's default on the same Node and its own source identity; no default seed or snapshot is consumed
   %%> - the Instance has only ordinary systemd or supported `vp-dev` Processes, no unfinished deployment or Process operation/runtime cleanup and no Route beside its own; a non-default Instance needs Conn and the model router, as a clone does
@@ -140,7 +141,7 @@ sequenceDiagram
     %%> - the checkout and database remain in place
     SW--xGW: Run failed<br/>failed step, error_code
     Note over GW: Project native end state
-    %%> - showing the Operation or admitting the next migrate settles native moved/restored/ready after expiry; a restored runtime reservation is removed only while this Operation owns it
+    %%> - the reconciler settles native moved/restored/ready after expiry; shows return recorded state, and admission waits for settlement
     %%> - an independent phase failure keeps its code; deadline abort stays failed/`operation.timed_out`, user abort stays cancelled
     %%> - a native finish supplies step statuses and times, even when no events streamed
     %%> Retry:

@@ -30,6 +30,7 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -51,6 +52,10 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         $refused = ! isset($operation->state['swamp_run_id']) && ($operation->state['native_start_not_submitted'] ?? false) === true;
         if ($instance !== null && ($unstarted || $refused) && ($operation->input['had_runtime_reservation'] ?? false) !== true) {
             $instance->runtime()->where('operation_id', $operation->id)->delete();
+        }
+        if (($unstarted || $refused) && is_array($operation->state['native_timeout'] ?? null)) {
+            app(OperationStore::class)->change($operation, ['state' => [...$operation->state,
+                'native_timeout' => [...ValidatedData::object($operation->state['native_timeout']), 'no_run_verified_at' => now()->toISOString()]]]);
         }
         app(DeferredMigrationScheduleRuns::class)->release($operation, targetAvailable: $instance !== null);
     }
@@ -95,30 +100,53 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         ]];
     }
 
-    /** Read a late migrate finish only when its Operation is shown or its Instance is admitted again. */
-    public function settle(Operation $operation): Operation
+    /** Keep the existing full hour from the recorded expiry; no failed read renews it. */
+    public static function settlementLimit(Operation $operation): ?CarbonImmutable
     {
-        $operation = app(ExpireOperationAction::class)->execute($operation);
-        if (! self::unsettled($operation)) {
-            return $operation;
+        $heldUntil = $operation->state['migrate_settlement_hold_limit'] ?? null;
+        if (is_string($heldUntil)) {
+            return CarbonImmutable::parse($heldUntil);
         }
-        $step = app(SwampCommandStep::class);
-        try {
-            if (! isset($operation->state['swamp_run_id'])) {
-                $step->recoverUnbound($operation);
-                $operation->refresh();
-            }
-            $run = $operation->state['swamp_run_id'] ?? null;
-            if (! is_string($run)) {
-                return $operation;
-            }
-            $selector = $this->direct->definition($operation->kind)['terminal_result']
-                ?? throw new \LogicException('Migrate requires a native terminal result.');
+        $expiry = $operation->error_code === 'operation.timed_out' && $operation->finished_at !== null
+            ? CarbonImmutable::instance($operation->finished_at) : OperationRunBudgets::deadline($operation);
 
-            return $step->projectTerminal($operation, ['id' => $run], $selector, atDeadline: true);
-        } catch (ResourceOperationException) {
-            return $operation->refresh();
-        }
+        return $expiry?->addMinutes(ExpireOperationAction::HoldMinutes);
+    }
+
+    /** Remember the first expiry's hold limit before any late-result read can reopen it. */
+    public function rememberSettlementLimit(Operation $operation): void
+    {
+        DB::transaction(function () use ($operation): void {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            if (self::unsettled($current) && ! isset($current->state['migrate_settlement_hold_limit'])) {
+                app(OperationStore::class)->change($current, ['state' => [...($current->state ?? []),
+                    'migrate_settlement_hold_limit' => self::settlementLimit($current)?->toISOString()]]);
+            }
+        });
+    }
+
+    /** The reconciler ends result recovery at the existing hold limit without claiming physical restoration. */
+    public function endUnavailable(Operation $operation): void
+    {
+        DB::transaction(function () use ($operation): void {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            if (! self::unsettled($current) || (self::settlementLimit($current)?->isFuture() ?? true)) {
+                return;
+            }
+            app(OperationStore::class)->change($current, [
+                'error_code' => 'instance.migrate_result_unavailable', 'lock_key' => null,
+                'result' => [...($current->result ?? []), 'instance_id' => $current->target_id,
+                    'error_code' => 'instance.migrate_result_unavailable'],
+                'state' => [...($current->state ?? []),
+                    'native_failure' => [...ValidatedData::object($current->state['native_failure'] ?? []),
+                        'detail' => 'The reconciler could not read the migrate result before its target hold limit. The container and address reservation remain.',
+                        'stderr_recorded' => false],
+                    'native_timeout' => [
+                        ...ValidatedData::object($current->state['native_timeout'] ?? []),
+                        'native_terminal_status' => 'unproven', 'result_unavailable_at' => now()->toISOString(),
+                    ]],
+            ]);
+        });
     }
 
     public function apply(Operation $operation, array $data): Operation
