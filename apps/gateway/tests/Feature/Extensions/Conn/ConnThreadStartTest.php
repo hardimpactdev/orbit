@@ -18,6 +18,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitBranchName;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Processes\CommandResult;
@@ -1336,3 +1337,53 @@ it('refuses a changed source identity between the remote read and reservation wi
         ->assertStatus(502)->assertJsonPath('error.code', 'source.head_unavailable');
     expect(threadBranchCounts())->toBe($before);
 });
+
+it('refuses ref-like and malformed explicit branch names before any remote read or reservation', function (string $value, bool $sharedValid, string $mode): void {
+    expect(GitBranchName::isValid($value))->toBe($sharedValid);
+    $default = threadDefault($this->beast, 'tool');
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldNotReceive('run');
+    app()->instance(ProcessRunner::class, $runner);
+    $before = threadBranchCounts();
+    $field = $mode === 'new' ? 'from' : 'name';
+
+    threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login', 'branch' => ['mode' => $mode, $field => $value]])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')->assertJsonValidationErrors('branch.'.$field, 'error.details');
+
+    expect(threadBranchCounts())->toBe($before);
+})->with([
+    'full local ref' => ['refs/heads/x', true],
+    'remote tracking ref' => ['refs/remotes/origin/x', true],
+    'leading dash' => ['-x', false],
+    'double dot' => ['x..y', false],
+    'reflog syntax' => ['x@{y', false],
+    'lock suffix' => ['feature.lock', false],
+    'trailing slash' => ['feature/', false],
+])->with(['new', 'existing']);
+
+it('accepts ordinary nested branch names without treating embedded ref words as prefixes', function (string $value, string $mode): void {
+    $default = threadDefault($this->beast, 'tool');
+    threadBranchRemote([$value]);
+    $field = $mode === 'new' ? 'from' : 'name';
+
+    threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login', 'branch' => ['mode' => $mode, $field => $value]])
+        ->assertAccepted();
+})->with(['refs-fix/x', 'heads-up/x', 'feature/refs/heads/x', 'feature/heads/x'])->with(['new', 'existing']);
+
+it('accepts heads/x as a branch name for explicit branch selection', function (string $mode): void {
+    $default = threadDefault($this->beast, 'tool');
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldReceive('run')->once()->with(Mockery::on(static fn ($call): bool => in_array('ls-remote', $call->arguments, true)))
+        ->andReturn(new CommandResult(0, str_repeat('a', 40)."\trefs/heads/heads/x\n".str_repeat('b', 40)."\trefs/heads/x\n", '', 1, false));
+    app()->instance(ProcessRunner::class, $runner);
+    $field = $mode === 'new' ? 'from' : 'name';
+
+    $response = threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login', 'branch' => ['mode' => $mode, $field => 'heads/x']])
+        ->assertAccepted();
+
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    $selection = ['mode' => $mode, 'target' => $mode === 'new' ? 'fix-login' : 'heads/x', 'base' => $mode === 'new' ? 'heads/x' : null,
+        'source_sha' => str_repeat('a', 40)];
+    expect($operation->input['branch_selection'])->toBe($selection)
+        ->and($operation->input['direct_provisioning']['container']['branch_selection'])->toBe($selection);
+})->with(['new', 'existing']);
