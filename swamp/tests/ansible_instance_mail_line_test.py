@@ -20,6 +20,7 @@ class MailLineTest(unittest.TestCase):
         self.envfile = self.root / '.env'
         self.calls = self.root / 'calls.json'
         self.calls.write_text('[]')
+        (self.root / 'file-actions.json').write_text('[]')
         self.bin = self.root / 'bin'
         self.bin.mkdir()
         fake = self.bin / 'incus'
@@ -28,6 +29,18 @@ import json, os, subprocess, sys
 from pathlib import Path
 root = Path(os.environ['MAIL_FIXTURE'])
 args = sys.argv[1:]
+actions = json.loads((root / 'file-actions.json').read_text())
+if 'file' in args and 'delete' in args:
+    if args[-1] != 'fixture/srv/workspace/.env.orbit-mail':
+        sys.exit(92)
+    actions.append({'action': 'delete', 'path': args[-1], 'stopped': (root / 'stopped').exists()})
+    (root / 'file-actions.json').write_text(json.dumps(actions))
+    (root / '.env.orbit-mail').unlink(missing_ok=True)
+    sys.exit(0)
+actions.append({'action': 'exec', 'stopped': (root / 'stopped').exists()})
+(root / 'file-actions.json').write_text(json.dumps(actions))
+if (root / 'stopped').exists():
+    sys.exit(93)
 if 'exec' not in args:
     sys.exit(91)
 args = args[args.index('--') + 1:]
@@ -41,6 +54,20 @@ if args[:2] == ['systemctl', 'try-restart']:
 sys.exit(subprocess.run(args).returncode)
 ''')
         fake.chmod(0o755)
+        # Kill the actual replacement shell at its first command after cat has staged all bytes.
+        chown = self.bin / 'chown'
+        chown.write_text('''#!/usr/bin/python3
+import json, os, signal, sys
+from pathlib import Path
+root = Path(os.environ['MAIL_FIXTURE'])
+if (root / 'interrupt-after-stage').exists():
+    (root / 'staged-names.json').write_text(json.dumps([Path(sys.argv[-1]).name]))
+    (root / 'stopped').touch()
+    os.kill(os.getppid(), signal.SIGKILL)
+    sys.exit(1)
+os.execv('/usr/bin/chown', ['chown', *sys.argv[1:]])
+''')
+        chown.chmod(0o755)
         self.env = {**os.environ, 'PATH': str(self.bin) + ':' + os.environ['PATH'], 'MAIL_FIXTURE': str(self.root),
                     'ANSIBLE_NOCOLOR': '1', 'ANSIBLE_STDOUT_CALLBACK': 'default', 'ANSIBLE_COLLECTIONS_PATH': str(self.root / 'collections'),
                     'ORBIT_RUN': str(self.root)}
@@ -77,6 +104,14 @@ sys.exit(subprocess.run(args).returncode)
             (b"OTHER='first\nMAIL_MAILER=log\nlast'", [2]),
             (b'\xef\xbb\xbfMAIL_MAILER=log', [1]),
             (b'MAIL_MAILER=log\r', [1]),
+            (b'MAIL_MAILER=log\n\x0bMAIL_MAILER=ses\n', [1, 2]),
+            (b'\x0bMAIL_MAILER=ses\nMAIL_MAILER=log\n', [1, 2]),
+            (b'MAIL_MAILER=log\n\x00MAIL_MAILER=ses\n', [1, 2]),
+            (b'MAIL_MAILER=log\n\rMAIL_MAILER=ses\n', [1, 2]),
+            (b'MAIL_MAILER=log\nexport\x0cMAIL_MAILER=ses\n', [1, 2]),
+            (b'# mentions MAIL_MAILER\nMAIL_MAILER=log\n', [1, 2]),
+            (b'OTHER=MAIL_MAILER\nMAIL_MAILER=log\n', [1, 2]),
+            (b'OTHER=MAIL_MAILER-MAIL_MAILER\n', [1, 1]),
         ]
         for before, numbers in cases:
             self.envfile.write_bytes(before)
@@ -84,12 +119,14 @@ sys.exit(subprocess.run(args).returncode)
             self.assertEqual(self.run_rule(), {'status': 'left_as_written', 'lines': numbers})
             self.assertTrue(self.envfile.read_bytes() == before)
             self.assertEqual(self.envfile.stat().st_mtime_ns, stamp)
+            self.assertEqual(json.loads(self.calls.read_text()), [])
 
     def test_missing_key_missing_file_symlink_and_already_smtp_write_nothing(self):
         self.assertEqual(self.run_rule(), {'status': 'not_present'})
         before = b'# MAIL_MAILER=log\nDB_HOST=hand-choice'
-        self.assertEqual(self.run_rule(before), {'status': 'not_present'})
+        self.assertEqual(self.run_rule(before), {'status': 'left_as_written', 'lines': [1]})
         self.assertTrue(self.envfile.read_bytes() == before)
+        self.assertEqual(self.run_rule(b'# no key here\nDB_HOST=hand-choice'), {'status': 'not_present'})
         self.assertEqual(self.run_rule(b'MAIL_MAILER=smtp\r\n'), {'status': 'already_smtp'})
         target = self.root / 'target'
         target.write_bytes(b'MAIL_MAILER=log\n')
@@ -112,7 +149,7 @@ sys.exit(subprocess.run(args).returncode)
         self.assertNotEqual(after.st_ino, before.st_ino)
         self.assertEqual(list(self.root.glob('.env.*')), [])
 
-    def ansible(self, path_status='applied', php=True, failure=False):
+    def ansible(self, path_status='applied', php=True, failure=False, probe_preserved=False):
         import yaml
         tasks = self.root / 'tasks'
         tasks.mkdir(exist_ok=True)
@@ -128,6 +165,14 @@ sys.exit(subprocess.run(args).returncode)
                                             'units': ['orbit-frankenphp.service', 'orbit-process-42.service', 'orbit-process-stopped.service']},
                            'as_root': ['incus', 'exec', 'fixture', '--'], 'as_orbit': ['incus', 'exec', 'fixture', '--']}
         wrapper['vars']['intent'] = {}
+        if probe_preserved:
+            wrapper['post_tasks'] = [
+                {'name': 'Probe the real preserved-line rule independently of the skipped path',
+                 'ansible.builtin.include_tasks': 'tasks/instance-mail-line.yml'},
+                {'name': 'Keep only the public preserved-line receipt', 'ansible.builtin.copy':
+                 {'content': '{{ mailer_result | to_json }}', 'dest': str(self.root / 'preserved-result.json'), 'mode': '0600'},
+                 'changed_when': False},
+            ]
         play = self.root / 'play.yml'
         play.write_text(yaml.safe_dump([wrapper], sort_keys=False))
         executable = shutil.which('ansible-playbook')
@@ -151,21 +196,61 @@ sys.exit(subprocess.run(args).returncode)
         self.assertEqual(self.ansible('unchanged')['mailer'], {'status': 'already_smtp'})
         self.assertEqual(json.loads(self.calls.read_text()), ['orbit-frankenphp.service', 'orbit-process-42.service'])
         self.assertEqual((self.root / 'config-clear').read_text(), 'called')
-        self.envfile.write_bytes(before)
-        self.assertNotIn('mailer', self.ansible('skipped'))
-        self.assertTrue(self.envfile.read_bytes() == before)
+        preserved = b'# MAIL_MAILER is mentioned here\n' + before
+        self.envfile.write_bytes(preserved)
+        self.assertNotIn('mailer', self.ansible('skipped', probe_preserved=True))
+        self.assertEqual(json.loads((self.root / 'preserved-result.json').read_text()),
+                         {'status': 'left_as_written', 'lines': [1, 2]})
+        self.assertTrue(self.envfile.read_bytes() == preserved)
         self.assertEqual(json.loads(self.calls.read_text()), ['orbit-frankenphp.service', 'orbit-process-42.service'])
 
     def test_failed_transfer_preserves_file_and_returns_only_a_code(self):
         before = b'MAIL_MAILER=log\n'
         self.envfile.write_bytes(before)
-        (self.bin / 'incus').chmod(0o644)
+        (self.bin / 'incus').write_text('#!/bin/sh\nexit 1\n')
         result = subprocess.run([sys.executable, '-c', SOURCE.read_text(), 'fixture', 'fixture'],
                                 env=self.env, capture_output=True, check=False)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(json.loads(result.stdout), {'error_code': 'env.configuration_invalid'})
         self.assertEqual(result.stderr, b'')
         self.assertTrue(self.envfile.read_bytes() == before)
+
+    def test_interruption_after_staging_cleans_the_fixed_name_even_with_stopped_guest(self):
+        before = b'MAIL_MAILER=log\nMAIL_PASSWORD=fixture-canary\n'
+        self.envfile.write_bytes(before)
+        (self.root / 'interrupt-after-stage').touch()
+        result = subprocess.run([sys.executable, '-c', SOURCE.read_text(), 'fixture', 'fixture'],
+                                env=self.env, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(json.loads(result.stdout), {'error_code': 'env.configuration_invalid'})
+        self.assertEqual(result.stderr, b'')
+        self.assertTrue((self.root / 'stopped').exists())
+        self.assertTrue(self.envfile.read_bytes() == before)
+        self.assertEqual(list(self.root.glob('.env.*')), [])
+        self.assertEqual(json.loads((self.root / 'staged-names.json').read_text()), ['.env.orbit-mail'])
+        actions = json.loads((self.root / 'file-actions.json').read_text())
+        self.assertEqual(actions[0]['action'], 'delete')
+        self.assertEqual(actions[-1], {'action': 'delete', 'path': 'fixture/srv/workspace/.env.orbit-mail', 'stopped': True})
+        self.assertEqual(json.loads(self.calls.read_text()), [])
+
+    def test_next_run_removes_a_leftover_before_even_inspecting_a_stopped_guest(self):
+        before = b'MAIL_MAILER=log\n'
+        self.envfile.write_bytes(before)
+        (self.root / '.env.orbit-mail').write_bytes(b'opaque prior staging')
+        (self.root / 'stopped').touch()
+        result = subprocess.run([sys.executable, '-c', SOURCE.read_text(), 'fixture', 'fixture'],
+                                env=self.env, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(json.loads(result.stdout), {'error_code': 'env.configuration_invalid'})
+        self.assertEqual(result.stderr, b'')
+        self.assertEqual(list(self.root.glob('.env.*')), [])
+        self.assertTrue(self.envfile.read_bytes() == before)
+        actions = json.loads((self.root / 'file-actions.json').read_text())
+        self.assertEqual(actions[0], {'action': 'delete', 'path': 'fixture/srv/workspace/.env.orbit-mail', 'stopped': True})
+        self.assertEqual(actions[1]['action'], 'exec')
+        (self.root / 'stopped').unlink()
+        self.assertEqual(self.run_rule()['status'], 'changed')
+        self.assertEqual(list(self.root.glob('.env.*')), [])
 
 
 if __name__ == '__main__':
