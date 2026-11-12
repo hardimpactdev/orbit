@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\NodeServiceTargetOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -30,6 +31,9 @@ final readonly class DetachInstanceNodeServiceTargetAction
             $target = $instance->nodeServiceTargets()->whereKey($targetId)->first();
             if (! $target instanceof InstanceNodeServiceTarget) {
                 throw new ResourceOperationException('instance.node_service_target_missing', 'The Node service target is not attached to this Instance.', 404);
+            }
+            if ($instance->runtime()->exists()) {
+                return app(NodeServiceTargetOperation::class)->start($instance, $target, $caller, $requestId);
             }
             $result = [...AttachInstanceNodeServiceTargetAction::data($target, true)->toArray(), 'detached' => true];
             $input = ['instance_id' => $instance->id, 'target_id' => $target->id, 'attachment' => $result];

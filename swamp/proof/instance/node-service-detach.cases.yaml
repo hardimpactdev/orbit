@@ -1,0 +1,21 @@
+command: instance:node-service:detach
+chart: instance/node-service-detach
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+uncovered:
+  main: "Fixture Node Process and container: withdraw only the detached target, retain a shared endpoint, delete the record only after success."
+  repeat: "Repeated application changes nothing; a partial attempt completes on retry."
+  refusals: "Stopped containers are not started; busy, foreign listener/unit and unavailable targets leave serving workloads unchanged."
+cases:
+  - id: invalid-id
+    batch: fresh-fleet
+    covers: []
+    summary: Reject an invalid Instance locally.
+    act:
+      - cli:
+          run: [instance:node-service:detach, invalid]
+          forms: [json, human]
+          expect: {exit: 1, code: instance.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}

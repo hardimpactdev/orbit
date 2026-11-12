@@ -1000,3 +1000,5 @@ Route site publication batches certificate, link, account-copy, trust and Caddy 
 A [migrated Schedule](/reference/schedules#container-timers) uses the same existing SSH account and Incus access to read its container journal and timer state. Its local timer runs only while the container runs, without a Node trigger or a new credential.
 
 Caddy publication validates a candidate before it replaces the live file, including the bootstrap Swamp front. Validation failure keeps the live bytes and skips reload; see [Caddy publication](/reference/caddy-configuration#native-publication).
+
+Explicit Instance Node service targets use the existing additive bridge admission path, without a role converge or helper reconciliation. Their own ACL rules and root-owned loopback proxies are applied in the container launch before application Processes. Shared translated tuples retain the database/mail host-reconciliation policy.
