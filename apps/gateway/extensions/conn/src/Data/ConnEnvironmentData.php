@@ -9,10 +9,12 @@ use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
+use Spatie\LaravelData\Optional;
 
 #[MapOutputName(SnakeCaseMapper::class)]
 final class ConnEnvironmentData extends Data
 {
+    /** @param array{state:string,reason:string}|Optional $git */
     public function __construct(
         public string $environmentId,
         public string $label,
@@ -32,9 +34,10 @@ final class ConnEnvironmentData extends Data
         public ?string $nodeName,
         public ?string $instanceUrl,
         public ?string $powerState,
+        public array|Optional $git = new Optional,
     ) {}
 
-    public static function fromModel(ConnEnvironment $environment): self
+    public static function fromModel(ConnEnvironment $environment, bool $includeGit = false): self
     {
         $environment->loadMissing(['node', 'instance.runtime', 'instance.project', 'instance.node', 'instance.routes']);
 
@@ -58,6 +61,9 @@ final class ConnEnvironmentData extends Data
             nodeName: $environment->instance?->node->name,
             instanceUrl: $environment->instance?->url(),
             powerState: $environment->instance?->runtime?->power_state->value,
+            // Only orbit-agent may collect Git facts; no container observations exist yet.
+            git: $includeGit && $environment->instance_id !== null
+                ? ['state' => 'unknown', 'reason' => 'not_observed'] : new Optional,
         );
     }
 }
