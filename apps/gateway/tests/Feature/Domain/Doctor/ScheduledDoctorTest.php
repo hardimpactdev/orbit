@@ -31,8 +31,10 @@ use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Database\Eloquent\Casts\Json;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -592,4 +594,84 @@ it('counts a late signal again after its window was evicted, retaining arrival o
     $collector->recordSignals($signals);
     $row->refresh();
     expect($row->occurrences)->toBe(289)->and($row->evidence['counted_blocks'])->toBe([...array_slice($blocks, 1), $current - 500]);
+});
+
+it('bounds the evidence decodes of a steady collection over a store with history', function (): void {
+    for ($i = 1; $i <= 15; $i++) {
+        $node = scheduledDoctorNode('node-'.$i, $i);
+        scheduledDoctorFacts($node);
+        if ($i === 1) {
+            for ($j = 1; $j <= 80; $j++) {
+                Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'process-'.$j,
+                    'runtime' => 'systemd', 'desired_state' => 'running', 'status' => 'active', 'runtime_config' => []]);
+            }
+        }
+    }
+    // 100 open rows that no current check visits, each with a filled history, as an older collection left them.
+    $blocks = range(5_926_000, 5_926_287);
+    $times = array_map(static fn (int $k): string => sprintf('2026-11-11T%02d:%02d:00.000000Z', intdiv($k, 12), ($k % 12) * 5), range(0, 19));
+    for ($k = 0; $k < 100; $k++) {
+        ProblemFingerprint::query()->create(['source' => ProblemSource::Doctor, 'fingerprint' => 'doctor#old'.$k, 'first_seen' => '2026-10-26 12:20:00',
+            'last_seen' => '2026-10-31 07:34:00', 'occurrences' => 400,
+            'evidence' => ['doctor_node' => (string) (($k % 15) + 1), 'doctor_code' => 'process.node_unreachable', 'doctor_family' => 'process',
+                'doctor_resource' => 'old'.$k, 'doctor_observed_at' => '2026-10-31T07:34:00.000000Z',
+                'observation_times' => $times, 'observation_counts' => array_fill(0, 20, 1), 'counted_blocks' => $blocks]]);
+    }
+    app(RunDoctorAction::class)->collectDoctor();
+    $this->travel(5)->minutes();
+    $this->view->putSubscriber(true, true, 15);
+    foreach (Node::query()->get() as $node) {
+        scheduledDoctorFacts($node);
+    }
+    $decodes = 0;
+    Json::decodeUsing(static function (mixed $value, ?bool $associative) use (&$decodes): mixed {
+        $decodes++;
+
+        return json_decode($value, $associative);
+    });
+    try {
+        app(RunDoctorAction::class)->collectDoctor();
+    } finally {
+        Json::decodeUsing(null);
+    }
+    fwrite(STDOUT, "\nDoctor collection evidence decodes (15 Nodes, 80 findings, 100 old rows, steady): {$decodes}\n");
+    // 180 rows. A few decodes per row is the work; a count that multiplies rows by Nodes and families is the fault.
+    expect($decodes)->toBeLessThanOrEqual(180 * 6);
+});
+
+it('trims a sample to the same result as a comparator that parses both sides', function (array $times): void {
+    $counts = array_keys($times);
+    // The comparator this helper had before it parsed each time once.
+    $stamp = static function (string $time): int {
+        try {
+            return Carbon::parse($time)->utc()->getTimestamp();
+        } catch (Throwable) {
+            return 0;
+        }
+    };
+    $order = array_keys($times);
+    usort($order, static fn (int $left, int $right): int => $stamp($times[$left]) <=> $stamp($times[$right]));
+    $expected = [[], []];
+    foreach (array_slice($order, -20) as $index) {
+        $expected[0][] = $times[$index];
+        $expected[1][] = $counts[$index];
+    }
+    $trim = new ReflectionMethod(ProblemCollector::class, 'trimSample');
+    expect($trim->invoke(app(ProblemCollector::class), $times, $counts))->toBe($expected);
+})->with([
+    'ordered, 21 windows' => [array_map(static fn (int $k): string => sprintf('2026-11-12T%02d:%02d:00.000000Z', intdiv($k, 12), ($k % 12) * 5), range(0, 20))],
+    'unordered, 25 windows' => [array_map(static fn (int $k): string => sprintf('2026-11-12T%02d:%02d:00.000000Z', intdiv(($k * 7) % 25, 12), ((($k * 7) % 25) % 12) * 5), range(0, 24))],
+    'equal times keep their arrival order' => [[...array_fill(0, 12, '2026-11-12T10:00:00.000000Z'), ...array_fill(0, 12, '2026-11-12T09:00:00.000000Z')]],
+    'legacy formats and zones' => [['2026-11-12 10:00:00', '2026-11-12T09:00:00+02:00', '2026-11-12T08:30:00Z', '12 November 2026 07:00', '2026-11-12T10:00:00.000000Z', '@1794300000']],
+    'malformed times sort first' => [['2026-11-12T10:00:00Z', 'not a time', '', '2026-13-45T99:99:99Z', '2026-11-12T09:00:00Z', 'not a time', ...array_map(static fn (int $k): string => sprintf('2026-11-11T00:%02d:00Z', $k), range(0, 19))]],
+    'fewer than 20' => [['2026-11-12T10:05:00Z', '2026-11-12T10:00:00Z']],
+    'empty' => [[]],
+]);
+
+it('reads a relative sample time once per trim', function (): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-12T12:00:00Z'));
+    $trim = new ReflectionMethod(ProblemCollector::class, 'trimSample');
+    // 'now' is 12:00:00 for the whole trim, so it sorts between the two absolute times whatever the sort compares first.
+    expect($trim->invoke(app(ProblemCollector::class), ['2026-11-12T11:50:00Z', 'now', '2026-11-12T12:00:01Z'], [10, 20, 30]))
+        ->toBe([['2026-11-12T11:50:00Z', 'now', '2026-11-12T12:00:01Z'], [10, 20, 30]]);
 });

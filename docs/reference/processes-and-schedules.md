@@ -18,6 +18,8 @@ A Process is one long-running systemd service or Docker container that Orbit man
 
 An Instance container’s Process start and restart use nonblocking systemd jobs with bounded readiness checks. The [container Process contract](/reference/development-containers#processes) defines their network ordering and runtime.
 
+A retained container create retry derives its Processes from the Project's current development definitions at admission. Changed definitions update their Processes, and removed definitions remove theirs. See [create retry](/reference/development-containers#processes) for the units, environment files and recovery result.
+
 ## Execution
 
 Process create, update, start, stop, restart, and destroy record an Operation and return HTTP 202. The Gateway validates the request and stores intent. Swamp executes the local Node actions and returns a bounded native result. The Gateway projects that result into the Process lifecycle or removes its record. After an install or control command, Swamp reads the observed runtime state. The Gateway uses that result for status events and the Process status index. Reads keep their existing Gateway paths. An Idempotency-Key replays the admitted Operation, including after removal.

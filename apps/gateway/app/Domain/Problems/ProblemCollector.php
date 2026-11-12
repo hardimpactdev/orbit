@@ -179,7 +179,9 @@ final readonly class ProblemCollector
                 $row = $rows->get($fingerprint) ?? new ProblemFingerprint([
                     'fingerprint' => $fingerprint, 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => [],
                 ]);
-                $evidence = $row->evidence;
+                // Decoded once: an array-cast attribute is decoded again on every read.
+                $current = $row->evidence;
+                $evidence = $current;
                 unset($evidence['resolved_at'], $evidence['resolution']);
                 $occurrences = $row->occurrences;
                 $settled = $this->evidence->legacyEpisode($evidence, ProblemSource::Doctor);
@@ -207,9 +209,9 @@ final readonly class ProblemCollector
                 $stored['doctor_issue_count'] = $issue['doctor_issue_count'];
                 $history = ['observation_times' => $times, 'observation_counts' => $counts, 'counted_blocks' => $blocks];
                 $stored = [...$stored, ...$history];
-                $unchanged = $row->exists && $row->first_seen !== null && ! isset($row->evidence['resolved_at'])
+                $unchanged = $row->exists && $row->first_seen !== null && ! isset($current['resolved_at'])
                     && array_all(array_diff_key($observation, ['doctor_observed_at' => true]),
-                        static fn (mixed $value, string $key): bool => array_key_exists($key, $row->evidence) && $row->evidence[$key] === $stored[$key]);
+                        static fn (mixed $value, string $key): bool => array_key_exists($key, $current) && $current[$key] === $stored[$key]);
                 $row->occurrences = $occurrences;
                 $row->first_seen ??= $seenAt;
                 $row->last_seen = $seenAt;
@@ -542,8 +544,13 @@ final readonly class ProblemCollector
      */
     private function trimSample(array $times, array $counts): array
     {
+        // Parse each time once. A comparator that parses both sides costs about eight times as many parses for 21 samples.
+        // A time that does not parse sorts as 0, first, as before. Every writer stores absolute times. A relative
+        // string in retained history, such as 'now', is read once per trim; the comparator read it at each
+        // comparison, so its place could differ when the clock moved during one sort.
+        $stamps = array_map(fn (string $time): int => $this->unixTime($time) ?? 0, $times);
         $order = array_keys($times);
-        usort($order, fn (int $left, int $right): int => ($this->unixTime($times[$left]) ?? 0) <=> ($this->unixTime($times[$right]) ?? 0));
+        usort($order, static fn (int $left, int $right): int => $stamps[$left] <=> $stamps[$right]);
         $trimmedTimes = [];
         $trimmedCounts = [];
 

@@ -771,3 +771,122 @@ fn removal_fails_when_a_tree_cannot_be_deleted() {
         Err(failed("certificate-remove"))
     );
 }
+
+#[test]
+fn request_leaf_is_linux_only() {
+    assert_eq!(
+        RequestLeaf::privilege(Platform::Linux),
+        Some(Privilege::Owner)
+    );
+    assert_eq!(RequestLeaf::privilege(Platform::Macos), None);
+}
+
+#[test]
+fn a_253_character_address_is_requested_signed_published_and_reused() {
+    let domain = format!(
+        "{}.{}.{}.{}",
+        "n".repeat(63),
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(61)
+    );
+    assert_eq!(domain.len(), 253);
+    let mut sandbox = Sandbox::new();
+    let mut input = sandbox.leaf_input("long");
+    input.domain = domain.clone();
+
+    let Requested::Request { request: csr } =
+        request(&sandbox.files, &mut sandbox.host, &input).unwrap()
+    else {
+        panic!("a fresh leaf was expected");
+    };
+    fs::write(sandbox.signer.join("request.pem"), &csr).unwrap();
+    let inspection = Process::new("openssl")
+        .args(["req", "-in", "request.pem", "-noout", "-text", "-verify"])
+        .current_dir(&sandbox.signer)
+        .output()
+        .unwrap();
+    assert!(inspection.status.success());
+    let text = String::from_utf8(inspection.stdout).unwrap();
+    assert!(
+        text.contains("CN=Orbit") || text.contains("CN = Orbit"),
+        "{text}"
+    );
+    assert!(text.contains(&format!("DNS:{domain}")), "{text}");
+    assert_eq!(text.matches("DNS:").count(), 1);
+    assert!(text.contains("Public-Key: (2048 bit)"), "{text}");
+
+    let certificate = sandbox.sign(&csr, &domain);
+    let published = PublishInput {
+        leaf: LeafInput {
+            domain: domain.clone(),
+            ..sandbox.leaf_input("long")
+        },
+        certificate,
+        root_certificate: sandbox.root_certificate.clone(),
+    };
+    assert_eq!(
+        publish(&sandbox.files, &mut sandbox.host, &published),
+        Ok(Published {})
+    );
+    assert_eq!(
+        request(&sandbox.files, &mut sandbox.host, &input),
+        Ok(Requested::Current {})
+    );
+}
+
+#[test]
+fn malformed_domains_refuse_before_creating_or_publishing_any_leaf_files() {
+    let mut sandbox = Sandbox::new();
+    let long = format!(
+        "{}.{}.{}.{}",
+        "n".repeat(63),
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(62)
+    );
+    assert_eq!(long.len(), 254);
+    for domain in [
+        "safe.test,other.test",
+        "safe.test,DNS:other.test",
+        "safe.test,IP:127.0.0.1",
+        "DNS:safe.test",
+        "IP:127.0.0.1",
+        "safe.test\nbasicConstraints=critical,CA:TRUE",
+        "safe..test",
+        "-safe.test",
+        "safe-.test",
+        "safe.test/other",
+        "",
+        &long,
+    ] {
+        let mut input = sandbox.leaf_input("invalid");
+        input.domain = domain.into();
+
+        assert_eq!(
+            request(&sandbox.files, &mut sandbox.host, &input),
+            Err(failed("certificate-input")),
+            "{domain:?}"
+        );
+        let published = PublishInput {
+            leaf: input,
+            certificate: String::new(),
+            root_certificate: sandbox.root_certificate.clone(),
+        };
+        assert_eq!(
+            publish(&sandbox.files, &mut sandbox.host, &published),
+            Err(failed("certificate-input")),
+            "{domain:?}"
+        );
+        assert!(sandbox.host.calls.is_empty(), "{domain:?}: no host action");
+        assert!(!sandbox.user_tree().exists(), "{domain:?}: no managed leaf");
+        assert!(
+            !sandbox.path(CADDY_ROOT).exists(),
+            "{domain:?}: no Caddy leaf"
+        );
+        assert!(
+            !sandbox.path(TRUST_ANCHOR).exists(),
+            "{domain:?}: no trust write"
+        );
+    }
+}
