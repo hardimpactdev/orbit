@@ -200,3 +200,97 @@ Deno.test("the workflow has ordered phase invocations and an always-dependent pr
     assertEquals(jobs.find((job) => job.name === "check")?.steps[0].name, "Check the Node");
     assertEquals(workflow.jobs.find((job) => job.name === "converge")?.dependsOn, [{ job: "check", condition: { type: "always" } }]);
 });
+
+// Captured with pinned ansible-core 2.20.11 and ansible.posix.json, then scrubbed
+// of host paths, interpreter facts, UUIDs and timestamps. Mutations below keep
+// its callback shape while covering other host results and privacy markers.
+const commandReport = JSON.parse(Deno.readTextFileSync(new URL("./fixtures/node-converge-command.json", import.meta.url)));
+const hiddenReport = JSON.parse(Deno.readTextFileSync(new URL("./fixtures/node-converge-hidden.json", import.meta.url)));
+const privateMarkers = ["LEAK_MSG", "LEAK_STDOUT", "LEAK_STDERR", "LEAK_CMD", "LEAK_ARGS", "LEAK_ITEM", "LEAK_HIDDEN"];
+const commandFailure = { task: "probe : Fail a command", role: null, host: "target", reason: "command_failed", rc: 7 } as const;
+
+async function failureReport(report: unknown, exitCode = 2) {
+    const folder = await Deno.makeTempDir();
+    try {
+        await reports(folder);
+        if (report !== undefined) await Deno.writeTextFile(`${folder}/roles.json`, typeof report === "string" ? report : JSON.stringify(report));
+        if (report === undefined) await Deno.remove(`${folder}/roles.json`);
+        await Deno.writeTextFile(`${folder}/roles-meta.json`, JSON.stringify({ exit_code: exitCode, elapsed_seconds: 1 }));
+        const result = await convergeResult(folder);
+        for (const marker of privateMarkers) assertEquals(JSON.stringify(result).includes(marker), false, marker);
+        return result;
+    } finally { await Deno.remove(folder, { recursive: true }); }
+}
+
+Deno.test("a failed role command exports only the first bounded task and return code", async () => {
+    assertEquals((await failureReport(commandReport)).failure, commandFailure);
+    const report = structuredClone(commandReport);
+    report.plays[0].tasks[0].task.role = "probe";
+    report.plays[0].tasks.push({ task: { name: "Second task" }, hosts: { target: { failed: true, rc: 9 } } });
+    assertEquals((await failureReport(report)).failure, { ...commandFailure, role: "probe" });
+});
+
+for (const [label, hostResult, expected] of [
+    ["unreachable", { unreachable: true, msg: "LEAK_MSG" }, { reason: "unreachable" }],
+    ["assert", { failed: true, action: "ansible.builtin.assert", assertion: "LEAK_ARGS", evaluated_to: false, msg: "LEAK_MSG" }, { reason: "assertion" }],
+    ["fail", { failed: true, action: "ansible.builtin.fail", msg: "LEAK_MSG" }, { reason: "assertion" }],
+    ["timeout", { failed: true, rc: 124, msg: "LEAK_MSG" }, { reason: "timeout" }],
+    ["module", { failed: true, msg: "LEAK_MSG" }, { reason: "module_failed" }],
+    ["unbounded rc", { failed: true, rc: 2147483648 }, { reason: "module_failed" }],
+] as const) {
+    Deno.test(`converge classifies ${label} without exporting host output`, async () => {
+        const report = structuredClone(commandReport);
+        report.plays[0].tasks[0].hosts.target = hostResult;
+        assertEquals((await failureReport(report)).failure, { task: commandFailure.task, role: null, host: "target", ...expected });
+    });
+}
+
+Deno.test("converge identifies the hub failure while target stats stay clean", async () => {
+    const report = structuredClone(commandReport);
+    report.plays[0].tasks[0].hosts = { hub: report.plays[0].tasks[0].hosts.target, target: { changed: false } };
+    report.stats.hub = report.stats.target;
+    report.stats.target = { changed: 0, failures: 0, unreachable: 0 };
+    assertEquals((await failureReport(report)).failure, { ...commandFailure, host: "hub" });
+});
+
+Deno.test("no_log and censored tasks hide names, roles and return codes", async () => {
+    assertEquals((await failureReport(hiddenReport)).failure, { task: null, role: null, host: "target", reason: "hidden" });
+    for (const scope of ["task", "result", "censored", "loop"]) {
+        const report = structuredClone(commandReport);
+        const row = report.plays[0].tasks[0];
+        row.task.name = "LEAK_HIDDEN";
+        row.task.role = "LEAK_HIDDEN";
+        if (scope === "task") row.task.no_log = true;
+        if (scope === "result") row.hosts.target._ansible_no_log = true;
+        if (scope === "censored") row.hosts.target.censored = "LEAK_HIDDEN";
+        if (scope === "loop") row.hosts.target.results = [{ _ansible_no_log: true, item: "LEAK_ITEM" }];
+        assertEquals((await failureReport(report)).failure, { task: null, role: null, host: "target", reason: "hidden" });
+    }
+});
+
+Deno.test("converge bounds task and role text and refuses host addresses", async () => {
+    const report = structuredClone(commandReport);
+    report.plays[0].tasks[0].task.name = "\u001b\n\u2603" + "x".repeat(120);
+    report.plays[0].tasks[0].task.role = "r".repeat(121);
+    assertEquals((await failureReport(report)).failure, { ...commandFailure, task: "???" + "x".repeat(117), role: "r".repeat(120) });
+    report.plays[0].tasks[0].hosts = { "192.0.2.1": { failed: true, rc: 7 } };
+    assertEquals(Object.hasOwn(await failureReport(report), "failure"), false);
+});
+
+Deno.test("unreadable or task-free failure reports never throw or invent a task", async () => {
+    for (const report of [undefined, "{", {}, { stats: commandReport.stats, plays: [{}] },
+        { stats: { target: { changed: 0, failures: 0, unreachable: 0 } }, plays: [{}] }]) {
+        const result = await failureReport(report);
+        assertEquals(result.failed_phase, "roles");
+        assertEquals(Object.hasOwn(result, "failure"), false);
+    }
+});
+
+Deno.test("successful converge results have no failure key", async () => {
+    const report = structuredClone(commandReport);
+    report.stats.target.failures = 0;
+    report.plays[0].tasks[0].hosts.target = { changed: false };
+    const result = await failureReport(report, 0);
+    assertEquals(result.failed_phase, undefined);
+    assertEquals(Object.hasOwn(result, "failure"), false);
+});

@@ -1804,6 +1804,8 @@ inputs = [
   "swamp/extensions/behaviors/operations/tools/native.ts",
   "swamp/scripts/instance_clone.py",
   "swamp/scripts/instance_clone_guest.py",
+  "swamp/tests/fixtures/node-converge-command.json",
+  "swamp/tests/fixtures/node-converge-hidden.json",
   "swamp/workflows/workflow-operation-node-converge-direct.yaml",
 ]
 

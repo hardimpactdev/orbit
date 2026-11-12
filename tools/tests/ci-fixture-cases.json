@@ -1511,7 +1511,7 @@
     ]
   },
   "swamp/tests/node_converge_test.ts": {
-    "source_sha256": "0c16e114d8301ba02f505cf2e65faa105003d98506b2092d93fe8186d628b4fa",
+    "source_sha256": "b5a3615352d159c2b442b332ea3594a1c3f7ed91da68d14ae7d6d1a626486cf7",
     "cases": [
       "converge reports all phases, live no-op counts and measured elapsed time; hub changes are not target changes",
       "converge stops reporting success at input and preserves the first failure",
@@ -1540,7 +1540,19 @@
       "an out-of-constraint candidate is rejected before returning write argv",
       "a protected package cannot produce a machine plan",
       "a failed Tool postcondition is not installed",
-      "the workflow has ordered phase invocations and an always-dependent private cleanup"
+      "the workflow has ordered phase invocations and an always-dependent private cleanup",
+      "a failed role command exports only the first bounded task and return code",
+      "converge classifies unreachable without exporting host output",
+      "converge classifies assert without exporting host output",
+      "converge classifies fail without exporting host output",
+      "converge classifies timeout without exporting host output",
+      "converge classifies module without exporting host output",
+      "converge classifies unbounded rc without exporting host output",
+      "converge identifies the hub failure while target stats stay clean",
+      "no_log and censored tasks hide names, roles and return codes",
+      "converge bounds task and role text and refuses host addresses",
+      "unreadable or task-free failure reports never throw or invent a task",
+      "successful converge results have no failure key"
     ]
   },
   "swamp/tests/node_network_hub_prune_test.ts": {
