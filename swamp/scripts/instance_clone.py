@@ -126,10 +126,11 @@ def main():
                 }):
                     # Only the guest's structured public receipt crosses; never its stderr.
                     public = {key: evidence[key] for key in ('error_code', 'process_failure', 'reason') if key in evidence}
-                    private_folder()
+                    owner = private_folder()
                     receipt = folder / 't3.json'
                     receipt.write_text(json.dumps(public))
                     receipt.chmod(0o600)
+                    os.chown(receipt, owner.pw_uid, owner.pw_gid)
                     raise RuntimeError(public['error_code'])
             # Only the guest's complete, output-free diagnostic may cross this boundary.
             diagnostic = result.stderr.strip()

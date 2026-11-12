@@ -1368,7 +1368,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "523a14c53f195c3f0f98a930d19f25af62c22008706a5d6bf726a60b599ee7a0",
+    "source_sha256": "523bd4f58544f250a3c795fc4ee0dc6afe8a9a1bfe9e4ef8505a44e6f373b3f8",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1389,7 +1389,6 @@
       "test_clone_uses_the_admitted_common_acl_name",
       "test_clone_refuses_unsafe_effective_nics_before_start",
       "test_guest_and_node_command_names_stay_in_sync",
-      "test_structured_process_failure_reaches_create_and_migrate_terminal_receipts",
       "test_preserves_only_the_guest_command_and_exit_code",
       "test_rejects_private_or_mismatched_guest_diagnostics",
       "test_node_command_failure_names_executable_and_exit_without_output"

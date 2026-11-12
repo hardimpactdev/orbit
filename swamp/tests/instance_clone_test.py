@@ -387,7 +387,7 @@ class CloneTest(unittest.TestCase):
                 ),
                 patch("sys.stdin", io.StringIO("PRIVATE-INPUT")),
                 patch("subprocess.run", command),
-                patch("os.chown"),
+                patch("os.chown") as ownership,
                 contextlib.redirect_stdout(output),
                 contextlib.redirect_stderr(error),
                 self.assertRaises(SystemExit) as exit_status,
@@ -397,13 +397,15 @@ class CloneTest(unittest.TestCase):
             self.assertEqual(output.getvalue(), "")
             self.assertNotIn("PRIVATE", error.getvalue())
             if evidence:
+                owner = pwd.getpwnam('agent')
+                ownership.assert_any_call(Path(folder) / 't3.json', owner.pw_uid, owner.pw_gid)
                 recorded = json.loads((Path(folder) / 't3.json').read_text())
                 self.assertEqual(recorded, evidence)
                 self.assertEqual((Path(folder) / 't3.json').stat().st_mode & 0o777, 0o600)
                 return recorded
             return error.getvalue()
 
-    def test_structured_process_failure_reaches_create_and_migrate_terminal_receipts(self):
+    def assert_structured_process_failure_reaches_create_and_migrate_terminal_receipts(self):
         evidence = {'error_code': 'instance.container_process_inactive', 'process_failure': {
             'unit': 'orbit-process-vp-dev.service', 'process_id': 19, 'ActiveState': 'failed',
             'SubState': 'failed', 'Result': 'exit-code', 'ExecMainStatus': 1, 'NRestarts': 5}}
@@ -472,6 +474,7 @@ console.log(JSON.stringify([JSON.parse(created.stdout), JSON.parse(migrated.stdo
                     + " exited 17\n"
                 )
                 self.assertEqual(self.invoke(diagnostic), diagnostic)
+        self.assert_structured_process_failure_reaches_create_and_migrate_terminal_receipts()
 
     def test_rejects_private_or_mismatched_guest_diagnostics(self):
         for stderr in [

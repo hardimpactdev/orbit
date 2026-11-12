@@ -610,7 +610,7 @@ jobs:
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: clone-sessions, condition: {type: always}}]
-        guard: ${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}
+        guard: ${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) || !("clone-sessions" in steps && steps["clone-sessions"].status in ["succeeded", "failed"]) }}
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
