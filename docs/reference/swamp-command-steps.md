@@ -158,6 +158,8 @@ Only kinds with `terminal_result` are followed through bound-root attachments an
 
 The native event connection and shared history reader accept messages and frames up to 8 MiB. Full run metadata and intent can exceed the Reverb client's 64 KiB message limit; Reverb keeps its existing limit. A run beyond the native bound cannot be projected through this connection and must not be treated as successful delivery.
 
+Each completed reconciliation pass records its time and duration and logs `Operation reconcile pass ran.` with its duration, open Operation count, and unsettled count. [`gateway:status`](/cli/gateway/status) exposes stored pass facts to peers with Gateway Node access. See [reconciliation health](/reference/operations#recover-a-terminal-native-result) for the facts and issue signals.
+
 A matching terminal frame is reduced to the Operation ID, bound run ID and actual native status. Laravel dispatches `ReconcileSwampOperations` for a pass; the pass reloads each Operation and its declaration and calls the same `SwampCommandStep` helper. There is no native execution command.
 
 A terminal child event requests the same shared reconciliation pass and keeps the parent attached. The reader verifies ancestry and the declared child result before recording evidence.

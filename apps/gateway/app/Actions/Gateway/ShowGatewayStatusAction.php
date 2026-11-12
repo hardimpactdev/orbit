@@ -41,6 +41,10 @@ final readonly class ShowGatewayStatusAction
     public function handle(?Node $consumer): GatewayStatusData
     {
         [$release, $sha] = $this->releases->current();
+        $observation = $consumer !== null ? ProblemCollectorState::query()->orderBy('id')->first()?->observation : null;
+        // Status explicitly includes the caller's own Node; other commands keep the shared grant rule.
+        $visibleIds = $consumer !== null ? array_fill_keys([$consumer->id, ...$this->access->accessibleNodeIds($consumer)], true) : [];
+        $gatewayId = $consumer !== null ? $this->access->activeGatewayId() : null;
 
         return new GatewayStatusData(
             name: 'orbit-gateway',
@@ -52,14 +56,17 @@ final readonly class ShowGatewayStatusAction
             release: $release,
             releaseSha: $sha,
             autoRelease: $consumer !== null ? $this->autoRelease() : null,
-            doctor: $consumer !== null ? $this->doctor($consumer) : null,
+            doctor: $consumer !== null ? $this->doctor($observation, $visibleIds) : null,
+            reconcile: $gatewayId !== null && isset($visibleIds[$gatewayId]) ? app(OperationReconcileHealth::class)->facts($observation) : null,
         );
     }
 
-    /** @return array{collected_at: ?string, last_run_ms: int|float|null, hidden_nodes: int, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>} */
-    private function doctor(Node $consumer): array
+    /**
+     * @param array<string, mixed>|null $observation
+     * @param array<int, true> $visibleIds
+     * @return array{collected_at: ?string, last_run_ms: int|float|null, hidden_nodes: int, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>} */
+    private function doctor(?array $observation, array $visibleIds): array
     {
-        $observation = ProblemCollectorState::query()->orderBy('id')->first()?->observation;
         $startedAt = $observation['doctor_started_at'] ?? null;
         // Only what the latest full collection saw is an open issue. A row that an older collection wrote and no
         // later one checks again stays in the store as history and is not shown.
@@ -115,8 +122,6 @@ final readonly class ShowGatewayStatusAction
                 }
             }
         }
-        // Status explicitly includes the caller's own Node; other commands keep the shared grant rule.
-        $visibleIds = array_fill_keys([$consumer->id, ...$this->access->accessibleNodeIds($consumer)], true);
         $hidden = [];
         $issues = [];
         foreach ($groups as $group) {

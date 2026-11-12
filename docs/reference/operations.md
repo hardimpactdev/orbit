@@ -560,6 +560,8 @@ Operation shows return recorded state. They make no Swamp request. The terminal 
 
 Each completed pass records its end time, duration, and the count and oldest completion time of bound runs proven terminal whose Operations still need settlement. It writes once in the existing collection state, including empty passes and passes with an individual settlement failure. Failed reads, running runs and unbound starts provide no terminal proof. A timeout or a migration settlement wait alone is no proof either.
 
+[`gateway:status`](/cli/gateway/status) exposes these pass facts in `reconcile.finished_at`, `reconcile.last_pass_ms`, and `reconcile.unsettled_count`. A healthy Gateway completes a pass every minute, normally with no unsettled Operations. These facts follow the Gateway Node access rule. Each completed pass also logs `Operation reconcile pass ran.` at info level, with `duration_ms`, `operations` (the number of open Operations read), and `unsettled`. The duration matches the stored value. Empty passes log zero Operations. A logging failure cannot fail the pass. The line contains no inputs, names, or remote text.
+
 [`gateway:status`](/cli/gateway/status) adds two signals on the Gateway Node, under the usual Node access rules. Both use five minutes, allowing five scheduled passes. Before the first recorded pass, the stalled signal requires a registered native Operation in `queued`, `running` or `waiting` state for more than five minutes. With nothing open, a new installation shows no signal:
 
 | Code | Meaning | First action |

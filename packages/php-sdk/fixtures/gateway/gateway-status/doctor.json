@@ -58,6 +58,11 @@
                         }
                     }
                 ]
+            },
+            "reconcile": {
+                "finished_at": "2026-11-12T12:00:00.000000Z",
+                "last_pass_ms": 6.125,
+                "unsettled_count": 0
             }
         },
         "meta": {
