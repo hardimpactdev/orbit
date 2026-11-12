@@ -537,8 +537,11 @@ final readonly class ProblemCollector
      */
     private function trimSample(array $times, array $counts): array
     {
+        // Parse each time once. A comparator that parses both sides costs about eight times as many parses for 21 samples.
+        // A time that does not parse sorts as 0, first, as before.
+        $stamps = array_map(fn (string $time): int => $this->unixTime($time) ?? 0, $times);
         $order = array_keys($times);
-        usort($order, fn (int $left, int $right): int => ($this->unixTime($times[$left]) ?? 0) <=> ($this->unixTime($times[$right]) ?? 0));
+        usort($order, static fn (int $left, int $right): int => $stamps[$left] <=> $stamps[$right]);
         $trimmedTimes = [];
         $trimmedCounts = [];
 
