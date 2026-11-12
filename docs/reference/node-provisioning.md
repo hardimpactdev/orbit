@@ -986,3 +986,5 @@ Development mail repair uses the Node’s existing Python prerequisite through f
 Container migration reuses this [development mail phase](/reference/development-containers#development-mail) after copying the workspace. It requires no Node converge.
 
 Instance migration checks selected environment services before downtime. Its mail check uses the admitted [development mail endpoint](/reference/development-containers#development-mail), so the preflight and mail setup share one eligibility decision.
+
+Before moving a checkout, Orbit compares its Node pins with executable versions in the shared runtime's Vite+ home. See [Node versions in containers](/reference/development-containers#node-versions-in-containers).

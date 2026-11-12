@@ -1125,3 +1125,11 @@ Two spikes on Beast on 2026-11-09 ran the user and agent layout in one container
 | `orbit` user | Could not run `t3`, `claude` or `codex`, read `/home/agent`, reach the model route or T3's port, or see agent processes |
 | Shared workspace | Each user edited the other's files; Git was clean for both |
 | Egress | Only DNS and the guard; no turn failed |
+
+## Node versions in containers
+
+The container reads the Node's shared runtime folder through `current`. Its `vite-plus-home/js_runtime/node` directories with executable Node binaries are the available versions. The home is read-only in a container; Vite+ cannot install another Node there. Migration reads this same home on the Node before any downtime. It checks pins even when a Process's Node use cannot be classified. No pin, including a packageManager-only manifest, uses the home's default.
+
+Vite+ v1.4.0 checks each directory, then its parents: `.node-version`, `package.json#devEngines.runtime` for Node, `package.json#engines.node`, then `.nvmrc`. The migration check follows that order within the copied checkout. Vite+ does not use Volta or `.tool-versions` for this lookup. The check accepts exact versions, including a leading `v`, only when installed. It refuses partial versions, ranges, aliases and unreadable pins when it cannot prove the resolved version available.
+
+The installed `vp env current node --json` command resolves partial versions through the network and has no offline flag. An offline probe with read-only scratch directories timed out for `24`, `v24` and `24.22`; these forms therefore refuse even if an installed version shares that prefix. The preflight reads files only and runs no Project code, network request or Vite+ command. Its source rules follow Vite+'s [v1.4.0 resolver](https://github.com/voidzero-dev/vite-plus/blob/v1.4.0/crates/vp_js_runtime/src/runtime.rs). Orbit will provide pinned versions in a later release. Create and clone do not run this migration check.
