@@ -310,7 +310,8 @@ fn request(files: &Files, host: &mut impl Host, input: &LeafInput) -> Result<Req
     let candidate_text = candidate.to_string_lossy().into_owned();
     let key = format!("{candidate_text}/key.pem");
     let request = format!("{candidate_text}/request.pem");
-    let subject = format!("/CN={}", input.domain);
+    let subject = "/CN=Orbit";
+    let subject_alt_name = format!("subjectAltName=DNS:{}", input.domain);
     host.as_user(
         &input.user,
         "install",
@@ -325,7 +326,16 @@ fn request(files: &Files, host: &mut impl Host, input: &LeafInput) -> Result<Req
         &input.user,
         "openssl",
         &[
-            "req", "-new", "-key", &key, "-subj", &subject, "-out", &request,
+            "req",
+            "-new",
+            "-key",
+            &key,
+            "-subj",
+            subject,
+            "-addext",
+            &subject_alt_name,
+            "-out",
+            &request,
         ],
     )
     .ok_or_else(|| failed(step))?;
