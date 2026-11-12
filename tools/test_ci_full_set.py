@@ -99,7 +99,8 @@ class PlanningTest(unittest.TestCase):
             self.assertIn(file, [unit.split('#')[0] for unit in pr['deferred']])
             self.assertFalse(any(unit.split('#')[0] == file
                                  for shard in pr['shards'] for unit in shard['units']))
-        cases = self.api.collect(file)['cases']
+        # The plan job has no Deno; live registration checks belong to the fixture runner.
+        cases = fixtures[file]['cases']
         self.assertEqual(len(cases), 4)
         result = self.plan([fixtures[file]], {file: cases})
         self.assertEqual(result['after_merge_files'], [file])
