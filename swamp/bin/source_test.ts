@@ -6,7 +6,8 @@ import {
 } from "jsr:@std/assert@1.0.19";
 import { expandGlob } from "jsr:@std/fs@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { command, ROOT } from "./gate-test-support.ts";
+import { command, type Flow, ROOT } from "./gate-test-support.ts";
+import { resolveConstantName } from "./constant-name.ts";
 type Definition = {
     id: string;
     name: string;
@@ -77,4 +78,80 @@ Deno.test("runtime credentials and generated records are ignored", async () => {
         ...paths,
     ], ROOT);
     assertEquals(new Set(result.stdout.trim().split("\n")), new Set(paths));
+});
+
+Deno.test("hot workflow trees avoid literal behavior lookups and preserve constant names", async () => {
+    const workflows = new Map<string, Flow>();
+    for await (const path of expandGlob(`${ROOT}/workflows/*.yaml`)) {
+        const workflow = parse(await Deno.readTextFile(path.path)) as Flow;
+        workflows.set(workflow.name!, workflow);
+        if (workflow.id) workflows.set(workflow.id, workflow);
+    }
+    // These fixed identities must never become computed names.
+    const expected = new Map(Object.entries({
+        "operation-instance-migrate/input": "ansible-input",
+        "route-withdraw-node/input": "ansible-input",
+        "route-dns-grace/wait-private-dns-ttl": "route-dns-grace",
+        "route-ingress-apply/result": "route-ingress-result",
+        "route-lan-apply/changes": "route-lan-changes",
+        "route-lan-apply/verify-tuples": "route-lan-applied",
+        "route-lan-apply/result": "route-lan-result",
+        "route-mutation-forward/result": "route-mutation-phase",
+        "route-mutation-withdraw/result": "route-mutation-phase",
+        "route-mutation-restore/result": "route-mutation-phase",
+        "route-withdraw/result": "route-mutation-phase",
+    }));
+    const seen = new Set<Flow>();
+    function walk(target: string) {
+        const workflow = workflows.get(resolveConstantName(target));
+        assert(workflow, `Unknown child workflow: ${target}`);
+        if (seen.has(workflow)) return;
+        seen.add(workflow);
+        for (const job of workflow.jobs) {
+            for (const step of job.steps) {
+                const task = step.task;
+                if (task.type === "workflow") {
+                    assert(task.workflowIdOrName, `${workflow.name}/${step.name}`);
+                    walk(task.workflowIdOrName);
+                } else if (task.type === "behavior" || task.type === "model_method") {
+                    const at = `${workflow.name}/${step.name}`;
+                    // Swamp reads the same reference from either spelling of a method step.
+                    const spelled = task as Record<string, unknown>;
+                    const name = spelled.behaviorName ?? spelled.modelName ?? spelled.behaviorIdOrName ??
+                        spelled.modelIdOrName;
+                    assert(
+                        typeof name === "string" && name.includes("${{"),
+                        `${at}: literal behavior name ${name}`,
+                    );
+                    const plain = resolveConstantName(name);
+                    if (plain !== name) {
+                        assertEquals(name, '${{ "' + plain + '" }}', at);
+                    } else {
+                        // Existing computed names depend on a target or fan-out item.
+                        // Reject alternative constant spellings and constant computations.
+                        assertMatch(name, /\b(?:inputs|steps|self|run)\./, at);
+                    }
+                    if (expected.has(at)) {
+                        assertEquals(
+                            name,
+                            '${{ "' + expected.get(at) + '" }}',
+                            at,
+                        );
+                        expected.delete(at);
+                    }
+                }
+            }
+        }
+    }
+    for (const root of [
+        "route-mutation-forward",
+        "route-mutation-withdraw",
+        "route-withdraw",
+        "operation-instance-migrate",
+    ]) walk(root);
+    assertEquals(
+        [...expected.keys()],
+        [],
+        "Every fixed identity must be reached",
+    );
 });

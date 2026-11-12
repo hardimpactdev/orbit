@@ -33,8 +33,16 @@ sequenceDiagram
   Note over CLI: Confirm the downtime
   %%> What it does:
   %%> - asks for default-No consent naming the source, destination and old-placement deletion
+  opt new transfer of a host checkout
+    GW->>S: Read worktrees<br/>Git · admission only
+    %%> On refusal:
+    %%> - target read failures and confirmed dependents refuse before any transfer record or Process change
+    %%> - unreadable candidates warn; an admitted retry never checks again
+    %%> Limit:
+    %%> - worktrees created after admission, during the queue wait or run, are not caught
+  end
   opt --name
-    Note over GW: Set destination name
+  Note over GW: Set destination name
     %%> What it changes:
     %%> - uses the supplied name for the destination path and generated domain instead of keeping the Instance name
   end

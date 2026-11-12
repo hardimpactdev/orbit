@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Instances;
 
 use App\Commands\Concerns\FollowsOperations;
+use App\Commands\Concerns\RendersCheckoutWarnings;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
@@ -18,6 +19,7 @@ use Orbit\Sdk\Responses\Operations\OperationResponse;
 final class TransferInstanceCommand extends GatewayCommand
 {
     use FollowsOperations;
+    use RendersCheckoutWarnings;
 
     #[\Override]
     protected $signature = 'instance:transfer
@@ -40,6 +42,11 @@ Orbit stops source processes for the downtime window, copies the source checkout
 
 Use --name when the destination path or generated domain must change. --json disables prompts and requires --force for transfer consent.
 HELP;
+
+    protected function writeOperationResult(OperationResponse $operation): void
+    {
+        $this->writeCheckoutWarnings($operation);
+    }
 
     public function handle(
         GatewayConfigRepository $repository,

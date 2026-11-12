@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\TransferInstanceData;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceDestroyWorktrees;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\InstanceTransferProcesses;
 use App\Domain\Instances\NativeInstanceTransferIntent;
@@ -51,8 +52,15 @@ final readonly class StartInstanceTransferAction
         }
         InstanceContainer::assertCheckout($instance);
         app(DirectOperation::class)->writer('instance.transfer');
+        $existing = $this->existingTransfer($instance, $data);
+        if ($existing?->status === InstanceTransferStatus::Completed) {
+            return Operation::query()->where('kind', 'instance.transfer')->where('target_type', 'instance')->where('target_id', $instance->id)
+                ->where('input->transfer_id', $existing->id)->where('status', 'succeeded')->latest('id')->first()
+                ?? throw $this->conflict('instance.transfer_conflict', 'The completed transfer has no successful Operation.');
+        }
+        $admission = $existing === null ? app(InstanceDestroyWorktrees::class)->assertAvailable($instance) : [];
 
-        return DB::transaction(function () use ($instance, $data, $caller, $requestId): Operation {
+        return DB::transaction(function () use ($instance, $data, $caller, $requestId, $admission): Operation {
             $instance->loadMissing(['project', 'node', 'routes.targets', 'removalMember']);
             app(NativeInstanceTransferIntent::class)->assertSupported($instance, $data->sqliteSourcePath);
             $existing = $this->existingTransfer($instance, $data);
@@ -66,7 +74,7 @@ final readonly class StartInstanceTransferAction
             $publication = app(NativeRouteTransferPublication::class)->capture($routePlan, ValidatedData::object($processes['destination_installations']));
 
             return $this->operations->execute('instance.transfer', 'instance', $instance->id, $transfer->source_node_id, [
-                'direct_transfer' => $plan, 'route_transfer' => $routePlan, 'process_installations' => $processes,
+                'checkout_warnings' => $admission['checkout_warnings'] ?? [], 'direct_transfer' => $plan, 'route_transfer' => $routePlan, 'process_installations' => $processes,
                 'participant_node_ids' => $routePlan['participant_node_ids'],
                 'environment_fields' => [(string) $source->id => 'source_route_environment', (string) $destination->id => 'destination_route_environment'],
                 'route_publication' => $publication,
