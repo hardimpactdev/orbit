@@ -227,7 +227,7 @@ final readonly class InstanceRestoreFence
                     JOIN pg_database d ON d.datname = j.name AND d.oid = j.oid::oid ORDER BY j.name
                 LOOP
                     IF entry.current_allow IS DISTINCT FROM entry.allow THEN
-                        EXECUTE format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', entry.name, entry.allow);
+                        EXECUTE format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', entry.name, CASE WHEN entry.allow THEN 'true' ELSE 'false' END);
                     END IF;
                 END LOOP;
                 IF to_regclass('orbit_admin.database_removal_fences') IS NOT NULL THEN

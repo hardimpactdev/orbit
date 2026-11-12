@@ -599,10 +599,11 @@ it('renders transactional fence restoration for both fresh-closed and already-re
             'LOCK TABLE pg_catalog.pg_authid IN SHARE MODE',
             'd.datallowconn IS DISTINCT FROM COALESCE(f.allow, p.allow)',
             'j.oid IS NOT NULL AND d.datallowconn AND NOT j.allow',
-            "format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', entry.name, entry.allow)",
+            "format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', entry.name, CASE WHEN entry.allow THEN 'true' ELSE 'false' END)",
             'j.datname = p.name AND j.oid = p.oid::oid AND j.allow_connections = p.allow',
             'removed <> json_array_length(live_journal)')
-        ->not->toContain('DROP ', 'unrelated_fixture', '303');
+        ->not->toContain('DROP ', 'unrelated_fixture', '303',
+            "format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', entry.name, entry.allow)");
     expect(strpos($sql, 'database_admission_changed'))->toBeLessThan(strpos($sql, 'EXECUTE format('))
         ->and(strpos($sql, 'EXECUTE format('))->toBeLessThan(strpos($sql, 'DELETE FROM'));
 })->with([false, true]);
