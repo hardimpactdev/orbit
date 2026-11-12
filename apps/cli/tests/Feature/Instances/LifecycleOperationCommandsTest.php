@@ -149,3 +149,24 @@ it('shows migration mail outcomes and advisory warnings in human and JSON output
     'advisory' => [['warnings' => [['code' => 'instance.mail_update_failed', 'step' => 'mail']]],
         'Warning: instance.mail_update_failed. Run orbit instance:mail:update 501 to repair mail.'],
 ]);
+
+it('reports copied untracked files for humans and keeps only the final Operation in JSON', function (bool $json, int $count): void {
+    $result = ['instance_id' => 501, 'moved' => true, 'ready' => true, 'untracked_files_copied' => $count];
+    $final = ['id' => 901, 'kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => 501,
+        'status' => 'succeeded', 'sequence' => 8, 'result' => $result];
+    MockClient::global([
+        MigrateInstanceRequest::class => MockResponse::make(['data' => $final], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final]),
+    ]);
+
+    expect(Artisan::call('instance:migrate', ['instance' => 501, '--force' => true, '--json' => $json, '--no-interaction' => true]))->toBe(0);
+    $output = Artisan::output();
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
+        expect($output)->not->toContain('Copied ');
+    } else {
+        $message = 'Copied '.$count.' untracked files (including ignored files).';
+        expect($output)->toContain($message)->and(substr_count($output, $message))->toBe(1);
+    }
+})->with(['human' => false, 'json' => true])->with(['none' => 0, 'generated files' => 56]);

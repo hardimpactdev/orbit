@@ -22,9 +22,9 @@ function docsMergeCommit(string $root, string $message): void
     docsMergeGit($root, ['commit', '-qm', $message]);
 }
 
-function docsMergeIndex(string $root): void
+function docsMergeNavigation(string $root): void
 {
-    // Keep each fixture's generated navigation aligned with its current pages.
+    // The preview command builds ignored outputs itself; fixtures need only their tracked navigation inputs.
     $pages = collect(new Filesystem()->allFiles($root.'/docs'))
         ->filter(fn (SplFileInfo $file): bool => in_array($file->getExtension(), ['md', 'mdx'], true))
         ->map(fn (SplFileInfo $file): string => preg_replace('/\.(md|mdx)$/', '', substr($file->getPathname(), strlen($root.'/docs/'))))
@@ -33,6 +33,11 @@ function docsMergeIndex(string $root): void
     file_put_contents($root.'/docs/navigation/fixture.json', json_encode(['navigation' => [
         ['tab' => 'Guides', 'group' => 'Fixture', 'order' => 1, 'pages' => $pages],
     ]], JSON_THROW_ON_ERROR));
+}
+
+function docsMergeIndex(string $root): void
+{
+    docsMergeNavigation($root);
     new Process(['python3', base_path('../../bin/docs-navigation'), '--root', $root])->mustRun();
 
     $previous = [
@@ -83,9 +88,12 @@ function withDocsMergeFixture(Closure $test): void
         file_put_contents($root.'/apps/docs/config/adr-legacy-allowlist.php', '<?php return [];');
         file_put_contents($root.'/apps/docs/config/adr-retired-slugs.php', '<?php return [];');
         docsMergeGit($root, ['init', '-q', '-b', 'main']);
-        // Local fixture settings need no five extra Git processes per case.
-        file_put_contents($root.'/.git/config', "\n[user]\n    name = Docs\n    email = docs@example.test\n[commit]\n    gpgsign = false\n[gc]\n    auto = 0\n[maintenance]\n    auto = false\n", FILE_APPEND);
-        docsMergeIndex($root);
+        docsMergeGit($root, ['config', 'user.name', 'Docs']);
+        docsMergeGit($root, ['config', 'user.email', 'docs@example.test']);
+        docsMergeGit($root, ['config', 'commit.gpgsign', 'false']);
+        docsMergeGit($root, ['config', 'gc.auto', '0']);
+        docsMergeGit($root, ['config', 'maintenance.auto', 'false']);
+        docsMergeNavigation($root);
         docsMergeCommit($root, 'common ancestor');
         docsMergeGit($root, ['branch', 'pr']);
 
@@ -93,7 +101,7 @@ function withDocsMergeFixture(Closure $test): void
         file_put_contents($root.'/docs/decisions/overview.mdx', file_get_contents($root.'/docs/decisions/overview.mdx')."| 0197 | Check documentation | [Guide](/README) |\n");
         file_put_contents($root.'/apps/docs/config/adr-retired-slugs.php', "<?php return ['0197' => ['0197-check-documentation']];");
         file_put_contents($root.'/docs/site.json', '{"navigation":{"tabs":[{"tab":"Guides","groups":[]}]},"redirects":[{"source":"/decisions/0197-check-documentation","destination":"/README"}]}');
-        docsMergeIndex($root);
+        docsMergeNavigation($root);
         docsMergeCommit($root, 'retire 0197 on base');
         docsMergeGit($root, ['checkout', '-q', 'pr']);
         expect(is_file($root.'/.git/HEAD'))->toBeTrue();
@@ -107,7 +115,7 @@ it('retired 0197 reuse passes head-only and fails the merge check', function (bo
     withDocsMergeFixture(function (string $root) use ($cached): void {
         file_put_contents($root.'/docs/decisions/0197-live-decision.md', "# ADR 0197: Check a documentation change\n\nOrbit checks the merge result.\n\n## Status\n\nIn progress.\n\nPrinciple: lean.\n\n## Context\n\nBranches can diverge.\n\n## Decision\n\nOrbit checks the resulting tree.\n\n## Rejected alternatives\n\n- Check only the head: misses base changes.\n\n## Consequences\n\n- Finds invalid combinations.\n\n## Affects\n\n- Components: apps/docs\n- ADRs: none\n- Detail: [Guide](/README)\n- Verify: Docs lint tests.\n");
         file_put_contents($root.'/docs/decisions/overview.mdx', str_replace("Orbit records decisions.\n", "Orbit records decisions.\n\n| Record | Decision | Status |\n| --- | --- | --- |\n| [0197](/decisions/0197-live-decision) | Check a documentation change | In progress |\n", file_get_contents($root.'/docs/decisions/overview.mdx')));
-        docsMergeIndex($root);
+        docsMergeNavigation($root);
         docsMergeCommit($root, 'reuse 0197 on old branch');
         $environment = [];
         $cacheContents = null;
@@ -150,7 +158,7 @@ it('retired 0197 reuse passes head-only and fails the merge check', function (bo
 it('a normal fixture PR passes both head-only and merge checks', function (): void {
     withDocsMergeFixture(function (string $root): void {
         file_put_contents($root.'/docs/architecture.md', "# Documentation\n\nOrbit checks a clean change.\n");
-        docsMergeIndex($root);
+        docsMergeNavigation($root);
         docsMergeCommit($root, 'normal documentation change');
         foreach ([['--head-only'], ['--base', 'main']] as $arguments) {
             $result = docsMergeRun($root, $arguments);
@@ -164,7 +172,7 @@ it('detects ratchet removal despite a missing or stale local main', function (bo
         // Add the ratchet on the shared history, then remove it on the PR.
         file_put_contents($root.'/docs/reference/guide.md', "---\ncovers:\n  - apps/docs/config/adr-retired-slugs.php\n---\n\n# Documentation\n\nOrbit checks documentation.\n");
         file_put_contents($root.'/apps/docs/config/docs-covers-ratchet.php', "<?php return ['docs/reference/guide.md'];\n");
-        docsMergeIndex($root);
+        docsMergeNavigation($root);
         docsMergeCommit($root, 'establish ratchet baseline');
         $baseline = docsMergeGit($root, ['rev-parse', 'HEAD']);
         if ($headOnly) {
@@ -194,7 +202,7 @@ it('head-only does not invent a source baseline from local main', function (): v
         docsMergeGit($root, ['checkout', '-q', 'main']);
         file_put_contents($root.'/docs/reference/guide.md', "---\ncovers:\n  - apps/docs/config/adr-retired-slugs.php\n---\n\n# Documentation\n\nOrbit checks documentation.\n");
         file_put_contents($root.'/apps/docs/config/docs-covers-ratchet.php', "<?php return ['docs/reference/guide.md'];\n");
-        docsMergeIndex($root);
+        docsMergeNavigation($root);
         docsMergeCommit($root, 'ratchet only on local main');
         docsMergeGit($root, ['checkout', '-q', '-B', 'pr']);
         file_put_contents($root.'/apps/docs/config/docs-covers-ratchet.php', "<?php return [];\n");

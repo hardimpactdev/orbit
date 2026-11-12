@@ -7,6 +7,7 @@
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
 import { createHash } from "node:crypto";
+import { migrateResult } from "../extensions/behaviors/operations/instance-dev-command/migrate_result.ts";
 import {
   legacyScheduleUnits,
   renderScheduleUnits,
@@ -125,6 +126,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-migrate-incus.ts", import.meta.url).pathname}' "$@"\n`,
   );
   Deno.chmodSync(`${folder}/bin/incus`, 0o755);
+  Deno.copyFileSync(new URL("instance_migrate_files.py", root), `${folder}/instance_migrate_files.py`);
   Deno.copyFileSync(new URL("instance_migrate_links.py", root), `${folder}/instance_migrate_links.py`);
   for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-process-ready.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-schedules.yml", "instance-migrate-schedule-check.yml", "instance-migrate-link-result.yml", "instance-migrate-env-check.yml"]) {
     const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => {
@@ -274,10 +276,25 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
       tasks.push({ name: "Force a failure after the phase effects", tags: ["always"], when: `phase == '${phase}'`, "ansible.builtin.fail": { msg: "forced migration failure" } });
       Deno.writeTextFileSync(file, stringify(tasks));
     },
-    run(phase: string, rawContainer = false, runId = folder.slice(folder.lastIndexOf("/") + 1), extraEnv: Record<string, string> = {}) {
-      const playbook = !rawContainer && ["container", "quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
+    run(phase: string | string[], rawContainer = false, runId = folder.slice(folder.lastIndexOf("/") + 1), extraEnv: Record<string, string> = {}) {
+      // Batch unchanged production plays with their phase fixed instead of launching Ansible for each tag.
+      // Task conditions still select the phase; all tags are enabled inside each separate play.
+      const phases = Array.isArray(phase) ? phase : [phase];
+      const batch = Array.isArray(phase);
+      phase = phases[0];
+      const batchFile = "batched-migrate.yml";
+      if (batch) {
+        const plays = phases.flatMap((selected) => {
+          const source = ["container", "quiesce", "files", "retire", "restore"].includes(selected) ? "instance-migrate.yml" : "instance-container.yml";
+          return JSON.parse(JSON.stringify(parse(Deno.readTextFileSync(`${folder}/${source}`)))
+            .replaceAll("ansible_run_tags | first", `'${selected}'`)) as Task[];
+        });
+        for (const play of plays) play.tags = ["always"];
+        Deno.writeTextFileSync(`${folder}/${batchFile}`, stringify(plays));
+      }
+      const playbook = batch ? batchFile : !rawContainer && ["container", "quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
       const done = new Deno.Command(phase === "processes" ? "timeout" : "ansible-playbook", {
-        args: [...(phase === "processes" ? ["120", "ansible-playbook"] : []), "-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
+        args: [...(phase === "processes" ? ["120", "ansible-playbook"] : []), "-i", "localhost,", "--tags", batch ? "all" : phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
           "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/${playbook}`],
         env: {
           HOST_FIXTURE: folder,
@@ -295,6 +312,10 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
         },
       }).outputSync();
       return { ok: done.success, output: new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr) };
+    },
+    buildBatched() {
+      const result = this.run(["container", "quiesce", "workspace", "files"]);
+      assert(result.ok, result.output);
     },
     /** The phases of a move up to the copied files. */
     build() {
@@ -587,6 +608,114 @@ os.execv("/usr/bin/tar", ["tar", *sys.argv[1:]])
 }
 
 Deno.test({
+  name: "untracked non-ignored files and nested repository leaves migrate with an exact archived file count",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      // Include a newline in a name: manifests must use NUL separators, not lines.
+      Deno.writeTextFileSync(`${f.checkout}/generated\nwayfinder.ts`, "generated output\n");
+      const nested = `${f.checkout}/nested`;
+      Deno.mkdirSync(nested);
+      git(nested, "init", "--quiet");
+      for (let i = 0; i < 31; i++) Deno.writeTextFileSync(`${nested}/file-${i}`, `nested ${i}\n`);
+      const leaves = (path: string): number => [...Deno.readDirSync(path)].reduce(
+        (count, entry) => count + (entry.isDirectory ? leaves(`${path}/${entry.name}`) : 1), 0);
+      const nestedLeaves = leaves(nested);
+      f.buildBatched();
+      assertEquals(f.read("generated\nwayfinder.ts"), "generated output\n");
+      assertEquals(f.read("vendor/pkg/a.php"), "<?php // dependency\n");
+      assertEquals(f.read("database/database.sqlite"), "sqlite\n");
+      for (let i = 0; i < 31; i++) assertEquals(f.read(`nested/file-${i}`), `nested ${i}\n`);
+      const receipt = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/untracked-files.json`));
+      assertEquals(receipt.untracked_files_copied, 4 + nestedLeaves);
+      const completed = f.run("retire");
+      assert(completed.ok, completed.output);
+      assert(exists(f.migrate.awake.path));
+      assertEquals(f.state().containers["instance-7"].status, "Running");
+      assertEquals(Deno.readTextFileSync(`${f.retained()}/generated\nwayfinder.ts`), "generated output\n");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "late ignored and non-ignored files do not refuse a move and remain in the retained checkout",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      Deno.writeTextFileSync(`${f.checkout}/.gitignore`, Deno.readTextFileSync(`${f.checkout}/.gitignore`) + "*.log\ncache/\n");
+      git(f.checkout, "add", ".gitignore");
+      git(f.checkout, "commit", "--quiet", "-m", "ignore generated output");
+      git(f.checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
+      Deno.writeTextFileSync(`${f.checkout}/draft.txt`, "copied version\n");
+      f.buildBatched();
+      Deno.writeTextFileSync(`${f.checkout}/draft.txt`, "late edited version\n");
+      Deno.writeTextFileSync(`${f.checkout}/late.txt`, "late untracked work\n");
+      Deno.writeTextFileSync(`${f.checkout}/runtime.log`, "late ignored output\n");
+      Deno.mkdirSync(`${f.checkout}/cache`);
+      Deno.writeTextFileSync(`${f.checkout}/cache/generated`, "late ignored cache\n");
+      const completed = f.run(["processes", "seed", "retire"]);
+      assert(completed.ok, completed.output);
+      const commit = f.workspace("rev-parse", "HEAD");
+      const copied = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/untracked-files.json`));
+      const projected = JSON.parse(migrateResult(
+        { instance_id: f.container.instance_id, container: f.container, route_mutations: null },
+        { container: "succeeded", quiesce: "succeeded", workspace: "succeeded", files: "succeeded",
+          processes: "succeeded", seed: "succeeded", agent: "skipped", t3: "skipped", register: "skipped",
+          route: "skipped", retire: "succeeded", restore_route: "skipped", restore: "skipped" },
+        { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}` } }, null, copied,
+      ).stdout);
+      assertEquals([projected.ready, projected.moved, projected.restored], [true, true, false]);
+      assertEquals(f.read("draft.txt"), "copied version\n");
+      for (const path of ["late.txt", "runtime.log", "cache/generated"]) assert(!exists(`${f.rootfs}/srv/workspace/${path}`));
+      const retained = f.retained();
+      assertEquals(Deno.readTextFileSync(`${retained}/draft.txt`), "late edited version\n");
+      assertEquals(Deno.readTextFileSync(`${retained}/late.txt`), "late untracked work\n");
+      assertEquals(Deno.readTextFileSync(`${retained}/runtime.log`), "late ignored output\n");
+      assertEquals(Deno.readTextFileSync(`${retained}/cache/generated`), "late ignored cache\n");
+      assert(exists(f.migrate.awake.path));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "untracked files inside a tracked submodule retain the named retirement refusal even when Git config ignores it",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const source = `${f.folder}/module-source`;
+      Deno.mkdirSync(source);
+      git(source, "init", "--quiet");
+      Deno.writeTextFileSync(`${source}/tracked.txt`, "module seed\n");
+      git(source, "add", ".");
+      git(source, "commit", "--quiet", "-m", "module seed");
+      git(f.checkout, "-c", "protocol.file.allow=always", "submodule", "add", "--quiet", source, "sub");
+      git(f.checkout, "commit", "--quiet", "-m", "tracked submodule");
+      git(f.checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
+      git(f.checkout, "config", "submodule.sub.ignore", "all");
+      Deno.writeTextFileSync(`${f.checkout}/sub/new-untracked`, "cannot be copied by the parent archive\n");
+      assertEquals(git(f.checkout, "status", "--porcelain=v1", "--untracked-files=no"), "");
+      const refused = f.run("container");
+      assert(!refused.ok, refused.output);
+      assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
+      assert(f.result().error_message.includes("sub"));
+      assert(f.result().error_message.includes("parent checkout archive"));
+      assertEquals(f.state().containers ?? {}, {});
+      assert(exists(f.migrate.awake.path));
+      assertEquals(Deno.readTextFileSync(`${f.checkout}/sub/new-untracked`), "cannot be copied by the parent archive\n");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
   name: "a retained default copies its unpushed commit and changed, staged, untracked, deleted and ignored files",
   ignore: !hasAnsible,
   fn() {
@@ -597,7 +726,7 @@ Deno.test({
       f.write();
       const head = git(f.checkout, "rev-parse", "HEAD");
       const status = git(f.checkout, "status", "--porcelain");
-      f.build();
+      f.buildBatched();
       // The Route shows the wake page from the first phase on.
       assert(!exists(f.migrate.awake.path));
       assertEquals(f.result(), { commit: head });
@@ -831,7 +960,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "preflight names linked and detached worktrees and every tracked or untracked change before any Node change",
+  name: "preflight names linked and detached worktrees and every tracked change before any Node change",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -855,11 +984,12 @@ Deno.test({
       assert(!quiesce.ok, quiesce.output);
       const receipt = f.result();
       assertEquals(receipt.error_code, "instance.migrate_retirement_blocked");
-      for (const path of [f.checkout, linked, detached, "index.php", "staged.php", "note.txt", "renamed with spaces.txt", "local.php", "untracked.txt"]) {
+      for (const path of [f.checkout, linked, detached, "index.php", "staged.php", "note.txt", "renamed with spaces.txt", "local.php"]) {
         assert(receipt.error_message.includes(path), receipt.error_message);
       }
       assert(receipt.error_message.includes("Other worktrees (2 total; first 20)"));
-      assert(receipt.error_message.includes("Changed files (5 total; first 20)"));
+      assert(receipt.error_message.includes("Changed files (4 total; first 20)"));
+      assert(!receipt.error_message.includes("untracked.txt"));
       assert(exists(f.migrate.awake.path));
       assertEquals(f.state(), state);
       const restore = f.run("restore");
@@ -884,6 +1014,10 @@ Deno.test({
         Deno.writeTextFileSync(`${f.checkout}/file-${String(i).padStart(2, "0")}.txt`, "new\n");
         git(f.checkout, "worktree", "add", "--quiet", "--detach", `${f.apps}/worktree-${String(i).padStart(2, "0")}`);
       }
+      git(f.checkout, "add", ".");
+      git(f.checkout, "commit", "--quiet", "-m", "tracked files for bounded errors");
+      git(f.checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
+      for (let i = 0; i < 22; i++) Deno.writeTextFileSync(`${f.checkout}/file-${String(i).padStart(2, "0")}.txt`, "changed\n");
       const quiesce = f.run("container");
       assert(!quiesce.ok, quiesce.output);
       const message = f.result().error_message;
@@ -908,8 +1042,8 @@ for (const blocker of ["changes", "worktree", "commits", "stashes"] as const) {
     fn() {
       const f = fixture();
       try {
-        f.build();
-        const path = blocker === "changes" ? `${f.checkout}/late.txt` : `${f.apps}/late-worktree`;
+        f.buildBatched();
+        const path = blocker === "changes" ? `${f.checkout}/index.php` : `${f.apps}/late-worktree`;
         if (blocker === "changes") Deno.writeTextFileSync(path, "late edit\n");
         else if (blocker === "worktree") git(f.checkout, "worktree", "add", "--quiet", "--detach", path);
         else if (blocker === "commits") git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "late commit");
@@ -923,7 +1057,7 @@ for (const blocker of ["changes", "worktree", "commits", "stashes"] as const) {
         assert(!retire.ok, retire.output);
         const code = blocker === "commits" ? "instance.migrate_unpushed_commits" : blocker === "stashes" ? "instance.migrate_stashes_present" : "instance.migrate_retirement_blocked";
         assertEquals(f.result().error_code, code);
-        const detail = blocker === "changes" ? "late.txt" : blocker === "worktree" ? path : blocker === "commits" ? '"commits": 1' : "Stashes: 1";
+        const detail = blocker === "changes" ? "index.php" : blocker === "worktree" ? path : blocker === "commits" ? '"commits": 1' : "Stashes: 1";
         assert(f.result().error_message.includes(detail), f.result().error_message);
         assertEquals(git(f.checkout, "show-ref"), refs);
         assertEquals(f.result().preflight_refused, false);

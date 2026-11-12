@@ -263,6 +263,25 @@ class CaddyCandidateTest(unittest.TestCase):
         self.assertEqual(
             publish["ansible.builtin.command"]["argv"][:3], ["mv", "-Tf", "--"]
         )
+        is_site = "orbit_route_site" in task
+        if is_site:
+            library = self.folder / "library"
+            library.mkdir()
+            module = (ROOT / "swamp/ansible/library/orbit_route_site.py").read_text()
+            module = module.replace(
+                'root=Path("/")', "root=Path(" + repr(str(self.folder)) + ")"
+            )
+            module = module.replace(
+                "group_lookup=grp.getgrnam,",
+                "group_lookup=lambda name: grp.getgrnam("
+                + repr(grp.getgrgid(self.publish_group).gr_name)
+                + "),",
+            )
+            module = module.replace(
+                "os.fchown(stream.fileno(), uid, gid)",
+                "os.fchown(stream.fileno(), os.getuid(), gid)",
+            )
+            (library / "orbit_route_site.py").write_text(module)
         helpers = self.folder / "tasks"
         helpers.mkdir()
         (helpers / "caddy-publish.yml").write_text(
@@ -297,7 +316,10 @@ class CaddyCandidateTest(unittest.TestCase):
                     if invalid
                     else "import relative.conf\n# valid replacement\n"
                 )
-                play["vars"]["intent"] = {"caddy": [{"node_id": 9, "content": value}]}
+                play["vars"]["intent"] = {
+                    "nodes": {"9": {"account": pwd.getpwuid(os.getuid()).pw_name}},
+                    "caddy": [{"node_id": 9, "content": value}],
+                }
                 play["vars"]["plan"] = {"caddy": {"content": value}}
                 play["vars"]["front_certificate"] = {
                     "stdout": json.dumps(
@@ -347,7 +369,12 @@ class CaddyCandidateTest(unittest.TestCase):
                     self.assertNotEqual(self.live.read_bytes(), self.old)
                 elif invalid:
                     self.assertNotEqual(done.returncode, 0, done.stdout)
-                    self.assertIn("invalid candidate", done.stdout)
+                    self.assertIn(
+                        "Route certificate or site publication failed."
+                        if is_site
+                        else "invalid candidate",
+                        done.stdout,
+                    )
                     self.assertEqual(self.live.read_bytes(), self.old)
                     self.assertEqual(
                         (
@@ -422,8 +449,8 @@ class CaddyCandidateTest(unittest.TestCase):
     def test_ansible_route_site(self):
         self.ansible(
             "swamp/ansible/route-create-site.yml",
-            "Publish the Caddy site",
-            {"node_ids": [9, "9"]},
+            "Converge certificate links trust and Caddy files",
+            {"node_id": 9, "signed": []},
         )
 
     def test_ansible_route_withdrawal(self):

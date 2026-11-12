@@ -14,6 +14,7 @@ additionalFiles:
   - ansible/proof-observer-facts.php
   - ansible/tasks/proof-gateway-release.yml
   - proof/cli-release.json
+  - ansible/library/orbit_route_site.py
   - ansible/library/orbit_artifact.py
   - ansible/library/orbit_schedule_journal.py
   - ansible/library/orbit_static_php.py
@@ -76,6 +77,7 @@ additionalFiles:
   - ansible/route-create-site.yml
   - ansible/route-withdraw.yml
   - ansible/instance-migrate.yml
+  - ansible/instance_migrate_files.py
   - ansible/instance_migrate_links.py
   - ansible/tasks/instance-migrate-link-result.yml
   - ansible/tasks/instance-migrate-process-ready.yml

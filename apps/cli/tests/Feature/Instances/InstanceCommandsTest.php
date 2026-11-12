@@ -19,6 +19,7 @@ use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Saloon\Http\Faking\MockClient;
@@ -943,3 +944,16 @@ function no_processes_response(): MockResponse
 {
     return MockResponse::make(['data' => [], 'meta' => ['request_id' => instance_request_id()]]);
 }
+
+describe('instance:transfer checkout warnings', function (): void {
+    it('renders structured warnings with path and Instance for humans and preserves JSON', function (bool $json): void {
+        $result = ['cutover' => true, 'warnings' => [['code' => 'instance.checkout_unknown', 'path' => '/work/missing', 'cause' => 'unreadable', 'instance_ids' => [69]]]];
+        MockClient::global(instance_operation_responses(TransferInstanceRequest::class, 'instance.transfer', $result));
+        expect(Artisan::call('instance:transfer', ['instance' => '5', 'node' => '8', '--force' => true, '--json' => $json]))->toBe(0);
+        if ($json) {
+            expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
+        } else {
+            expect(instance_source_text(Artisan::output()))->toContain('Warning: instance.checkout_unknown.', '/work/missing (Instance #69): unreadable.');
+        }
+    })->with([false, true]);
+});

@@ -8,8 +8,8 @@ covers:
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock,RemoteAppDevCertificateManager,RemoteAppDevRouteFirewallManager}.php
   - apps/gateway/app/{Domain/AppDev/{DevelopmentServerEndpoint,PrivateDnsAnswerExpiry}.php,Infrastructure/Clusters/NativeClusterRouterOperationLock.php}
   - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentRouteProjector,NativeDevelopmentSourceAccess}.php
-  - apps/gateway/app/Domain/Instances/DevelopmentSourceAccess.php
-  - apps/gateway/database/migrations/*_instance_path_proxies_table.php
+  - apps/gateway/{app/Domain/Instances/DevelopmentSourceAccess.php,database/migrations/*_instance_path_proxies_table.php}
+  - swamp/{ansible/route-create-site.yml,ansible/library/orbit_route_site.py,workflows/workflow-{operation-route-create,route-create-site,route-create-csr}.yaml}
 ---
 
 # Routes
@@ -18,7 +18,17 @@ A Route is a domain that reaches an Instance or a Node service. This page explai
 
 The Gateway validates Route changes and records intent as an Operation. Each available kind runs one native Swamp DAG, with Node effects as placed steps. The Gateway keeps Route state, ownership checks, read APIs and minimal result projection. Kinds whose native conversion is incomplete return `operation.kind_unavailable`; there is no polled fallback. Certificate signing runs in Swamp on the control worker.
 
-Route creation and updates use official cfgmgmt resources and pinned SSH argv commands. Their TLS probes run on 209 over the captured SSH connection, verify the hostname and Orbit CA, and ignore the application HTTP status. A failed Caddy validation removes its candidate, leaves the live Caddyfile unchanged and stops reload. A successful validation permits atomic publication, then reload; a later reload failure retains the validated new file for retry.
+Route creation and updates use Node phases and pinned SSH argv commands. Their TLS probes run on 209 over the captured SSH connection, verify the hostname and Orbit CA, and ignore the application HTTP status. A failed Caddy validation removes its candidate, leaves the live Caddyfile unchanged and stops reload. A successful validation permits atomic publication, then reload; a later reload failure retains the validated new file for retry.
+
+The site phase converges certificates, their current links and account copies, root trust and the Caddyfile in one Node call. Private keys are copied only within their Node. Workspace access, `APP_URL`, shared environment links and PHP-FPM pool publication keep their existing order. Caddy validation precedes reload; the TLS probe still runs afterwards.
+
+The site module writes a candidate with final owner and mode, validates that file, then atomically renames it over the live Caddyfile. A repeated publication retains the existing account-copy and Caddy reload behavior, so a retry completes activation even when its files already match. See [candidate publication](/reference/caddy-configuration#native-publication).
+
+This site module is an accepted exception to rule 22 because it batches the stock modules’ Node round trips. On Beast, the isolated site phase fell from 3.260–3.308 seconds to 1.067–1.272 seconds. This includes Ansible startup and real Caddy validation/reload. This is not a general pattern: another custom module needs the same measurement.
+
+An Instance create shares its already-written Route intent and shipped assets with the site child. The child reads that input and keeps its own scratch folder, SSH pins and cleanup. It cannot remove the parent's input. Standalone Route calls and other callers prepare their own child input. Both entry forms run the same site phase.
+
+The Node CSR action creates its certificate directory as `root:caddy` with mode `0750`, then creates the private key and sets `root:caddy` ownership and mode `0640` before it returns the public request. Signing stays a separate Gateway behavior. The key never leaves its Node.
 
 "Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
 

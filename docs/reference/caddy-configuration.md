@@ -6,9 +6,10 @@ covers:
   - apps/gateway/app/Console/Commands/CaddyBuildCommand.php
   - apps/gateway/app/Infrastructure/Nodes/Roles/CaddyRoleFailure.php
   - apps/gateway/app/Domain/Nodes/CaddyRelease.php
-  - swamp/ansible/{route-create-site,route-withdraw}.yml
+  - swamp/ansible/{route-create-site.yml,route-withdraw.yml,library/orbit_route_site.py}
   - swamp/ansible/tasks/{caddy-publish,gateway-swamp}.yml
   - swamp/workflows/workflow-{operation-route-caddy,operation-route-caddy-delta,route-create-ingress}.yaml
+  - swamp/proof/spike/shape-live
 ---
 
 # Caddy configuration

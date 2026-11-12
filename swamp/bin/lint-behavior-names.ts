@@ -1,3 +1,4 @@
+import { resolveConstantName } from "./constant-name.ts";
 import { parse } from "jsr:@std/yaml@1.0.12";
 
 // A behavior is named after its target, never its run (docs/cli/README.md).
@@ -172,7 +173,7 @@ export function sharedAcrossTypes(
                 if (typeof name !== "string" || typeof type !== "string") {
                     continue;
                 }
-                const key = name.replace(/\s+/g, "");
+                const key = resolveConstantName(name).replace(/\s+/g, "");
                 if (!types.has(key)) types.set(key, new Set());
                 types.get(key)!.add(`${type} (${path})`);
             }

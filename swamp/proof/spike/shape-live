@@ -232,6 +232,7 @@ destroy-before | destroy-after)
         exit 0
     }
     put() {
+        # shellcheck disable=SC2016 # Expand the candidate in the target Node's shell.
         incus exec "$node" -- sh -eu -c '
             umask 077
             candidate=$(mktemp /etc/caddy/.orbit-shape-candidate.XXXXXXXX)
