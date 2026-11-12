@@ -157,6 +157,10 @@ export const behavior = {
                     JSON.stringify(container), await Deno.readTextFile(ctx.extensionFile("scripts/instance_clone_guest.py")),
                     await Deno.readTextFile(ctx.extensionFile("ansible/instance_network.py")),
                     (args.intent.ssh_execution as { target: { user: string } }).target.user, privatePath,
+                    JSON.stringify({
+                        mail: await Deno.readTextFile(ctx.extensionFile("ansible/instance_mail.py")),
+                        bridge: await Deno.readTextFile(ctx.extensionFile("ansible/instance_bridge.py")),
+                    }),
                 ] : [];
                 const value = Output.parse({
                     clone_argv: cloneArgv,

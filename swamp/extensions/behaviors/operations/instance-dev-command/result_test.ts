@@ -276,7 +276,7 @@ Deno.test("container mail skips retain their reason and a failed or missing phas
     const admitted = {...intent, setup_steps: [], route: null, container: {mail: {host: "10.253.0.1", port: 1025}}};
     for (const marker of ["applied", "unchanged", "skipped:mail_port_in_use", "skipped:mail_unit_conflict"]) {
         const result = JSON.parse(createResult(admitted, {...phases, container: {...container,
-            mail: {status: "succeeded", outputs: {stdout: 'TASK [Report the public mail outcome]\nok: [node] => {"msg": "orbit-mail=' + marker + '"}'}}}}).stdout);
+            mail: {status: "succeeded", outputs: {stdout: 'orbit-mail=' + marker + '\n{"phase":"container","changed":false}'}}}}).stdout);
         assertEquals(result.ready, true);
         assertEquals(result.mail, {status: marker.split(":")[0], ...(marker.includes(":") ? {reason: marker.split(":")[1]} : {}), ports: [1025, 2525]});
     }

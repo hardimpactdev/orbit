@@ -19,11 +19,12 @@ NETWORK_CHECK = SCRIPT.parents[1] / "ansible/instance_network.py"
 
 
 class CloneTest(unittest.TestCase):
-    def clone(self, damaged=None, nic_acl="orbitinst0-proxy"):
+    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None):
         calls = []
         real_run = subprocess.run
         with tempfile.TemporaryDirectory() as folder:
             container = {
+                "mail": mail,
                 "name": "instance-7",
                 "project": "orbit-instances",
                 "network": "orbitinst0",
@@ -89,6 +90,7 @@ class CloneTest(unittest.TestCase):
                         NETWORK_CHECK.read_text(),
                         pwd.getpwuid(os.getuid()).pw_name,
                         folder + "/private",
+                        json.dumps({"mail": 'print(\'{"status":"unchanged"}\')'}),
                         "container",
                     ],
                 ),
@@ -120,6 +122,11 @@ class CloneTest(unittest.TestCase):
         self.assertLess(calls.index(deleted), calls.index(start))
         check = next(i for i, call in enumerate(calls) if call[:2] == ["python3", "-c"])
         self.assertLess(check, calls.index(start))
+
+    def test_clone_launch_applies_mail_without_another_playbook(self):
+        calls, _, error = self.clone(mail={"port": 1025})
+        self.assertEqual(error, "")
+        self.assertFalse(any("ansible-playbook" in call for call in calls))
 
     def test_clone_uses_the_admitted_common_acl_name(self):
         _, read, error = self.clone(nic_acl="admitted-proxy")

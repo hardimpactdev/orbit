@@ -20,7 +20,7 @@ def main():
     network_check = sys.argv[3]
     account = sys.argv[4]
     folder = Path(sys.argv[5])
-    phase = sys.argv[6]
+    phase = sys.argv[-1]
     if phase not in {"container", "workspace", "agent", "t3", "sessions", "cleanup"}:
         raise ValueError("instance.clone_phase_invalid")
     name = container["name"]
@@ -297,6 +297,11 @@ def main():
                 raise RuntimeError("instance.container_network_unsafe")
             if read["status"] != "Running":
                 change(project + ["start", name])
+            if container.get("mail") is not None:
+                bundle = json.loads(sys.argv[6])
+                mail = json.loads(run(["python3", "-c", bundle["mail"],
+                                       json.dumps(container), json.dumps(bundle)]).stdout)
+                print("orbit-mail=" + mail["status"] + (":" + mail["reason"] if "reason" in mail else ""))
             # Git credentials remain on the Node, and leave even when a read/fetch fails.
             mirror = Path(container["mirror"])
             mirror.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
