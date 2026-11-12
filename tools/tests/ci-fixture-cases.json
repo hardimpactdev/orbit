@@ -777,7 +777,7 @@
     ]
   },
   "swamp/tests/ansible_shape_gate_tools_test.py": {
-    "source_sha256": "a70cc7d76d9318e4f797dee9651bea556aeeb16ded6911944790cb64ee8f8a8b",
+    "source_sha256": "5d4ed64fa727443866ac35a2e1d76d9bad165053dd15c2e2ce775fbf9a0a1a44",
     "cases": [
       "test_uses_the_system_tools_only_when_built_for_these_pins",
       "test_a_built_venv_needs_no_write_access_and_no_install",
