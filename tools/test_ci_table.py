@@ -94,7 +94,7 @@ class CheckTableTest(unittest.TestCase):
 ROOT = plan.ROOT
 
 # Infrastructure, not checks: explicit exceptions so new jobs cannot evade the table.
-NON_CHECKS = {'changes', 'gateway-release', 'required', 'cli-release', 'proof-run', 'delivery', 'main-required', 'fixture-report'}
+NON_CHECKS = {'changes', 'gateway-release', 'required', 'cli-release', 'proof-run', 'proof-eligibility', 'delivery', 'main-required', 'fixture-report'}
 OTHER_DEPENDENCIES = {'required', 'cli-release', 'proof-run', 'delivery', 'main-required', 'fixture-report'}
 PROOF_GATE_TIMEOUT = "${{ github.event_name == 'pull_request' && vars.ORBIT_SLOW_CHECKS_BLOCKING != 'false' && vars.ORBIT_PROOF_BLOCKING != 'false' && needs.changes.outputs.proof_run == 'true' && 195 || 2 }}"
 FIXTURES_CONDITION = "${{ !inputs.changed-only && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}"
@@ -125,7 +125,7 @@ def budget_errors(workflows, checks, fixture_budget):
             key = {'cli/build': 'cli', 'swamp/shape': 'swamp-shape',
                    'swamp/validate': 'swamp-validate', 'swamp/tests': 'swamp-tests'}.get(label, name)
             if caller is None and name in NON_CHECKS:
-                expected = 195 if name == 'proof-run' else PROOF_GATE_TIMEOUT if name == 'required' else 2
+                expected = 195 if name == 'proof-run' else 1 if name == 'proof-eligibility' else PROOF_GATE_TIMEOUT if name == 'required' else 2
             elif label == 'fixtures':
                 if 'shard_ceiling_seconds' not in fixture_budget:
                     reject(label, 'no entry in .github/ci/checks.toml')

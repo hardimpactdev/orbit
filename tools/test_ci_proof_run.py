@@ -100,6 +100,37 @@ class EvaluateTest(unittest.TestCase):
         self.assertIn('Error: proof.queue_unavailable The Gateway could not queue the admission of the proof.', lines)
 
 
+class TrustLossReportTest(unittest.TestCase):
+    def test_only_explicit_failed_no_case_trust_refusal_can_skip(self):
+        payload = {'status': 'failed', 'error': {'code': 'proof.commit_untrusted'},
+                   'result': {'outcome': 'failed', 'cases': []}}
+        for wrapper in (None, 'data', 'operation'):
+            output = json.dumps({wrapper: payload} if wrapper else payload)
+            self.assertEqual(proof.report(1, output, SHA, 'key', allow_trust_skip=True)[0], 'skipped')
+            self.assertEqual(proof.report(1, output, SHA, 'key')[0], 'failed')
+        for outcome, cases, code in (('failed', [{'verdict': 'failed'}], 1),
+                                     ('failed', [{'verdict': 'passed'}], 1),
+                                     ('interrupted', [], 1), ('failed', None, 1),
+                                     ('failed', [], 130), ('failed', [], 143), ('failed', [], 124), ('failed', [], -2)):
+            with self.subTest(outcome=outcome, cases=cases, code=code):
+                payload['result'] = {'outcome': outcome, 'cases': cases}
+                self.assertNotEqual(proof.report(code, json.dumps(payload), SHA, 'key', allow_trust_skip=True)[0], 'skipped')
+        self.assertEqual(proof.report(1, '{"error":{"code":"proof.commit_untrusted"}}', SHA, 'key', allow_trust_skip=True)[0], 'failed')
+    def test_interrupted_operation_status_and_timeout_never_skip_even_with_trust_error(self):
+        from unittest.mock import Mock, patch
+        payload = {'status': 'interrupted', 'error': {'code': 'proof.commit_untrusted'},
+                   'result': {'outcome': 'failed', 'cases': []}}
+        self.assertEqual(proof.report(1, json.dumps(payload), SHA, 'key', allow_trust_skip=True)[0], 'failed')
+        payload['status'] = 'failed'
+        child = Mock()
+        child.communicate.side_effect = [subprocess.TimeoutExpired('orbit', 1), (json.dumps(payload), None)]
+        with patch.object(subprocess, 'Popen', return_value=child), patch.object(proof.signal, 'signal'):
+            code, output = proof.run(SHA, 'key', 'orbit')
+        self.assertEqual(code, 124)
+        child.send_signal.assert_called_once_with(proof.signal.SIGINT)
+        self.assertEqual(proof.report(code, output, SHA, 'key', allow_trust_skip=True)[0], 'failed')
+
+
 class CapacityReportTest(unittest.TestCase):
     def capacity(self):
         return {'id': 73, 'status': 'failed', 'error': {'code': 'tasks.capacity_unavailable', 'detail': 'private host detail'},

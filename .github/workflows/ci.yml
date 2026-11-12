@@ -654,12 +654,48 @@ jobs:
           "$RUNNER_TEMP/proof-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0
           "$RUNNER_TEMP/proof-tools/bin/ruff" check --isolated --select=E4,E7,E9,F,I swamp/proof/runner swamp/proof/firewall tools/swamp-proof-guest
 
+  # Metadata only, after selection and before any managed-runner or Gateway wait.
+  proof-eligibility:
+    name: CI proof eligibility
+    permissions:
+      contents: read
+      pull-requests: read
+    needs: changes
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && needs.changes.outputs.proof_run == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 1
+    outputs:
+      eligible: ${{ steps.eligibility.outputs.eligible }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: bin/ci-proof-eligibility
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Check commit eligibility
+        id: eligibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROOF_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 -I bin/ci-proof-eligibility
+      # Required checks reads this explicit marker only while proof is blocking.
+      - name: Skip ineligible proof
+        if: steps.eligibility.outputs.eligible == 'false'
+        run: echo 'Proof skipped; no case ran and no proof passed.'
+
   # A selected proof is part of the single Required checks result.
   proof-run:
     name: CI proof
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       outcome: ${{ steps.report.outputs.outcome }}
-    needs: changes
+    needs: [changes, proof-eligibility]
     # Only a pull request from a branch of this repository. A fork or outside PR needs a maintainer's review and
     # the label `run-proofs` (stage 4 of the command pipeline) and never starts this job: the workflow proof-outside.yml
     # runs its proof. There is no queue run, and no run after the merge: the proof tests the PR head once per push.
@@ -667,6 +703,7 @@ jobs:
       github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
       && needs.changes.outputs.proof_run == 'true'
+      && needs.proof-eligibility.outputs.eligible == 'true'
     # The runner must act as an enrolled Node that may reach the Gateway: the orbit CLI on its PATH calls the Gateway
     # from its WireGuard address and uses no secret. Set the variable ORBIT_PROOF_RUNNER to a JSON list of labels to
     # move the job to such a runner.
@@ -678,17 +715,22 @@ jobs:
       group: proof-run-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
-      # The job checks out one file, the script. It passes the head SHA and an idempotency key, and Orbit chooses the cases.
+      # Only same-repository code supplies these scripts. The outside workflow uses its trusted base.
+      # Pass the head SHA and an idempotency key; Orbit chooses the cases.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-          sparse-checkout: bin/ci-proof-run
+          sparse-checkout: |
+            bin/ci-proof-run
+            bin/ci-proof-eligibility
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Run orbit proof:run on the pull request head
         id: report
         env:
           PROOF_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          PROOF_CHECK_ELIGIBILITY: 'true'
           PROOF_RECEIPT: ${{ runner.temp }}/proof-receipt.json
         run: python3 -I bin/ci-proof-run
       - name: Store the proof report receipt
