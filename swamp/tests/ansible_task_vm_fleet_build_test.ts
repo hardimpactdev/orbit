@@ -173,6 +173,7 @@ case "$*" in
   *" -- cat /etc/ssh/ssh_host_ed25519_key.pub") echo "ssh-ed25519 AAAAgateway root@nested-gateway" ;;
   *" -- cat /home/orbit/.orbit/ssh/id_ed25519.pub") echo "ssh-ed25519 AAAAgatewaykey orbit@nested-gateway" ;;
   *" -- ssh-keygen -lf "*) echo "256 SHA256:fp-$2 root@$2 (ED25519)" ;;
+  *" --tags grants "*) echo "localhost : ok=3 changed=0 unreachable=0 failed=0" ;;
   "file push "*) cat >> "${folder}/pushed-input" ;;
   *" php artisan orbit:"*) n=$(($(cat "${folder}/operations" 2>/dev/null || echo 0) + 1)); echo "$n" > "${folder}/operations"; if [ -n "$STOCK_ROLES" ]; then "${Deno.execPath()}" run -A "${
       new URL("_support/task_vm_stock_roles.ts", import.meta.url).pathname
@@ -545,6 +546,8 @@ Deno.test({
       "incus storage list --format csv",
       "incus network list --format csv",
       "incus list --format json",
+      "incus exec nested-gateway -- env ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg ANSIBLE_STDOUT_CALLBACK=default ANSIBLE_NOCOLOR=1 ANSIBLE_DISPLAY_FAILED_STDERR=true /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e @/opt/orbit/bootstrap/control.yml --tags grants /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml",
+      "incus exec nested-gateway -- sha256sum /home/orbit/orbit/swamp/grants/orbit-gateway.yaml /home/orbit/orbit/swamp/grants/orbit-serve.yaml",
     ]);
     assertStringIncludes(output, "changed=0");
   },
