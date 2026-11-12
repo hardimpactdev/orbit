@@ -32,7 +32,7 @@ sequenceDiagram
     %%> - syntax: instance:node-service:attach
     Note over GW: Check request and access
     %%> On failure:
-    %%> - peer.identity_unknown, node_access.required or http.404 refuses the caller or numeric Instance.
+    %%> - peer.identity_unknown, node_access.required or http.404 refuses the caller or numeric Instance; authority is required for both the Instance Node and selected Process Node.
     %%> - validation.failed refuses invalid body fields or environment keys.
     alt request refused
       GW--xCLI: Named refusal<br/>No attachment change
@@ -50,10 +50,10 @@ sequenceDiagram
         alt Process or endpoint refused
           GW--xCLI: Target refused<br/>No attachment change
           %%> On failure:
-          %%> - instance.node_service_process_missing, instance.node_service_remote_node and instance.node_service_process_owned refuse an unknown, non-Node, remote or service-owned Process.
+          %%> - instance.node_service_process_missing and instance.node_service_process_owned refuse an unknown, non-Node or service-owned Process; remote Docker Processes are eligible.
           %%> - instance.node_service_protocol_unsupported and instance.node_service_process_stopped refuse non-TCP or desired-stopped targets.
           %%> - instance.node_service_port_required and instance.node_service_port_unpublished refuse an omitted choice among several ports or an unpublished TCP host port.
-          %%> - instance.node_service_port_reserved, instance.host_unavailable and instance.node_service_listener_private refuse infrastructure ports, a missing bridge or private-only binding.
+          %%> - instance.node_service_port_reserved, instance.host_unavailable and instance.node_service_listener_private refuse infrastructure ports, a missing Instance bridge, or an ineligible bind. A remote target needs exactly one TCP publication at its owner's private IPv4 WireGuard address.
         else valid endpoint
           alt identical attachment
             GW-->>CLI: Already attached<br/>changed false, reason code
@@ -64,7 +64,7 @@ sequenceDiagram
             %%> On failure:
             %%> - instance.node_service_environment_conflict requires detaching the old record before a correction.
           else unused keys
-            Note over GW: Record the attachment
+            Note over GW: Record service Node and attachment
             alt transaction fails
               GW--xCLI: Transaction failed<br/>Attachment write rolls back
             else transaction commits
