@@ -757,7 +757,7 @@ The runtime reservation belongs to its admitting Operation. A late receipt canno
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |
 | After a failed restore | The reservation and deployment hold remain. Inspect the site and failed recovery step; deployments refuse with `instance.lifecycle_busy` until the move has run again |
 
-The whole-run budget is 5,400 seconds. A lower-bound test checks it against the declared phase and child timeouts, including restoration and cleanup, with 600 seconds of margin. A deadline or confirmed cancel still projects the native end state. A lost worker with no final result reports an unknown state and retains its reservation.
+The whole-run budget is 5,700 seconds: 4,830 seconds of declared phase and child timeouts, including Node preparation, restoration and cleanup, rounded up to five minutes, plus 600 seconds for admission and settlement. A lower-bound test checks those declared timeouts and margin. A deadline or confirmed cancel still projects the native end state. A lost worker with no final result reports an unknown state and retains its reservation.
 
 Restore changes host Process states and the awake marker only when quiesce began. A target probe failure leaves both untouched.
 

@@ -54,10 +54,10 @@ final class OperationBudgetTable
         // the new `base` (about 150 s); about 1,900 s x 1.5, rounded up to five minutes. Replace with the 14-day p95 after the first success.
         'proof.verify' => 3000,
         'node.converge' => 3900,
-        // The migrate path declares 4,680 s after bounding six forward/restore Caddy validations at 70 s each.
-        // Round to 4,800, plus 600 s for admission and settlement. This lower bound includes restore/cleanup,
+        // The migrate path declares 4,830 s, including the 150 s pre-cutover Node preparation phase.
+        // Round up to 5,100, plus 600 s for admission and settlement. This lower bound includes restore/cleanup,
         // but not undeclared work or dynamic repetitions.
-        'instance.migrate' => 5400,
+        'instance.migrate' => 5700,
         // No native run yet. Basis: the legacy rollback deadline of 900 s (docs/reference/deployments.md#deploy) and the chart's
         // budget. Replace with the 14-day p95 after the first success.
         'instance.rollback' => 900,

@@ -33,7 +33,7 @@ sequenceDiagram
   %%> - a database on a Database server has an IPv4 address and a port, else `instance.database_clone_unsupported`
   %%> Result:
   %%> - the runtime reservation records its owning Operation; late receipts cannot change a newer owner
-  %%> - the whole-run budget is 5,100 seconds; a lower-bound test includes declared child, restoration and cleanup timeouts
+  %%> - the whole-run budget is 5,700 seconds: 4,830 seconds of declared phase and child timeouts, including Node preparation, restoration and cleanup, rounded up to five minutes, plus 600 seconds for admission and settlement
   %%> - maps only known host command locations, preserving opaque env/shell strings, and records each Process/from/to translation in the terminal receipt
   %%> - the runtime record is reserved: the next bridge address and, for a non-default Instance, the lowest free T3 port
   %%> - the checkout stays the Instance's runtime until the Route has moved; the Route's Node is held for the run
