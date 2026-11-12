@@ -985,6 +985,4 @@ Development mail repair uses the Node’s existing Python prerequisite through f
 
 Container migration reuses this [development mail phase](/reference/development-containers#development-mail) after copying the workspace. It requires no Node converge.
 
-Checkout destroy admission has one [read-only SSH exception](/reference/remote-programs#remote-programs) for live Git dependencies, before Schedule withdrawal. It uses the existing Node account and identity with a short timeout. Containers and unmaterialized sources skip that read; source removal rechecks the owner’s Git registry and recorded checkout paths through the shared Ansible helper. It never traverses checkout contents.
-
 Instance migration checks selected environment services before downtime. Its mail check uses the admitted [development mail endpoint](/reference/development-containers#development-mail), so the preflight and mail setup share one eligibility decision.
