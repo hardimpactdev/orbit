@@ -30,7 +30,7 @@ Orbit prepares the SMTP path and the two loopback forwarders first. A Project li
 
 The result names the path status, forwarder ports, and mailer outcome: `changed`, `left_as_written`, `not_present`, or `already_smtp`. A preserved occurrence reports only its 1-based line numbers. Mentions in comments and other values also count. No value or file content appears. Repeating a completed update writes nothing and restarts nothing.
 
-Only `changed` clears Laravel's config cache, when PHP and `artisan` exist, then restarts the Instance's running PHP unit and PHP worker Processes. Other Processes stay running. Config-clear failure does not fail the Operation. A failed path or write keeps completed path work and can be retried. The Node removes the one staging file, `/srv/workspace/.env.orbit-mail`, at entry and on exit, including after a forced container stop. The [mail rule](/reference/development-containers#development-mail) states the Node-loss window.
+Only `changed` clears Laravel's config cache, when PHP and `artisan` exist, then restarts the Instance's running PHP unit and PHP worker Processes. Other Processes stay running. Config-clear failure does not fail the Operation. A failed path or write keeps completed path work and can be retried. The Operation shows a fixed failure code and recognized tool diagnostics, without file content. Atomic replacement preserves ACLs and extended attributes as well as owner, group and mode. The Node removes the one staging file, `/srv/workspace/.env.orbit-mail`, at entry and on exit, including after a forced container stop. The [mail rule](/reference/development-containers#development-mail) states the Node-loss window.
 
 ## How it works
 

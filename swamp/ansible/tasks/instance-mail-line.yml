@@ -12,7 +12,10 @@
 - name: Require a safe mailer result
   ansible.builtin.assert:
     that: mail_line_exec.rc == 0
-    fail_msg: env.configuration_invalid
+    fail_msg: >-
+      {{ 'env.configuration_invalid' ~ (': ' ~ (mail_line_exec.stdout | from_json).error_detail
+         if mail_line_exec.stdout | default('') | length > 0 and
+         (mail_line_exec.stdout | from_json).error_detail is defined else '') }}
     quiet: true
 
 - name: Keep only the public mailer result
