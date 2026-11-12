@@ -292,7 +292,7 @@ The compiled crash-recovery worker retries a model request cut off by its kill a
 
 Workspace TMPDIR tests call the workspace bash tool in-process with a private inherited TMPDIR; the worker ACL test still crosses the real user boundary.
 
-Bash output tests retain a one-second command timeout so the output can arrive before expiry. Only the abort cases wait for the command's output before cancelling it. Boost cancellation waits for the child to receive a request, and cleanup polls for process exit instead of sleeping. The busy-turn test holds the provider response until interrupt, so it does not depend on a slow token rate.
+Bash output tests retain a one-second command timeout so the output can arrive before expiry. Only the abort cases wait for the command's output before cancelling it. Boost cancellation waits for the child to receive a request. Timeout tests observe the spawned process directly, including a child that writes no startup log; cleanup polls for process exit instead of sleeping. The busy-turn test holds the provider response until interrupt, so it does not depend on a slow token rate.
 
 ## Why it works this way
 
