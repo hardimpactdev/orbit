@@ -33,7 +33,7 @@ sequenceDiagram
   %%> - a database on a Database server has an IPv4 address and a port, else `instance.database_clone_unsupported`
   %%> Result:
   %%> - the runtime reservation records its owning Operation; late receipts cannot change a newer owner
-  %%> - the whole-run budget is 5,100 seconds; a lower-bound test includes declared child, restoration and cleanup timeouts
+  %%> - the whole-run budget is 5,700 seconds: 4,830 seconds of declared phase and child timeouts, including Node preparation, restoration and cleanup, rounded up to five minutes, plus 600 seconds for admission and settlement
   %%> - maps only known host command locations, preserving opaque env/shell strings, and records each Process/from/to translation in the terminal receipt
   %%> - the runtime record is reserved: the next bridge address and, for a non-default Instance, the lowest free T3 port
   %%> - the checkout stays the Instance's runtime until the Route has moved; the Route's Node is held for the run
@@ -53,6 +53,10 @@ sequenceDiagram
   %%> - probes every attached target from inside the container before downtime, else `instance.database_unreachable`
   %%> - checks mapped Process executables inside the container, then repeats before quiesce; unavailable paths report `instance.migrate_process_binary_unavailable` naming every Process and path, leaving the checkout serving
   %%> - fetches the branch from the checkout into the Node's mirror, including commits never pushed
+  SW->>C: Prepare Node runtimes<br/>Ansible · tags node-runtime
+  %%> What it does:
+  %%> - while the checkout still serves, mounts its source read-only in the new container, converts an inherited shared store to a private copy, and lets Vite+ resolve and install each Process's Node; the mount is removed on success and failure
+  %%> - this phase is bounded at 150 seconds; Vite+ resolution and verified download share 90 seconds; failure names the pin and reason with instance.node_runtime_prepare_failed and restores without downtime
   SW->>N: Check and stop<br/>Ansible · tags quiesce
   %%> What it does:
   %%> - repeats the branch and retirement checks
@@ -81,6 +85,7 @@ sequenceDiagram
     %%> - the shared path status and exact-line result, with line numbers only; conflicts skip the line rule
   end
   SW->>C: Start the container<br/>Processes · T3 · seed
+  %%> - first installs carried Schedule pairs disabled, after the workspace copy and before application Processes start; services run as orbit
   %%> - container units use `network.target` and nonblocking starts; reads all moved desired-running Processes active with no pending job, waits 5 seconds once for the whole set, then requires each still active with the same positive MainPID and NRestarts; failure names the Process with `instance.migrate_processes_failed` and restores before cutover
   %%> What it does:
   %%> - starts FrankenPHP and the Instance's existing Processes as `orbit`, with the same ids and desired states; their environment files come through the vault
@@ -96,7 +101,8 @@ sequenceDiagram
     %%> What it does:
     %%> - a due timer fire waits as a recorded Schedule Operation until migration terminal projection reopens admission; its context is rebuilt for the final runtime, on success or rollback
     %%> - every terminal transition settles deferred fires under the Instance lock; closed runtime admission explicitly fails them, including bound start failure and expiry; Schedule settlement preserves the migration result and late native recovery cannot replay a settled fire
-    %%> - replaces only the moved Schedules’ checkout-dependent services with host triggers for container execution, keeps their UUID timers and calendars, and resumes each recorded desired state
+    %%> - activates carried container timers with Persistent=false and the recorded desired state; removes their host pairs at retirement
+    %%> - a Schedule activation or host-unit cleanup failure is advisory after cutover: record id, name, not_activated and cause, keep the container serving and succeed migration
     %%> - removes the old host Process units and their environment folders
     %%> - repeats the same retirement preflight as an early warning; a new blocker leaves the container serving and the checkout intact
     %%> - atomically moves each old checkout under `<checkout>.orbit-retired-git/<sha256 of original path>`; the retained root is beside the migrating Instance's checkout

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\InstanceMigration;
 
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTrigger;
@@ -44,9 +46,6 @@ final readonly class MigrateSchedules
             } catch (ResourceOperationException|ScheduleOperationException) {
                 $this->refuse($schedule, 'account_unsupported', 'its recorded runtime account is unavailable');
             }
-            if (! in_array($target->user, ['orbit', 'agent'], true) || $target->group !== $target->user || $target->home !== '/home/'.$target->user) {
-                $this->refuse($schedule, 'account_unsupported', 'its user, group or home does not match a container account (orbit or agent with its own group and /home/<user>)');
-            }
             if ($target->shell !== '/bin/bash') {
                 $this->refuse($schedule, 'shell_unsupported', 'its login shell is not /bin/bash');
             }
@@ -64,9 +63,11 @@ final readonly class MigrateSchedules
                 'service' => 'orbit-schedule-'.$schedule->id.'.service', 'timer' => 'orbit-schedule-'.$schedule->id.'.timer',
                 'user' => $target->user, 'group' => $target->group, 'home' => $target->home, 'shell' => $target->shell, 'login_shell' => $target->loginShell,
                 'source_directory' => $directory, 'directory' => InstanceHostIntent::Workspace.substr($directory, strlen(rtrim($instance->checkout_path, '/'))),
-                'container_user' => $target->user, 'container_home' => '/home/'.$target->user, 'container_shell' => '/bin/bash',
+                'container_user' => 'orbit', 'container_home' => '/home/orbit', 'container_shell' => '/bin/bash',
                 'command_hash' => hash('sha256', $schedule->command), 'mapped_command_hash' => hash('sha256', $compiled['command']),
                 'source_script_hash' => hash('sha256', $script), 'source_command_paths' => $compiled['paths'],
+                'environment_file' => InstanceHostIntent::Workspace.substr($directory, strlen(rtrim($instance->checkout_path, '/'))).'/.env',
+                'path' => InstanceContainer::path($instance->project),
                 'calendar' => $schedule->calendar, 'timeout_seconds' => $schedule->timeout_seconds, 'desired' => $schedule->desired_timer_state->value,
             ];
         }
@@ -77,7 +78,7 @@ final readonly class MigrateSchedules
     /** Only the move that crossed cutover changes the Schedule's command. No identity, calendar, state or history changes.
      * @param  list<array<string,mixed>>  $admitted
      */
-    public function complete(Instance $instance, array $admitted): void
+    public function complete(Instance $instance, array $admitted, ?int $migrationId = null): void
     {
         foreach ($admitted as $plan) {
             $schedule = Schedule::query()->whereIn('target_type', Instance::morphTypes())->where('target_id', $instance->id)
@@ -85,8 +86,39 @@ final readonly class MigrateSchedules
             if (! hash_equals(ValidatedData::string($plan['command_hash']), hash('sha256', $schedule->command))) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'The admitted Schedule command changed during migration.', 409);
             }
-            $schedule->update(['command' => $this->command($schedule, $instance, ValidatedData::string($plan['source_directory']))['command']]);
+            $schedule->update([...(($plan['path'] ?? null) === null ? [] : ['trigger' => ScheduleTrigger::Container]), 'command' => $this->command($schedule, $instance, ValidatedData::string($plan['source_directory']))['command']]);
+            if ($schedule->trigger === ScheduleTrigger::Container && $migrationId !== null) {
+                foreach (Operation::query()->where('kind', 'schedule.run')->where('target_type', 'instance_schedules')
+                    ->where('target_id', $instance->id)->where('status', OperationStatus::Waiting)
+                    ->where('input->id', $schedule->id)->where('input->deferred_instance_migration', $migrationId)
+                    ->lockForUpdate()->get() as $fire) {
+                    app(OperationStore::class)->change($fire, [
+                        'status' => OperationStatus::Succeeded, 'finished_at' => now(),
+                        'result' => ['skipped' => true, 'reason' => 'container_timer_missed_during_migration'],
+                    ]);
+                }
+            }
         }
+    }
+
+    /** Private command copies, revalidated against the frozen plans before dispatch.
+     * @param  list<array<string,mixed>>  $admitted
+     */
+    public function commands(Instance $instance, array $admitted): string
+    {
+        $commands = [];
+        foreach ($admitted as $plan) {
+            $schedule = Schedule::query()->whereIn('target_type', Instance::morphTypes())
+                ->where('target_id', $instance->id)->whereKey($plan['id'])->firstOrFail();
+            $mapped = $this->command($schedule, $instance, ValidatedData::string($plan['source_directory']))['command'];
+            if (! hash_equals(ValidatedData::string($plan['command_hash']), hash('sha256', $schedule->command))
+                || ! hash_equals(ValidatedData::string($plan['mapped_command_hash']), hash('sha256', $mapped))) {
+                throw new ResourceOperationException('operation.execution_forbidden', 'The admitted Schedule changed before dispatch.', 403);
+            }
+            $commands[$schedule->id] = $mapped;
+        }
+
+        return json_encode((object) $commands, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 
     private function inside(string $path, string $checkout): bool

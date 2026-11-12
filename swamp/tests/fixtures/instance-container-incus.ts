@@ -109,7 +109,11 @@ if (family === "list") {
   }
   Deno.mkdirSync(`${rootfs(name)}/tmp`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/usr/local/bin`, { recursive: true });
+  Deno.mkdirSync(`${rootfs(name)}/usr/local/libexec`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/etc/systemd/system/multi-user.target.wants`, { recursive: true });
+  const runtimeHome = rootfs(name) + "/var/lib/orbit/vite-plus-home";
+  Deno.mkdirSync(runtimeHome, {recursive: true});
+  Deno.symlinkSync("/opt/orbit-runtime/current/vite-plus-home/js_runtime", runtimeHome + "/js_runtime");
   // The image was published from a booted container, so every container made from it starts with the image's machine-id.
   Deno.writeTextFileSync(`${rootfs(name)}/etc/machine-id`, "0123456789abcdef0123456789abcdef\n");
 } else if (family === "copy") {
@@ -258,6 +262,11 @@ if (family === "list") {
     }
     Deno.exit(0);
   }
+  if (command[0] === "python3" && command[1] === "/usr/local/libexec/orbit-instance-node-runtime.py") {
+    // Runtime conversion and Vite+ behavior have their own real helper/fake-vp fixture.
+    console.log(JSON.stringify({status: "unchanged", versions: ["24.22.1"], pins: []}));
+    Deno.exit(0);
+  }
   if (command[0] === "journalctl") {
     const unit = command[command.indexOf("--unit") + 1];
     for (const line of (state.journal?.[unit] ?? []).slice().reverse()) console.log(line);
@@ -308,6 +317,10 @@ if (family === "list") {
     const admitted = nic.some((acl: {egress: Record<string, string>[]}) => acl.egress.some((rule) => allows(rule, target.host, target.port))) &&
       bridge?.egress.some((rule: Record<string, string>) => rule.source === "10.253.0.0/24" && allows(rule, target.translatedHost, target.translatedPort));
     Deno.exit(admitted ? 0 : 1);
+  }
+  if (command[0] === "python3" && command[1] === "-c" && command[2].includes("/var/lib/orbit/vite-plus-home/js_runtime")) {
+    command[2] = command[2].replaceAll("/var/lib/orbit/vite-plus-home", rootfs(name) + "/var/lib/orbit/vite-plus-home")
+      .replaceAll("/usr/local/libexec", rootfs(name) + "/usr/local/libexec");
   }
   const done = new Deno.Command(command[0], {
     args: command.slice(1).map((value) => command[0] === "git" && command[1] === "config" ? value : inside(name, value)),

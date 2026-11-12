@@ -183,6 +183,10 @@ Deno.test("the Route is not finished until every certificate step succeeded", ()
     }
 });
 Deno.test("a container default takes its commit from the workspace and finishes after the seed snapshot", () => {
+    const advisory = JSON.parse(createResult({...intent, container: {clone: null}}, {...phases,
+        container: {launch: "succeeded", workspace: phases.checkout, deploy: [], processes: "succeeded", seed: "succeeded"}}).stdout);
+    assertEquals(advisory.node_pin, {status: "not_prepared", reason: "container_from_stock_image"});
+    assertEquals(advisory.ready, true);
     const container: NonNullable<Parameters<typeof createResult>[1]["container"]> = {
         launch: "succeeded",
         workspace: { status: "succeeded", outputs: { stdout: `"msg": "orbit-commit=${commit}"` } },
@@ -197,7 +201,7 @@ Deno.test("a container default takes its commit from the workspace and finishes 
             route: "succeeded",
             container: { ...container, ...changes },
         }).stdout);
-    assertEquals(create({}), { instance_id: 7, ready: true, name_converted_from: null, commit });
+    assertEquals(create({}), { instance_id: 7, ready: true, name_converted_from: null, commit, node_pin: {status: "not_prepared", reason: "container_from_stock_image"} });
     assertEquals([create({ deploy: ["succeeded", "failed"] }).failed_step, create({ deploy: ["succeeded", "failed"] }).error_code], [
         "deploy",
         "instance.create_deploy_failed",

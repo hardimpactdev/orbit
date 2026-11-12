@@ -54,3 +54,5 @@ Instance runtime preparation installs captured Schedule definition copies throug
 - [`instance:destroy`](/cli/instance/destroy) removes every Schedule of the Instance.
 
 [`schedule:logs`](/cli/schedule/logs) reads a bounded snapshot. `--follow` refuses until the fixed Agent release is pinned.
+
+Migrated legacy Schedules use [container timers](/reference/schedules#container-timers). List and show include observed timer state and latest execution; a stopped container is inactive. Logs read its bounded service journal without waking it. Container Schedule mutations are not available yet and refuse with schedule.target_unsupported. Automatic fires create no Operation.

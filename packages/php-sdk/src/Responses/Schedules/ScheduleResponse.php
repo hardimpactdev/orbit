@@ -45,6 +45,7 @@ final readonly class ScheduleResponse
         public ?string $lastRunAt,
         public ?string $lastRunStatus,
         public string $requestId,
+        public ?string $timerState,
     ) {}
 
     /** @param array<array-key, mixed> $data */
@@ -91,6 +92,7 @@ final readonly class ScheduleResponse
             || ! in_array($desiredTimerState, self::DESIRED_TIMER_STATES, strict: true)
             || ! is_string($status)
             || ! in_array($status, self::STATUSES, strict: true)
+            || (isset($data['timer_state']) && ! in_array($data['timer_state'], ['active', 'inactive', 'failed', 'unknown'], true))
             || $failedStep === false
             || $lastRunAt === false
             || ! in_array($lastRunStatus, self::LAST_RUN_STATUSES, strict: true)
@@ -113,6 +115,7 @@ final readonly class ScheduleResponse
             lastRunAt: $lastRunAt,
             lastRunStatus: $lastRunStatus,
             requestId: GatewayRequestId::fromTransport($requestId) ?? '',
+            timerState: $data['timer_state'] ?? null,
         );
     }
 
@@ -129,6 +132,7 @@ final readonly class ScheduleResponse
             'timeout_seconds' => $this->timeoutSeconds,
             'desired_timer_state' => $this->desiredTimerState,
             'status' => $this->status,
+            ...($this->timerState === null ? [] : ['timer_state' => $this->timerState]),
             'failed_step' => $this->failedStep,
             'error_code' => $this->errorCode,
             'last_run_at' => $this->lastRunAt,

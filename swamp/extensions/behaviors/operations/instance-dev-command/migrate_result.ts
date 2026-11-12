@@ -3,6 +3,7 @@ import { Step } from "./result.ts";
 
 /** The statuses of the steps of a move (docs/cli/instance/migrate.mmd). Temporary, with the command. */
 export const MigratePhases = z.object({
+    node: z.string().optional(),
     mail: z.string().optional(),
     quiesce: z.string(),
     container: z.string(),
@@ -32,6 +33,11 @@ const MailReceipt = z.object({
     if (receipt.mailer.status === "left_as_written") return receipt.mailer.lines !== undefined;
     return receipt.mailer.lines === undefined;
 });
+const ScheduleOutcome = z.object({
+    id: z.string().uuid(), name: z.string().min(1).max(63),
+    outcome: z.enum(["activated", "disabled", "not_activated"]),
+    cause: z.string().regex(/^[a-z]+\.[a-z0-9_]+$/).optional(),
+}).strict();
 type WrittenFailure = Partial<z.infer<typeof MailReceipt>> & {
     error_code?: string;
     error_message?: string;
@@ -39,6 +45,7 @@ type WrittenFailure = Partial<z.infer<typeof MailReceipt>> & {
     retained_git_path?: string;
     retained_git_at?: string;
     untracked_files_copied?: number;
+    schedules?: z.infer<typeof ScheduleOutcome>[];
 };
 type Phases = z.infer<typeof MigratePhases>;
 
@@ -47,7 +54,7 @@ const COMMIT = /orbit-commit=([0-9a-f]{40}|[0-9a-f]{64})\b/;
 /** A public error code, as a phase's refusal writes it into the run folder. */
 const CODE = /^[a-z]+\.[a-z0-9_]+$/;
 /** The phases that write `result.json`: the Ansible ones. The Route child and the registration step write none. */
-const WRITES_RESULT = ["quiesce", "container", "workspace", "files", "agent", "processes", "seed", "t3", "retire"];
+const WRITES_RESULT = ["node", "quiesce", "container", "workspace", "files", "agent", "processes", "seed", "t3", "retire"];
 
 /**
  * Map the step statuses of a move to its terminal receipt. `moved` says that the Route serves the container and the checkout's
@@ -67,10 +74,11 @@ export function migrateResult(
     const translations = processes.flatMap((process) => process.translations ?? []);
     const routed = intent.route_mutations != null;
     const commit = workspace?.status === "succeeded" ? COMMIT.exec(String(workspace.outputs?.stdout ?? ""))?.[1] ?? null : null;
-    const done = (name: Exclude<keyof Phases, "mail">): [string, boolean, boolean] => [name, phases[name] === "succeeded", ["failed", "cancelled", "interrupted", "unknown"].includes(phases[name])];
+    const done = (name: Exclude<keyof Phases, "mail" | "node">): [string, boolean, boolean] => [name, phases[name] === "succeeded", ["failed", "cancelled", "interrupted", "unknown"].includes(phases[name])];
     // [phase, finished, failed], in the order the run takes them.
     const outcomes: [string, boolean, boolean][] = [
         done("container"),
+        ...(phases.node === undefined ? [] : [["node", phases.node === "succeeded", ["failed", "cancelled", "interrupted", "unknown"].includes(phases.node)] as [string, boolean, boolean]]),
         done("quiesce"),
         ["workspace", commit !== null, ["failed", "cancelled", "interrupted", "unknown"].includes(phases.workspace)],
         done("files"),
@@ -92,14 +100,26 @@ export function migrateResult(
     const parsedMail = phases.mail === "succeeded" ? MailReceipt.safeParse(written) : null;
     const mail = parsedMail?.success ? parsedMail.data : null;
     const mailWarning = phases.mail !== undefined && phases.mail !== "skipped" && mail === null;
+    const schedulePlans = (intent.migrate as { schedules?: { id: string; name: string }[] } | undefined)?.schedules ?? [];
+    const schedules = moved ? schedulePlans.map((plan) => {
+        const receipt = written?.schedules?.find((row) => row.id === plan.id && row.name === plan.name);
+        return receipt && (receipt.outcome !== "not_activated" || receipt.cause)
+            ? receipt : { id: plan.id, name: plan.name, outcome: "not_activated", cause: "schedule.container_activation_unverified" };
+    }) : [];
+    const warnings = [
+        ...(mailWarning ? [{code: "instance.mail_update_failed", step: "mail"}] : []),
+        ...schedules.filter((row) => row.outcome === "not_activated").map((row) => ({
+            code: row.cause, schedule_id: row.id, schedule_name: row.name,
+        })),
+    ];
     const result = {
         instance_id: intent.instance_id,
         ready: failed === undefined,
         moved,
         restored: !moved && phases.restore === "succeeded" && ["succeeded", "skipped"].includes(phases.restore_route),
         ...(mail ?? {}),
-        ...(mailWarning
-            ? {warnings: [{code: "instance.mail_update_failed", step: "mail"}]} : {}),
+        ...(warnings.length ? { warnings } : {}),
+        ...(schedules.length ? { schedules } : {}),
         ...(translations.length ? { process_translations: translations } : {}),
         ...(failed?.[0] === "container" && refusal !== null && written?.preflight_refused === true ? { preflight_refused: true } : {}),
         ...(commit ? { commit } : {}),
@@ -137,6 +157,12 @@ export async function writtenFailure(folder: string): Promise<WrittenFailure | n
             JSON.parse(await Deno.readTextFile(`${folder}/untracked-files.json`)));
         if (parsed.success) files = parsed.data;
     } catch { /* No complete copy receipt. */ }
-    const result = { ...failure, ...retained, ...mail, ...files };
+    let schedules: Pick<WrittenFailure, "schedules"> = {};
+    try {
+        const parsed = z.object({schedules: z.array(ScheduleOutcome)}).safeParse(
+            JSON.parse(await Deno.readTextFile(folder + "/schedule-result.json")));
+        if (parsed.success) schedules = parsed.data;
+    } catch { /* A missing or malformed activation receipt becomes a per-Schedule warning. */ }
+    const result = { ...failure, ...retained, ...mail, ...files, ...schedules };
     return Object.keys(result).length > 0 ? result : null;
 }

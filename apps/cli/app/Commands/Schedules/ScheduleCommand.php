@@ -52,6 +52,7 @@ abstract class ScheduleCommand extends GatewayCommand
             'Timeout seconds' => $schedule->timeoutSeconds,
             'Desired timer state' => $schedule->desiredTimerState,
             'Lifecycle state' => $schedule->status,
+            ...($schedule->timerState === null ? [] : ['Timer state' => $schedule->timerState]),
             'Failed step' => $schedule->failedStep,
             'Error code' => $schedule->errorCode,
             'Last run at' => $schedule->lastRunAt,

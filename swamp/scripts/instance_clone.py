@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 # Mirrored by the guest emitter; the clone tests keep the two sets in sync.
-GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "systemctl", "t3")
+GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 
 
 
@@ -259,10 +259,15 @@ def main():
                         "/etc/systemd/system",
                         "/etc/orbit/processes",
                         "/etc/systemd/system/sockets.target.wants",
+                        "/etc/systemd/system/timers.target.wants",
+                        "/etc/orbit/schedules",
                     ]
                 ):
                     response = run(["incus", "query", files + directory], check=False)
                     if response.returncode:
+                        if index in (1, 4, 5) and response.stderr.strip() not in (
+                            "Error: file does not exist", "Error: not found", "Error: Not Found", "Error: Path not found"):
+                            raise RuntimeError("schedule.container_clone_cleanup_failed")
                         continue
                     for item in json.loads(response.stdout):
                         if (
@@ -277,6 +282,9 @@ def main():
                                 and item.endswith(".service")
                                 and item not in own_units
                             )
+                            or (index == 1 and item.startswith("orbit-schedule-") and item.endswith((".service", ".timer")))
+                            or (index == 4 and item.startswith("orbit-schedule-") and item.endswith(".timer"))
+                            or (index == 5 and item.endswith((".sh", ".complete")))
                             or (index == 2 and item not in own_ids)
                             or (index == 3 and (item in {"orbit-mail-1025.socket", "orbit-mail-2525.socket"}
                                                or item.startswith("orbit-node-service-")))

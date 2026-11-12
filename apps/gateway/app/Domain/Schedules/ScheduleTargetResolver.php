@@ -42,17 +42,23 @@ final readonly class ScheduleTargetResolver
     }
 
     /** The Placement alone: the host Node, the user and the working directory, with no read of the Node. */
-    public function placement(ScheduleTargetType $type, int $id): ScheduleTarget
+    public function placement(ScheduleTargetType $type, int $id, bool $allowContainer = false): ScheduleTarget
     {
         if ($id < 1) {
             $this->invalid();
         }
 
         try {
-            return match ($type) {
+            $target = match ($type) {
                 ScheduleTargetType::Node => $this->node(Node::query()->findOrFail($id), lookup: false),
                 ScheduleTargetType::Instance => $this->instance(Instance::query()->with('node')->findOrFail($id), lookup: false),
             };
+            if ($target->container !== null && ! $allowContainer) {
+                throw new ResourceOperationException('schedule.target_unsupported',
+                    'Creating container Schedules is not available yet; migrated Schedules support list, show and logs.', 409);
+            }
+
+            return $target;
         } catch (ModelNotFoundException) {
             $this->invalid();
         }
@@ -60,7 +66,7 @@ final readonly class ScheduleTargetResolver
 
     public function placementOf(#[SensitiveParameter] Schedule $schedule): ScheduleTarget
     {
-        $target = $this->placement($this->typeForModel($schedule->target_type), $schedule->target_id);
+        $target = $schedule->trigger === ScheduleTrigger::Container ? $this->forSchedule($schedule) : $this->placement($this->typeForModel($schedule->target_type), $schedule->target_id, allowContainer: true);
         if ($target->node->id !== $schedule->host_node_id) {
             $this->unavailable();
         }
@@ -71,7 +77,9 @@ final readonly class ScheduleTargetResolver
     public function forSchedule(#[SensitiveParameter] Schedule $schedule): ScheduleTarget
     {
         $type = $this->typeForModel($schedule->target_type);
-        $target = $this->resolve($type, $schedule->target_id);
+        $target = $schedule->trigger === ScheduleTrigger::Container
+            ? $this->instance(Instance::query()->with('node')->findOrFail($schedule->target_id), applicationUser: true)
+            : $this->resolve($type, $schedule->target_id);
 
         if ($target->node->id !== $schedule->host_node_id) {
             $this->unavailable();
@@ -124,6 +132,7 @@ final readonly class ScheduleTargetResolver
                 ScheduleTargetType::Instance => $this->instance(
                     Instance::query()->with('node')->findOrFail($schedule->target_id),
                     requireActive: false,
+                    applicationUser: $schedule->trigger === ScheduleTrigger::Container,
                 ),
             };
         } catch (ModelNotFoundException) {
@@ -178,7 +187,7 @@ final readonly class ScheduleTargetResolver
         );
     }
 
-    private function instance(Instance $instance, bool $requireActive = true, bool $lookup = true): ScheduleTarget
+    private function instance(Instance $instance, bool $requireActive = true, bool $lookup = true, bool $applicationUser = false): ScheduleTarget
     {
         $instance->loadMissing('node');
         $this->assertNode($instance->node, $requireActive);
@@ -196,7 +205,7 @@ final readonly class ScheduleTargetResolver
 
         $runtime = $instance->runtime()->first();
         if ($runtime !== null && ! InstanceMigration::pending($instance)) {
-            $user = $instance->node->user;
+            $user = $applicationUser ? 'orbit' : $instance->node->user;
             if (! in_array($user, ['orbit', 'agent'], true)) {
                 $this->unavailable();
             }

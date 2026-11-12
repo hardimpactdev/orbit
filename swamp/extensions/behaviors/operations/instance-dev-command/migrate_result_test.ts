@@ -126,7 +126,7 @@ Deno.test("the migration prepares and probes the container before quiesce and bu
     };
     const steps = Object.fromEntries(flow.jobs[0].steps.map((step) => [step.name, step]));
     assertEquals(steps.container.dependsOn?.map((edge) => edge.step), ["input"]);
-    assertEquals(steps.quiesce.dependsOn?.map((edge) => edge.step), ["container"]);
+    assertEquals(steps.quiesce.dependsOn?.map((edge) => edge.step), ["node-runtime"]);
     assertEquals(steps.workspace.dependsOn?.map((edge) => edge.step), ["quiesce"]);
     assertEquals(steps.container.task.inputs?.run?.includes('--tags container "$ORBIT_ANSIBLE/instance-migrate.yml"'), true);
 });
@@ -229,6 +229,17 @@ Deno.test("missing or malformed successful mail receipts become advisory warning
     } finally { await Deno.remove(folder, {recursive: true}); }
 });
 
+Deno.test("Node preparation fails before quiesce with its pin reason and restores only the new container", () => {
+    const phases = {...moved, node: "failed", quiesce: "skipped", workspace: "skipped", files: "skipped",
+        processes: "skipped", seed: "skipped", route: "skipped", retire: "skipped", restore: "succeeded"};
+    const receipt = result(defaultIntent, phases, null, null, {
+        error_code: "instance.node_runtime_prepare_failed", error_message: ".nvmrc pins Node 22: checksum verification failed",
+    });
+    assertEquals([receipt.ready, receipt.moved, receipt.restored, receipt.failed_step, receipt.error_code],
+        [false, false, true, "node", "instance.node_runtime_prepare_failed"]);
+    assertEquals(receipt.error_message, ".nvmrc pins Node 22: checksum verification failed");
+});
+
 Deno.test("the copied untracked count includes zero, excludes paths and survives later failure", async () => {
     const folder = await Deno.makeTempDir();
     try {
@@ -264,4 +275,33 @@ Deno.test("invalid or incomplete copied-file receipts do not claim a count", asy
     } finally {
         await Deno.remove(folder, { recursive: true });
     }
+});
+
+Deno.test("carried Schedule activation failures and missing receipts warn without failing completed migration", async () => {
+    const schedule = {id: "11111111-1111-4111-8111-000000000001", name: "laravel-scheduler"};
+    const intent = {...defaultIntent, migrate: {schedules: [schedule]}};
+    const folder = await Deno.makeTempDir();
+    try {
+        for (const receipt of [
+            {...schedule, outcome: "activated"},
+            {...schedule, outcome: "disabled"},
+            {...schedule, outcome: "not_activated", cause: "schedule.container_activation_failed"},
+            {...schedule, outcome: "not_activated"},
+            {id: "invalid", name: schedule.name, outcome: "activated"},
+        ]) {
+            await Deno.writeTextFile(folder + "/schedule-result.json", JSON.stringify({schedules: [receipt]}));
+            const observed = result(intent, moved, workspace, null, await writtenFailure(folder));
+            assertEquals(observed.ready, true);
+            assertEquals(observed.moved, true);
+            assertEquals(observed.restored, false);
+            assertEquals(observed.schedules[0].id, schedule.id);
+            assertEquals(observed.schedules[0].name, schedule.name);
+            if (receipt.id === schedule.id && ["activated", "disabled"].includes(receipt.outcome)) {
+                assertEquals(observed.warnings, undefined);
+            } else {
+                assertEquals(observed.schedules[0].outcome, "not_activated");
+                assertEquals(observed.warnings[0].code.startsWith("schedule.container_"), true);
+            }
+        }
+    } finally { await Deno.remove(folder, {recursive: true}); }
 });

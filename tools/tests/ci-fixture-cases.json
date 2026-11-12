@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "b0ac54e2a84d453aa467cd8257cdce27489ca8e878e220943413154bd4184f5a",
+    "source_sha256": "99302ecb7d7ee6e6192e2fcc092c648f76e2fa233f602470549695b11f01bf33",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -108,7 +108,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "f0787511d26abd6a0356b3ebe4c4bdb54aafd0fc4ea526eaedb5305beeb60045",
+    "source_sha256": "e6b555d91970fe14226bc78383c19e87cdf76ae47fae432325740cacdbef0dc4",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
@@ -1340,7 +1340,7 @@
     ]
   },
   "swamp/tests/instance_clone_guest_test.py": {
-    "source_sha256": "5aecb8d8f4b0f05021ade52dc9c3f5157d5fc0a2af560a2829be74b56c7ecca3",
+    "source_sha256": "7966a609b3b563b1184fc5d1582ce87c167cf4d11e34de31ed14786b11c30a33",
     "cases": [
       "test_sessions_check_only_loopback_t3_and_reject_http_and_scope_failures",
       "test_workspace_forwards_one_json_vault_value_without_printing_secrets",
@@ -1355,7 +1355,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "0f640301e9923aa832b2db2c254190cc0d1b491e0c8b6da1db5bd322e082346a",
+    "source_sha256": "cd6fd017b0f76e9c39a4bd05ebd3f48e787d4db3a3747c757858dc1477edd7ea",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1367,8 +1367,10 @@
       "test_target_created_after_admission_is_not_silently_reused",
       "test_unreadable_remote_fails_without_creating_a_branch",
       "test_unreachable_frozen_commit_fails_without_using_current_tip",
+      "test_schedule_cleanup_listing_error_refuses_before_clone_boot",
       "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
       "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement",
+      "test_clone_target_failure_receipt_keeps_public_identity_and_bounds_tool_output",
       "test_clone_launch_applies_mail_without_another_playbook",
       "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful",
       "test_clone_uses_the_admitted_common_acl_name",
@@ -1773,9 +1775,10 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "a94d87a8d2226b97829a166f735fab05ffc8147e3323338096053391746c6356",
+    "source_sha256": "362db7b9578a6ea1cc393fe3fefd2ad0cb9fb850c481e31bc96688f9d02f8fc9",
     "cases": [
       "test_loopback_requires_exact_attached_key_pair_and_port",
+      "test_database_urls_refuse_without_exposing_credentials_or_bypassing_attached_keys",
       "test_development_mail_satisfies_only_the_ipv4_forwarded_endpoints",
       "test_ipv6_mail_is_refused_even_with_the_development_mail_path",
       "test_mail_outside_the_forwarded_tuple_keeps_the_original_verdict",
@@ -1818,8 +1821,13 @@
       "test_partial_write_retries_activation_and_disabled_active_socket_is_repaired",
       "test_failed_target_is_fatal_and_retry_keeps_pending",
       "test_detach_keeps_shared_port_then_removes_only_owned_access_without_dnat",
+      "test_kernel_probe_reads_only_established_sockets_owned_by_the_proxy",
+      "test_failed_proxy_refuses_before_quiesce_with_public_identity_and_retains_pending",
+      "test_effective_vendor_runtime_fragments_and_dropins_are_not_shadowed",
+      "test_exact_incus_type_wide_dropin_is_allowed_but_modified_content_refuses",
       "test_public_failure_boundary_keeps_only_allowlisted_codes",
       "test_real_ansible_phase_accepts_minimal_intent_without_workspace_fields",
+      "test_real_create_and_migrate_failure_receipts_keep_target_and_block_later_work",
       "test_no_attachment_is_noop_and_phase_before_application_work"
     ]
   },
@@ -1853,14 +1861,17 @@
     ]
   },
   "swamp/tests/ansible_schedule_logs_test.ts": {
-    "source_sha256": "f38567c977c0d0bd2efa8e46ad78b49077868d7f881000d4001138f0135e113d",
+    "source_sha256": "9c19465180c4136985405ec46e404fcf4300416398a821d148a8bfdcc0fd9a85",
     "cases": [
       "migrated Schedule logs combine unit and command entries privately, in time order, with whole multiline messages",
       "Schedule journal byte cap retains complete multibyte entries and excludes the first entry that cannot fit",
       "Schedule journal keeps a complete entry at the exact UTF-8 byte bound",
       "Schedule journal stops reading an oversized frame on the Node before transfer",
       "Schedule journal reads long fields with --all and handles null and non-UTF-8 byte-array messages",
-      "Schedule journal bounds double JSON encoding and crosses the Gateway's real framed client"
+      "Schedule journal bounds double JSON encoding and crosses the Gateway's real framed client",
+      "container Schedule inspection reads guest state and journal, and stopped inspection never execs or wakes",
+      "carried Schedule installs disabled and post-cutover activation failure stays advisory",
+      "carried fixed-time calendars preserve explicit zones and capture an unzoned source without changing the stored form"
     ]
   },
   "swamp/tests/process_destroy_failed_cache_test.ts": {
@@ -1885,7 +1896,7 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_test.py": {
-    "source_sha256": "d81d218f68bd558ec8ab79da40f21cf77beb77ecd539b41400b0eff863e22e5e",
+    "source_sha256": "8d463986f73bba118e9f87ad0eeac78f701f260024041f9a877ffb0a41fa82d6",
     "cases": [
       "test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes",
       "test_new_admission_metadata_and_incus_empty_fields_are_unchanged",
@@ -1923,7 +1934,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "ccdee12065c4cc149312ad2c0ceb472f9fba037567b1f357fe3fc171a54f6a1f",
+    "source_sha256": "a452ae8d4ece76ed216171f8669e58e1c939efd6b5d2237b661c98c3c90ef99b",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -1948,12 +1959,14 @@
       "mail failure is an advisory warning and cannot fail or restore a completed migration",
       "migration retains each exact-line outcome and the named path conflict without values",
       "missing or malformed successful mail receipts become advisory warnings",
+      "Node preparation fails before quiesce with its pin reason and restores only the new container",
       "the copied untracked count includes zero, excludes paths and survives later failure",
-      "invalid or incomplete copied-file receipts do not claim a count"
+      "invalid or incomplete copied-file receipts do not claim a count",
+      "carried Schedule activation failures and missing receipts warn without failing completed migration"
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {
-    "source_sha256": "766c8a4602e80721efc68bf018c2b8681d5274b9798ef727a5f1e045baf1050b",
+    "source_sha256": "7b5244c4236f3869ddff74290c7c58b31c570ff9ea9b8309214137ace1239478",
     "cases": [
       "create returns only the commit when every step finished",
       "create names the first unfinished phase",
@@ -2025,6 +2038,24 @@
       "test_ansible_route_site",
       "test_ansible_route_withdrawal",
       "test_ansible_bootstrap_swamp_front"
+    ]
+  },
+  "swamp/tests/instance_node_runtime_test.py": {
+    "source_sha256": "aacf9890475b52a1297c0074dda0f86ae67b7e858a4d7f8a3e3a5b18c37e53ad",
+    "cases": [
+      "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat",
+      "test_recipe_copy_survives_current_flip_and_shared_pruning_and_seed_keeps_download",
+      "test_cloned_user_planted_links_never_change_their_external_target",
+      "test_vite_alone_resolves_and_fetches_once_as_the_app_user",
+      "test_recipe_pin_and_unpinned_projects_need_no_install",
+      "test_download_integrity_and_timeout_failures_name_the_pin",
+      "test_malformed_and_ambiguous_pins_refuse_instead_of_using_the_default",
+      "test_download_failures_keep_specific_safe_reasons",
+      "test_shasums_download_failures_are_transport_errors_not_verification_errors",
+      "test_non_vite_projects_do_not_resolve_or_download_unused_pins",
+      "test_deploy_fetch_refuses_legacy_store_even_with_a_helper",
+      "test_nested_ignored_pin_refuses_even_when_a_parent_pin_is_selected",
+      "test_production_phase_removes_read_only_source_mount_after_failure_without_downtime"
     ]
   }
 }

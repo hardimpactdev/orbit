@@ -76,6 +76,8 @@ function fixture() {
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
+  Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
+  Deno.copyFileSync(new URL("tasks/instance-node-runtime.yml", root), `${folder}/tasks/instance-node-runtime.yml`);
   Deno.mkdirSync(`${folder}/run`);
   // The Project's repository, with one commit on main.
   const source = `${folder}/source`;
@@ -204,11 +206,19 @@ Deno.test({
       // No bundle, credential or .env stays behind on the Node or in the container.
       assertEquals([...Deno.readDirSync(`${f.folder}/containers/instance-7/tmp`)], []);
 
+      // Deploy must leave a stock legacy store alone, even if a helper file is present.
+      const guest = f.folder + "/containers/instance-7";
+      const helper = guest + "/usr/local/libexec/orbit-instance-node-runtime.py";
+      Deno.mkdirSync(guest + "/usr/local/libexec", {recursive: true});
+      Deno.writeTextFileSync(helper, "pre-existing helper: do not install or convert");
       for (const phase of ["container", "workspace", "processes", "seed", "start", "check"]) {
         const again = f.run(phase);
         assert(again.ok, again.output);
         assertEquals(again.changed, 0, `${phase}: ${again.output}`);
       }
+
+      assertEquals(Deno.readTextFileSync(helper), "pre-existing helper: do not install or convert");
+      assertEquals(Deno.readLinkSync(guest + "/var/lib/orbit/vite-plus-home/js_runtime"), "/opt/orbit-runtime/current/vite-plus-home/js_runtime");
 
       // Configuration drift alone restarts PHP, even when its unit has not changed.
       Deno.writeTextFileSync(`${f.folder}/containers/instance-7/etc/orbit/frankenphp.Caddyfile`, "stale\n");

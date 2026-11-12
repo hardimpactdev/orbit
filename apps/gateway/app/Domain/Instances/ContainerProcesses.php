@@ -161,14 +161,21 @@ final readonly class ContainerProcesses
             || $process->keep_alive !== $attributes['keep_alive'] || $process->restart_on_deploy !== $attributes['restart_on_deploy']) {
             return false;
         }
-        $actual = $this->forDefinition($process, $instance);
-        $expected = clone $actual;
-        $expected->forceFill($attributes);
-        $expected = $this->forDefinition($expected, $instance);
-        $target = $this->targets->forInspection($actual);
+        try {
+            $actual = $this->forDefinition($process, $instance);
+            $expected = clone $actual;
+            $expected->forceFill($attributes);
+            // Definitions already use container coordinates, even while this Instance is still a host checkout.
+            $placement = clone $instance;
+            $placement->checkout_path = InstanceHostIntent::Workspace;
+            $expected = $this->forDefinition($expected, $placement);
+            $target = $this->targets->forInspection($actual);
 
-        return $this->systemd->render($actual, $target) === $this->systemd->render($expected, $target)
-            && $this->systemd->environmentContent($actual, $target) === $this->systemd->environmentContent($expected, $target);
+            return $this->systemd->render($actual, $target) === $this->systemd->render($expected, $target)
+                && $this->systemd->environmentContent($actual, $target) === $this->systemd->environmentContent($expected, $target);
+        } catch (ResourceOperationException) {
+            return false;
+        }
     }
 
     /**
