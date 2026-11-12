@@ -605,10 +605,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 \u2192 v5.12.0",
-      "exact script output: v5.42.0 \u2192 v5.43.0",
-      "exact script output: v5.49.0 \u2192 v5.50.0",
-      "exact script output: v5.50.0 \u2192 v5.50.1",
+      "exact script output: v5.11.0 → v5.12.0",
+      "exact script output: v5.42.0 → v5.43.0",
+      "exact script output: v5.49.0 → v5.50.0",
+      "exact script output: v5.50.0 → v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -2159,6 +2159,18 @@
       "test_other_container_retains_shared_bridge_endpoint_but_not_this_containers_forward_rule",
       "test_remote_destroy_and_failed_migrate_restore_remove_only_their_owned_path",
       "test_previous_gateway_local_intent_has_no_new_required_fields"
+    ]
+  },
+  "swamp/extensions/behaviors/operations/ansible-input/write_test.ts": {
+    "source_sha256": "0095bb2c3ad26a5c8ef616a5c3075a0f051d8fac6eb014bf9bd4761e819f1559",
+    "cases": [
+      "the full intent reaches a private file beyond the environment size limit",
+      "an intent write refuses paths outside its run folder",
+      "the fleet reboot finalizer publishes only its redacted public evidence",
+      "the fleet reboot finalizer reports a fixed error when private callback inputs cannot be parsed",
+      "real clone commands stay below 32 KiB with a large Gateway intent",
+      "real clone launch preserves stdin and cleanup works after an early container failure",
+      "workflow command and inline script templates keep 16 KiB of budget headroom"
     ]
   }
 }

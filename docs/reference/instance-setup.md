@@ -15,7 +15,7 @@ covers:
 
 [Instance containers](/reference/development-containers#processes) use the Project's development deploy steps to build the default, then install its development Process definitions. A clone inherits that workspace and installs its own Process records. Its workspace phase reads `.env` and the Process environment files from one private vault copy.
 
-Orbit activates the clone after reading T3's registration receipt.
+Orbit activates the clone after reading T3's registration receipt. Its helpers and public intent travel separately from credentials. A failed first launch still removes the private clone folder.
 
 A Project stores two ordered lists of named commands: setup steps and teardown steps. Orbit runs the setup list before it activates a new development Instance, and the teardown list before it removes an active development Instance. Setup does not require a Route: an unrouted monorepo `default` becomes `active` and runs the same list. Its setup commands can install dependencies in each subproject without application metadata inspection at the repository root.
 
