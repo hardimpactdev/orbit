@@ -30,11 +30,6 @@ An Instance create shares its already-written Route intent and shipped assets wi
 
 The Node CSR action creates its certificate directory as `root:caddy` with mode `0750`, then creates the private key and sets `root:caddy` ownership and mode `0640` before it returns the public request. Signing stays a separate Gateway behavior. The key never leaves its Node.
 
-Orbit leaf requests use the fixed common name `Orbit` and exactly one DNS subject alternative name (SAN): the admitted domain. The Gateway signs that SAN into the leaf. A domain can use up to 253 characters, with at most 63 in each label; it has no 64-character certificate limit. Caddy, TLS probes and renewal use SAN, so existing leaves whose common name equals the domain remain valid.
-
-During a release overlap, the signer also accepts the previous request form: common name equal to the admitted domain, with either no SAN or that exact DNS SAN. Remove this request form after all certificate-producing workflows use the new form and all queued or in-flight runs with the previous definitions have finished. Existing certificate validation needs no overlap branch.
-
-
 "Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
 
 Domain, publication and web-root updates use the Route admission action. The Gateway renders every file the run writes: each Node's whole Caddyfile, PHP pools, `APP_URL` lines and certificate leaves.
@@ -387,6 +382,14 @@ The first [Node Caddy build](/reference/caddy-configuration#replaced-configurati
 Route publication, withdrawal, and rollback send private DNS children only to active Nodes with an active `vpn` role. A separate Gateway is a DNS client, so its `gateway` role does not make it a publication target. When both roles share a Node, that Node receives one child. The Node footprint stages the listener release and units; the publication child validates and writes its catalog before activating an installed but inactive socket. A missing socket remains a refusal.
 
 The Gateway prepares the runtime, certificates, Caddy sites, and firewall rules of a new Route before it publishes private DNS. It publishes DNS last and then marks the Route and Instance active. It does not wait for the application to answer successfully.
+
+### Certificate request forms
+
+The live Node workflows still put the domain in the common name. Development Instance create therefore has a 64-character domain limit, checked before an Operation starts with `route.domain_invalid`. DNS labels remain limited to 63 characters, and a full DNS name to 253. The signer accepts longer DNS names in the new request form so the accepting Gateway can release before the producers change.
+
+The Gateway accepts two CSR forms: common name equal to the admitted domain, with either no SAN or exactly that DNS SAN; or the fixed short common name `Orbit` with exactly one DNS SAN equal to the admitted domain. It always signs the admitted domain into the leaf SAN. Caddy, TLS probes and certificate reuse check SAN, so existing leaves remain valid.
+
+Remove the old request form only when no Node, queued or in-flight run, or supported rollback release can send it. The producers are `route-create-csr`, `route-certificate-publish`, `node-role-certificate-publish` and the remaining agent producer in [dev_certificates.rs](https://github.com/hardimpactdev/orbit/blob/main/apps/agent/src/commands/dev_certificates.rs#L313). Refreshing workflows alone does not retire that agent or old rollback releases.
 
 ### Node scope
 

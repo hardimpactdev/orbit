@@ -179,6 +179,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 $instance->update(['selected_php_version' => $project->php_version, 'source_is_laravel' => $project->is_laravel === true]);
                 if ($instance->requiresRoute()) {
                     $route = app(CreateRouteAction::class)->ensureForInstance($instance, $data->domain);
+                    $this->admission->assertRouteDomain($route->domain);
                     $input = [...$input, 'route_id' => $route->id, 'route_domain' => $route->domain];
                 }
             }

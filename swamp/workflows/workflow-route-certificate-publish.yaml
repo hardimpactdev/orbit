@@ -91,7 +91,7 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: '${{ ["timeout", "30", "openssl", "req", "-quiet", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", "/etc/caddy/orbit-certificates/" + self.leaf.scope + "/" + "versions/" + self.leaf.version + "/key.pem", "-subj", "/CN=Orbit", "-addext", "subjectAltName=DNS:" + self.leaf.domain] }}'
+        argv: '${{ ["timeout", "30", "openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", "/etc/caddy/orbit-certificates/" + self.leaf.scope + "/" + "versions/" + self.leaf.version + "/key.pem", "-subj", "/CN=" + self.leaf.domain] }}'
         timeoutSec: 40
     # The leaf key, root:caddy 0640, without its content.
   - name: 'Protect the key'

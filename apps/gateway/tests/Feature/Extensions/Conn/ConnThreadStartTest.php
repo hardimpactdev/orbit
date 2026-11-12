@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Data\Instances\CreateInstanceData;
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppCredentials;
@@ -21,7 +22,10 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Certificates\GatewayLeafCertificateSigner;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\NativeProcessRunner;
+use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -42,6 +46,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Symfony\Component\Yaml\Yaml;
+use Tests\Support\TestOrbitHome;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -691,7 +696,7 @@ describe('the reachable Project directory', function (): void {
         threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name={$name}")
             ->assertOk()->assertJsonPath('data.available', $valid)->assertJsonPath('data.reason', $valid ? null : 'domain_invalid')
             ->assertJsonPath('data.domain', $valid ? $domain : null);
-        expect(strlen($domain))->toBe($valid ? 253 : 254);
+        expect(strlen($domain))->toBe($lastLabelLength === 56 ? 253 : 254);
         if (! $valid) {
             $operations = Operation::query()->count();
             $instances = Instance::query()->count();
@@ -704,7 +709,46 @@ describe('the reachable Project directory', function (): void {
                 ->and(Operation::query()->count())->toBe($operations)
                 ->and(Instance::query()->count())->toBe($instances);
         }
-    })->with(['253 characters' => [56, true], '254 characters' => [57, false]]);
+    })->with(['253 characters still exceed the live CSR limit' => [56, false], '254 characters exceed DNS' => [57, false]]);
+
+    it('refuses a 65 character domain at the name check and all create boundaries before any Operation', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5']);
+        $this->beast->update(['tld' => 'test']);
+        $name = str_repeat('n', 55);
+        expect(strlen($name.'.tool.test'))->toBe(65);
+        $operations = Operation::query()->count();
+        $instances = Instance::query()->count();
+
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name={$name}")
+            ->assertOk()->assertJsonPath('data', ['name' => $name, 'available' => false, 'reason' => 'domain_invalid', 'domain' => null]);
+        threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => $name])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'route.domain_invalid');
+        $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+            ->postJson('/api/v1/instances', ['project_id' => $default->project_id, 'node_id' => $this->beast->id, 'name' => $name])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'route.domain_invalid');
+        expect(containerRefusal(fn () => containerCreate($default->project, $this->beast, $name)))->toBe('route.domain_invalid')
+            ->and(Operation::query()->count())->toBe($operations)
+            ->and(Instance::query()->count())->toBe($instances);
+    });
+
+    it('admits a 64 character domain with the installed-client response and records its Route before the Operation', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5']);
+        $this->beast->update(['tld' => 'test']);
+        $name = str_repeat('n', 54);
+        $domain = $name.'.tool.test';
+        expect(strlen($domain))->toBe(64);
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name={$name}")
+            ->assertOk()->assertJsonPath('data', ['name' => $name, 'available' => true, 'reason' => null, 'domain' => $domain]);
+
+        Node::query()->whereHas('roles', static fn (Builder $query) => $query->where('role', RoleName::Swamp))
+            ->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-control-key']);
+        $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('admission-root-certificate');
+        $operation = threadCreate($this->phone, $default->project, $name);
+        expect($operation->input['route_domain'])->toBe($domain);
+        $this->assertDatabaseHas('routes', ['domain' => $domain]);
+    });
 
     it('refuses a generated domain label over 63 characters', function (): void {
         $default = threadDefault($this->beast, 'tool');
@@ -1409,3 +1453,114 @@ it('accepts heads/x as a branch name for explicit branch selection', function (s
     expect($operation->input['branch_selection'])->toBe($selection)
         ->and($operation->input['direct_provisioning']['container']['branch_selection'])->toBe($selection);
 })->with(['new', 'existing']);
+
+/** Execute the production CSR argv, substituting only public inputs and the key's scratch path. */
+function routeSanRequest(string $workflow, string $directory, string $domain): ProcessInvocation
+{
+    $definition = Yaml::parseFile(base_path('../../swamp/workflows/'.$workflow.'.yaml'));
+    $steps = $definition['jobs'][0]['steps'];
+    $step = array_values(array_filter($steps, static fn (array $step): bool => in_array($step['name'], ['csr', 'Make a CSR on the Node'], true)))[0];
+    $expression = substr($step['task']['inputs']['argv'], 4, -3);
+    $expression = strtr($expression, [
+        '"/etc/caddy/orbit-certificates/" + self.leaf.scope + "/" + "versions/" + self.leaf.version + "/key.pem"' => json_encode($directory.'/key.pem'),
+        '"/var/lib/orbit/role-certificates/" + inputs.leaf.scope + "/" + inputs.leaf.version + "/key.pem"' => json_encode($directory.'/key.pem'),
+        'inputs.intent.leaves[inputs.leaf].directory' => json_encode($directory),
+        'inputs.intent.leaves[inputs.leaf].domain' => json_encode($domain),
+        '"subjectAltName=DNS:" + self.leaf.domain' => json_encode('subjectAltName=DNS:'.$domain),
+        '"subjectAltName=DNS:" + inputs.leaf.domain' => json_encode('subjectAltName=DNS:'.$domain),
+        '"/CN=" + self.leaf.domain' => json_encode('/CN='.$domain),
+        '"/CN=" + inputs.leaf.domain' => json_encode('/CN='.$domain),
+    ]);
+    $argv = json_decode($expression, true, flags: JSON_THROW_ON_ERROR);
+    if ($workflow === 'workflow-route-create-csr') {
+        // The Node's surrounding install/chown needs root:caddy; run its unchanged CSR statement here.
+        expect(preg_match('/openssl req .+?(?= &&)/', $argv[5], $match))->toBe(1);
+        $argv[5] = $match[0];
+    }
+
+    return new ProcessInvocation($argv, timeout: 5);
+}
+
+function expectRouteSanLeaf(string $domain, string $request): string
+{
+    $certificate = test()->signer->sign($domain, $request, test()->root);
+    $path = test()->directory.'/leaf.pem';
+    file_put_contents($path, $certificate);
+    $details = openssl_x509_parse($certificate);
+    expect($details['extensions']['subjectAltName'])->toBe('DNS:'.$domain)
+        ->and($details['extensions']['basicConstraints'])->toBe('CA:FALSE')
+        ->and($details['extensions']['extendedKeyUsage'])->toBe('TLS Web Server Authentication')
+        ->and(openssl_x509_check_private_key($certificate, file_get_contents(test()->directory.'/key.pem')))->toBeTrue();
+    $validation = test()->processes->run(new ProcessInvocation([
+        'openssl', 'verify', '-CAfile', test()->directory.'/root.pem', '-purpose', 'sslserver', '-verify_hostname', $domain, $path,
+    ], timeout: 5));
+    expect($validation->exitCode)->toBe(0, $validation->stderr);
+
+    return $certificate;
+}
+
+describe('Route certificate producer compatibility', function (): void {
+    beforeEach(function (): void {
+        $this->directory = TestOrbitHome::scratch('san-leaf');
+        mkdir($this->directory.'/ca', 0700, true);
+        config(['orbit.home' => $this->directory]);
+        $key = file_get_contents(base_path('tests/Fixtures/gateway-bootstrap-root.key'));
+        file_put_contents($this->directory.'/ca/root.key', $key);
+        $configuration = $this->directory.'/root.cnf';
+        file_put_contents($configuration, "[req]\ndistinguished_name=subject\n[subject]\n[ca]\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\n");
+        $request = openssl_csr_new(['commonName' => 'Orbit Test Root'], $key, ['config' => $configuration]);
+        $root = openssl_csr_sign($request, null, $key, 2, ['config' => $configuration, 'x509_extensions' => 'ca', 'digest_alg' => 'sha256']);
+        openssl_x509_export($root, $this->root);
+        file_put_contents($this->directory.'/root.pem', $this->root);
+        $this->processes = new NativeProcessRunner;
+        $this->signer = new GatewayLeafCertificateSigner($this->processes);
+    });
+
+    it('signs the unchanged production old-form CSR at the live 64 character domain limit', function (string $workflow): void {
+        $domain = str_repeat('n', 54).'.tool.test';
+        expect(strlen($domain))->toBe(64);
+
+        $result = $this->processes->run(routeSanRequest($workflow, $this->directory, $domain));
+
+        expect($result->exitCode)->toBe(0, $result->stderr)
+            ->and(openssl_csr_get_subject($result->stdout)['CN'])->toBe($domain);
+        $certificate = expectRouteSanLeaf($domain, $result->stdout);
+        expect(openssl_x509_parse($certificate)['subject']['CN'])->toBe($domain);
+    })->with(['workflow-route-create-csr', 'workflow-route-certificate-publish', 'workflow-node-role-certificate-publish']);
+
+    it('accepts the future producer form before any producer changes, including after switch-back', function (string $domain): void {
+        $result = $this->processes->run(new ProcessInvocation([
+            'openssl', 'req', '-quiet', '-new', '-newkey', 'rsa:2048', '-nodes', '-keyout', $this->directory.'/key.pem',
+            '-subj', '/CN=Orbit', '-addext', 'subjectAltName=DNS:'.$domain,
+        ], timeout: 5));
+
+        expect($result->exitCode)->toBe(0);
+        $certificate = expectRouteSanLeaf($domain, $result->stdout);
+        expect(openssl_x509_parse($certificate)['subject']['CN'])->toBe('Orbit');
+    })->with(['ordinary domain' => 'future.tool.test',
+        '253 character DNS name' => str_repeat('n', 63).'.tool.'.str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 56)]);
+
+    it('still signs and validates an old Node request during release overlap', function (bool $withSan): void {
+        $domain = 'existing.tool.test';
+        $argv = ['openssl', 'req', '-quiet', '-new', '-newkey', 'rsa:2048', '-nodes', '-keyout', $this->directory.'/key.pem', '-subj', '/CN='.$domain];
+        if ($withSan) {
+            $argv = [...$argv, '-addext', 'subjectAltName=DNS:'.$domain];
+        }
+        $result = $this->processes->run(new ProcessInvocation($argv, timeout: 5));
+        expect($result->exitCode)->toBe(0);
+        $certificate = expectRouteSanLeaf($domain, $result->stdout);
+        expect(openssl_x509_parse($certificate)['subject']['CN'])->toBe($domain);
+    })->with(['previous workflow without SAN' => false, 'old CN with exact SAN' => true]);
+
+    it('refuses a new request whose SAN is missing or is not the admitted domain alone', function (?string $san): void {
+        $argv = ['openssl', 'req', '-quiet', '-new', '-newkey', 'rsa:2048', '-nodes', '-keyout', $this->directory.'/key.pem', '-subj', '/CN=Orbit'];
+        if ($san !== null) {
+            $argv = [...$argv, '-addext', 'subjectAltName='.$san];
+        }
+        $result = $this->processes->run(new ProcessInvocation($argv, timeout: 5));
+        expect($result->exitCode)->toBe(0)
+            ->and(fn () => $this->signer->sign('tool.test', $result->stdout, $this->root))
+            ->toThrow(ResourceOperationException::class, 'The CSR must be an RSA 2048 request for the admitted domain only.');
+    })->with(['missing SAN' => null, 'different DNS name' => 'DNS:other.test', 'extra DNS name' => 'DNS:tool.test,DNS:other.test']);
+
+});

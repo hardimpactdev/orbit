@@ -237,7 +237,7 @@ If GitHub fails, returns malformed data, or has more than 500 open requests, all
 - `invalid` means the name is not a lowercase DNS label of 1–63 characters, with no leading or trailing hyphen. An empty string is invalid.
 - `default` means the name is `default` or the Project's default-branch alias.
 - `taken` means any Instance of the Project holds the name, on any Node and in any state, including the caller's own Instance.
-- `domain_invalid` means the generated web Route fails the [domain limits](/reference/routes): 253 characters in total and 63 per label.
+- `domain_invalid` means the generated domain cannot be issued by the live CSR producer. See [certificate limits](/reference/routes#certificate-request-forms).
 - `domain` previews `<name>.<project-slug>.<effective-tld>`. The default's placement selects the active Cluster TLD before the Node TLD.
 
 Create refuses an invalid domain with `route.domain_invalid` (422) before starting an Operation. Its admission transaction leaves no Instance reservation.

@@ -21,7 +21,7 @@ final readonly class GatewayLeafCertificateSigner
             throw $this->invalidRequest();
         }
         $subject = @openssl_csr_get_subject($request, false);
-        // Retire the old request form after every producer is refreshed and its queued/in-flight runs finish.
+        // Old-form retirement: docs/reference/routes.md#certificate-request-forms.
         $oldRequest = is_array($subject) && ($subject['commonName'] ?? null) === $domain;
         $public = @openssl_csr_get_public_key($request);
         $key = $public === false ? false : openssl_pkey_get_details($public);
