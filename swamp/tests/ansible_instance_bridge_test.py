@@ -1,10 +1,12 @@
 """Exact DNAT resolution and shared boot/attach/converge policy, without Docker or Incus mutations."""
 import copy
+import hashlib
 import importlib.util
 import io
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -855,6 +857,108 @@ class BridgePolicy(unittest.TestCase):
                          [('remove', 'egress', current['egress'][-1])])
         self.assertEqual(bridge.plan(current, {}, '10.253.0.0/24', {}), [])
 
+
+
+
+@unittest.skipUnless(shutil.which('ansible-playbook'), 'pinned Ansible is required')
+class ReleaseHelperDelivery(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.run = self.root / 'run'
+        self.run.mkdir()
+        self.installed = self.root / 'installed-helper'
+        self.installed.write_text('# old complete helper\n')
+        self.unit = self.root / 'refresh.service'
+        self.unit.write_text('[Service]\nExecStart=/usr/bin/python3 /usr/local/libexec/orbit-instance-bridge\n')
+        self.source = Path(__file__).parents[1] / 'ansible/instance_bridge.py'
+        self.capture = {
+            'sha256': hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            'nodes': [self.node(7)],
+        }
+        self.inventory = {'all': {'hosts': {
+            'localhost': {'ansible_connection': 'local'},
+            'bridge_7': {'ansible_connection': 'local'},
+        }}}
+
+    def node(self, node_id, port=22):
+        import base64
+        import struct
+        key = base64.b64encode(struct.pack('!I', 11) + b'ssh-ed25519' + struct.pack('!I', 32) + b'x' * 32).decode()
+        return {'node_id': node_id, 'name': f'node-{node_id}', 'host': '127.0.0.1',
+                'user': 'fixture', 'port': port, 'identity_file': '/unused',
+                'host_keys': ['ssh-ed25519 ' + key]}
+
+    def publish(self):
+        (self.run / 'intent.json').write_text(json.dumps({'bridge_release_json': json.dumps(self.capture)}))
+        inventory = self.root / 'inventory.json'
+        inventory.write_text(json.dumps(self.inventory))
+        values = {'ansible_become': False, 'ansible_python_interpreter': sys.executable,
+                  'bridge_release_path': str(self.installed), 'bridge_release_unit': str(self.unit)}
+        result = subprocess.run([
+            'ansible-playbook', '-i', str(inventory), '--forks', '4', '-e', json.dumps(values),
+            str(Path(__file__).parents[1] / 'ansible/gateway-release-bridge.yml')],
+            env={**os.environ, 'ORBIT_RUN': str(self.run), 'ANSIBLE_NOCOLOR': '1', 'ANSIBLE_CONNECTION_PLUGINS': str(self.root / 'connections'), 'ORBIT_TEST_INSTALLED_HELPER': str(self.installed), 'ORBIT_TEST_HELPER_DIGEST': self.capture['sha256']},
+            text=True, capture_output=True, timeout=45, check=False)
+        return result
+
+    def test_release_replaces_the_real_helper_atomically_and_repeats_without_replacing_it(self):
+        with self.installed.open() as running_refresh:
+            inode = self.installed.stat().st_ino
+            result = self.publish()
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(running_refresh.read(), '# old complete helper\n')
+            self.assertNotEqual(self.installed.stat().st_ino, inode)
+        self.assertEqual(self.installed.read_bytes(), self.source.read_bytes())
+        self.assertEqual(self.installed.stat().st_mode & 0o777, 0o755)
+        inode = self.installed.stat().st_ino
+        result = self.publish()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.installed.stat().st_ino, inode)
+
+    def test_a_node_without_the_refresh_unit_keeps_its_helper_unchanged(self):
+        self.unit.unlink()
+        result = self.publish()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.installed.read_text(), '# old complete helper\n')
+
+    def test_an_unreachable_node_does_not_block_a_reachable_host_or_fail_delivery(self):
+        with socket.socket() as closed_port:
+            closed_port.bind(('127.0.0.1', 0))
+            self.capture['nodes'].insert(0, self.node(8, closed_port.getsockname()[1]))
+            result = self.publish()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('UNREACHABLE', result.stdout)
+        self.assertEqual(self.installed.read_bytes(), self.source.read_bytes())
+
+    def test_a_connection_lost_during_readback_does_not_fail_the_release(self):
+        plugins = self.root / 'connections'
+        plugins.mkdir()
+        (plugins / 'bridge_drop.py').write_text(
+            "import hashlib, os\n"
+            "from pathlib import Path\n"
+            "from ansible.plugins.connection.local import Connection as LocalConnection\n"
+            "from ansible.errors import AnsibleConnectionFailure\n"
+            "class Connection(LocalConnection):\n"
+            "    transport = 'bridge_drop'\n"
+            "    def exec_command(self, cmd, in_data=None, sudoable=True):\n"
+            "        helper = Path(os.environ['ORBIT_TEST_INSTALLED_HELPER'])\n"
+            "        if helper.exists() and hashlib.sha256(helper.read_bytes()).hexdigest() == os.environ['ORBIT_TEST_HELPER_DIGEST']:\n"
+            "            raise AnsibleConnectionFailure('fixture connection lost during readback')\n"
+            "        return super().exec_command(cmd, in_data, sudoable)\n")
+        self.inventory['all']['hosts']['bridge_7']['ansible_connection'] = 'bridge_drop'
+        result = self.publish()
+        self.assertIn('fixture connection lost during readback', result.stdout)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.installed.read_bytes(), self.source.read_bytes())
+
+    def test_a_wrong_candidate_checksum_refuses_before_any_replacement(self):
+        self.capture['sha256'] = '0' * 64
+        result = self.publish()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('gateway.release_bridge_checksum_mismatch', result.stdout)
+        self.assertEqual(self.installed.read_text(), '# old complete helper\n')
 
 if __name__ == '__main__':
     unittest.main()

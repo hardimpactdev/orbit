@@ -71,6 +71,16 @@ sequenceDiagram
     %%> - refuses to stop a unit that lacks the stop policy (`KillMode=mixed`, `SendSIGKILL=no`), because it would kill a running job
     %%> On failure:
     %%> - the run fails with `gateway.release_horizon_unit_stale` for a unit without the policy, or `gateway.release_horizon_not_drained` when the unit did not stop in time; Horizon is started again below
+    AC->>GN: Read bridge helper intent<br/>candidate release capture
+    %%> What it does:
+    %%> - the candidate build captures managed app-dev SSH targets and its helper checksum; no new field is needed from an older admitting Gateway
+    AC->>GN: Publish bridge helpers<br/>Ansible · before live switch
+    %%> What it does:
+    %%> - reach each captured Node with pinned SSH keys, with no nightly window
+    %%> - only when its refresh service unit exists, atomically replace the installed helper and verify SHA-256
+    %%> - an in-flight Python refresh keeps its old open file; the next timer start opens the replacement
+    %%> On failure:
+    %%> - an unreachable Node does not fail the release; a copy or checksum failure stops the handoff, and checksum observation is a separate change
     AC->>GN: Switch the release<br/>gateway-rollback · Horizon
     %%> Why:
     %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart

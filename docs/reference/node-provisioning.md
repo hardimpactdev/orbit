@@ -34,6 +34,8 @@ Migration checks remote source access before quiesce using the Node's existing G
 
 Clone creation stages its release's helpers once in a private folder for the run. Later phases run the launcher by path, keeping scripts and intent off the SSH command. Cleanup removes the folder even when staging or the first clone phase fails.
 
+Gateway releases also publish the bridge helper directly to managed app-dev Nodes that already have the refresh service unit, before switching live. This delivery has no nightly window. It verifies the checksum after atomic replacement; an unreachable Node does not fail the release. See [helper delivery](/reference/gateway-recovery#instance-bridge-helper-delivery).
+
 The Instance bridge refresh applies resolvable publications without changing saved rules for unresolved or duplicate ones. Empty or failed NAT reads change no ACL or endpoint record. Health keeps a warning count and at most 20 samples within the observer's 4,096-byte limit. Warning propagation to doctor needs the separate agent change; stale rules remain until the removal design lands.
 
 Each argument of an Ansible command must parse as a string. One shared test reads every literal `argv` list. It fails on a YAML mapping, a number or a boolean.

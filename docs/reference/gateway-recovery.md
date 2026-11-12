@@ -580,6 +580,16 @@ The Gateway posts one JSON object. It signs `{unix timestamp}.{raw body}` with H
 
 The body serves two kinds of receivers. A receiver that verifies the signature reads the typed fields, such as an agent's intake webhook. A Slack incoming webhook shows `text` and ignores the signature, because its URL is the credential. The Gateway still needs a secret to send, so set any random value for such a receiver.
 
+## Instance bridge helper delivery
+
+Each release build captures the managed, active Linux Nodes with an active app-dev role and pinned SSH keys, together with the candidate release's bridge helper checksum. The capture runs with the candidate Gateway code, including when an older Gateway admitted the release. A reused build captures the Nodes again.
+
+Before switching live, the activation phase visits those Nodes directly, without a fleet rollout window. Where the refresh service unit exists, it copies the candidate helper to the installed path and verifies SHA-256. The copy uses atomic rename. A refresh already running keeps its complete old file; the timer opens the new file at its next start. The phase does not run the helper, change endpoint records or rules, or restart the timer.
+
+A Node that is down does not fail the release or block other Nodes. It retains its helper until a later release or host convergence reaches it. Checksum facts and a dedicated doctor issue are not part of this delivery change. A clone create still uses its bundled helper for admission.
+
+The unresolved-record change in release 1958 adds no removal and changes no record format. An older timer helper beside new admission code can still fail the whole refresh on one unresolved record, so Docker address updates can stop until the helper is replaced. It does not undo a new admission's confirmed rule. New timer code beside older admission code accepts the same records.
+
 ## Fleet rollout
 
 After each verified Gateway release, Swamp brings every managed workload Node to the same release, one Node at a time. A fleet failure never rolls the Gateway back.

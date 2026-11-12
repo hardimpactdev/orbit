@@ -64,10 +64,68 @@ jobs:
     # The release's own switch script, as an operator's rollback uses it: the links, a PHP-FPM reload and a restart of
     # the running services under the application, such as the scheduler and agent-view. Horizon starts after its drain.
     # A scheduler start pauses the release cleanups, so it first prints their generations for the cleanup step.
+  - name: Read bridge helper intent
+    labels: {role: swamp}
+    dependsOn: [{step: Drain Horizon, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-bridge-intent-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 20
+        argv: [timeout, '15', cat, '/home/orbit/releases/${{ inputs.intent.id }}/apps/gateway/bootstrap/cache/bridge-helpers.json']
+  - name: Write bridge helper intent
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Read bridge helper intent, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
+      inputs:
+        intent: {bridge_release_json: '${{ steps["Read bridge helper intent"].outputs.stdout }}'}
+        path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+  - name: Publish bridge helpers
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Write bridge helper intent, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "gateway-release-bridge-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --forks 4 "$ORBIT_ANSIBLE/gateway-release-bridge.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps["Write bridge helper intent"].outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps["Write bridge helper intent"].outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+  - name: Clean bridge helper intent
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn:
+    - {step: Write bridge helper intent, condition: {type: always}}
+    - {step: Publish bridge helpers, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "gateway-release-bridge-cleanup-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 10 rm -rf -- "$ORBIT_RUN"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
   - name: Switch the release
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Drain Horizon, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn:
+    - {step: Drain Horizon, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Publish bridge helpers, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

@@ -717,7 +717,7 @@
     ]
   },
   "swamp/tests/ansible_instance_bridge_test.py": {
-    "source_sha256": "aa5d705cdcbb552e457f904dfa90e4a88d79536a4b821d7866377cbc585274ea",
+    "source_sha256": "97e4feb00444ca9b07ad22051ea34dc03bb15ed722afb580a4fd34f7be7e9c37",
     "cases": [
       "test_stale_capture_keeps_later_admission_then_current_capture_prunes_it",
       "test_refresh_paused_after_read_cannot_resurrect_last_user_after_withdrawal",
@@ -750,7 +750,12 @@
       "test_withdrawal_retains_stopped_shared_service_and_unrelated_stopped_database",
       "test_withdrawal_uses_last_refresh_translation_and_preserves_newer_admission",
       "test_withdrawal_cannot_admit_an_unrecorded_endpoint_or_changed_publication_kind",
-      "test_reconcile_preserves_proxy_ingress_and_rules_outside_its_endpoint_shape"
+      "test_reconcile_preserves_proxy_ingress_and_rules_outside_its_endpoint_shape",
+      "test_release_replaces_the_real_helper_atomically_and_repeats_without_replacing_it",
+      "test_a_node_without_the_refresh_unit_keeps_its_helper_unchanged",
+      "test_an_unreachable_node_does_not_block_a_reachable_host_or_fail_delivery",
+      "test_a_connection_lost_during_readback_does_not_fail_the_release",
+      "test_a_wrong_candidate_checksum_refuses_before_any_replacement"
     ]
   },
   "swamp/tests/ansible_instance_container_destroy_test.ts": {
@@ -1350,10 +1355,11 @@
     ]
   },
   "swamp/tests/gateway_release_order_test.ts": {
-    "source_sha256": "4c1a7eb375b093c963ad7454471704e428132a1246d18471fe8b22eeb92c6fa4",
+    "source_sha256": "1a871e226f9a9994f06e5815172500be569a16a31d9a16d98e71968816e82bb2",
     "cases": [
       "refresh admission follows successful verify and the new Horizon start, tolerating admission failure only",
-      "Swamp load requires the bounded DB busy guard, including forced releases"
+      "Swamp load requires the bounded DB busy guard, including forced releases",
+      "the candidate release publishes bridge helpers before switching, independently of rollout and tolerating offline Nodes"
     ]
   },
   "swamp/tests/gateway_swamp_load_test.ts": {

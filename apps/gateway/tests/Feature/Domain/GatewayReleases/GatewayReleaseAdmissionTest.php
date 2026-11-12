@@ -6,6 +6,7 @@ use App\Actions\GatewayReleases\AdmitSwampGatewayReleaseAction;
 use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseAgent;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
+use App\Domain\GatewayReleases\GatewayReleaseBridgeInput;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
@@ -135,4 +136,31 @@ it('rolls back to a retained release by releasing its commit, and refuses an unk
         ->and(fn () => $admit->rollback(substr(ReleaseA, 0, 12)))->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_already_current'))
         ->and(fn () => $admit->rollback(substr(ReleaseB, 0, 12)))->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_provenance_invalid'))
         ->and($fetched)->toBe([ReleaseB]);
+});
+
+it('captures helper publication from the candidate code for every managed app-dev Node without a rollout window or a live Node read', function (): void {
+    config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('x', 32))]);
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'bridge-host', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'user' => 'orbit',
+        'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key',
+    ]));
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    Node::query()->findOrFail(209)->roles()->create(['role' => RoleName::Swamp, 'status' => LifecycleStatus::Active]);
+    $capture = app(GatewayReleaseBridgeInput::class)->capture();
+
+    expect($capture)->toBe([
+        'sha256' => hash_file('sha256', base_path('../../swamp/ansible/instance_bridge.py')),
+        'nodes' => [[
+            'name' => 'bridge-host', 'node_id' => $node->id, 'host' => '10.44.0.9', 'user' => 'orbit', 'port' => 22,
+            'host_keys' => ['ssh-ed25519 fixture-host-key'], 'identity_file' => '/etc/orbit/swamp-role-worker/ssh-identity',
+        ]],
+    ]);
+
+    $node->update(['ssh_host_fingerprint' => null]);
+    expect(app(GatewayReleaseBridgeInput::class)->capture()['nodes'])->toBe([]);
+    $node->update(['ssh_host_fingerprint' => 'SHA256:fixture']);
+    $node->roles()->where('role', RoleName::AppDev)->update(['status' => LifecycleStatus::Removing]);
+    expect(app(GatewayReleaseBridgeInput::class)->capture()['nodes'])->toBe([]);
 });

@@ -42,3 +42,23 @@ Deno.test("Swamp load requires the bounded DB busy guard, including forced relea
   assertEquals(release.find((step) => step.name === "Load Swamp on Node 209")?.dependsOn,
     [{ step: "Wait for active Operations", condition: { type: "succeeded" } }]);
 });
+
+
+Deno.test("the candidate release publishes bridge helpers before switching, independently of rollout and tolerating offline Nodes", async () => {
+  const read = activate.find((step) => step.name === "Read bridge helper intent")!;
+  const publish = activate.find((step) => step.name === "Publish bridge helpers")!;
+  assert(read && publish);
+  assertEquals(read.allowFailure, undefined);
+  assertEquals(publish.allowFailure, undefined);
+  assert(read.task.inputs?.argv?.join(" ").includes("/bootstrap/cache/bridge-helpers.json"));
+  assertEquals(publish.dependsOn, [{ step: "Write bridge helper intent", condition: { type: "succeeded" } }]);
+  assert(activate.find((step) => step.name === "Switch the release")!.dependsOn!.some(
+    (edge) => edge.step === "Publish bridge helpers" && edge.condition.type === "succeeded"));
+  const build = await Deno.readTextFile(new URL("../scripts/gateway-release-build.sh", import.meta.url));
+  assert(build.includes("GatewayReleaseBridgeInput::class)->capture()"));
+  assert(build.indexOf("bridge_input=") > build.indexOf("\nfi\n"), "reused sealed releases recapture Nodes too");
+  assertEquals(activate.find((step) => step.name === "Clean bridge helper intent")!.dependsOn, [
+    { step: "Write bridge helper intent", condition: { type: "always" } },
+    { step: "Publish bridge helpers", condition: { type: "always" } },
+  ]);
+});
