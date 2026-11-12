@@ -254,7 +254,9 @@ The first local measurement at `6faf66c1da` took 13.34 seconds for 228 Pest test
 
 A local install into empty vendor directories took 3.45 seconds for Docs dev packages and 3.18 seconds for Gateway runtime packages, with scripts disabled and warm Composer downloads. Contract generation took 1.61 seconds; web types took 0.82 seconds. Hosted PHP and Bun setup and cold downloads remain unmeasured.
 
-The job keeps its 120-second ceiling. Its table cost is a 70-second estimate: the previous 40 seconds plus about 28 seconds of measured local tests and setup, rounded up. Hosted evidence must replace this estimate. Budget PHP setup, dev-package extraction, Gateway runtime installation, the filtered Bun install and contract generation as well as Pest; download-cache misses add network time. Check the first hosted run against the two-minute job limit and the five-minute push-to-Required budget before claiming it fits. Check Linux process-adoption fixtures on slower runners; each unsized test has a two-second limit.
+The job keeps its 120-second ceiling. Its table cost is a 70-second estimate: the previous 40 seconds plus about 28 seconds of measured local tests and setup, rounded up. Hosted evidence must replace this estimate. Budget PHP setup, dev-package extraction, Gateway runtime installation, the filtered Bun install and contract generation as well as Pest; download-cache misses add network time. Check the first hosted run against the two-minute job limit and the five-minute push-to-Required budget before claiming it fits.
+
+Docs tests do not enforce a per-test wall-clock limit: shared-runner contention must not turn a correct result into a risky failure. Risky tests and PHPUnit warnings still fail. The Docs job still stops after two minutes if the suite hangs.
 
 Two checks guard the flow charts. Generated contracts requires a chart or a `docs/cli/flows-pending.txt` line for every kind. Docs build runs `bin/check-flows`. Their inputs are declared in the checks table.
 
