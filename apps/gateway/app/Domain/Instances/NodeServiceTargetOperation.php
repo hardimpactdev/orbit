@@ -30,8 +30,8 @@ final readonly class NodeServiceTargetOperation implements DirectOperationProjec
         }
         $gateway = Ipv4Subnet::from(ValidatedData::string($instance->node->instance_bridge))->usableRange()[0];
         // Withdrawal uses recorded identities, not live Docker eligibility: a stopped target must remain detachable.
-        $endpoints = $instance->nodeServiceTargets()->where('id', '!=', $target->id)->orderBy('id')->get()
-            ->map(static fn (InstanceNodeServiceTarget $row): array => ['id' => $row->id, 'host' => $gateway, 'port' => $row->port,
+        $endpoints = $instance->nodeServiceTargets()->where('id', '!=', $target->id)->with('process')->orderBy('id')->get()
+            ->map(static fn (InstanceNodeServiceTarget $row): array => ['id' => $row->id, 'process_id' => $row->process_id, 'process_name' => $row->process->name, 'host' => $gateway, 'port' => $row->port,
                 'docker' => true, 'host_env_key' => $row->host_env_key, 'port_env_key' => $row->port_env_key])->all();
         $container = ['name' => $runtime->container_name, 'project' => $runtime->incus_project,
             'acl' => $runtime->container_name, 'network' => InstanceHostIntent::Network,

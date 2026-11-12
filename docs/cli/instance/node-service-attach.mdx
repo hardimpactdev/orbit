@@ -13,7 +13,7 @@ covers:
 orbit instance:node-service:attach <instance> --process=PROCESS [--port=PORT] --host-env-key=KEY --port-env-key=KEY [--protocol=tcp] [--json]
 ```
 
-Attach records the Instance, a standalone registered Docker Node Process on the Instance's own Node, its published TCP host port and two environment key names. A checkout attachment records intent only and changes no environment values. Migration later applies and probes its scoped loopback access before quiescing the checkout. See [Node service target records](/reference/processes-and-schedules#node-service-target-records) for the shared admission and ownership rules.
+Attach records the Instance, a standalone registered Docker Node Process on the Instance's own Node, its published TCP host port and two environment key names. It grants no network access, changes no environment values or runtime, and runs no reach probe. See [Node service target records](/reference/processes-and-schedules#node-service-target-records) for the shared admission and ownership rules.
 
 ```bash
 orbit instance:node-service:attach 12 --process=221 --port=1025 --host-env-key=MAIL_HOST --port-env-key=MAIL_PORT
@@ -67,5 +67,3 @@ The result has `id`, `instance_id`, `node_id`, `process_id`, `protocol`, `port`,
 | `instance.host_unavailable` | The Node has no Instance bridge configuration; converge its app-dev role first. |
 | `instance.node_service_listener_private` | The port binds only to an address other than the bridge or `0.0.0.0`. |
 | `instance.node_service_environment_conflict` | Another attachment owns one of the key names. |
-
-Container access is described in [Node service targets](/reference/processes-and-schedules#node-service-target-records). This first network cut keeps attach checkout-only. It does not add a command for applying a new attachment to a running container.

@@ -157,7 +157,13 @@
   block:
     - name: Read the units that start at boot, the Process units and the Process folders
       ansible.builtin.command: { argv: [incus, query, "--", "{{ files_route }}{{ item }}"] }
-      loop: [/etc/systemd/system/multi-user.target.wants, /etc/systemd/system, /etc/orbit/processes, /etc/systemd/system/timers.target.wants, /etc/orbit/schedules, /etc/systemd/system/sockets.target.wants]
+      loop:
+        - /etc/systemd/system/multi-user.target.wants
+        - /etc/systemd/system
+        - /etc/orbit/processes
+        - /etc/systemd/system/timers.target.wants
+        - /etc/orbit/schedules
+        - /etc/systemd/system/sockets.target.wants
       register: copy_read
       changed_when: false
       failed_when: copy_read.rc != 0 and 'not found' not in (copy_read.stderr | lower)

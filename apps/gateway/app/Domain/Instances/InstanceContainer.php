@@ -318,7 +318,7 @@ final readonly class InstanceContainer
 
     /** Attached targets and the Node's development SMTP publication share one endpoint policy.
      * @param  array{host:string,port:int,docker:bool}|null  $mail
-     * @param  list<array{id:int,host:string,port:int,docker:bool,host_env_key:string,port_env_key:string}>|null  $nodeServices
+     * @param  list<array{id:int,process_id:int,process_name:string,host:string,port:int,docker:bool,host_env_key:string,port_env_key:string}>|null  $nodeServices
      * @return list<array{host:string,port:int,docker:bool,node_service?:bool,rule?:array<string,string>}>
      */
     private function targetAccesses(Instance $instance, InstanceRuntime $runtime, ?DatabaseConnection $primary, ?array $mail, ?array $nodeServices = null): array
@@ -369,7 +369,8 @@ final readonly class InstanceContainer
     {
         $endpoints = [];
         foreach (InstanceRuntime::query()->where('node_id', $node->id)->with('instance')->orderBy('id')->get() as $runtime) {
-            foreach ($this->targetAccesses($runtime->instance, $runtime, null, app(DevelopmentMail::class)->forInstance($runtime->instance)) as $access) {
+            foreach ($this->targetAccesses($runtime->instance, $runtime, null, app(DevelopmentMail::class)->forInstance($runtime->instance),
+                InstanceNodeServiceTargets::endpoints($runtime->instance, requireRunning: false)) as $access) {
                 $endpoints[$access['host'].':'.$access['port']] = ['host' => $access['host'], 'port' => $access['port'], 'docker' => $access['docker']];
             }
         }

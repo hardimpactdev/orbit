@@ -23,16 +23,16 @@ use App\Support\ValidatedData;
 /** Explicit local TCP endpoints; never inferred from an Instance's environment. */
 final class InstanceNodeServiceTargets
 {
-    public static function assertValid(InstanceNodeServiceTarget $target, Instance $instance): void
+    public static function assertValid(InstanceNodeServiceTarget $target, Instance $instance, bool $requireRunning = true): void
     {
         if ($target->node_id !== $instance->node_id) {
             throw new ResourceOperationException('instance.node_service_remote_node', "A Node service target must be on the Instance's own Node.", 422);
         }
         $process = Process::query()->find($target->process_id);
-        self::resolvePort($instance, $process, $target->protocol, $target->port);
+        self::resolvePort($instance, $process, $target->protocol, $target->port, $requireRunning);
     }
 
-    public static function resolvePort(Instance $instance, ?Process $process, string $protocol, ?int $requested): int
+    public static function resolvePort(Instance $instance, ?Process $process, string $protocol, ?int $requested, bool $requireRunning = true): int
     {
         if (! $process instanceof Process || $process->owner_type !== Node::class) {
             throw new ResourceOperationException('instance.node_service_process_missing', 'Select a registered Orbit Node Process.', 422);
@@ -44,12 +44,12 @@ final class InstanceNodeServiceTargets
         if ($protocol !== 'tcp') {
             throw new ResourceOperationException('instance.node_service_protocol_unsupported', 'A Node service target supports TCP only.', 422);
         }
-        if ($process->desired_state !== DesiredProcessState::Running) {
+        if ($requireRunning && $process->desired_state !== DesiredProcessState::Running) {
             throw new ResourceOperationException('instance.node_service_process_stopped', 'Start the registered Node Process before attaching or migrating its service.', 422);
         }
         $mappings = [];
         $specs = $process->runtime_config['ports'] ?? [];
-        if ($process->runtime === ProcessRuntime::Docker && $process->status === LifecycleStatus::Active && is_array($specs)) {
+        if ($process->runtime === ProcessRuntime::Docker && (! $requireRunning || $process->status === LifecycleStatus::Active) && is_array($specs)) {
             foreach ($specs as $spec) {
                 if (! is_string($spec) || (str_contains($spec, '/') && ! str_ends_with($spec, '/tcp'))) {
                     continue;
@@ -78,17 +78,14 @@ final class InstanceNodeServiceTargets
     }
 
     /** Exact recorded attachments projected into public container intent. No environment values are read.
-     * @return list<array{id:int,host:string,port:int,docker:bool,host_env_key:string,port_env_key:string}>
+     * @return list<array{id:int,process_id:int,process_name:string,host:string,port:int,docker:bool,host_env_key:string,port_env_key:string}>
      */
-    public static function endpoints(Instance $instance, ?int $excluding = null): array
+    public static function endpoints(Instance $instance, bool $requireRunning = true): array
     {
         $targets = [];
-        foreach ($instance->nodeServiceTargets()->orderBy('id')->get() as $target) {
-            if ($target->id === $excluding) {
-                continue;
-            }
-            self::assertValid($target, $instance);
-            $targets[] = ['id' => $target->id, 'host' => self::bridge($instance->node), 'port' => $target->port,
+        foreach ($instance->nodeServiceTargets()->with('process')->orderBy('id')->get() as $target) {
+            self::assertValid($target, $instance, $requireRunning);
+            $targets[] = ['id' => $target->id, 'process_id' => $target->process_id, 'process_name' => $target->process->name, 'host' => self::bridge($instance->node), 'port' => $target->port,
                 'docker' => true, 'host_env_key' => $target->host_env_key, 'port_env_key' => $target->port_env_key];
         }
 

@@ -309,6 +309,12 @@ def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, de
         except (OSError, UnicodeError):
             refusals.append(f'{relative}: cannot read .env safely. {RECOVERY}')
             continue
+        # URL configuration overrides HOST/PORT in Laravel. K1a admits key pairs, not URL selectors.
+        # Keep URL contents and credentials private; the first cut refuses non-SQLite selectors explicitly.
+        for key, value in values.items():
+            if (key in ('DB_URL', 'DATABASE_URL') or (key.endswith('_DB_URL') and database_drivers(values, key[:-4]))) and value and not value.startswith('sqlite:'):
+                refusals.append(f'{relative}: {key}: a database URL can override the attached host/port keys; '
+                                'use the exact attached HOST/PORT keys without a URL override. No URL value is shown.')
         for key, value in values.items():
             if not key.endswith('_HOST') or listener_or_browser_key(values, key):
                 continue

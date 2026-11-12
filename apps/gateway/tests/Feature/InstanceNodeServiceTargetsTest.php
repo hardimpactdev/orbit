@@ -539,3 +539,24 @@ it('retains an attachment after a failed container withdrawal without claiming i
     expect($result->result['detached'])->toBeFalse()->and($result->error_code)->toBe('instance.node_service_apply_failed');
     $this->assertModelExists($target);
 });
+
+it('keeps the exact recorded endpoint through a stopped Process Node-intent capture and restart', function (): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default',
+        'checkout_path' => '/workspace/default', 'status' => 'active', 'first_setup_pending' => false]);
+    $process = nodeServiceAttachmentProcess($node, ['0.0.0.0:3308:3306']);
+    $instance->nodeServiceTargets()->create(['node_id' => $node->id, 'process_id' => $process->id, 'protocol' => 'tcp',
+        'port' => 3308, 'host_env_key' => 'DB_HOST', 'port_env_key' => 'DB_PORT']);
+    $policy = app(InstanceContainer::class);
+    $policy->reserve($instance, $node);
+    $expected = [['host' => '10.253.0.1', 'port' => 3308, 'docker' => true]];
+    expect($policy->nodeEndpoints($node))->toBe($expected);
+    $process->update(['desired_state' => 'stopped']);
+    expect($policy->nodeEndpoints($node))->toBe($expected)
+        ->and(fn () => InstanceNodeServiceTargets::endpoints($instance))->toThrow(ResourceOperationException::class);
+    $process->update(['desired_state' => 'running']);
+    expect($policy->nodeEndpoints($node))->toBe($expected);
+    $target = InstanceNodeServiceTargets::endpoints($instance)[0];
+    expect($target['process_id'])->toBe($process->id)->and($target['process_name'])->toBe('mailpit');
+});

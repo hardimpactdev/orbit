@@ -5,6 +5,7 @@ attempt. This behavior accepts public endpoints and can serve other callers late
 """
 import json
 import os
+import re
 import socket
 import stat
 import subprocess
@@ -15,14 +16,48 @@ from pathlib import Path
 MARKER = '# Managed by Orbit: attached Node service.\n'
 PUBLIC = {'process.target_inactive', 'instance.host_unavailable',
           'instance.node_service_port_in_use', 'instance.node_service_unit_conflict',
-          'instance.node_service_unreachable', 'instance.bridge_busy'}
+          'instance.node_service_unreachable', 'instance.bridge_busy', 'instance.node_service_apply_failed'}
+# Incus installs this type-wide drop-in in every systemd guest. It cannot replace
+# ExecStart, User or a listener; all unit-specific and other effective drop-ins refuse.
+LXC_DROPIN = '/run/systemd/system/service.d/zzz-lxc-service.conf'
+LXC_CONTENT = ('[Service]\nProcSubset=all\nProtectProc=default\nProtectControlGroups=no\n'
+               'ProtectKernelTunables=no\nNoNewPrivileges=no\nLoadCredential=\n'
+               'PrivateNetwork=no\nImportCredential=\n')
+
+
+def public_target(target):
+    if not isinstance(target, dict):
+        return {}
+    value = {key: target[key] for key in ('id', 'process_id', 'port')
+             if type(target.get(key)) is int and target[key] > 0}
+    name = target.get('process_name')
+    if isinstance(name, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', name):
+        value['process_name'] = name
+    return value
+
+
+class TargetFailure(RuntimeError):
+    def __init__(self, code, target=None):
+        super().__init__(code)
+        self.target = public_target(target)
+
+    def evidence(self):
+        return {'error_code': str(self), **({'node_service_target': self.target} if self.target else {})}
+
 
 
 def command(argv, content=None, public_guest=False):
     result = subprocess.run(argv, input=content, text=True, capture_output=True, check=False, timeout=30)
     if result.returncode and argv[:2] != ['systemctl', 'show']:
         code = result.stderr.removesuffix('\n')
-        raise RuntimeError(code if public_guest and code in PUBLIC else 'instance.node_service_apply_failed')
+        if public_guest and code in PUBLIC:
+            try:
+                evidence = json.loads(result.stdout)
+            except (ValueError, TypeError):
+                evidence = {}
+            target = evidence.get('node_service_target') if isinstance(evidence, dict) and evidence.get('error_code') == code else None
+            raise TargetFailure(code, target)
+        raise RuntimeError('instance.node_service_apply_failed')
     return result.stdout
 
 
@@ -63,6 +98,7 @@ After=network.target
 ExecStart=/usr/lib/systemd/systemd-socket-proxyd --connections-max=256 {target['host']}:{port}
 PrivateTmp=true
 NoNewPrivileges=true
+DynamicUser=yes
 '''
     return files
 
@@ -70,10 +106,71 @@ NoNewPrivileges=true
 def socket_rows(run, ports):
     if not ports:
         return {}
+    names = [unit_name(p) + ext for p in ports for ext in ('.socket', '.service')]
     output = run(['systemctl', 'show', '--property=Id', '--property=ActiveState',
-                  '--property=Listen', '--property=UnitFileState', '--'] + [unit_name(p) + '.socket' for p in ports])
+                  '--property=SubState', '--property=MainPID', '--property=Job',
+                  '--property=FragmentPath', '--property=DropInPaths',
+                  '--property=Listen', '--property=UnitFileState', '--'] + names)
     return {row.get('Id'): row for block in output.strip().split('\n\n')
             if (row := dict(line.split('=', 1) for line in block.splitlines() if '=' in line))}
+
+
+def foreign_dropins(row, root):
+    for name in row.get('DropInPaths', '').split():
+        path = root / name.lstrip('/')
+        if (name != LXC_DROPIN or path.is_symlink() or not path.is_file()
+                or path.stat().st_uid != 0 or path.read_text() != LXC_CONTENT):
+            return True
+    return False
+
+
+def service_pid(rows, port):
+    row = rows.get(unit_name(port) + '.service', {})
+    pid = row.get('MainPID', '')
+    return int(pid) if row.get('ActiveState') == 'active' and row.get('SubState') == 'running' and not row.get('Job') and str(pid).isdigit() and int(pid) > 0 else None
+
+
+def tcp_sockets(pid, root):
+    """Kernel evidence owned by this proxy process, not PID 1's listening backlog."""
+    inodes = set()
+    for descriptor in (root / 'proc' / str(pid) / 'fd').iterdir():
+        try:
+            link = descriptor.readlink().as_posix()
+        except FileNotFoundError:
+            continue
+        match = re.fullmatch(r'socket:\[([0-9]+)\]', link)
+        if match:
+            inodes.add(match[1])
+
+    def address(raw):
+        host, port = raw.split(':')
+        return socket.inet_ntoa(bytes.fromhex(host)[::-1]), int(port, 16)
+
+    return {parts[9]: (address(parts[1]), address(parts[2]))
+            for line in (root / 'proc/net/tcp').read_text().splitlines()[1:]
+            if len(parts := line.split()) > 9 and parts[3] == '01' and parts[9] in inodes}
+
+
+def probe_proxy(target, root, run, connect):
+    port = target['port']
+    rows = socket_rows(run, [port])
+    pid = service_pid(rows, port)
+    if pid is None or not ready(rows.get(unit_name(port) + '.socket', {}), port):
+        raise TargetFailure('instance.node_service_unreachable', target)
+    try:
+        before = set(tcp_sockets(pid, root))
+        with connect(('127.0.0.1', port), timeout=2) as client:
+            source = client.getsockname()
+            # Re-read systemd after connecting: a listening PID 1 socket alone is insufficient.
+            rows = socket_rows(run, [port])
+            sockets = tcp_sockets(pid, root)
+            accepted = any(local == ('127.0.0.1', port) and peer == source for local, peer in sockets.values())
+            upstream = any(inode not in before and peer == (target['host'], port) for inode, (_, peer) in sockets.items())
+            if not (accepted and upstream and service_pid(rows, port) == pid
+                    and ready(rows.get(unit_name(port) + '.socket', {}), port)):
+                raise TargetFailure('instance.node_service_unreachable', target)
+    except OSError as error:
+        raise TargetFailure('instance.node_service_unreachable', target) from error
 
 
 def owns(row, port):
@@ -92,16 +189,21 @@ def guest(action, plan, root=Path('/'), run=command, connect=socket.create_conne
     if ports and not os.access(root / 'usr/lib/systemd/systemd-socket-proxyd', os.X_OK):
         raise RuntimeError('instance.host_unavailable')
     changed = []
+    rows = socket_rows(run, sorted(set(ports) | removed))
+    by_port = {target['port']: target for target in plan['targets']}
     # Inspect every owned path before changing anything. Never follow a foreign link.
     for name in set(desired) | {unit_name(p) + ext for p in removed for ext in ('.socket', '.service')}:
         path = directory / name
-        if path.is_symlink() or (path.exists() and not path.read_text().startswith(MARKER)):
-            raise RuntimeError('instance.node_service_unit_conflict')
+        port = int(name.removeprefix('orbit-node-service-').split('.')[0])
+        effective = rows.get(name, {})
+        if (effective.get('FragmentPath') not in (None, '', '/etc/systemd/system/' + name)
+                or foreign_dropins(effective, root) or path.is_symlink()
+                or (path.exists() and not path.read_text().startswith(MARKER))):
+            raise TargetFailure('instance.node_service_unit_conflict', by_port.get(port, {'port': port}))
         if name in desired:
             info = path.stat() if path.exists() else None
             if info is None or path.read_text() != desired[name] or info.st_uid != 0 or info.st_gid != 0 or stat.S_IMODE(info.st_mode) != 0o644:
                 changed.append(name)
-    rows = socket_rows(run, ports)
     if action == 'inspect':
         if ports:
             expression = '( ' + ' or '.join('sport = :' + str(p) for p in ports) + ' )'
@@ -110,7 +212,7 @@ def guest(action, plan, root=Path('/'), run=command, connect=socket.create_conne
                 local = fields[3] if len(fields) > 3 else ''
                 for port in ports:
                     if local.rsplit(':', 1)[-1] == str(port) and not owns(rows.get(unit_name(port) + '.socket', {}), port):
-                        raise RuntimeError('instance.node_service_port_in_use')
+                        raise TargetFailure('instance.node_service_port_in_use', by_port[port])
         return {'changed_units': sorted(changed), 'sockets': rows, 'removed': sorted(p for p in removed if any((directory / (unit_name(p) + ext)).exists() for ext in ('.socket', '.service')))}
     if action != 'install':
         raise RuntimeError('instance.node_service_apply_failed')
@@ -128,8 +230,11 @@ def guest(action, plan, root=Path('/'), run=command, connect=socket.create_conne
         atomic(directory / name, desired[name], 0o644)
         os.chown(directory / name, 0, 0, follow_symlinks=False)
     pending = plan['activation_units']
-    if pending or mutation or plan.get('pending_removal', False):
+    failed = [name for name, row in rows.items() if row.get('ActiveState') == 'failed']
+    if pending or mutation or failed or plan.get('pending_removal', False):
         run(['systemctl', 'daemon-reload'])
+        if failed:
+            run(['systemctl', 'reset-failed', '--'] + failed)
         services = [name for name in pending if name.endswith('.service')]
         if services:
             run(['systemctl', 'try-restart', '--'] + services)
@@ -139,16 +244,18 @@ def guest(action, plan, root=Path('/'), run=command, connect=socket.create_conne
     final = socket_rows(run, ports)
     if not all(ready(final.get(unit_name(p) + '.socket', {}), p) for p in ports):
         raise RuntimeError('process.target_inactive')
+    started = []
     if plan.get('probe', True):
-        for target in plan['targets']:
-            try:
-                # A local accept alone cannot prove a socket proxy's upstream; check both exact hops.
-                for address in [(target['host'], target['port']), ('127.0.0.1', target['port'])]:
-                    with connect(address, timeout=2):
-                        pass
-            except OSError as error:
-                raise RuntimeError('instance.node_service_unreachable') from error
-    return {'changed': bool(changed or pending or drift or mutation or plan.get('pending_removal', False))}
+        for target in by_port.values():
+            port = target['port']
+            if service_pid(final, port) is None:
+                try:
+                    run(['systemctl', 'start', '--', unit_name(port) + '.service'])
+                except RuntimeError as error:
+                    raise TargetFailure('instance.node_service_unreachable', target) from error
+                started.append(port)
+            probe_proxy(target, root, run, connect)
+    return {'changed': bool(changed or pending or drift or mutation or failed or started or plan.get('pending_removal', False))}
 
 
 def apply(container, bundle, run=command, state=Path('/var/lib/orbit/instance-node-services')):
@@ -200,6 +307,8 @@ def main():
         print(json.dumps(result))
     except Exception as error:  # noqa: BLE001 - public diagnostic boundary; never echo tool output.
         code = str(error)
+        if isinstance(error, TargetFailure):
+            print(json.dumps(error.evidence()))
         print(code if code in PUBLIC else 'instance.node_service_apply_failed', file=sys.stderr)
         raise SystemExit(1)
 
