@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "a5aac37686ac49369b687d9d3fb7ce36a099232d97a64dd1cd74ee51b72e22e4",
+    "source_sha256": "edee53732e9a864b8cedd39c46d42f6ae57b10e9c847fc604408e6beefc0d141",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -1773,7 +1773,7 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "317d1dc0ea918627b222ffeb246440207ac1a0828127c37101065f55f56b3984",
+    "source_sha256": "b4a913f8022e8e56039cd9be42de73d7b9cd7b81335d67a4d779a98e09022459",
     "cases": [
       "test_development_mail_satisfies_only_the_ipv4_forwarded_endpoints",
       "test_ipv6_mail_is_refused_even_with_the_development_mail_path",
@@ -1790,6 +1790,7 @@
       "test_quotes_spaces_export_comments_and_crlf",
       "test_dependency_env_fixtures_are_never_discovered",
       "test_process_named_environment_outside_the_root_is_read",
+      "test_process_working_directory_environment_is_read_only_inside_checkout",
       "test_application_and_schedule_environment_paths_are_explicit",
       "test_only_explicit_symlinked_env_files_are_read_without_tree_traversal",
       "test_node_addresses_and_unspecified_hosts_are_refused_even_inside_allowed_ranges",

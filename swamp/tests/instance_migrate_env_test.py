@@ -178,6 +178,22 @@ class InstanceMigrateEnvTest(unittest.TestCase):
         self.assertEqual(guard.inspect_environment(str(self.root), [], [], unit_files=[str(unit)]), [])
 
 
+    def test_process_working_directory_environment_is_read_only_inside_checkout(self):
+        self.inspect('DB_CONNECTION=sqlite\n')
+        directory = self.root / 'second'
+        directory.mkdir()
+        (directory / '.env').write_text('DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n')
+        unit = self.root / 'worker.service'
+        unit.write_text('[Service]\nWorkingDirectory=' + str(directory) + '\nEnvironmentFile=-' + str(self.root / '.env') + '\n')
+        found = guard.inspect_environment(str(self.root), [], [], unit_files=[str(unit)])
+        self.assertEqual(len(found), 1)
+        self.assertIn('second/.env: DB_HOST=127.0.0.1:3306', found[0])
+        external = tempfile.TemporaryDirectory()
+        self.addCleanup(external.cleanup)
+        Path(external.name, '.env').write_text('DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n')
+        unit.write_text('[Service]\nWorkingDirectory=' + external.name + '\n')
+        self.assertEqual(guard.inspect_environment(str(self.root), [], [], unit_files=[str(unit)]), [])
+
     def test_application_and_schedule_environment_paths_are_explicit(self):
         self.inspect('DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n')
         application = self.root / 'server/web/.env'

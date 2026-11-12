@@ -279,11 +279,15 @@ def env_files(checkout, environment_files=None, unit_files=()):
             # The Process preflight owns a missing unit; it names no environment file here.
             continue
         files = []
+        directory = ''
         for line in lines:
             key, separator, value = line.strip().partition('=')
-            if separator and key == 'EnvironmentFile':
+            if separator and key in ('EnvironmentFile', 'WorkingDirectory'):
                 if not value.strip():
-                    files = []
+                    if key == 'EnvironmentFile':
+                        files = []
+                    else:
+                        directory = ''
                     continue
                 try:
                     # Keep systemd's backslash escapes until token boundaries are known.
@@ -291,10 +295,17 @@ def env_files(checkout, environment_files=None, unit_files=()):
                     words.whitespace_split = True
                     words.commenters = ''
                     words.escape = ''
-                    files.extend(re.sub(r'\\x([0-9a-fA-F]{2})', lambda match: chr(int(match[1], 16)),
-                                        path.removeprefix('-')).replace('%%', '%') for path in words)
+                    named = [re.sub(r'\\x([0-9a-fA-F]{2})', lambda match: chr(int(match[1], 16)),
+                                    path.removeprefix('-')).replace('%%', '%') for path in words]
+                    if key == 'EnvironmentFile':
+                        files.extend(named)
+                    else:
+                        directory = named[0] if named else ''
                 except ValueError as error:
                     raise OSError(0, 'Cannot read the named environment paths.', unit) from error
+        if os.path.isabs(directory) and os.path.commonpath(
+                [os.path.realpath(checkout), os.path.realpath(directory)]) == os.path.realpath(checkout):
+            paths.append(os.path.join(directory, '.env'))
         for path in files:
             paths.extend(glob.glob(path) if glob.has_magic(path) else [path])
     for path in dict.fromkeys(paths):

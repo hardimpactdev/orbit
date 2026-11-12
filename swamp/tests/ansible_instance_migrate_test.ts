@@ -2140,6 +2140,24 @@ Deno.test({
       f.write();
       const stateBefore = f.state();
 
+      Deno.mkdirSync(`${f.checkout}/second`);
+      const primaryEnvironment = Deno.readTextFileSync(`${f.checkout}/.env`);
+      const sourceContent = Deno.readTextFileSync(sourceUnit);
+      Deno.writeTextFileSync(`${f.checkout}/.env`, "DB_CONNECTION=sqlite\nMAIL_MAILER=log\n");
+      Deno.writeTextFileSync(`${f.checkout}/second/.env`, "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n");
+      Deno.writeTextFileSync(sourceUnit, `[Service]\nWorkingDirectory=${f.checkout}/second\nEnvironmentFile=-${f.checkout}/.env\nExecStart=/bin/true\n`);
+      const secondRefused = f.run("container");
+      assert(!secondRefused.ok, secondRefused.output);
+      assertEquals(f.result().error_code, "instance.migrate_env_service_unreachable");
+      assert(f.result().error_message.includes("second/.env: DB_HOST=127.0.0.1:3306"));
+      assert(!exists(`${f.folder}/calls`), "a second application refusal precedes every probe");
+      assert(!exists(`${f.folder}/run/quiesced`));
+      assertEquals(Deno.readTextFileSync(`${f.folder}/host-processes.json`), before);
+      assertEquals(f.state(), stateBefore);
+      Deno.removeSync(`${f.checkout}/second`, { recursive: true });
+      Deno.writeTextFileSync(`${f.checkout}/.env`, primaryEnvironment);
+      Deno.writeTextFileSync(sourceUnit, sourceContent);
+
       const refused = f.run("container");
 
       assert(!refused.ok, refused.output);
