@@ -785,7 +785,7 @@
     ]
   },
   "swamp/tests/ansible_shape_gate_tools_test.py": {
-    "source_sha256": "a70cc7d76d9318e4f797dee9651bea556aeeb16ded6911944790cb64ee8f8a8b",
+    "source_sha256": "5d4ed64fa727443866ac35a2e1d76d9bad165053dd15c2e2ce775fbf9a0a1a44",
     "cases": [
       "test_uses_the_system_tools_only_when_built_for_these_pins",
       "test_a_built_venv_needs_no_write_access_and_no_install",
@@ -1767,18 +1767,6 @@
       "empty step labels erase inherited labels but keep an inherited target",
       "intrinsic steps also declare placement; malformed labels do not place work",
       "only the Gateway bootstrap runs without a worker placement"
-    ]
-  },
-  "swamp/tests/writes_declared_test.ts": {
-    "source_sha256": "9b4d11a8e2b7028920832ffcb90ecc2afaee4db5304775648770044ad7036480",
-    "cases": [
-      "every step with an external effect declares writes: true or is reviewed",
-      "a step that cannot run twice declares writes, and is not listed as reviewed",
-      "the reviewed list holds no stale entry and its unreviewed count is pinned",
-      "the pattern finds the commands that cannot run twice",
-      "unknown behavior and model methods are audited by default",
-      "a custom file writer cannot lose its writes declaration",
-      "every native-data exception has an exact method pair and a review reason"
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
