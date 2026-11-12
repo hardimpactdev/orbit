@@ -30,6 +30,16 @@
       {{ (container.units + (container.processes | default([]) | selectattr('desired', 'equalto', 'running') | list))
          | map(attribute='name') | list }}
 
+# Private runtime preparation is also the narrow per-Instance conversion entry.
+- name: Prepare the Instance's private Node store
+  tags: [node-store, node-runtime]
+  when: phase in ['node-store', 'node-runtime']
+  ansible.builtin.include_tasks:
+    file: tasks/instance-node-runtime.yml
+    apply: {tags: [always]}
+  vars:
+    node_fetch: "{{ phase == 'node-runtime' }}"
+
 # A dedicated phase also serves the one-Instance refresh without visiting workspace or Process tasks.
 - name: Apply development mail
   tags: [mail]
@@ -600,6 +610,30 @@
       loop_control: { label: "{{ item.item.name }}" }
       no_log: true
       changed_when: true
+
+- name: Read whether this container already has a private Node store
+  tags: [processes]
+  when: phase == 'processes'
+  vars:
+    node_private_layout: >-
+      from pathlib import Path; import sys;
+      h=Path("/var/lib/orbit/vite-plus-home/js_runtime");
+      sys.exit(0 if not h.is_symlink() and h.is_dir() and not (h/"node").is_symlink()
+      and (h/"node").is_dir() and Path("/usr/local/libexec/orbit-instance-node-runtime.py").is_file() else 1)
+  ansible.builtin.command:
+    argv: "{{ as_orbit + ['python3', '-c', node_private_layout] }}"
+  register: node_private_bootstrap
+  changed_when: false
+  failed_when: node_private_bootstrap.rc not in [0, 1]
+
+- name: Fetch Node versions before starting application Processes
+  tags: [processes]
+  when: phase == 'processes' and node_private_bootstrap.rc == 0
+  ansible.builtin.include_tasks:
+    file: tasks/instance-node-runtime.yml
+    apply: {tags: [processes]}
+  vars:
+    node_fetch: true
 
 # A changed value is a new file; the old one goes, so no former value stays in the container.
 - name: Remove the Processes' former environment files

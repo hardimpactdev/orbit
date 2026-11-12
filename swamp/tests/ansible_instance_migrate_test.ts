@@ -135,6 +135,8 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     });
     Deno.writeTextFileSync(`${folder}/tasks/${name}`, stringify(tasks));
   }
+  Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
+  Deno.copyFileSync(new URL("tasks/instance-node-runtime.yml", root), `${folder}/tasks/instance-node-runtime.yml`);
   Deno.mkdirSync(`${folder}/templates`);
   Deno.writeTextFileSync(`${folder}/templates/instance-migrate-schedule.j2`,
     Deno.readTextFileSync(new URL("templates/instance-migrate-schedule.j2", root)).replace("playbook_dir ~ '/../extensions/", "playbook_dir ~ '/extensions/"));

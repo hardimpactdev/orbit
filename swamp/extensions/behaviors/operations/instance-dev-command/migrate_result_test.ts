@@ -126,7 +126,7 @@ Deno.test("the migration prepares and probes the container before quiesce and bu
     };
     const steps = Object.fromEntries(flow.jobs[0].steps.map((step) => [step.name, step]));
     assertEquals(steps.container.dependsOn?.map((edge) => edge.step), ["input"]);
-    assertEquals(steps.quiesce.dependsOn?.map((edge) => edge.step), ["container"]);
+    assertEquals(steps.quiesce.dependsOn?.map((edge) => edge.step), ["node-runtime"]);
     assertEquals(steps.workspace.dependsOn?.map((edge) => edge.step), ["quiesce"]);
     assertEquals(steps.container.task.inputs?.run?.includes('--tags container "$ORBIT_ANSIBLE/instance-migrate.yml"'), true);
 });
@@ -227,6 +227,17 @@ Deno.test("missing or malformed successful mail receipts become advisory warning
         }
         assertEquals(result(defaultIntent, {...moved, mail: "skipped"}, workspace, null, null).warnings, undefined);
     } finally { await Deno.remove(folder, {recursive: true}); }
+});
+
+Deno.test("Node preparation fails before quiesce with its pin reason and restores only the new container", () => {
+    const phases = {...moved, node: "failed", quiesce: "skipped", workspace: "skipped", files: "skipped",
+        processes: "skipped", seed: "skipped", route: "skipped", retire: "skipped", restore: "succeeded"};
+    const receipt = result(defaultIntent, phases, null, null, {
+        error_code: "instance.node_runtime_prepare_failed", error_message: ".nvmrc pins Node 22: checksum verification failed",
+    });
+    assertEquals([receipt.ready, receipt.moved, receipt.restored, receipt.failed_step, receipt.error_code],
+        [false, false, true, "node", "instance.node_runtime_prepare_failed"]);
+    assertEquals(receipt.error_message, ".nvmrc pins Node 22: checksum verification failed");
 });
 
 Deno.test("the copied untracked count includes zero, excludes paths and survives later failure", async () => {

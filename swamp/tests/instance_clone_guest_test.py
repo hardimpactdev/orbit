@@ -279,6 +279,8 @@ class CloneGuestTest(unittest.TestCase):
             }
 
             def command(argv, **_kwargs):
+                if "/usr/local/libexec/orbit-instance-node-runtime.py" in argv:
+                    return subprocess.CompletedProcess(argv, 0, '{"status":"unchanged"}', "")
                 value = "proof\n" if "symbolic-ref" in argv else "abc123\n"
                 return subprocess.CompletedProcess(argv, 0, value, "")
 
@@ -328,6 +330,8 @@ class CloneGuestTest(unittest.TestCase):
             commands = []
 
             def command(argv, **_kwargs):
+                if "/usr/local/libexec/orbit-instance-node-runtime.py" in argv:
+                    return subprocess.CompletedProcess(argv, 0, '{"status":"unchanged"}', "")
                 commands.append(list(argv))
                 value = "proof\n" if "symbolic-ref" in argv else "abc123\n"
                 return subprocess.CompletedProcess(argv, 0, value, "")
@@ -350,6 +354,7 @@ class CloneGuestTest(unittest.TestCase):
                     ),
                     patch.object(GUEST.subprocess, "run", command),
                     patch.object(GUEST.os, "walk", return_value=[]),
+                    patch.object(GUEST.os, "chown"),
                     patch.object(
                         GUEST.sys,
                         "stdin",
@@ -424,6 +429,8 @@ class CloneGuestTest(unittest.TestCase):
             commands = []
 
             def command(argv, **_kwargs):
+                if "/usr/local/libexec/orbit-instance-node-runtime.py" in argv:
+                    return subprocess.CompletedProcess(argv, 0, '{"status":"unchanged"}', "")
                 commands.append(argv)
                 # Configured identity stays; the trust list must narrow to this workspace.
                 key = argv[-1]

@@ -111,6 +111,8 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
         ready: failed === undefined,
         name_converted_from: intent.name_converted_from ?? null,
         ...(commit ? { commit } : {}),
+        ...(container !== null && (intent.container as {clone?: unknown} | null)?.clone == null
+            ? {node_pin: {status: "not_prepared", reason: "container_from_stock_image"}} : {}),
         ...(server ? { t3: server } : {}),
         ...(mail ? {mail} : {}),
         ...(mail?.status === "failed" ? {warnings: [{code: "instance.mail_update_failed", step: "mail"}]} : {}),
