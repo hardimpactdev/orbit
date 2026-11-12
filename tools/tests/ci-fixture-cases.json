@@ -1761,7 +1761,7 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "b1268fa407e2e833f748eca363abaf00fe4e58e883165438b0ecafe70e8ef1a0",
+    "source_sha256": "e12a031c865034f2731e29f80d0f7ec4dc909644e418187aad64f9c4116906ec",
     "cases": [
       "test_development_mail_satisfies_only_the_ipv4_forwarded_endpoints",
       "test_ipv6_mail_is_refused_even_with_the_development_mail_path",

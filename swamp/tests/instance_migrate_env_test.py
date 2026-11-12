@@ -41,6 +41,27 @@ class InstanceMigrateEnvTest(unittest.TestCase):
                         self.assertIn('no eligible main Mailpit on its Node', refused[0])
                         self.assertIn(f'no mail forwarder on {host}:{port}', refused[0])
 
+        for quote in ("'", '"'):
+            for host in ('127.0.0.1', 'localhost'):
+                for port in ('1025', '2525'):
+                    for altered in (' ' + host, host + ' ', '\t' + host, host + '\t',
+                                    'LOCALHOST', 'LocalHost', 'localhost.', '[127.0.0.1]'):
+                        with self.subTest(host=altered, port=port, quote=quote):
+                            text = f'MAIL_MAILER=smtp\nMAIL_HOST={quote}{altered}{quote}\nMAIL_PORT={quote}{port}{quote}\n'
+                            refused = self.inspect(text, development_mail=endpoint)
+                            self.assertEqual(len(refused), 1)
+                            self.assertIn('the host belongs to the Node or container loopback and has no exact attached target', refused[0])
+                    for altered in (' ' + port, port + ' ', '\t' + port, port + '\t', '0' + port):
+                        with self.subTest(host=host, port=altered, quote=quote):
+                            text = f'MAIL_MAILER=smtp\nMAIL_HOST={quote}{host}{quote}\nMAIL_PORT={quote}{altered}{quote}\n'
+                            refused = self.inspect(text, development_mail=endpoint)
+                            self.assertEqual(len(refused), 1)
+                            self.assertTrue('the service port is missing or is not a literal port' in refused[0]
+                                            or 'the host belongs to the Node or container loopback' in refused[0])
+        for quote in ('', "'", '"'):
+            text = f' MAIL_MAILER = smtp \n MAIL_HOST = {quote}127.0.0.1{quote} \n MAIL_PORT = {quote}1025{quote} \n'
+            self.assertEqual(self.inspect(text, development_mail=endpoint), [])
+
     def test_ipv6_mail_is_refused_even_with_the_development_mail_path(self):
         for port in (1025, 2525):
             text = f'MAIL_MAILER=smtp\nMAIL_HOST="::1"\nMAIL_PORT="{port}"\n'

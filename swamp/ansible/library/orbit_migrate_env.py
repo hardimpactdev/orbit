@@ -318,7 +318,8 @@ def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, de
                 reason = 'the service port is missing or is not a literal port'
             elif (host, port) in attached:
                 continue
-            elif key == 'MAIL_HOST' and host in ('127.0.0.1', 'localhost', '::1') and port in (1025, 2525):
+            elif (key == 'MAIL_HOST' and value in ('127.0.0.1', 'localhost', '::1')
+                  and values.get('MAIL_PORT') in ('1025', '2525')):
                 if development_mail is None:
                     reason = ('this Instance has no eligible main Mailpit on its Node, so the container will have no '
                               f'mail forwarder on {display}:{port}')
