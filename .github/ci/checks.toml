@@ -39,6 +39,8 @@ inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
   "swamp/ansible/tasks/address-node.yml",
   "swamp/ansible/tasks/instance-bridge-rules.yml",
   "swamp/ansible/tasks/instance-container-*.yml",
@@ -55,7 +57,7 @@ inputs = [
   "stock selector preflight: attached Redis" = 120 # UNMEASURED estimate; registration refreshed from current source
   "stock selector preflight: wrong Redis port" = 120 # UNMEASURED estimate; registration refreshed from current source
   "untracked non-ignored files and nested repository leaves migrate with an exact archived file count" = 80 # local completed 36s; conservative runner allowance
-  "late untracked files including nested repository leaves refuse before cut-over and restore the source" = 80 # local completed 38s; conservative runner allowance
+  "late ignored and non-ignored files do not refuse a move and remain in the retained checkout" = 80 # conservative estimate; includes processes and seed before retirement
   "untracked files inside a tracked submodule retain the named retirement refusal even when Git config ignores it" = 7 # local completed 2s; conservative runner allowance
   "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links" = 62 # completed, run 43002948719
   "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources" = 8 # completed, run 43002948719
@@ -2655,7 +2657,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts"
-cost = 27
+cost = 25
 inputs = [
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
   "swamp/workflows/workflow-operation-instance-migrate.yaml",
@@ -2686,8 +2688,6 @@ inputs = [
 "missing or malformed successful mail receipts become advisory warnings" = 1
 "the copied untracked count includes zero, excludes paths and survives later failure" = 1
 "invalid or incomplete copied-file receipts do not claim a count" = 1
-"uncopied work fails before Route cut-over, restores the source and keeps its named code" = 1
-"the manifest check gates cut-over and restoration waits for it even without a Route" = 1
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts"

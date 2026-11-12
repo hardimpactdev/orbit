@@ -7,6 +7,7 @@
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
 import { createHash } from "node:crypto";
+import { migrateResult } from "../extensions/behaviors/operations/instance-dev-command/migrate_result.ts";
 import {
   legacyScheduleUnits,
   renderScheduleUnits,
@@ -284,14 +285,14 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
       const batchFile = "batched-migrate.yml";
       if (batch) {
         const plays = phases.flatMap((selected) => {
-          const source = ["container", "quiesce", "files", "files_check", "retire", "restore"].includes(selected) ? "instance-migrate.yml" : "instance-container.yml";
+          const source = ["container", "quiesce", "files", "retire", "restore"].includes(selected) ? "instance-migrate.yml" : "instance-container.yml";
           return JSON.parse(JSON.stringify(parse(Deno.readTextFileSync(`${folder}/${source}`)))
             .replaceAll("ansible_run_tags | first", `'${selected}'`)) as Task[];
         });
         for (const play of plays) play.tags = ["always"];
         Deno.writeTextFileSync(`${folder}/${batchFile}`, stringify(plays));
       }
-      const playbook = batch ? batchFile : !rawContainer && ["container", "quiesce", "files", "files_check", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
+      const playbook = batch ? batchFile : !rawContainer && ["container", "quiesce", "files", "retire", "restore"].includes(phase) ? "instance-migrate.yml" : "instance-container.yml";
       const done = new Deno.Command(phase === "processes" ? "timeout" : "ansible-playbook", {
         args: [...(phase === "processes" ? ["120", "ansible-playbook"] : []), "-i", "localhost,", "--tags", batch ? "all" : phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
           "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/${playbook}`],
@@ -628,7 +629,7 @@ Deno.test({
       for (let i = 0; i < 31; i++) assertEquals(f.read(`nested/file-${i}`), `nested ${i}\n`);
       const receipt = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/untracked-files.json`));
       assertEquals(receipt.untracked_files_copied, 4 + nestedLeaves);
-      const completed = f.run(["files_check", "retire"]);
+      const completed = f.run("retire");
       assert(completed.ok, completed.output);
       assert(exists(f.migrate.awake.path));
       assertEquals(f.state().containers["instance-7"].status, "Running");
@@ -640,29 +641,42 @@ Deno.test({
 });
 
 Deno.test({
-  name: "late untracked files including nested repository leaves refuse before cut-over and restore the source",
+  name: "late ignored and non-ignored files do not refuse a move and remain in the retained checkout",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
-      Deno.mkdirSync(`${f.checkout}/nested`);
-      git(`${f.checkout}/nested`, "init", "--quiet");
-      Deno.writeTextFileSync(`${f.checkout}/nested/first.txt`, "copied\n");
+      Deno.writeTextFileSync(`${f.checkout}/.gitignore`, Deno.readTextFileSync(`${f.checkout}/.gitignore`) + "*.log\ncache/\n");
+      git(f.checkout, "add", ".gitignore");
+      git(f.checkout, "commit", "--quiet", "-m", "ignore generated output");
+      git(f.checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
+      Deno.writeTextFileSync(`${f.checkout}/draft.txt`, "copied version\n");
       f.buildBatched();
-      Deno.writeTextFileSync(`${f.checkout}/late.txt`, "late work\n");
-      Deno.writeTextFileSync(`${f.checkout}/nested/late.txt`, "nested late work\n");
-      const checked = f.run("files_check");
-      assert(!checked.ok, checked.output);
-      assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
-      assert(f.result().error_message.includes("late.txt"));
-      assert(f.result().error_message.includes("nested/late.txt"));
-      assert(!exists(`${f.rootfs}/srv/workspace/late.txt`));
-      const restored = f.run("restore");
-      assert(restored.ok, restored.output);
-      assert(!exists(f.rootfs));
+      Deno.writeTextFileSync(`${f.checkout}/draft.txt`, "late edited version\n");
+      Deno.writeTextFileSync(`${f.checkout}/late.txt`, "late untracked work\n");
+      Deno.writeTextFileSync(`${f.checkout}/runtime.log`, "late ignored output\n");
+      Deno.mkdirSync(`${f.checkout}/cache`);
+      Deno.writeTextFileSync(`${f.checkout}/cache/generated`, "late ignored cache\n");
+      const completed = f.run(["processes", "seed", "retire"]);
+      assert(completed.ok, completed.output);
+      const commit = f.workspace("rev-parse", "HEAD");
+      const copied = JSON.parse(Deno.readTextFileSync(`${f.folder}/run/untracked-files.json`));
+      const projected = JSON.parse(migrateResult(
+        { instance_id: f.container.instance_id, container: f.container, route_mutations: null },
+        { container: "succeeded", quiesce: "succeeded", workspace: "succeeded", files: "succeeded",
+          processes: "succeeded", seed: "succeeded", agent: "skipped", t3: "skipped", register: "skipped",
+          route: "skipped", retire: "succeeded", restore_route: "skipped", restore: "skipped" },
+        { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}` } }, null, copied,
+      ).stdout);
+      assertEquals([projected.ready, projected.moved, projected.restored], [true, true, false]);
+      assertEquals(f.read("draft.txt"), "copied version\n");
+      for (const path of ["late.txt", "runtime.log", "cache/generated"]) assert(!exists(`${f.rootfs}/srv/workspace/${path}`));
+      const retained = f.retained();
+      assertEquals(Deno.readTextFileSync(`${retained}/draft.txt`), "late edited version\n");
+      assertEquals(Deno.readTextFileSync(`${retained}/late.txt`), "late untracked work\n");
+      assertEquals(Deno.readTextFileSync(`${retained}/runtime.log`), "late ignored output\n");
+      assertEquals(Deno.readTextFileSync(`${retained}/cache/generated`), "late ignored cache\n");
       assert(exists(f.migrate.awake.path));
-      assertEquals(Deno.readTextFileSync(`${f.checkout}/late.txt`), "late work\n");
-      assertEquals(Deno.readTextFileSync(`${f.checkout}/nested/late.txt`), "nested late work\n");
     } finally {
       f.cleanup();
     }

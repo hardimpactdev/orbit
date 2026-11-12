@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "8d8910ebc2e54c0fc5a35f9e96cccc296b7dd845ae44365ee1f8ea116e6ba7cf",
+    "source_sha256": "eaea621b747d1fe1463bb9465326941f7f9d988308e12d38ebe92bad51361ab6",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -12,7 +12,7 @@
       "the exact archive tree handles outside link changes after preflight and preserves rollback",
       "the exact archive tree handles broken link changes after preflight and preserves rollback",
       "untracked non-ignored files and nested repository leaves migrate with an exact archived file count",
-      "late untracked files including nested repository leaves refuse before cut-over and restore the source",
+      "late ignored and non-ignored files do not refuse a move and remain in the retained checkout",
       "untracked files inside a tracked submodule retain the named retirement refusal even when Git config ignores it",
       "a retained default copies its unpushed commit and changed, staged, untracked, deleted and ignored files",
       "a linked checkout refuses retirement even when the default is in the same retirement batch",
@@ -1922,7 +1922,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "586150cce9681b75a4525680ed458d21bb673b38800762662ce16ac93de3b834",
+    "source_sha256": "ccdee12065c4cc149312ad2c0ceb472f9fba037567b1f357fe3fc171a54f6a1f",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -1948,9 +1948,7 @@
       "migration retains each exact-line outcome and the named path conflict without values",
       "missing or malformed successful mail receipts become advisory warnings",
       "the copied untracked count includes zero, excludes paths and survives later failure",
-      "invalid or incomplete copied-file receipts do not claim a count",
-      "uncopied work fails before Route cut-over, restores the source and keeps its named code",
-      "the manifest check gates cut-over and restoration waits for it even without a Route"
+      "invalid or incomplete copied-file receipts do not claim a count"
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {

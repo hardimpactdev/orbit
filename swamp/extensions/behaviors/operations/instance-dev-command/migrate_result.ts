@@ -8,7 +8,6 @@ export const MigratePhases = z.object({
     container: z.string(),
     workspace: z.string(),
     files: z.string(),
-    files_check: z.string(),
     agent: z.string(),
     processes: z.string(),
     seed: z.string(),
@@ -48,7 +47,7 @@ const COMMIT = /orbit-commit=([0-9a-f]{40}|[0-9a-f]{64})\b/;
 /** A public error code, as a phase's refusal writes it into the run folder. */
 const CODE = /^[a-z]+\.[a-z0-9_]+$/;
 /** The phases that write `result.json`: the Ansible ones. The Route child and the registration step write none. */
-const WRITES_RESULT = ["quiesce", "container", "workspace", "files", "agent", "processes", "seed", "t3", "files_check", "retire"];
+const WRITES_RESULT = ["quiesce", "container", "workspace", "files", "agent", "processes", "seed", "t3", "retire"];
 
 /**
  * Map the step statuses of a move to its terminal receipt. `moved` says that the Route serves the container and the checkout's
@@ -81,7 +80,6 @@ export function migrateResult(
             done("t3"),
             ["register", phases.register === "succeeded" && typeof server === "string", ["failed", "cancelled", "interrupted", "unknown"].includes(phases.register)] as [string, boolean, boolean],
         ]),
-        done("files_check"),
         ...(routed ? [done("route")] : []),
         done("retire"),
     ];

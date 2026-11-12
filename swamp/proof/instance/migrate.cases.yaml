@@ -4,7 +4,7 @@
 # the Pest, Deno and Ansible fixture tests cover the move, and the live check on a build-list Node proves it.
 # Retirement fixture coverage (ansible_instance_migrate_test.ts): dirty tracked/staged/deleted/renamed files refuse before
 # downtime; all untracked files pass, copy into the container and report their count (including ignored files and nested repository leaves, no paths/content).
-# New paths after copying refuse before cut-over and restore the checkout; submodule changes still refuse.
+# Late ignored and non-ignored files do not refuse the move and remain in the retained checkout; submodule changes still refuse.
 # Counts include archived untracked leaves inside nested repositories; directories do not count.
 # Linked and detached worktrees refuse and name their paths.
 # Target probes run in the container phase before quiesce; an unreachable SQL or Redis target leaves the awake marker,

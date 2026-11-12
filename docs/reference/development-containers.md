@@ -740,7 +740,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 
 All untracked files enter the default's seed snapshot and every clone, as ignored build output already does. A branch that later tracks one of those paths can refuse checkout in a clone or deploy. Forgotten credentials files travel into the seed like `.env` does.
 
-Migration reports `untracked_files_copied` as archived untracked leaf entries, including ignored files, nested repository contents and symlinks; directories do not count. It exposes no new paths or file contents. Submodule changes still refuse because the parent archive cannot preserve them. A manifest check before cut-over refuses and restores on new untracked paths; the repeated retirement check catches later arrivals without silently succeeding.
+Migration reports `untracked_files_copied` as archived untracked leaf entries, including ignored files, nested repository contents and symlinks; directories do not count. It exposes no new paths or file contents. Submodule changes still refuse because the parent archive cannot preserve them.
 
 The runtime reservation belongs to its admitting Operation. A late receipt cannot change a newer owner. Settlement reads private material before taking the Instance lock, then checks ownership and records the runtime and receipt atomically. An already-settled stale runtime is not repaired: inspections keep selecting it until a new migrate reuses and owns that reservation.
 

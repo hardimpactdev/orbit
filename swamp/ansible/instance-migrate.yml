@@ -30,7 +30,7 @@
   hosts: migrate_node
   gather_facts: false
   become: true
-  tags: [container, quiesce, files, files_check, retire, restore]
+  tags: [container, quiesce, files, retire, restore]
   vars:
     intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
     container: "{{ intent.container }}"
@@ -49,7 +49,7 @@
             file: tasks/instance-migrate-phase.yml
             apply: { tags: [always] }
         - name: Write the result
-          when: phase in ['container', 'quiesce', 'files', 'files_check']
+          when: phase in ['container', 'quiesce', 'files']
           ansible.builtin.copy:
             content: "{{ {'commit': migrate_commit | default(none)} | to_json }}"
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
