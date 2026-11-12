@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "c3528213ebb7bd5cc3c50e535a64cfc2feb9e711dc9fb4467f191c8dcad1cff2",
+    "source_sha256": "22d5991104957ee5c6a7258e6875647da4cc782f034a3924c6e2f2f8daa2cfaa",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -113,7 +113,10 @@
       "stock selector preflight: selected Redis",
       "stock selector preflight: attached Redis",
       "stock selector preflight: wrong Redis port",
-      "stock unused MySQL passes both real preflights and its warning survives the completed move"
+      "empty untracked storage and nested ignored directories migrate with exact modes and resolving links",
+      "copy prediction refuses missing targets and omitted submodule content before quiesce without changing the checkout",
+      "stock unused MySQL passes both real preflights and its warning survives the completed move",
+      "directory modes stay in the protected result and restore through the workspace owner"
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
@@ -743,7 +746,7 @@
     ]
   },
   "swamp/tests/ansible_instance_migrate_links_test.py": {
-    "source_sha256": "2c06767fd3066491dd28df9a3a2904ce904b64349e5657d4eec42e8d8dc7ee89",
+    "source_sha256": "3213eef67d13283040a99ffef0e1d0adfc7ae0f89383343a7aea292379fb989a",
     "cases": [
       "test_rewrites_absolute_storage_and_local_package_links_without_changing_source",
       "test_keeps_relative_targets_exactly",
@@ -758,7 +761,14 @@
       "test_refuses_missing_copied_data_even_if_the_source_target_still_exists_without_partial_rewrites",
       "test_preserves_non_utf8_bytes_in_link_names_and_targets",
       "test_reports_non_utf8_refusals_as_byte_escapes_without_json_surrogates",
-      "test_resolves_parent_components_after_following_directory_links"
+      "test_resolves_parent_components_after_following_directory_links",
+      "test_archive_carries_empty_untracked_and_nested_ignored_directories_with_exact_modes",
+      "test_prediction_keeps_existing_validation_for_links_into_generated_git_metadata",
+      "test_prediction_refuses_source_only_git_metadata_before_the_copy",
+      "test_restore_refuses_a_symlink_directory_component_and_leaves_outside_untouched",
+      "test_restore_rejects_absolute_and_parent_manifest_paths_without_touching_outside",
+      "test_added_unreadable_directory_can_be_inspected_before_exact_mode_restoration",
+      "test_prediction_refuses_source_valid_links_to_omitted_submodule_contents_and_missing_targets"
     ]
   },
   "swamp/tests/ansible_instance_module_args_test.py": {

@@ -28,6 +28,8 @@ Migration retirement protects the Node's remaining checkouts: an owner with depe
 
 Linked worktree retirement checks only its own HEAD for unpushed commits; shared stashes stay with the owner. The [retirement rules](/cli/instance/migrate#before-you-start) define the checks for the owner's whole store.
 
+Migration carries missing directories, including empty link targets, with their modes and the existing ownership mapping. Symlink prediction runs before downtime and shares the final copied-tree resolver; [migration files and links](/cli/instance/migrate#what-moves) define the exclusions.
+
 Migration checks remote source access before quiesce using the Node's existing Git transport. Its temporary fetch credential is mode 0600 and is removed after success, refusal or timeout; no source token enters the container.
 
 Each argument of an Ansible command must parse as a string. One shared test reads every literal `argv` list. It fails on a YAML mapping, a number or a boolean.
