@@ -876,19 +876,22 @@ class BridgeHelperInstallation(unittest.TestCase):
         text = (self.source.parent / 'tasks/instance-bridge-rules.yml').read_text()
         # Execute the real installer, excluding endpoint application. CI is
         # unprivileged; root execution in the work clone also proves root:root.
-        text = text.split('# One attempt', 1)[0]
-        self.assertIn('owner: root\n            group: root\n            mode:', text)
+        self.assertIn('owner: root', text)
+        self.assertIn('group: root', text)
         if os.geteuid() != 0:
             text = text.replace('owner: root', 'owner: ' + pwd.getpwuid(os.geteuid()).pw_name)
             text = text.replace('group: root', 'group: ' + grp.getgrgid(os.getegid()).gr_name)
         text = text.replace('/usr/local/libexec', str(self.libexec))
-        (self.root / 'tasks.yml').write_text(text)
+        self.full_tasks = text
+        (self.root / 'tasks.yml').write_text(text.split('# One attempt', 1)[0])
         shutil.copyfile(self.source, self.root / 'instance_bridge.py')
         self.playbook = self.root / 'play.yml'
         self.playbook.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False,
             'tasks': [{'ansible.builtin.include_tasks': str(self.root / 'tasks.yml')}]}]))
 
-    def install(self, fault=''):
+    def install(self, fault='', *, check_mode=False):
+        if check_mode:
+            (self.root / 'tasks.yml').write_text(self.full_tasks)
         plugins = self.root / 'connections'
         plugins.mkdir(exist_ok=True)
         (plugins / 'bridge_install_fault.py').write_text(
@@ -914,11 +917,55 @@ class BridgeHelperInstallation(unittest.TestCase):
             "        return super().exec_command(cmd, in_data, sudoable)\n")
         result = subprocess.run(['ansible-playbook', '-i', 'localhost,',
             '-c', 'bridge_install_fault', '-e', json.dumps({'ansible_python_interpreter': sys.executable}),
-            str(self.playbook)], capture_output=True, text=True, timeout=45, check=False,
+            str(self.playbook), *(['--check'] if check_mode else [])], capture_output=True, text=True, timeout=45, check=False,
             env={**os.environ, 'ANSIBLE_CONNECTION_PLUGINS': str(plugins), 'ANSIBLE_NOCOLOR': '1',
                  'BRIDGE_INSTALL_FIXTURE': str(self.root), 'BRIDGE_INSTALL_FAULT': fault,
                  'BRIDGE_INSTALL_DIGEST': self.digest})
         return result
+
+    def node_files(self):
+        return {path.name: (str(path.readlink()) if path.is_symlink() else path.read_bytes(),
+                           path.lstat().st_ino, path.lstat().st_mtime_ns, path.lstat().st_ctime_ns,
+                           path.lstat().st_mode, path.lstat().st_uid, path.lstat().st_gid)
+                for path in self.libexec.iterdir()}
+
+    def test_check_mode_missing_helper_reports_change_without_writing(self):
+        self.installed.unlink()
+        before = self.node_files()
+        result = self.install(check_mode=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Bridge helper would change', result.stdout)
+        self.assertRegex(result.stdout, r'changed=[1-9]')
+        self.assertEqual(self.node_files(), before)
+
+    def test_check_mode_old_helper_reports_change_without_writing(self):
+        before = self.node_files()
+        result = self.install(check_mode=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Bridge helper would change', result.stdout)
+        self.assertRegex(result.stdout, r'changed=[1-9]')
+        self.assertEqual(self.node_files(), before)
+
+    def test_check_mode_current_helper_reports_no_change_without_writing(self):
+        self.installed.write_bytes(self.source.read_bytes())
+        self.installed.chmod(0o755)
+        before = self.node_files()
+        result = self.install(check_mode=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('changed=0', result.stdout)
+        self.assertEqual(self.node_files(), before)
+
+    def test_check_mode_target_symlink_refuses_without_writing(self):
+        referent = self.root / 'referent'
+        referent.write_bytes(b'keep the referent')
+        self.installed.unlink()
+        self.installed.symlink_to(referent)
+        before = self.node_files()
+        result = self.install(check_mode=True)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('instance.bridge_helper_target_symlink', result.stdout)
+        self.assertEqual(self.node_files(), before)
+        self.assertEqual(referent.read_bytes(), b'keep the referent')
 
     def test_verified_install_is_atomic_owned_executable_and_unchanged_repeat_is_write_free(self):
         inode = self.installed.stat().st_ino

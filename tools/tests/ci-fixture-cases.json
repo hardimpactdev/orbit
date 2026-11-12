@@ -717,7 +717,7 @@
     ]
   },
   "swamp/tests/ansible_instance_bridge_test.py": {
-    "source_sha256": "a047964494e245eaca5ebf171b99bd9fa732d97b69b10e61f14ff6bdb13cb816",
+    "source_sha256": "7aacc4b03ca1f8019410960f4600962ff2de40fff55f07aef979f6909b142773",
     "cases": [
       "test_stale_capture_keeps_later_admission_then_current_capture_prunes_it",
       "test_refresh_paused_after_read_cannot_resurrect_last_user_after_withdrawal",
@@ -751,6 +751,10 @@
       "test_withdrawal_uses_last_refresh_translation_and_preserves_newer_admission",
       "test_withdrawal_cannot_admit_an_unrecorded_endpoint_or_changed_publication_kind",
       "test_reconcile_preserves_proxy_ingress_and_rules_outside_its_endpoint_shape",
+      "test_check_mode_missing_helper_reports_change_without_writing",
+      "test_check_mode_old_helper_reports_change_without_writing",
+      "test_check_mode_current_helper_reports_no_change_without_writing",
+      "test_check_mode_target_symlink_refuses_without_writing",
       "test_verified_install_is_atomic_owned_executable_and_unchanged_repeat_is_write_free",
       "test_corrupt_candidate_is_removed_and_old_helper_stays_installed",
       "test_target_symlink_is_refused_without_touching_its_referent",
