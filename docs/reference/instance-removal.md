@@ -68,7 +68,7 @@ Destroy removes the Instance's folder for pending mail activation from the Node,
 
 The Gateway captures the run budget at admission from the teardown timeouts, the Routes it withdraws and its owned databases; see [Instance setup](/reference/instance-setup#run-setup). Before it removes the source, the run removes each member's [hibernation](/reference/app-dev-runtime-hibernation) files: its awake marker, cold marker and Caddy access log. A failed or cancelled run retains its removal intent. Start a fresh normal `instance:destroy` Operation with a new idempotency key to converge the same admitted removal. Repeating the old key returns the old Operation. This workflow does not depend on `workflow resume`: pinned e459 loses inline official SSH global arguments when resuming a failed run.
 
-A retry repeats every step; each converges, and a checkout that is already gone counts as removed. If a step fails after the Route withdrawal, the site stays down until a rerun finishes the removal.
+A retry repeats every step; each converges, and a checkout that is already gone counts as removed. If a step fails after the Route withdrawal, the site stays down until a rerun finishes the removal or an intact failed removal is restored.
 
 The Gateway records the member set as Removing in the same admission transaction that captures database ownership. Database saves refuse additions, ownership changes and attachments involving a Removing owner. An owned database targeted by another Instance refuses removal. Only owned resources go with an Instance; unrelated checkouts and database targets remain untouched. Registered external databases lose their records without a backend absence claim.
 
@@ -85,3 +85,20 @@ Admission removes each admitted Schedule's native workflow, and the run removes 
 ## Keep unfinished transfer history
 
 Removing an Instance preserves closed transfer history by clearing its Instance association after native success. An unfinished transfer must be settled by its owning workflow first. The Gateway does not infer cleanup from a missing Instance or start a child removal Operation.
+
+
+## Restore a failed removal
+
+[`instance:restore`](/cli/instance/restore) abandons an intact failed development removal. It admits only a removing Instance with a failed live removal, conclusive stopped-run evidence, no queued/running/waiting lifecycle or related Process/Schedule work, matching checkout/workspace/Git identity, and the whole planned database/user set with its ownership intact. Missing members, Route targets or source, removed containers, Processes, Schedule triggers or SQLite, and executed teardown refuse; publication cannot reverse them.
+
+### Admission and publication
+
+Admission holds the Instance, removal, database ownership and Route publication locks. When all checks pass, restore captures only this removal's verified database fence rows, identified by name, OID and allow-connections value. Settlement deletes those matching rows only; already absent is success. Identity or admission drift refuses, and the main database must already admit connections. Restore issues no ALTER and never clears the whole journal.
+
+Restore republishes the same Route, targets and domain through Route creation's certificate, site, TLS and DNS phases. Its site phase writes only the awake marker. The cold marker stays absent; serving recreates the access log. The Instance and Route stay removing and retiring until publication and its check finish.
+
+### Recorded outcome
+
+One final Gateway transaction sets each member's `abandoned_at`, sets the removal to terminal `abandoned` with current/failed step and error cleared, and sets Instance and Route active with the Route published. History and existing checkpoints remain; `row_deleted_at` stays null. A live member has neither `row_deleted_at` nor `abandoned_at`; destroy admission, Instance JSON and site rendering share that scope. A later destroy captures a fresh removal identity and inventory. The old destroy Operation keeps its failure.
+
+Failure keeps the removal failed and live and the Instance removing. Compensation removes a newly written awake marker and withdraws partial site/DNS publication before the publication holds are released. It preserves the checkout, databases and completed fence settlement. Compensation failure remains explicit and retryable. A fresh restore attempt repeats safely; after success, the same restored state returns `instance.already_restored` from the verified receipt.
