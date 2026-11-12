@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -39,6 +40,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $source_finalized_at
  * @property string|null $finalization_receipt
  * @property Carbon|null $runtime_cleaned_at
+ * @property Carbon|null $abandoned_at
  * @property Carbon|null $row_deleted_at
  * @property-read InstanceRemoval $removal
  */
@@ -80,7 +82,16 @@ final class InstanceRemovalMember extends Model
         'finalization_receipt',
         'runtime_cleaned_at',
         'row_deleted_at',
+        'abandoned_at',
     ];
+
+    /** @param Builder<self> $query
+     * @return Builder<self>
+     */
+    public function scopeLive(Builder $query): Builder
+    {
+        return $query->whereNull($this->qualifyColumn('row_deleted_at'))->whereNull($this->qualifyColumn('abandoned_at'));
+    }
 
     /** @return BelongsTo<InstanceRemoval, $this> */
     public function removal(): BelongsTo
@@ -100,6 +111,7 @@ final class InstanceRemovalMember extends Model
             'source_finalized_at' => 'datetime',
             'runtime_cleaned_at' => 'datetime',
             'row_deleted_at' => 'datetime',
+            'abandoned_at' => 'datetime',
         ];
     }
 }

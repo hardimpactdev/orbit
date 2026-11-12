@@ -89,3 +89,13 @@ Admission removes each admitted Schedule's native workflow, and the run removes 
 ## Keep unfinished transfer history
 
 Removing an Instance preserves closed transfer history by clearing its Instance association after native success. An unfinished transfer must be settled by its owning workflow first. The Gateway does not infer cleanup from a missing Instance or start a child removal Operation.
+
+## Removal states and retained history
+
+A removal is `removing`, `failed`, `completed` or `abandoned`. Completed removal requires the recorded members to be deleted. Abandoned removal retains every member and its source inventory; it never records a deletion that did not occur.
+
+The schema permits abandonment only from failed removal while its members still belong to removing Instances. Each member receives `abandoned_at`. The terminal header requires every retained member to have that timestamp and requires the current step, failed step and error code to be cleared. Abandoned history is immutable.
+
+Live members have neither `row_deleted_at` nor `abandoned_at`. Destroy admission, the Instance relation, Instance JSON and site rendering use this one rule. A later destroy captures a new removal identity and inventory.
+
+This schema change adds no command or production path that abandons a removal. Existing removing, failed and completed records keep their meaning. The migration preserves existing rows and triggers. It is forward-only: rollback refuses because the previous schema cannot represent abandoned history.

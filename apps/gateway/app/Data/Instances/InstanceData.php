@@ -71,7 +71,7 @@ final class InstanceData extends Data
             ->with('members')
             ->whereHas('members', static fn ($query) => $query
                 ->where('instance_id', $instance->id)
-                ->whereNull('row_deleted_at'))
+                ->live())
             ->latest('created_at')
             ->first();
 
