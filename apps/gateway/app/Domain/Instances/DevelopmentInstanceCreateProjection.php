@@ -48,7 +48,8 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 $result['mail_keys_set'] = ValidatedData::stringList($operation->input['mail_keys_set'] ?? []);
             }
             if ($container !== null && in_array($data['status'], ['failed', 'cancelled'], true)) {
-                $recovery = $this->recovery($operation, ValidatedData::object($container), [...$result, 'error_code' => $data['error_code'] ?? $result['error_code'] ?? null]);
+                $recovery = $this->recovery($operation, ValidatedData::object($container), $data['status'] === 'failed'
+                    ? [...$result, 'error_code' => $data['error_code'] ?? $result['error_code'] ?? null] : []);
                 if ($recovery === null) {
                     return $this->direct->project($operation, $data, $result);
                 }

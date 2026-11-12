@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
+use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
@@ -22,6 +23,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\Projects\ProjectEnvironmentTemplateRefresh;
+use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
@@ -993,20 +995,20 @@ it('marks retry as needing a definition change only for an admitted Project Proc
     $process = Process::query()->where('owner_id', $operation->target_id)->sole();
     $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']])->save();
     $facts = match ($failure) {
-        'project' => ['process_id' => $process->id],
+        'project', 'cancelled' => ['process_id' => $process->id],
         'foreign' => ['process_id' => $process->id + 1000],
         default => [],
     };
-    app(DevelopmentInstanceCreateProjection::class)->apply($operation, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'error_code' => $failure === 'infrastructure' ? 'instance.create_clone_failed' : 'instance.container_process_inactive',
-        'result' => ['instance_id' => $operation->target_id, 'failed_step' => 'register', 'process_failure' => $facts]]);
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, ['status' => $failure === 'cancelled' ? 'cancelled' : 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'error_code' => $failure === 'cancelled' ? null : ($failure === 'infrastructure' ? 'instance.create_clone_failed' : 'instance.container_process_inactive'),
+        'result' => ['instance_id' => $operation->target_id, 'failed_step' => 'register', 'process_failure' => $facts, 'error_code' => 'instance.container_process_inactive']]);
     $retry = $operation->fresh()->result['recovery']['retry'];
     if ($failure === 'project') {
         expect($retry['requires'] ?? null)->toBe('project_process_definition');
     } else {
         expect($retry)->not->toHaveKey('requires');
     }
-})->with(['project', 'builtin', 'foreign', 'infrastructure']);
+})->with(['project', 'builtin', 'foreign', 'infrastructure', 'cancelled']);
 
 it('rolls back a refused retry Process set and admits new definitions on a reserved retry', function (): void {
     $node = containerDefaultNode();
@@ -1030,4 +1032,34 @@ it('rolls back a refused retry Process set and admits new definitions on a reser
         ->and($instance->processes()->sole()->source_definition_id)->toBe($new->id)
         ->and(Process::query()->find($original->id))->toBeNull()
         ->and(containerIntentOf($retry)['processes'][0]['content'])->toContain('/bin/sleep');
+});
+
+it('preserves an active container Process after definition removal on create and deploy', function (): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    $definition = ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'worker', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/bin/sleep', '3600']]]);
+    $projection = app(DevelopmentInstanceCreateProjection::class);
+    $first = containerCreate($project, $node);
+    $first->update(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']]);
+    $receipt = ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
+        'result' => ['ready' => true, 'instance_id' => $first->target_id, 'commit' => str_repeat('c', 40)]];
+    $projection->apply($first, $receipt);
+    $instance = Instance::query()->findOrFail($first->target_id);
+    $before = $instance->processes()->sole()->getAttributes();
+    $definition->delete();
+    $repeat = containerCreate($project, $node);
+    expect($repeat->target_id)->toBe($instance->id)
+        ->and($instance->processes()->sole()->getAttributes())->toBe($before);
+    $repeat->update(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']]);
+    $projection->apply($repeat, $receipt);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn([
+        'head' => str_repeat('c', 40), 'files' => [
+            '.env.example' => ['mode' => '100644', 'object' => str_repeat('d', 40), 'content' => "APP_NAME=tool\n"],
+            'composer.json' => null, 'artisan' => null,
+        ],
+    ]);
+    $deployment = app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
+    expect($deployment->kind)->toBe('instance.deploy')
+        ->and($instance->processes()->sole()->getAttributes())->toBe($before);
 });
