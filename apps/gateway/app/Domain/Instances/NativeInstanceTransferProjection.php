@@ -92,10 +92,7 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
             'instance_id' => $instance->id, 'instance_name' => ValidatedData::string($operation->input['destination_name'])],
             app(NativeInstanceTransferIntent::class)->setupSteps($instance, InstanceLifecycleInput::members(['members' => $plan['setup'] ?? []])));
 
-        $sourceInstance = clone $instance;
-        $sourceInstance->node_id = ValidatedData::integer($plan['source_node_id']);
-
-        return ['intent' => [...$plan, 'checkout_instances' => app(InstanceDestroyWorktrees::class)->inventory($sourceInstance), 'route_mutations' => $publication['route_mutations'], 'workloads' => $publication['workloads'], 'processes' => $processes,
+        return ['intent' => [...$plan, 'route_mutations' => $publication['route_mutations'], 'workloads' => $publication['workloads'], 'processes' => $processes,
             'setup_steps' => $setup],
             'execution_secrets' => [...ValidatedData::object($publication['execution_secrets']), ...$copies,
                 'environment' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-transfer-environment-'.$operation->id, $environment)]];
@@ -113,22 +110,8 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
                 throw $this->conflict();
             }
             $result = $this->outcome($transfer, ValidatedData::object($data['result'] ?? []));
-            $receipt = ValidatedData::object($data['result'] ?? [])['source_removal'] ?? null;
-            $receipt = is_string($receipt) ? json_decode($receipt, true) : null;
-            $source = is_array($receipt) && is_array($receipt['data'] ?? null) ? $receipt['data'] : [];
-            $policy = app(InstanceDestroyWorktrees::class);
-            $sourceInstance = clone $instance;
-            $sourceInstance->node_id = $transfer->source_node_id;
-            if (in_array($source['error_code'] ?? null, ['instance.worktree_dependents', 'instance.remove_refused'], true)) {
-                $details = $source['error_code'] === 'instance.worktree_dependents'
-                    ? $policy->details($sourceInstance, is_array($source['dependents'] ?? null) ? $source['dependents'] : [], $operation->triggered_by)
-                    : $policy->failureDetails($sourceInstance, $source);
-                $result = [...$result, 'error_code' => $source['error_code'], 'details' => $details];
-                $data = [...$data, 'status' => 'failed', 'error_code' => $source['error_code']];
-            }
-            $warnings = $policy->warnings($sourceInstance, $source['warnings'] ?? []);
-            if ($warnings !== []) {
-                $result['warnings'] = $warnings;
+            if (is_array($operation->input['checkout_warnings'] ?? null) && $operation->input['checkout_warnings'] !== []) {
+                $result['warnings'] = $operation->input['checkout_warnings'];
             }
             $status = OperationStatus::from(ValidatedData::string($data['status']));
             // A run that ends without moving the Instance, such as a restored publication, failed the transfer.

@@ -33,8 +33,16 @@ sequenceDiagram
   Note over CLI: Confirm the downtime
   %%> What it does:
   %%> - asks for default-No consent naming the source, destination and old-placement deletion
+  opt new transfer of a host checkout
+    GW->>S: Read worktrees<br/>Git · admission only
+    %%> On refusal:
+    %%> - target read failures and confirmed dependents refuse before any transfer record or Process change
+    %%> - unreadable candidates warn; an admitted retry never checks again
+    %%> Limit:
+    %%> - worktrees created after admission, during the queue wait or run, are not caught
+  end
   opt --name
-    Note over GW: Set destination name
+  Note over GW: Set destination name
     %%> What it changes:
     %%> - uses the supplied name for the destination path and generated domain instead of keeping the Instance name
   end
@@ -139,15 +147,11 @@ sequenceDiagram
   %%> - the end check before the source is retired; a failure keeps the source for repair
   alt destination published
     SW->>S: Remove source Processes<br/>process child · forEach
-    Note over SW: Prepare source retirement
-    %%> Why:
-    %%> - hand the source path, SSH pins and host-only source Node checkout inventory to the shared removal phase
-    SW->>S: Retire the source<br/>Ansible · tags remove
+    SW->>S: Retire the source<br/>@swamp/ssh exec · rm -rf
     %%> What it does:
-    %%> - the shared destroy guard checks live Git dependencies immediately before removal; a late worktree keeps the source intact
-    %%> - removes a linked worktree through Git, with no rm fallback on refusal or unregister failure
+    %%> - deletes the checkout and prunes a linked worktree's entry; the common repository stays
     %%> If it fails:
-    %%> - Node 15 stays authoritative; retain the domain refusal and dependent paths/IDs before cleanup; mark the task failed
+    %%> - Node 15 stays authoritative; the Gateway keeps the placement and marks the task failed
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader reads the run's steps and the Route child's ready result
@@ -166,9 +170,6 @@ sequenceDiagram
     %%> Result:
     %%> - Instance 42 stays on Node 12; a run that only restored also fails (`instance.transfer_failed`)
   end
-  Note over SW: Clean retirement files
-  %%> When:
-  %%> - after preparation and retirement settle, also on failure
   SW->>S: Remove the source archive<br/>@swamp/ssh exec · rm
   SW->>D: Remove the copied archive<br/>@swamp/ssh exec · rm
   Note over SW: Remove the 209 archive<br/>rm · always

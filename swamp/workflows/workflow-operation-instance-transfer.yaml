@@ -615,41 +615,10 @@ jobs:
         kind: process.destroy
         intent: ${{ self.member.control_intent }}
         execution_secrets: {}
-  - name: Prepare source retirement
-    labels:
-      role: swamp
-    writes: true
-    dependsOn:
-    - step: Discard the destination
-      condition:
-        type: always
-    - step: Remove source Processes
-      condition:
-        type: always
-    - step: Check the destination
-      condition:
-        type: always
-    guard: ${{ !(("Publish the Route" in steps) && steps["Publish the Route"].status == "succeeded" && steps["Publish the Route"].outputs.result.ready) || steps.exists(n,n.startsWith("Remove
-      source Processes-") && steps[n].status == "failed") || (inputs.intent.destination.domain != "" && (!("Check the destination" in steps) || steps["Check the destination"].status
-      != "succeeded")) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/ansible-input'
-      behaviorName: ${{ "itr-retire-input-" + string(inputs.node_id) }}
-      methodName: write
-      inputs:
-        intent:
-          ssh_execution: ${{ inputs.intent.source.ssh_execution }}
-          source_paths: ${{ [inputs.intent.source.source] }}
-          checkout_instances: '${{ "checkout_instances" in inputs.intent ? inputs.intent.checkout_instances : [] }}'
-        path: ${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}
   - name: Retire the source
     labels:
       role: swamp
     dependsOn:
-    - step: Prepare source retirement
-      condition:
-        type: succeeded
     - step: Discard the destination
       condition:
         type: always
@@ -664,49 +633,34 @@ jobs:
       != "succeeded")) }}
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "itr-retire-" + string(inputs.node_id) }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-33-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("itr-3-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.source.ssh_execution.target.user }}
+          port: ${{ inputs.intent.source.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.source.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.source.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.source.ssh_execution.target.host_keys }}
       inputs:
-        run: |-
-          if [ "$ORBIT_CHECKOUT_INVENTORY" != 1 ]; then
-            printf '%s\n' '{"outcome":"refused","data":{"error_code":"instance.remove_refused","reason":"checkout_inventory_missing"}}' > "$ORBIT_RUN/source-result.json"
-            cat "$ORBIT_RUN/source-result.json"
-            exit 1
-          fi
-          status=0
-          timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags remove "$ORBIT_ANSIBLE/instance-checkout-destroy.yml" >&2 || status=$?
-          if [ -f "$ORBIT_RUN/source-result.json" ]; then cat "$ORBIT_RUN/source-result.json"; fi
-          exit "$status"
-        env:
-          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
-          ORBIT_ANSIBLE: ${{ steps["Prepare source retirement"].outputs.assets }}
-          ORBIT_CHECKOUT_INVENTORY: '${{ "checkout_instances" in inputs.intent ? "1" : "0" }}'
-          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-          ANSIBLE_SSH_ARGS: ${{ "-o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts -o StrictHostKeyChecking=yes" }}
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '300'
+        - /bin/sh
+        - -c
+        - set -e; g=$(/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$1" rev-parse --absolute-git-dir); c=$(/usr/bin/git -c core.hooksPath=/dev/null
+          -c core.fsmonitor=false -C "$1" rev-parse --path-format=absolute --git-common-dir); rm -rf -- "$1"; [ "$c" = "$g" ] || /usr/bin/git --git-dir "$c" worktree
+          prune
+        - sh
+        - ${{ inputs.intent.source.source }}
     writes: true
-  - name: Clean retirement files
-    labels:
-      role: swamp
-    writes: true
-    dependsOn:
-    - step: Prepare source retirement
-      condition:
-        type: always
-    - step: Retire the source
-      condition:
-        type: always
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "itr-retire-clean-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: |-
-          if [ -f "$ORBIT_RUN/source-result.json" ]; then cat "$ORBIT_RUN/source-result.json"; fi
-          timeout 10 rm -rf -- "$ORBIT_RUN"
-        env:
-          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
   - name: Remove the source archive
     labels:
       role: swamp

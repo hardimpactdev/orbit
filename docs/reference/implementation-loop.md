@@ -718,7 +718,4 @@ When a fixture gains cases, collect its registrations with `bin/ci-units collect
 
 The mail fixture executes the production prefix whitelist, the reviewed bare-CR and comment-grouping regressions, and a realistic thirty-line file. It preserves `lines` beside `guard_line` and uses three Ansible launches. Gateway tests compare every admitted shape with installed phpdotenv; Swamp fixtures need no PHP or Composer installation.
 
-The destroy dependency fixture uses real broken Git pointers and FIFO configs to prove bounded fallback reads at admission and removal. Unknown paths retain typed warning diagnostics through the Operation and CLI, while an unreadable pointer that can conceal a dependency still refuses. It retains the three existing Ansible launches.
-
-Transfer retirement fixtures run the shipped shared removal phase against real Git after the production archive command. The pinned native case keeps the transfer guards and dependencies, adds a worktree after publication, and proves refusal without rollback. Two ordinary cases run in CI; the native case also runs when the pinned proof binary is supplied. Together they use at most three Ansible launches. The native proof is registered after merge because fixture workers do not install its pinned binary.
 The destroy guard is admission only. Tests pin the workflow to its pre-guard main bytes and prove retry/dispatch does not recheck Git after dismantling begins. Candidate pointer failures retain named warnings; target failures and confirmed dependents refuse before record or trigger changes.

@@ -73,10 +73,7 @@ final readonly class NativeInstanceTransferIntent
             throw new ResourceOperationException('operation.kind_unavailable', 'A stored destination apps root is required.', 503);
         }
 
-        $sourceInstance = clone $instance;
-        $sourceInstance->node_id = $transfer->source_node_id;
-
-        return ['checkout_instances' => app(InstanceDestroyWorktrees::class)->inventory($sourceInstance), 'transfer_id' => $transfer->id, 'instance_id' => $instance->id,
+        return ['transfer_id' => $transfer->id, 'instance_id' => $instance->id,
             'source_node_id' => $transfer->source_node_id, 'destination_node_id' => $destination->id,
             'source' => ['source' => $transfer->source_path, 'user' => $instance->node->user,
                 'layout' => $transfer->source_layout->value, 'repository_identity' => $instance->project->repository_identity,
