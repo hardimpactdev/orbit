@@ -1249,7 +1249,9 @@ function threadLegacySnapshot(mixed $value, ?string $key = null): mixed
 it('matches the installed-client no-branch intent steps result and resume snapshot byte for byte', function (): void {
     $this->freezeTime();
     $default = threadDefault($this->beast, 'tool');
-    $operation = threadCreate($this->phone, $default->project, 'fix-login');
+    $response = threadCall($this->phone, 'POST', "projects/{$default->project->id}/instances", ['name' => 'fix-login'])
+        ->assertAccepted()->assertJsonPath('data.status', 'queued');
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
     $initial = threadLegacySnapshot($operation->input);
     $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'legacy-run']]);
     app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
@@ -1270,6 +1272,9 @@ it('matches the installed-client no-branch intent steps result and resume snapsh
         'resume' => threadLegacySnapshot($resume->input)], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
     $path = __DIR__.'/../../../Fixtures/conn-create-no-branch-folded-mail.json';
     expect($snapshot)->toBe(file_get_contents($path));
+    // The start receipt exposes the full intent too; keep the installed-client response unchanged.
+    $expected = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+    expect(threadLegacySnapshot($response->json('data.input')))->toBe($expected['input']);
 });
 
 it('adds explicit branch fields to a successful clone receipt without replacing existing fields', function (?array $branch, bool $mailFailure = false): void {

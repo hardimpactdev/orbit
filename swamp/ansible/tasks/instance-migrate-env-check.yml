@@ -14,6 +14,7 @@
          + (migrate.schedules | default([]) | map(attribute='source_directory') | product(['.env']) | map('path_join') | list) }}
     unit_files: "{{ migrate.processes | map(attribute='path') | list }}"
     targets: "{{ migrate.environment.targets }}"
+    node_services: "{{ container.node_services | default([]) }}"
     development_mail: "{{ container.mail | default(none) }}"
     node_addresses: >-
       {{ migrate.environment.node_addresses

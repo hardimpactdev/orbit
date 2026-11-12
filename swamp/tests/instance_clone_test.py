@@ -117,7 +117,7 @@ class BranchSelectionTest(unittest.TestCase):
 
 
 class CloneTest(unittest.TestCase):
-    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None):
+    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None):
         calls = []
         real_run = subprocess.run
         with tempfile.TemporaryDirectory() as folder:
@@ -159,7 +159,7 @@ class CloneTest(unittest.TestCase):
                     if "snapshots?" in argv[2]:
                         output = json.dumps([{"name": "seed"}])
                     elif "sockets.target.wants" in argv[2]:
-                        output = json.dumps(["orbit-mail-1025.socket", "orbit-mail-2525.socket", "project.socket"])
+                        output = json.dumps(["orbit-mail-1025.socket", "orbit-mail-2525.socket", "orbit-node-service-3308.socket", "project.socket"])
                     elif "timers.target.wants" in argv[2]:
                         if container.get("fixture_schedule_listing_error"):
                             return subprocess.CompletedProcess(argv, 1, "", "Error: Permission denied")
@@ -199,7 +199,7 @@ class CloneTest(unittest.TestCase):
                         NETWORK_CHECK.read_text(),
                         pwd.getpwuid(os.getuid()).pw_name,
                         folder + "/private",
-                        json.dumps({"mail": mail_code or 'print(\'{"status":"unchanged"}\')'}),
+                        json.dumps({"node_services": node_service_code or 'print(\'{"status":"unchanged"}\')', "mail": mail_code or 'print(\'{"status":"unchanged"}\')'}),
                         "container",
                     ],
                 ),
@@ -243,6 +243,38 @@ class CloneTest(unittest.TestCase):
         self.assertLess(calls.index(deleted), calls.index(start))
         check = next(i for i, call in enumerate(calls) if call[:2] == ["python3", "-c"])
         self.assertLess(check, calls.index(start))
+
+    def test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement(self):
+        _, _, error = self.clone(overrides={'node_services': [{'port': 3308}]},
+                                 node_service_code="raise SystemExit('instance.node_service_unreachable')")
+        self.assertEqual(error, 'instance.node_service_unreachable\n')
+        calls, _, error = self.clone(overrides={'node_services': [{'port': 3308}]})
+        self.assertEqual(error, '')
+        removed = next(c for c in calls if 'file' in c and 'delete' in c)
+        self.assertIn('instance-7/etc/systemd/system/sockets.target.wants/orbit-node-service-3308.socket', removed)
+        start = calls.index(['incus', '--project', 'orbit-instances', 'start', 'instance-7'])
+        apply = next(i for i, c in enumerate(calls) if c[:2] == ['python3', '-c'] and c[2] == 'print(\'{"status":"unchanged"}\')')
+        self.assertLess(start, apply)
+
+    def test_clone_target_failure_receipt_keeps_public_identity_and_bounds_tool_output(self):
+        target = {"id": 7, "process_id": 19, "process_name": "fixture-db", "port": 3308}
+        for code in ("instance.node_service_unreachable", "PRIVATE-TOOL-OUTPUT"):
+            evidence = {"error_code": code, "node_service_target": target,
+                        "private": "PRIVATE-CREDENTIAL"}
+            script = ("import json,sys; print(" + repr(json.dumps(evidence)) + "); "
+                      "raise SystemExit(" + repr(code) + ")")
+            transcript = []
+            calls, _, error = self.clone(overrides={"node_services": [target]},
+                                        node_service_code=script, transcript=transcript)
+            if code == "instance.node_service_unreachable":
+                marker, terminal = error.splitlines()
+                self.assertEqual(json.loads(marker.removeprefix("orbit-node-service-failure=")),
+                                 {"error_code": code, "node_service_target": target})
+                self.assertEqual(terminal, code)
+            else:
+                self.assertEqual(error, "instance.node_service_apply_failed\n")
+            self.assertNotIn("PRIVATE", error + "".join(transcript))
+            self.assertFalse(any("workspace" in str(call) for call in calls if call[0] != "python3"))
 
     def test_clone_launch_applies_mail_without_another_playbook(self):
         fixture = BranchSelectionTest()

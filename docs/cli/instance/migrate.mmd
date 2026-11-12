@@ -99,6 +99,7 @@ sequenceDiagram
   %%> - `vp-dev` uses the runtime folder’s `current/bin/vp`, workspace paths and its assigned port on `0.0.0.0`; only the Node can reach that port, and Caddy sends `/__orbit/vite` there
   %%> - a non-default Instance gets `/etc/orbit/instance`, the agent settings and its T3 server, registered as in create
   %%> - a default Instance gets its first `seed-<commit>` snapshot
+  %%> - attached Node service proxies are installed and proven before quiesce, inside the container launch; their Processes run without root
   SW->>N: Move the Route<br/>child route-mutation-forward
   %%> What it does:
   %%> - points the Instance's Route at FrankenPHP in the container, and withdraws the checkout's PHP-FPM pool

@@ -51,10 +51,11 @@
           tags: [always]
           ansible.builtin.copy:
             content: >-
-              {{ (mail_result if mail_result is defined else
+              {{ ({'node_services': node_services_result} if node_services_result is defined else
+                  (mail_result if mail_result is defined else
                   (process_result if process_result is defined else
                    (node_runtime_result if node_runtime_result is defined and ansible_run_tags | first in ['node-store', 'node-runtime']
-                    else {'commit': container_commit | default(none)}))) | to_json }}
+                    else {'commit': container_commit | default(none)})))) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           no_log: true

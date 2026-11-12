@@ -12,7 +12,9 @@ use Orbit\Sdk\Requests\Instances\DetachInstanceNodeServiceTargetRequest;
 use Orbit\Sdk\Requests\Instances\ListInstanceNodeServiceTargetsRequest;
 use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Process\Process;
@@ -321,7 +323,7 @@ it('requires terminal detach consent and never sends on decline or cancellation'
     $result = nodeServiceTerminal($this->orbitHome.'/detach-terminal', ['instance:node-service:detach', '12', '4'], $keys, $replies);
 
     expect($result['status'])->toBe($consent ? 0 : 1)
-        ->and($result['output'])->toContain('Network access, environment and Process stay unchanged.')
+        ->and($result['output'])->toContain('Its scoped access is withdrawn; environment and Node Process stay unchanged.')
         ->and($result['trace'])->toHaveCount($consent ? 1 : 0);
     if ($consent) {
         expect($result['trace'][0]['method'])->toBe('DELETE')
@@ -393,3 +395,19 @@ it('rejects a signed or spaced supplied target before reads or consent and accep
         ->and($corrected['trace'][0]['method'])->toBe('DELETE')
         ->and($corrected['trace'][0]['url'])->toEndWith('/api/v1/instances/12/node-service-targets/4');
 })->with(['+4', ' 4 ']);
+
+it('follows a container withdrawal and reports its real terminal outcome', function (string $status): void {
+    $result = [...nodeServiceCliData(), 'detached' => true, 'node_services' => ['status' => 'applied', 'ports' => []]];
+    $base = ['id' => 41, 'kind' => 'instance.node_service_detach', 'target_type' => 'instance', 'target_id' => 12, 'sequence' => 1];
+    $mock = MockClient::global([
+        DetachInstanceNodeServiceTargetRequest::class => MockResponse::make(['data' => [...$base, 'status' => 'queued']], 202),
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['url' => null, 'key' => null, 'channel' => 'orbit']]),
+        ShowOperationRequest::class => MockResponse::make(['data' => [...$base, 'sequence' => 2, 'status' => $status,
+            'result' => $result, 'error_code' => $status === 'failed' ? 'instance.node_service_apply_failed' : null]]),
+    ]);
+    $exit = Artisan::call('instance:node-service:detach', ['instance' => '12', 'target' => '4', '--yes' => true, '--json' => true]);
+    $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    expect($exit)->toBe($status === 'succeeded' ? 0 : 1)
+        ->and($output)->toMatchArray(['id' => 41, 'status' => $status, 'result' => $result]);
+    $mock->assertSentCount(4);
+})->with(['succeeded', 'failed']);

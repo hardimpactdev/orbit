@@ -387,7 +387,9 @@ The Gateway prepares the runtime, certificates, Caddy sites, and firewall rules 
 
 Private DNS points the domain at the workload Node. Its Caddy terminates HTTPS with an Orbit certificate authority (CA) certificate and serves the Instance's web root.
 
-Before the Gateway publishes a development Route, it gives Caddy read access to the web root and traversal access to its parent directories. Caddy cannot read the other source files. The web root must be inside the checkout. Symlinks in the web root are refused, except Laravel's `public/storage` link to the checkout's `storage/app/public`. When this preparation fails, the Gateway restores the previous permissions and reports `app-dev.source_access_failed` at step `source-access`.
+Before the Gateway publishes a development Route, it gives Caddy read access to the web root and traversal access to its parent directories. Route publication skips missing optional Laravel storage paths, including their missing parents; it creates no checkout directories. A missing web root still fails. The site phase records Ansible failure text on stderr; secret-bearing tasks keep their output private.
+
+Caddy cannot read the other source files. The web root must be inside the checkout. Symlinks in the web root are refused, except Laravel's `public/storage` link to the checkout's `storage/app/public`. When this preparation fails, the Gateway restores the previous permissions and reports `app-dev.source_access_failed` at step `source-access`.
 
 This preparation walks only the Instance's checkout and served checkouts nested in it. Other checkouts on the Node keep the access their own Route granted.
 

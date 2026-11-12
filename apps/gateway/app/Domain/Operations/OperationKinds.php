@@ -11,7 +11,6 @@ final readonly class OperationKinds
 {
     /** Kinds the Gateway runs or closes itself, with no Swamp run: the WebSocket registry tasks and the proof run, which closes when its runs (`proof.command`) have ended. */
     private const array GatewayJobs = [
-        'instance.node_service_detach' => ['executor' => 'gateway'],
         'websocket.sync' => ['executor' => 'gateway'],
         'websocket.app_create' => ['executor' => 'gateway'],
         'websocket.app_destroy' => ['executor' => 'gateway'],

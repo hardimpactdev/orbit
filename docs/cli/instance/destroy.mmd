@@ -59,6 +59,8 @@ sequenceDiagram
   %%> - your Node has an access grant to Node 12, which runs Instance 42
   %%> - Instance 42 is a development Instance; production removal is not charted here
   %%> - no other lifecycle change and no unfinished transfer holds Instance 42
+  %%> - no Route is required; a sole pending or failed Route always runs withdrawal, including when sites_published=false; an absent publication is accepted
+  %%> - multiple owning Routes, a foreign Project, wrong targets or unsafe placement still refuse
   %%> Captures:
   %%> - the source: path, owner, origin, branch, linked worktrees
   %%> - what Instance 42 owns: Processes, Schedules, Route, SQLite files, server databases
@@ -201,7 +203,7 @@ sequenceDiagram
     SW->>N: Delete the container<br/>Ansible · tags remove
     %%> What it does:
     %%> - removes the container, volume, snapshots, Processes, T3, proxy, owned ACL, firewall rules and mirror
-    %%> - requires successful Route withdrawal and owned database removal; other Instances stay
+    %%> - requires successful Route withdrawal when present, and owned database removal; other Instances stay
     Note over SW: Read container removal
     %%> Failure:
     %%> - a skipped deletion has no result and cannot report success

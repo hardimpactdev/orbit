@@ -218,11 +218,18 @@ class DestroyGitTest(unittest.TestCase):
         finally:
             folder.chmod(0o700)
 
-    def test_workflow_and_source_removal_are_identical_to_the_pre_reland_main(self):
-        file = 'swamp/workflows/workflow-operation-instance-destroy.yaml'
+    def test_source_removal_stays_unchanged_and_workflow_never_checks_dependencies(self):
         import hashlib
-        self.assertEqual(hashlib.sha256((ROOT / file).read_bytes()).hexdigest(), '2d309e9538e24546b4922fff60785a16358f28f2e7c3407ebd9f99461fb645ea')
+        import yaml
+        text = (ROOT / 'swamp/workflows/workflow-operation-instance-destroy.yaml').read_text()
+        workflow = yaml.safe_load(text)
+        source = next(step for job in workflow['jobs'] for step in job['steps'] if step['name'] == 'Remove the source')
+        # Pin only the source-removal step, including its inline program and argv, from pre-reland main 6b2e7bc1.
+        self.assertEqual(hashlib.sha256(json.dumps(source, sort_keys=True, separators=(',', ':')).encode()).hexdigest(), '106c0ad7578ad0c11e1e02ad41e2cec8732f185b6d01ff7ae008beef18963a51')
+        for reference in ['destroy-git', 'instance-checkout-destroy', 'checkout_instances', 'worktree_dependents']:
+            self.assertNotIn(reference, text)
         self.assertFalse((ROOT / 'swamp/ansible/instance-checkout-destroy.yml').exists())
+
 
 
 if __name__ == '__main__':

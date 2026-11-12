@@ -45,7 +45,11 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same fast checks.
 
-Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units in hosted shards. The migration environment fixtures cover dependency-file isolation and explicit application, Process and Schedule file selection. [Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
+Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units in hosted shards. Route access fixtures share the admitted argv with the Gateway unit test, so hosted Ansible checks need no Gateway Composer installation. The fixture for destroy without a Route evaluates guards with the pinned CEL compiler. It runs source removal against real temporary Git trees.
+
+The migration environment fixtures cover dependency-file isolation and explicit application, Process and Schedule file selection.
+
+The retained guard fixture pins only the source-removal step and the absence of workflow dependency checks, so unrelated Route phases can change. The withdrawal fixture runs two local Ansible applications to verify cleanup after a partial publication and after an already absent site. [Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
 
 | Check | Work |
 | --- | --- |
@@ -736,3 +740,5 @@ The container Schedule fixture checks timer installation and advisory activation
 Private Node-runtime fixtures use the shipped conversion and fetch helper with a fake Vite+ command; network downloads are tested separately in an owned fixture Instance.
 
 The Caddy candidate fixtures execute each changed writer with invalid and valid candidates. They keep every path and stand-in under a private temporary directory, run Ansible without facts or privilege, preserve relative-import directories and prove invalid input leaves live bytes unchanged with no reload.
+
+Node service endpoint fixtures run unprivileged in the existing migrate environment unit. They use temporary guest files and bounded stand-ins for Incus/systemd; one pinned-Ansible run proves the dedicated tag accepts minimal public intent without workspace fields. The helper is measured separately on fixture containers for real networking, source address and idle connection survival.

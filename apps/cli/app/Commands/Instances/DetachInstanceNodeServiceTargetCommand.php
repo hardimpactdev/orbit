@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
@@ -15,6 +16,8 @@ use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class DetachInstanceNodeServiceTargetCommand extends NodeServiceTargetCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'instance:node-service:detach
         {instance? : Numeric Instance ID}
@@ -23,7 +26,7 @@ final class DetachInstanceNodeServiceTargetCommand extends NodeServiceTargetComm
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Delete a Node service attachment record without changing network access or runtime.';
+    protected $description = 'Withdraw scoped Node service access and remove the attachment.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -43,7 +46,7 @@ final class DetachInstanceNodeServiceTargetCommand extends NodeServiceTargetComm
         if ($targetId === null) {
             return self::FAILURE;
         }
-        if (! $this->confirmAction("Delete Node service target record [{$targetId}] from Instance [{$instance}]? Network access, environment and Process stay unchanged.", 'Node service target detach cancelled.',
+        if (! $this->confirmAction("Delete Node service target record [{$targetId}] from Instance [{$instance}]? Its scoped access is withdrawn; environment and Node Process stay unchanged.", 'Node service target detach cancelled.',
             option: 'yes', requiredCode: 'instance.node_service_confirmation_required')) {
             return self::FAILURE;
         }
@@ -56,6 +59,12 @@ final class DetachInstanceNodeServiceTargetCommand extends NodeServiceTargetComm
 
         if (! $operation instanceof OperationResponse) {
             return self::FAILURE;
+        }
+        if (! $operation->terminal()) {
+            $profile = $this->activeGatewayProfile($repository);
+
+            return $profile === null ? self::FAILURE
+                : $this->followOperation($connector, $profile, $operation, 'Detach Node service target', 'Node service detach');
         }
         if ($this->option('json') === true) {
             $this->writeJson($operation->toArray());

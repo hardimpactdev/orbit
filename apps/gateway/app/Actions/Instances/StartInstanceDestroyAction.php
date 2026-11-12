@@ -320,8 +320,7 @@ final readonly class StartInstanceDestroyAction
 
     private function withoutRoute(Instance $instance): bool
     {
-        return $this->ownRoutes($instance)->isEmpty()
-            && (! $instance->requiresRoute() || $instance->status === InstanceState::SourceResolved || $this->failedCreation($instance));
+        return $this->ownRoutes($instance)->isEmpty();
     }
 
     private function removableRouteState(Route $route, Instance $instance): bool
@@ -333,8 +332,7 @@ final readonly class StartInstanceDestroyAction
         }
 
         return $route->status === RouteStatus::Active
-            || ($this->failedCreation($instance)
-                && in_array($route->status, [RouteStatus::Pending, RouteStatus::Failed], true)
+            || (in_array($route->status, [RouteStatus::Pending, RouteStatus::Failed], true)
                 && $this->routePlacedOnInstance($route, $instance)
                 && $route->project_id === $instance->project_id);
     }

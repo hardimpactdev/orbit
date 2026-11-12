@@ -599,10 +599,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 \u2192 v5.12.0",
-      "exact script output: v5.42.0 \u2192 v5.43.0",
-      "exact script output: v5.49.0 \u2192 v5.50.0",
-      "exact script output: v5.50.0 \u2192 v5.50.1",
+      "exact script output: v5.11.0 → v5.12.0",
+      "exact script output: v5.42.0 → v5.43.0",
+      "exact script output: v5.49.0 → v5.50.0",
+      "exact script output: v5.50.0 → v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -1363,7 +1363,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "309e3a159c99b5fa295fcabfb77c6ef4d632f9aaf388f49d5e96c14b24b37b54",
+    "source_sha256": "cd6fd017b0f76e9c39a4bd05ebd3f48e787d4db3a3747c757858dc1477edd7ea",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1377,6 +1377,8 @@
       "test_unreachable_frozen_commit_fails_without_using_current_tip",
       "test_schedule_cleanup_listing_error_refuses_before_clone_boot",
       "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
+      "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement",
+      "test_clone_target_failure_receipt_keeps_public_identity_and_bounds_tool_output",
       "test_clone_launch_applies_mail_without_another_playbook",
       "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful",
       "test_clone_uses_the_admitted_common_acl_name",
@@ -1782,8 +1784,10 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "b4a913f8022e8e56039cd9be42de73d7b9cd7b81335d67a4d779a98e09022459",
+    "source_sha256": "eb0cb4ce337db4bf017c43743f65d536cfcce0341c59098a8432623d24a26369",
     "cases": [
+      "test_loopback_requires_exact_attached_key_pair_and_port",
+      "test_database_urls_refuse_without_exposing_credentials_or_bypassing_attached_keys",
       "test_development_mail_satisfies_only_the_ipv4_forwarded_endpoints",
       "test_ipv6_mail_is_refused_even_with_the_development_mail_path",
       "test_mail_outside_the_forwarded_tuple_keeps_the_original_verdict",
@@ -1824,7 +1828,23 @@
       "test_mixed_network_selections_cannot_use_only_the_default_drivers_port",
       "test_explicit_connection_evidence_overrides_listener_exemptions",
       "test_named_unit_and_env_read_errors_return_safe_preflight_refusals",
-      "test_multiline_private_values_do_not_forge_service_keys"
+      "test_multiline_private_values_do_not_forge_service_keys",
+      "test_exact_network_first_private_units_no_workspace_and_repeat",
+      "test_stopped_conflict_and_failed_network_do_not_write_units",
+      "test_partial_write_retries_activation_and_disabled_active_socket_is_repaired",
+      "test_failed_target_is_fatal_and_retry_keeps_pending",
+      "test_detach_keeps_shared_port_then_removes_only_owned_access_without_dnat",
+      "test_kernel_probe_reads_only_established_sockets_owned_by_the_proxy",
+      "test_failed_proxy_refuses_before_quiesce_with_public_identity_and_retains_pending",
+      "test_effective_vendor_runtime_fragments_and_dropins_are_not_shadowed",
+      "test_exact_incus_type_wide_dropin_is_allowed_but_modified_content_refuses",
+      "test_public_failure_boundary_keeps_only_allowlisted_codes",
+      "test_real_ansible_phase_accepts_minimal_intent_without_workspace_fields",
+      "test_failed_socket_enable_names_target_in_create_and_migrate_receipts",
+      "test_failed_service_restart_names_target_in_create_and_migrate_receipts",
+      "test_inactive_socket_names_target_in_create_and_migrate_receipts",
+      "test_real_create_and_migrate_failure_receipts_keep_target_and_block_later_work",
+      "test_no_attachment_is_noop_and_phase_before_application_work"
     ]
   },
   "swamp/tests/instance_migrate_dotenv_test.py": {
@@ -1983,7 +2003,7 @@
     ]
   },
   "swamp/tests/instance_destroy_git_test.py": {
-    "source_sha256": "495ea0b4710cbedf82049fc82b888741bdd00cc4da9266014a5fc34ac20519fa",
+    "source_sha256": "1010ada43464b0c71382e3daa0a80ece2b1dca68618049083684592c0a1a83ed",
     "cases": [
       "test_confirmed_registered_and_moved_dependents_are_found_even_with_force",
       "test_existing_owner_registration_refuses_without_reading_candidate_git",
@@ -1996,7 +2016,7 @@
       "test_target_directory_marker_resolve_and_git_failures_keep_path_and_cause",
       "test_alternates_dependency_and_symlinked_candidate_are_confirmed",
       "test_inspect_never_walks_checkout_contents_or_accepts_a_remove_action",
-      "test_workflow_and_source_removal_are_identical_to_the_pre_reland_main"
+      "test_source_removal_stays_unchanged_and_workflow_never_checks_dependencies"
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts": {
@@ -2008,7 +2028,7 @@
     ]
   },
   "swamp/tests/ansible_route_site_test.py": {
-    "source_sha256": "10bffda334426845865b174a4851f2011b17acbb1275ba36b607678846365bab",
+    "source_sha256": "6f4dbe4ea2789f037a25d58b772ccf044528799415da8ef4b3826c404ae1544f",
     "cases": [
       "test_certificate_links_account_copy_modes_and_literal_caddy_text",
       "test_existing_file_mode_drift_clears_unwanted_special_bits",
@@ -2020,6 +2040,8 @@
       "test_production_workspace_app_url_links_and_php_tasks_are_unchanged",
       "test_csr_action_owns_folder_and_key_before_public_request_returns",
       "test_real_production_phase_keeps_access_app_url_php_links_and_reload",
+      "test_real_site_phase_skips_missing_optional_storage_but_requires_the_web_root",
+      "test_route_ansible_failures_reach_stderr_and_module_diagnostics_never_expose_content",
       "test_reused_input_is_read_only_and_child_cleanup_keeps_its_own_folder"
     ]
   },
@@ -2052,6 +2074,19 @@
       "test_deploy_fetch_refuses_legacy_store_even_with_a_helper",
       "test_nested_ignored_pin_refuses_even_when_a_parent_pin_is_selected",
       "test_production_phase_removes_read_only_source_mount_after_failure_without_downtime"
+    ]
+  },
+  "swamp/tests/instance_destroy_routeless_test.ts": {
+    "source_sha256": "dff80fd9b009168e93fa1e938c88d503184d0b1fcb3605c18ab7788c8aabbfc4",
+    "cases": [
+      "destroy skips withdrawal without publications including old admission without mutation keys",
+      "Route-less checkout and linked worktree skip the child and still remove the real source"
+    ]
+  },
+  "swamp/tests/ansible_instance_route_withdraw_test.ts": {
+    "source_sha256": "01d908556d2e655a2da703663973a5329a7d31969e2e6b903a01414602050eb5",
+    "cases": [
+      "pending Route withdrawal removes partial publication and CSR residue or accepts an absent site with real Ansible"
     ]
   },
   "swamp/tests/ansible_instance_migrate_source_test.ts": {

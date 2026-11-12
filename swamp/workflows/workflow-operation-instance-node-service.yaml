@@ -1,0 +1,72 @@
+id: f9fbb916-c659-4d93-a314-d2080a468a6b
+name: operation-instance-node-service
+description: Apply or withdraw one Instance's recorded Node service access.
+queueTimeout: 30
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: instance.node_service_detach}
+    intent: {type: object}
+    # The common Gateway envelope always supplies an empty map; this workflow accepts no secrets.
+    execution_secrets: {type: object, properties: {}, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+  - name: node-service
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ansible-input
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      - name: node-service
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "instance-node-service-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 90 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags node-service "$ORBIT_ANSIBLE/instance-container.yml"
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      - name: result
+        labels: {role: swamp}
+        dependsOn: [{step: node-service, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: instance-node-service-result
+          methodName: execute
+          inputs:
+            run: timeout 5 cat "$ORBIT_RUN/result.json"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      - name: cleanup
+        writes: true
+        labels: {role: swamp}
+        dependsOn: [{step: result, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: instance-node-service-cleanup
+          methodName: execute
+          inputs:
+            run: timeout 5 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
