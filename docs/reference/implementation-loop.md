@@ -710,4 +710,6 @@ The migration mail fixture also checks the phase order: copy first, bounded mail
 
 The destroy dependency fixture uses real Git in private temporary directories. It runs unprivileged, includes three Ansible phase launches, and proves refusal, registration removal and preservation of the owner’s Git data. Inventory and named cost keys are collected together.
 
+Clone branch fixtures use unprivileged local Git repositories and run without an Ansible playbook. Their registered case names and conservative costs change together in `tools/tests/ci-fixture-cases.json` and `.github/ci/checks.toml`; collect names with `bin/ci-units collect --file swamp/tests/instance_clone_test.py`.
+
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise.

@@ -1,0 +1,576 @@
+{
+    "input": {
+        "instance_id": 2,
+        "project_id": 1,
+        "created": true,
+        "name": "fix-login",
+        "name_converted_from": null,
+        "root": null,
+        "domain": null,
+        "branch_override": null,
+        "checkout": "/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace",
+        "prepare_id": "<prepare-uuid>",
+        "repository": "https://github.com/nckrtl/tool.git",
+        "repository_identity": "github.com/nckrtl/tool",
+        "default_branch": "main",
+        "task_vm": false,
+        "node_id": 2,
+        "initial_status": "reserved",
+        "first_setup_pending": true,
+        "user": "orbit",
+        "source_root": "/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace",
+        "participant_node_ids": [
+            2
+        ],
+        "seed_repository": null,
+        "seed_commit": null,
+        "seed_path": null,
+        "source_layout": "checkout",
+        "route_id": null,
+        "route_domain": null,
+        "setup_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "teardown_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "php_version": null,
+        "laravel": false,
+        "ssh_execution": {
+            "control_node_id": 1,
+            "identity_file": "/etc/orbit/swamp-role-worker/ssh-identity",
+            "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0",
+            "target": {
+                "name": "target",
+                "node_id": 2,
+                "host": "10.44.0.7",
+                "user": "orbit",
+                "port": 22,
+                "host_keys": [
+                    "ssh-ed25519 fixture-public-key"
+                ]
+            }
+        },
+        "members": [],
+        "mail_keys_set": [],
+        "environment_keys": [
+            "APP_DEBUG",
+            "APP_ENV",
+            "APP_KEY",
+            "APP_NAME"
+        ],
+        "direct_provisioning": {
+            "instance_id": 2,
+            "project_id": 1,
+            "node_id": 2,
+            "node_user": "orbit",
+            "platform": "linux",
+            "architecture": "x86_64",
+            "environment": "development",
+            "user": "orbit",
+            "checkout": "/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace",
+            "application": "/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace",
+            "project_type": "node-package",
+            "entry_point": "artisan",
+            "skip_profile": false,
+            "php_versions": [
+                "8.5",
+                "8.4"
+            ],
+            "source": {
+                "repository": "https://github.com/nckrtl/tool.git",
+                "checkout": "/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace",
+                "root": "/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace",
+                "user": "orbit",
+                "prepare_id": "<prepare-uuid>",
+                "seed_repository": null
+            },
+            "resolve": {
+                "default_branch": "main",
+                "branch": "fix-login",
+                "seed_commit": null,
+                "network": true,
+                "protocols": [
+                    "https"
+                ]
+            },
+            "setup": {
+                "instance_id": 2,
+                "list": "setup",
+                "project_id": 1,
+                "environment": "development",
+                "execution": {
+                    "variant": "checkout",
+                    "user": "orbit",
+                    "directory": "/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace",
+                    "seed_path": "",
+                    "seed_commit": ""
+                },
+                "steps": []
+            },
+            "already_active": false,
+            "retained_source": null,
+            "route": null,
+            "database": null,
+            "server_database": null,
+            "container": {
+                "instance_id": 2,
+                "project": "orbit-instances",
+                "name": "instance-2",
+                "config": {
+                    "limits.cpu": "4",
+                    "limits.memory": "8GiB",
+                    "limits.processes": "4096"
+                },
+                "root_disk_pool": "orbit-instances",
+                "root_disk_size": "40GiB",
+                "image": "orbit-instance",
+                "address": "10.253.0.3",
+                "network": "orbitinst0",
+                "acl": "instance-2",
+                "nic_acl": "orbitinst0-proxy",
+                "bridge_cidr": "10.253.0.0/24",
+                "bridge_admitted_at": "<bridge-admitted-at>",
+                "bridge_endpoints": [],
+                "acl_rules": {
+                    "description": "Orbit Instance 2",
+                    "egress": [],
+                    "ingress": [
+                        {
+                            "action": "allow",
+                            "source": "10.253.0.1/32",
+                            "protocol": "tcp",
+                            "destination_port": "8080",
+                            "state": "enabled"
+                        },
+                        {
+                            "action": "allow",
+                            "protocol": "tcp",
+                            "destination_port": "3773",
+                            "state": "enabled"
+                        }
+                    ]
+                },
+                "firewall": [
+                    {
+                        "route": "yes",
+                        "interface_in": "orbit",
+                        "interface_out": "orbitinst0",
+                        "to_ip": "10.253.0.3",
+                        "to_port": "3773",
+                        "proto": "tcp",
+                        "rule": "deny",
+                        "from_ip": "10.44.0.128/25",
+                        "comment": "orbit:instance-2-t3-task-vms"
+                    },
+                    {
+                        "route": "yes",
+                        "interface_in": "orbit",
+                        "interface_out": "orbitinst0",
+                        "to_ip": "10.253.0.3",
+                        "to_port": "3773",
+                        "proto": "tcp",
+                        "rule": "allow",
+                        "from_ip": "any",
+                        "comment": "orbit:instance-2-t3"
+                    }
+                ],
+                "mirror": "/var/lib/orbit/instance-repositories/2.git",
+                "repository": "https://github.com/nckrtl/tool.git",
+                "protocols": [
+                    "https"
+                ],
+                "branch": "fix-login",
+                "commit": null,
+                "workspace": "/srv/workspace",
+                "environment_file": "/srv/workspace/.env",
+                "environment": [
+                    "HOME=/home/orbit",
+                    "USER=orbit",
+                    "LOGNAME=orbit",
+                    "PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin",
+                    "VP_HOME=/var/lib/orbit/vite-plus-home",
+                    "VP_NO_UPDATE_CHECK=1",
+                    "HTTP_PROXY=http://10.253.0.1:3128",
+                    "HTTPS_PROXY=http://10.253.0.1:3128",
+                    "NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1",
+                    "http_proxy=http://10.253.0.1:3128",
+                    "https_proxy=http://10.253.0.1:3128",
+                    "no_proxy=localhost,127.0.0.1,::1,10.253.0.1",
+                    "NODE_USE_ENV_PROXY=1"
+                ],
+                "mail": null,
+                "mail_units": [],
+                "units": [],
+                "web_config": null,
+                "php": null,
+                "clone": {
+                    "source": "instance-1",
+                    "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",
+                    "seed_commit": "cccccccccccccccccccccccccccccccccccccccc",
+                    "source_mirror": "/var/lib/orbit/instance-repositories/1.git",
+                    "t3": {
+                        "port": 3800,
+                        "listen": "10.44.0.7",
+                        "device": "t3",
+                        "title": "Tool",
+                        "unit": "t3.service",
+                        "internal_port": 3773,
+                        "ready_seconds": 30,
+                        "url": "http://10.44.0.7:3800",
+                        "label": "tool / fix-login",
+                        "t3": "/opt/orbit-agent/current/agent/bin/t3",
+                        "project_mark": "/home/agent/.config/orbit/t3-project"
+                    },
+                    "model_environment": {
+                        "path": "/home/agent/.config/orbit/model.env",
+                        "uid": 2750,
+                        "gid": 2750,
+                        "mode": "0600"
+                    },
+                    "files": [
+                        {
+                            "path": "/etc/orbit/instance",
+                            "uid": 0,
+                            "gid": 0,
+                            "mode": "0644",
+                            "content": "# Managed by Orbit.\nORBIT_INSTANCE_ID=2\nORBIT_INSTANCE=fix-login\nORBIT_PROJECT=tool\nORBIT_PROJECT_ID=1\nORBIT_PROJECT_NAME=\"Tool\"\nORBIT_NODE=beast\nORBIT_URL=\n"
+                        },
+                        {
+                            "path": "/home/agent/.codex/config.toml",
+                            "uid": 2750,
+                            "gid": 2750,
+                            "mode": "0600",
+                            "content": "check_for_update_on_startup = false\nmodel_provider = \"orbit\"\n\n[model_providers.orbit]\nname = \"Orbit\"\nbase_url = \"http://10.253.0.1:8319/v1\"\nenv_key = \"ORBIT_MODEL_KEY\"\nwire_api = \"responses\"\nsupports_websockets = false\n\n[projects.\"/srv/workspace\"]\ntrust_level = \"trusted\"\n"
+                        },
+                        {
+                            "path": "/home/agent/.claude.json",
+                            "uid": 2750,
+                            "gid": 2750,
+                            "mode": "0600",
+                            "json": {
+                                "hasCompletedOnboarding": true
+                            }
+                        },
+                        {
+                            "path": "/home/agent/.t3/userdata/settings.json",
+                            "uid": 2750,
+                            "gid": 2750,
+                            "mode": "0600",
+                            "json": {
+                                "linkedEnvironmentsEnabled": true
+                            }
+                        }
+                    ],
+                    "links": [
+                        {
+                            "path": "/home/agent/.claude/CLAUDE.md",
+                            "target": "/opt/orbit-agent/current/notes/package.md"
+                        },
+                        {
+                            "path": "/home/agent/.codex/AGENTS.md",
+                            "target": "/opt/orbit-agent/current/notes/package.md"
+                        }
+                    ]
+                },
+                "processes": [],
+                "steps": []
+            }
+        },
+        "run_budget_seconds": 1800
+    },
+    "clone_steps": [
+        "clone-container",
+        "clone-database-snapshot",
+        "clone-database-install",
+        "clone-database-cleanup",
+        "clone-server-database",
+        "clone-server-database-check",
+        "clone-server-database-fill",
+        "clone-mail",
+        "clone-workspace",
+        "clone-agent",
+        "clone-t3",
+        "clone-sessions",
+        "clone-session-copy",
+        "clone-register"
+    ],
+    "failed_result": {
+        "instance_id": 2,
+        "ready": false,
+        "failed_step": "clone",
+        "error_code": "instance.create_clone_failed"
+    },
+    "resume": {
+        "instance_id": 2,
+        "project_id": 1,
+        "created": false,
+        "name": "fix-login",
+        "name_converted_from": null,
+        "root": null,
+        "domain": null,
+        "branch_override": null,
+        "checkout": "/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace",
+        "prepare_id": "<prepare-uuid>",
+        "repository": "https://github.com/nckrtl/tool.git",
+        "repository_identity": "github.com/nckrtl/tool",
+        "default_branch": "main",
+        "task_vm": false,
+        "node_id": 2,
+        "initial_status": "reserved",
+        "first_setup_pending": true,
+        "user": "orbit",
+        "source_root": "/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace",
+        "participant_node_ids": [
+            2
+        ],
+        "seed_repository": null,
+        "seed_commit": null,
+        "seed_path": null,
+        "source_layout": "checkout",
+        "route_id": null,
+        "route_domain": null,
+        "setup_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "teardown_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "php_version": null,
+        "laravel": false,
+        "ssh_execution": {
+            "control_node_id": 1,
+            "identity_file": "/etc/orbit/swamp-role-worker/ssh-identity",
+            "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0",
+            "target": {
+                "name": "target",
+                "node_id": 2,
+                "host": "10.44.0.7",
+                "user": "orbit",
+                "port": 22,
+                "host_keys": [
+                    "ssh-ed25519 fixture-public-key"
+                ]
+            }
+        },
+        "members": [],
+        "mail_keys_set": [],
+        "environment_keys": [
+            "APP_DEBUG",
+            "APP_ENV",
+            "APP_KEY",
+            "APP_NAME"
+        ],
+        "direct_provisioning": {
+            "instance_id": 2,
+            "project_id": 1,
+            "node_id": 2,
+            "node_user": "orbit",
+            "platform": "linux",
+            "architecture": "x86_64",
+            "environment": "development",
+            "user": "orbit",
+            "checkout": "/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace",
+            "application": "/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace",
+            "project_type": "node-package",
+            "entry_point": "artisan",
+            "skip_profile": false,
+            "php_versions": [
+                "8.5",
+                "8.4"
+            ],
+            "source": {
+                "repository": "https://github.com/nckrtl/tool.git",
+                "checkout": "/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace",
+                "root": "/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace",
+                "user": "orbit",
+                "prepare_id": "<prepare-uuid>",
+                "seed_repository": null
+            },
+            "resolve": {
+                "default_branch": "main",
+                "branch": "fix-login",
+                "seed_commit": null,
+                "network": true,
+                "protocols": [
+                    "https"
+                ]
+            },
+            "setup": {
+                "instance_id": 2,
+                "list": "setup",
+                "project_id": 1,
+                "environment": "development",
+                "execution": {
+                    "variant": "checkout",
+                    "user": "orbit",
+                    "directory": "/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace",
+                    "seed_path": "",
+                    "seed_commit": ""
+                },
+                "steps": []
+            },
+            "already_active": false,
+            "retained_source": null,
+            "route": null,
+            "database": null,
+            "server_database": null,
+            "container": {
+                "instance_id": 2,
+                "project": "orbit-instances",
+                "name": "instance-2",
+                "config": {
+                    "limits.cpu": "4",
+                    "limits.memory": "8GiB",
+                    "limits.processes": "4096"
+                },
+                "root_disk_pool": "orbit-instances",
+                "root_disk_size": "40GiB",
+                "image": "orbit-instance",
+                "address": "10.253.0.3",
+                "network": "orbitinst0",
+                "acl": "instance-2",
+                "nic_acl": "orbitinst0-proxy",
+                "bridge_cidr": "10.253.0.0/24",
+                "bridge_admitted_at": "<bridge-admitted-at>",
+                "bridge_endpoints": [],
+                "acl_rules": {
+                    "description": "Orbit Instance 2",
+                    "egress": [],
+                    "ingress": [
+                        {
+                            "action": "allow",
+                            "source": "10.253.0.1/32",
+                            "protocol": "tcp",
+                            "destination_port": "8080",
+                            "state": "enabled"
+                        },
+                        {
+                            "action": "allow",
+                            "protocol": "tcp",
+                            "destination_port": "3773",
+                            "state": "enabled"
+                        }
+                    ]
+                },
+                "firewall": [
+                    {
+                        "route": "yes",
+                        "interface_in": "orbit",
+                        "interface_out": "orbitinst0",
+                        "to_ip": "10.253.0.3",
+                        "to_port": "3773",
+                        "proto": "tcp",
+                        "rule": "deny",
+                        "from_ip": "10.44.0.128/25",
+                        "comment": "orbit:instance-2-t3-task-vms"
+                    },
+                    {
+                        "route": "yes",
+                        "interface_in": "orbit",
+                        "interface_out": "orbitinst0",
+                        "to_ip": "10.253.0.3",
+                        "to_port": "3773",
+                        "proto": "tcp",
+                        "rule": "allow",
+                        "from_ip": "any",
+                        "comment": "orbit:instance-2-t3"
+                    }
+                ],
+                "mirror": "/var/lib/orbit/instance-repositories/2.git",
+                "repository": "https://github.com/nckrtl/tool.git",
+                "protocols": [
+                    "https"
+                ],
+                "branch": "fix-login",
+                "commit": null,
+                "workspace": "/srv/workspace",
+                "environment_file": "/srv/workspace/.env",
+                "environment": [
+                    "HOME=/home/orbit",
+                    "USER=orbit",
+                    "LOGNAME=orbit",
+                    "PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin",
+                    "VP_HOME=/var/lib/orbit/vite-plus-home",
+                    "VP_NO_UPDATE_CHECK=1",
+                    "HTTP_PROXY=http://10.253.0.1:3128",
+                    "HTTPS_PROXY=http://10.253.0.1:3128",
+                    "NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1",
+                    "http_proxy=http://10.253.0.1:3128",
+                    "https_proxy=http://10.253.0.1:3128",
+                    "no_proxy=localhost,127.0.0.1,::1,10.253.0.1",
+                    "NODE_USE_ENV_PROXY=1"
+                ],
+                "mail": null,
+                "mail_units": [],
+                "units": [],
+                "web_config": null,
+                "php": null,
+                "clone": {
+                    "source": "instance-1",
+                    "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",
+                    "seed_commit": "cccccccccccccccccccccccccccccccccccccccc",
+                    "source_mirror": "/var/lib/orbit/instance-repositories/1.git",
+                    "t3": {
+                        "port": 3800,
+                        "listen": "10.44.0.7",
+                        "device": "t3",
+                        "title": "Tool",
+                        "unit": "t3.service",
+                        "internal_port": 3773,
+                        "ready_seconds": 30,
+                        "url": "http://10.44.0.7:3800",
+                        "label": "tool / fix-login",
+                        "t3": "/opt/orbit-agent/current/agent/bin/t3",
+                        "project_mark": "/home/agent/.config/orbit/t3-project"
+                    },
+                    "model_environment": {
+                        "path": "/home/agent/.config/orbit/model.env",
+                        "uid": 2750,
+                        "gid": 2750,
+                        "mode": "0600"
+                    },
+                    "files": [
+                        {
+                            "path": "/etc/orbit/instance",
+                            "uid": 0,
+                            "gid": 0,
+                            "mode": "0644",
+                            "content": "# Managed by Orbit.\nORBIT_INSTANCE_ID=2\nORBIT_INSTANCE=fix-login\nORBIT_PROJECT=tool\nORBIT_PROJECT_ID=1\nORBIT_PROJECT_NAME=\"Tool\"\nORBIT_NODE=beast\nORBIT_URL=\n"
+                        },
+                        {
+                            "path": "/home/agent/.codex/config.toml",
+                            "uid": 2750,
+                            "gid": 2750,
+                            "mode": "0600",
+                            "content": "check_for_update_on_startup = false\nmodel_provider = \"orbit\"\n\n[model_providers.orbit]\nname = \"Orbit\"\nbase_url = \"http://10.253.0.1:8319/v1\"\nenv_key = \"ORBIT_MODEL_KEY\"\nwire_api = \"responses\"\nsupports_websockets = false\n\n[projects.\"/srv/workspace\"]\ntrust_level = \"trusted\"\n"
+                        },
+                        {
+                            "path": "/home/agent/.claude.json",
+                            "uid": 2750,
+                            "gid": 2750,
+                            "mode": "0600",
+                            "json": {
+                                "hasCompletedOnboarding": true
+                            }
+                        },
+                        {
+                            "path": "/home/agent/.t3/userdata/settings.json",
+                            "uid": 2750,
+                            "gid": 2750,
+                            "mode": "0600",
+                            "json": {
+                                "linkedEnvironmentsEnabled": true
+                            }
+                        }
+                    ],
+                    "links": [
+                        {
+                            "path": "/home/agent/.claude/CLAUDE.md",
+                            "target": "/opt/orbit-agent/current/notes/package.md"
+                        },
+                        {
+                            "path": "/home/agent/.codex/AGENTS.md",
+                            "target": "/opt/orbit-agent/current/notes/package.md"
+                        }
+                    ]
+                },
+                "processes": [],
+                "steps": []
+            }
+        },
+        "run_budget_seconds": 1800
+    }
+}
