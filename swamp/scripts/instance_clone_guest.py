@@ -4,6 +4,7 @@ import http.client
 import json
 import os
 import pathlib
+import re
 import stat
 import subprocess
 import sys
@@ -12,6 +13,30 @@ from contextlib import closing
 
 # Mirrored by the Node boundary; the clone tests keep the two sets in sync.
 GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
+
+
+class PhaseRefusal(AssertionError):
+    def __init__(self, evidence):
+        super().__init__(evidence['error_code'])
+        self.evidence = evidence
+
+
+def process_failure(unit, state):
+    """Public classes and exit facts only; a Process journal can contain arbitrary secrets."""
+    classes = {
+        'ActiveState': {'active', 'inactive', 'failed', 'activating', 'deactivating', 'reloading', 'maintenance'},
+        'SubState': {'running', 'exited', 'dead', 'failed', 'start', 'start-pre', 'start-post', 'auto-restart', 'auto-restart-queued', 'stop', 'stop-post', 'stop-sigterm', 'stop-sigkill'},
+        'Result': {'success', 'resources', 'timeout', 'exit-code', 'signal', 'core-dump', 'watchdog', 'start-limit-hit', 'protocol', 'oom-kill', 'exec-condition'},
+    }
+    value = {'unit': unit['name']}
+    if type(unit.get('id')) is int:
+        value['process_id'] = unit['id']
+    for key, allowed in classes.items():
+        value[key] = state.get(key) if state.get(key) in allowed else 'unknown'
+    for key in ('ExecMainStatus', 'NRestarts'):
+        raw = state.get(key, '')
+        value[key] = int(raw) if re.fullmatch(r'[0-9]{1,10}', raw) and int(raw) <= 2147483647 else None
+    return {'error_code': 'instance.container_process_inactive', 'process_failure': value}
 
 
 def phase_main(phase, raw):
@@ -69,6 +94,18 @@ def phase_main(phase, raw):
             orbit=not agent,
             check=check,
         )
+
+    def require_units():
+        for unit in c['units'] + c['processes']:
+            if unit.get('desired', 'running') != 'running':
+                continue
+            if run(['systemctl', 'is-active', '--quiet', unit['name']], False).returncode:
+                observed = run(['systemctl', 'show', '--property=ActiveState', '--property=SubState',
+                                '--property=Result', '--property=ExecMainStatus', '--property=NRestarts',
+                                '--', unit['name']], False)
+                state = dict(line.split('=', 1) for line in observed.stdout.splitlines() if '=' in line)
+                if state.get('ActiveState') != 'active':
+                    raise PhaseRefusal(process_failure(unit, state))
 
     if phase == "workspace":
         assert root(ws + "/.git").is_dir()
@@ -338,14 +375,7 @@ def phase_main(phase, raw):
         assert git("rev-parse", "HEAD").stdout.strip() == c["expected_commit"]
         if c["php"] is not None:
             run(["php", "-v"], agent=True)
-        for unit in c["units"] + c["processes"]:
-            if unit.get("desired", "running") == "running":
-                assert (
-                    run(
-                        ["systemctl", "is-active", "--quiet", unit["name"]], False
-                    ).returncode
-                    == 0
-                )
+        require_units()
         reply = {
             "environment": json.dumps(env),
             "gateway": replies[0],
@@ -372,11 +402,7 @@ def phase_main(phase, raw):
         assert git("config", "--global", "user.name", agent=True).stdout.strip()
         if c["php"] is not None:
             run(["php", "-v"], agent=True)
-        for u in c["units"] + c["processes"]:
-            assert (
-                run(["systemctl", "is-active", "--quiet", u["name"]], False).returncode
-                == 0
-            )
+        require_units()
     else:
         raise ValueError(phase)
     print(json.dumps({"phase": phase, "changes": changes}))
@@ -385,6 +411,10 @@ def phase_main(phase, raw):
 if __name__ == "__main__":
     try:
         phase_main(sys.argv[1], sys.argv[2])
+    except PhaseRefusal as error:
+        print(json.dumps(error.evidence))
+        print(error.evidence['error_code'], file=sys.stderr)
+        raise SystemExit(1)
     except subprocess.CalledProcessError as error:
         command = os.path.basename(error.cmd[0])
         print(

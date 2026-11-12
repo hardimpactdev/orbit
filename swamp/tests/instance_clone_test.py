@@ -205,6 +205,7 @@ class CloneTest(unittest.TestCase):
                 ),
                 patch("sys.stdin", io.StringIO("PRIVATE-INPUT")),
                 patch("subprocess.run", command),
+                patch("os.chown"),
                 contextlib.redirect_stdout(output),
                 contextlib.redirect_stderr(error),
             ):
@@ -355,7 +356,8 @@ class CloneTest(unittest.TestCase):
             commands(SCRIPT), commands(SCRIPT.with_name("instance_clone_guest.py"))
         )
 
-    def invoke(self, stderr, phase="sessions", fail="incus"):
+    def invoke(self, stderr, phase="sessions", fail="incus", evidence=None):
+        account = pwd.getpwuid(os.getuid())
         with tempfile.TemporaryDirectory() as folder:
             container = {
                 "name": "instance-proof",
@@ -368,7 +370,7 @@ class CloneTest(unittest.TestCase):
             def command(argv, **_kwargs):
                 if argv[0] != fail:
                     return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
-                return subprocess.CompletedProcess(argv, 7, "PRIVATE-STDOUT", stderr)
+                return subprocess.CompletedProcess(argv, 7, json.dumps(evidence) if evidence else "PRIVATE-STDOUT", stderr)
 
             output, error = io.StringIO(), io.StringIO()
             with (
@@ -379,13 +381,14 @@ class CloneTest(unittest.TestCase):
                         json.dumps(container),
                         "guest",
                         NETWORK_CHECK.read_text(),
-                        "agent",
+                        account.pw_name,
                         folder,
                         phase,
                     ],
                 ),
                 patch("sys.stdin", io.StringIO("PRIVATE-INPUT")),
                 patch("subprocess.run", command),
+                patch("os.chown") as ownership,
                 contextlib.redirect_stdout(output),
                 contextlib.redirect_stderr(error),
                 self.assertRaises(SystemExit) as exit_status,
@@ -394,7 +397,46 @@ class CloneTest(unittest.TestCase):
             self.assertEqual(exit_status.exception.code, 1)
             self.assertEqual(output.getvalue(), "")
             self.assertNotIn("PRIVATE", error.getvalue())
+            if evidence:
+                ownership.assert_any_call(Path(folder) / 't3.json', account.pw_uid, account.pw_gid)
+                recorded = json.loads((Path(folder) / 't3.json').read_text())
+                self.assertEqual(recorded, evidence)
+                self.assertEqual((Path(folder) / 't3.json').stat().st_mode & 0o777, 0o600)
+                return recorded
             return error.getvalue()
+
+    def assert_structured_process_failure_reaches_create_terminal_receipt(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('guest_fixture', SCRIPT.parents[1] / 'tests/instance_clone_guest_test.py')
+        fixture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixture)
+        # Execute the production guest entry point; only its system boundaries are faked.
+        _, output, _ = fixture.CloneGuestTest().readiness('sessions', entrypoint=True, inactive=True)
+        evidence = json.loads(output)
+        self.invoke('token=ghp_PRIVATE_TOKEN_12345678901234567890', evidence=evidence)
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            (folder / 't3.json').write_text(json.dumps(evidence))
+            script = """
+import { behavior } from './swamp/extensions/behaviors/operations/instance-dev-command/assets.ts';
+const folder = Deno.args[0];
+const ctx = {writeResource: async () => {}};
+const created = await behavior.methods.create_result.execute({
+    folder, intent: {instance_id: 7, setup_steps: [], container: {clone: {}}},
+    checkout: null, database: 'succeeded', setup: 'skipped', processes: [], route: 'skipped',
+    container: {launch: 'succeeded', workspace: {status: 'succeeded', outputs: {stdout: 'orbit-commit=' + 'a'.repeat(40)}},
+        deploy: [], processes: 'succeeded', seed: 'skipped', agent: 'succeeded', t3: 'succeeded', register: 'failed'},
+}, ctx);
+console.log(JSON.stringify(JSON.parse(created.stdout)));
+"""
+            result = subprocess.run(['deno', 'eval', '--no-check', script, str(folder)],
+                                    cwd=SCRIPT.parents[2], text=True, capture_output=True, check=False, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            receipt = json.loads(result.stdout)
+            self.assertEqual(receipt['error_code'], evidence['error_code'])
+            self.assertEqual(receipt['process_failure'], evidence['process_failure'])
+            self.assertFalse(receipt['ready'])
+            self.assertNotIn('PRIVATE', json.dumps(receipt))
 
     def test_preserves_only_the_guest_command_and_exit_code(self):
         for command in ["curl", "git", "mkdir", "php", "systemctl", "t3"]:
@@ -405,6 +447,7 @@ class CloneTest(unittest.TestCase):
                     + " exited 17\n"
                 )
                 self.assertEqual(self.invoke(diagnostic), diagnostic)
+        self.assert_structured_process_failure_reaches_create_terminal_receipt()
 
     def test_rejects_private_or_mismatched_guest_diagnostics(self):
         for stderr in [

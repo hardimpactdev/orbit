@@ -160,14 +160,14 @@ class CloneGuestTest(unittest.TestCase):
 
             self.assertNotIn("private", output.getvalue())
 
-    def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=False):
+    def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=False, inactive=False, state=None, desired="running", is_active=1, expected_exit=1):
         container = {
             "workspace": "/srv/workspace",
             "branch": "proof",
             "expected_commit": "abc123",
             "php": php,
             "units": [],
-            "processes": [],
+            "processes": [{"name": "orbit-process-vp-dev.service", "id": 19, "desired": desired}] if inactive else [],
             "clone": {
                 "seed_commit": "abc123",
                 "t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"},
@@ -188,11 +188,16 @@ class CloneGuestTest(unittest.TestCase):
                 stdout = json.dumps(
                     {"environmentId": "proof", "serverVersion": "0.1.7"}
                 )
+            if actual[:2] == ['systemctl', 'is-active'] and inactive:
+                code = is_active
+            if actual[:2] == ['systemctl', 'show']:
+                observed = state if state is not None else {'ActiveState': 'failed', 'SubState': 'failed', 'Result': 'exit-code', 'ExecMainStatus': '1', 'NRestarts': '5'}
+                stdout = '\n'.join(key + '=' + str(value) for key, value in observed.items())
             if actual[0] == "git":
                 stdout = "proof\n" if "symbolic-ref" in actual else "abc123\n"
             if actual[0] == "/opt/agent/bin/t3":
                 stdout = actual[actual.index("--label") + 1] + "-PRIVATE-TOKEN\n"
-            return subprocess.CompletedProcess(argv, code, stdout, "PRIVATE-STDERR")
+            return subprocess.CompletedProcess(argv, code, stdout, "token=ghp_SUPER_PRIVATE_TOKEN_12345678901234567890")
 
         sessions = {
             key: {"token": key + "-PRIVATE-TOKEN"} for key in ["gateway", "swamp"]
@@ -224,16 +229,66 @@ class CloneGuestTest(unittest.TestCase):
             contextlib.redirect_stderr(error),
         ):
             if entrypoint:
-                with (
-                    patch("sys.argv", [str(SPEC.origin), phase, json.dumps(container)]),
-                    self.assertRaises(SystemExit) as exit_status,
-                ):
-                    runpy.run_path(SPEC.origin, run_name="__main__")
-                self.assertEqual(exit_status.exception.code, 1)
+                with patch("sys.argv", [str(SPEC.origin), phase, json.dumps(container)]):
+                    if expected_exit:
+                        with self.assertRaises(SystemExit) as exit_status:
+                            runpy.run_path(SPEC.origin, run_name="__main__")
+                        self.assertEqual(exit_status.exception.code, expected_exit)
+                    else:
+                        runpy.run_path(SPEC.origin, run_name="__main__")
             else:
                 GUEST.phase_main(phase, json.dumps(container))
         self.assertNotIn("PRIVATE", error.getvalue())
         return commands, output.getvalue(), error.getvalue()
+
+    def test_inactive_process_names_unit_states_and_exit_without_private_log(self):
+        commands, output, error = self.readiness('sessions', entrypoint=True, inactive=True)
+        receipt = json.loads(output)
+        self.assertEqual(receipt, {'error_code': 'instance.container_process_inactive', 'process_failure': {
+            'unit': 'orbit-process-vp-dev.service', 'process_id': 19, 'ActiveState': 'failed',
+            'SubState': 'failed', 'Result': 'exit-code', 'ExecMainStatus': 1, 'NRestarts': 5}})
+        self.assertEqual(error, 'instance.container_process_inactive\n')
+        self.assertNotIn('PRIVATE', output + error)
+        self.assertFalse(any(argv[0] == 'journalctl' for argv in commands))
+
+        healthy = {'ActiveState': 'active', 'SubState': 'running', 'Result': 'success', 'ExecMainStatus': '0', 'NRestarts': '5'}
+        for label, options in [
+            ('healthy', {'is_active': 0}),
+            ('recovered between reads', {'state': healthy}),
+            ('desired stopped', {'desired': 'stopped'}),
+        ]:
+            with self.subTest(label=label):
+                calls, output, error = self.readiness('sessions', entrypoint=True, inactive=True,
+                                                     expected_exit=0, **options)
+                self.assertEqual(json.loads(output)['phase'], 'sessions')
+                self.assertNotIn('process_failure', output)
+                self.assertEqual(error, '')
+                if label == 'desired stopped':
+                    self.assertFalse(any(argv[0] == 'systemctl' for argv in calls))
+
+        stopped = {'ActiveState': 'inactive', 'SubState': 'dead', 'Result': 'success',
+                   'ExecMainStatus': '0', 'NRestarts': '0'}
+        _, output, _ = self.readiness('sessions', entrypoint=True, inactive=True, state=stopped)
+        self.assertEqual(json.loads(output)['process_failure']['ActiveState'], 'inactive')
+        self.assertEqual(json.loads(output)['process_failure']['ExecMainStatus'], 0)
+
+        transitional = {'ActiveState': 'activating', 'SubState': 'auto-restart', 'Result': 'exit-code',
+                        'ExecMainStatus': '1', 'NRestarts': '5'}
+        _, output, _ = self.readiness('sessions', entrypoint=True, inactive=True, state=transitional)
+        reported = json.loads(output)['process_failure']
+        self.assertEqual(reported['ActiveState'], 'activating')
+        self.assertEqual(reported['SubState'], 'auto-restart')
+        self.assertEqual(reported['Result'], 'exit-code')
+
+        private = {key: 'PRIVATE_TOKEN_ghp_12345678901234567890' for key in ('ActiveState', 'SubState', 'Result')}
+        private.update(ExecMainStatus='-1', NRestarts='999999999999999999999')
+        _, output, _ = self.readiness('sessions', entrypoint=True, inactive=True, state=private)
+        reported = json.loads(output)['process_failure']
+        self.assertEqual({key: reported[key] for key in ('ActiveState', 'SubState', 'Result')},
+                         dict.fromkeys(('ActiveState', 'SubState', 'Result'), 'unknown'))
+        self.assertIsNone(reported['ExecMainStatus'])
+        self.assertIsNone(reported['NRestarts'])
+        self.assertNotIn('PRIVATE', output)
 
     def test_non_php_sessions_keep_both_authenticated_sessions_without_php(self):
         for existing in [False, True]:

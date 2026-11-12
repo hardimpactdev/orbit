@@ -82,6 +82,17 @@ export const behavior = {
                         if (!(error instanceof Deno.errors.NotFound || error instanceof SyntaxError)) throw error;
                     }
                 }
+                if (!value.ready && result.failed_step === "register") {
+                    try {
+                        const failure = z.object({
+                            error_code: z.literal("instance.container_process_inactive"),
+                            process_failure: ObjectValue,
+                        }).safeParse(JSON.parse(await Deno.readTextFile(args.folder + "/t3.json")));
+                        if (failure.success) value.stdout = JSON.stringify({...result, ...failure.data});
+                    } catch (error) {
+                        if (!(error instanceof Deno.errors.NotFound || error instanceof SyntaxError)) throw error;
+                    }
+                }
                 await ctx.writeResource("result", "create", value);
                 return value;
             },

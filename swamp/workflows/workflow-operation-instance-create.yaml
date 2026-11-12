@@ -609,8 +609,8 @@ jobs:
       - name: clone-session-copy
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: clone-sessions, condition: {type: succeeded}}]
-        guard: ${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}
+        dependsOn: [{step: clone-sessions, condition: {type: always}}]
+        guard: ${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) || !("clone-sessions" in steps && steps["clone-sessions"].status in ["succeeded", "failed"]) }}
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -637,7 +637,7 @@ jobs:
       - name: clone-register
         labels: {role: swamp}
         dependsOn: [{step: clone-session-copy, condition: {type: succeeded}}]
-        guard: ${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone == null }}
+        guard: ${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone == null || !("clone-sessions" in steps && steps["clone-sessions"].status == "succeeded") }}
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-t3'

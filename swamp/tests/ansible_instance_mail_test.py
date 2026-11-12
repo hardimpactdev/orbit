@@ -383,7 +383,9 @@ class MailPhase(unittest.TestCase):
         self.assertEqual(
             preflight.inspect_environment(str(source), [], [], {}, self.endpoint), []
         )
-        self.assertTrue(preflight.inspect_environment(str(source), [], [], {}))
+        # This refusal requires an answering service; a closed endpoint is only a warning.
+        with patch.object(preflight.HostProbes, 'answer', return_value=True):
+            self.assertTrue(preflight.inspect_environment(str(source), [], [], {}))
         self.assertEqual(self.apply(), {"status": "applied"})
         self.assertEqual(self.sockets, {1025: True, 2525: True})
 

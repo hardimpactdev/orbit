@@ -1362,10 +1362,11 @@
     ]
   },
   "swamp/tests/instance_clone_guest_test.py": {
-    "source_sha256": "9b728ffbdc1418099924c930302d57368c222ba285c713975cd67e7995443207",
+    "source_sha256": "f15a5c11cf7ec00c9beaeb3b730457dc48063779ae6f26f687c47dd2da929c24",
     "cases": [
       "test_sessions_check_only_loopback_t3_and_reject_http_and_scope_failures",
       "test_workspace_forwards_one_json_vault_value_without_printing_secrets",
+      "test_inactive_process_names_unit_states_and_exit_without_private_log",
       "test_non_php_sessions_keep_both_authenticated_sessions_without_php",
       "test_non_php_check_has_no_php_probe",
       "test_php_readiness_still_checks_the_project_runtime",
@@ -1377,7 +1378,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "cd6fd017b0f76e9c39a4bd05ebd3f48e787d4db3a3747c757858dc1477edd7ea",
+    "source_sha256": "6c0b177613603a6210c342c13c46032417e173eab2c2f14df37253171aaeb50d",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1947,7 +1948,7 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_test.py": {
-    "source_sha256": "3b77b20a21a1e39f6b2febf78e29bd28d3f94e715be9cdd4a9b8f8fe901c3eb0",
+    "source_sha256": "b4e313471a8b830a46387ea5f00bd0d343693da2f37f433b431848161a14c53f",
     "cases": [
       "test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes",
       "test_new_admission_metadata_and_incus_empty_fields_are_unchanged",
