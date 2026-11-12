@@ -734,8 +734,8 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
 | Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
 | While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
-| Retirement check | Checks Git identity before downtime and retention. Blocks tracked changes, owner dependencies, unpushed commits and stashes. Untracked files pass; errors name 20 paths and total counts |
-| Branch | The mirror fetches the recorded branch from the checkout itself. A retained checkout can carry commits that were never pushed; retirement refuses them. The move needs no token |
+| Retirement check | Checks Git identity before downtime and retention. Blocks tracked changes and owner dependencies. Linked checkouts check their own HEAD; owners check all branches and stashes. Untracked files pass; errors name 20 paths and total counts |
+| Branch | The mirror fetches the recorded branch from the checkout itself. A linked checkout refuses only its own unpushed HEAD; an owner checks every local branch and detached HEAD. The move needs no token |
 | Files | One archive of the paths of `git diff HEAD` and `git ls-files --others`, extracted as `orbit`. Tracked files that the checkout deleted are removed |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace`, and the Gateway rewrites its stored values the same way |
 | Database server | The NIC ACL and the Node's firewall rule to every attached target. The container phase checks every port from inside before quiesce, else `instance.database_unreachable`, with zero downtime |
@@ -1070,8 +1070,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
 | `instance.migrate_unsupported` | 409 | `instance:migrate` of an Instance that is not an active development checkout on a Node of the build list |
 | `instance.migrate_retirement_blocked` | 409 | Owner dependencies, registered descendants, changed Git identity or tracked changes block retirement. Names 20 paths and total counts |
-| `instance.migrate_unpushed_commits` | 409 | Local branches or detached HEAD have commits unreachable from all local remote-tracking refs. The error names each and its commit count; no fetch or source changes |
-| `instance.migrate_stashes_present` | 409 | A planned retirement has stashes. The error names the count and leaves the source untouched |
+| `instance.migrate_unpushed_commits` | 409 | A linked checkout's own HEAD, or an owner's branches or detached HEAD, has unpushed commits. Names each protected ref and count |
+| `instance.migrate_stashes_present` | 409 | An owner has stashes. Linked checkouts leave shared stashes in the owner's store |
 | `instance.migrate_branch_changed` | 409 | The checkout is not on the branch that Orbit records for the Instance |
 | `instance.database_unreachable` | 502 | The new container of a move could not reach the Instance's database server |
 | `instance.migrate_process_binary_unavailable` | 409 | A moved Process needs an unavailable PHP version or executable path. The error names the Process and path; the checkout keeps serving |

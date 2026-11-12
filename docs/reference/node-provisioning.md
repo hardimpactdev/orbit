@@ -22,6 +22,8 @@ Preparing an `app-dev` Node for [Instance containers](/reference/development-con
 
 Migration retirement protects the Node's remaining checkouts: an owner with dependents or a checkout with registered descendants refuses before downtime; a linked checkout keeps independent Git recovery data and removes only its own registration. See [retirement and recovery](/cli/instance/migrate#retained-git-data).
 
+Linked worktree retirement checks only its own HEAD for unpushed commits; shared stashes stay with the owner. The [retirement rules](/cli/instance/migrate#before-you-start) define the checks for the owner's whole store.
+
 Migration checks remote source access before quiesce using the Node's existing Git transport. Its temporary fetch credential is mode 0600 and is removed after success, refusal or timeout; no source token enters the container.
 
 Each argument of an Ansible command must parse as a string. One shared test reads every literal `argv` list. It fails on a YAML mapping, a number or a boolean.
