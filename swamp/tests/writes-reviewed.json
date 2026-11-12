@@ -422,6 +422,10 @@
    "Check removed files": "idempotent",
    "Log in to departing Node": "unreviewed"
   },
+  "operation-instance-mail-update": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "operation-node-role-add": {
    "Check the role": "read-only",
    "Read the OS release": "read-only",
