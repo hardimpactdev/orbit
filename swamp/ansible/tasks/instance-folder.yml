@@ -3,18 +3,18 @@
 # agent. A version is a digest of the folder's whole content, so a version that exists is complete: it is built under a staging name
 # and renamed last. `current` then flips to it, and each running container restarts what runs from the folder, one after another:
 # T3 for the agent folder, its Orbit Processes for the runtime folder. A version that no process maps any more goes.
-- name: Name the folder version of {{ folder_name }}
+- name: Name the folder version
   ansible.builtin.set_fact:
     folder_root: "{{ folder.path }}/{{ folder.version }}"
     folder_stage: "{{ folder.path }}/.{{ folder.version }}.stage"
     # The agent's programs sit one level down, in `agent/`, which only gid 2750 opens; the notes beside it stay public.
     folder_parts: "{{ folder.path }}/.{{ folder.version }}.stage{{ '/agent' if folder_name == 'agent' else '' }}"
 
-- name: Read the folder version of {{ folder_name }}
+- name: Read the folder version
   ansible.builtin.stat: { path: "{{ folder_root }}", get_checksum: false, get_mime: false }
   register: folder_present
 
-- name: Build the folder version of {{ folder_name }}
+- name: Build the folder version
   when: not folder_present.stat.exists
   block:
     - name: Create the folder and the artifact cache
@@ -133,24 +133,24 @@
       ansible.builtin.command: { argv: [mv, "{{ folder_stage }}", "{{ folder_root }}"] }
       changed_when: true
 
-- name: Read the folder in use of {{ folder_name }}
+- name: Read the folder in use
   ansible.builtin.stat: { path: "{{ folder.path }}/current", get_checksum: false, get_mime: false }
   register: folder_current
 
 # A run that fails between the flip and the last restart leaves this marker, so the next run restarts the containers again.
-- name: Mark the restart of what runs from the folder of {{ folder_name }}
+- name: Mark the restart of what runs from the folder
   when: folder_current.stat.exists and folder_current.stat.lnk_target != folder.version
   ansible.builtin.file: { path: "{{ folder.path }}/.restart", state: touch, mode: "0644" }
 
-- name: Read the restart mark of {{ folder_name }}
+- name: Read the restart mark
   ansible.builtin.stat: { path: "{{ folder.path }}/.restart", get_checksum: false, get_mime: false }
   register: folder_restart
 
-- name: Flip the folder to the version of {{ folder_name }}
+- name: Flip the folder to the version
   ansible.builtin.file: { path: "{{ folder.path }}/current", src: "{{ folder.version }}", state: link, force: true, owner: root, group: root }
   register: folder_flip
 
-- name: Restart what runs from the folder in each running container of {{ folder_name }}
+- name: Restart what runs from the folder in each running container
   when: folder_restart.stat.exists
   block:
     - name: Read the running containers
@@ -169,18 +169,18 @@
 
 # A process maps the files it runs, by their path inside its container, which is the path on the Node: a version that no process
 # names in its maps is unused.
-- name: Read the folder versions in use of {{ folder_name }}
+- name: Read the folder versions in use
   ansible.builtin.shell:
     cmd: set -o pipefail; cat /proc/[0-9]*/maps 2>/dev/null | grep -o "{{ folder.path }}/[0-9a-f]\{12\}/" | sort -u || true
     executable: /bin/bash
   register: folder_used
   changed_when: false
 
-- name: Find the folder versions of {{ folder_name }}
+- name: Find the folder versions
   ansible.builtin.find: { paths: "{{ folder.path }}", file_type: directory, patterns: "^[0-9a-f]{12}$", use_regex: true }
   register: folder_versions
 
-- name: Remove the unused folder versions of {{ folder_name }}
+- name: Remove the unused folder versions
   ansible.builtin.file: { path: "{{ item.path }}", state: absent }
   loop: "{{ folder_versions.files }}"
   loop_control: { label: "{{ item.path | basename }}" }

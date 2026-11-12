@@ -605,10 +605,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 → v5.12.0",
-      "exact script output: v5.42.0 → v5.43.0",
-      "exact script output: v5.49.0 → v5.50.0",
-      "exact script output: v5.50.0 → v5.50.1",
+      "exact script output: v5.11.0 \u2192 v5.12.0",
+      "exact script output: v5.42.0 \u2192 v5.43.0",
+      "exact script output: v5.49.0 \u2192 v5.50.0",
+      "exact script output: v5.50.0 \u2192 v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -643,12 +643,13 @@
     ]
   },
   "swamp/tests/ansible_command_output_test.py": {
-    "source_sha256": "68821d06d0c31cf0c43faf93a99ff3b9878db0751290703c3a3313994f2e8217",
+    "source_sha256": "f10de64195b1b74768a7e56d851edde65035dfd6fff03be6d6ed69bb68e37ae7",
     "cases": [
       "test_every_regex_is_exercised_or_classified_without_command_output",
       "test_unclassified_native_regex_tests_fail_coverage",
       "test_recorded_output_through_production_expressions",
-      "test_dpkg_installed_held_removed_and_absent"
+      "test_dpkg_installed_held_removed_and_absent",
+      "test_every_reachable_converge_task_name_is_static"
     ]
   },
   "swamp/tests/ansible_container_host_system_test.py": {
@@ -854,7 +855,7 @@
     ]
   },
   "swamp/tests/ansible_static_php_test.py": {
-    "source_sha256": "0ceee7bc659a002a18635ec911a5bdb7e63d79525bb7927668271912ae3d65a9",
+    "source_sha256": "86d9ee6d2294d2486faf022aabe804f61a155fe082d16e6b821dfbac8ecd28c4",
     "cases": [
       "test_matching_build_passes",
       "test_a_missing_and_an_extra_extension_fail_for_their_binary",
@@ -1519,7 +1520,7 @@
     ]
   },
   "swamp/tests/node_converge_test.ts": {
-    "source_sha256": "0c16e114d8301ba02f505cf2e65faa105003d98506b2092d93fe8186d628b4fa",
+    "source_sha256": "87d98cb7df890f50cc4c67bab12cb877d5bd4f1134638e64174e96106b9e6e67",
     "cases": [
       "converge reports all phases, live no-op counts and measured elapsed time; hub changes are not target changes",
       "converge stops reporting success at input and preserves the first failure",
@@ -1548,7 +1549,29 @@
       "an out-of-constraint candidate is rejected before returning write argv",
       "a protected package cannot produce a machine plan",
       "a failed Tool postcondition is not installed",
-      "the workflow has ordered phase invocations and an always-dependent private cleanup"
+      "the workflow has ordered phase invocations and an always-dependent private cleanup",
+      "a failed role command exports only its bounded task and return code",
+      "converge classifies unreachable without exporting host output",
+      "converge classifies assert without exporting host output",
+      "converge classifies fail without exporting host output",
+      "converge classifies timeout without exporting host output",
+      "converge classifies module without exporting host output",
+      "converge classifies unbounded rc without exporting host output",
+      "converge identifies the hub failure while target stats stay clean",
+      "no_log and censored tasks hide names and return codes",
+      "converge bounds task text and refuses host addresses",
+      "unreadable or task-free failure reports never throw or invent a task",
+      "successful converge results have no failure key",
+      "the last fatal record explains ignored callback statistics",
+      "the last fatal record explains rescued callback statistics",
+      "the last fatal record explains always callback statistics",
+      "a rescued callback without fatal statistics succeeds with no failure",
+      "a censored unreachable callback identifies its failed host without leaking its name",
+      "an unreachable host is not explained by its earlier ignored failure",
+      "a rendered-secret callback retains the failure while withholding the name and private markers",
+      "a path callback retains the failure while withholding the name and private markers",
+      "value-like names are withheld without changing the failure class",
+      "only hosts with fatal statistics compete in play and task order, with hub winning ties"
     ]
   },
   "swamp/tests/node_network_hub_prune_test.ts": {
