@@ -120,3 +120,32 @@ it('renders every final clone warning once for humans and retains the JSON list'
     $mock->assertSentCount(1, CloneInstanceRequest::class);
     $mock->assertSentCount($json ? 2 : 1, ShowOperationRequest::class);
 })->with(['human' => false, 'json' => true]);
+
+it('shows migration mail outcomes and advisory warnings in human and JSON output', function (bool $json, array $mail, string $human): void {
+    $result = ['instance_id' => 501, 'moved' => true, 'ready' => true, ...$mail];
+    $final = ['id' => 901, 'kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => 501,
+        'status' => 'succeeded', 'sequence' => 8, 'result' => $result];
+    MockClient::global([
+        MigrateInstanceRequest::class => MockResponse::make(['data' => $final], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final]),
+    ]);
+    expect(Artisan::call('instance:migrate', ['instance' => 501, '--force' => true, '--json' => $json, '--no-interaction' => true]))->toBe(0);
+    $output = Artisan::output();
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
+        expect($output)->not->toContain('Warning:');
+    } else {
+        expect(preg_replace('/\s+/', '', $output))->toContain(preg_replace('/\s+/', '', $human));
+        expect(substr_count($output, str_starts_with($human, 'Warning:') ? 'Warning:' : $human))->toBe(1);
+    }
+})->with(['human' => false, 'json' => true])->with([
+    'changed' => [['mailer' => ['status' => 'changed', 'lines' => [50]]], 'Mailer: changed (line 50).'],
+    'preserved' => [['mailer' => ['status' => 'left_as_written', 'lines' => [4, 9]]], 'Mailer: left_as_written (line 4, 9).'],
+    'missing' => [['mailer' => ['status' => 'not_present']], 'Mailer: not_present.'],
+    'smtp' => [['mailer' => ['status' => 'already_smtp']], 'Mailer: already_smtp.'],
+    'port conflict' => [['mail' => ['status' => 'skipped', 'reason' => 'mail_port_in_use']], 'Mail setup skipped: mail_port_in_use.'],
+    'unit conflict' => [['mail' => ['status' => 'skipped', 'reason' => 'mail_unit_conflict']], 'Mail setup skipped: mail_unit_conflict.'],
+    'advisory' => [['warnings' => [['code' => 'instance.mail_update_failed', 'step' => 'mail']]],
+        'Warning: instance.mail_update_failed. Run orbit instance:mail:update 501 to repair mail.'],
+]);

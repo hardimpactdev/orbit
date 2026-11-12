@@ -69,6 +69,15 @@ sequenceDiagram
   %%> - removes the tracked files that the checkout deleted, and rewrites the checkout's path in `.env` to `/srv/workspace`
   %%> - checks the exact copied tree inside the container, maps old-checkout targets into the workspace and rewrites absolute internal links there; broken or external links fail with the same code before any Process starts, relative links keep their targets, and source links never change
   %%> - a non-default Instance gets the proxy device that publishes its T3 port
+  opt Node runs the main Mailpit
+    SW->>C: Apply development mail<br/>Ansible · tags mail
+    %%> When:
+    %%> - after copying the checkout's `.env`, before application Processes start
+    %%> On failure:
+    %%> - record `instance.mail_update_failed` for a failed attempt or missing/malformed receipt; application starts, Route cutover and retirement continue, with no rollback for mail; `instance:mail:update` repairs it later
+    %%> Result:
+    %%> - the shared path status and exact-line result, with line numbers only; conflicts skip the line rule
+  end
   SW->>C: Start the container<br/>Processes · T3 · seed
   %%> - container units use `network.target` and nonblocking starts; reads all moved desired-running Processes active with no pending job, waits 5 seconds once for the whole set, then requires each still active with the same positive MainPID and NRestarts; failure names the Process with `instance.migrate_processes_failed` and restores before cutover
   %%> What it does:

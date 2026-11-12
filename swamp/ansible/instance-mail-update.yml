@@ -23,7 +23,7 @@
   vars:
     intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
     container: "{{ intent.container }}"
-    mail_refresh: "{{ intent.mail_refresh }}"
+    mail_refresh: "{{ intent.mail_refresh | default({'php': container.php, 'application': container.environment_file | dirname, 'units': []}) }}"
     as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
     as_orbit: "{{ ['incus', 'exec', '--project', container.project, container.name, '--user', '1000', '--group', '1000', '--'] }}"
   tasks:
@@ -39,7 +39,7 @@
             content: >-
               {{ {'mail': mail_result | combine({'ports': [1025, 2525]})}
                  | combine({'mailer': mailer_result} if mailer_result is defined else {}) | to_json }}
-            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/{{ 'mail-result.json' if intent.migrate is defined else 'result.json' }}"
             mode: '0600'
           delegate_to: localhost
           become: false
@@ -54,7 +54,7 @@
               {{ {'error_code': 'env.configuration_invalid' if mail_line_exec is defined and mail_line_exec.rc != 0 else
                   ansible_failed_result.msg if ansible_failed_result.msg | default('') in
                   ['process.target_inactive', 'instance.host_unavailable', 'env.configuration_invalid'] else 'instance.mail_update_failed'} | to_json }}
-            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/{{ 'mail-result.json' if intent.migrate is defined else 'result.json' }}"
             mode: '0600'
           delegate_to: localhost
           become: false

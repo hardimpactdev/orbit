@@ -364,6 +364,16 @@ class TableTest(unittest.TestCase):
 
 
 class ExecutionTest(unittest.TestCase):
+    def test_migrate_result_fixture_uses_deno_and_proves_its_case_receipts(self):
+        budget, fixtures, _ = units.configuration()
+        file = 'swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts'
+        self.assertEqual([name for name, _ in units.units_for(fixtures[file], budget)], [file])
+        step = units.unit_step(file, fixtures, units.fixture_steps(), Path('/collections'))
+        self.assertEqual(step.argv[:4], ['deno', 'test', '--preload', str(ROOT / units.PRELOAD)])
+        self.assertEqual(step.argv[-2:], ['-A', file.removeprefix('swamp/')])
+        self.assertEqual(json.loads(step.env['ORBIT_TEST_CASES']), fixtures[file]['cases'])
+        self.assertNotIn('ORBIT_TEST_SLICE', step.env)
+
     def test_gate_flags_environment_and_slice_preload_are_retained(self):
         _, fixtures, _ = units.configuration()
         steps = units.fixture_steps()

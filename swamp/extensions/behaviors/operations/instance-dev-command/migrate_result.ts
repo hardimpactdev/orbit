@@ -3,6 +3,7 @@ import { Step } from "./result.ts";
 
 /** The statuses of the steps of a move (docs/cli/instance/migrate.mmd). Temporary, with the command. */
 export const MigratePhases = z.object({
+    mail: z.string().optional(),
     quiesce: z.string(),
     container: z.string(),
     workspace: z.string(),
@@ -17,7 +18,20 @@ export const MigratePhases = z.object({
     restore_route: z.string(),
     restore: z.string(),
 });
-type WrittenFailure = {
+const MailReceipt = z.object({
+    mail: z.object({status: z.enum(["applied", "unchanged", "skipped"]),
+        ports: z.tuple([z.literal(1025), z.literal(2525)]),
+        reason: z.enum(["mail_port_in_use", "mail_unit_conflict"]).optional()}),
+    mailer: z.object({status: z.enum(["changed", "left_as_written", "not_present", "already_smtp"]),
+        lines: z.array(z.number().int().positive()).optional()}).optional(),
+}).refine((receipt) => {
+    if (receipt.mail.status === "skipped") return receipt.mail.reason !== undefined && receipt.mailer === undefined;
+    if (receipt.mail.reason !== undefined || receipt.mailer === undefined) return false;
+    if (receipt.mailer.status === "changed") return receipt.mailer.lines?.length === 1;
+    if (receipt.mailer.status === "left_as_written") return receipt.mailer.lines !== undefined;
+    return receipt.mailer.lines === undefined;
+});
+type WrittenFailure = Partial<z.infer<typeof MailReceipt>> & {
     error_code?: string;
     error_message?: string;
     preflight_refused?: boolean;
@@ -51,7 +65,7 @@ export function migrateResult(
     const translations = processes.flatMap((process) => process.translations ?? []);
     const routed = intent.route_mutations != null;
     const commit = workspace?.status === "succeeded" ? COMMIT.exec(String(workspace.outputs?.stdout ?? ""))?.[1] ?? null : null;
-    const done = (name: keyof Phases): [string, boolean, boolean] => [name, phases[name] === "succeeded", ["failed", "cancelled", "interrupted", "unknown"].includes(phases[name])];
+    const done = (name: Exclude<keyof Phases, "mail">): [string, boolean, boolean] => [name, phases[name] === "succeeded", ["failed", "cancelled", "interrupted", "unknown"].includes(phases[name])];
     // [phase, finished, failed], in the order the run takes them.
     const outcomes: [string, boolean, boolean][] = [
         done("container"),
@@ -73,11 +87,17 @@ export function migrateResult(
             !written.error_code?.startsWith("instance.container_")
         ? written.error_code ?? null
         : null;
+    const parsedMail = phases.mail === "succeeded" ? MailReceipt.safeParse(written) : null;
+    const mail = parsedMail?.success ? parsedMail.data : null;
+    const mailWarning = phases.mail !== undefined && phases.mail !== "skipped" && mail === null;
     const result = {
         instance_id: intent.instance_id,
         ready: failed === undefined,
         moved,
         restored: !moved && phases.restore === "succeeded" && ["succeeded", "skipped"].includes(phases.restore_route),
+        ...(mail ?? {}),
+        ...(mailWarning
+            ? {warnings: [{code: "instance.mail_update_failed", step: "mail"}]} : {}),
         ...(translations.length ? { process_translations: translations } : {}),
         ...(failed?.[0] === "container" && refusal !== null && written?.preflight_refused === true ? { preflight_refused: true } : {}),
         ...(commit ? { commit } : {}),
@@ -103,6 +123,11 @@ export async function writtenFailure(folder: string): Promise<WrittenFailure | n
         const parsed = z.object({ retained_git_path: z.string().min(1), retained_git_at: z.iso.datetime({ offset: true }) }).safeParse(value);
         if (parsed.success) retained = parsed.data;
     } catch { /* No checkout was retained. */ }
-    const result = { ...failure, ...retained };
+    let mail: Partial<z.infer<typeof MailReceipt>> = {};
+    try {
+        const parsed = MailReceipt.safeParse(JSON.parse(await Deno.readTextFile(`${folder}/mail-result.json`)));
+        if (parsed.success) mail = parsed.data;
+    } catch { /* A bounded mail failure is named by its phase status, without failing migration. */ }
+    const result = { ...failure, ...retained, ...mail };
     return Object.keys(result).length > 0 ? result : null;
 }
