@@ -115,9 +115,12 @@ Deno.test("hot workflow trees avoid literal behavior lookups and preserve consta
                 if (task.type === "workflow") {
                     assert(task.workflowIdOrName, `${workflow.name}/${step.name}`);
                     walk(task.workflowIdOrName);
-                } else if (task.type === "behavior") {
+                } else if (task.type === "behavior" || task.type === "model_method") {
                     const at = `${workflow.name}/${step.name}`;
-                    const name = task.behaviorName;
+                    // Swamp reads the same reference from either spelling of a method step.
+                    const spelled = task as Record<string, unknown>;
+                    const name = spelled.behaviorName ?? spelled.modelName ?? spelled.behaviorIdOrName ??
+                        spelled.modelIdOrName;
                     if (literalUntilBaseCheckerAccepts.get(at) === name) {
                         literalUntilBaseCheckerAccepts.delete(at);
                         continue;
