@@ -8,6 +8,7 @@ behaviors:
   - operations/ansible-input/write.ts
 additionalFiles:
   - scripts/instance_clone.py
+  - scripts/instance_clone_launch.py
   - scripts/instance_clone_guest.py
   - ansible/proof-gateway.yml
   - ansible/proof-observers.yml

@@ -2161,6 +2161,18 @@
       "test_previous_gateway_local_intent_has_no_new_required_fields"
     ]
   },
+  "swamp/extensions/behaviors/operations/ansible-input/write_test.ts": {
+    "source_sha256": "0095bb2c3ad26a5c8ef616a5c3075a0f051d8fac6eb014bf9bd4761e819f1559",
+    "cases": [
+      "the full intent reaches a private file beyond the environment size limit",
+      "an intent write refuses paths outside its run folder",
+      "the fleet reboot finalizer publishes only its redacted public evidence",
+      "the fleet reboot finalizer reports a fixed error when private callback inputs cannot be parsed",
+      "real clone commands stay below 32 KiB with a large Gateway intent",
+      "real clone launch preserves stdin and cleanup works after an early container failure",
+      "workflow command and inline script templates keep 16 KiB of budget headroom"
+    ]
+  },
   "swamp/tests/caddy_publish_test.py": {
     "source_sha256": "697f557a1ef9a249b0d5551d8979810628e249003801863be00976d5e22f3859",
     "cases": [

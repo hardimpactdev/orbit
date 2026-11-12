@@ -32,6 +32,8 @@ Migration carries missing directories, including empty link targets, with their 
 
 Migration checks remote source access before quiesce using the Node's existing Git transport. Its temporary fetch credential is mode 0600 and is removed after success, refusal or timeout; no source token enters the container.
 
+Clone creation stages its release's helpers once in a private folder for the run. Later phases run the launcher by path, keeping scripts and intent off the SSH command. Cleanup removes the folder even when staging or the first clone phase fails.
+
 Each argument of an Ansible command must parse as a string. One shared test reads every literal `argv` list. It fails on a YAML mapping, a number or a boolean.
 
 Container Process journal and state reads use this Node’s existing SSH account and Incus access, under the [transport exception](/reference/node-agent#commands). They add no account, group membership or sudo rule. The Node already requires `python3` for the container host’s effective-NIC gate and bridge reader.

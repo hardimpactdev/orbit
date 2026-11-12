@@ -20,6 +20,8 @@ const Output = z.object({
     collections: z.string(),
     clone_argv: z.array(z.string()),
     clone_private: z.string(),
+    clone_stage_argv: z.array(z.string()),
+    clone_payload: z.string(),
 });
 type Context = {
     extensionFile(path: string): string;
@@ -152,20 +154,28 @@ export const behavior = {
                 );
                 const container = args.intent.container as { clone?: unknown; instance_id: number } | null | undefined;
                 const privatePath = `/tmp/orbit-clone-${container?.instance_id ?? 0}-${folder.split("/").at(-1)?.slice("orbit-ansible-".length)}`;
-                const cloneArgv = container?.clone ? [
-                    "python3", "-c", await Deno.readTextFile(ctx.extensionFile("scripts/instance_clone.py")),
-                    JSON.stringify(container), await Deno.readTextFile(ctx.extensionFile("scripts/instance_clone_guest.py")),
-                    await Deno.readTextFile(ctx.extensionFile("ansible/instance_network.py")),
-                    (args.intent.ssh_execution as { target: { user: string } }).target.user, privatePath,
-                    JSON.stringify({
+                const launcher = container?.clone
+                    ? await Deno.readTextFile(ctx.extensionFile("scripts/instance_clone_launch.py")) : "";
+                const cloneArgv = container?.clone
+                    ? ["python3", privatePath + "/launch.py", privatePath] : [];
+                const clonePayload = container?.clone ? JSON.stringify({
+                    launcher,
+                    script: await Deno.readTextFile(ctx.extensionFile("scripts/instance_clone.py")),
+                    container,
+                    guest: await Deno.readTextFile(ctx.extensionFile("scripts/instance_clone_guest.py")),
+                    network: await Deno.readTextFile(ctx.extensionFile("ansible/instance_network.py")),
+                    account: (args.intent.ssh_execution as { target: { user: string } }).target.user,
+                    bundle: {
                         node_services: await Deno.readTextFile(ctx.extensionFile("ansible/instance_node_services.py")),
                         mail: await Deno.readTextFile(ctx.extensionFile("ansible/instance_mail.py")),
                         bridge: await Deno.readTextFile(ctx.extensionFile("ansible/instance_bridge.py")),
                         node: await Deno.readTextFile(ctx.extensionFile("ansible/instance_node_runtime.py")),
-                    }),
-                ] : [];
+                    },
+                }) : "";
                 const value = Output.parse({
                     clone_argv: cloneArgv,
+                    clone_stage_argv: container?.clone ? ["python3", "-c", launcher, privatePath] : [],
+                    clone_payload: clonePayload,
                     clone_private: privatePath,
                     path: args.path,
                     assets,

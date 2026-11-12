@@ -33,6 +33,10 @@ sequenceDiagram
   GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start run from queue<br/>operation-instance-create
   par isolated container job · native progress per phase
+    SW->>N: Stage clone helpers<br/>native clone-input
+    %%> What it does:
+    %%> - stages the release's helpers and intent from stdin in a private folder for this run; later phases run its launcher by path
+    %%> - scripts and intent never fill the SSH command; the next phase keeps the repository credential on its own stdin
     SW->>N: Clone default container<br/>native clone-container
     %%> What it does:
     %%> - the copy supplies the full root disk device (type, path, pool and size), whether the seed inherits it or stores it locally
@@ -115,6 +119,8 @@ sequenceDiagram
     SW->>N: Stop the container<br/>incus stop
     %%> What stays:
     %%> - the stopped container, its database and its runtime record, marked failed; `instance:destroy` removes them
+    %%> Cleanup:
+    %%> - remove the private clone folder after success or failure, even if staging or the first launch failed
     SW--xGW: Run failed<br/>failed step, error_code
     Note over GW: Record the failure
     %%> Retry:
