@@ -1,11 +1,10 @@
 # Program: instance.destroy-git
-# Outcomes: inspected removed refused
+# Outcomes: inspected refused
 # Timeout: 10
-# Input: fixed inspect/remove action, admitted paths and optional Node Instance path inventory.
+# Input: fixed inspect action, target paths and optional Node host-checkout inventory.
 # Result: dependent paths and Instance IDs only; no Git output or file contents.
 import json
 import os
-import shutil
 import stat
 import subprocess
 import sys
@@ -115,34 +114,37 @@ def pointer_relationship(checkout, target):
     except FileNotFoundError:
         return 'unknown'
     except (OSError, ValueError, RuntimeError):
-        # A present unreadable pointer/alternates can conceal a moved worktree or object dependency.
-        raise CheckoutReadFailed(checkout, 'unreadable') from None
+        return 'unknown'
 
 
 def inspect(path, instances):
     raw_target = Path(path)
-    if not raw_target.is_absolute() or str(raw_target) == '/' or raw_target.is_symlink():
-        raise ValueError
-    if not present(raw_target):
-        return [], None, []
-    path = raw_target.resolve(strict=True)
-    if not present(path / '.git'):
-        return [], None, []
     try:
+        if not raw_target.is_absolute() or str(raw_target) == '/' or raw_target.is_symlink():
+            raise ValueError
+        if not present(raw_target):
+            raise ValueError
+        path = raw_target.resolve(strict=True)
+        if not present(path / '.git'):
+            raise ValueError
         facts = git(path, 'rev-parse', '--path-format=absolute', '--git-common-dir', '--absolute-git-dir').splitlines()
         if len(facts) != 2:
             raise ValueError
         common, own_gitdir = [Path(os.fsdecode(value)).resolve(strict=True) for value in facts]
         records = git(path, 'worktree', 'list', '--porcelain', '-z').split(b'\0\0')
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         raise CheckoutReadFailed(raw_target, 'timed_out' if isinstance(error, subprocess.TimeoutExpired) else 'unreadable') from None
-    candidates = {}
+    candidates, warnings = {}, []
     for row in instances:
-        candidate = Path(row['path'])
-        if not candidate.is_absolute() or len(str(candidate)) > 4096 or not isinstance(row['id'], int):
-            raise ValueError
-        candidates.setdefault(candidate, []).append(row['id'])
-    dependents, warnings = {}, []
+        raw = row.get('path', '') if isinstance(row, dict) else ''
+        identity = row.get('id') if isinstance(row, dict) else None
+        ids = [identity] if isinstance(identity, int) and not isinstance(identity, bool) and identity > 0 else []
+        display = raw[:4096].replace('\0', '\\0') if isinstance(raw, str) else ''
+        if not isinstance(raw, str) or not raw.startswith('/') or len(raw) > 4096 or '\0' in raw or not ids:
+            warnings.append({'code': 'instance.checkout_unknown', 'path': display[:4096], 'cause': 'unreadable', 'instance_ids': ids})
+            continue
+        candidates.setdefault(Path(raw), []).extend(ids)
+    dependents = {}
     # Existing owner-side registrations prove a dependency without reading the other checkout's Git.
     for record in records:
         field = next((line[9:] for line in record.split(b'\0') if line.startswith(b'worktree ')), None)
@@ -151,9 +153,8 @@ def inspect(path, instances):
         candidate = Path(os.fsdecode(field))
         try:
             registered_exists = present(candidate)
-        except OSError:
-            # An owner registration behind an unreadable parent can still hide an existing worktree.
-            registered_exists = True
+        except (OSError, ValueError, RuntimeError):
+            registered_exists = False
         if inside(common, path) and candidate not in (path, raw_target) and registered_exists:
             ids = [identity for item, identities in candidates.items() if canonical(item) == canonical(candidate) for identity in identities]
             dependents[candidate] = {'path': str(candidate), 'instance_ids': ids[:50]}
@@ -177,16 +178,13 @@ def inspect(path, instances):
                     relationship = 'dependent' if inside(directory, path) else pointer_relationship(candidate, path)
                 except (OSError, ValueError, subprocess.SubprocessError) as error:
                     cause = 'timed_out' if isinstance(error, subprocess.TimeoutExpired) else 'unreadable'
-                    try:
-                        relationship = pointer_relationship(candidate, path)
-                    except CheckoutReadFailed:
-                        raise CheckoutReadFailed(candidate, cause, ids) from None
+                    relationship = pointer_relationship(candidate, path)
+                    if relationship == 'unrelated':
+                        relationship = 'unknown'
             if relationship == 'dependent':
                 dependents[candidate] = {'path': str(candidate), 'instance_ids': ids[:50]}
             elif relationship == 'unknown':
                 warnings.append({'code': 'instance.checkout_unknown', 'path': str(candidate), 'cause': cause, 'instance_ids': ids[:50]})
-        except CheckoutReadFailed as error:
-            raise CheckoutReadFailed(candidate, error.cause, ids) from None
         except (OSError, ValueError, RuntimeError):
             warnings.append({'code': 'instance.checkout_unknown', 'path': str(candidate), 'cause': cause, 'instance_ids': ids[:50]})
     return list(dependents.values()), common if own_gitdir != common else None, warnings
@@ -195,29 +193,15 @@ def inspect(path, instances):
 def run(payload):
     paths = payload['paths']
     instances = payload.get('instances', [])
-    action = payload['action']
-    if action not in ['inspect', 'remove'] or not isinstance(paths, list) or not paths:
+    if payload['action'] != 'inspect' or not isinstance(paths, list) or not paths or not isinstance(instances, list):
         raise ValueError
-    inspected = [(path, *inspect(path, instances)) for path in paths]
-    dependents = [dependent for _, dependencies, _, _ in inspected for dependent in dependencies]
-    warnings = [warning for _, _, _, warnings in inspected for warning in warnings]
+    inspected = [inspect(path, instances) for path in paths]
+    dependents = [dependent for dependencies, _, _ in inspected for dependent in dependencies]
+    warnings = [warning for _, _, warnings in inspected for warning in warnings]
     diagnostics = {'warnings': warnings[:20]} if warnings else {}
     if len(warnings) > 20:
         diagnostics['other_warnings'] = len(warnings) - 20
-    if action == 'inspect':
-        return {'outcome': 'inspected', 'data': {'dependents': dependents, **diagnostics}}
-    if dependents:
-        return {'outcome': 'refused', 'data': {'error_code': 'instance.worktree_dependents', 'dependents': dependents, **diagnostics}}
-    for raw, _, common, _ in inspected:
-        path = Path(raw)
-        if not present(path):
-            continue
-        if common is not None:
-            # Run from the common repository, not from the worktree being removed. No rm fallback.
-            git(common, 'worktree', 'remove', '--force', '--', str(path))
-        else:
-            shutil.rmtree(path)
-    return {'outcome': 'removed', 'data': diagnostics}
+    return {'outcome': 'inspected', 'data': {'dependents': dependents, **diagnostics}}
 
 
 def main():

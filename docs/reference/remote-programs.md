@@ -15,7 +15,7 @@ One narrow exception reads Git dependencies of a host checkout Instance at destr
 
 The read is read-only, has a ten-second outer timeout and three seconds per Git invocation. It reads only the owner’s Git registry and each recorded checkout’s Git common directory, without traversing checkout contents, and runs as the Node’s existing SSH account with its existing identity and pins. It adds no identity or capability. Containers, reserved sources, missing checkout paths and inactive Nodes skip it.
 
-An unreachable Node or outer SSH timeout refuses with `instance.host_unavailable`; a Git error in the target refuses with `instance.remove_refused`. Other checkout failures use bounded, non-blocking pointer reads inside the same call, without a tree scan or retry. Only confirmed dependents use `instance.worktree_dependents`.
+An unreachable Node or outer SSH timeout refuses with `instance.host_unavailable`; a Git error in the target refuses with `instance.remove_refused`. Other checkout failures use bounded, non-blocking pointer reads inside the same call, without a tree scan or retry. Only confirmed dependents use `instance.worktree_dependents`. The check is admission only; an admitted retry or workflow dispatch never repeats it after removal has started.
 
 The follow-up moves this check and Schedule withdrawal together into Swamp. This fix keeps the synchronous refusal small instead of moving that lifecycle boundary. No other new caller is allowed by this exception.
 

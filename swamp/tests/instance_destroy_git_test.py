@@ -1,4 +1,4 @@
-"""Real Git, real source-removal helper and three unprivileged Ansible phase launches."""
+"""Read-only admission guard with real Git and unprivileged filesystem failures. No playbook launches."""
 import json
 import os
 import shutil
@@ -19,286 +19,210 @@ class DestroyGitTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.owner = self.root / 'owner'
-        self.linked = self.root / 'linked worktree'
+        self.linked = self.root / 'linked'
         self.git(self.root, 'init', '-q', str(self.owner))
-        (self.owner / 'work.txt').write_bytes(b'owner work remains')
+        (self.owner / 'work').write_bytes(b'preserve owner work')
         self.git(self.owner, 'add', '.')
-        self.git(self.owner, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-qm', 'fixture')
+        self.git(self.owner, '-c', 'user.name=Fixture', '-c', 'user.email=f@example.test', 'commit', '-qm', 'fixture')
 
     def git(self, path, *args):
-        return subprocess.run(['git', '-C', str(path), *args], check=True, capture_output=True,
+        return subprocess.run(['git', '-C', str(path), *args], capture_output=True, check=True,
                               env={**os.environ, 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null'}).stdout
 
-    def add_worktree(self):
+    def read(self, instances=None, target=None, **extra):
+        done = subprocess.run([sys.executable, str(PROGRAM)], check=True, capture_output=True,
+            input=json.dumps({'action': 'inspect', 'paths': [str(target or self.owner)], 'instances': instances or [], **extra}).encode())
+        self.assertEqual(done.stderr, b'')
+        return json.loads(done.stdout)
+
+    def snapshot(self):
+        return {str(p.relative_to(self.owner)): p.read_bytes() for p in self.owner.rglob('*') if p.is_file()}
+
+    def warning(self, candidate, identity=69, cause='unreadable'):
+        return {'code': 'instance.checkout_unknown', 'path': str(candidate), 'cause': cause, 'instance_ids': [identity]}
+
+    def test_confirmed_registered_and_moved_dependents_are_found_even_with_force(self):
         self.git(self.owner, 'worktree', 'add', '-q', '--detach', str(self.linked))
+        for moved in [False, True]:
+            path = self.root / 'moved' if moved else self.linked
+            if moved:
+                self.linked.rename(path)
+            before = self.snapshot()
+            result = self.read([{'id': 69, 'path': str(path), 'source_layout': 'checkout'}], force=True)
+            self.assertEqual(result, {'outcome': 'inspected', 'data': {'dependents': [{'path': str(path), 'instance_ids': [69]}]}})
+            self.assertEqual(self.snapshot(), before)
+            self.assertEqual(self.git(path, 'rev-parse', 'HEAD'), self.git(self.owner, 'rev-parse', 'HEAD'))
 
-    def run_helper(self, path, action='remove', instances=None, **extra):
-        result = subprocess.run([sys.executable, str(PROGRAM)],
-                                input=json.dumps({'action': action, 'paths': [str(path)], 'instances': instances or [], **extra}).encode(),
-                                capture_output=True, check=True)
-        self.assertEqual(result.stderr, b'')
-        return json.loads(result.stdout)
+    def test_existing_owner_registration_refuses_without_reading_candidate_git(self):
+        self.git(self.owner, 'worktree', 'add', '-q', '--detach', str(self.linked))
+        (self.linked / '.git').write_text('gitdir: /missing-elsewhere')
+        self.assertEqual(self.read()['data']['dependents'], [{'path': str(self.linked), 'instance_ids': []}])
 
-    def snapshot(self, path, registration=False):
-        return {str(file.relative_to(path)): file.read_bytes() for file in path.rglob('*')
-                if file.is_file() and (registration or not str(file.relative_to(path)).startswith('worktrees/'))}
-
-    def test_owner_refuses_for_both_force_values_and_lying_layout_records(self):
-        self.add_worktree()
-        owner = self.snapshot(self.owner, True)
-        linked = self.snapshot(self.linked, True)
-        instances = [{'id': 69, 'path': str(self.linked), 'source_layout': 'checkout'}]
-        for force in [False, True]:
-            result = self.run_helper(self.owner, instances=instances, force=force, source_layout='checkout')
-            self.assertEqual(result, {'outcome': 'refused', 'data': {'error_code': 'instance.worktree_dependents',
-                             'dependents': [{'path': str(self.linked), 'instance_ids': [69]}]}})
-            self.assertTrue(self.snapshot(self.owner, True) == owner)
-            self.assertTrue(self.snapshot(self.linked, True) == linked)
-
-    def test_dependent_removal_unregisters_only_it_and_preserves_owner_git_and_work(self):
-        self.add_worktree()
-        before = self.snapshot(self.owner / '.git')
-        self.assertEqual(self.run_helper(self.linked, source_layout='checkout')['outcome'], 'removed')
-        self.assertFalse(self.linked.exists())
-        self.assertTrue((self.owner / '.git').is_dir())
-        self.assertTrue(self.snapshot(self.owner / '.git') == before)
-        self.assertEqual((self.owner / 'work.txt').read_bytes(), b'owner work remains')
-        self.assertNotIn(os.fsencode(self.linked), self.git(self.owner, 'worktree', 'list', '--porcelain', '-z'))
-
-    def test_unowned_worktree_blocks_with_its_path(self):
-        self.add_worktree()
-        result = self.run_helper(self.owner)
-        self.assertEqual(result['data']['error_code'], 'instance.worktree_dependents')
-        self.assertEqual(result['data']['dependents'], [{'path': str(self.linked), 'instance_ids': []}])
-        self.assertTrue((self.owner / '.git').is_dir())
-        self.assertTrue((self.linked / '.git').is_file())
-
-    def test_standalone_checkout_and_absent_repeat_are_removed(self):
-        self.assertEqual(self.run_helper(self.owner)['outcome'], 'removed')
-        self.assertFalse(self.owner.exists())
-        self.assertEqual(self.run_helper(self.owner)['outcome'], 'removed')
-        # A separate git directory also makes .git a file, but it is not a linked worktree.
-        external = self.root / 'separate-git'
-        self.git(self.root, 'init', '-q', '--separate-git-dir', str(external), str(self.owner))
-        self.assertEqual(self.run_helper(self.owner)['outcome'], 'removed')
-        self.assertFalse(self.owner.exists())
-        self.assertTrue(external.is_dir())
-
-    def test_unreadable_git_and_failed_unregister_never_fall_back_to_rm(self):
-        self.add_worktree()
-        self.git(self.owner, 'worktree', 'lock', str(self.linked))
-        before = self.snapshot(self.linked, True)
-        self.assertEqual(self.run_helper(self.linked)['data']['error_code'], 'instance.remove_refused')
-        self.assertTrue(self.snapshot(self.linked, True) == before)
-        (self.linked / '.git').write_text('gitdir: /does-not-exist\n')
-        self.assertEqual(self.run_helper(self.linked)['data']['error_code'], 'instance.remove_refused')
-        self.assertTrue(self.linked.exists())
-        self.assertTrue((self.owner / '.git').is_dir())
-
-    def test_moved_worktree_is_found_from_recorded_path_at_admission_and_removal(self):
-        self.add_worktree()
-        moved = self.root / 'moved'
-        self.linked.rename(moved)
-        inventory = [{'id': 69, 'path': str(moved), 'source_layout': 'checkout'}]
-        before = self.snapshot(self.owner, True)
-        for action in ['inspect', 'remove']:
-            result = self.run_helper(self.owner, action, inventory, force=True)
-            self.assertEqual(result['outcome'], 'inspected' if action == 'inspect' else 'refused')
-            self.assertEqual(result['data']['dependents'], [{'path': str(moved), 'instance_ids': [69]}])
-            self.assertTrue(self.snapshot(self.owner, True) == before)
-            self.assertEqual(self.git(moved, 'rev-parse', 'HEAD'), self.git(self.owner, 'rev-parse', 'HEAD'))
-
-    def test_deleted_prunable_registration_is_nonblocking(self):
-        self.add_worktree()
+    def test_prunable_gone_registration_and_independent_checkouts_do_not_block(self):
+        self.git(self.owner, 'worktree', 'add', '-q', '--detach', str(self.linked))
         shutil.rmtree(self.linked)
-        self.assertEqual(self.run_helper(self.owner, 'inspect')['data']['dependents'], [])
-        self.assertEqual(self.run_helper(self.owner)['outcome'], 'removed')
+        other = self.root / 'other'
+        self.git(self.root, 'clone', '-q', str(self.owner), str(other))
+        self.assertEqual(self.read([{'id': 69, 'path': str(other)}]), {'outcome': 'inspected', 'data': {'dependents': []}})
 
-    def test_checkout_contents_are_never_walked_during_inspection(self):
-        dependency = self.owner / 'node_modules'
-        dependency.mkdir()
-        (dependency / 'irrelevant').write_bytes(b'fixture')
-        dependency.chmod(0)
+    def test_broken_gitdir_and_commondir_into_target_are_confirmed(self):
+        other = self.root / 'other'
+        other.mkdir()
+        marker = other / '.git'
+        marker.write_text('gitdir: ../owner/.git/worktrees/missing\n')
+        self.assertEqual(self.read([{'id': 69, 'path': str(other)}])['data']['dependents'], [{'path': str(other), 'instance_ids': [69]}])
+        external = self.root / 'external'
+        external.mkdir()
+        marker.write_text('gitdir: ../external\n')
+        (external / 'commondir').write_text('../owner/.git\n')
+        self.assertEqual(self.read([{'id': 69, 'path': str(other)}])['data']['dependents'], [{'path': str(other), 'instance_ids': [69]}])
+
+    def test_unreadable_candidate_shapes_are_named_unknown_and_never_veto(self):
+        # Each case uses real Git and real filesystem boundaries, including non-blocking FIFO reads.
+        for shape in ['gitdir-mode', 'marker-mode', 'fifo', 'loop', 'commondir', 'alternates', 'oversized', 'not-directory', 'missing', 'broken-elsewhere']:
+            with self.subTest(shape=shape):
+                other = self.root / shape
+                self.git(self.root, 'clone', '-q', str(self.owner), str(other))
+                marker = other / '.git'
+                restore = None
+                if shape == 'gitdir-mode':
+                    marker.chmod(0)
+                    restore = marker
+                elif shape in ['marker-mode', 'fifo', 'loop', 'oversized', 'not-directory', 'broken-elsewhere']:
+                    shutil.rmtree(marker)
+                    if shape == 'marker-mode':
+                        marker.write_text('gitdir: /missing\n')
+                        marker.chmod(0)
+                        restore = marker
+                    elif shape == 'fifo':
+                        os.mkfifo(marker)
+                    elif shape == 'loop':
+                        marker.symlink_to('.git')
+                    elif shape == 'oversized':
+                        marker.write_bytes(b'gitdir: ' + b'x' * 4097)
+                    elif shape == 'not-directory':
+                        (other / 'regular').write_text('file')
+                        marker.write_text('gitdir: regular/child\n')
+                    else:
+                        marker.write_text('gitdir: /missing-elsewhere\n')
+                elif shape in ['commondir', 'alternates']:
+                    blocked = marker / ('commondir' if shape == 'commondir' else 'objects/info/alternates')
+                    blocked.write_text('/missing\n')
+                    blocked.chmod(0)
+                    restore = blocked
+                elif shape == 'missing':
+                    shutil.rmtree(other)
+                before = self.snapshot()
+                try:
+                    result = self.read([{'id': 69, 'path': str(other)}])
+                    self.assertEqual(result, {'outcome': 'inspected', 'data': {'dependents': [], 'warnings': [self.warning(other)]}})
+                    self.assertEqual(self.snapshot(), before)
+                finally:
+                    if restore:
+                        restore.chmod(0o700 if restore.is_dir() else 0o644)
+
+    def test_unreadable_parent_in_mixed_inventory_warns_including_the_moved_worktree_limit(self):
+        private = self.root / 'private'
+        private.mkdir()
+        self.git(self.owner, 'worktree', 'add', '-q', '--detach', str(self.linked))
+        moved = private / 'moved'
+        self.linked.rename(moved)
+        container = private / 'container/rootfs/srv/workspace'
+        container.mkdir(parents=True)
+        private.chmod(0)
         try:
-            self.assertEqual(self.run_helper(self.owner, 'inspect'),
-                             {'outcome': 'inspected', 'data': {'dependents': []}})
-            self.add_worktree()
-            self.assertEqual(self.run_helper(self.owner)['data']['error_code'], 'instance.worktree_dependents')
+            result = self.read([{'id': 69, 'path': str(moved)}, {'id': 70, 'path': str(container)}])
+            self.assertEqual(result, {'outcome': 'inspected', 'data': {'dependents': [], 'warnings': [self.warning(moved), self.warning(container, 70)]}})
+            self.assertTrue((self.owner / '.git').is_dir())
         finally:
-            dependency.chmod(0o700)
+            private.chmod(0o700)
+        self.git(moved, 'status', '--porcelain')
 
-    def test_broken_recorded_pointer_into_target_is_a_named_dependent(self):
-        other = self.root / 'other'
-        self.git(self.root, 'clone', '-q', str(self.owner), str(other))
-        shutil.rmtree(other / '.git')
-        (other / '.git').write_text('gitdir: ../owner/.git/worktrees/missing\n')
-        inventory = [{'id': 69, 'path': str(other)}]
-        original = self.snapshot(self.owner, True)
-        for action in ['inspect', 'remove']:
-            result = self.run_helper(self.owner, action, inventory)
-            self.assertEqual(result['data']['dependents'], [{'path': str(other), 'instance_ids': [69]}])
-            if action == 'remove':
-                self.assertEqual(result['data']['error_code'], 'instance.worktree_dependents')
-            self.assertTrue(self.snapshot(self.owner, True) == original)
-
-    def test_broken_recorded_pointer_elsewhere_does_not_block_unrelated_removal(self):
-        other = self.root / 'other'
-        self.git(self.root, 'clone', '-q', str(self.owner), str(other))
-        shutil.rmtree(other / '.git')
-        (other / '.git').write_text('gitdir: ../gone/.git/worktrees/missing\n')
-        inventory = [{'id': 69, 'path': str(other)}]
-        self.assertEqual(self.run_helper(self.owner, 'inspect', inventory), {'outcome': 'inspected', 'data': {'dependents': []}})
-        self.assertTrue((self.owner / '.git').is_dir())
-        self.assertEqual(self.run_helper(self.owner, 'remove', inventory), {'outcome': 'removed', 'data': {}})
-        self.assertFalse(self.owner.exists())
-
-    def test_missing_recorded_folder_warns_at_inspection_and_removal(self):
-        path = str(self.root / 'missing')
-        inventory = [{'id': 69, 'path': path}]
-        warnings = [{'code': 'instance.checkout_unknown', 'path': path, 'cause': 'unreadable', 'instance_ids': [69]}]
-        self.assertEqual(self.run_helper(self.owner, 'inspect', inventory),
-                         {'outcome': 'inspected', 'data': {'dependents': [], 'warnings': warnings}})
-        self.assertTrue((self.owner / '.git').is_dir())
-        self.assertEqual(self.run_helper(self.owner, 'remove', inventory), {'outcome': 'removed', 'data': {'warnings': warnings}})
-
-    def test_unrelated_fifo_config_times_out_then_own_store_proves_it_unrelated(self):
+    def test_candidate_timeouts_share_one_allowance_and_warn(self):
         inventory = []
         for index in range(4):
-            other = self.root / f'other-{index}'
+            other = self.root / f'fifo-{index}'
             self.git(self.root, 'clone', '-q', str(self.owner), str(other))
             (other / '.git/config').unlink()
             os.mkfifo(other / '.git/config')
-            inventory.append({'id': 69 + index, 'path': str(other)})
-        for action in ['inspect', 'remove']:
-            start = time.monotonic()
-            result = self.run_helper(self.owner, action, inventory)
-            self.assertGreater(time.monotonic() - start, 2.8)
-            self.assertLess(time.monotonic() - start, 7)
-            self.assertEqual(result, {'outcome': 'inspected', 'data': {'dependents': []}} if action == 'inspect'
-                             else {'outcome': 'removed', 'data': {}})
-            if action == 'inspect':
-                self.assertTrue((self.owner / '.git').is_dir())
+            inventory.append({'id': index + 69, 'path': str(other)})
+        started = time.monotonic()
+        result = self.read(inventory)
+        self.assertLess(time.monotonic() - started, 6)
+        self.assertEqual(result, {'outcome': 'inspected', 'data': {'dependents': [], 'warnings': [self.warning(r['path'], r['id'], 'timed_out') for r in inventory]}})
 
-    def test_unreadable_moved_pointer_can_hide_a_dependency_and_refuses_with_identity(self):
-        self.add_worktree()
-        moved = self.root / 'moved'
-        self.linked.rename(moved)
-        inventory = [{'id': 69, 'path': str(moved)}]
-        marker = moved / '.git'
-        marker.chmod(0)
-        original = self.snapshot(self.owner, True)
-        try:
-            for action in ['inspect', 'remove']:
-                result = self.run_helper(self.owner, action, inventory)
-                self.assertEqual(result, {'outcome': 'refused', 'data': {'error_code': 'instance.remove_refused',
-                    'path': str(moved), 'cause': 'unreadable', 'instance_ids': [69]}})
-                self.assertTrue(self.snapshot(self.owner, True) == original)
-        finally:
-            marker.chmod(0o644)
-        self.git(moved, 'status', '--porcelain')
+    def test_malformed_rows_cannot_poison_other_candidates_and_diagnostics_are_bounded(self):
+        rows = [{'id': 69, 'path': value} for value in ['', 'relative/path', '/' + 'x' * 5000]]
+        rows += [{'id': 70}, None, {'path': 123}, {'id': 'untyped', 'path': '/missing'}]
+        result = self.read(rows)
+        self.assertEqual(result['outcome'], 'inspected')
+        self.assertEqual(result['data']['dependents'], [])
+        self.assertEqual(len(result['data']['warnings']), len(rows))
+        for item in result['data']['warnings']:
+            self.assertLessEqual(len(item['path']), 4096)
+            self.assertEqual(item['cause'], 'unreadable')
+        self.assertEqual(result['data']['warnings'][1], self.warning('relative/path'))
+        many = self.read([{'id': 69, 'path': ''}] * 25)
+        self.assertEqual(len(many['data']['warnings']), 20)
+        self.assertEqual(many['data']['other_warnings'], 5)
 
-    def test_own_repository_with_alternates_into_target_and_symlinked_paths_refuses(self):
+    def test_target_directory_marker_resolve_and_git_failures_keep_path_and_cause(self):
+        cases = ['directory', 'parent', 'marker', 'symlink-loop', 'fifo-config']
+        for shape in cases:
+            with self.subTest(shape=shape):
+                target = self.root / shape
+                self.git(self.root, 'clone', '-q', str(self.owner), str(target))
+                restore = None
+                if shape in ['directory', 'parent']:
+                    if shape == 'parent':
+                        child = target / 'child'
+                        target.rename(self.root / 'saved')
+                        target.mkdir()
+                        (self.root / 'saved').rename(child)
+                        restore = target
+                        target = child
+                    else:
+                        restore = target
+                    restore.chmod(0)
+                elif shape == 'marker':
+                    (target / '.git').chmod(0)
+                    restore = target / '.git'
+                elif shape == 'symlink-loop':
+                    shutil.rmtree(target)
+                    target.symlink_to(target.name)
+                else:
+                    (target / '.git/config').unlink()
+                    os.mkfifo(target / '.git/config')
+                try:
+                    self.assertEqual(self.read(target=target), {'outcome': 'refused', 'data': {'error_code': 'instance.remove_refused', 'path': str(target),
+                        'cause': 'timed_out' if shape == 'fifo-config' else 'unreadable', 'instance_ids': []}})
+                finally:
+                    if restore:
+                        restore.chmod(0o700)
+
+    def test_alternates_dependency_and_symlinked_candidate_are_confirmed(self):
         other = self.root / 'other'
         alias = self.root / 'alias'
         self.git(self.root, 'clone', '-q', '--shared', str(self.owner), str(other))
         alias.symlink_to(other, target_is_directory=True)
-        for action in ['inspect', 'remove']:
-            result = self.run_helper(self.owner, action, [{'id': 69, 'path': str(alias)}])
-            self.assertEqual(result['data']['dependents'], [{'path': str(alias), 'instance_ids': [69]}])
-            self.git(other, 'status', '--porcelain')
-            self.assertTrue((self.owner / '.git').is_dir())
+        self.assertEqual(self.read([{'id': 69, 'path': str(alias)}])['data']['dependents'], [{'path': str(alias), 'instance_ids': [69]}])
 
-    def test_owner_registry_refuses_existing_broken_dependent_without_reading_its_git(self):
-        self.add_worktree()
-        (self.linked / '.git').write_text('gitdir: ../missing-elsewhere\n')
-        for action in ['inspect', 'remove']:
-            result = self.run_helper(self.owner, action)
-            self.assertEqual(result['data']['dependents'], [{'path': str(self.linked), 'instance_ids': []}])
-            self.assertTrue((self.owner / '.git').is_dir())
-
-    def test_commondir_relative_pointer_into_target_survives_a_git_error(self):
-        self.add_worktree()
-        marker = self.linked / '.git'
-        directory = Path(marker.read_text().removeprefix('gitdir: ').strip())
-        external = self.root / 'external-gitdir'
-        directory.rename(external)
-        marker.write_text('gitdir: ' + str(external) + '\n')
-        (external / 'commondir').write_text(os.path.relpath(self.owner / '.git', external) + '\n')
-        (external / 'HEAD').write_text('invalid-head')
-        for action in ['inspect', 'remove']:
-            result = self.run_helper(self.owner, action, [{'id': 69, 'path': str(self.linked)}])
-            self.assertEqual(result['data']['dependents'], [{'path': str(self.linked), 'instance_ids': [69]}])
-            self.assertTrue((self.owner / '.git').is_dir())
-
-    def test_non_git_pointer_reader_rejects_fifo_and_oversized_regular_files_without_blocking(self):
-        import runpy
-        read = runpy.run_path(str(PROGRAM))['pointer_text']
-        fifo = self.root / 'pointer-fifo'
-        os.mkfifo(fifo)
-        started = time.monotonic()
-        with self.assertRaises(ValueError):
-            read(fifo)
-        self.assertLess(time.monotonic() - started, 0.5)
-        large = self.root / 'large-pointer'
-        large.write_bytes(b'x' * 4097)
-        with self.assertRaises(ValueError):
-            read(large)
-
-    def test_target_own_git_timeout_keeps_refusal_with_its_path_and_cause(self):
-        config = self.owner / '.git/config'
-        config.unlink()
-        os.mkfifo(config)
-        for action in ['inspect', 'remove']:
-            result = self.run_helper(self.owner, action)
-            self.assertEqual(result, {'outcome': 'refused', 'data': {'error_code': 'instance.remove_refused',
-                'path': str(self.owner), 'cause': 'timed_out', 'instance_ids': []}})
-            self.assertTrue((self.owner / '.git').is_dir())
-
-    def test_inaccessible_container_style_inventory_warns_without_blocking_host_removal(self):
-        private = self.root / 'container-private'
-        workspace = private / 'rootfs/srv/workspace'
-        workspace.mkdir(parents=True)
-        private.chmod(0)
+    def test_inspect_never_walks_checkout_contents_or_accepts_a_remove_action(self):
+        folder = self.owner / 'node_modules'
+        folder.mkdir()
+        folder.chmod(0)
         try:
-            inventory = [{'id': 2103, 'path': str(self.owner)}, {'id': 2078, 'path': str(workspace)}]
-            warnings = [{'code': 'instance.checkout_unknown', 'path': str(workspace), 'cause': 'unreadable', 'instance_ids': [2078]}]
-            self.assertEqual(self.run_helper(self.owner, 'inspect', inventory),
-                {'outcome': 'inspected', 'data': {'dependents': [], 'warnings': warnings}})
+            self.assertEqual(self.read(), {'outcome': 'inspected', 'data': {'dependents': []}})
+            self.assertEqual(self.read(action='remove')['outcome'], 'refused')
             self.assertTrue((self.owner / '.git').is_dir())
-            self.assertEqual(self.run_helper(self.owner, 'remove', inventory), {'outcome': 'removed', 'data': {'warnings': warnings}})
-            self.assertFalse(self.owner.exists())
         finally:
-            private.chmod(0o700)
+            folder.chmod(0o700)
 
-    def test_real_ansible_phase_refuses_owner_removes_dependent_then_owner(self):
-        import yaml
-        self.add_worktree()
-        shutil.copytree(ROOT / 'swamp/ansible/instance', self.root / 'instance')
-        # Move without git repair so the real removal phase must use the admitted inventory.
-        moved = self.root / 'moved'
-        self.linked.rename(moved)
-        self.linked = moved
-        wrapper = yaml.safe_load((ROOT / 'swamp/ansible/instance-checkout-destroy.yml').read_text())[1]
-        wrapper.update({'hosts': 'fixture', 'connection': 'local'})
-        wrapper['vars'] = {'ansible_python_interpreter': sys.executable, 'run': str(self.root), 'intent': {'source_paths': [str(self.owner)], 'checkout_instances': [{'id': 69, 'path': str(self.linked)}]}}
-        env = {**os.environ, 'ANSIBLE_STDOUT_CALLBACK': 'default', 'ANSIBLE_COLLECTIONS_PATH': str(self.root / 'collections')}
-        for target, refused in [(self.owner, True), (self.linked, False), (self.owner, False)]:
-            wrapper['vars']['intent']['source_paths'] = [str(target)]
-            play = self.root / 'play.yml'
-            play.write_text(yaml.safe_dump([wrapper], sort_keys=False))
-            result = subprocess.run(['ansible-playbook', '-i', 'fixture,', '--tags', 'remove', str(play)],
-                                    capture_output=True, env=env)
-            self.assertEqual(result.returncode == 0, not refused, result.stdout.decode() + result.stderr.decode())
-            receipt = json.loads((self.root / 'source-result.json').read_text())
-            self.assertEqual(receipt['outcome'], 'refused' if refused else 'removed')
-            if refused:
-                self.assertEqual(receipt['data']['error_code'], 'instance.worktree_dependents')
-                self.assertTrue((self.owner / '.git').is_dir())
-                self.assertTrue((self.linked / '.git').is_file())
-                # Git refuses unregistering a moved tree until its registration is repaired.
-                self.git(self.owner, 'worktree', 'repair', str(self.linked))
-            else:
-                self.assertFalse(target.exists())
+    def test_workflow_and_source_removal_are_identical_to_the_pre_reland_main(self):
+        file = 'swamp/workflows/workflow-operation-instance-destroy.yaml'
+        import hashlib
+        self.assertEqual(hashlib.sha256((ROOT / file).read_bytes()).hexdigest(), '2d309e9538e24546b4922fff60785a16358f28f2e7c3407ebd9f99461fb645ea')
+        self.assertFalse((ROOT / 'swamp/ansible/instance-checkout-destroy.yml').exists())
 
 
 if __name__ == '__main__':
