@@ -66,7 +66,13 @@ Route destroy and withdrawal follow the chart [`route/destroy.mmd`](/cli/route).
 
 The end check uses the `check` of the same official behaviors and a native assertion that each result is compliant: no site, scope or rule of the Route is left. A successful check command with a `non_compliant` result fails the removal.
 
-With `--offline`, the run first tries each Node once. A Node that does not answer is skipped by every later step and keeps residue for `node:converge`; a VPN Node is never skipped. On success the Gateway deletes the captured Route rows; a withdrawal keeps them. A failure before site withdrawal leaves the Route unchanged. Once withdrawal starts, a failed removal records the Route as `retiring`, with its failed step and error. Confirmed site withdrawal clears its publication flag; an incomplete child keeps the previous flag because some Nodes may still serve it. Completed work stays for the next removal attempt. DNS remains until every earlier step passes, so a refusal before publication leaves the site served and resolvable. The Operation records the failure:
+With `--offline`, the run first tries each Node once. A Node that does not answer is skipped by every later step and keeps residue for `node:converge`; a VPN Node is never skipped. On success the Gateway deletes the captured Route rows; a withdrawal keeps them.
+
+A failure before site withdrawal leaves the Route unchanged. Once withdrawal starts, a failed removal records the Route as `retiring`, with its failed step and error. Confirmed site withdrawal clears its publication flag; an incomplete child keeps the previous flag because some Nodes may still serve it.
+
+Completed work stays for the next removal attempt. DNS remains until every earlier step passes, so a refusal before publication leaves the site served and resolvable.
+
+The Operation records the failure:
 
 | Error code | Step |
 | --- | --- |

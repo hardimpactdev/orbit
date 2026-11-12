@@ -12,6 +12,7 @@ use App\Domain\Operations\NativeFailedStep;
 use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
+use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
@@ -21,7 +22,6 @@ final readonly class NativeRouteRemovalProjection implements DirectOperationProj
     /** Each chart step's error code. A step fails with its own exit code; its stderr carries the reason (rule 14). */
     public const array StepCodes = [
         'Remove private DNS' => 'private_dns.publication_failed',
-        'Wait the DNS grace' => 'route.dns_grace_failed',
         'Withdraw site, remove cert' => 'route.withdraw_failed',
         'Converge PHP-FPM pools' => 'route.pool_converge_failed',
         'Remove unused LAN rules' => 'route.lan_firewall_failed',
@@ -75,8 +75,21 @@ final readonly class NativeRouteRemovalProjection implements DirectOperationProj
         if ($wasTerminal || ! $operation->status->terminal()) {
             return $operation;
         }
-        // A failed removal leaves the Route as it was: a failed Route renders no site, which would withdraw sites the
-        // run may not have reached. The Operation carries the failed step and its code for the rerun.
+        if ($operation->status === OperationStatus::Failed) {
+            $withdrawal = array_filter($steps, static fn (string $name): bool => str_starts_with($name, 'Withdraw site, remove cert-'), ARRAY_FILTER_USE_KEY);
+            $attempted = array_any($withdrawal, static fn (mixed $row): bool => is_array($row) && ($row['status'] ?? 'skipped') !== 'skipped');
+            $withdrawn = $withdrawal !== [] && count($withdrawal) === count(ValidatedData::integerList($plan['retire_nodes']))
+                && array_all($withdrawal, static fn (mixed $row): bool => is_array($row) && ($row['status'] ?? null) === 'succeeded');
+            if ($attempted) {
+                Route::query()->whereKey($operation->target_id)->update([
+                    'status' => RouteStatus::Retiring,
+                    ...($withdrawn ? ['sites_published' => false] : []),
+                    'failed_step' => $step ?? 'native-removal', 'error_code' => $operation->error_code,
+                ]);
+            }
+        }
+        // Confirmed full removal deletes the record. Partial failure records retiring without
+        // pretending that a failed child finished every Node effect.
         if ($operation->status === OperationStatus::Succeeded) {
             $snapshot = ValidatedData::object($operation->input['route_removal']);
             $rows = array_map(static fn (array $row): array => ['route_id' => ValidatedData::integer($row['route_id']), 'domain' => ValidatedData::string($row['domain']), 'replacement_of' => $row['replacement_of'] === null ? null : ValidatedData::integer($row['replacement_of'])], RouteExecutionProof::objects($snapshot['routes']));

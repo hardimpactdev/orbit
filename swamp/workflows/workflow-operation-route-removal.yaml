@@ -1,6 +1,6 @@
 id: 855a0c69-2eab-4eea-8488-0b63b2312cb1
 name: operation-route-removal
-description: "Route destroy and withdrawal in the chart's steps; Node work through official cfgmgmt and SSH behaviors (rule 22)."
+description: "Withdraw sites and check cleanup before removing private DNS."
 vaults: [orbit-control-inputs]
 queueTimeout: 30
 inputs:
@@ -25,7 +25,6 @@ jobs:
 - name: update
   labels: {role: swamp}
   steps:
-    # --offline: each Node is tried once; one that does not answer is skipped by every later step.
   - name: 'Check each Node answers'
     labels: {role: swamp}
     dependsOn: []
@@ -51,39 +50,10 @@ jobs:
         hosts: name:target
         argv: ['/usr/bin/true']
         timeoutSec: 20
-    # Only outside the TLD: records, catalog, then dnsmasq; the name stops resolving first (route-create-dns).
-  - name: 'Remove private DNS'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'Check each Node answers', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed" && !k.startsWith("Check each Node answers")) }}'
-    writes: true
-    forEach: {item: vpn, in: '${{ inputs.intent.dns }}'}
-    task:
-      type: workflow
-      workflowIdOrName: route-create-dns
-      inputs:
-        intent: '${{ inputs.intent }}'
-        node_id: '${{ self.vpn.node_id }}'
-    # Resolvers that honor the TTL stop asking for the name before its site leaves (route-dns-grace).
-  - name: 'Wait the DNS grace'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'Check each Node answers', condition: {type: always}}
-    - {step: 'Remove private DNS', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed" && !k.startsWith("Check each Node answers")) }}'
-    forEach: {item: wait, in: '${{ inputs.intent.grace }}'}
-    task:
-      type: workflow
-      workflowIdOrName: route-dns-grace
-      inputs: {}
-    # Each Node's whole Caddyfile without the Route, then the Route's certificate scopes (route-target-retire).
   - name: 'Withdraw site, remove cert'
     labels: {role: swamp}
     dependsOn:
     - {step: 'Check each Node answers', condition: {type: always}}
-    - {step: 'Remove private DNS', condition: {type: always}}
-    - {step: 'Wait the DNS grace', condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed" && !k.startsWith("Check each Node answers")) || (string(self.node.node_id) in inputs.intent.answer_index && steps["Check each Node answers-" + string(inputs.intent.answer_index[string(self.node.node_id)])].status != "succeeded") }}'
     writes: true
     forEach: {item: node, in: '${{ inputs.intent.retire_nodes.map(n, {"node_id": n}) }}'}
@@ -98,13 +68,10 @@ jobs:
         node_id: '${{ self.node.node_id }}'
         signed: []
         execution_secrets: '${{ inputs.execution_secrets }}'
-    # Development targets: the Node's whole shared pool files, php-fpm -t, then a reload (route-create-site).
   - name: 'Converge PHP-FPM pools'
     labels: {role: swamp}
     dependsOn:
     - {step: 'Check each Node answers', condition: {type: always}}
-    - {step: 'Remove private DNS', condition: {type: always}}
-    - {step: 'Wait the DNS grace', condition: {type: always}}
     - {step: 'Withdraw site, remove cert', condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed" && !k.startsWith("Check each Node answers")) || (string(self.node.node_id) in inputs.intent.answer_index && steps["Check each Node answers-" + string(inputs.intent.answer_index[string(self.node.node_id)])].status != "succeeded") }}'
     writes: true
@@ -117,13 +84,10 @@ jobs:
         node_id: '${{ self.node.node_id }}'
         signed: []
         execution_secrets: '${{ inputs.execution_secrets }}'
-    # The LAN tuples and public ports that no published Route still needs (route-remove-firewall).
   - name: 'Remove unused LAN rules'
     labels: {role: swamp}
     dependsOn:
     - {step: 'Check each Node answers', condition: {type: always}}
-    - {step: 'Remove private DNS', condition: {type: always}}
-    - {step: 'Wait the DNS grace', condition: {type: always}}
     - {step: 'Withdraw site, remove cert', condition: {type: always}}
     - {step: 'Converge PHP-FPM pools', condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed" && !k.startsWith("Check each Node answers")) || (string(self.node.node_id) in inputs.intent.answer_index && steps["Check each Node answers-" + string(inputs.intent.answer_index[string(self.node.node_id)])].status != "succeeded") }}'
@@ -135,13 +99,10 @@ jobs:
       inputs:
         intent: '${{ inputs.intent }}'
         node_id: '${{ self.node.node_id }}'
-    # The cfgmgmt check of each Node's file, certificate and firewall state (route-remove-check).
   - name: 'Check nothing is left'
     labels: {role: swamp}
     dependsOn:
     - {step: 'Check each Node answers', condition: {type: always}}
-    - {step: 'Remove private DNS', condition: {type: always}}
-    - {step: 'Wait the DNS grace', condition: {type: always}}
     - {step: 'Withdraw site, remove cert', condition: {type: always}}
     - {step: 'Converge PHP-FPM pools', condition: {type: always}}
     - {step: 'Remove unused LAN rules', condition: {type: always}}
@@ -153,3 +114,21 @@ jobs:
       inputs:
         intent: '${{ inputs.intent }}'
         node_id: '${{ self.node.node_id }}'
+    # Last: do not strand a still-served Route without DNS after an earlier failure.
+  - name: 'Remove private DNS'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Check each Node answers', condition: {type: always}}
+    - {step: 'Withdraw site, remove cert', condition: {type: always}}
+    - {step: 'Converge PHP-FPM pools', condition: {type: always}}
+    - {step: 'Remove unused LAN rules', condition: {type: always}}
+    - {step: 'Check nothing is left', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed" && !k.startsWith("Check each Node answers")) }}'
+    writes: true
+    forEach: {item: vpn, in: '${{ inputs.intent.dns }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-create-dns
+      inputs:
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.vpn.node_id }}'

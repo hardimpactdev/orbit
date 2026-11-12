@@ -171,7 +171,6 @@ final readonly class AdmitRouteOperationAction
             if (! $route->isUnactivatedReplacement()) {
                 if (! $route->hasWebRoot() && $route->targets->isNotEmpty()) {
                     $this->associations->assertTargetsDetachable($route);
-                    $this->reconciliation->assertRouteMutable($route);
                 }
                 $this->removal->assertStandaloneRemovalAllowed($route, false);
             }

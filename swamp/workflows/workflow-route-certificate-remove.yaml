@@ -14,7 +14,7 @@ inputs:
     intent:
       type: object
       properties:
-        control_node_id: {type: integer, const: 209}
+        control_node_id: {type: integer, minimum: 1}
         connection: {type: object}
         host_keys: {type: array, items: {type: string}, minItems: 1}
         leaf: {type: object}
