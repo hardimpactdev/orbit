@@ -113,6 +113,8 @@ Classify a no-start failure at the submission boundary, including execution-copy
 
 Fixture calibration binds to source and registered case names, including loop-generated cases. Include startup in each slice cost, distinguish a completed case from a censored unit, and report whole-file capacity failures instead of packing new cases into old slices.
 
+Audit fixture headroom across several hosted runs, using exact case names and source hashes. A passing case near its ceiling still needs splitting or explicit after-merge coverage; a larger slice count cannot split one state transition across consecutive converges.
+
 A release gate that excludes after-merge fixtures must verify the exact SHA, main event and CI workflow through Actions run and job records. The workflow may finish red. Give skipped PR and main gates distinct names when a reader counts every check with the required name.
 
 For CI or CLI release workflow changes, run `apps/cli/tests/Feature/CliReleaseContractTest.php` with the CLI’s Pest runner as well as the CI tooling tests. The CLI suite owns release-contract assertions that workflow lint and Python tests do not exercise.

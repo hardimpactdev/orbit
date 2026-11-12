@@ -91,6 +91,21 @@ class PlanningTest(unittest.TestCase):
             self.assertCountEqual(restored, current[file])
         self.assertEqual(len(result['restored_pr_exclusions']), 2)
 
+    def test_host_update_headroom_deferral_preserves_every_transition_in_full_set(self):
+        file = 'swamp/tests/ansible_instance_host_updates_test.ts'
+        budget, fixtures, defaults = self.api.configuration()
+        for path in (file, 'swamp/ansible/tasks/instance-folder.yml'):
+            pr = self.api.plan([path], budget, fixtures, defaults)
+            self.assertIn(file, [unit.split('#')[0] for unit in pr['deferred']])
+            self.assertFalse(any(unit.split('#')[0] == file
+                                 for shard in pr['shards'] for unit in shard['units']))
+        cases = self.api.collect(file)['cases']
+        self.assertEqual(len(cases), 4)
+        result = self.plan([fixtures[file]], {file: cases})
+        self.assertEqual(result['after_merge_files'], [file])
+        self.assertCountEqual([case for unit in result['units'] for case in unit['cases']], cases)
+        self.assertFalse(result['fixtures'][file].get('after_merge'))
+
     def test_operator_key_case_is_restored_to_bounded_pr_selection(self):
         file = 'swamp/tests/ansible_task_vm_fleet_build_test.ts'
         case = 'a from-stock refresh with no Gateway release metadata reaches all nested roles after private DNS lets the websocket dependency listen'

@@ -171,6 +171,8 @@ The native migration fixture also forces advisory mail failure and malformed rec
 
 The task VM host egress Python file is also after-merge-only: it repeatedly reached the 180-second PR ceiling, including run 43102509039. Python files run as whole units; the full-set receiver retains every case until measured case splitting makes PR admission possible. These explicit deferrals do not fail Required checks.
 
+The Instance host updates file runs after merge only. Across 24 PR observations per case, the runtime update reached 166.761 seconds and the Squid rollback reached 152.639 seconds, leaving about 7% and 15% of the 180-second ceiling. Both cases already run alone and require an initial converge followed by a changed-input converge. All four cases remain in Main full set; restoring PR coverage requires a measured faster fixture that preserves those transitions.
+
 Each fixture shard has a four-minute job limit. The runner stops the shard at 190 seconds, names running units as `OVER BUDGET` and queued units as `NOT RUN`, and fails the shard.
 
 Each unit has a 180-second ceiling; a unit that exceeds it fails with its name, time and an instruction to raise its table cost for another slice or make it faster. Units that cannot be sliced and cost more than 150 seconds run after merge only, with a reason in the table.
