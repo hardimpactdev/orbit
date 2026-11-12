@@ -200,6 +200,8 @@ Automatic Gateway release commands use `gateway:auto-release:{status,enable,disa
 
 Instance responses expose nullable `retained_git_path` and `retained_git_at` after [checkout migration](/cli/instance/migrate#retained-git-data). They identify retained Node-side Git data and the time it was retained.
 
+Conn Instance create accepts an optional closed `branch` object: `{"mode":"new","from":"release"}` or `{"mode":"existing","name":"feature/login"}`. See [Conn](/reference/conn#threads-in-an-orbit-project) for admission refusals, branch holding, frozen retries and seed dependencies. Omit it to keep the installed-client behavior.
+
 ## Instance attached targets
 
 Instance records, including `GET /api/v1/instances/{instance}` and the MCP `instance-show` result, include `attached_targets`. It is an empty array when the Instance has no attached connections. The list reads Orbit's records without contacting a Node and uses the same attachments as [instance:migrate](/cli/instance/migrate), ordered by `DB` prefix first and then attachment ID.

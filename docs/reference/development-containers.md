@@ -533,6 +533,8 @@ After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the def
 
 There are no development setup steps. The default Instance has them done already, so a clone needs none. A clone prepares its container in five direct command phases: container, workspace and Processes, agent, T3, and sessions. Each native step reports its timestamps through the existing Operation progress.
 
+Conn supports an [explicit branch selection](/reference/conn#threads-in-an-orbit-project) for a clone. It prepares the Node mirror from the admitted remote source commit and checks out its bundle in the existing workspace phase. Dependencies and build still come from the default's seed; checkout runs no Project setup or deploy command again.
+
 A separate job publishes the Route, certificate and DNS, so Route depth cannot delay the container job. The Route checks the TLS handshake, without waiting for the application to start. The create receipt records T3, session and Route readiness times. Workspace access and environment files stay in the container preparation.
 
 #### What is built

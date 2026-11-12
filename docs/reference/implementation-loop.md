@@ -707,3 +707,5 @@ Native Vault CLI fixtures serialize each read and write of their shared backend 
 The development mail-line fixture runs unprivileged. It executes the shipped byte rule against temporary files through a fake Incus boundary. Its inventory and named case costs change together, using `bin/ci-units collect --file` after each fixture edit.
 
 The migration mail fixture also checks the phase order: copy first, bounded mail attempt second, application starts last. A failed attempt retains the copied file and produces a warning receipt.
+
+Clone branch fixtures use unprivileged local Git repositories and run without an Ansible playbook. Their registered case names and conservative costs change together in `tools/tests/ci-fixture-cases.json` and `.github/ci/checks.toml`; collect names with `bin/ci-units collect --file swamp/tests/instance_clone_test.py`.
