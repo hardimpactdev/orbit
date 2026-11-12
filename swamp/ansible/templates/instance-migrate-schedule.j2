@@ -11,6 +11,9 @@
   {%- endfor -%}
   {{- output.text -}}
 {%- endmacro -%}
+{%- macro directive_path(value) -%}
+{{- value | replace('\\', '\\x5c') | replace(' ', '\\x20') | replace('"', '\\x22') | replace("'", '\\x27') | replace('$', '\\x24') | replace('%', '%%') -}}
+{%- endmacro -%}
 {%- set container_service -%}
 [Unit]
 Description=Orbit Schedule {{ schedule.id }}
@@ -22,10 +25,10 @@ Type=oneshot
 User=orbit
 Group=orbit
 UMask=0007
-WorkingDirectory="{{ schedule.directory | replace('\\', '\\\\') | replace('"', '\\"') | replace('%', '%%') }}"
+WorkingDirectory={{ directive_path(schedule.directory) }}
 Environment=HOME=/home/orbit
 Environment=PATH={{ schedule.path | default('') | replace('%', '%%') }}
-EnvironmentFile=-"{{ schedule.environment_file | default('') | replace('\\', '\\\\') | replace('"', '\\"') | replace('%', '%%') }}"
+EnvironmentFile=-{{ directive_path(schedule.environment_file | default('')) }}
 ExecStart=/bin/bash /etc/orbit/schedules/{{ schedule.id }}.sh
 TimeoutStartSec={{ schedule.timeout_seconds }}
 TimeoutStopSec=5
@@ -42,6 +45,7 @@ X-Orbit-Schedule-ID={{ schedule.id }}
 OnCalendar={{ container_calendar | default(schedule.calendar) | replace('%', '%%') }}
 Persistent=false
 DeferReactivation=true
+AccuracySec=1s
 Unit={{ schedule.service }}
 
 [Install]

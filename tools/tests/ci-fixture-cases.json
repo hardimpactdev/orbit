@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "aa5270fab735246a76e3f10581bdc56bccec9ebda7fe62d330248f08a834c651",
+    "source_sha256": "29b6c8488d8b45457b34f5c71b03b4e31b13911cb3e6ebbceed8accd5c6128f8",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -1842,7 +1842,7 @@
     ]
   },
   "swamp/tests/ansible_schedule_logs_test.ts": {
-    "source_sha256": "ec3d506bd3d8948aadb0b48bbded872a50890c782bb4843d949ef36baa5a554e",
+    "source_sha256": "d2402298f7cce7c069c92063f72a441362796b39e9798dc6d405fcbbd58ad06b",
     "cases": [
       "migrated Schedule logs combine unit and command entries privately, in time order, with whole multiline messages",
       "Schedule journal byte cap retains complete multibyte entries and excludes the first entry that cannot fit",

@@ -281,12 +281,18 @@ Deno.test({name: "carried Schedule installs disabled and post-cutover activation
     const service = Deno.readTextFileSync(guest + "/etc/systemd/system/" + schedule.service);
     const timer = Deno.readTextFileSync(guest + "/etc/systemd/system/" + schedule.timer);
     assert(service.includes("User=orbit\n"));
-    assert(service.includes('EnvironmentFile=-"/srv/workspace/apps/my app/.env"\n'));
+    assert(service.includes("EnvironmentFile=-/srv/workspace/apps/my\\x20app/.env\n"));
     assert(service.includes("TimeoutStartSec=7\n"));
     assert(timer.includes("OnCalendar=" + schedule.calendar + " Europe/Amsterdam\nPersistent=false\nDeferReactivation=true\n"));
     assertFalse(service.includes("private-schedule-output"));
-    const verified = new Deno.Command("systemd-analyze", {args: ["verify", "--man=no",
-      guest + "/etc/systemd/system/" + schedule.service, guest + "/etc/systemd/system/" + schedule.timer]}).outputSync();
+    // Verify against a disposable system root: the test must not read this machine's unrelated private units.
+    Deno.mkdirSync(guest + "/bin", {recursive: true});
+    Deno.copyFileSync("/bin/bash", guest + "/bin/bash");
+    for (const unit of ["sysinit.target", "basic.target", "shutdown.target", "timers.target", "network.target"]) {
+      Deno.writeTextFileSync(guest + "/etc/systemd/system/" + unit, "[Unit]\nDescription=Fixture target\nDefaultDependencies=no\n");
+    }
+    const verified = new Deno.Command("systemd-analyze", {args: ["--root=" + guest, "verify", "--man=no",
+      "/etc/systemd/system/" + schedule.service, "/etc/systemd/system/" + schedule.timer]}).outputSync();
     assert(verified.success, new TextDecoder().decode(verified.stderr));
     assertEquals(Deno.readTextFileSync(guest + "/etc/orbit/schedules/" + id + ".sh"), "# X-Orbit-Schedule-ID=" + id + "\necho private-schedule-output\n");
     assertEquals(Deno.statSync(guest + "/etc/orbit/schedules/" + id + ".sh").mode! & 0o777, 0o640);

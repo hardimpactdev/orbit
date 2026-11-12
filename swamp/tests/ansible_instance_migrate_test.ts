@@ -1220,7 +1220,7 @@ for (const [desired, kind] of [["enabled", "current"], ["disabled", "agent"], ["
         const service = Deno.readTextFileSync(f.rootfs + "/etc/systemd/system/" + schedules.schedule.service);
         const timer = Deno.readTextFileSync(f.rootfs + "/etc/systemd/system/" + schedules.schedule.timer);
         assert(service.includes("User=orbit\n"));
-        assert(service.includes('WorkingDirectory="/srv/workspace"\n'));
+        assert(service.includes("WorkingDirectory=/srv/workspace\n"));
         assert(timer.includes("Persistent=false\n"));
         assert(timer.includes("OnCalendar=" + schedules.schedule.calendar));
         assert(!exists(schedules.scriptPath));
