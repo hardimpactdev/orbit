@@ -31,6 +31,8 @@ orbit instance:migrate 12
 orbit instance:migrate 12 --force --json > migrate.json
 ```
 
+A linked worktree can move while its owner remains an active host checkout on the same Node. Migration starts from the stock image and copies this Instance's workspace; it needs no migrated default or seed. A non-default keeps its T3 and model-router prerequisites. Migrate the owner after its last dependent leaves.
+
 The command moves one checkout Instance into an [Instance container](/reference/development-containers#migrate-a-checkout-instance) on the same Node. It is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
 
 In a terminal, the CLI asks to confirm that the Instance goes down during the move and that its checkout leaves the live path after it, with No selected. Declining, Ctrl-C or end of input ends with `input.cancelled` and starts no move.
@@ -65,7 +67,7 @@ The container does not receive the index’s staging state, stashes, or branches
 
 ## Retained Git data
 
-Retirement removes the checkout from its old live path by renaming the whole directory. The retained root is `<checkout>.orbit-retired-git`, beside the migrating Instance's checkout. Each retained checkout is a child named by the SHA-256 of its original absolute path. Its `.git`, objects, refs, reflogs, submodule repositories under `.git/modules`, nested repositories and work-tree files all stay there. Tag-only commits, stashes added after preflight and late worktrees remain recoverable because retirement deletes no files or Git metadata. The rename requires the same filesystem; Orbit has no copy-and-delete path. Worktree pointers may still name the old paths and need repair before use.
+Retirement removes the checkout from its old live path by renaming the whole directory. The retained root is `<checkout>.orbit-retired-git`, beside the migrating Instance's checkout. Each retained checkout is a child named by the SHA-256 of its original absolute path. Its files, including untracked and ignored files such as `.env`, `storage`, `vendor` and `node_modules`, all stay there. An owner keeps its whole Git directory. A linked worktree gets an independent `.git`: common objects, refs and reflogs, overlaid with its own HEAD, index, reflogs and private metadata. Alternate object stores are materialized into this copy, then removed from its configuration. Orbit verifies the copy before unregistering only the original, now-missing worktree entry. The owner's store and sibling registrations stay in place. The rename requires the same filesystem; Orbit has no copy-and-delete path. Owner submodule or nested worktree pointers can still need repair before use.
 
 Find the root and its retention time with `orbit instance:show INSTANCE --json`: the fields are `retained_git_path` and `retained_git_at`, also returned by `GET /api/v1/instances/{instance}`. `retained.json` inside that root records the same path and time. Both API fields are null until retirement prepares that root. The timestamp is when the root was prepared. A failed retirement can leave an empty or partly filled root; its path is recorded before any checkout moves.
 
@@ -73,7 +75,123 @@ Destroying the migrated Instance keeps this directory. After destroy deletes the
 
 ### Recovery
 
-To inspect retained commits, use `git --git-dir=RETAINED_CHILD/.git show REF` on the Instance's Node. Repairing a linked worktree's pointers to the retained repository can make it usable again, but it still depends on that repository. Keep the retained root while any worktree depends on it.
+A retained linked checkout supports `git -C RETAINED_CHILD status` and history recovery without its former owner's store. To inspect a commit, use `git --git-dir=RETAINED_CHILD/.git show REF`. Keep an owner's retained root while any worktree depends on it.
+
+#### Interrupted unregister
+
+An interrupted unregister reports `instance.migrate_retire_failed` and the exact identity receipt path. That receipt is `<retained-root>/<source-path-hash>.json`, beside the retained child; it is separate from `retained.json`. Its state stays `pending`, and repeating retirement refuses even after someone removes the stale registration.
+
+Run this recovery on the Instance's Node with access to the retained root and owner Git metadata. Replace uppercase paths below with quoted absolute paths.
+
+1. Read `RECEIPT`. Use its `source` as `OLD_PATH`, `identity.git_dir` as `PRIVATE_GIT_DIR`, and `identity.common_dir` as the owner's common Git directory. `RETAINED_CHILD` is the receipt path without `.json`. Confirm `identity.linked` is true and `state` is `pending`.
+
+   ```sh
+   cat -- RECEIPT
+   test ! -e OLD_PATH
+   test ! -L OLD_PATH
+   if test -e PRIVATE_GIT_DIR; then
+     cat -- PRIVATE_GIT_DIR/gitdir
+   fi
+   git -C OWNER rev-parse --path-format=absolute --git-common-dir
+   ```
+
+   If the registration still exists, its `gitdir` must name exactly `OLD_PATH/.git`. Its private directory must be an immediate child of the recorded common directory's `worktrees` folder. The owner's reported common directory must match the receipt. If any identity cannot be proved, keep the retained data and stop recovery.
+
+2. Check the independent copy before unregistering anything.
+
+   ```sh
+   git -C RETAINED_CHILD rev-parse --absolute-git-dir
+   git -C RETAINED_CHILD rev-parse --path-format=absolute --git-common-dir
+   test ! -e RETAINED_CHILD/.git/commondir
+   test ! -e RETAINED_CHILD/.git/objects/info/alternates
+   test ! -e RETAINED_CHILD/.git/objects/info/http-alternates
+   git -C RETAINED_CHILD fsck --full
+   git --no-optional-locks -C RETAINED_CHILD status --short
+   git -C RETAINED_CHILD rev-parse HEAD
+   ```
+
+   Both directory reads must resolve to `RETAINED_CHILD/.git`. Check the selected branch and commit against the migration result, and confirm all retained files are present. If `.git` is missing or is still the original gitfile, complete the [interrupted installation](#interrupted-git-installation) first.
+
+   If the private entry still exists, compare its index and HEAD with the retained copy:
+
+   ```sh
+   cmp -- PRIVATE_GIT_DIR/index RETAINED_CHILD/.git/index
+   git --git-dir=PRIVATE_GIT_DIR rev-parse HEAD
+   git -C RETAINED_CHILD rev-parse HEAD
+   ```
+
+   Both HEAD reads must agree. If the private entry is already absent, confirm `OLD_PATH` is absent from the owner's worktree list and skip its removal; reconcile the receipt in step 4.
+
+3. Once the original path is absent and the identity checks pass, remove exactly its missing registration at the owner.
+
+   ```sh
+   git -C OWNER worktree remove --force OLD_PATH
+   test ! -e PRIVATE_GIT_DIR
+   git -C OWNER worktree list --porcelain
+   git -C RETAINED_CHILD fsck --full
+   ```
+
+   Confirm `OLD_PATH` is absent from the list and every other registration is unchanged. This removes the missing original registration; the retained child and sibling files stay in place.
+
+4. Reconcile only this receipt after unregister succeeds. The following manual step preserves its identity fields and changes `state` to `complete`.
+
+   ```sh
+   python3 - RECEIPT <<'PY'
+   import json
+   import os
+   import sys
+   from pathlib import Path
+
+   receipt = Path(sys.argv[1])
+   data = json.loads(receipt.read_text())
+   assert data["state"] == "pending" and data["identity"]["linked"] is True
+   assert not os.path.lexists(data["source"])
+   assert not os.path.lexists(data["identity"]["git_dir"])
+   assert (receipt.with_suffix("") / ".git").is_dir()
+   updated = receipt.with_suffix(".complete")
+   updated.write_text(json.dumps({**data, "state": "complete"}) + "\n")
+   updated.chmod(receipt.stat().st_mode & 0o777)
+   updated.replace(receipt)
+   PY
+   ```
+
+Orbit has no receipt reconciliation command. This manual update lets a repeated retirement phase pass the incomplete-retirement guard. It does not start a retry or change the failed Operation's result. An operator command for this recovery is a follow-up; the migrated container keeps serving.
+
+#### Interrupted Git installation
+
+If rename completed but installing the independent `.git` failed, the verified copy stays at `<retained-root>/.recovery-*/.git`. Identify the matching copy by checking its HEAD and index against the exact `PRIVATE_GIT_DIR` from the pending receipt. Keep all candidates if no unique match can be proved.
+
+```sh
+git --git-dir=RECOVERY_GIT fsck --full
+git --git-dir=RECOVERY_GIT rev-parse HEAD
+git --git-dir=PRIVATE_GIT_DIR rev-parse HEAD
+cmp -- PRIVATE_GIT_DIR/index RECOVERY_GIT/index
+```
+
+The common directory must resolve to `RECOVERY_GIT`, with no owner pointer or alternates:
+
+```sh
+git --git-dir=RECOVERY_GIT rev-parse --path-format=absolute --git-common-dir
+test ! -e RECOVERY_GIT/commondir
+test ! -e RECOVERY_GIT/objects/info/alternates
+test ! -e RECOVERY_GIT/objects/info/http-alternates
+```
+
+If `RETAINED_CHILD/.git` is still the old gitfile, confirm its pointer resolves to the recorded private directory from the original path, then remove only that file:
+
+```sh
+rm -- RETAINED_CHILD/.git
+```
+
+Once the retained `.git` path is absent, install the verified copy:
+
+```sh
+test ! -e RETAINED_CHILD/.git
+test ! -L RETAINED_CHILD/.git
+mv -- RECOVERY_GIT RETAINED_CHILD/.git
+```
+
+Repeat the independent-copy checks above, then remove the missing original registration and reconcile the receipt. Keep the retained files throughout recovery.
 
 ### Manual purge
 
@@ -111,7 +229,7 @@ Only after all data is saved and no surviving worktree uses a retained Git direc
 - **Processes.** Ordinary systemd Processes keep their ids and desired states. The `vp-dev` preset also moves; Docker Processes and other presets cannot move. Finish pending Process operations, removals and previous runtime cleanup first.
 - **Routes.** The Instance has no Route beside its own.
 - **Symlinks.** Links must resolve within the checkout. Orbit checks dependency package links but skips installed package contents, as the [symlink rule](/reference/development-containers#migration-symlinks) defines. Orbit checks before creating the container and again before stopping host writers. It refuses broken links and external targets before downtime with `instance.migrate_symlink_unsupported`, naming every path and target. Resolve the intended data source before retrying; Orbit does not run project setup to repair links.
-- **Retirement.** Every checkout scheduled for retirement has no staged or unstaged changes to tracked files and no other worktree registered on its Git directory. Orbit checks before downtime and again before moving the checkout to retention. `instance.migrate_retirement_blocked` names the checkout, other worktree paths and changed files, with total counts and the first 20 entries of each list. Ordinary untracked files, ignored or not, do not block. Submodule changes, including untracked submodule files, still refuse: the parent archive cannot preserve them. Every local branch and a detached HEAD must have no commits unreachable from all remote-tracking refs, and the repository must have no stashes. `instance.migrate_unpushed_commits` names every affected branch (or detached HEAD) and its commit count; `instance.migrate_stashes_present` names the stash count. Orbit reads the local remote-tracking refs without fetching. Orbit never stashes, pushes, prunes or removes blockers for you.
+- **Retirement.** Every checkout scheduled for retirement has no staged or unstaged changes to tracked files. An owner also has no other registered worktree. Any registered worktree physically inside the checkout blocks its rename, including a descendant of a linked checkout. Orbit checks before downtime and again before moving the checkout to retention. `instance.migrate_retirement_blocked` names the checkout, other worktree paths and changed files, with total counts and the first 20 entries of each list. Ordinary untracked files, ignored or not, do not block. Submodule changes, including untracked submodule files, still refuse: the parent archive cannot preserve them. Every local branch and a detached HEAD must have no commits unreachable from all remote-tracking refs, and the repository must have no stashes. `instance.migrate_unpushed_commits` names every affected branch (or detached HEAD) and its commit count; `instance.migrate_stashes_present` names the stash count. Orbit reads the local remote-tracking refs without fetching. Orbit never stashes, pushes, prunes or removes blockers for you.
 
 Orbit checks service hosts only when an environment selector names that service. A bare host or host/port declaration is not selection evidence. The cache selector uses CACHE_STORE, falling back to CACHE_DRIVER only when CACHE_STORE is absent; broadcasting uses BROADCAST_CONNECTION with the same fallback to BROADCAST_DRIVER. SESSION_DRIVER, QUEUE_CONNECTION, DB_CONNECTION and MAIL_MAILER select their corresponding service. REDIS_CLIENT selects a client library, not service use. Redis and Memcached host, port, password and URL declarations alone do not select a service. Database connection overrides count only for a selected database-backed cache, session or queue.
 
@@ -147,9 +265,9 @@ Captured command-name definitions need a renderer that supports this migration f
 
 ## Order
 
-A Project's default Instance moves first. A non-default Instance before its default refuses with `instance.default_not_migrated`.
+A linked worktree can move before its owner. The owner can retire only after its last registered dependent leaves.
 
-A non-default checkout is a linked worktree of the default's repository. So the default keeps its checkout on the Node until the last other checkout Instance of the Project has moved. That last move can retain it only after the retirement checks pass. A linked checkout also sees the default in its worktree list; the worktrees must be separated before it can retire.
+Retirement reads the real Git topology. A linked checkout leaves the owner's common store in place. Owner retirement refuses while any other worktree remains registered, including another checkout scheduled in the same retirement batch.
 
 After the default has moved, an Instance that is still a checkout keeps working until its own move.
 
@@ -179,7 +297,7 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `input.cancelled` | You declined, pressed Ctrl-C, or the input ended. |
 | `instance.confirmation_required` | The call cannot prompt and has no `--force`. |
 | `instance.migrate_unsupported` | The Instance already runs in a container, is not active, is a production Instance, or its Node is not on the [build list](/reference/development-containers#the-build-list). |
-| `instance.default_not_migrated` | The Project's default Instance is still a checkout, or its move has not ended. Move it first. |
+| `instance.default_missing` | A non-default Instance has no Project default on the same Node. |
 | `instance.lifecycle_busy` | A deployment, transfer, removal or another move of the Instance is unfinished. |
 | `instance.migrate_unsupported` | The Instance has a Route beside its own. |
 | `project.source_defaults_incomplete` | A web-serving Project has no recorded PHP version. Run `orbit project:update PROJECT --source-access=github_app` after setting `require.php` in its source. |
@@ -196,7 +314,7 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.migrate_env_service_unreachable` | A selected environment file has an unsupported service endpoint or a value the check cannot determine safely. Endpoint errors name the offending keys and safe host:port; syntax errors name only the file and line. Both include recovery actions. The checkout keeps serving. |
 | `instance.migrate_branch_changed` | The checkout is not on the branch that Orbit records. Check out that branch, or record the new one with [`instance:rename`](/cli/instance/rename). |
 | `instance.migrate_symlink_unsupported` | A checkout link is broken or points outside the checkout. The error names every path, target and reason. The preflight refusal leaves the checkout serving. The same check on the copied workspace fails the move and restores the checkout if a link changed during copying. |
-| `instance.migrate_retirement_blocked` | A checkout scheduled for retirement has other worktrees or tracked or submodule changes. The error names up to 20 paths per list and each total count. Before downtime the checkout keeps serving; at the final check the container keeps serving and the checkout stays. |
+| `instance.migrate_retirement_blocked` | A checkout contains a registered descendant, is an owner with other worktrees, has changed Git identity, or has tracked or submodule changes. The error names up to 20 paths per list and each total count. Before downtime the checkout keeps serving; at the final check the container keeps serving and the checkout stays. |
 | `instance.migrate_unpushed_commits` | A planned retirement has local branches or a detached HEAD with commits unreachable from every local remote-tracking ref. The error names each branch or detached HEAD and its commit count. The source stays untouched. |
 | `instance.migrate_stashes_present` | A planned retirement has stashes. The error names the count and leaves the source untouched. |
 | `schedule.container_trigger_unsupported` | A named Schedule uses a native workflow with fixed placement. Only registered Node timers move. |

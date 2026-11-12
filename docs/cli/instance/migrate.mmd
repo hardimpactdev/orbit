@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#migrate-a-checkout-instance): one checkout Instance moves into a container, with its code. Its database stays where it is, and the container gets its own way to it. A default Instance moves before the other Instances of its Project, and keeps its checkout until its last worktree has moved. The command exists only until the last checkout Instance has moved (docs/reference/old-paths.md). The container steps are the phases of docs/cli/instance/container/create-default.mmd and create.mmd.
+  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#migrate-a-checkout-instance): one checkout Instance moves into a container, with its code. Its database stays where it is, and the container gets its own way to it. A linked worktree can move while its owner remains a host checkout; the owner moves after its last dependent leaves. The command exists only until the last checkout Instance has moved (docs/reference/old-paths.md). The container steps are the phases of docs/cli/instance/container/create-default.mmd and create.mmd.
   %% status: draft
   %% command: instance:migrate
   %% kind: instance.migrate
@@ -26,7 +26,7 @@ sequenceDiagram
   %%> - cancellation or admission expiry frees the new reservation and releases deferred Schedule fires under the Instance lock; an uncertain start keeps its reservation
   %%> Requirements:
   %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
-  %%> - a non-default Instance needs its Project's default Instance in a container first, else `instance.default_not_migrated`
+  %%> - a non-default Instance needs its Project's default on the same Node and its own source identity; no default seed or snapshot is consumed
   %%> - the Instance has only ordinary systemd or supported `vp-dev` Processes, no unfinished deployment or Process operation/runtime cleanup and no Route beside its own; a non-default Instance needs Conn and the model router, as a clone does
   %%> - `vp-dev` keeps its identity, assigned port and desired state; unsupported preset versions, custom commands, external paths and recorded container port conflicts refuse before downtime, naming the Process and reason
   %%> - a web-serving Project names its PHP version; a missing version refuses with `project.source_defaults_incomplete`, naming `orbit project:update PROJECT --source-access=github_app` to record it from source
@@ -51,7 +51,7 @@ sequenceDiagram
   %%> - makes one HTTPS read of the Project default branch with the deploy credential; the Instance branch stays local for copying and retirement, before any Node change or quiesce; its 30-second bound allows slow successful reads; source.read_timed_out says the source could not be reached in 30 s, source.head_unavailable names missing refs or network failures; Git authentication refusal names the App and repository with source.github_app_denied
   %%> - before any Node change, checks the recorded branch and every planned retirement; a refusal leaves prior resources untouched
   %%> - checks checkout symlinks and dependency package links before creating the container, skipping `.git` and installed package contents; broken links or targets outside the checkout refuse with `instance.migrate_symlink_unsupported`, naming every path and target
-  %%> - retirement preflight refuses tracked staged or unstaged changes, other worktrees, unpushed local branches or detached HEAD and stashes, with their existing named errors; ordinary untracked files, ignored or not, do not block; submodule changes, including untracked submodule files, still refuse because the parent archive cannot preserve them; it reads local refs only
+  %%> - retirement preflight refuses tracked staged or unstaged changes, other worktrees of an owner repository or registered descendants of any retiring checkout, unpushed local branches or detached HEAD and stashes, with their existing named errors; ordinary untracked files, ignored or not, do not block; submodule changes, including untracked submodule files, still refuse because the parent archive cannot preserve them; it reads local refs only
   %%> - checks service hosts selected by cache, session, queue, broadcasting, database or mail drivers (never by Redis client or endpoint declarations alone) in the primary application `.env`, each Process working-directory `.env` inside the checkout, and environment files named by its Processes or Schedules before any probe or Node change; direct services require an exact endpoint from the shared container access plan; unsupported endpoints refuse with `instance.migrate_env_service_unreachable`, naming the file, key and host:port without credentials; unreadable syntax names only the file and line, and file read failures name only the path
   %%> - selected SMTP on 127.0.0.1 or localhost, port 1025 or 2525, is satisfied by the same admitted main Mailpit endpoint used by the mail phase; absent mail explains the missing forwarder, and direct ::1 refuses because listeners are IPv4 only; both selector checks read the source before the copy and mailer rule
   %%> - deletes a container that an earlier failed move left, then creates and starts the new container through the shared container phase; discard leaves shared bridge endpoint rules for host reconciliation
@@ -73,7 +73,7 @@ sequenceDiagram
   SW->>C: Build the workspace<br/>Ansible · tags workspace
   %%> What it does:
   %%> - pushes the branch in as a bundle and checks it out in a standalone repository in `/srv/workspace`
-  %%> - a non-default checkout is a linked worktree, so its `.git` is never copied
+  %%> - the container gets independent Git metadata, whether the source is an owner or a linked worktree
   SW->>C: Copy the files<br/>Ansible · tags files
   %%> What it does:
   %%> - copies every file that differs from the commit, every untracked file and every ignored file, `.env` among them; the result counts untracked files that Git does not ignore, expanding selected nested repositories to archived leaf entries, without paths or contents
@@ -111,13 +111,13 @@ sequenceDiagram
     %%> - activates carried container timers with Persistent=false and the recorded desired state; removes their host pairs at retirement
     %%> - a Schedule activation or host-unit cleanup failure is advisory after cutover: record id, name, not_activated and cause, keep the container serving and succeed migration
     %%> - removes the old host Process units and their environment folders
-    %%> - repeats the same retirement preflight as an early warning; a new blocker leaves the container serving and the checkout intact
+    %%> - repeats canonical git-dir/common-dir and registration identity checks and the retirement preflight; a new blocker leaves the container serving and the checkout intact
     %%> - atomically moves each old checkout under `<checkout>.orbit-retired-git/<sha256 of original path>`; the retained root is beside the migrating Instance's checkout
-    %%> - keeps the whole tree, including Git objects, refs, reflogs, `.git/modules` and nested repositories; a late worktree cannot lose its Git metadata to retirement
+    %%> - keeps every tracked, untracked and ignored file; for a linked worktree, copies the common objects/refs/reflogs and its index and private metadata into an independent .git, materializes alternates, and verifies recovery before removing only its identity-matched, now-missing owner registration
     %%> - records `retained_git_path` and `retained_git_at` on the Instance; `instance:show` and the Instance API expose them
-    %%> - writes the awake marker; a default's checkout stays until its last worktree has moved; retirement never deletes or prunes Git metadata
+    %%> - writes the awake marker; owner retirement refuses while any other worktree is registered; linked retirement never changes the owner store or prunes another registration
     %%> If it fails:
-    %%> - the container stays the Instance; the run fails with `instance.migrate_retire_failed`, and the source or retained checkout stays on the Node
+    %%> - the container stays the Instance; the run fails with `instance.migrate_retire_failed`, and the source or retained checkout stays on the Node; a pending linked-unregister identity receipt makes repeat retirement fail explicitly
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record runtime<br/>and Process definitions
     %%> Result:

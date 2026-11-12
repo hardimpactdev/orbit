@@ -727,7 +727,9 @@ Clone branch fixtures use unprivileged local Git repositories and run without an
 
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise. The Ansible structure test also checks parsed command argument types before module validation can coerce them.
 
-The migration source fixture runs one unprivileged Ansible play, fakes Git and timeout without network calls or sleeps, and checks credential removal on success and refusal. Migration fixtures also check that untracked files survive copying and retirement, that the count includes only untracked files that Git does not ignore, and that tracked changes, stashes, unpushed commits and other worktrees retain their refusal codes. Batch phase plays in one Ansible invocation to keep each fixture within three playbook launches; update registered case names and costs together.
+The migration source fixture runs one unprivileged Ansible play, fakes Git and timeout without network calls or sleeps, and checks credential removal on success and refusal. Migration fixtures also check that untracked files survive copying and retirement, that the count includes only untracked files that Git does not ignore, and that tracked changes, stashes, unpushed commits and owner dependencies retain their refusal codes.
+
+A linked checkout can move before its owner; a registered descendant still refuses. Linked fixtures verify file retention, independent Git recovery and exact unregister. An interrupted unregister keeps an incomplete-retirement failure on repeat. Batch phase plays in one Ansible invocation to keep each fixture within three playbook launches; update registered case names and costs together.
 
 The mail fixture executes the production prefix whitelist, the reviewed bare-CR and comment-grouping regressions, and a realistic thirty-line file. It preserves `lines` beside `guard_line` and uses three Ansible launches. Gateway tests compare every admitted shape with installed phpdotenv; Swamp fixtures need no PHP or Composer installation.
 
