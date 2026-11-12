@@ -713,7 +713,7 @@ Instance removal deletes a Route whose last target it removes, before it finaliz
 
 ## Coordinate publication
 
-Each Route plan captures the control Node resolved from the Swamp role with its Node connections, including connections needed only for certificate cleanup. Certificate retirement accepts a missing control Node from an older captured plan as null: placement uses the Swamp role and the captured SSH connection.
+Each Route plan captures the control Node resolved from the Swamp role with its Node connections, including connections needed only for certificate cleanup. Certificate retirement omits this unused metadata from its child call, so older plans need no new key. The child accepts the field as an optional integer for other callers; placement uses the Swamp role and the captured SSH connection.
 
 The Gateway's Route publication hold orders writers during normal work. The Node guard is a second layer for writers that use it. Withdrawal waits at most 5 seconds for an exclusive lock on `/etc/caddy/.orbit-publish.lock`. Under that lock, it compares the composed-from SHA-256 with the live Caddyfile, validates a restricted candidate, renames that exact inode and reloads Caddy.
 

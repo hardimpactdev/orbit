@@ -7,11 +7,13 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\NativeRouteRemovalProjection;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Process as ManagedProcess;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -29,17 +31,21 @@ beforeEach(function (): void {
     });
 });
 
-/** @return array{Node, Node} */
-function destroyFleet(): array
+function destroyNode(string $name, string $address): Node
 {
-    $make = static fn (string $name, string $address): Node => Node::withoutEvents(fn (): Node => Node::query()->create([
+    return Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'wireguard_ip' => $address, 'public_ssh_host' => $address, 'user' => 'orbit',
         'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-key',
     ]));
-    $control = $make('control', '10.44.0.2');
+}
+
+/** @return array{Node, Node} */
+function destroyFleet(): array
+{
+    $control = destroyNode('control', '10.44.0.2');
     $control->roles()->create(['role' => 'swamp', 'status' => 'active']);
-    $node = $make('workload', '10.44.0.9');
+    $node = destroyNode('workload', '10.44.0.9');
     foreach (['app-dev', 'vpn'] as $role) {
         $node->roles()->create(['role' => $role, 'status' => 'active']);
     }
@@ -120,8 +126,7 @@ it('renders every instantiated destroy and child CEL expression from a real :dat
     if ($kind === 'proxy') {
         expect($run['files'])->toContain('route-target-retire', 'route-create-site', 'route-create-dns', 'route-dns-grace')
             ->and($run['dnsRemoved'])->toBeTrue()->and($run['siteRemoved'])->toBeTrue()
-            ->and($run['certificateControls'])->not->toBeEmpty()
-            ->and(array_unique($run['certificateControls']))->toBe([$control->id]);
+            ->and($run['certificateInputs'])->not->toBeEmpty();
         $trace = implode("\n", $run['trace']);
         expect(strpos($trace, 'route-create-dns/restart:'))->toBeLessThan(strpos($trace, 'route-dns-grace/'))
             ->and(strpos($trace, 'route-dns-grace/'))->toBeLessThan(strpos($trace, 'route-create-site/site:'));
@@ -129,8 +134,7 @@ it('renders every instantiated destroy and child CEL expression from a real :dat
         expect($plan['cleanup'])->not->toBeEmpty()
             ->and($plan['retire_nodes'])->toContain($node->id)
             ->and($run['files'])->toContain('route-target-retire', 'route-certificate-remove')
-            ->and($run['certificateControls'])->not->toBeEmpty()
-            ->and(array_unique($run['certificateControls']))->toBe([$control->id]);
+            ->and($run['certificateInputs'])->not->toBeEmpty();
     }
     app(NativeRouteRemovalProjection::class)->apply($operation, [
         'run_id' => 'fixture-run', 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
@@ -148,10 +152,50 @@ it('retires certificates from an older captured plan without inventing a control
     }
     unset($connection);
     $run = destroyExpressions($inputs);
+    foreach ($run['certificateInputs'] as $input) {
+        expect(array_key_exists('control_node_id', $input))->toBeFalse();
+    }
     expect($run['status'])->toBe('succeeded')
         ->and($run['files'])->toContain('route-certificate-remove')
-        ->and($run['certificateControls'])->not->toBeEmpty()
-        ->and(array_unique($run['certificateControls']))->toBe([null])
+        ->and($run['certificateInputs'])->not->toBeEmpty()
+        ->and($run['trace'])->toContain('route-certificate-remove/Remove the Caddy pair:succeeded',
+            'route-certificate-remove/Remove the account pair:succeeded');
+});
+
+it('captures and evaluates a public Process proxy with a genuinely cleanup-only Process Node', function (): void {
+    [$ingress, $control] = destroyFleet();
+    $cluster = Cluster::query()->create(['name' => 'public-process', 'state' => 'active', 'tld' => 'cluster.test']);
+    $ingress->update(['cluster_id' => $cluster->id]);
+    $ingress->roles()->create(['role' => 'ingress', 'status' => 'active', 'cluster_id' => $cluster->id]);
+    $processNode = destroyNode('process', '10.44.0.10');
+    $process = ManagedProcess::query()->create([
+        'owner_type' => Node::class, 'owner_id' => $processNode->id, 'name' => 'fixture-proxy',
+        'runtime' => 'docker', 'runtime_config' => ['image' => 'nginx:alpine', 'ports' => ['10.44.0.10:18080:8080/tcp']],
+        'desired_state' => 'running', 'status' => 'active',
+    ]);
+    $route = Route::query()->create([
+        'kind' => 'custom_proxy', 'cluster_id' => $cluster->id, 'domain' => 'public-process.outside.test',
+        'provenance' => 'explicit', 'publication' => 'public', 'status' => 'pending',
+    ]);
+    $route->customProxy()->create(['node_id' => $processNode->id, 'process_id' => $process->id, 'upstream' => 'http://10.44.0.10:18080']);
+    $route->update(['status' => 'active', 'sites_published' => true, 'replacement_step' => 'cleanup']);
+    expect(app(DevelopmentSiteRepository::class)->all()->where('domain', $route->domain)->pluck('nodeId')->unique()->values()->all())
+        ->toBe([$ingress->id]);
+
+    [, $inputs] = destroyAdmission($route);
+    $plan = $inputs['intent'];
+    expect(array_column($plan['retire']['caddy'], 'node_id'))->toContain($ingress->id)->not->toContain($processNode->id)
+        ->and(array_column($plan['dns'], 'node_id'))->not->toContain($processNode->id)
+        ->and(array_column($plan['cleanup'], 'node_id'))->toContain($processNode->id)
+        ->and($plan['nodes'][(string) $processNode->id]['host'])->toBe($processNode->wireguard_ip)
+        ->and($plan['nodes'][(string) $processNode->id]['control_node_id'])->toBe($control->id);
+
+    $run = destroyExpressions($inputs);
+    $processCleanup = array_values(array_filter($run['certificateInputs'], static fn (array $input): bool => $input['node_id'] === $processNode->id));
+    expect($run['status'])->toBe('succeeded')
+        ->and($processCleanup)->not->toBeEmpty()
+        ->and($processCleanup[0]['connection']['nodeHost'])->toBe($processNode->wireguard_ip)
+        ->and($processCleanup[0]['leaf']['scope'])->toBe('route-'.$route->id)
         ->and($run['trace'])->toContain('route-certificate-remove/Remove the Caddy pair:succeeded',
             'route-certificate-remove/Remove the account pair:succeeded');
 });

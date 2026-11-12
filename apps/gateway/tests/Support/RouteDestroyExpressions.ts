@@ -1,5 +1,8 @@
 // Render real Gateway inputs through the complete instantiated workflow graph.
 // Machine behavior outputs are inert fixtures; no behavior or external command runs.
+// This evaluates CEL, not native Swamp parsing or input-schema constraints.
+// The type allowlist below only catches schema types the pinned parser cannot load;
+// the authenticated native workflow validation in CI remains required.
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
 
@@ -14,7 +17,30 @@ let expressions = 0;
 const files = new Set<string>();
 const trace: string[] = [];
 let siteRemoved = false, dnsRemoved = false;
-const certificateControls: (number | null)[] = [];
+const certificateInputs: Row[] = [];
+const schemaTypes = new Set([
+    "string",
+    "number",
+    "integer",
+    "boolean",
+    "array",
+    "object",
+]);
+function checkSchemaTypes(schema: Row): void {
+    if (schema.type !== undefined && !schemaTypes.has(schema.type)) {
+        throw new Error(
+            "Unsupported Swamp input schema type: " +
+                JSON.stringify(schema.type),
+        );
+    }
+    for (const property of Object.values(schema.properties ?? {})) {
+        checkSchemaTypes(property as Row);
+    }
+    if (schema.items) checkSchemaTypes(schema.items);
+    if (typeof schema.additionalProperties === "object") {
+        checkSchemaTypes(schema.additionalProperties);
+    }
+}
 
 function evaluate(expression: string, context: Row): any {
     expressions++;
@@ -51,12 +77,13 @@ function allows(condition: Row, status: string): boolean {
 }
 function workflow(name: string, inputs: Row): Row {
     if (name === "route-certificate-remove") {
-        certificateControls.push(inputs.intent.control_node_id);
+        certificateInputs.push({ node_id: inputs.node_id, ...inputs.intent });
     }
     files.add(name);
     const flow = parse(
         Deno.readTextFileSync(new URL("workflow-" + name + ".yaml", root)),
     ) as Row;
+    checkSchemaTypes(flow.inputs);
     const steps: Row = {}, jobs: Row = {};
     const context: Row = {
         inputs,
@@ -147,7 +174,7 @@ console.log(
         expressions,
         files: [...files],
         trace,
-        certificateControls,
+        certificateInputs,
         siteRemoved,
         dnsRemoved,
     }),
