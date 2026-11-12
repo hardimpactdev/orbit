@@ -149,7 +149,9 @@
    "Render the plan": "unreviewed"
   },
   "gateway-release-activate": {
-   "Verify the Gateway": "unreviewed"
+   "Verify the Gateway": "unreviewed",
+   "Read bridge helper intent": "read-only",
+   "bridge_helpers": "read-only"
   },
   "horizon-new-dawn-detect": {
    "enrolled": "read-only"

@@ -8,6 +8,7 @@ use App\Domain\GatewayReleases\GatewayReleaseAgent;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseBridgeInput;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseRunProjection;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCheckRun;
@@ -15,13 +16,16 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GreenCommit;
 use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\GatewayRelease;
 use App\Models\Node;
+use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -164,3 +168,54 @@ it('captures helper publication from the candidate code for every managed app-de
     $node->roles()->where('role', RoleName::AppDev)->update(['status' => LifecycleStatus::Removing]);
     expect(app(GatewayReleaseBridgeInput::class)->capture()['nodes'])->toBe([]);
 });
+
+it('retains per-Node helper failures in a verified release and its Operation without retaining tool output', function (): void {
+    Queue::fake();
+    $sha = ReleaseC;
+    $release = GatewayRelease::query()->create(['requested' => $sha, 'trigger' => 'auto', 'outcome' => GatewayRelease::Running,
+        'force' => false, 'phases' => [], 'duration_ms' => 0]);
+    $operation = Operation::query()->create(['kind' => 'gateway.release', 'target_type' => 'gateway_release',
+        'target_id' => $release->id, 'status' => 'running', 'input' => ['sha' => $sha, 'previous' => substr(ReleaseA, 0, 12)],
+        'triggered_by' => 'gateway-release', 'state' => ['swamp_run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f']]);
+    $rows = [['node_id' => 7, 'updated' => true, 'reason' => 'updated'],
+        ['node_id' => 8, 'updated' => false, 'reason' => 'checksum'],
+        ['node_id' => 9, 'updated' => false, 'reason' => 'timeout'],
+        ['node_id' => 10, 'updated' => false, 'reason' => 'copy']];
+    $handoff = ['bridge_helpers' => ['stdout' => json_encode(['nodes' => array_map(
+        static fn (array $row): array => $row + ['stderr' => 'Bearer secret-token'], $rows)], JSON_THROW_ON_ERROR)]];
+    new GatewayReleaseRunProjection()->apply($operation, [
+        'run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f', 'status' => 'succeeded',
+        'started_at' => '2026-11-04T16:00:00.000Z', 'finished_at' => '2026-11-04T16:01:00.000Z',
+        'result' => ['bridge_helpers' => $handoff],
+    ]);
+
+    expect($release->refresh()->outcome)->toBe('verified')
+        ->and($release->phases['bridge_helpers'])->toBe(['nodes' => $rows])
+        ->and($operation->refresh()->result['bridge_helpers'])->toBe(['nodes' => $rows])
+        ->and(json_encode($operation->result))->not->toContain('secret-token', 'stderr');
+    $declaration = app(DirectOperation::class)->definition('gateway.release');
+    expect($declaration['terminal_result']['captures']['bridge_helpers'])
+        ->toBe(['job' => 'release', 'step' => 'Hand over the release']);
+});
+
+it('keeps an unconfirmed Node in the release receipt after a publication timeout or missing report', function (int $exit, string $reason): void {
+    Queue::fake();
+    $release = GatewayRelease::query()->create(['requested' => ReleaseC, 'trigger' => 'auto', 'outcome' => GatewayRelease::Running,
+        'force' => false, 'phases' => [], 'duration_ms' => 0]);
+    $operation = Operation::query()->create(['kind' => 'gateway.release', 'target_type' => 'gateway_release',
+        'target_id' => $release->id, 'status' => 'running', 'input' => ['sha' => ReleaseC, 'previous' => substr(ReleaseA, 0, 12)],
+        'triggered_by' => 'gateway-release', 'state' => ['swamp_run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f']]);
+    new GatewayReleaseRunProjection()->apply($operation, [
+        'run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f', 'status' => 'succeeded',
+        'started_at' => '2026-11-04T16:00:00.000Z', 'finished_at' => '2026-11-04T16:01:00.000Z',
+        'result' => ['bridge_helpers' => [
+            'Read bridge helper intent' => ['stdout' => '{"nodes":[{"node_id":7}]}'],
+            'Publish bridge helpers' => ['exitCode' => $exit],
+        ]],
+    ]);
+
+    expect($release->refresh()->outcome)->toBe('verified')
+        ->and($operation->refresh()->status->value)->toBe('succeeded')
+        ->and($operation->error_code)->toBeNull()
+        ->and($operation->result['bridge_helpers'])->toBe(['nodes' => [['node_id' => 7, 'updated' => false, 'reason' => $reason]]]);
+})->with([[124, 'timeout'], [2, 'report']]);

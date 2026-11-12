@@ -65,6 +65,7 @@ jobs:
     # the running services under the application, such as the scheduler and agent-view. Horizon starts after its drain.
     # A scheduler start pauses the release cleanups, so it first prints their generations for the cleanup step.
   - name: Read bridge helper intent
+    allowFailure: true
     labels: {role: swamp}
     dependsOn: [{step: Drain Horizon, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
@@ -78,6 +79,7 @@ jobs:
         timeoutSec: 20
         argv: [timeout, '15', cat, '/home/orbit/releases/${{ inputs.intent.id }}/apps/gateway/bootstrap/cache/bridge-helpers.json']
   - name: Write bridge helper intent
+    allowFailure: true
     labels: {role: swamp}
     writes: true
     dependsOn: [{step: Read bridge helper intent, condition: {type: succeeded}}]
@@ -90,6 +92,7 @@ jobs:
         intent: {bridge_release_json: '${{ steps["Read bridge helper intent"].outputs.stdout }}'}
         path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
   - name: Publish bridge helpers
+    allowFailure: true
     labels: {role: swamp}
     writes: true
     dependsOn: [{step: Write bridge helper intent, condition: {type: succeeded}}]
@@ -99,15 +102,14 @@ jobs:
       behaviorName: '${{ "gateway-release-bridge-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
-        run: timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --forks 4 "$ORBIT_ANSIBLE/gateway-release-bridge.yml"
+        run: timeout --kill-after=5 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --forks 4 "$ORBIT_ANSIBLE/gateway-release-bridge.yml"
         env:
           ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
           ORBIT_ANSIBLE: '${{ steps["Write bridge helper intent"].outputs.assets }}'
           ANSIBLE_CONFIG: '${{ steps["Write bridge helper intent"].outputs.assets + "/ansible.cfg" }}'
           ANSIBLE_FORCE_COLOR: '0'
-  - name: Clean bridge helper intent
+  - name: bridge_helpers
     labels: {role: swamp}
-    writes: true
     allowFailure: true
     dependsOn:
     - {step: Write bridge helper intent, condition: {type: always}}
@@ -115,17 +117,51 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
+      behaviorName: '${{ "gateway-release-bridge-report-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: |
+          timeout --kill-after=2 10 python3 -c '
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ["ORBIT_RUN"])
+          try:
+              intent = json.loads(json.loads((root / "intent.json").read_text())["bridge_release_json"])
+          except (OSError, ValueError, KeyError):
+              intent = {"nodes": []}
+          rows = []
+          for node in intent["nodes"]:
+              path = root / ("bridge-" + str(node["node_id"]) + ".json")
+              try:
+                  row = json.loads(path.read_text())
+              except (OSError, ValueError):
+                  row = {"node_id": node["node_id"], "updated": False, "reason": "timeout" if os.environ.get("BRIDGE_PHASE_EXIT") in ("124", "137") else "report"}
+              rows.append(row)
+          print(json.dumps({"nodes": rows}))'
+        env:
+          BRIDGE_PHASE_EXIT: '${{ has(steps["Publish bridge helpers"].outputs) && has(steps["Publish bridge helpers"].outputs.exitCode) ? string(steps["Publish bridge helpers"].outputs.exitCode) : "" }}'
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+  - name: Clean bridge helper intent
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn:
+    - {step: Write bridge helper intent, condition: {type: always}}
+    - {step: bridge_helpers, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: command/shell
       behaviorName: '${{ "gateway-release-bridge-cleanup-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
-        run: timeout 10 rm -rf -- "$ORBIT_RUN"
+        run: timeout --kill-after=2 10 rm -rf -- "$ORBIT_RUN"
         env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
   - name: Switch the release
     labels: {role: swamp}
     writes: true
     dependsOn:
     - {step: Drain Horizon, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: Publish bridge helpers, condition: {type: succeeded}}
+    - {step: bridge_helpers, condition: {type: always}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

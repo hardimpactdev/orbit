@@ -80,7 +80,12 @@ sequenceDiagram
     %%> - only when its refresh service unit exists, atomically replace the installed helper and verify SHA-256
     %%> - an in-flight Python refresh keeps its old open file; the next timer start opens the replacement
     %%> On failure:
-    %%> - an unreachable Node does not fail the release; a copy or checksum failure stops the handoff, and checksum observation is a separate change
+    %%> - no delivery failure stops the release or triggers switch-back; the result names each Node and its reason
+    AC->>GN: Record helper outcomes<br/>bridge_helpers · per Node
+    %%> Time:
+    %%> - four Nodes in parallel, no task barrier between Nodes; Node reads wait at most 10 seconds each and copying at most 15 seconds
+    %%> - publication stops after 180 seconds plus 5 seconds to kill; Nodes without a final observation are named as not updated
+    %%> - receipt and cleanup each have a 10-second bound plus 2 seconds to kill; queue and staging time are additional
     AC->>GN: Switch the release<br/>gateway-rollback · Horizon
     %%> Why:
     %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart

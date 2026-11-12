@@ -48,17 +48,21 @@ Deno.test("the candidate release publishes bridge helpers before switching, inde
   const read = activate.find((step) => step.name === "Read bridge helper intent")!;
   const publish = activate.find((step) => step.name === "Publish bridge helpers")!;
   assert(read && publish);
-  assertEquals(read.allowFailure, undefined);
-  assertEquals(publish.allowFailure, undefined);
+  assertEquals(activate.find((step) => step.name === "Write bridge helper intent")!.allowFailure, true);
+  assertEquals(activate.find((step) => step.name === "bridge_helpers")!.allowFailure, true);
+  const switchBack = activate.find((step) => step.name === "Switch back")!;
+  assertEquals(switchBack.dependsOn, [{step: "Verify the Gateway", condition: {type: "failed"}}]);
+  assertEquals(read.allowFailure, true);
+  assertEquals(publish.allowFailure, true);
   assert(read.task.inputs?.argv?.join(" ").includes("/bootstrap/cache/bridge-helpers.json"));
   assertEquals(publish.dependsOn, [{ step: "Write bridge helper intent", condition: { type: "succeeded" } }]);
   assert(activate.find((step) => step.name === "Switch the release")!.dependsOn!.some(
-    (edge) => edge.step === "Publish bridge helpers" && edge.condition.type === "succeeded"));
+    (edge) => edge.step === "bridge_helpers" && edge.condition.type === "always"));
   const build = await Deno.readTextFile(new URL("../scripts/gateway-release-build.sh", import.meta.url));
   assert(build.includes("GatewayReleaseBridgeInput::class)->capture()"));
   assert(build.indexOf("bridge_input=") > build.indexOf("\nfi\n"), "reused sealed releases recapture Nodes too");
   assertEquals(activate.find((step) => step.name === "Clean bridge helper intent")!.dependsOn, [
     { step: "Write bridge helper intent", condition: { type: "always" } },
-    { step: "Publish bridge helpers", condition: { type: "always" } },
+    { step: "bridge_helpers", condition: { type: "always" } },
   ]);
 });

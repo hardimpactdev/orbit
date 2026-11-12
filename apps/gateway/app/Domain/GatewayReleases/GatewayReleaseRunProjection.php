@@ -89,8 +89,13 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         $snapshot = ValidatedData::object($data['result'] ?? [])['snapshot'] ?? null;
         $snapshot = is_string($snapshot) && trim($snapshot) !== '' ? trim($snapshot) : null;
         $status = $data['status'] ?? null;
-        $projected = app(DirectOperation::class)->project($operation, $data, $status === 'succeeded' ? ['sha' => $operation->input['sha'],
-            'previous' => $operation->input['previous'], 'snapshot' => $snapshot] : []);
+        $bridge = self::bridgeHelpers($data);
+        $result = $status === 'succeeded' ? ['sha' => $operation->input['sha'],
+            'previous' => $operation->input['previous'], 'snapshot' => $snapshot] : [];
+        if ($bridge !== null) {
+            $result['bridge_helpers'] = $bridge;
+        }
+        $projected = app(DirectOperation::class)->project($operation, $data, $result);
         if (in_array($status, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
             $this->finish($operation, $data, $snapshot);
         }
@@ -114,6 +119,10 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         $sha = ValidatedData::string($operation->input['sha']);
         $status = ValidatedData::string($data['status']);
         $phases = ['run' => ['operation_id' => $operation->id, 'status' => $status]];
+        $bridge = self::bridgeHelpers($data);
+        if ($bridge !== null) {
+            $phases['bridge_helpers'] = $bridge;
+        }
         $step = NativeFailedStep::label($data, array_keys(self::Steps));
         // A cancelled, interrupted or expired run, or one that stopped at an unknown step, may have migrated: it pauses.
         [$phase, $code, $migrated] = $status === 'succeeded' ? ['verify', null, true]
@@ -170,6 +179,50 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             // As the legacy runner: whether this manual deploy pins an older commit decides if automation pauses.
             $recorder->progress($record->refresh(), [...$record->phases, 'newest_green' => app(GatewayReleaseSupersession::class)->check($sha)]);
         }
+    }
+
+    /**
+     * Keep only the public per-Node receipt; missing completion never means updated.
+     *
+     * @param  array<string,mixed>  $data
+     * @return array{nodes:list<array{node_id:int,updated:bool,reason:string}>}|null
+     */
+    private static function bridgeHelpers(array $data): ?array
+    {
+        $result = is_array($data['result'] ?? null) ? $data['result'] : [];
+        if (! is_array($result['bridge_helpers'] ?? null)) {
+            return null;
+        }
+        $handoff = $result['bridge_helpers'];
+        $decode = static function (mixed $value): array {
+            if (! is_string($value)) {
+                return [];
+            }
+            $parsed = json_decode($value, true);
+
+            return is_array($parsed) ? $parsed : [];
+        };
+        $report = is_array($handoff['bridge_helpers'] ?? null) ? $handoff['bridge_helpers'] : [];
+        $rows = $decode($report['stdout'] ?? null)['nodes'] ?? [];
+        $read = is_array($handoff['Read bridge helper intent'] ?? null) ? $handoff['Read bridge helper intent'] : [];
+        $expected = $decode($read['stdout'] ?? null)['nodes'] ?? [];
+        $byNode = [];
+        foreach (is_array($rows) ? $rows : [] as $row) {
+            if (! is_array($row) || ! is_int($row['node_id'] ?? null) || ! is_bool($row['updated'] ?? null)
+                || ! in_array($row['reason'] ?? null, ['updated', 'current', 'no_unit', 'unreachable', 'access', 'copy', 'checksum', 'timeout', 'report'], true)) {
+                continue;
+            }
+            $byNode[$row['node_id']] = ['node_id' => $row['node_id'], 'updated' => $row['updated'], 'reason' => $row['reason']];
+        }
+        $publish = is_array($handoff['Publish bridge helpers'] ?? null) ? $handoff['Publish bridge helpers'] : [];
+        $missing = in_array($publish['exitCode'] ?? null, [124, 137], true) ? 'timeout' : 'report';
+        foreach (is_array($expected) ? $expected : [] as $node) {
+            if (is_array($node) && is_int($node['node_id'] ?? null) && ! isset($byNode[$node['node_id']])) {
+                $byNode[$node['node_id']] = ['node_id' => $node['node_id'], 'updated' => false, 'reason' => $missing];
+            }
+        }
+
+        return ['nodes' => array_values($byNode)];
     }
 
     /**

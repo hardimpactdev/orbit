@@ -890,18 +890,94 @@ class ReleaseHelperDelivery(unittest.TestCase):
                 'user': 'fixture', 'port': port, 'identity_file': '/unused',
                 'host_keys': ['ssh-ed25519 ' + key]}
 
-    def publish(self):
+    def publish(self, *, extra=None, deadline=None):
         (self.run / 'intent.json').write_text(json.dumps({'bridge_release_json': json.dumps(self.capture)}))
         inventory = self.root / 'inventory.json'
         inventory.write_text(json.dumps(self.inventory))
         values = {'ansible_become': False, 'ansible_python_interpreter': sys.executable,
                   'bridge_release_path': str(self.installed), 'bridge_release_unit': str(self.unit)}
-        result = subprocess.run([
-            'ansible-playbook', '-i', str(inventory), '--forks', '4', '-e', json.dumps(values),
-            str(Path(__file__).parents[1] / 'ansible/gateway-release-bridge.yml')],
+        values.update(extra or {})
+        argv = ['ansible-playbook', '-i', str(inventory), '--forks', '4', '-e', json.dumps(values),
+                str(Path(__file__).parents[1] / 'ansible/gateway-release-bridge.yml')]
+        if deadline is not None:
+            argv = ['timeout', '--kill-after=1', str(deadline), *argv]
+        result = subprocess.run(argv,
             env={**os.environ, 'ORBIT_RUN': str(self.run), 'ANSIBLE_NOCOLOR': '1', 'ANSIBLE_CONNECTION_PLUGINS': str(self.root / 'connections'), 'ORBIT_TEST_INSTALLED_HELPER': str(self.installed), 'ORBIT_TEST_HELPER_DIGEST': self.capture['sha256']},
             text=True, capture_output=True, timeout=45, check=False)
+        self.phase_exit = result.returncode
         return result
+
+    def receipt(self):
+        import yaml
+        workflow = yaml.safe_load((Path(__file__).parents[1] / 'workflows/workflow-gateway-release-activate.yaml').read_text())
+        step = next(step for job in workflow['jobs'] for step in job['steps'] if step['name'] == 'bridge_helpers')
+        result = subprocess.run(['/bin/sh', '-c', step['task']['inputs']['run']],
+                                env={**os.environ, 'ORBIT_RUN': str(self.run), 'BRIDGE_PHASE_EXIT': str(self.phase_exit)}, capture_output=True,
+                                text=True, timeout=15, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return json.loads(result.stdout)['nodes']
+
+    def fault_connection(self, body):
+        plugins = self.root / 'connections'
+        plugins.mkdir(exist_ok=True)
+        (plugins / 'bridge_fault.py').write_text(
+            "import hashlib, os, time\n"
+            "from pathlib import Path\n"
+            "from ansible.plugins.connection.local import Connection as LocalConnection\n"
+            "class Connection(LocalConnection):\n"
+            "    transport = 'bridge_fault'\n"
+            "    def exec_command(self, cmd, in_data=None, sudoable=True):\n"
+            + ''.join('        ' + line + '\n' for line in body.splitlines())
+            + "        return super().exec_command(cmd, in_data, sudoable)\n")
+        self.inventory['all']['hosts']['bridge_7']['ansible_connection'] = 'bridge_fault'
+
+    def test_post_copy_corruption_is_reported_as_checksum_and_does_not_fail_delivery(self):
+        self.fault_connection(
+            "helper = Path(os.environ['ORBIT_TEST_INSTALLED_HELPER'])\n"
+            "if helper.exists() and hashlib.sha256(helper.read_bytes()).hexdigest() == os.environ['ORBIT_TEST_HELPER_DIGEST']:\n"
+            "    helper.write_text('# corrupted after copying\\n')")
+        result = self.publish()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.receipt(), [{'node_id': 7, 'updated': False, 'reason': 'checksum'}])
+
+    def test_copy_failure_is_reported_without_failing_delivery(self):
+        self.installed = self.root / 'missing-parent' / 'helper'
+        result = self.publish()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.receipt(), [{'node_id': 7, 'updated': False, 'reason': 'copy'}])
+
+    def test_each_node_task_has_a_bounded_wait_and_a_timeout_receipt(self):
+        self.fault_connection("time.sleep(2)")
+        result = self.publish(extra={'bridge_release_read_seconds': 1})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.receipt(), [{'node_id': 7, 'updated': False, 'reason': 'timeout'}])
+
+    def test_the_outer_deadline_keeps_a_receipt_for_unfinished_nodes(self):
+        self.fault_connection("time.sleep(4)")
+        result = self.publish(deadline=2)
+        self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+        self.assertEqual(self.receipt(), [{'node_id': 7, 'updated': False, 'reason': 'timeout'}])
+
+    def test_an_unobserved_node_after_a_phase_error_is_not_misreported_as_a_timeout(self):
+        del self.capture['nodes'][0]['host']
+        result = self.publish()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.receipt(), [{'node_id': 7, 'updated': False, 'reason': 'report'}])
+
+    def test_a_destination_symlink_is_replaced_without_changing_its_referent(self):
+        referent = self.root / 'foreign-file'
+        referent.write_text('keep the referent\n')
+        referent.chmod(0o600)
+        inode = referent.stat().st_ino
+        self.installed.unlink()
+        self.installed.symlink_to(referent)
+        result = self.publish()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.installed.is_symlink())
+        self.assertEqual(self.installed.read_bytes(), self.source.read_bytes())
+        self.assertEqual(referent.read_text(), 'keep the referent\n')
+        self.assertEqual(referent.stat().st_ino, inode)
+        self.assertEqual(referent.stat().st_mode & 0o777, 0o600)
 
     def test_release_replaces_the_real_helper_atomically_and_repeats_without_replacing_it(self):
         with self.installed.open() as running_refresh:
@@ -931,6 +1007,9 @@ class ReleaseHelperDelivery(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('UNREACHABLE', result.stdout)
         self.assertEqual(self.installed.read_bytes(), self.source.read_bytes())
+        self.assertEqual(self.receipt(), [
+            {'node_id': 8, 'updated': False, 'reason': 'unreachable'},
+            {'node_id': 7, 'updated': True, 'reason': 'updated'}])
 
     def test_a_connection_lost_during_readback_does_not_fail_the_release(self):
         plugins = self.root / 'connections'
@@ -956,8 +1035,8 @@ class ReleaseHelperDelivery(unittest.TestCase):
     def test_a_wrong_candidate_checksum_refuses_before_any_replacement(self):
         self.capture['sha256'] = '0' * 64
         result = self.publish()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('gateway.release_bridge_checksum_mismatch', result.stdout)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.receipt(), [{'node_id': 7, 'updated': False, 'reason': 'checksum'}])
         self.assertEqual(self.installed.read_text(), '# old complete helper\n')
 
 if __name__ == '__main__':

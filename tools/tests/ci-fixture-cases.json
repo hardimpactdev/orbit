@@ -717,7 +717,7 @@
     ]
   },
   "swamp/tests/ansible_instance_bridge_test.py": {
-    "source_sha256": "97e4feb00444ca9b07ad22051ea34dc03bb15ed722afb580a4fd34f7be7e9c37",
+    "source_sha256": "7c59506a1a295bb95b9ad26a409ee51b2cdd1ce68b9083bc4893cb4b5ef89030",
     "cases": [
       "test_stale_capture_keeps_later_admission_then_current_capture_prunes_it",
       "test_refresh_paused_after_read_cannot_resurrect_last_user_after_withdrawal",
@@ -751,6 +751,12 @@
       "test_withdrawal_uses_last_refresh_translation_and_preserves_newer_admission",
       "test_withdrawal_cannot_admit_an_unrecorded_endpoint_or_changed_publication_kind",
       "test_reconcile_preserves_proxy_ingress_and_rules_outside_its_endpoint_shape",
+      "test_post_copy_corruption_is_reported_as_checksum_and_does_not_fail_delivery",
+      "test_copy_failure_is_reported_without_failing_delivery",
+      "test_each_node_task_has_a_bounded_wait_and_a_timeout_receipt",
+      "test_the_outer_deadline_keeps_a_receipt_for_unfinished_nodes",
+      "test_an_unobserved_node_after_a_phase_error_is_not_misreported_as_a_timeout",
+      "test_a_destination_symlink_is_replaced_without_changing_its_referent",
       "test_release_replaces_the_real_helper_atomically_and_repeats_without_replacing_it",
       "test_a_node_without_the_refresh_unit_keeps_its_helper_unchanged",
       "test_an_unreachable_node_does_not_block_a_reachable_host_or_fail_delivery",
@@ -1355,7 +1361,7 @@
     ]
   },
   "swamp/tests/gateway_release_order_test.ts": {
-    "source_sha256": "1a871e226f9a9994f06e5815172500be569a16a31d9a16d98e71968816e82bb2",
+    "source_sha256": "efd40b74a690c9559fbc3e4a6777982d76ae990829e807b1f7e50dcfb4cf9f37",
     "cases": [
       "refresh admission follows successful verify and the new Horizon start, tolerating admission failure only",
       "Swamp load requires the bounded DB busy guard, including forced releases",

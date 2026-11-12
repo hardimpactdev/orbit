@@ -1,5 +1,5 @@
 ---
-# Public intent was captured by the candidate Gateway, not by an older admitting release.
+# The candidate Gateway captured this public release material during the build.
 - name: Address the Instance hosts
   hosts: localhost
   connection: local
@@ -14,23 +14,22 @@
         path: "{{ playbook_dir }}/instance_bridge.py"
         checksum_algorithm: sha256
       register: bridge_source
-    - name: Bind the shipped helper to the candidate release
-      ansible.builtin.assert:
-        that: bridge_source.stat.checksum == bridge_release.sha256
-        quiet: true
-        fail_msg: gateway.release_bridge_checksum_mismatch
     - name: Pin the captured Node host keys
-      ansible.builtin.known_hosts:
-        path: "{{ run }}/known_hosts"
-        name: "{{ item.0.host if item.0.port == 22 else '[' ~ item.0.host ~ ']:' ~ item.0.port }}"
-        key: "{{ item.0.host if item.0.port == 22 else '[' ~ item.0.host ~ ']:' ~ item.0.port }} {{ item.1 }}"
-        state: present
-      loop: "{{ bridge_release.nodes | subelements('host_keys') }}"
-      loop_control: {label: "{{ item.0.node_id }}"}
+      ansible.builtin.copy:
+        dest: "{{ run }}/known_hosts"
+        mode: '0600'
+        content: |
+          {% for node in bridge_release.nodes %}
+          {% for key in node.host_keys %}
+          {{ node.host if node.port == 22 else '[' ~ node.host ~ ']:' ~ node.port }} {{ key }}
+          {% endfor %}
+          {% endfor %}
     - name: Address every captured Node
       ansible.builtin.add_host:
         name: "bridge_{{ item.node_id }}"
         groups: [bridge_release_hosts]
+        bridge_source_valid: "{{ bridge_source.stat.checksum | default('') == bridge_release.sha256 }}"
+        bridge_node_id: "{{ item.node_id }}"
         ansible_host: "{{ item.host }}"
         ansible_user: "{{ item.user }}"
         ansible_port: "{{ item.port }}"
@@ -43,40 +42,93 @@
 
 - name: Publish the candidate bridge helper
   hosts: bridge_release_hosts
+  strategy: free
   become: true
   gather_facts: false
-  ignore_unreachable: true
   vars:
     run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
     bridge_release: "{{ (lookup('ansible.builtin.file', run ~ '/intent.json') | from_json).bridge_release_json | from_json }}"
     bridge_release_unit: /etc/systemd/system/orbit-instance-bridge-refresh.service
     bridge_release_path: /usr/local/libexec/orbit-instance-bridge
   tasks:
-    - name: Read the existing refresh unit
-      ansible.builtin.stat:
-        path: "{{ bridge_release_unit }}"
-        get_checksum: false
-      register: bridge_refresh
-    - name: Publish only where the refresh unit exists
-      when: bridge_refresh.stat.exists | default(false)
+    - name: Initialize the delivery observation
+      ansible.builtin.set_fact:
+        bridge_reason: checksum
+    - name: Publish the exact release helper
+      when: bridge_source_valid
       block:
-        # copy defaults to atomic replacement. Never permit truncation of an executing Python source.
-        - name: Install the exact candidate helper atomically
-          ansible.builtin.copy:
-            src: "{{ playbook_dir }}/instance_bridge.py"
-            dest: "{{ bridge_release_path }}"
-            mode: '0755'
-            unsafe_writes: false
-          register: bridge_delivery
-        - name: Read the installed helper checksum
-          when: not (bridge_delivery.unreachable | default(false))
+        - name: Read the existing refresh unit
+          timeout: "{{ bridge_release_read_seconds | default(10) }}"
+          ignore_errors: true
+          ignore_unreachable: true
           ansible.builtin.stat:
-            path: "{{ bridge_release_path }}"
-            checksum_algorithm: sha256
-          register: bridge_installed
-        - name: Verify the helper follows the candidate release
-          when: not (bridge_delivery.unreachable | default(false)) and not (bridge_installed.unreachable | default(false))
-          ansible.builtin.assert:
-            that: bridge_installed.stat.checksum == bridge_release.sha256
-            quiet: true
-            fail_msg: gateway.release_bridge_checksum_mismatch
+            path: "{{ bridge_release_unit }}"
+            get_checksum: false
+          register: bridge_refresh
+        - name: Publish only where the refresh unit exists
+          when: bridge_refresh.stat.exists | default(false)
+          block:
+            # Replaces a destination symlink itself; never changes its referent.
+            - name: Install the exact candidate helper atomically
+              timeout: "{{ bridge_release_copy_seconds | default(15) }}"
+              ignore_errors: true
+              ignore_unreachable: true
+              ansible.builtin.copy:
+                src: "{{ playbook_dir }}/instance_bridge.py"
+                dest: "{{ bridge_release_path }}"
+                mode: '0755'
+                unsafe_writes: false
+                follow: false
+              register: bridge_delivery
+            - name: Read the installed helper checksum
+              timeout: "{{ bridge_release_read_seconds | default(10) }}"
+              ignore_errors: true
+              ignore_unreachable: true
+              when: not (bridge_delivery.failed | default(false)) and not (bridge_delivery.unreachable | default(false))
+              ansible.builtin.stat:
+                path: "{{ bridge_release_path }}"
+                checksum_algorithm: sha256
+                follow: false
+              register: bridge_installed
+            - name: Verify the helper follows the candidate release
+              ignore_errors: true
+              when: >-
+                not (bridge_delivery.failed | default(false)) and not (bridge_delivery.unreachable | default(false))
+                and not (bridge_installed.failed | default(false)) and not (bridge_installed.unreachable | default(false))
+              ansible.builtin.assert:
+                that:
+                  - bridge_installed.stat.isreg | default(false)
+                  - bridge_installed.stat.checksum | default('') == bridge_release.sha256
+                quiet: true
+                fail_msg: gateway.release_bridge_checksum_mismatch
+              register: bridge_verified
+        - name: Classify the delivery observation without retaining output
+          ansible.builtin.set_fact:
+            bridge_reason: >-
+              {{ 'unreachable' if bridge_refresh.unreachable | default(false)
+                 else 'timeout' if bridge_refresh.failed | default(false) and (
+                   'timeout' in (bridge_refresh.msg | default('') | lower)
+                   or 'timed out' in (bridge_refresh.msg | default('') | lower))
+                 else 'access' if bridge_refresh.failed | default(false)
+                 else 'no_unit' if not (bridge_refresh.stat.exists | default(false))
+                 else 'unreachable' if bridge_delivery.unreachable | default(false)
+                 else 'timeout' if bridge_delivery.failed | default(false) and (
+                   'timeout' in (bridge_delivery.msg | default('') | lower)
+                   or 'timed out' in (bridge_delivery.msg | default('') | lower))
+                 else 'copy' if bridge_delivery.failed | default(false)
+                 else 'unreachable' if bridge_installed.unreachable | default(false)
+                 else 'timeout' if bridge_installed.failed | default(false) and (
+                   'timeout' in (bridge_installed.msg | default('') | lower)
+                   or 'timed out' in (bridge_installed.msg | default('') | lower))
+                 else 'checksum' if bridge_installed.failed | default(false) or bridge_verified.failed | default(false)
+                 else 'updated' if bridge_delivery.changed
+                 else 'current' }}
+    - name: Record the Node delivery observation
+      timeout: 5
+      become: false
+      delegate_to: localhost
+      vars: {ansible_connection: local, ansible_python_interpreter: "{{ ansible_playbook_python }}"}
+      ansible.builtin.copy:
+        dest: "{{ run }}/bridge-{{ bridge_node_id }}.json"
+        mode: '0600'
+        content: "{{ {'node_id': bridge_node_id | int, 'updated': bridge_reason in ['updated', 'current'], 'reason': bridge_reason} | to_json }}"
