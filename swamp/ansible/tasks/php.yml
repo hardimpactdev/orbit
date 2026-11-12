@@ -1,5 +1,5 @@
 ---
-- name: Find PHP-FPM {{ php.version }}
+- name: Find the PHP-FPM version
   ansible.builtin.stat: { path: "/usr/sbin/php-fpm{{ php.version }}" }
   register: fpm
   failed_when: not fpm.stat.executable | default(false)

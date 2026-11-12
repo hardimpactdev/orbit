@@ -64,7 +64,7 @@ exit {code}
 
     def test_the_folder_install_checks_each_static_php_part(self):
         tasks = yaml.safe_load((ROOT / 'ansible/tasks/instance-folder.yml').read_text())
-        build = next(task for task in tasks if task['name'] == 'Build the folder version of {{ folder_name }}')['block']
+        build = next(task for task in tasks if task['name'] == 'Build the folder version')['block']
         names = [task['name'] for task in build]
         check = build[names.index('Check each static PHP build against its extensions')]
         # It runs on the unpacked part, after the programs are known to be executable and before the version is whole.
