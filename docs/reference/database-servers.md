@@ -457,3 +457,5 @@ PostgreSQL cannot run `DROP DATABASE` in a transaction, so an infrastructure fai
 A first Valkey adoption refused before mutation releases only its reserved Database server record. Its existing Process, container, data volume and connection remain unchanged, so correcting the connection password permits another adoption. Later or uncertain failures retain their records for inspection.
 
 A server recorded with `default_open=null` by an earlier release has unknown default access. ACL generation refuses that state until the operator verifies access.
+
+[Instance restore](/reference/instance-removal#restore-a-failed-removal) verifies every planned PostgreSQL database and user through the administrator catalog before it settles only the captured matching fence rows. It changes no database admission value.

@@ -1004,3 +1004,5 @@ A [migrated Schedule](/reference/schedules#container-timers) uses the same exist
 Caddy publication validates a candidate before it replaces the live file, including the bootstrap Swamp front. Validation failure keeps the live bytes and skips reload; see [Caddy publication](/reference/caddy-configuration#native-publication).
 
 Explicit Instance Node service targets use the existing additive bridge admission path, without a role converge or helper reconciliation. Their own ACL rules and root-owned loopback proxies are applied in the container launch before application Processes. Shared translated tuples retain the database/mail host-reconciliation policy.
+
+The shipped Ansible assets include the Instance restoration phase for exact database fence settlement and awake marker compensation.

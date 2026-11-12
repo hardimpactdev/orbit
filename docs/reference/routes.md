@@ -868,3 +868,5 @@ Complete Node Caddy builds use official cfgmgmt file application and an end chec
 Native Cluster Router admission captures Caddy recipe candidates through the same native-only producer as Node convergence. Its [candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror) accepts the schema before producing candidates, then activates consumers after that Gateway release is live.
 
 Site rendering uses only live Instance removal members. Abandoned history does not retain the unavailable site from a previous removal.
+
+[Instance restore](/reference/instance-removal#restore-a-failed-removal) republishes the same Route through Route creation's certificate, site, TLS and DNS phases. Failed publication is withdrawn before its publication holds are released.

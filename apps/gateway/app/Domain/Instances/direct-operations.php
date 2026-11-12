@@ -12,11 +12,19 @@ use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
 use App\Domain\Instances\InstanceCloneProjection;
 use App\Domain\Instances\InstanceGitHubReadTokens;
 use App\Domain\Instances\InstanceRegisterResult;
+use App\Domain\Instances\InstanceRestoreProjection;
 use App\Domain\Instances\NativeInstanceTransferProjection;
 use App\Domain\Instances\NodeServiceTargetOperation;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
 return [
+    'instance.restore' => ['workflow' => 'operation-instance-restore', 'workflow_inputs' => true,
+        'projection' => InstanceRestoreProjection::class,
+        'terminal_result' => ['job' => 'restore', 'step' => 'Republish the Route', 'native' => true,
+            'captures' => ['withdrawal' => ['job' => 'restore', 'step' => 'Withdraw partial publication', 'field' => 'result']]],
+        'execution_copies' => [DatabaseDestroyRun::OWNED_EXECUTION_COPY,
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$']]],
+
     'instance.node_service_detach' => ['workflow' => 'operation-instance-node-service', 'workflow_inputs' => true,
         'projection' => NodeServiceTargetOperation::class, 'terminal_result' => ['job' => 'node-service', 'step' => 'result']],
     'instance.transfer' => ['workflow' => 'operation-instance-transfer', 'workflow_inputs' => true,

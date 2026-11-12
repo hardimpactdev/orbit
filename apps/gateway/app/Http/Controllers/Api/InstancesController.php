@@ -10,9 +10,11 @@ use App\Actions\Instances\RenameInstanceAction;
 use App\Actions\Instances\ShowInstanceAction;
 use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Actions\Instances\StartInstanceRestoreAction;
 use App\Actions\Instances\UpdateInstanceAction;
 use App\Data\Instances\InstanceData;
 use App\Data\Operations\OperationData;
+use App\Domain\Shared\ResourceOperationException;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -132,6 +134,18 @@ final class InstancesController extends Controller
             'data' => OperationData::fromModel($operation)->toArray(),
             'meta' => $this->meta($request),
         ], 202);
+    }
+
+    #[RequiresNodeAccess(ServingNode::InstanceOwning)]
+    #[StartsOperation('instance.restore')]
+    public function restore(Request $request, Instance $instance, StartInstanceRestoreAction $action): JsonResponse
+    {
+        if ($request->all() !== []) {
+            throw new ResourceOperationException('validation.failed', 'Instance restoration takes no options or body fields.', 422);
+        }
+        $operation = $action->execute($instance, $this->caller($request), $request->attributes->getString('orbit.request_id'));
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     private function caller(Request $request): ?string

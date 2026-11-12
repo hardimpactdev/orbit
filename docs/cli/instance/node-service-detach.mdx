@@ -73,3 +73,5 @@ Receipt creation and attachment deletion commit in one transaction. If either wr
 | `operation.target_busy` | 409 | Another Operation holds the Instance lock. Nothing is deleted and no new receipt is created. |
 
 Destroy removes this Instance's entire ACL and container, including its proxy units. Shared translated bridge tuples follow the existing database/mail host reconciliation policy; detach does not invent a separate bridge withdrawal mechanism.
+
+[Instance restore](/cli/instance/restore) requires every planned Process and Schedule to survive. It cannot undo completed runtime removal.

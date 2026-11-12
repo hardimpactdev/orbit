@@ -1,0 +1,69 @@
+---
+- name: Address the admitted restoration Node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    phase: "{{ lookup('ansible.builtin.env', 'ORBIT_PHASE') }}"
+    index: "{{ lookup('ansible.builtin.env', 'ORBIT_INDEX') }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/' ~ phase ~ '-' ~ index }}"
+    server: "{{ intent.servers[index | int] if phase == 'settle' else {} }}"
+    node: "{{ intent.route_create.nodes[index] if phase == 'compensate' else {} }}"
+    address_target: "{{ server.ssh_execution.target if phase == 'settle' else node }}"
+    address_identity: "{{ server.ssh_execution.identity_file if phase == 'settle' else node.identity_file }}"
+    address_group: restore_node
+  tasks:
+    - name: Create the private phase folder
+      ansible.builtin.file:
+        path: "{{ run }}"
+        state: directory
+        mode: '0700'
+    - name: Pin and address the admitted Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Settle this removal's captured fence rows
+  hosts: restore_node
+  gather_facts: false
+  tags: [settle]
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    server: "{{ intent.servers[lookup('ansible.builtin.env', 'ORBIT_INDEX') | int] }}"
+  tasks:
+    - name: Verify survivors and settle the exact captured journal set
+      block:
+        - name: Execute the admitted administrator transaction
+          ansible.builtin.command:
+            argv: "{{ ['timeout', '30', 'sudo', '-n'] + server.admin_client }}"
+            stdin: "{{ lookup('ansible.builtin.env', 'ORBIT_DATABASE_INPUT') }}"
+            stdin_add_newline: true
+          register: restore_settlement
+          changed_when: false
+          no_log: true
+      rescue:
+        - name: Report the public settlement refusal
+          ansible.builtin.fail:
+            msg: >-
+              {{ (ansible_failed_result.stderr | default('')
+                  | regex_search('instance[.]restore_(database_identity_changed|database_admission_changed|ownership_changed)'))
+                 | default('instance.restore_evidence_missing', true) }}
+
+- name: Remove awake markers owned by this restoration
+  hosts: restore_node
+  become: true
+  gather_facts: false
+  tags: [compensate]
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    node_id: "{{ lookup('ansible.builtin.env', 'ORBIT_INDEX') | int }}"
+    retained: "{{ intent.awake_before | selectattr('present', 'equalto', true) | map(attribute='instance_id') | list }}"
+  tasks:
+    - name: Remove only a newly written awake marker
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ intent.route_create.awake | selectattr('node_id', 'equalto', node_id) | rejectattr('instance_id', 'in', retained) | list }}"
+      loop_control:
+        label: "{{ item.path }}"

@@ -628,6 +628,11 @@ def node_fixture(run, args):
     return []
 
 
+def instance_removal(run, args):
+    from restore_fixture import execute
+    return execute(run, args)
+
+
 def recorded_request(run, args):
     """An audited HTTP-kernel request, with optional request-local agent view and clock for exact boundaries."""
     payload = {'mode': 'request', **{key: value for key, value in args.items() if key != 'expect'}}
@@ -819,4 +824,4 @@ def unbuilt(name):
 FUNCTIONS = {name: unbuilt(name) for name in spec.STEPS}
 FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6_addresses, 'listener': listener, 'ufw_rule': ufw_rule, 'probe': probe, 'cli': cli, 'ufw': ufw, 'record': record, 'doctor': doctor,
                   'service': service, 'package': package, 'ansible_changes': ansible_changes, 'unchanged': unchanged, 'ufw_delete': ufw_delete, 'agent_report': agent_report, 'node_down': node_down,
-                  'node_access_remove': node_access_remove, 'node_fixture': node_fixture, 'recorded_request': recorded_request})
+                  'node_access_remove': node_access_remove, 'node_fixture': node_fixture, 'recorded_request': recorded_request, 'instance_removal': instance_removal})

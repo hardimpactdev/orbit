@@ -29,7 +29,7 @@ use Throwable;
 final class RoutePublicationHolds
 {
     /** @var list<string> */
-    private const array Kinds = ['instance.create', 'instance.destroy', 'instance.clone', 'instance.transfer', 'instance.migrate',
+    private const array Kinds = ['instance.create', 'instance.destroy', 'instance.restore', 'instance.clone', 'instance.transfer', 'instance.migrate',
         'route.create', 'route.update', 'route.destroy', 'route.target_set'];
 
     /** A timed-out write that Swamp never confirmed stopped gives its Nodes back after this long. */
@@ -77,6 +77,11 @@ final class RoutePublicationHolds
      */
     public static function keepsNodes(Operation $operation): bool
     {
+        if ($operation->kind === 'instance.restore' && $operation->status->terminal()
+            && isset($operation->state['swamp_run_id']) && ($operation->result['restored'] ?? false) !== true
+            && ($operation->result['compensation_complete'] ?? false) !== true) {
+            return true;
+        }
         if (ExpireOperationAction::awaitsSettlement($operation)) {
             return true;
         }
@@ -125,6 +130,14 @@ final class RoutePublicationHolds
     /** True when the Operation may start now. Otherwise it is set to `waiting` and starts when `promote` finds its Nodes free. */
     public function admit(Operation $operation): bool
     {
+        if ($operation->kind === 'instance.restore') {
+            // An admission that proved the old run stopped transfers incomplete compensation's hold
+            // atomically. The Nodes are never free between attempts.
+            $prior = Operation::query()->where('kind', 'instance.restore')->where('id', '<', $operation->id)
+                ->where('target_type', 'instance')->where('target_id', $operation->target_id)
+                ->where('input->removal_id', $operation->input['removal_id'])->whereIn('status', OperationStatus::terminalValues())->pluck('id');
+            DB::table('route_publication_holds')->whereIn('operation_id', $prior)->update(['operation_id' => $operation->id]);
+        }
         // A kind that holds per step takes no Node at admission: its run calls for the hold around its Route-publish step.
         $nodes = self::applies($operation->kind) ? self::nodes($operation) : [];
         if ($nodes === []) {

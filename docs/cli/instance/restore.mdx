@@ -23,7 +23,7 @@ There is no force flag or recovery option. Orbit admits only a failed removal wh
 
 The same Route, targets and domain serve again. Only the awake marker is restored; the cold marker stays absent and serving creates the access log. Orbit reports the Instance and Route active only after publication and its check pass.
 
-A failure keeps the Instance removing and the removal failed. Orbit withdraws partial publication before releasing its publication holds. A failed withdrawal is reported as incomplete recovery. Run `instance:restore` again to retry. A repeat after success checks the restoration receipt and current records, then succeeds with `instance.already_restored`. A later `instance:destroy` captures a new removal identity and inventory.
+A failure, including cancellation at a native step boundary, keeps the Instance removing and the removal failed. Orbit withdraws partial publication before releasing its publication holds. A failed withdrawal is reported as incomplete recovery. Run `instance:restore` again to retry. A repeat after success checks the restoration receipt and current records, then succeeds with `instance.already_restored`. A later `instance:destroy` captures a new removal identity and inventory.
 
 ## How it works
 
@@ -34,25 +34,10 @@ A failure keeps the Instance removing and the removal failed. Orbit withdraws pa
 | Code | Meaning |
 | --- | --- |
 | `instance.id_invalid` | The ID is missing or is not a positive integer, and the CLI cannot prompt. |
-| `instance.restore_not_failed` | The Instance is not removing with a failed live removal. |
-| `instance.restore_run_unsettled` | A native removal run has not conclusively stopped. |
-| `instance.restore_busy` | Lifecycle, Process or Schedule work is queued, running or waiting. |
-| `instance.restore_container_removed` | The removal deleted the Instance container. |
-| `instance.restore_member_missing` | A planned Instance member is gone. |
-| `instance.restore_route_missing` | The captured Route is gone or its identity changed. |
-| `instance.restore_target_missing` | A captured Route target is gone or changed. |
-| `instance.restore_source_removed` | Source deletion completed; the checkout is gone. |
-| `instance.restore_processes_removed` | Removal already removed a Process. |
-| `instance.restore_schedules_removed` | Removal already removed a Schedule trigger. |
-| `instance.restore_sqlite_removed` | Removal already removed an owned SQLite file. |
-| `instance.restore_teardown_ran` | A teardown step ran and cannot be reversed by publication. |
-| `instance.restore_evidence_missing` | The saved removal or terminal evidence is incomplete. |
-| `instance.restore_source_changed` | The checkout, workspace or Git identity does not match. |
-| `instance.restore_database_missing` | A database in the complete captured plan is gone. |
-| `instance.restore_user_missing` | A planned database user is gone. |
-| `instance.restore_ownership_changed` | A surviving database or user has different ownership. |
-| `instance.restore_database_identity_changed` | A captured database name or OID changed. |
-| `instance.restore_database_admission_changed` | Database admission differs from the captured fence value, or the main database is closed. |
+| `instance.restore_state_invalid` | The Instance is not in a failed removal, a run is unsettled, or source identity changed. |
+| `instance.restore_already_removed` | A required resource is gone or teardown ran. The message and `details.reason` name the item. |
+| `instance.restore_database_changed` | The planned database set, users, ownership, identity, admission or required evidence changed. |
+| `instance.restore_busy` | Lifecycle, Process, Schedule or publication work still holds a required resource. |
 | `instance.restore_publication_failed` | Publication or its check failed; the Instance stays removing. |
 | `instance.restore_compensation_failed` | Withdrawing the partial publication failed; recovery remains incomplete. |
 | `http.404` | The Instance is unknown. |

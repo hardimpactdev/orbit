@@ -194,6 +194,15 @@ tools/swamp-proof-guest/**                       none: shared code; a proof runs
 swamp/extensions/behaviors/operations/firewall/*_test.ts   skip
 swamp/extensions/behaviors/operations/firewall/native_fixture.ts  skip
 
+# Abandon only an intact failed Instance removal; live fixture obligations are in its cases file.
+apps/gateway/app/Actions/Instances/StartInstanceRestoreAction.php instance:restore
+apps/gateway/app/Domain/Instances/InstanceRestoreProjection.php instance:restore
+apps/gateway/app/Domain/DatabaseServers/InstanceRestoreFence.php instance:restore
+apps/cli/app/Commands/Instances/RestoreInstanceCommand.php instance:restore
+swamp/workflows/workflow-operation-instance-restore.yaml instance:restore
+swamp/ansible/instance-restore.yml instance:restore
+swamp/ansible/instance/restore-source.py instance:restore
+
 # Documentation, charts and case descriptions need no proof, also inside the directories above. This block comes last so that it wins.
 **/*.md                                          skip
 **/*.mdx                                         skip

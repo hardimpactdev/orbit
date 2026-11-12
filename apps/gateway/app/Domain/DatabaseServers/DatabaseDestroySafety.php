@@ -37,11 +37,15 @@ final readonly class DatabaseDestroySafety
 
     public function assertAcceptsCreates(DatabaseServer $server): void
     {
-        $operations = Operation::query()->whereIn('kind', ['database.destroy', 'instance.destroy'])
+        $operations = Operation::query()->whereIn('kind', ['database.destroy', 'instance.destroy', 'instance.restore'])
             ->whereNotIn('status', OperationStatus::terminalValues())->get();
         foreach ($operations as $operation) {
             $direct = $operation->target_type === 'database_server' && $operation->target_id === $server->id;
-            $servers = $operation->kind === 'instance.destroy' ? Arr::get($operation->input, 'direct_destroy.database.servers', []) : [];
+            $servers = match ($operation->kind) {
+                'instance.destroy' => Arr::get($operation->input, 'direct_destroy.database.servers', []),
+                'instance.restore' => $operation->input['servers'] ?? [],
+                default => [],
+            };
             $owned = is_array($servers) && array_any($servers, static fn (mixed $entry): bool => is_array($entry) && ($entry['server_id'] ?? null) === $server->id);
             if ($direct || $owned) {
                 throw new ResourceOperationException('database.server_in_use', 'Database removal is unfinished on this server.', 409);

@@ -1,0 +1,189 @@
+id: 4dbf5486-26c2-4934-9541-96127f5ef9cf
+name: operation-instance-restore
+description: Abandon an intact failed removal after exact fence settlement and proved Route republication.
+vaults:
+- orbit-control-inputs
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      const: instance.restore
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+        required:
+        - vault
+        - key
+        additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: restore
+  labels:
+    role: swamp
+  steps:
+  - name: input
+    labels:
+      role: swamp
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
+      inputs:
+        intent: ${{ inputs.intent }}
+        path: ${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}
+  - name: Settle database fences
+    labels:
+      role: swamp
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+    forEach:
+      item: server
+      in: ${{ inputs.intent.servers }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ir-settle-" + string(self.server.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags settle "$ORBIT_ANSIBLE/instance-restore.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps.input.outputs.assets }}
+          ORBIT_PHASE: settle
+          ORBIT_INDEX: ${{ string(self._index) }}
+          ORBIT_DATABASE_INPUT: ${{ vault.get(inputs.execution_secrets["restore_server_" + string(self._index)].vault, inputs.execution_secrets["restore_server_"
+            + string(self._index)].key) }}
+          ANSIBLE_CONFIG: ${{ steps.input.outputs.assets + "/ansible.cfg" }}
+          ANSIBLE_SSH_ARGS: ${{ "-o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/settle-" + string(self._index)
+            + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+  - name: Republish the Route
+    labels:
+      role: swamp
+    dependsOn:
+    - step: input
+      condition:
+        type: always
+    - step: Settle database fences
+      condition:
+        type: always
+    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-create
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        parent_run_id: ${{ run.id }}
+        node_id: ${{ inputs.node_id }}
+        kind: route.create
+        intent: ${{ inputs.intent.route_create }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+  - name: Compensate publication
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Republish the Route
+      condition:
+        type: always
+    guard: ${{ steps["Republish the Route"].status != "failed" }}
+    forEach:
+      item: node
+      in: ${{ inputs.intent.route_create.site_nodes }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ir-compensate-" + string(self.node) }}
+      methodName: execute
+      inputs:
+        run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags compensate "$ORBIT_ANSIBLE/instance-restore.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps.input.outputs.assets }}
+          ORBIT_PHASE: compensate
+          ORBIT_INDEX: ${{ string(self.node) }}
+          ANSIBLE_CONFIG: ${{ steps.input.outputs.assets + "/ansible.cfg" }}
+          ANSIBLE_SSH_ARGS: ${{ "-o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/compensate-" + string(self.node)
+            + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+  - name: Withdraw partial publication
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Republish the Route
+      condition:
+        type: always
+    - step: Compensate publication
+      condition:
+        type: always
+    guard: ${{ steps["Republish the Route"].status != "failed" }}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: route-withdraw
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        side: restore
+        intent: ${{ inputs.intent.route_lifecycle }}
+        execution_secrets: {}
+  - name: cleanup
+    labels:
+      role: swamp
+    dependsOn:
+    - step: input
+      condition:
+        type: always
+    - step: Settle database fences
+      condition:
+        type: always
+    - step: Republish the Route
+      condition:
+        type: always
+    - step: Compensate publication
+      condition:
+        type: always
+    - step: Withdraw partial publication
+      condition:
+        type: always
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ir-clean-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 10 rm -rf -- "$ORBIT_RUN"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}

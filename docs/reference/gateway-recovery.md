@@ -927,3 +927,5 @@ A closed window or a busy publication lock defers a Node instead of failing it. 
 Development [`instance:mail:update`](/cli/instance/mail-update) also holds the release idle guard until its Operation settles.
 
 The release idle guard includes `instance.node_service_detach`: wait for its bounded network/proxy withdrawal before replacing Gateway execution code. Its record remains until the scoped withdrawal succeeds, so a failed Operation can be retried.
+
+The release idle guard also waits for `instance.restore`, because restoration publishes a Route before its final record transaction.

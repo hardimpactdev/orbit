@@ -42,3 +42,5 @@ This read uses recorded state. It contacts no Node, starts no Operation and chan
 | `http.404` | The numeric Instance or its Node is not recorded. |
 
 This is a recorded-state read. A listed target may already have scoped container access; listing neither applies that path nor probes its availability. Container detach withdraws the owned path before deleting its record.
+
+A failed Instance removal retains its Process records until success. [Instance restore](/cli/instance/restore) checks that the planned records still exist before restoring serving.

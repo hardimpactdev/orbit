@@ -592,10 +592,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 → v5.12.0",
-      "exact script output: v5.42.0 → v5.43.0",
-      "exact script output: v5.49.0 → v5.50.0",
-      "exact script output: v5.50.0 → v5.50.1",
+      "exact script output: v5.11.0 \u2192 v5.12.0",
+      "exact script output: v5.42.0 \u2192 v5.43.0",
+      "exact script output: v5.49.0 \u2192 v5.50.0",
+      "exact script output: v5.50.0 \u2192 v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -2088,6 +2088,18 @@
     "cases": [
       "migration source preflight distinguishes failure and timeout before changing the checkout",
       "a never-pushed branch at a pushed commit passes source and retirement checks and copies locally"
+    ]
+  },
+  "swamp/tests/instance_restore_test.py": {
+    "source_sha256": "1377f49dd6993e48c50cbf1ee57e8c6ee7c7e3b9b610718cc301d7d5410a9744",
+    "cases": [
+      "test_intact_source_read_preserves_checkout_and_reports_marker_baseline",
+      "test_source_deletion_refuses_without_creating_anything",
+      "test_changed_branch_origin_commit_or_workspace_refuses",
+      "test_removed_container_refuses_before_reading_checkout",
+      "test_restore_proof_has_a_runnable_isolated_slot_fixture_and_three_cli_stages",
+      "test_admin_read_uses_stdin_and_never_returns_private_client_output",
+      "test_publication_failure_compensation_removes_only_new_awake_markers_and_repeats"
     ]
   }
 }
