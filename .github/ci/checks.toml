@@ -2610,7 +2610,6 @@ inputs = [
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts"
 cost = 22
-slices = false
 inputs = [
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
   "swamp/workflows/workflow-operation-instance-migrate.yaml",
