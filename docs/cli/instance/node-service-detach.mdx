@@ -42,7 +42,9 @@ The MCP tool is `instance-node-service-detach`:
 
 The caller must be an active WireGuard peer authorized for the Instance's Node. [Node access](/cli/node/access-add) defines that authority. The optional `Idempotency-Key` header follows the shared [Operation replay contract](/reference/operations#retry-a-start-with-a-key).
 
-For a checkout, detach deletes the selected record and stores an immediately succeeded `instance.node_service_detach` Operation. For a running container, the Operation first withdraws the owned loopback proxy and SMTP-independent Node service rule, then deletes the record. A failed withdrawal retains the attachment for retry. HTTP 202 returns the Operation; its result includes the attachment identity and `detached: true`. No environment values, workspace files or Node Process runtime change. Other records using the same port retain their shared proxy and rule. Other attachments and the Node Process remain.
+For a checkout, detach deletes the selected record and stores an immediately succeeded `instance.node_service_detach` Operation. For a running container, the Operation first withdraws the owned path, then deletes the record. A same-Node target withdraws its loopback proxy and Node service rule. A remote target withdraws its NIC rule, unused bridge endpoint, WireGuard forward rule and managed NO_PROXY host. Withdrawal uses the recorded applied endpoint and retains applied paths still used by other Instances; it does not recheck unrelated Process publications. A failed withdrawal retains the attachment for retry.
+
+HTTP 202 returns the Operation; its result includes the attachment identity and `detached: true`. No environment values, workspace files or Node Process runtime change. Other records using the same host and port retain their shared path. A same-Node proxy remains while another local attachment uses its port. Other attachments and the Node Process remain.
 
 Detach works for a checkout Instance and after successful migration, including a default Instance. It releases that record's [Process dependency](/reference/processes-and-schedules#node-service-target-records). A missing target or another Instance's target returns 404 without a new receipt or deletion. A repeat without the original idempotency key therefore returns the same missing-target refusal; a matching keyed replay returns the original receipt.
 
@@ -72,4 +74,4 @@ Receipt creation and attachment deletion commit in one transaction. If either wr
 | `instance.node_service_target_missing` | 404 | The target is missing or belongs to another Instance. Nothing is deleted and no new receipt is created. |
 | `operation.target_busy` | 409 | Another Operation holds the Instance lock. Nothing is deleted and no new receipt is created. |
 
-Destroy removes this Instance's entire ACL and container, including its proxy units. Shared translated bridge tuples follow the existing database/mail host reconciliation policy; detach does not invent a separate bridge withdrawal mechanism.
+Destroy removes this Instance's entire ACL and container, including its proxy units. Same-Node Docker bridge tuples follow the existing database/mail host reconciliation policy. Remote detach uses the shared bridge withdrawal builder and retains endpoints still used on the Node.

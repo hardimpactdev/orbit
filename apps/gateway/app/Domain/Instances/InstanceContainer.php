@@ -17,6 +17,7 @@ use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
+use App\Models\InstanceNodeServiceTarget;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Project;
@@ -177,13 +178,17 @@ final readonly class InstanceContainer
         $environment = InstanceImage::environment($gateway);
         $mail = app(DevelopmentMail::class)->forInstance($instance);
         $nodeServices = InstanceNodeServiceTargets::endpoints($instance);
+        $environment = [...$environment, ...InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices)];
         $access = $this->targetAccesses($instance, $runtime, $database, $mail, $nodeServices);
         $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url);
         $vitePort = app(ContainerProcesses::class)->vitePort($instance);
 
         return [
             'instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
-            'config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096'],
+            'config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096',
+                ...(! array_any($nodeServices, static fn (array $target): bool => ! $target['docker']) && ! isset($clone['proxy_environment']) ? []
+                    : array_combine(array_map(static fn (string $key): string => 'environment.'.$key, ['NO_PROXY', 'no_proxy']),
+                        array_values(InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices))))],
             'root_disk_pool' => InstanceHostIntent::Pool, 'root_disk_size' => '40GiB',
             'image' => self::Image, 'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
             'acl' => $runtime->container_name, 'nic_acl' => InstanceHostIntent::NicAcl,
@@ -265,6 +270,8 @@ final readonly class InstanceContainer
         $source = $runtime->clone_source_instance_id === null ? null
             : InstanceRuntime::query()->where('instance_id', $runtime->clone_source_instance_id)->firstOrFail();
         $node = Node::query()->findOrFail($runtime->node_id);
+        $resetProxy = $source !== null && InstanceNodeServiceTarget::query()->where('instance_id', $source->instance_id)
+            ->where('node_id', '!=', $source->node_id)->exists();
         $project = $instance->project;
         $agent = InstanceHostIntent::AgentUid;
         $workspace = InstanceHostIntent::Workspace;
@@ -283,7 +290,9 @@ final readonly class InstanceContainer
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
                 't3' => InstanceHostIntent::AgentFolder.'/current/agent/bin/t3', 'project_mark' => '/home/agent/.config/orbit/t3-project'],
             'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600'],
+            ...($resetProxy ? ['proxy_environment' => InstanceNodeServiceTargets::proxyEnvironment($gateway, [])] : []),
             'files' => [
+                ...($resetProxy ? $this->proxyFiles($gateway) : []),
                 ['path' => self::InstanceFile, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => "# Managed by Orbit.\n"
                     ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\n"
                     ."ORBIT_PROJECT_ID={$project->id}\nORBIT_PROJECT_NAME=".InstanceEnvironmentRenderer::quote(str_replace(["\r", "\n"], ' ', $project->name))."\n"
@@ -296,6 +305,22 @@ final readonly class InstanceContainer
             ],
             // The note of the Project's type, as the agents' own instructions file; it states facts about the container only.
             'links' => [['path' => '/home/agent/.claude/CLAUDE.md', 'target' => $note], ['path' => '/home/agent/.codex/AGENTS.md', 'target' => $note]],
+        ];
+    }
+
+    /** A clone has no inherited Node service attachments.
+     * @return list<array{path:string,content:string,uid:int,gid:int,mode:string}>
+     */
+    private function proxyFiles(string $gateway): array
+    {
+        $environment = InstanceNodeServiceTargets::proxyEnvironment($gateway, []);
+        $assignments = implode(' ', array_map(static fn (string $key, string $value): string => $key.'='.$value, array_keys($environment), $environment));
+
+        return [
+            ['path' => '/etc/systemd/system.conf.d/99-orbit-node-services.conf',
+                'content' => "# Managed by Orbit: attached Node service.\n[Manager]\nDefaultEnvironment=".$assignments."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+            ['path' => '/etc/profile.d/99-orbit-node-services.sh',
+                'content' => "# Managed by Orbit: attached Node service.\nexport ".$assignments."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
         ];
     }
 
@@ -326,7 +351,10 @@ final readonly class InstanceContainer
         $targets = $this->databaseAccesses($instance, $runtime, $primary);
         $attached = [];
         foreach ($nodeServices ?? InstanceNodeServiceTargets::endpoints($instance) as $endpoint) {
-            $attached[$endpoint['port']] = ['host' => $endpoint['host'], 'port' => $endpoint['port'], 'docker' => true, 'node_service' => true];
+            $attached[$endpoint['host'].':'.$endpoint['port']] = ['host' => $endpoint['host'], 'port' => $endpoint['port'],
+                'docker' => $endpoint['docker'], 'node_service' => true,
+                ...($endpoint['docker'] ? [] : ['rule' => $this->tcpRule($instance, $runtime, $endpoint['host'], $endpoint['port'], false,
+                    'node-service-'.$endpoint['host'].'-'.$endpoint['port'])])];
         }
         $targets = [...$targets, ...array_values($attached)];
         if ($mail !== null && ! in_array($mail, array_map(static fn (array $target): array => array_intersect_key($target, $mail), $targets), true)) {
@@ -395,11 +423,19 @@ final readonly class InstanceContainer
             throw new ResourceOperationException('instance.database_clone_unsupported', 'A container reaches only a database server with an IPv4 address and a port.', 422);
         }
         $local = $database->server?->node_id === $runtime->node_id;
-        $rule = ['rule' => 'allow', 'interface_in' => InstanceHostIntent::Network, 'from_ip' => $runtime->bridge_address,
+
+        return ['host' => $host, 'port' => $port, 'docker' => $local && $database->server->process?->runtime === ProcessRuntime::Docker,
+            'rule' => $this->tcpRule($instance, $runtime, $host, $port, $local, $name)];
+    }
+
+    /** The exact TCP path shared by attached databases and remote Node services.
+     * @return array<string,string>
+     */
+    public function tcpRule(Instance $instance, InstanceRuntime $runtime, string $host, int $port, bool $local, string $name): array
+    {
+        return ['rule' => 'allow', 'interface_in' => InstanceHostIntent::Network, 'from_ip' => $runtime->bridge_address,
             'to_ip' => $host, 'to_port' => (string) $port, 'proto' => 'tcp', 'comment' => self::firewallPrefix($instance).$name,
             ...($local ? [] : ['route' => 'yes', 'interface_out' => self::WireGuardInterface])];
-
-        return ['host' => $host, 'port' => $port, 'docker' => $local && $database->server->process?->runtime === ProcessRuntime::Docker, 'rule' => $rule];
     }
 
     /**

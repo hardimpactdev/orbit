@@ -13,7 +13,7 @@ covers:
 orbit instance:node-service:attach <instance> --process=PROCESS [--port=PORT] --host-env-key=KEY --port-env-key=KEY [--protocol=tcp] [--json]
 ```
 
-Attach records the Instance, a standalone registered Docker Node Process on the Instance's own Node, its published TCP host port and two environment key names. It grants no network access, changes no environment values or runtime, and runs no reach probe. See [Node service target records](/reference/processes-and-schedules#node-service-target-records) for the shared admission and ownership rules.
+Attach records the Instance, a standalone registered Docker Node Process on the Instance's own Node or another authorized Node, its exact published TCP host port and two environment key names. It grants no network access, changes no environment values or runtime, and runs no reach probe. See [Node service target records](/reference/processes-and-schedules#node-service-target-records) for the shared admission and ownership rules.
 
 ```bash
 orbit instance:node-service:attach 12 --process=221 --port=1025 --host-env-key=MAIL_HOST --port-env-key=MAIL_PORT
@@ -22,20 +22,22 @@ orbit instance:node-service:attach 12 --process=221 --port=1025 --host-env-key=M
 | Input | Meaning |
 | --- | --- |
 | `instance` | Required positive numeric Instance ID. Route domains are not accepted. |
-| `--process=PROCESS` | Required positive ID of a registered standalone Node Process on the Instance's own Node. |
+| `--process=PROCESS` | Required positive ID of a registered standalone Docker Node Process. Supply the remote Process ID explicitly. |
 | `--port=PORT` | Exact published TCP host port, from 1 through 65535. Omit it only when the Process publishes one TCP host port; an explicitly empty value is refused. |
 | `--host-env-key=KEY` | Required environment key name for the service host. No value is written. |
 | `--port-env-key=KEY` | Required, different environment key name for the service port. No value is written. |
 | `--protocol=tcp` | Defaults to `tcp`; other protocols are refused. |
 | `--json` | Write the attachment result as one JSON object without prompts or progress. |
 
-In a human terminal, omitted Instance and Process IDs use registry data lists; the Process list is scoped to the selected Instance's Node, and final eligibility is checked on attach. Omitted key names use text prompts that reject malformed names and repeat until valid. JSON and noninteractive calls require the inputs explicitly. Cancelling a selection or text prompt ends before the attachment request. Environment keys start with a letter or underscore, contain only letters, digits and underscores, and have at most 255 characters. The Process must be active with desired state running and publish the selected port on `0.0.0.0` or the Node's Instance bridge address. An omitted Docker bind address means `0.0.0.0`. Orbit checks recorded publication intent here; it does not contact the Node. It refuses unpublished, private-only and infrastructure-reserved ports and never substitutes another port.
+In a human terminal, omitted Instance and Process IDs use registry data lists; the Process list is scoped to the selected Instance's Node, and final eligibility is checked on attach. Omitted key names use text prompts that reject malformed names and repeat until valid. JSON and noninteractive calls require the inputs explicitly. Cancelling a selection or text prompt ends before the attachment request. Environment keys start with a letter or underscore, contain only letters, digits and underscores, and have at most 255 characters. The Process must be active with desired state running. On the same Node, its selected port must bind to `0.0.0.0` or the Instance bridge address. On another Node, it must have exactly one recorded TCP publication of that port bound to that Node's private IPv4 WireGuard address. Public, wildcard, loopback and other bind addresses do not qualify for a remote target. An omitted Docker bind address means `0.0.0.0`. Orbit checks recorded publication intent here; it does not contact the Node. It refuses unpublished, ineligible bind addresses and infrastructure-reserved ports and never substitutes another port.
 
-Attach is available before the Instance has a container runtime. The Instance must be active, with no migration or detach running. The Node must have an Instance bridge configuration. The caller needs the same [Node authority](/cli/node/access-add) as database attachment. A Process owned by a registered service cannot be attached through this command. An attached Process refuses later removal or service ownership claims until its dependent records are detached.
+Attach is available before the Instance has a container runtime. The Instance must be active, with no migration or detach running. The Instance Node must have an Instance bridge configuration. The caller needs [Node authority](/cli/node/access-add) for both the Instance Node and the service Node. A Process owned by a registered service cannot be attached through this command. An attached Process refuses later removal or service ownership claims until its dependent records are detached.
 
 The key pair identifies the attachment. An identical attach succeeds with `changed: false` and `instance.node_service_target_unchanged`. A different target using either key refuses with `instance.node_service_environment_conflict`; [detach the old record](/cli/instance/node-service-detach) before correcting it. Other attachments and the Process remain. No target is inferred from `.env`.
 
 The result has `id`, `instance_id`, `node_id`, `process_id`, `protocol`, `port`, `host_env_key`, `port_env_key`, `changed`, `reason_code` and `request_id`. Human output shows the identity, port, key names, change flag and request ID in a detail tree, or a skip message for an identical attachment. The API is `POST /api/v1/instances/{instance}/node-service-targets`; MCP exposes `instance-node-service-attach` with numeric `instance` and the same body fields.
+
+A remote target keeps its real numeric host and port, including in an application's URL. At container preparation, Orbit adds that exact TCP destination to the Instance NIC ACL and Node bridge endpoint union, and a forward allowance from that container's bridge address through WireGuard. Only that host joins managed `NO_PROXY` and `no_proxy`; the ACL still restricts the port. No container socket proxy is installed for a remote target. The existing attached-service phase probes it from the container before application work or migration downtime. A failed probe refuses the move. The Process keeps its owner and is not changed or restarted. Detach removes the owned path and proxy bypass, retaining an endpoint still used by another attachment.
 
 ## How it works
 
@@ -52,18 +54,18 @@ The result has `id`, `instance_id`, `node_id`, `process_id`, `protocol`, `port`,
 | `instance.node_service_port_key_required` | The noninteractive call omits `--port-env-key`. |
 | `validation.failed` | A supplied Process ID or port is invalid, the keys are malformed or equal, or an API body is invalid. |
 | `peer.identity_unknown` | The caller is not an active WireGuard peer. |
-| `node_access.required` | The caller lacks authority for the Instance's Node. |
+| `node_access.required` | The caller lacks authority for the Instance Node or service Node. |
 | `http.404` | The Instance or its Node does not exist. |
 | `instance.lifecycle_busy` | The Instance is not active, migration is running or a detach is already running. |
 | `instance.node_service_runtime_unsupported` | The Instance already has a container runtime. Detach remains available after successful migration. |
 | `instance.node_service_process_missing` | The Process is unknown or is not a Node Process. |
-| `instance.node_service_remote_node` | The Process belongs to another Node. |
+| `instance.node_service_remote_node` | The stored service Node differs from the Process owner. |
 | `instance.node_service_process_owned` | A registered service owns the Process. Only standalone Node Processes qualify. |
 | `instance.node_service_protocol_unsupported` | The protocol is not TCP. |
 | `instance.node_service_process_stopped` | The Process's desired state is not running. |
 | `instance.node_service_port_required` | The Process publishes several TCP host ports; select one with `--port`. |
 | `instance.node_service_port_unpublished` | The active Docker Process does not publish the selected TCP host port. |
-| `instance.node_service_port_reserved` | Orbit reserves this port for infrastructure. |
+| `instance.node_service_port_reserved` | Orbit reserves this port for infrastructure or a registered Database server on the service Node. |
 | `instance.host_unavailable` | The Node has no Instance bridge configuration; converge its app-dev role first. |
-| `instance.node_service_listener_private` | The port binds only to an address other than the bridge or `0.0.0.0`. |
+| `instance.node_service_listener_private` | The publication has no eligible same-Node bind, or no unique remote private WireGuard bind. |
 | `instance.node_service_environment_conflict` | Another attachment owns one of the key names. |
