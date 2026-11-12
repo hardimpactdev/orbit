@@ -4,6 +4,8 @@ description: "Move a development Instance through one native Swamp workflow."
 covers:
   - apps/gateway/app/Domain/Instances/NativeInstanceTransferProjection.php
   - apps/gateway/app/Actions/Instances/StartInstanceTransferAction.php
+  - apps/cli/app/Commands/Instances/TransferInstanceCommand.php
+  - apps/cli/app/Commands/Concerns/RendersCheckoutWarnings.php
   - swamp/{workflows/workflow-operation-instance-transfer.yaml,extensions/behaviors/operations/instance-source-command/**}
 ---
 
@@ -27,7 +29,7 @@ An Instance's Schedules move with it. At run start the Gateway removes their nat
 
 Each additional Route with a web root must be active and have no domain or placement change. A public web-root Route cannot move across Clusters. The Route family captures the complete primary and web-root inventory and reserves any replacement primary during admission.
 
-Before recording a new transfer, Orbit applies the [Git dependency check at admission](/reference/instance-removal). Confirmed dependents and target read failures refuse before any Process or Schedule change. Unreadable candidates produce named warnings retained in the Operation result. Already admitted transfers reuse their intent without another read. The [known limits](/reference/instance-removal) apply, including worktrees created after admission during the queue wait or run. There is no new retirement check or changed removal command.
+Before recording a new transfer, Orbit applies the [Git dependency check at admission](/reference/instance-removal). Confirmed dependents and target read failures refuse before any Process or Schedule change. Unreadable candidates produce named warnings retained in the Operation result. Already admitted transfers reuse their intent without another read. An identical completed request returns its recorded successful Operation. Both human and JSON output retain unknown-checkout warnings with the path and recorded Instance IDs. The [known limits](/reference/instance-removal) apply, including worktrees created after admission during the queue wait or run. There is no new retirement check or changed removal command.
 
 ## Source and archive
 

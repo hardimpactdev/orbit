@@ -52,8 +52,13 @@ final readonly class StartInstanceTransferAction
         }
         InstanceContainer::assertCheckout($instance);
         app(DirectOperation::class)->writer('instance.transfer');
-        $admission = $this->existingTransfer($instance, $data) === null
-            ? app(InstanceDestroyWorktrees::class)->assertAvailable($instance) : [];
+        $existing = $this->existingTransfer($instance, $data);
+        if ($existing?->status === InstanceTransferStatus::Completed) {
+            return Operation::query()->where('kind', 'instance.transfer')->where('target_type', 'instance')->where('target_id', $instance->id)
+                ->where('input->transfer_id', $existing->id)->where('status', 'succeeded')->latest('id')->first()
+                ?? throw $this->conflict('instance.transfer_conflict', 'The completed transfer has no successful Operation.');
+        }
+        $admission = $existing === null ? app(InstanceDestroyWorktrees::class)->assertAvailable($instance) : [];
 
         return DB::transaction(function () use ($instance, $data, $caller, $requestId, $admission): Operation {
             $instance->loadMissing(['project', 'node', 'routes.targets', 'removalMember']);
