@@ -3,6 +3,7 @@
 The phase admits network before unit writes. Pending activation survives a partial
 attempt. This behavior accepts public endpoints and can serve other callers later.
 """
+import contextlib
 import json
 import os
 import re
@@ -11,6 +12,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 MARKER = '# Managed by Orbit: attached Node service.\n'
@@ -25,6 +27,26 @@ LXC_CONTENT = ('[Service]\nProcSubset=all\nProtectProc=default\nProtectControlGr
                'PrivateNetwork=no\nImportCredential=\n')
 
 
+REASONS = {'proxy_not_running', 'proxy_job_pending', 'socket_not_ready', 'socket_not_enabled',
+           'accept_not_seen', 'upstream_not_established', 'connect_failed'}
+UNIT_STATES = {
+    'ActiveState': {'active', 'reloading', 'inactive', 'failed', 'activating', 'deactivating', 'maintenance', 'refreshing'},
+    'SubState': {'running', 'listening', 'dead', 'failed', 'start', 'start-pre', 'start-post', 'auto-restart',
+                 'auto-restart-queued', 'stop', 'stop-sigterm', 'stop-sigkill', 'stop-post', 'final-sigterm',
+                 'final-sigkill', 'condition', 'reload', 'reload-signal', 'reload-notify', 'exited', 'cleaning'},
+    'UnitFileState': {'enabled', 'enabled-runtime', 'linked', 'linked-runtime', 'alias', 'masked', 'masked-runtime',
+                      'static', 'disabled', 'indirect', 'generated', 'transient', 'bad'},
+    'Result': {'success', 'resources', 'timeout', 'exit-code', 'signal', 'core-dump', 'watchdog', 'start-limit-hit',
+               'service-start-limit-hit', 'trigger-limit-hit', 'protocol', 'oom-kill', 'exec-condition'},
+}
+
+
+def public_units(rows):
+    return {kind: {key: row.get(key) if row.get(key) in values else 'unknown'
+                   for key, values in UNIT_STATES.items()}
+            for kind, row in rows.items() if kind in ('socket', 'service') and isinstance(row, dict)}
+
+
 def public_target(target):
     if not isinstance(target, dict):
         return {}
@@ -33,6 +55,13 @@ def public_target(target):
     name = target.get('process_name')
     if isinstance(name, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', name):
         value['process_name'] = name
+    if target.get('reason') in REASONS:
+        value['reason'] = target['reason']
+        waited = target.get('waited_ms')
+        if type(waited) is int and waited >= 0:
+            value['waited_ms'] = waited
+        if isinstance(target.get('units'), dict):
+            value['units'] = public_units(target['units'])
     return value
 
 
@@ -46,8 +75,8 @@ class TargetFailure(RuntimeError):
 
 
 
-def command(argv, content=None, public_guest=False):
-    result = subprocess.run(argv, input=content, text=True, capture_output=True, check=False, timeout=30)
+def command(argv, content=None, public_guest=False, timeout=30):
+    result = subprocess.run(argv, input=content, text=True, capture_output=True, check=False, timeout=timeout)
     if result.returncode and argv[:2] != ['systemctl', 'show']:
         code = result.stderr.removesuffix('\n')
         if public_guest and code in PUBLIC:
@@ -66,7 +95,12 @@ def activate(run, argv, target):
     try:
         run(argv)
     except (RuntimeError, OSError, subprocess.SubprocessError) as error:
-        raise TargetFailure('instance.node_service_unreachable', target) from error
+        try:
+            rows = socket_rows(run, [target['port']])
+        except (RuntimeError, OSError, subprocess.SubprocessError):
+            rows = {}
+        reason = proxy_reason(rows, target['port']) or ('socket_not_ready' if argv[1] == 'enable' else 'proxy_not_running')
+        raise probe_failure(target, rows, reason, 0) from error
 
 
 def atomic(path, content, mode):
@@ -111,14 +145,15 @@ DynamicUser=yes
     return files
 
 
-def socket_rows(run, ports):
+def socket_rows(run, ports, timeout=None):
     if not ports:
         return {}
     names = [unit_name(p) + ext for p in ports for ext in ('.socket', '.service')]
-    output = run(['systemctl', 'show', '--property=Id', '--property=ActiveState',
-                  '--property=SubState', '--property=MainPID', '--property=Job',
+    argv = ['systemctl', 'show', '--property=Id', '--property=ActiveState',
+                  '--property=SubState', '--property=MainPID', '--property=Job', '--property=Result',
                   '--property=FragmentPath', '--property=DropInPaths',
-                  '--property=Listen', '--property=UnitFileState', '--'] + names)
+                  '--property=Listen', '--property=UnitFileState', '--'] + names
+    output = run(argv, **({'timeout': timeout} if timeout is not None else {}))
     return {row.get('Id'): row for block in output.strip().split('\n\n')
             if (row := dict(line.split('=', 1) for line in block.splitlines() if '=' in line))}
 
@@ -154,31 +189,81 @@ def tcp_sockets(pid, root):
         host, port = raw.split(':')
         return socket.inet_ntoa(bytes.fromhex(host)[::-1]), int(port, 16)
 
-    return {parts[9]: (address(parts[1]), address(parts[2]))
+    return {parts[9]: (address(parts[1]), address(parts[2]), parts[3])
             for line in (root / 'proc/net/tcp').read_text().splitlines()[1:]
-            if len(parts := line.split()) > 9 and parts[3] == '01' and parts[9] in inodes}
+            if len(parts := line.split()) > 9 and parts[3] != '0A' and parts[9] in inodes}
 
 
-def probe_proxy(target, root, run, connect):
+def proxy_reason(rows, port):
+    service = rows.get(unit_name(port) + '.service', {})
+    if service.get('Job'):
+        return 'proxy_job_pending'
+    if service_pid(rows, port) is None:
+        return 'proxy_not_running'
+    listener = rows.get(unit_name(port) + '.socket', {})
+    if not owns(listener, port):
+        return 'socket_not_ready'
+    if listener.get('UnitFileState') != 'enabled':
+        return 'socket_not_enabled'
+    return None
+
+
+def probe_failure(target, rows, reason, waited_ms):
+    units = {kind: rows.get(unit_name(target['port']) + '.' + kind, {}) for kind in ('socket', 'service')}
+    return TargetFailure('instance.node_service_unreachable', target | {
+        'reason': reason, 'units': public_units(units), 'waited_ms': waited_ms})
+
+
+def probe_proxy(target, root, run, connect, clock=time.monotonic, sleep=time.sleep):
     port = target['port']
-    rows = socket_rows(run, [port])
-    pid = service_pid(rows, port)
-    if pid is None or not ready(rows.get(unit_name(port) + '.socket', {}), port):
-        raise TargetFailure('instance.node_service_unreachable', target)
-    try:
-        before = set(tcp_sockets(pid, root))
-        with connect(('127.0.0.1', port), timeout=2) as client:
-            source = client.getsockname()
-            # Re-read systemd after connecting: a listening PID 1 socket alone is insufficient.
-            rows = socket_rows(run, [port])
-            sockets = tcp_sockets(pid, root)
-            accepted = any(local == ('127.0.0.1', port) and peer == source for local, peer in sockets.values())
-            upstream = any(inode not in before and peer == (target['host'], port) for inode, (_, peer) in sockets.items())
-            if not (accepted and upstream and service_pid(rows, port) == pid
-                    and ready(rows.get(unit_name(port) + '.socket', {}), port)):
-                raise TargetFailure('instance.node_service_unreachable', target)
-    except OSError as error:
-        raise TargetFailure('instance.node_service_unreachable', target) from error
+    started = clock()
+    deadline = started + 3
+    rows = {}
+    reason = 'proxy_not_running'
+    client = None
+    pid = None
+    before = {}
+    ambiguous = False
+    with contextlib.ExitStack() as stack:
+        while clock() < deadline:
+            try:
+                rows = socket_rows(run, [port], timeout=max(0.001, deadline - clock()))
+                reason = proxy_reason(rows, port)
+                if reason is None:
+                    current_pid = service_pid(rows, port)
+                    if client is None:
+                        pid = current_pid
+                        reason = 'accept_not_seen'
+                        before = tcp_sockets(pid, root)
+                        reason = 'connect_failed'
+                        client = stack.enter_context(connect(('127.0.0.1', port), timeout=max(0.001, min(2, deadline - clock()))))
+                    if current_pid != pid:
+                        reason = 'proxy_not_running'
+                    else:
+                        sockets = tcp_sockets(pid, root)
+                        fresh = {inode: row for inode, row in sockets.items() if inode not in before}
+                        source = client.getsockname()
+                        accepted = {inode for inode, (local, peer, state) in fresh.items()
+                                    if local == ('127.0.0.1', port) and peer == source and state == '01'}
+                        # /proc has no pairing identifier. Reject an observed competitor,
+                        # including SYN_SENT sockets and pre-existing unpaired clients.
+                        competing = any(local == ('127.0.0.1', port) and peer != source
+                                        for local, peer, _ in fresh.values())
+                        pending = any(state != '01' for _, _, state in before.values())
+                        downstream = sum(local == ('127.0.0.1', port) for local, _, _ in before.values())
+                        upstream_before = sum(peer == (target['host'], port) for _, peer, _ in before.values())
+                        ambiguous |= competing or pending or downstream != upstream_before or any(sockets.get(inode) != row for inode, row in before.items())
+                        upstream = {inode for inode, (_, peer, state) in fresh.items()
+                                    if peer == (target['host'], port) and state == '01'}
+                        reason = 'accept_not_seen' if not accepted else 'upstream_not_established'
+                        if not ambiguous and len(accepted) == len(upstream) == 1 and set(fresh) == accepted | upstream:
+                            return
+            except (OSError, subprocess.SubprocessError):
+                reason = reason or 'upstream_not_established'
+            remaining = deadline - clock()
+            if remaining > 0:
+                sleep(min(0.05, remaining))
+    raise probe_failure(target, rows, reason, round((clock() - started) * 1000))
 
 
 def owns(row, port):
@@ -253,9 +338,10 @@ def guest(action, plan, root=Path('/'), run=command, connect=socket.create_conne
         if name in drift:
             activate(run, ['systemctl', 'enable', '--now', '--', name], by_port[port])
     final = socket_rows(run, ports)
-    for port in ports:
-        if not ready(final.get(unit_name(port) + '.socket', {}), port):
-            raise TargetFailure('process.target_inactive', by_port[port])
+    if not plan.get('probe', True):
+        for port in ports:
+            if not ready(final.get(unit_name(port) + '.socket', {}), port):
+                raise TargetFailure('process.target_inactive', by_port[port])
     started = []
     if plan.get('probe', True):
         for target in by_port.values():
