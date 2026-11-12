@@ -32,7 +32,7 @@ The agent observes the Node. Swamp applies the network part after the agent foot
 
 Persistent Node workers are installed by `agent.configure` from the admitted Node footprint. They run as the Node's configured user with its existing sudo, use native enrollment and a persistent systemd unit, and keep a stable private cache. See [per-Node workers](/reference/node-provisioning#per-node-swamp-worker) for enrollment, placement and activation.
 
-The remaining Linux-only `certificate.request-leaf` command runs `openssl` from the managed account's inherited PATH. It creates an RSA 2048 key and a request with common name `Orbit` and one DNS SAN equal to the domain. It does not run on macOS. See [certificate request forms](/reference/routes#certificate-request-forms) for signing and release order.
+The remaining Linux-only `certificate.request-leaf` command runs `openssl` from the managed account's inherited PATH. It refuses an invalid DNS name before changing files: at most 253 ASCII characters in total and 63 per label, with letters, digits and inner hyphens only. It creates an RSA 2048 key and a request with common name `Orbit` and one DNS SAN equal to the domain. It does not run on macOS. See [certificate request forms](/reference/routes#certificate-request-forms) for signing and release order.
 
 ## Where it runs
 

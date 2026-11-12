@@ -260,7 +260,7 @@ fn valid_name(name: &str) -> bool {
 }
 
 fn roots(files: &Files, input: &LeafInput) -> Result<(PathBuf, PathBuf), LeafError> {
-    if !valid_name(&input.version) {
+    if !valid_name(&input.version) || !super::source::valid_domain(&input.domain) {
         return Err(failed("certificate-input"));
     }
     scope_roots(

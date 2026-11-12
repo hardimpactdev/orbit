@@ -834,3 +834,59 @@ fn a_253_character_address_is_requested_signed_published_and_reused() {
         Ok(Requested::Current {})
     );
 }
+
+#[test]
+fn malformed_domains_refuse_before_creating_or_publishing_any_leaf_files() {
+    let mut sandbox = Sandbox::new();
+    let long = format!(
+        "{}.{}.{}.{}",
+        "n".repeat(63),
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(62)
+    );
+    assert_eq!(long.len(), 254);
+    for domain in [
+        "safe.test,other.test",
+        "safe.test,DNS:other.test",
+        "safe.test,IP:127.0.0.1",
+        "DNS:safe.test",
+        "IP:127.0.0.1",
+        "safe.test\nbasicConstraints=critical,CA:TRUE",
+        "safe..test",
+        "-safe.test",
+        "safe-.test",
+        "safe.test/other",
+        "",
+        &long,
+    ] {
+        let mut input = sandbox.leaf_input("invalid");
+        input.domain = domain.into();
+
+        assert_eq!(
+            request(&sandbox.files, &mut sandbox.host, &input),
+            Err(failed("certificate-input")),
+            "{domain:?}"
+        );
+        let published = PublishInput {
+            leaf: input,
+            certificate: String::new(),
+            root_certificate: sandbox.root_certificate.clone(),
+        };
+        assert_eq!(
+            publish(&sandbox.files, &mut sandbox.host, &published),
+            Err(failed("certificate-input")),
+            "{domain:?}"
+        );
+        assert!(sandbox.host.calls.is_empty(), "{domain:?}: no host action");
+        assert!(!sandbox.user_tree().exists(), "{domain:?}: no managed leaf");
+        assert!(
+            !sandbox.path(CADDY_ROOT).exists(),
+            "{domain:?}: no Caddy leaf"
+        );
+        assert!(
+            !sandbox.path(TRUST_ANCHOR).exists(),
+            "{domain:?}: no trust write"
+        );
+    }
+}
