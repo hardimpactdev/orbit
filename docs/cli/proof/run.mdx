@@ -3,6 +3,7 @@ title: "orbit proof:run"
 sidebarTitle: "proof:run"
 description: "Prove the commands that a commit changes. Orbit picks the cases from the commit, runs them in a disposable test fleet inside a task VM, and reports a verdict for each case."
 covers:
+  - apps/gateway/app/Domain/Proof/ProofChildStarts.php
   - apps/gateway/app/Domain/Proof/ProofBatchPlan.php
   - apps/gateway/app/Domain/Proof/ProofShardVerdicts.php
   - apps/gateway/app/Domain/Proof/ProofCommandProjection.php
@@ -58,6 +59,8 @@ Orbit reads the cases at the trusted commit and expands their variant ids. It su
 
 Each VM's share gets a run budget from its batches, at most two hours. When a share of more than one batch needs more, the proof waits for another CI place, as long as some usable place is taken. With every usable place free, it runs anyway. Orbit records the verdicts of each batch as the batch ends, so a share that reaches its budget keeps them; only the cases of its unfinished batches are `unrun`.
 
+Orbit starts the children of one proof in order. It queues the first start after all execution copies succeed, then queues each next start 20 seconds after the previous start answers. A refusal or definite start failure still lets the siblings start. A start with no confirmed answer is never submitted again. This leaves room for unrelated Operations to start between children. The [admission clock](/reference/operations#direct-swamp-starts) begins when a child is released.
+
 Each allocated VM starts from the host base with the task checkout at the tested commit. Orbit checks that commit, restores the nested fleet, and runs the VM's assigned batches in order. Before each batch it restores the head checkout, because replaying a changed case with `fails_on_base: true` may switch it to the merge base. Each batch runs its declared setup. A setup failure leaves missing cases unrun. Execution retries nothing.
 
 Operator proofs use one VM per command through the task pool's FIFO admission. Their optional `--keep-failed` retains a failed VM for 60 minutes. CI ignores that option and always deletes its VMs.
@@ -89,7 +92,7 @@ The result names the commit, each case with its command, selection reason, verdi
 | You pressed Ctrl-C. | `130`. |
 | The process received SIGTERM. | `143`. |
 
-Ctrl-C, or `operation:cancel` on the proof, ends every run at once and cancels their groups, which destroys the VMs. A case that was running stops with its VM. Each group ends when its run ends.
+A child whose turn has not come is cancelled without submission if its proof was cancelled or ended. Ctrl-C, or `operation:cancel` on the proof, ends every run at once and cancels their groups, which destroys the VMs. A case that was running stops with its VM. Each group ends when its run ends.
 
 ## After the run
 
