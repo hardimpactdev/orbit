@@ -1945,6 +1945,17 @@ it('skips and reports held hosts in release and daily refresh admission while st
     $logger->shouldHaveReceived('info')->with('Task image refresh admissions.', ['reason' => $release ? 'release' : 'daily', 'hosts' => $hosts])->once();
 })->with(['release' => true, 'daily' => false]);
 
+it('reads the stored hold when a release asks again with the Node it loaded before the hold was set', function (): void {
+    [$host] = slotPoolHost();
+    $loaded = Node::query()->findOrFail($host->id);
+    Node::query()->whereKey($host->id)->update(['image_refresh_hold' => true]);
+    expect($loaded->image_refresh_hold)->toBeFalse();
+
+    expect(fn () => app(TaskVmImageRefreshIntent::class)->start($loaded, 'refresh-release'))
+        ->toThrow(ResourceOperationException::class, 'The host has an image refresh hold');
+    expect(Operation::query()->count())->toBe(0);
+});
+
 it('refuses an explicit held refresh before queueing, reserving capacity or withdrawing the base', function (bool $fromStock): void {
     [$host, $project, $build] = slotPoolHost();
     $host->update(['image_refresh_hold' => true]);

@@ -81,7 +81,8 @@ final readonly class TaskVmImageRefreshIntent
      */
     public function start(Node $host, string $caller, ?string $request = null, ?string $commit = null, bool $fromStock = false): Operation
     {
-        if ($host->image_refresh_hold) {
+        // Read the stored hold: a release asks again after a pause with the same Node object, and the operator may have set it meanwhile.
+        if (Node::query()->whereKey($host->id)->value('image_refresh_hold') === true) {
             throw new ResourceOperationException(self::Held, 'The host has an image refresh hold; clear it through node:update before refreshing.', 409);
         }
         if ($fromStock && self::open($host) instanceof Operation) {

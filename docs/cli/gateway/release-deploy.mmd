@@ -32,7 +32,7 @@ sequenceDiagram
   SW->>GN: Fetch the commit<br/>shared repository
   %%> What it does:
   %%> - fetches the commit with the read token when the shared repository lacks it; the token reaches git only in its environment
-  %%> Decided by the orchestrator, for Nick's review:
+  %%> Decided by the orchestrator, for review:
   %%> - the fetch is its own step, so that the build runs its script from the commit being released, not from the live release
   SW->>GN: Build the release<br/>worktree · composer · REVISION
   %%> What it does:
@@ -82,7 +82,7 @@ sequenceDiagram
     %%> Why:
     %%> - the release drained Horizon, so every end of the run leaves it running: the old release after a failed drain or a switch back, the new one after a verified switch
     %%> - starting a running unit changes nothing
-    %%> Decided by the orchestrator, for Nick's review:
+    %%> Decided by the orchestrator, for review:
     %%> - the drain relies on the unit's stop policy alone; the rollback script no longer starts a stopped Horizon, because this step does after every end of the run
     AC->>GN: Admit VM refreshes<br/>artisan · verified release
     %%> Held hosts:
