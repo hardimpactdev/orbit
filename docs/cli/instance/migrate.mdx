@@ -35,6 +35,8 @@ The command moves one checkout Instance into an [Instance container](/reference/
 
 In a terminal, the CLI asks to confirm that the Instance goes down during the move and that its checkout leaves the live path after it, with No selected. Declining, Ctrl-C or end of input ends with `input.cancelled` and starts no move.
 
+The whole-run budget is 5,700 seconds. It covers the declared workflow timeouts, including Node preparation, restoration and cleanup, rounded up to five minutes, plus 600 seconds for admission and settlement.
+
 The attached targets in [instance:show](/cli/instance/show) are the connections migrate reads: it grants and probes their network endpoints; SQLite files move with the checkout.
 
 ## What moves
@@ -217,3 +219,5 @@ Mail setup runs after the copied `.env` and before application Processes start. 
 Human output shows the mailer outcome and line numbers, the named conflict skip, or the warning and repair command; JSON retains the same result fields, including `guard_line` when a preceding line is outside the shared whitelist. Repair it with [`instance:mail:update`](/cli/instance/mail-update).
 
 Registered legacy timer Schedules move into the container with their identity, calendar, timeout and desired state. Before cutover a failure restores the host timer; after cutover a Schedule problem is a named advisory result and migration succeeds. See [Schedule migration](/reference/schedules#checkout-migration).
+
+Before downtime, Orbit lets Vite+ resolve and prepare pinned Node versions in the new container’s private store. An invalid or ambiguous pin, or a failed download, verification or resolution, stops the move with `instance.node_runtime_prepare_failed`, naming the pin and its specific network, HTTP, checksum, disk or unknown-version reason. The checkout keeps serving. Projects without a Vite+/Node Process do not fetch an unused Node pin.

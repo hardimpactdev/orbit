@@ -3,6 +3,7 @@ import { Step } from "./result.ts";
 
 /** The statuses of the steps of a move (docs/cli/instance/migrate.mmd). Temporary, with the command. */
 export const MigratePhases = z.object({
+    node: z.string().optional(),
     mail: z.string().optional(),
     quiesce: z.string(),
     container: z.string(),
@@ -53,7 +54,7 @@ const COMMIT = /orbit-commit=([0-9a-f]{40}|[0-9a-f]{64})\b/;
 /** A public error code, as a phase's refusal writes it into the run folder. */
 const CODE = /^[a-z]+\.[a-z0-9_]+$/;
 /** The phases that write `result.json`: the Ansible ones. The Route child and the registration step write none. */
-const WRITES_RESULT = ["quiesce", "container", "workspace", "files", "agent", "processes", "seed", "t3", "retire"];
+const WRITES_RESULT = ["node", "quiesce", "container", "workspace", "files", "agent", "processes", "seed", "t3", "retire"];
 
 /**
  * Map the step statuses of a move to its terminal receipt. `moved` says that the Route serves the container and the checkout's
@@ -73,10 +74,11 @@ export function migrateResult(
     const translations = processes.flatMap((process) => process.translations ?? []);
     const routed = intent.route_mutations != null;
     const commit = workspace?.status === "succeeded" ? COMMIT.exec(String(workspace.outputs?.stdout ?? ""))?.[1] ?? null : null;
-    const done = (name: Exclude<keyof Phases, "mail">): [string, boolean, boolean] => [name, phases[name] === "succeeded", ["failed", "cancelled", "interrupted", "unknown"].includes(phases[name])];
+    const done = (name: Exclude<keyof Phases, "mail" | "node">): [string, boolean, boolean] => [name, phases[name] === "succeeded", ["failed", "cancelled", "interrupted", "unknown"].includes(phases[name])];
     // [phase, finished, failed], in the order the run takes them.
     const outcomes: [string, boolean, boolean][] = [
         done("container"),
+        ...(phases.node === undefined ? [] : [["node", phases.node === "succeeded", ["failed", "cancelled", "interrupted", "unknown"].includes(phases.node)] as [string, boolean, boolean]]),
         done("quiesce"),
         ["workspace", commit !== null, ["failed", "cancelled", "interrupted", "unknown"].includes(phases.workspace)],
         done("files"),

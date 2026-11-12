@@ -28,6 +28,8 @@ after_merge_cases = ["a failed move removes its container, its ACL, its firewall
 # Unmeasured cases use the observed maximum (120s); these are estimates, not completed measurements.
 slices = 102
 inputs = [
+  "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance-container.yml",
@@ -163,6 +165,8 @@ after_merge_cases = ["a clone copies the seed, takes its own address, ACL, firew
 # Unmeasured cases use the observed maximum (141s); these are estimates, not completed measurements.
 slices = 23
 inputs = [
+  "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance-container.yml",
@@ -1578,6 +1582,8 @@ inputs = [
 file = "swamp/tests/instance_clone_guest_test.py"
 cost = 30
 inputs = [
+  "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
@@ -2666,8 +2672,10 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts"
-cost = 27
+cost = 28
 inputs = [
+  "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/tasks/instance-node-runtime.yml",
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
   "swamp/workflows/workflow-operation-instance-migrate.yaml",
 ]
@@ -2697,6 +2705,7 @@ inputs = [
 "missing or malformed successful mail receipts become advisory warnings" = 1
 "the copied untracked count includes zero, excludes paths and survives later failure" = 1
 "invalid or incomplete copied-file receipts do not claim a count" = 1
+"Node preparation fails before quiesce with its pin reason and restores only the new container" = 1
 
 "carried Schedule activation failures and missing receipts warn without failing completed migration" = 2 # local completed under 2 s; conservative CI estimate
 
@@ -2781,6 +2790,24 @@ inputs = [
 "the files Orbit renders do not count as unpushed work, at any depth" = 1
 "any other change is still work that is not pushed" = 1
 "every destroy Ansible step enables failed task stderr" = 1
+[[fixture]]
+file = "swamp/tests/instance_node_runtime_test.py"
+cost = 17
+[fixture.case_costs]
+"test_conversion_keeps_running_executable_and_is_unchanged_on_repeat" = 1
+"test_recipe_copy_survives_current_flip_and_shared_pruning_and_seed_keeps_download" = 1
+"test_cloned_user_planted_links_never_change_their_external_target" = 1
+"test_vite_alone_resolves_and_fetches_once_as_the_app_user" = 1
+"test_recipe_pin_and_unpinned_projects_need_no_install" = 1
+"test_download_integrity_and_timeout_failures_name_the_pin" = 1
+"test_malformed_and_ambiguous_pins_refuse_instead_of_using_the_default" = 1
+"test_download_failures_keep_specific_safe_reasons" = 1
+"test_shasums_download_failures_are_transport_errors_not_verification_errors" = 1
+"test_non_vite_projects_do_not_resolve_or_download_unused_pins" = 1
+"test_deploy_fetch_refuses_legacy_store_even_with_a_helper" = 1
+"test_nested_ignored_pin_refuses_even_when_a_parent_pin_is_selected" = 1
+"test_production_phase_removes_read_only_source_mount_after_failure_without_downtime" = 5
+
 
 [[fixture]]
 file = "swamp/tests/caddy_candidate_test.py"
