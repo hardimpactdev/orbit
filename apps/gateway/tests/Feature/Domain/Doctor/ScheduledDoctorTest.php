@@ -667,3 +667,11 @@ it('trims a sample to the same result as a comparator that parses both sides', f
     'fewer than 20' => [['2026-11-12T10:05:00Z', '2026-11-12T10:00:00Z']],
     'empty' => [[]],
 ]);
+
+it('reads a relative sample time once per trim', function (): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-12T12:00:00Z'));
+    $trim = new ReflectionMethod(ProblemCollector::class, 'trimSample');
+    // 'now' is 12:00:00 for the whole trim, so it sorts between the two absolute times whatever the sort compares first.
+    expect($trim->invoke(app(ProblemCollector::class), ['2026-11-12T11:50:00Z', 'now', '2026-11-12T12:00:01Z'], [10, 20, 30]))
+        ->toBe([['2026-11-12T11:50:00Z', 'now', '2026-11-12T12:00:01Z'], [10, 20, 30]]);
+});
