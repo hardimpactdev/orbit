@@ -44,6 +44,8 @@ sequenceDiagram
     %%> Mail:
     %%> - the same launch applies the exact SMTP path before the four root-owned mail units; no separate mail playbook or step
     %%> - two IPv4 loopback sockets forward 1025 and 2525; foreign units or listeners skip setup without stopping their Process
+    %%> On mail failure:
+    %%> - keep a mail warning and continue workspace, T3 and registration; mail:update remains the repair command
     %%> Branch:
     %%> - fetches the Instance's branch into the Node's mirror with the read token, or creates it at the seed commit; the token stays on the Node
     opt database on a Database server

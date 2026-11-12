@@ -971,6 +971,19 @@
 - name: Apply mail before preparing the new workspace
   tags: [container, clone]
   when: phase in ['container', 'clone'] and container.mail | default(none) is not none
-  ansible.builtin.include_tasks:
-    file: tasks/instance-mail.yml
-    apply: {tags: [container, clone]}
+  block:
+    - name: Attempt the shared mail setup
+      ansible.builtin.include_tasks:
+        file: tasks/instance-mail.yml
+        apply: {tags: [container, clone]}
+  rescue:
+    - name: Keep mail failure advisory for creation
+      ansible.builtin.set_fact:
+        mail_result:
+          status: failed
+          reason: >-
+            {{ ansible_failed_result.msg if ansible_failed_result.msg | default('') in
+               ['instance.host_unavailable', 'process.target_inactive'] else 'instance.mail_update_failed' }}
+    - name: Report the advisory mail outcome
+      ansible.builtin.debug:
+        msg: "orbit-mail=failed:{{ mail_result.reason }}"

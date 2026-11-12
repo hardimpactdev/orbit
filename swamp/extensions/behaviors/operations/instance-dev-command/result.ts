@@ -38,8 +38,10 @@ const COMMIT = /orbit-commit=([0-9a-f]{40}|[0-9a-f]{64})\b/;
 /** Ansible emits only this bounded public vocabulary; no file contents or Process output is decoded. */
 function mailResult(phase: Phase) {
     if (phase?.status !== "succeeded") return null;
-    const found = /orbit-mail=(applied|unchanged|skipped)(?::(mail_port_in_use|mail_unit_conflict))?/.exec(String(phase.outputs?.stdout ?? ""));
-    if (!found || (found[1] === "skipped" && !found[2])) return null;
+    const found = /orbit-mail=(applied|unchanged|skipped|failed)(?::(mail_port_in_use|mail_unit_conflict|instance\.host_unavailable|process\.target_inactive|instance\.mail_update_failed))?/.exec(String(phase.outputs?.stdout ?? ""));
+    if (!found || (["skipped", "failed"].includes(found[1]) && !found[2])) return null;
+    if (found[1] === "failed" && !["instance.host_unavailable", "process.target_inactive", "instance.mail_update_failed"].includes(found[2])) return null;
+    if (found[1] === "skipped" && !["mail_port_in_use", "mail_unit_conflict"].includes(found[2])) return null;
     return {status: found[1], ...(found[2] ? {reason: found[2]} : {}), ports: [1025, 2525]};
 }
 
@@ -101,13 +103,17 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
     const failed = outcomes.find(([, , failure]) => failure) ??
         outcomes.find(([, finished]) => !finished);
     const server = failed === undefined && container?.server ? JSON.parse(container.server) : null;
+    const mail = (intent.container as {mail?: unknown} | null)?.mail != null
+        ? mailResult(container?.mail) ?? {status: "failed", reason: "instance.mail_update_failed", ports: [1025, 2525]}
+        : null;
     const result = {
         instance_id: intent.instance_id,
         ready: failed === undefined,
         name_converted_from: intent.name_converted_from ?? null,
         ...(commit ? { commit } : {}),
         ...(server ? { t3: server } : {}),
-        ...(mailResult(container?.mail) ? { mail: mailResult(container?.mail) } : {}),
+        ...(mail ? {mail} : {}),
+        ...(mail?.status === "failed" ? {warnings: [{code: "instance.mail_update_failed", step: "mail"}]} : {}),
         ...(failed
             ? {
                 failed_step: failed[0],
@@ -164,13 +170,9 @@ function containerOutcomes(
         phases.route === "failed" || certificates.includes("failed"),
     ];
     const clone = (intent.container as { clone?: unknown } | null)?.clone ?? null;
-    const wantsMail = (intent.container as { mail?: unknown } | null)?.mail != null;
-    const mail: [string, boolean, boolean][] = wantsMail
-        ? [["mail", mailResult(container.mail) !== null, container.mail?.status === "failed" || (container.mail?.status === "succeeded" && mailResult(container.mail) === null)]] : [];
     if (clone !== null) {
         return [
             ["clone", container.launch === "succeeded", container.launch === "failed"],
-            ...mail,
             ["database", (intent.database == null && intent.server_database == null) || phases.database === "succeeded", phases.database === "failed"],
             ["workspace", commit !== null, container.workspace?.status === "failed"],
             ["agent", container.agent === "succeeded", container.agent === "failed"],
@@ -186,7 +188,6 @@ function containerOutcomes(
     }
     return [
         ["container", container.launch === "succeeded", container.launch === "failed"],
-        ...mail,
         ["workspace", commit !== null, container.workspace?.status === "failed"],
         [
             "deploy",

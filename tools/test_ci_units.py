@@ -72,7 +72,7 @@ class PlanningTest(unittest.TestCase):
         self.assertIn(file, names(result))
         self.assertNotIn(file, result['deferred'])
         self.assertFalse(fixtures[file].get('after_merge'))
-        self.assertLessEqual(fixtures[file]['cost'], 10)
+        self.assertLessEqual(fixtures[file]['cost'], 15)
 
     def test_limit_defers_names_and_keeps_direct_matches_over_shared_globs(self):
         fixtures = [fixture('swamp/direct.py', 100, ['swamp/tasks/input.yml']),

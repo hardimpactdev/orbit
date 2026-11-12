@@ -1574,7 +1574,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 36
+cost = 38
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1606,6 +1606,7 @@ inputs = [
   "test_preserves_only_the_guest_command_and_exit_code" = 2
   "test_rejects_private_or_mismatched_guest_diagnostics" = 2
   "test_node_command_failure_names_executable_and_exit_without_output" = 2
+  "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful" = 2
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_native_faults_test.ts"
@@ -2585,10 +2586,11 @@ default = []
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_mail_test.py"
-cost = 10
+cost = 15
 # Batched production converger with unprivileged host/guest tool boundaries; no playbook per case.
 slices = false
 inputs = [
+  "swamp/ansible/requirements.txt",
   "swamp/ansible/instance_mail.py",
   "swamp/ansible/tasks/instance-mail.yml",
   "swamp/ansible/tasks/instance-container-phase.yml",
@@ -2607,6 +2609,9 @@ inputs = [
 "test_no_endpoint_does_no_work" = 1
 "test_create_launches_share_the_mail_step_and_receipt" = 1
 "test_migrate_selected_smtp_passes_real_preflight_and_installs_forwarders" = 1
+"test_active_owned_socket_with_missing_enable_link_is_repaired" = 1
+"test_failed_guest_entry_preserves_only_exact_public_codes_at_subprocess_boundary" = 1
+"test_real_default_launch_continues_after_mail_failure" = 3
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_mail_line_test.py"
@@ -2669,3 +2674,25 @@ inputs = [
 "mail failure is an advisory warning and cannot fail or restore a completed migration" = 1
 "migration retains each exact-line outcome and the named path conflict without values" = 1
 "missing or malformed successful mail receipts become advisory warnings" = 1
+
+[[fixture]]
+file = "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts"
+cost = 16
+inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts", "swamp/workflows/workflow-operation-instance-create.yaml"]
+[fixture.case_costs]
+"create returns only the commit when every step finished" = 1
+"create names the first unfinished phase" = 1
+"a Project without setup steps runs no setup phase" = 1
+"a web-serving create needs its Route; a Project without one skips it" = 1
+"an already active create reports ready without step evidence" = 1
+"VP preparation uses stock CLI environment installation and discrete official SSH effects" = 1
+"a create that copies the default database needs that copy; others skip it" = 1
+"a Route certificate that failed is the Route's failure, not the setup it skipped" = 1
+"a failed setup wins over the Route it skipped" = 1
+"the Route is not finished until every certificate step succeeded" = 1
+"a container default takes its commit from the workspace and finishes after the seed snapshot" = 1
+"a clone finishes only with its registered T3 server, which the receipt carries; it has no deploy step or seed" = 1
+"readiness records only timestamps from the T3 checks and the Route TLS probe" = 1
+"container mail skips retain their reason and missing mail observations stay advisory" = 1
+"default and clone finish workspace T3 and registration despite bounded mail failure" = 1
+"a Node without the main Mailpit gets no mail warning or failure" = 1

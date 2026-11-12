@@ -271,7 +271,7 @@ Deno.test("readiness records only timestamps from the T3 checks and the Route TL
     assertEquals(JSON.parse(createResult(intent, { ...phases, t3_observation: "broken" }).stdout).readiness.t3_answers_at, null);
 });
 
-Deno.test("container mail skips retain their reason and a failed or missing phase cannot report a ready create", () => {
+Deno.test("container mail skips retain their reason and missing mail observations stay advisory", () => {
     const container = {launch: "succeeded", workspace: phases.checkout, deploy: [], processes: "succeeded", seed: "succeeded"};
     const admitted = {...intent, setup_steps: [], route: null, container: {mail: {host: "10.253.0.1", port: 1025}}};
     for (const marker of ["applied", "unchanged", "skipped:mail_port_in_use", "skipped:mail_unit_conflict"]) {
@@ -282,7 +282,37 @@ Deno.test("container mail skips retain their reason and a failed or missing phas
     }
     for (const mail of [null, {status: "failed"}, {status: "succeeded", outputs: {stdout: "missing outcome"}}]) {
         const result = JSON.parse(createResult(admitted, {...phases, container: {...container, mail}}).stdout);
-        assertEquals(result.ready, false);
-        assertEquals(result.failed_step, "mail");
+        assertEquals(result.ready, true);
+        assertEquals(result.failed_step, undefined);
+        assertEquals(result.mail, {status: "failed", reason: "instance.mail_update_failed", ports: [1025, 2525]});
+        assertEquals(result.warnings, [{code: "instance.mail_update_failed", step: "mail"}]);
     }
+});
+
+Deno.test("default and clone finish workspace T3 and registration despite bounded mail failure", () => {
+    for (const clone of [null, {}]) {
+        const admitted = {...intent, setup_steps: [], route: null, container: {clone, mail: {host: "10.253.0.1", port: 1025}}};
+        for (const reason of ["instance.host_unavailable", "process.target_inactive", "instance.mail_update_failed"]) {
+            const result = JSON.parse(createResult(admitted, {...phases, container: {
+                launch: "succeeded", workspace: phases.checkout, deploy: [], processes: "succeeded", seed: "succeeded",
+                agent: "succeeded", t3: "succeeded", register: "succeeded", server: '{"server_id":8}',
+                mail: {status: "succeeded", outputs: {stdout: "orbit-mail=failed:" + reason}}
+            }}).stdout);
+            assertEquals(result.ready, true);
+            assertEquals(result.commit, commit);
+            assertEquals(result.t3, {server_id: 8});
+            assertEquals(result.mail, {status: "failed", reason, ports: [1025, 2525]});
+            assertEquals(result.warnings, [{code: "instance.mail_update_failed", step: "mail"}]);
+        }
+    }
+});
+
+Deno.test("a Node without the main Mailpit gets no mail warning or failure", () => {
+    const admitted = {...intent, setup_steps: [], route: null, container: {mail: null}};
+    const result = JSON.parse(createResult(admitted, {...phases, container: {
+        launch: "succeeded", workspace: phases.checkout, deploy: [], processes: "succeeded", seed: "succeeded"
+    }}).stdout);
+    assertEquals(result.ready, true);
+    assertEquals(result.mail, undefined);
+    assertEquals(result.warnings, undefined);
 });

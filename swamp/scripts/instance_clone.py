@@ -335,9 +335,22 @@ def main():
             if read["status"] != "Running":
                 change(project + ["start", name])
             if container.get("mail") is not None:
-                bundle = json.loads(sys.argv[6])
-                mail = json.loads(run(["python3", "-c", bundle["mail"],
-                                       json.dumps(container), json.dumps(bundle)]).stdout)
+                try:
+                    bundle = json.loads(sys.argv[6])
+                    attempted = run(["python3", "-c", bundle["mail"],
+                                     json.dumps(container), json.dumps(bundle)], check=False)
+                    if attempted.returncode:
+                        code = attempted.stderr.removesuffix("\n")
+                        mail = {"status": "failed", "reason": code if code in
+                                {"instance.host_unavailable", "process.target_inactive"} else "instance.mail_update_failed"}
+                    else:
+                        mail = json.loads(attempted.stdout)
+                        if mail.get("status") not in {"applied", "unchanged", "skipped"} or (
+                            mail["status"] == "skipped" and mail.get("reason") not in {"mail_port_in_use", "mail_unit_conflict"}
+                        ):
+                            raise ValueError("invalid mail outcome")
+                except Exception:  # noqa: BLE001 - mail is advisory; keep arbitrary tool output private.
+                    mail = {"status": "failed", "reason": "instance.mail_update_failed"}
                 print("orbit-mail=" + mail["status"] + (":" + mail["reason"] if "reason" in mail else ""))
             # Git credentials remain on the Node, and leave even when a read/fetch fails.
             mirror = Path(container["mirror"])

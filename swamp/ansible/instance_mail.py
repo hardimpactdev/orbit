@@ -16,13 +16,19 @@ PORTS = (1025, 2525)
 MARKER = "# Managed by Orbit: development mail.\n"
 
 
-def command(argv, content=None):
+def command(argv, content=None, public_guest=False):
     result = subprocess.run(
         argv, input=content, text=True, capture_output=True, check=False, timeout=30
     )
     if result.returncode and argv[:2] != ["systemctl", "show"]:
-        # Never echo tool output, which can include arbitrary Project data.
-        raise RuntimeError("instance.mail_update_failed")
+        # Only our guest entry emits these complete public diagnostics. Tool output stays private.
+        code = result.stderr.removesuffix("\n")
+        raise RuntimeError(
+            code
+            if public_guest
+            and code in ("instance.host_unavailable", "process.target_inactive")
+            else "instance.mail_update_failed"
+        )
     return result.stdout
 
 
@@ -63,13 +69,17 @@ def sockets(run):
     }
 
 
-def ready(rows, port):
+def owns_listener(rows, port):
     row = rows.get("orbit-mail-" + str(port) + ".socket", {})
     return (
         row.get("ActiveState") == "active"
-        and row.get("UnitFileState") == "enabled"
         and row.get("Listen") == "127.0.0.1:" + str(port) + " (Stream)"
     )
+
+
+def ready(rows, port):
+    row = rows.get("orbit-mail-" + str(port) + ".socket", {})
+    return owns_listener(rows, port) and row.get("UnitFileState") == "enabled"
 
 
 def guest(action, plan, root=Path("/"), run=command):
@@ -103,7 +113,9 @@ def guest(action, plan, root=Path("/"), run=command):
             fields = line.split()
             local = fields[3] if len(fields) > 3 else ""
             for port in PORTS:
-                if local.rsplit(":", 1)[-1] == str(port) and not ready(rows, port):
+                if local.rsplit(":", 1)[-1] == str(port) and not owns_listener(
+                    rows, port
+                ):
                     return {"status": "skipped", "reason": "mail_port_in_use"}
         return {"changed_units": changed, "sockets": rows}
     if action != "install":
@@ -170,7 +182,9 @@ def apply(container, bundle, run=command, state=Path("/var/lib/orbit/instance-ma
         "-c",
         bundle["mail"],
     ]
-    probe = json.loads(run(exec_argv + ["inspect"], json.dumps(container)))
+    probe = json.loads(
+        run(exec_argv + ["inspect"], json.dumps(container), public_guest=True)
+    )
     if probe.get("status") == "skipped":
         return probe
     bridge_route = (
@@ -247,6 +261,7 @@ def apply(container, bundle, run=command, state=Path("/var/lib/orbit/instance-ma
             run(
                 exec_argv + ["install"],
                 json.dumps(container | probe | {"activation_units": activation}),
+                public_guest=True,
             )
         )
     pending.unlink(missing_ok=True)

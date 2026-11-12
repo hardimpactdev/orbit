@@ -395,9 +395,13 @@ The stock image supplies `/usr/lib/systemd/systemd-socket-proxyd`; setup checks 
 
 ### Apply and retry
 
+Create and clone treat mail failures as advisory: the container launch succeeds and workspace, T3 and registration continue. The receipt carries `mail.status=failed` with a bounded reason and `warnings: [{code: "instance.mail_update_failed", step: "mail"}]`. A Node without the main Mailpit adds no warning. `instance:mail:update` retains a real failure when its mail work fails.
+
 Network changes precede unit writes. A failure after admission can leave the exact ACL rule, its confirmed bridge endpoint and some unit files in place; no application Process is restarted. A rerun keeps the admitted path, completes missing or changed units and enables both sockets.
 
-Pending activation lives on the Node at `/var/lib/orbit/instance-mail/<container>/activation.json`, root-only, with unit names only. Orbit saves it before writing units and clears it after reload, restarts and socket checks succeed. A repeat with no drift changes nothing and reports `unchanged`. Refreshing an endpoint’s admission timestamp alone does not count as a changed mail path. One guest preflight checks the executable, unit ownership and contents, socket states and both ports; only when needed, a second guest command installs and activates the four units together. An unchanged repeat needs only the preflight entry. Network admission completes before any unit write.
+Pending activation lives on the Node at `/var/lib/orbit/instance-mail/<container>/activation.json`, root-only, with unit names only. Orbit saves it before writing units and clears it after reload, restarts and socket checks succeed. A repeat with no drift changes nothing and reports `unchanged`. Refreshing an endpoint’s admission timestamp alone does not count as a changed mail path.
+
+One guest preflight checks the executable, unit ownership and contents, socket states and both ports; only when needed, a second guest command installs and activates the four units together. An unchanged repeat needs only the preflight entry. An active Orbit socket with a missing enable link remains Orbit-owned; the next run restores enablement. Guest failures retain only the fixed public `instance.host_unavailable` and `process.target_inactive` codes; tool output remains private. Network admission completes before any unit write.
 
 Updated endpoint settings rewrite the proxy services and restart active proxies, leaving application Processes running. The runtime folder's existing `try-restart orbit-*.service` also leaves idle proxies inactive; an active proxy restart can close its current SMTP connections while its socket remains listening. Process cleanup matches `orbit-process-*` and does not remove these mail units. Clone preparation disables inherited mail socket links before first boot, then its container launch enables its own listeners.
 

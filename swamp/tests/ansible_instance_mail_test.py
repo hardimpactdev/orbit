@@ -3,6 +3,9 @@
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -74,6 +77,7 @@ class MailPhase(unittest.TestCase):
         )
 
         self.sockets = {}
+        self.disabled = set()
         self.services = {}
         self.loaded = {}
         self.calls = []
@@ -96,7 +100,11 @@ class MailPhase(unittest.TestCase):
                 + ".socket\nActiveState="
                 + ("active" if self.sockets.get(p) else "inactive")
                 + "\nUnitFileState="
-                + ("enabled" if self.sockets.get(p) else "disabled")
+                + (
+                    "enabled"
+                    if self.sockets.get(p) and p not in self.disabled
+                    else "disabled"
+                )
                 + (
                     "\nListen=127.0.0.1:" + str(p) + " (Stream)"
                     if self.sockets.get(p)
@@ -105,7 +113,13 @@ class MailPhase(unittest.TestCase):
                 for p in MAIL.PORTS
             )
         if argv[0] == "ss":
-            return "LISTEN 0 128 0.0.0.0:2525 0.0.0.0:*\n" if self.foreign else ""
+            return (
+                "LISTEN 0 128 0.0.0.0:2525 0.0.0.0:*\n" if self.foreign else ""
+            ) + "".join(
+                f"LISTEN 0 128 127.0.0.1:{p} 0.0.0.0:*\n"
+                for p in MAIL.PORTS
+                if self.sockets.get(p)
+            )
         if argv == ["systemctl", "daemon-reload"]:
             if self.failure == "reload":
                 raise RuntimeError("fixture reload failed")
@@ -117,12 +131,14 @@ class MailPhase(unittest.TestCase):
                     self.services[name] = self.loaded[name]
         elif argv[:2] == ["systemctl", "enable"]:
             for name in argv[4:]:
-                self.sockets[int(name.split("-")[-1].split(".")[0])] = True
+                port = int(name.split("-")[-1].split(".")[0])
+                self.sockets[port] = True
+                self.disabled.discard(port)
         else:
             raise AssertionError(argv)
         return ""
 
-    def node_run(self, argv, content=None):
+    def node_run(self, argv, content=None, public_guest=False):
         self.calls.append(argv[:6])
         if argv[0:2] == ["incus", "query"]:
             if "/instances/" in argv[-1]:
@@ -371,6 +387,181 @@ class MailPhase(unittest.TestCase):
         self.assertEqual(self.apply(), {"status": "applied"})
         self.assertEqual(self.sockets, {1025: True, 2525: True})
 
+    def test_active_owned_socket_with_missing_enable_link_is_repaired(self):
+        self.assertEqual(self.apply(), {"status": "applied"})
+        self.disabled.add(
+            1025
+        )  # disable without stopping: the listener is still Orbit's.
+        self.calls.clear()
+        self.assertEqual(self.apply(), {"status": "applied"})
+        self.assertEqual(self.disabled, set())
+        self.assertEqual(self.sockets, {1025: True, 2525: True})
+        self.assertIn(
+            ["systemctl", "enable", "--now", "--", "orbit-mail-1025.socket"], self.calls
+        )
+        self.assertFalse(any("try-restart" in call for call in self.calls))
+        self.assertEqual(self.apply(), {"status": "unchanged"})
+
+    def test_failed_guest_entry_preserves_only_exact_public_codes_at_subprocess_boundary(
+        self,
+    ):
+        # Execute the shipped guest main through a real subprocess, with only Incus replaced.
+        binary = self.root / "bin"
+        binary.mkdir()
+        incus = binary / "incus"
+        incus.write_text(
+            "#!"
+            + sys.executable
+            + "\nimport os,sys\na=sys.argv[sys.argv.index('--')+1:]\nos.execv(sys.executable,[sys.executable]+a[1:])\n"
+        )
+        incus.chmod(0o755)
+        systemctl = binary / "systemctl"
+        systemctl.write_text(
+            "#!/bin/sh\nprintf 'Id=orbit-mail-1025.socket\\nActiveState=inactive\\nUnitFileState=enabled\\n'\n"
+        )
+        systemctl.chmod(0o755)
+        source = (
+            (ROOT / "swamp/ansible/instance_mail.py")
+            .read_text()
+            .replace(
+                "guest(sys.argv[1], json.load(sys.stdin))",
+                "guest(sys.argv[1], json.load(sys.stdin), root=Path("
+                + repr(str(self.guest))
+                + "))",
+            )
+        )
+
+        def invoke(code, action="inspect", plan=None, public=True):
+            argv = [
+                str(incus),
+                "exec",
+                "--project",
+                "fixture",
+                "instance-7",
+                "--",
+                "python3",
+                "-c",
+                code,
+                action,
+            ]
+            return MAIL.command(
+                argv, json.dumps(plan or self.plan), public_guest=public
+            )
+
+        proxy = self.guest / "usr/lib/systemd/systemd-socket-proxyd"
+        with patch.dict(os.environ, {"PATH": str(binary) + ":" + os.environ["PATH"]}):
+            proxy.chmod(0o644)
+            with self.assertRaisesRegex(RuntimeError, "^instance.host_unavailable$"):
+                invoke(source)
+            proxy.chmod(0o755)
+            plan = self.plan | {
+                "changed_units": [],
+                "activation_units": [],
+                "sockets": {
+                    f"orbit-mail-{p}.socket": {
+                        "ActiveState": "active",
+                        "UnitFileState": "enabled",
+                        "Listen": f"127.0.0.1:{p} (Stream)",
+                    }
+                    for p in MAIL.PORTS
+                },
+            }
+            with self.assertRaisesRegex(RuntimeError, "^process.target_inactive$"):
+                invoke(source, "install", plan)
+            for diagnostic in [
+                "process.target_inactive: private",
+                "private\ninstance.host_unavailable",
+                "instance.host_unavailable\n\n",
+            ]:
+                code = (
+                    "import sys;sys.stderr.write(" + repr(diagnostic) + ");sys.exit(1)"
+                )
+                with self.assertRaisesRegex(
+                    RuntimeError, "^instance.mail_update_failed$"
+                ):
+                    invoke(code)
+            with self.assertRaisesRegex(RuntimeError, "^instance.mail_update_failed$"):
+                invoke(
+                    "import sys;sys.stderr.write('instance.host_unavailable\\n');sys.exit(1)",
+                    public=False,
+                )
+
+    @unittest.skipUnless(shutil.which("ansible-playbook"), "pinned Ansible required")
+    def test_real_default_launch_continues_after_mail_failure(self):
+        import yaml
+
+        tasks = yaml.safe_load(
+            (ROOT / "swamp/ansible/tasks/instance-container-phase.yml").read_text()
+        )
+        mail_block = next(
+            t
+            for t in tasks
+            if t["name"] == "Apply mail before preparing the new workspace"
+        )
+        assets = self.root / "tasks"
+        assets.mkdir()
+        shutil.copy(ROOT / "swamp/ansible/tasks/instance-mail.yml", assets)
+        for name in ["instance_mail.py", "instance_bridge.py"]:
+            shutil.copy(ROOT / "swamp/ansible" / name, self.root)
+        binary = self.root / "bin"
+        binary.mkdir()
+        incus = binary / "incus"
+        incus.write_text(
+            "#!"
+            + sys.executable
+            + "\nimport sys,json\nif 'query' in sys.argv: print(json.dumps({'status':'Running'}))\nelse: sys.stderr.write('instance.host_unavailable\\n');sys.exit(1)\n"
+        )
+        incus.chmod(0o755)
+        receipt = self.root / "receipt.json"
+        play = [
+            {
+                "hosts": "localhost",
+                "connection": "local",
+                "gather_facts": False,
+                "vars": {
+                    "ansible_python_interpreter": sys.executable,
+                    "container": self.plan,
+                    "phase": "container",
+                },
+                "tasks": [
+                    mail_block,
+                    {
+                        "ansible.builtin.copy": {
+                            "dest": str(receipt),
+                            "mode": "0600",
+                            "content": "{{ {'mail': mail_result, 'later_workspace_step': true} | to_json }}",
+                        }
+                    },
+                ],
+            }
+        ]
+        plan = self.root / "play.json"
+        plan.write_text(json.dumps(play))
+        done = subprocess.run(
+            ["ansible-playbook", "-i", "localhost,", str(plan)],
+            env=os.environ
+            | {
+                "PATH": str(binary) + ":" + os.environ["PATH"],
+                "ANSIBLE_STDOUT_CALLBACK": "default",
+                "ANSIBLE_COLLECTIONS_PATH": str(self.root / "empty"),
+                "ANSIBLE_LOCAL_TEMP": str(self.root / "local"),
+                "ANSIBLE_REMOTE_TEMP": str(self.root / "remote"),
+            },
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(
+            json.loads(receipt.read_text()),
+            {
+                "mail": {"status": "failed", "reason": "instance.host_unavailable"},
+                "later_workspace_step": True,
+            },
+        )
+        self.assertIn("orbit-mail=failed:instance.host_unavailable", done.stdout)
+
     def test_no_endpoint_does_no_work(self):
         self.plan["mail"] = None
         self.assertIsNone(self.apply())
@@ -400,10 +591,10 @@ class MailPhase(unittest.TestCase):
         self.assertIn('steps["clone-container"]', str(steps["finish"]))
         self.assertIn("steps.container", str(steps["finish"]))
         source = (ROOT / "swamp/scripts/instance_clone.py").read_text()
-        self.assertIn("mail = json.loads(run(", source)
+        self.assertIn("attempted = run(", source)
         self.assertLess(
             source.index('change(project + ["start", name])'),
-            source.index("mail = json.loads(run("),
+            source.index("attempted = run("),
         )
 
 
