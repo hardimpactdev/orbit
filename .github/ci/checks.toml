@@ -2182,6 +2182,7 @@ inputs = [
 ]
 
 [all-checks]
+# checks.toml is compared by entry at the merge base: individual checks select themselves; shared policy selects all.
 # Changes to the check machinery run each check job once, without an agent delivery.
 inputs = [".github/workflows/ci.yml", ".github/actions/**", ".github/ci/checks.toml", "bin/ci-build-plan"]
 
