@@ -1,7 +1,7 @@
 ---
 title: "orbit instance:node-service:detach"
 sidebarTitle: "instance:node-service:detach"
-description: "Delete an Instance's Node service attachment record without changing network access, environment or runtime."
+description: "Withdraw an Instance's Node service access and delete its attachment record."
 covers:
   - apps/cli/app/Commands/Instances/DetachInstanceNodeServiceTargetCommand.php
   - packages/php-sdk/src/Requests/Instances/DetachInstanceNodeServiceTargetRequest.php
@@ -19,7 +19,7 @@ orbit instance:node-service:detach <instance> <target> [--yes] [--json]
 orbit instance:node-service:detach 12 4 --yes
 ```
 
-In a human terminal, omitted Instance and attachment IDs use registry data lists. The attachment choices come from the selected Instance's [Node service list](/cli/instance/node-service-list). JSON and noninteractive calls require both IDs explicitly. A supplied attachment ID must use ASCII digits and fit the positive integer range, without a sign or surrounding whitespace. `--yes` confirms deletion of this record. Without it, a terminal asks for confirmation with No selected after both IDs are resolved; JSON and noninteractive calls refuse with `instance.node_service_confirmation_required`. Declining, cancelling a selection or confirmation, Ctrl-C or end of input returns `input.cancelled` before the delete request. The confirmation states that network access, environment and the Process stay unchanged.
+In a human terminal, omitted Instance and attachment IDs use registry data lists. The attachment choices come from the selected Instance's [Node service list](/cli/instance/node-service-list). JSON and noninteractive calls require both IDs explicitly. A supplied attachment ID must use ASCII digits and fit the positive integer range, without a sign or surrounding whitespace. `--yes` confirms deletion of this record. Without it, a terminal asks for confirmation with No selected after both IDs are resolved; JSON and noninteractive calls refuse with `instance.node_service_confirmation_required`. Declining, cancelling a selection or confirmation, Ctrl-C or end of input returns `input.cancelled` before the delete request. The confirmation states that the attachment and its scoped access are removed; the Node Process and environment stay unchanged.
 
 `--json` writes the completed Operation as one JSON object without prompts or progress. Human output shows the target ID, Instance ID, Operation ID, status and request ID in a detail tree. The CLI generates one idempotency key for its delete request; it does not poll a completed receipt.
 
@@ -42,7 +42,7 @@ The MCP tool is `instance-node-service-detach`:
 
 The caller must be an active WireGuard peer authorized for the Instance's Node. [Node access](/cli/node/access-add) defines that authority. The optional `Idempotency-Key` header follows the shared [Operation replay contract](/reference/operations#retry-a-start-with-a-key).
 
-Detach deletes only the selected attachment record and stores an immediately succeeded `instance.node_service_detach` Operation. HTTP 202 returns the Operation; its result includes the attachment identity and `detached: true`. No network rules, environment values, workload files or Process runtime change, and no reach probe runs. Other attachments and the Node Process remain.
+For a checkout, detach deletes the selected record and stores an immediately succeeded `instance.node_service_detach` Operation. For a running container, the Operation first withdraws the owned loopback proxy and SMTP-independent Node service rule, then deletes the record. A failed withdrawal retains the attachment for retry. HTTP 202 returns the Operation; its result includes the attachment identity and `detached: true`. No environment values, workspace files or Node Process runtime change. Other records using the same port retain their shared proxy and rule. Other attachments and the Node Process remain.
 
 Detach works for a checkout Instance and after successful migration, including a default Instance. It releases that record's [Process dependency](/reference/processes-and-schedules#node-service-target-records). A missing target or another Instance's target returns 404 without a new receipt or deletion. A repeat without the original idempotency key therefore returns the same missing-target refusal; a matching keyed replay returns the original receipt.
 
@@ -71,3 +71,5 @@ Receipt creation and attachment deletion commit in one transaction. If either wr
 | `instance.node_service_runtime_cleanup_required` | 409 | An unfinished move retained its runtime. Retry migration to finish or restore it first. |
 | `instance.node_service_target_missing` | 404 | The target is missing or belongs to another Instance. Nothing is deleted and no new receipt is created. |
 | `operation.target_busy` | 409 | Another Operation holds the Instance lock. Nothing is deleted and no new receipt is created. |
+
+Destroy removes this Instance's entire ACL and container, including its proxy units. Shared translated bridge tuples follow the existing database/mail host reconciliation policy; detach does not invent a separate bridge withdrawal mechanism.

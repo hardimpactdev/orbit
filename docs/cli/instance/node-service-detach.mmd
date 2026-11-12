@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Record-only detach: the Gateway action and shared admission guards.
+  %% Withdraw container access before deleting the attachment.
   %% status: draft
   %% command: instance:node-service:detach
   %% kind: instance.node_service_detach
@@ -8,6 +8,7 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   participant CALL as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>Node service phase
   Note over CALL: Resolve input and consent
   %%> When:
   %%> - Omitted Instance and attachment IDs use registry choices. The attachment GET is scoped to the selected Instance and completes before consent.
@@ -51,9 +52,16 @@ sequenceDiagram
         %%> On failure:
         %%> - operation.target_busy (409): the Instance's Operation lock is held.
       else target admitted
-        Note over GW: Remove attachment<br/>Record succeeded Operation
+        opt running container
+          GW->>SW: node-service (withdraw)
+          Note over SW: Stop owned units, remove rule<br/>Keep other attachments' endpoints
+          %%> On failure:
+          %%> - Keep the attachment; retry completes the withdrawal.
+          SW-->>GW: Withdrawal complete
+        end
+        Note over GW: Remove attachment<br/>Complete Operation
         %%> When:
-        %%> - The Instance uses its checkout or has completed migration successfully.
+        %%> - A checkout needs no Node work. A container keeps the record until withdrawal succeeds.
         alt transaction fails
           GW--xCALL: Transaction failed<br/>Both writes roll back
           %%> On failure:
