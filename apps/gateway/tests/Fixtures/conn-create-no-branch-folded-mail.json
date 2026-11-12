@@ -283,7 +283,6 @@
         "clone-server-database",
         "clone-server-database-check",
         "clone-server-database-fill",
-        "clone-mail",
         "clone-workspace",
         "clone-agent",
         "clone-t3",

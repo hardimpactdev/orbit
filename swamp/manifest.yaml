@@ -141,6 +141,7 @@ additionalFiles:
   - ansible/tasks/instance-mail.yml
   - ansible/tasks/instance-mail-line.yml
   - ansible/instance-mail-update.yml
+  - ansible/instance_mail.py
   - ansible/instance_mail_line.py
   - ansible/instance/destroy-git.py
   - ansible/instance-checkout-destroy.yml

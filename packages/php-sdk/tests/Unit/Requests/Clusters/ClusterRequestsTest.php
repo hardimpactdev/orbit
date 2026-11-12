@@ -16,6 +16,7 @@ use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\UpdateClusterRequest;
 use Orbit\Sdk\Responses\Clusters\ClusterResponse;
 use Orbit\Sdk\Responses\Clusters\ClustersResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -154,11 +155,12 @@ describe('Cluster requests', function (): void {
             DestroyClusterRequest::class => new DestroyClusterRequest(3),
             AddClusterNodeRequest::class => new AddClusterNodeRequest(3, 7),
             RemoveClusterNodeRequest::class => new RemoveClusterNodeRequest(3, 7, true),
-            SetClusterRouterRequest::class => new SetClusterRouterRequest(3, 7),
-            UnsetClusterRouterRequest::class => new UnsetClusterRouterRequest(3, true),
         };
 
-        expect($connector->send($request)->dto())->toBeInstanceOf(ClusterResponse::class);
+        $response = $connector->send($request)->dto();
+        expect($response)->toBeInstanceOf(ClusterResponse::class)
+            ->and($response->toArray())->toMatchArray(cluster_request_gateway_data())
+            ->and($response->requestId)->toBe(cluster_requests_request_id());
     })->with([
         ShowClusterRequest::class,
         UpdateClusterRequest::class,
@@ -167,8 +169,28 @@ describe('Cluster requests', function (): void {
         DestroyClusterRequest::class,
         AddClusterNodeRequest::class,
         RemoveClusterNodeRequest::class,
-        SetClusterRouterRequest::class,
-        UnsetClusterRouterRequest::class,
+    ]);
+
+    it('maps Router changes to correlated Operation receipts', function (string $class, string $kind): void {
+        [$connector] = cluster_connector($class, [
+            'id' => 901, 'kind' => $kind, 'target_type' => 'cluster_router', 'target_id' => 3,
+            'status' => 'queued', 'sequence' => 1, 'steps' => [],
+        ], status: 202);
+        $request = $class === SetClusterRouterRequest::class
+            ? new SetClusterRouterRequest(3, 7)
+            : new UnsetClusterRouterRequest(3, true);
+        $response = $connector->send($request)->dto();
+
+        expect($response)->toBeInstanceOf(OperationResponse::class)
+            ->and($response->id)->toBe(901)
+            ->and($response->kind)->toBe($kind)
+            ->and($response->targetType)->toBe('cluster_router')
+            ->and($response->targetId)->toBe(3)
+            ->and($response->status)->toBe('queued')
+            ->and($response->requestId)->toBe(cluster_requests_request_id());
+    })->with([
+        [SetClusterRouterRequest::class, 'cluster.router_set'],
+        [UnsetClusterRouterRequest::class, 'cluster.router_unset'],
     ]);
 
     it('does not keep replaced Cluster request class names', function (string $class): void {

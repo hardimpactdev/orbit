@@ -62,16 +62,17 @@ class PlanningTest(unittest.TestCase):
         self.assertEqual([u for u, _ in explicit], [f'swamp/a.ts#{k}/5' for k in range(5)])
         self.assertTrue(all(cost == 121 / 5 + 6 for _, cost in explicit))
 
-    def test_mail_python_fixture_is_deferred_whole_until_the_followup(self):
+    def test_fast_mail_python_fixture_runs_whole_in_required_pr_path(self):
         budget, fixtures, defaults = units.configuration()
         file = 'swamp/tests/ansible_instance_mail_test.py'
         self.assertEqual(set(units.collect(file)['cases']), set(fixtures[file]['cases']))
         step = units.unit_step(file, fixtures, {}, Path('/tmp/fixture-collections'))
         self.assertEqual(step.argv, ['python3', '-I', 'tests/ansible_instance_mail_test.py'])
         result = units.plan([file], budget, fixtures, defaults)
-        self.assertNotIn(file, names(result))
-        self.assertIn(file, result['deferred'])
-        self.assertEqual(fixtures[file]['reason'], 'over the 180 s ceiling, follow-up')
+        self.assertIn(file, names(result))
+        self.assertNotIn(file, result['deferred'])
+        self.assertFalse(fixtures[file].get('after_merge'))
+        self.assertLessEqual(fixtures[file]['cost'], 15)
 
     def test_limit_defers_names_and_keeps_direct_matches_over_shared_globs(self):
         fixtures = [fixture('swamp/direct.py', 100, ['swamp/tasks/input.yml']),
