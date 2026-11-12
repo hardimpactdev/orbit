@@ -239,6 +239,9 @@ def probe_proxy(target, root, run, connect, clock=time.monotonic, sleep=time.sle
                         before = tcp_sockets(pid, root)
                         reason = 'connect_failed'
                         client = stack.enter_context(connect(('127.0.0.1', port), timeout=max(0.001, min(2, deadline - clock()))))
+                        # Re-read systemd after connecting, before accepting kernel evidence.
+                        reason = 'accept_not_seen'
+                        continue
                     if current_pid != pid:
                         reason = 'proxy_not_running'
                     else:
