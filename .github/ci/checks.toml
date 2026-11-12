@@ -2838,7 +2838,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_migrate_source_test.ts"
-cost = 8
+cost = 16
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -2846,4 +2846,5 @@ inputs = [
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/instance-migrate-phase.yml",
+  "swamp/ansible/tasks/instance-migrate-retirement-check.yml",
 ]

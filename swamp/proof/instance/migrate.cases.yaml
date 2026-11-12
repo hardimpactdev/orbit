@@ -22,6 +22,8 @@
 # retain their Git data after retirement. Retirement atomically moves the whole checkout and never deletes metadata.
 # Both path lists are bounded to 20 entries with total counts. New changes or worktrees after preflight refuse final retirement,
 # keep every source intact, and leave the container serving. Late additions after the final listing are retained. A retained checkout (retire: []) is not deleted or checked.
+# Source fixtures use real Git to prove a never-pushed branch at a pushed commit passes retirement and copies locally;
+# the remote probe reads the Project default branch. gh_cli skips the App preflight and keeps the local-copy path.
 command: instance:migrate
 chart: instance/migrate
 target: app-dev
@@ -29,11 +31,10 @@ sources: [gateway]
 baseline: [operations]
 
 uncovered:
-  "code:source.github_app_denied": "Pest covers missing installation, excluded repository and no vault copy; migration refusal before native submission leaves the checkout unchanged."
+  "code:source.github_app_denied": "Pest covers missing installation, excluded repository and no vault copy; Ansible covers later Git authentication refusal with the same safe App/repository message and no raw diagnostics."
   "code:source.github_unavailable": "Faked HTTP tests distinguish GitHub 5xx and timeout from missing installation; no live credential faults are injected."
   "code:source.read_timed_out": "One unprivileged Ansible fixture fakes timeout exit 124 with no sleep, proves the 30-second command bound and credential removal before any checkout change."
   "code:source.head_unavailable": "Ansible fixture covers a failed remote branch read before downtime."
-  "code:deployment.source_access_unsupported": "Pest proves gh_cli migration refuses before credential copies because deploy cannot fetch it."
   development-mail: "Real-Ansible fixtures execute the shared exact-line task after a fixture copy. Result fixtures prove a failed mail attempt records a warning without changing moved, ready or restored; the workflow orders both application starts after its bounded allowFailure phase."
   "code:instance.migrate_env_service_unreachable": "Environment policy fixtures cover loopback, stale addresses, exact attached targets, driver skips, prefixes, IPv6, quoted values, nested files and redaction. Ansible fixtures prove refusal before Process stop or marker removal; live migration requires the Instance pool/image."
 

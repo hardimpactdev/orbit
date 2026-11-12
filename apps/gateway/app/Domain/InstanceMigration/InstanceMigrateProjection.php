@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\InstanceMigration;
 
 use App\Actions\Operations\ExpireOperationAction;
+use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
@@ -57,12 +59,10 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
     {
         $input = $operation->input;
         $instance = Instance::query()->findOrFail($operation->target_id);
-        if ($instance->project->source_access !== ProjectSourceAccess::GitHubApp) {
-            throw new ResourceOperationException('deployment.source_access_unsupported',
-                'Migration requires github_app source access, as deployment does.', 409);
-        }
-        $source = app(InstanceGitHubReadTokens::class)->credentialCopy($instance->project->repository_url,
-            'instance-migrate-source-'.$operation->id);
+        $appSource = $instance->project->source_access === ProjectSourceAccess::GitHubApp;
+        $source = $appSource ? app(InstanceGitHubReadTokens::class)->credentialCopy($instance->project->repository_url,
+            'instance-migrate-source-'.$operation->id) : null;
+        $repository = GitHubRepository::fromOrigin($instance->project->repository_url);
         $container = ValidatedData::object($input['container']);
         $publication = ($input['route_publication'] ?? null) === null ? null : ValidatedData::object($input['route_publication']);
         // Swamp evaluates the agent step's inputs for a default too, so every run has the copy; only an Instance with T3 holds a key.
@@ -76,13 +76,16 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
 
         return ['intent' => [
             'instance_id' => $instance->id, 'instance_name' => $instance->name, 'ssh_execution' => $input['ssh_execution'],
-            'container' => $container, 'migrate' => [...ValidatedData::object($input['migrate']), 'source' => [
-                'repository' => $instance->project->repository_url,
-                'branch' => ValidatedData::object($input['migrate'])['branch'],
-            ]],
+            'container' => $container, 'migrate' => [...ValidatedData::object($input['migrate']),
+                ...($source === null ? [] : ['source' => [
+                    'repository' => $instance->project->repository_url,
+                    'branch' => ValidatedData::string($instance->project->default_branch),
+                    'access_denied_message' => $repository === null ? null : InstanceGitHubReadTokens::accessDeniedMessage(
+                        app(GitHubAppStore::class)->credentials()->slug ?? '(not configured)', $repository),
+                ]])],
             'route_mutations' => $publication === null ? null : ValidatedData::object($publication['route_mutations']),
         ], 'execution_secrets' => [
-            'source_credential' => $source,
+            ...($source === null ? [] : ['source_credential' => $source]),
             ...($publication === null ? [] : ValidatedData::object($publication['execution_secrets'])),
             'process_environments' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-migrate-processes-'.$operation->id,
                 json_encode([...ValidatedData::object(json_decode(app(ContainerProcesses::class)->environments($instance, $container['processes'] ?? [], migrate: true), true, flags: JSON_THROW_ON_ERROR)),

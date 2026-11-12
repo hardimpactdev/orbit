@@ -91,6 +91,12 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
         }
     }
 
+    /** Safe diagnosis shared by credential preparation and the Node's later authentication refusal. */
+    public static function accessDeniedMessage(string $app, GitHubRepository $repository): string
+    {
+        return "The GitHub App {$app} cannot read {$repository->owner}/{$repository->name}: install it for that organisation or add the repository.";
+    }
+
     /** A fresh Contents read token, or anonymous access for a confirmed public repository. */
     private function mint(string $origin): ?GitHubAccessToken
     {
@@ -122,7 +128,7 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
         }
 
         throw new ResourceOperationException('source.github_app_denied',
-            "The GitHub App {$app} cannot read {$name}: install it for that organisation or add the repository.", 403);
+            self::accessDeniedMessage($app, $repository), 403);
     }
 
     /**

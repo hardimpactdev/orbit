@@ -42,17 +42,17 @@ App install/show are state-only. They return the last stored installation observ
 
 ## Instance source credentials
 
-Deploy, automatic deploy, development create, production clone and removal that reads source resolve fresh repository-scoped `Contents: read` credentials before writing a fetch credential. Migration uses the same resolver, then checks the remote branch before downtime. An already active create and a removal that needs no source read still need no credential. These errors fail the admitted Operation before its native run starts; no empty credential is written for an inaccessible private repository.
+Deploy, automatic deploy, development create, production clone and removal that reads source resolve fresh repository-scoped `Contents: read` credentials before writing a fetch credential. Migration uses the same resolver, then checks the Project's default branch before downtime; `gh_cli` migration keeps its local-copy path and skips this App preflight. An already active create and a removal that needs no source read still need no credential. Credential preparation errors fail the admitted Operation before its native run starts; no empty credential is written for an inaccessible private repository.
 
 | Code | HTTP status | Meaning |
 | --- | --- | --- |
-| `source.github_app_denied` | 403 | The message names the App and owner/repository. Install the App for that account or add the repository to its installation. GitHub's repository-installation 404 does not distinguish those two causes. |
+| `source.github_app_denied` | 403 | The message names the App and repository. Install the App or add the repository. Git authentication refusal during migration carries the same message. |
 | `source.github_unavailable` | 502 | GitHub failed or timed out while resolving the credential. This does not establish that the App lacks access. |
-| `deployment.source_access_unsupported` | 409 | Migration and development deployment require `github_app`; `gh_cli` is unsupported. |
+| `deployment.source_access_unsupported` | 409 | Development deployment requires `github_app`; migration still accepts `gh_cli` without the App preflight. |
 | `source.read_timed_out` | Operation error | Migration could not reach the source in 30 s. The checkout keeps serving. |
-| `source.head_unavailable` | Operation error | Migration could not read the requested remote branch. The checkout keeps serving. |
+| `source.head_unavailable` | Operation error | Migration could not read the Project's default branch; its message distinguishes a missing ref from a network failure. The checkout keeps serving. |
 
-A missing installation permits anonymous access only when GitHub confirms the repository is public. This preserves public sources outside the App's installation accounts. Automatic deployment records a credential failure as terminal; it does not repeatedly admit the same failed deployment as a transient start failure.
+GitHub's repository-installation 404 does not distinguish a missing installation from an excluded repository. A missing installation permits anonymous access only when GitHub confirms the repository is public. This preserves public sources outside the App's installation accounts. Automatic deployment records a credential failure as terminal; it does not repeatedly admit the same failed deployment as a transient start failure.
 
 ## Services dependency credentials
 

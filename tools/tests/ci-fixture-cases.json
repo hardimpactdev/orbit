@@ -1919,7 +1919,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "a452ae8d4ece76ed216171f8669e58e1c939efd6b5d2237b661c98c3c90ef99b",
+    "source_sha256": "f7c89e168f3a4e06db343d7842deeffd40ee1cf4138edd0c6a69f4d1584b813e",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -2044,9 +2044,10 @@
     ]
   },
   "swamp/tests/ansible_instance_migrate_source_test.ts": {
-    "source_sha256": "586ae924884c2e5ef7a6028d257f3576d434777669068fa37cf7a9d04b298f96",
+    "source_sha256": "cb06c8182f55785efd21d952bc3f2853fb5603fae9d94a8730e6f96ac349fb6a",
     "cases": [
-      "migration source preflight distinguishes failure and timeout before changing the checkout"
+      "migration source preflight distinguishes failure and timeout before changing the checkout",
+      "a never-pushed branch at a pushed commit passes source and retirement checks and copies locally"
     ]
   }
 }

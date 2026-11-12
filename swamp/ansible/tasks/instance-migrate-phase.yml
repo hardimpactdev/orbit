@@ -73,14 +73,29 @@
       always:
         - name: Remove the temporary fetch credential
           ansible.builtin.file: {path: "{{ migrate_source_private.path }}", state: absent}
+    - name: Classify authentication diagnostics privately
+      ansible.builtin.set_fact:
+        migrate_source_auth_denied: >-
+          {{ migrate_source_read.rc not in [0, 2, 124, 137]
+             and migrate.source.get('access_denied_message') is not none
+             and ('authentication failed' in (migrate_source_read.stderr | lower)
+                  or 'could not read username' in (migrate_source_read.stderr | lower)
+                  or 'repository not found' in (migrate_source_read.stderr | lower)
+                  or 'requested url returned error: 401' in (migrate_source_read.stderr | lower)
+                  or 'requested url returned error: 403' in (migrate_source_read.stderr | lower)) }}
+      no_log: true
     - name: Name a failed source read without remote output
       when: migrate_source_read.rc != 0
       ansible.builtin.set_fact:
-        migrate_refusal_code: "{{ 'source.read_timed_out' if migrate_source_read.rc in [124, 137] else 'source.head_unavailable' }}"
+        migrate_refusal_code: >-
+          {{ 'source.read_timed_out' if migrate_source_read.rc in [124, 137] else
+             'source.github_app_denied' if migrate_source_auth_denied else 'source.head_unavailable' }}
         migrate_refusal_message: >-
           {{ 'Could not reach the source in 30 s: ' ~ migrate.source.repository ~ '.'
              if migrate_source_read.rc in [124, 137] else
-             'Could not read the remote branch ' ~ migrate.source.branch ~ ' of ' ~ migrate.source.repository ~ '.' }}
+             migrate.source.access_denied_message if migrate_source_auth_denied else
+             'The remote branch ' ~ migrate.source.branch ~ ' does not exist in ' ~ migrate.source.repository ~ '.'
+             if migrate_source_read.rc == 2 else 'Could not reach the source: ' ~ migrate.source.repository ~ '.' }}
     - name: Require the remote branch to be readable
       ansible.builtin.assert:
         that: migrate_source_read.rc == 0
