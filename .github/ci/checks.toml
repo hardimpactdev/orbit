@@ -2565,7 +2565,7 @@ default = []
 file = "swamp/tests/ansible_instance_mail_test.py"
 cost = 40
 # Per-case estimates; real Ansible executes only against fake Incus and Docker boundaries.
-slices = 4
+slices = false
 inputs = [
   "apps/gateway/app/Domain/Instances/DevelopmentMail.php",
   "swamp/ansible/tasks/instance-mail.yml",

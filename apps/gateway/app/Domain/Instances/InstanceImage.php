@@ -15,7 +15,7 @@ final readonly class InstanceImage
     public const string StableAlias = 'orbit-instance';
 
     /** OS packages beyond the stock image: the firewall, ACLs on the workspace, and Git for the workspace repository. */
-    public const array Packages = ['acl', 'git', 'nftables', 'systemd'];
+    public const array Packages = ['acl', 'git', 'nftables'];
 
     /**
      * The environment of every program from the runtime folder: Vite+ links the prepared runtime from its writable home,

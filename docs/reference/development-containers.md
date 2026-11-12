@@ -391,7 +391,7 @@ Create and development clone apply the mail phase before workspace preparation. 
 
 ### Listeners and lifecycle
 
-The `systemd` image package supplies `/usr/lib/systemd/systemd-socket-proxyd`; setup checks that it is executable before any changes. Four root-owned files under `/etc/systemd/system` define `orbit-mail-1025.socket`, `orbit-mail-1025.service`, `orbit-mail-2525.socket` and `orbit-mail-2525.service`. Only the sockets are enabled. Services start on demand and restart on failure. They listen only on IPv4 loopback. Foreign listeners or unit files skip mail setup with `mail_port_in_use` or `mail_unit_conflict`; Orbit does not stop a Project Process to take its port.
+The stock image supplies `/usr/lib/systemd/systemd-socket-proxyd`; setup checks that it is executable before any changes. Mail changes neither the prepared image definition nor its digest. Four root-owned files under `/etc/systemd/system` define `orbit-mail-1025.socket`, `orbit-mail-1025.service`, `orbit-mail-2525.socket` and `orbit-mail-2525.service`. Only the sockets are enabled. Services start on demand and restart on failure. They listen only on IPv4 loopback. Foreign listeners or unit files skip mail setup with `mail_port_in_use` or `mail_unit_conflict`; Orbit does not stop a Project Process to take its port.
 
 ### Apply and retry
 

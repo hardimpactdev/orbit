@@ -62,6 +62,18 @@ class PlanningTest(unittest.TestCase):
         self.assertEqual([u for u, _ in explicit], [f'swamp/a.ts#{k}/5' for k in range(5)])
         self.assertTrue(all(cost == 121 / 5 + 6 for _, cost in explicit))
 
+    def test_mail_python_fixture_plans_one_executable_unit_within_capacity(self):
+        budget, fixtures, defaults = units.configuration()
+        file = 'swamp/tests/ansible_instance_mail_test.py'
+        planned_units = units.units_for(fixtures[file], budget)
+        self.assertEqual(planned_units, [(file, fixtures[file]['cost'])])
+        self.assertLessEqual(planned_units[0][1], budget['shard_seconds'])
+        step = units.unit_step(file, fixtures, {}, Path('/tmp/fixture-collections'))
+        self.assertEqual(step.argv, ['python3', '-I', 'tests/ansible_instance_mail_test.py'])
+        result = units.plan([file], budget, fixtures, defaults)
+        self.assertIn(file, names(result))
+        self.assertEqual(result.get('capacity', []), [])
+
     def test_limit_defers_names_and_keeps_direct_matches_over_shared_globs(self):
         fixtures = [fixture('swamp/direct.py', 100, ['swamp/tasks/input.yml']),
                     fixture('swamp/other.py', 100, ['swamp/**']),
