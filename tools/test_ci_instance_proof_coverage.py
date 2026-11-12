@@ -111,7 +111,7 @@ class InstanceExecutionProofTest(unittest.TestCase):
                 plan.report_instance_execution_coverage(coverage, selected)
 
     def test_mapping_only_removal_is_rejected_before_a_later_execution_edit(self):
-        for mapping in ('** skip\n', MAPPING + f'{PATH} skip\n'):
+        for mapping in ('** skip\n', MAPPING + f'{PATH} skip\n', MAPPING + f'{PATH} none: no case yet\n'):
             # Step one cannot establish a new base without ownership.
             coverage, selected = self.assess(before=REAL, after=REAL, mapping=mapping,
                                              old_mapping=MAPPING, paths=[plan.SELECTION])
@@ -121,6 +121,21 @@ class InstanceExecutionProofTest(unittest.TestCase):
             # The next execution edit still compares against the last accepted base.
             coverage, selected = self.assess(before=REAL, after=REAL, mapping=mapping,
                                              old_mapping=MAPPING, paths=[PATH, plan.SELECTION])
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(ValueError):
+                plan.report_instance_execution_coverage(coverage, selected)
+
+    def test_wildcard_preserves_real_coverage_and_cannot_later_be_removed(self):
+        wildcard = MAPPING + f'{PATH} *\n'
+        coverage, selected = self.assess(before=REAL, after=REAL, mapping=wildcard,
+                                         old_mapping=MAPPING, paths=[PATH, plan.SELECTION])
+        self.assertFalse(any(item['missing_mappings'] for item in coverage))
+        self.assertEqual(selected[0]['only'], ['clone-runtime'])
+        with contextlib.redirect_stderr(io.StringIO()) as output:
+            plan.report_instance_execution_coverage(coverage, selected)
+        self.assertNotIn('::error', output.getvalue())
+        for value in ('skip', 'none: no case yet'):
+            coverage, selected = self.assess(before=REAL, after=REAL, mapping=MAPPING + f'{PATH} {value}\n',
+                                             old_mapping=wildcard, paths=[plan.SELECTION])
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(ValueError):
                 plan.report_instance_execution_coverage(coverage, selected)
 

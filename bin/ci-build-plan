@@ -92,6 +92,8 @@ def instance_execution_coverage(paths, selection, read, tracked_paths=()):
 
     def commands(path, rules):
         value = next((value for (regex, _), value in reversed(rules) if regex.fullmatch(path)), '')
+        if value == '*':
+            return set(INSTANCE_COMMANDS)
         return set() if value == 'skip' or value.startswith('none:') else set(value.split()) & set(INSTANCE_COMMANDS)
 
     def execution_path(path):
