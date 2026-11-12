@@ -14,10 +14,10 @@ use Illuminate\Validation\ValidationException;
 use stdClass;
 use UnexpectedValueException;
 
-/** One closed object: a new name, a platform, the LAN address, reboot hold, the apps folder, or the task VM host settings; at least one. */
+/** One closed object: a new name, a platform, the LAN address, reboot hold, image refresh hold, the apps folder, or the task VM host settings; at least one. */
 final class UpdateNodeRequest extends FormRequest
 {
-    private const array MEMBERS = ['name', 'platform', 'lan_ip', 'reboot_hold', 'apps', 'task_vms'];
+    private const array MEMBERS = ['name', 'platform', 'lan_ip', 'reboot_hold', 'image_refresh_hold', 'apps', 'task_vms'];
 
     public function authorize(): bool
     {
@@ -34,6 +34,7 @@ final class UpdateNodeRequest extends FormRequest
             'platform' => ['sometimes', 'string', Rule::in(['linux', 'macos', 'ipados'])],
             'lan_ip' => ['sometimes', 'nullable', 'ipv4'],
             'reboot_hold' => ['sometimes', 'boolean:strict'],
+            'image_refresh_hold' => ['sometimes', 'boolean:strict'],
             'apps' => ['sometimes', 'nullable', 'array:path'],
             'apps.path' => ['sometimes', 'nullable', 'string'],
             'task_vms' => ['sometimes', 'nullable', 'array:cidr,task_places,project,network,pool,pool_size,image_alias,zfs_dataset,cpus,memory,disk,operator_owned,slots,ci_places,containers'],
@@ -77,7 +78,7 @@ final class UpdateNodeRequest extends FormRequest
         $patch = $this->settings();
 
         return [
-            ...array_intersect_key($body, array_flip(['name', 'platform', 'lan_ip', 'reboot_hold'])),
+            ...array_intersect_key($body, array_flip(['name', 'platform', 'lan_ip', 'reboot_hold', 'image_refresh_hold'])),
             ...($patch->hasApps ? ['apps' => $patch->apps === null ? null : ['path' => $patch->apps->path]] : []),
             ...($patch->hasTaskVms ? ['task_vms' => $patch->taskVms?->toArray()] : []),
         ];
@@ -117,6 +118,13 @@ final class UpdateNodeRequest extends FormRequest
         return is_bool($hold) ? $hold : null;
     }
 
+    public function imageRefreshHold(): ?bool
+    {
+        $hold = $this->validated()['image_refresh_hold'] ?? null;
+
+        return is_bool($hold) ? $hold : null;
+    }
+
     /** The apps and task_vms members; the settings parser owns their shape and the `node.settings_*` codes. */
     public function settings(): NodeSettingsPatch
     {
@@ -140,7 +148,7 @@ final class UpdateNodeRequest extends FormRequest
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
         if ($body === []) {
-            throw ValidationException::withMessages(['body' => ['The request body must contain at least one of name, platform, lan_ip, reboot_hold, apps, or task_vms.']]);
+            throw ValidationException::withMessages(['body' => ['The request body must contain at least one of name, platform, lan_ip, reboot_hold, image_refresh_hold, apps, or task_vms.']]);
         }
 
         return $body;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\UpdateNodeRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
@@ -230,3 +231,19 @@ it('refuses malformed reboot hold options before sending a request', function (s
     $this->artisan('node:update', ['node' => '9', '--reboot-hold' => $value, '--json' => true])
         ->expectsOutputToContain('node.reboot_hold_invalid')->assertExitCode(1);
 })->with(['', '1', 'yes', 'null']);
+
+it('sets and clears an image refresh hold through Node update', function (bool $hold): void {
+    node_update_profile();
+    $mock = MockClient::global(['*/api/v1/nodes/12' => MockResponse::make([
+        'data' => ['id' => 12, 'name' => 'sabre', 'status' => 'active', 'image_refresh_hold' => $hold],
+        'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+    ])]);
+    expect(Artisan::call('node:update', ['node' => '12', $hold ? '--image-refresh-hold' : '--no-image-refresh-hold' => true, '--json' => true]))->toBe(0);
+    expect(Artisan::output())->toContain('"image_refresh_hold":'.($hold ? 'true' : 'false'));
+    $mock->assertSent(fn ($request): bool => $request instanceof UpdateNodeRequest && $request->body()->all() === ['image_refresh_hold' => $hold]);
+})->with([true, false]);
+
+it('refuses conflicting image refresh hold switches before sending a request', function (): void {
+    expect(Artisan::call('node:update', ['node' => '12', '--image-refresh-hold' => true, '--no-image-refresh-hold' => true, '--json' => true]))->toBe(1);
+    expect(Artisan::output())->toContain('node.image_refresh_hold_invalid');
+});

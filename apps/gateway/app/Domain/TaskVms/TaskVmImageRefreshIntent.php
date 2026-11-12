@@ -27,6 +27,8 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class TaskVmImageRefreshIntent
 {
+    public const string Held = 'task_vm.image_refresh_held';
+
     public const string Kind = 'task_vm.image_refresh';
 
     /** Where the proof Swamp Club key lives on a task VM; the nested Gateway reads it through a disk device (swamp/ansible/task-vm-role.yml). */
@@ -79,6 +81,10 @@ final readonly class TaskVmImageRefreshIntent
      */
     public function start(Node $host, string $caller, ?string $request = null, ?string $commit = null, bool $fromStock = false): Operation
     {
+        // Read the stored hold: a release asks again after a pause with the same Node object, and the operator may have set it meanwhile.
+        if (Node::query()->whereKey($host->id)->value('image_refresh_hold') === true) {
+            throw new ResourceOperationException(self::Held, 'The host has an image refresh hold; clear it through node:update before refreshing.', 409);
+        }
         if ($fromStock && self::open($host) instanceof Operation) {
             throw new ResourceOperationException('operation.target_busy', 'A refresh of this host is open; rebuild after it ends.', 409);
         }

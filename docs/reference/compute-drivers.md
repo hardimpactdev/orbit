@@ -1242,6 +1242,10 @@ Each task VM host refreshes its own base. Nothing is copied between hosts. An op
 
 Two triggers admit every Linux host: every verified release, from its step "Admit VM refreshes" after successful verification and successful or skipped Horizon start, which runs `task-vms:refresh-images --commit <sha>` from the verified release, and a daily schedule at 03:20. Release admission is best effort and does not wait for refresh completion.
 
+Set a per-host hold with `orbit node:update NODE --image-refresh-hold`; clear it with `--no-image-refresh-hold`. The Node column `image_refresh_hold` defaults to false and appears in Node list and show. Release and daily admission skip each held host with `skipped:operator_hold`, without creating or queueing an Operation. The release keeps this host-name result in its "Admit VM refreshes" step output; the daily job records the same result in the admission log. Other hosts refresh as usual. The host stays configured and keeps serving task VMs from its last promoted image.
+
+Operator refreshes respect the hold too, as operator fleet reboot passes respect `reboot_hold`. A single-host `task-vms:refresh-image`, including `--from-stock`, refuses with `task_vm.image_refresh_held`. The all-host command reports the held host as skipped. Changes apply to the next admission, including a release commit queued behind an open refresh. An admitted refresh continues; setting the hold does not cancel it.
+
 A host with a refresh open keeps it and queues the newest commit behind it: the run that ends admits that commit. A host that refuses is skipped until the next trigger. `task-vms:image-builds` (also `task-vms:list-image-builds`) lists recent refresh records.
 
 `task-vms:refresh-image <host> --from-stock` rebuilds the base. At admission it withdraws the recorded base, so a task start on that host is refused until the run promotes the new one. The run deletes the base VM and its seed, with their snapshots, then builds the base from the stock image as on a new host. After a failure, the next refresh builds it as on a new host too. After every refresh that passed, a `host-clean` phase removes what no current path makes:
@@ -1473,6 +1477,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:refresh-image <host>` |
 | `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. Run `task-vms:refresh-image <host>` |
 | `task_vm.topology_seed_failed` | 502 | The topology seed build was refused. The error includes its bounded diagnostic |
+| `task_vm.image_refresh_held` | 409 | The host has an image refresh hold; clear it through `node:update` before an explicit refresh |
 | `task_vm.image_refresh_unavailable` | 409 | A refresh cannot start: the Gateway release has no commit |
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |
 The build row records the step and error |

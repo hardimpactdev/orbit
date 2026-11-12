@@ -27,6 +27,8 @@ final class UpdateNodeCommand extends NodeCommand
         {--name= : New unique registry name}
         {--platform= : Platform of an unmanaged Node: linux, macos, or ipados}
         {--reboot-hold= : Hold fleet reboots: true or false}
+        {--image-refresh-hold : Hold task VM image refreshes}
+        {--no-image-refresh-hold : Clear the task VM image refresh hold}
         {--lan-ip= : LAN IPv4 address; an empty value clears it}
         {--apps-path= : Apps folder; an empty value restores the default}
         {--task-vms= : Task VM host settings as a JSON object, or null to remove them}
@@ -34,7 +36,7 @@ final class UpdateNodeCommand extends NodeCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Change the name, platform, LAN address, reboot hold, apps folder, or task VM host settings of a Node.';
+    protected $description = 'Change the name, platform, LAN address, reboot hold, image refresh hold, apps folder, or task VM host settings of a Node.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -48,11 +50,18 @@ final class UpdateNodeCommand extends NodeCommand
         $platform = $this->option('platform');
         $lanIp = $this->option('lan-ip');
         $rebootHold = $this->option('reboot-hold');
+        $holdImageRefresh = (bool) $this->option('image-refresh-hold');
+        $clearImageRefreshHold = (bool) $this->option('no-image-refresh-hold');
+        $imageRefreshHold = $holdImageRefresh ? true : ($clearImageRefreshHold ? false : null);
         $appsPath = $this->option('apps-path');
         $taskVms = $this->option('task-vms');
 
-        if (! is_string($name) && ! is_string($platform) && ! is_string($lanIp) && ! is_string($appsPath) && ! is_string($taskVms) && ! is_string($rebootHold)) {
-            return $this->renderGatewayFailure('node.option_required', 'Provide at least one of --name, --platform, --lan-ip, --reboot-hold, --apps-path, or --task-vms.');
+        if (! is_string($name) && ! is_string($platform) && ! is_string($lanIp) && ! is_string($appsPath) && ! is_string($taskVms) && ! is_string($rebootHold) && $imageRefreshHold === null) {
+            return $this->renderGatewayFailure('node.option_required', 'Provide at least one of --name, --platform, --lan-ip, --reboot-hold, --image-refresh-hold, --no-image-refresh-hold, --apps-path, or --task-vms.');
+        }
+
+        if ($holdImageRefresh && $clearImageRefreshHold) {
+            return $this->renderGatewayFailure('node.image_refresh_hold_invalid', 'Use only one of --image-refresh-hold or --no-image-refresh-hold.');
         }
 
         if (is_string($rebootHold) && ! in_array($rebootHold, ['true', 'false'], true)) {
@@ -115,6 +124,7 @@ final class UpdateNodeCommand extends NodeCommand
                 taskVms: NodeSettingOptions::taskVms($host['value'] ?? null),
                 idempotencyKey: is_string($idempotencyKey) ? $idempotencyKey : null,
                 rebootHold: is_string($rebootHold) ? $rebootHold === 'true' : null,
+                imageRefreshHold: $imageRefreshHold,
                 hasLanIp: is_string($lanIp),
                 lanIp: is_string($lanIp) && $lanIp !== '' ? $lanIp : null,
             ),

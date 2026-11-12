@@ -16,7 +16,7 @@ sequenceDiagram
   CLI->>GW: node:update NODE<br/>--apps-path=PATH
   %%> Command:
   %%> - `orbit node:update NODE --apps-path=PATH`
-  %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--lan-ip=IP] [--reboot-hold=BOOL] [--apps-path=PATH] [--task-vms=JSON] [--json]`
+  %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--lan-ip=IP] [--reboot-hold=BOOL] [--image-refresh-hold|--no-image-refresh-hold] [--apps-path=PATH] [--task-vms=JSON] [--json]`
   %%> Input:
   %%> - the Node, and at least one setting to change
   %%> - an apps-folder change or withdrawal of existing task-host input rules needs Node work; other changes are records
@@ -56,7 +56,7 @@ sequenceDiagram
     %%> - the new apps folder, and the managed user and group that must own it
     %%> - the target's address and SSH host keys; the SSH identity comes from the `swamp` role
     %%> Not stored yet:
-    %%> - the settings stay unchanged until the run succeeds; a new name, platform, LAN address or reboot hold in the same request is saved at once
+    %%> - the settings stay unchanged until the run succeeds; a new name, platform, LAN address or either hold in the same request is saved at once
     %%> Unsetting on a Node with an active `app-dev` role:
     %%> - prepares the default folder, `<managed-user-home>/apps`
     GW-->>CLI: 202 Accepted<br/>task ID
@@ -113,7 +113,8 @@ sequenceDiagram
     %% path: records
     Note over GW: Save the records
     %%> What it does:
-    %%> - saves the name, platform, LAN address, reboot hold or task VM host settings at once when no apps preparation or task-host input withdrawal is needed; no Node is contacted
+    %%> - saves the name, platform, LAN address, reboot hold, image refresh hold or task VM host settings at once when no apps preparation or task-host input withdrawal is needed; no Node is contacted
+    %%> - `--image-refresh-hold` and `--no-image-refresh-hold` store the image refresh hold; every Node read shows it; the next refresh admission respects it
     %%> - `--reboot-hold=true` or `false` saves a boolean column; every Node read shows it; the next fleet reboot admission freezes it
     %%> - a new LAN address takes effect where Orbit next renders it; a Node on the hub's private network moves to the hub's LAN endpoint at its next `node:converge`
     %%> Skipped:

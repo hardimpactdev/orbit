@@ -66,6 +66,7 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
+use App\Domain\TaskVms\TaskVmImageRefreshTrigger;
 use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Domain\TaskVms\TaskVmPromotedImage;
 use App\Domain\TaskVms\TaskVmProviderKind;
@@ -83,6 +84,7 @@ use App\Infrastructure\Swamp\SwampDispatch;
 use App\Infrastructure\Swamp\SwampWorkerKnownHostsInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Jobs\Tasks\AdmitTaskVm;
+use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Jobs\TaskVms\ReleaseIdleTaskVms;
 use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
@@ -100,6 +102,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Mockery\MockInterface;
@@ -1898,4 +1901,91 @@ it('has a group cancel stop the group\'s running task start, then answer busy wi
     expect($refused?->errorCode)->toBe('operation.target_busy')->and($refused?->details['operation_id'] ?? null)->toBe($provision->id)
         ->and($provision->refresh()->cancel_requested_at)->not->toBeNull()
         ->and($refused?->getMessage())->toContain('asked to stop');
+});
+
+it('skips and reports held hosts in release and daily refresh admission while starting the others', function (bool $release): void {
+    Queue::fake();
+    [$beast] = slotPoolHost();
+    slotPoolSweepWorld();
+    slotPoolClaimServices();
+    $sabre = $beast->replicate();
+    $sabre->forceFill(['id' => 12, 'name' => 'sabre', 'wireguard_ip' => '10.44.0.12', 'public_ssh_host' => '10.44.0.12', 'image_refresh_hold' => true]);
+    $sabre->saveQuietly();
+    $shark = $beast->replicate();
+    $shark->forceFill(['name' => 'shark', 'wireguard_ip' => '10.44.0.13', 'public_ssh_host' => '10.44.0.13']);
+    $shark->saveQuietly();
+    $settings = app(TaskVmSettings::class);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
+        [new TaskVmHost($beast->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 2, 4, '8GiB', '20GiB', ciPlaces: 2),
+            new TaskVmHost($sabre->id, 'orbit-tasks', 'orbittask0', '10.252.12.0/24', 2, 4, '8GiB', '20GiB', ciPlaces: 2),
+            new TaskVmHost($shark->id, 'orbit-tasks', 'orbittask0', '10.252.13.0/24', 2, 4, '8GiB', '20GiB', ciPlaces: 2)],
+        '/pi', str_repeat('a', 64), ['gpt-6']));
+    $home = config()->string('orbit.home');
+    $commit = str_repeat('d', 40);
+    File::ensureDirectoryExists($home.'/releases/'.substr($commit, 0, 12).'/apps/gateway');
+    file_put_contents($home.'/releases/'.substr($commit, 0, 12).'/REVISION', $commit."\n");
+    symlink(base_path('resources'), $home.'/releases/'.substr($commit, 0, 12).'/apps/gateway/resources');
+    symlink('releases/'.substr($commit, 0, 12), $home.'/orbit');
+    config(['orbit.gateway_checkout' => $home.'/orbit/apps/gateway', 'swamp.proof_club_api_key' => 'club']);
+    $logger = Log::spy();
+
+    if ($release) {
+        expect(Artisan::call('task-vms:refresh-images', ['--commit' => $commit]))->toBe(0);
+        expect(Artisan::output())->toContain('sabre: skipped:operator_hold');
+    } else {
+        (new RefreshTaskVmImages)->handle(app(TaskVmImageRefreshTrigger::class));
+    }
+    $operations = Operation::query()->where('kind', 'task_vm.image_refresh')->orderBy('target_id')->get();
+    expect($operations)->toHaveCount(2)
+        ->and($operations->pluck('target_id')->all())->toBe([$beast->id, $shark->id])
+        ->and($operations->pluck('triggered_by')->unique()->all())->toBe([$release ? 'refresh-release' : 'refresh-daily'])
+        ->and($operations->every(fn (Operation $operation): bool => $operation->status === OperationStatus::Queued))->toBeTrue()
+        ->and(TaskVm::query()->where('host_node_id', $sabre->id)->count())->toBe(0);
+    $hosts = ['beast' => 'operation:'.$operations->sole(fn (Operation $operation): bool => $operation->target_id === $beast->id)->id, 'sabre' => 'skipped:operator_hold', 'shark' => 'operation:'.$operations->sole(fn (Operation $operation): bool => $operation->target_id === $shark->id)->id];
+    $logger->shouldHaveReceived('info')->with('Task image refresh admissions.', ['reason' => $release ? 'release' : 'daily', 'hosts' => $hosts])->once();
+})->with(['release' => true, 'daily' => false]);
+
+it('reads the stored hold when a release asks again with the Node it loaded before the hold was set', function (): void {
+    [$host] = slotPoolHost();
+    $loaded = Node::query()->findOrFail($host->id);
+    Node::query()->whereKey($host->id)->update(['image_refresh_hold' => true]);
+    expect($loaded->image_refresh_hold)->toBeFalse();
+
+    expect(fn () => app(TaskVmImageRefreshIntent::class)->start($loaded, 'refresh-release'))
+        ->toThrow(ResourceOperationException::class, 'The host has an image refresh hold');
+    expect(Operation::query()->count())->toBe(0);
+});
+
+it('refuses an explicit held refresh before queueing, reserving capacity or withdrawing the base', function (bool $fromStock): void {
+    [$host, $project, $build] = slotPoolHost();
+    $host->update(['image_refresh_hold' => true]);
+    $stored = $host->refresh()->toArray();
+    expect(Artisan::call('task-vms:refresh-image', ['host' => (string) $host->id, '--from-stock' => $fromStock]))->toBe(1);
+    expect(Artisan::output())->toContain('task_vm.image_refresh_held');
+    expect(Operation::query()->count())->toBe(0)
+        ->and(TaskVm::query()->count())->toBe(0)
+        ->and($host->fresh()->toArray())->toBe($stored)
+        ->and(app(TaskVmPromotedImage::class)->latest($host, TaskVmRuntime::Vm)?->id)->toBe($build->id);
+    // Placement still uses the last promoted image on this held host.
+    $slot = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
+    expect($slot->host_node_id)->toBe($host->id);
+})->with(['refresh' => false, 'from stock' => true]);
+
+it('rechecks a hold for a queued release commit without altering an admitted refresh', function (): void {
+    [$host] = slotPoolHost();
+    $open = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id,
+        'node_id' => $host->id, 'status' => OperationStatus::Running, 'input' => ['commit' => str_repeat('a', 40)], 'state' => []]);
+    $host->update(['image_refresh_hold' => true]);
+    $trigger = app(TaskVmImageRefreshTrigger::class);
+    expect($trigger->admitHost($host->id, 'release', str_repeat('b', 40)))->toBe('skipped:operator_hold')
+        ->and($open->refresh()->state)->not->toHaveKey(TaskVmImageRefreshIntent::Next)
+        ->and($open->status)->toBe(OperationStatus::Running);
+    $open->update(['status' => OperationStatus::Succeeded]);
+    expect($trigger->admitHost($host->id, 'release', str_repeat('b', 40)))->toBe('skipped:operator_hold')
+        ->and(Operation::query()->where('kind', 'task_vm.image_refresh')->count())->toBe(1);
+    $host->update(['image_refresh_hold' => false]);
+    // Clearing restores ordinary admission; a new open refresh can accept the newest release again.
+    $open->update(['status' => OperationStatus::Running]);
+    expect($trigger->admitHost($host->id, 'release', str_repeat('b', 40)))->toBe('operation:'.$open->id)
+        ->and($open->refresh()->state)->toHaveKey(TaskVmImageRefreshIntent::Next, str_repeat('b', 40));
 });
