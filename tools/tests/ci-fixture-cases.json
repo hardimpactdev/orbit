@@ -1788,7 +1788,7 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "63332a033ba507a0bc37a27eb252e5d0127c031fa92a6325db2fd7af5a1973d9",
+    "source_sha256": "5f28f07f6475223a3e1b02b626886b79e067979efd3b9ab8a15fb44a79a87a5f",
     "cases": [
       "test_stock_mysql_without_a_host_listener_warns_instead_of_refusing",
       "test_answering_unattached_loopback_service_retains_the_refusal",
@@ -1864,6 +1864,7 @@
       "test_upstream_appearing_after_delay_passes_with_one_client",
       "test_never_established_refuses_after_whole_probe_bound",
       "test_accepted_client_closed_after_upstream_refusal_keeps_cause_in_both_receipts",
+      "test_immediate_proxy_eof_and_reset_keep_upstream_reason_in_both_receipts",
       "test_every_probe_reason_names_condition_and_public_unit_states",
       "test_unit_jobs_and_socket_enable_lag_settle_within_same_bound",
       "test_foreign_or_ambiguous_connections_never_prove_this_probe",
