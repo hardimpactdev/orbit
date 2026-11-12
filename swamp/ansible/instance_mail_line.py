@@ -75,20 +75,23 @@ def apply(prefix, path, remove):
         line = lines[index]
         body = line[:-1] if line.endswith(b'\r') and index < len(lines) - 1 else line
         # A conservative guard, not a dotenv parser. Any earlier multiline quote opener makes the match unsafe.
-        for earlier in lines[:index]:
-            if b'=' not in earlier:
+        for opening, earlier in enumerate(lines[:index], 1):
+            comment = earlier[3:] if opening == 1 and earlier.startswith(b'\xef\xbb\xbf') else earlier
+            if comment.lstrip().startswith(b'#') or b'=' not in earlier:
                 continue
-            counts = {34: 0, 39: 0}
+            active = None
             escaped = False
             for byte in earlier.split(b'=', 1)[1]:
                 if escaped:
                     escaped = False
                 elif byte == 92:
                     escaped = True
-                elif byte in counts:
-                    counts[byte] += 1
-            if any(count % 2 for count in counts.values()):
-                return {'status': 'left_as_written', 'lines': numbers}
+                elif active is None and byte in (34, 39):
+                    active = byte
+                elif byte == active:
+                    active = None
+            if active is not None:
+                return {'status': 'left_as_written', 'lines': numbers, 'quote_opening_line': opening}
         replacements = {
             b'MAIL_MAILER=log': b'MAIL_MAILER=smtp',
             b'MAIL_MAILER="log"': b'MAIL_MAILER="smtp"',

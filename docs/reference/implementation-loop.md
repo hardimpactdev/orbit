@@ -709,3 +709,5 @@ The development mail-line fixture runs unprivileged. It executes the shipped byt
 The migration mail fixture also checks the phase order: copy first, bounded mail attempt second, application starts last. A failed attempt retains the copied file and produces a warning receipt.
 
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise.
+
+The mail fixture executes the production quote guard for balanced mixed quote types, escapes, comments and genuinely unclosed values. It also checks a realistic thirty-line file and preserves the original `lines` result beside `quote_opening_line`.
