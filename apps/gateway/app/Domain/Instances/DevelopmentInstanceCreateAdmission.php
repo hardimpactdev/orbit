@@ -23,7 +23,12 @@ final readonly class DevelopmentInstanceCreateAdmission
 {
     public function assertRouteDomain(string $domain): void
     {
-        RouteDomain::validate($domain);
+        $domain = RouteDomain::validate($domain);
+        // The live Node CSR still puts this domain in the common name.
+        if (strlen($domain) > 64) {
+            throw new ResourceOperationException('route.domain_invalid',
+                'The Instance Route domain exceeds the live CSR common-name limit of 64 characters.', 422);
+        }
     }
 
     public function assertSourceAccess(Project $project): void

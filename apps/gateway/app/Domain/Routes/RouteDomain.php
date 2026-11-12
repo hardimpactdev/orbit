@@ -26,22 +26,6 @@ final class RouteDomain
     {
         $normalized = self::normalize($domain);
 
-        foreach (explode('.', $normalized) as $label) {
-            if (strlen($label) > 63) {
-                throw new ResourceOperationException(
-                    errorCode: 'route.domain_invalid',
-                    message: 'The name part '.$label.' is too long: '.strlen($label).' characters, at most 63. Use a shorter name part.',
-                );
-            }
-        }
-
-        if (strlen($normalized) > 253) {
-            throw new ResourceOperationException(
-                errorCode: 'route.domain_invalid',
-                message: 'The address '.$normalized.' is too long: '.strlen($normalized).' characters, at most 253. Use a shorter Instance name.',
-            );
-        }
-
         if (! self::isValid($normalized)) {
             throw new ResourceOperationException(
                 errorCode: 'route.domain_invalid',

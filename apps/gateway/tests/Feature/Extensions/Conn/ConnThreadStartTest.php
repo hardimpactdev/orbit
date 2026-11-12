@@ -18,8 +18,6 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
-use App\Domain\Routes\NativeRouteCertificateInput;
-use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\TaskVms\TaskVmModelRoute;
@@ -702,38 +700,37 @@ describe('the reachable Project directory', function (): void {
         if (! $valid) {
             $operations = Operation::query()->count();
             $instances = Instance::query()->count();
-            $message = 'The address '.$domain.' is too long: 254 characters, at most 253. Use a shorter Instance name.';
             threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => $name])
-                ->assertUnprocessable()->assertJsonPath('error.code', 'route.domain_invalid')
-                ->assertJsonPath('error.message', $message);
+                ->assertUnprocessable()->assertJsonPath('error.code', 'route.domain_invalid');
             $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
                 ->postJson('/api/v1/instances', ['project_id' => $default->project_id, 'node_id' => $this->beast->id, 'name' => $name])
-                ->assertUnprocessable()->assertJsonPath('error.code', 'route.domain_invalid')
-                ->assertJsonPath('error.message', $message);
+                ->assertUnprocessable()->assertJsonPath('error.code', 'route.domain_invalid');
             expect(containerRefusal(fn () => containerCreate($default->project, $this->beast, $name)))->toBe('route.domain_invalid')
                 ->and(Operation::query()->count())->toBe($operations)
                 ->and(Instance::query()->count())->toBe($instances);
         }
-    })->with(['253 characters' => [56, true], '254 characters exceed DNS' => [57, false]]);
+    })->with(['253 characters still exceed the live CSR limit' => [56, false], '254 characters exceed DNS' => [57, false]]);
 
-    it('admits domains over 64 characters through the DNS limit after the producer release', function (int $nameLength, string $tld, int $domainLength): void {
+    it('refuses a 65 character domain at the name check and all create boundaries before any Operation', function (): void {
         $default = threadDefault($this->beast, 'tool');
         $default->project->update(['type' => ProjectType::LaravelApp, 'root' => 'public', 'php_version' => '8.5']);
-        $this->beast->update(['tld' => $tld]);
-        $name = str_repeat('n', $nameLength);
-        $domain = $name.'.tool.'.$tld;
-        expect(strlen($domain))->toBe($domainLength);
+        $this->beast->update(['tld' => 'test']);
+        $name = str_repeat('n', 55);
+        expect(strlen($name.'.tool.test'))->toBe(65);
+        $operations = Operation::query()->count();
+        $instances = Instance::query()->count();
 
         threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name={$name}")
-            ->assertOk()->assertJsonPath('data', ['name' => $name, 'available' => true, 'reason' => null, 'domain' => $domain]);
-        Node::query()->whereHas('roles', static fn (Builder $query) => $query->where('role', RoleName::Swamp))
-            ->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-control-key']);
-        $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('admission-root-certificate');
-        $operation = threadCreate($this->phone, $default->project, $name);
-        expect($operation->input['route_domain'])->toBe($domain);
-        $this->assertDatabaseHas('routes', ['domain' => $domain]);
-    })->with(['65 character domain' => [55, 'test', 65],
-        '253 character domain with a 63 character name' => [63, str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 56), 253]]);
+            ->assertOk()->assertJsonPath('data', ['name' => $name, 'available' => false, 'reason' => 'domain_invalid', 'domain' => null]);
+        threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => $name])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'route.domain_invalid');
+        $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+            ->postJson('/api/v1/instances', ['project_id' => $default->project_id, 'node_id' => $this->beast->id, 'name' => $name])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'route.domain_invalid');
+        expect(containerRefusal(fn () => containerCreate($default->project, $this->beast, $name)))->toBe('route.domain_invalid')
+            ->and(Operation::query()->count())->toBe($operations)
+            ->and(Instance::query()->count())->toBe($instances);
+    });
 
     it('admits a 64 character domain with the installed-client response and records its Route before the Operation', function (): void {
         $default = threadDefault($this->beast, 'tool');
@@ -760,17 +757,6 @@ describe('the reachable Project directory', function (): void {
 
         threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=free")
             ->assertOk()->assertJsonPath('data.available', false)->assertJsonPath('data.reason', 'domain_invalid')->assertJsonPath('data.domain', null);
-
-        $message = 'The name part '.str_repeat('p', 64).' is too long: 64 characters, at most 63. Use a shorter name part.';
-        $operations = Operation::query()->count();
-        $instances = Instance::query()->count();
-        threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'free'])
-            ->assertUnprocessable()->assertJsonPath('error.code', 'route.domain_invalid')->assertJsonPath('error.message', $message);
-        $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
-            ->postJson('/api/v1/instances', ['project_id' => $default->project_id, 'node_id' => $this->beast->id, 'name' => 'free'])
-            ->assertUnprocessable()->assertJsonPath('error.code', 'route.domain_invalid')->assertJsonPath('error.message', $message);
-        expect(Operation::query()->count())->toBe($operations)
-            ->and(Instance::query()->count())->toBe($instances);
     });
 });
 
@@ -1530,21 +1516,9 @@ describe('Route certificate producer compatibility', function (): void {
         $this->signer = new GatewayLeafCertificateSigner($this->processes);
     });
 
-    it('captures a long existing Route for re-publication through the unchanged certificate domain validation', function (): void {
-        $domain = str_repeat('n', 63).'.tool.'.str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 56);
-        $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn($this->root);
-
-        $input = app(NativeRouteCertificateInput::class)->convergenceInput($this->beast, 'app-instance-1', $domain);
-
-        expect($input['domain'])->toBe($domain)
-            ->and($input['root_hash'])->toBe(hash('sha256', $this->root));
-    });
-
-    it('makes and signs the real production CSR for a 63 character name at the 253 character domain limit', function (string $workflow): void {
-        $name = str_repeat('n', 63);
-        $tld = str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 56);
-        $domain = app(RouteStateResolver::class)->generatedDomain('tool', $name, $tld);
-        expect(strlen($domain))->toBe(253);
+    it('signs the new production CSR at the unchanged live 64 character domain limit', function (string $workflow): void {
+        $domain = str_repeat('n', 54).'.tool.test';
+        expect(strlen($domain))->toBe(64);
 
         $result = $this->processes->run(routeSanRequest($workflow, $this->directory, $domain));
 

@@ -385,9 +385,7 @@ The Gateway prepares the runtime, certificates, Caddy sites, and firewall rules 
 
 ### Certificate request forms
 
-The Node workflows send the fixed common name `Orbit` and exactly one DNS SAN equal to the admitted domain. Instance names can use all 63 characters of a DNS label. A full Route domain can use up to 253 characters, with at most 63 per label. An invalid domain returns `route.domain_invalid` before an Operation starts.
-
-An address over the limit says `The address <domain> is too long: <length> characters, at most 253. Use a shorter Instance name.` A name part over the limit says `The name part <part> is too long: <length> characters, at most 63. Use a shorter name part.`
+The Node workflows use the fixed short common name `Orbit` with exactly one DNS SAN equal to the admitted domain. Instance create and the name check keep their 64-character domain limit while this producer release becomes the rollback target. The domain rule and existing responses are unchanged.
 
 The Gateway accepts two CSR forms: common name equal to the admitted domain, with either no SAN or exactly that DNS SAN; or the fixed short common name `Orbit` with exactly one DNS SAN equal to the admitted domain. It always signs the admitted domain into the leaf SAN. Caddy, TLS probes and certificate reuse check SAN, so existing leaves remain valid.
 

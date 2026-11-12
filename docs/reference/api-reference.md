@@ -41,7 +41,7 @@ bin/docs-openapi
 
 The generated `conn-pairing-revoke` tool includes optional `pairing_id`. Its description explains how to retry a revoked pairing whose session still lives. [Conn session cleanup](/reference/conn#session-cleanup) defines selection and failure behavior. Regenerate both OpenAPI and the MCP manifest when this request changes.
 
-The generated `conn-instance-name-check` reason includes `domain_invalid` for an uncreatable web Route. Its description names the DNS limits of 253 characters per domain and 63 per label. [Conn name checks](/reference/conn#threads-in-an-orbit-project) owns the refusal contract.
+The generated `conn-instance-name-check` reason includes `domain_invalid` for an uncreatable web Route. Its description names the live 64-character certificate limit and the DNS limits. [Conn name checks](/reference/conn#threads-in-an-orbit-project) owns the refusal contract.
 
 Group assistance comments have separate collection and create schemas: `GET /api/v1/tasks/{task}/comments` returns an array of `TaskCommentData`, while POST returns one comment with HTTP 201. POST has no exact-retry 200 response: retries may insert another audit comment. Its 409 response describes the orchestration, group-status, and open-child guards. Keep these operation-specific mappings in `bin/docs-openapi`; [group assistance](/reference/tasks#group-assistance-after-all-children-end) owns the behavior.
 
