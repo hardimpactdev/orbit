@@ -104,11 +104,10 @@ def phase_main(phase, raw):
                                 '--property=Result', '--property=ExecMainStatus', '--property=NRestarts',
                                 '--', unit['name']], False)
                 state = dict(line.split('=', 1) for line in observed.stdout.splitlines() if '=' in line)
-                raise PhaseRefusal(process_failure(unit, state))
+                if state.get('ActiveState') != 'active':
+                    raise PhaseRefusal(process_failure(unit, state))
 
-    if phase == 'process-check':
-        require_units()
-    elif phase == "workspace":
+    if phase == "workspace":
         assert root(ws + "/.git").is_dir()
         before = git("symbolic-ref", "--quiet", "--short", "HEAD").stdout.strip()
         head = git("rev-parse", "HEAD").stdout.strip()
@@ -363,7 +362,7 @@ def phase_main(phase, raw):
                 assert body["authenticated"] and {
                     "access:read",
                     "access:write",
-                }.issubset(body["scopes"]), "session_scope_missing"
+                }.issubset(body["scopes"])
                 replies.append(
                     {
                         "token": token,
@@ -371,9 +370,9 @@ def phase_main(phase, raw):
                         "body": json.dumps(body),
                     }
                 )
-        assert replies[0]["token"] != replies[1]["token"], "sessions_not_distinct"
-        assert git("symbolic-ref", "--short", "HEAD").stdout.strip() == c["branch"], "branch_mismatch"
-        assert git("rev-parse", "HEAD").stdout.strip() == c["expected_commit"], "commit_mismatch"
+        assert replies[0]["token"] != replies[1]["token"]
+        assert git("symbolic-ref", "--short", "HEAD").stdout.strip() == c["branch"]
+        assert git("rev-parse", "HEAD").stdout.strip() == c["expected_commit"]
         if c["php"] is not None:
             run(["php", "-v"], agent=True)
         require_units()
@@ -396,7 +395,7 @@ def phase_main(phase, raw):
         )
         return
     elif phase == "check":
-        assert git("symbolic-ref", "--short", "HEAD").stdout.strip() == c["branch"], "branch_mismatch"
+        assert git("symbolic-ref", "--short", "HEAD").stdout.strip() == c["branch"]
         assert git("rev-parse", "HEAD").stdout.strip() == c.get(
             "expected_commit", c["clone"]["seed_commit"]
         )
@@ -429,12 +428,6 @@ if __name__ == "__main__":
             ),
             file=sys.stderr,
         )
-        raise SystemExit(1)
-    except AssertionError as error:
-        reason = str(error)
-        if reason in {'session_scope_missing', 'sessions_not_distinct', 'branch_mismatch', 'commit_mismatch'}:
-            print(json.dumps({'error_code': 'instance.container_sessions_failed', 'reason': reason}))
-        print('instance.container_' + sys.argv[1] + '_failed', file=sys.stderr)
         raise SystemExit(1)
     except Exception:  # noqa: BLE001 - private tool output must never reach native run history.
         print("instance.container_" + sys.argv[1] + "_failed", file=sys.stderr)

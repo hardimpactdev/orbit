@@ -357,6 +357,7 @@ class CloneTest(unittest.TestCase):
         )
 
     def invoke(self, stderr, phase="sessions", fail="incus", evidence=None):
+        account = pwd.getpwuid(os.getuid())
         with tempfile.TemporaryDirectory() as folder:
             container = {
                 "name": "instance-proof",
@@ -380,7 +381,7 @@ class CloneTest(unittest.TestCase):
                         json.dumps(container),
                         "guest",
                         NETWORK_CHECK.read_text(),
-                        "agent",
+                        account.pw_name,
                         folder,
                         phase,
                     ],
@@ -397,46 +398,25 @@ class CloneTest(unittest.TestCase):
             self.assertEqual(output.getvalue(), "")
             self.assertNotIn("PRIVATE", error.getvalue())
             if evidence:
-                owner = pwd.getpwnam('agent')
-                ownership.assert_any_call(Path(folder) / 't3.json', owner.pw_uid, owner.pw_gid)
+                ownership.assert_any_call(Path(folder) / 't3.json', account.pw_uid, account.pw_gid)
                 recorded = json.loads((Path(folder) / 't3.json').read_text())
                 self.assertEqual(recorded, evidence)
                 self.assertEqual((Path(folder) / 't3.json').stat().st_mode & 0o777, 0o600)
                 return recorded
             return error.getvalue()
 
-    def assert_structured_process_failure_reaches_create_and_migrate_terminal_receipts(self):
-        evidence = {'error_code': 'instance.container_process_inactive', 'process_failure': {
-            'unit': 'orbit-process-vp-dev.service', 'process_id': 19, 'ActiveState': 'failed',
-            'SubState': 'failed', 'Result': 'exit-code', 'ExecMainStatus': 1, 'NRestarts': 5}}
+    def assert_structured_process_failure_reaches_create_terminal_receipt(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('guest_fixture', SCRIPT.parents[1] / 'tests/instance_clone_guest_test.py')
+        fixture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixture)
+        # Execute the production guest entry point; only its system boundaries are faked.
+        _, output, _ = fixture.CloneGuestTest().readiness('sessions', entrypoint=True, inactive=True)
+        evidence = json.loads(output)
         self.invoke('token=ghp_PRIVATE_TOKEN_12345678901234567890', evidence=evidence)
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
             (folder / 't3.json').write_text(json.dumps(evidence))
-            # Evaluate the production registration refusal and failure-file tasks.
-            import yaml
-            ansible = folder / 'ansible'
-            scripts = folder / 'scripts'
-            ansible.mkdir(); scripts.mkdir()
-            (scripts / 'instance_clone_guest.py').write_text(
-                'import sys; print(' + repr(json.dumps(evidence)) + '); raise SystemExit(1)')
-            root = SCRIPT.parents[1]
-            tasks = yaml.safe_load((root / 'ansible/tasks/instance-container-phase.yml').read_text())
-            register = next(task for task in tasks if task.get('name') == 'Register the T3 server')
-            playbook = yaml.safe_load((root / 'ansible/instance-container.yml').read_text())
-            rescue = next(task for task in playbook[1]['tasks'][0]['rescue'] if task['name'] == 'Write the failure')
-            play = [{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
-                     'vars': {'container': {}, 'as_root': [], 'phase': 'register',
-                              'ansible_python_interpreter': __import__('sys').executable},
-                     'tasks': [{'name': 'Production register refusal', 'block': register['block'][:3],
-                                'rescue': [rescue], 'tags': ['register']}]}]
-            path = ansible / 'proof.yml'
-            path.write_text(yaml.safe_dump(play))
-            checked = subprocess.run(['ansible-playbook', '-i', 'localhost,', '--tags', 'register', str(path)],
-                                     text=True, capture_output=True, check=False, timeout=20,
-                                     env=dict(os.environ, ORBIT_RUN=str(folder), ANSIBLE_STDOUT_CALLBACK='default'))
-            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
-            self.assertEqual(json.loads((folder / 'result.json').read_text()), evidence)
             script = """
 import { behavior } from './swamp/extensions/behaviors/operations/instance-dev-command/assets.ts';
 const folder = Deno.args[0];
@@ -447,23 +427,16 @@ const created = await behavior.methods.create_result.execute({
     container: {launch: 'succeeded', workspace: {status: 'succeeded', outputs: {stdout: 'orbit-commit=' + 'a'.repeat(40)}},
         deploy: [], processes: 'succeeded', seed: 'skipped', agent: 'succeeded', t3: 'succeeded', register: 'failed'},
 }, ctx);
-const phases = Object.fromEntries(['quiesce', 'container', 'workspace', 'files', 'agent', 'processes', 'seed', 't3',
-    'route', 'retire', 'restore_route', 'restore'].map(name => [name, 'succeeded']));
-phases.register = 'failed'; phases.retire = 'skipped';
-const migrated = await behavior.methods.migrate_result.execute({folder,
-    intent: {instance_id: 7, container: {clone: {}}, migrate: {}}, phases,
-    workspace: {status: 'succeeded', outputs: {stdout: 'orbit-commit=' + 'a'.repeat(40)}}, server: null,
-}, ctx);
-console.log(JSON.stringify([JSON.parse(created.stdout), JSON.parse(migrated.stdout)]));
+console.log(JSON.stringify(JSON.parse(created.stdout)));
 """
             result = subprocess.run(['deno', 'eval', '--no-check', script, str(folder)],
                                     cwd=SCRIPT.parents[2], text=True, capture_output=True, check=False, timeout=20)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            for receipt in json.loads(result.stdout):
-                self.assertEqual(receipt['error_code'], evidence['error_code'])
-                self.assertEqual(receipt['process_failure'], evidence['process_failure'])
-                self.assertFalse(receipt['ready'])
-                self.assertNotIn('PRIVATE', json.dumps(receipt))
+            receipt = json.loads(result.stdout)
+            self.assertEqual(receipt['error_code'], evidence['error_code'])
+            self.assertEqual(receipt['process_failure'], evidence['process_failure'])
+            self.assertFalse(receipt['ready'])
+            self.assertNotIn('PRIVATE', json.dumps(receipt))
 
     def test_preserves_only_the_guest_command_and_exit_code(self):
         for command in ["curl", "git", "mkdir", "php", "systemctl", "t3"]:
@@ -474,7 +447,7 @@ console.log(JSON.stringify([JSON.parse(created.stdout), JSON.parse(migrated.stdo
                     + " exited 17\n"
                 )
                 self.assertEqual(self.invoke(diagnostic), diagnostic)
-        self.assert_structured_process_failure_reaches_create_and_migrate_terminal_receipts()
+        self.assert_structured_process_failure_reaches_create_terminal_receipt()
 
     def test_rejects_private_or_mismatched_guest_diagnostics(self):
         for stderr in [

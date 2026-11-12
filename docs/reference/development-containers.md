@@ -1091,7 +1091,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
 | `instance.t3_unready` | 502 | The T3 server did not answer within 30 seconds of its first start in a clone |
 | `instance.default_seed_moved` | 409 | A deployment of the default replaced the seed that a clone's create admitted, before the copy. The step's report names it; run the same command again |
-| `instance.container_process_inactive` | 502 | A required unit is inactive when clone or migrate records its sessions. The Operation names the unit and records its states, exit status and restart count |
+| `instance.container_process_inactive` | 502 | A required unit is inactive when a clone records its sessions. The Operation names the unit and records its states, exit status and restart count |
 | `instance.create_register_failed` | 502 | A clone's registration step failed: T3 refused a session, or the Gateway's lacks its scopes. The step's report names the `conn.*` code |
 | `instance.database_clone_unsupported` | 422 | A clone names another Database server than the default's, or the default has no database on a server to clone |
 | `conn.environment_asleep` | 409 | A pairing with a sleeping Instance's T3 server |
@@ -1197,4 +1197,4 @@ Attached-target admission and migration require an active, desired-running Proce
 
 Migrate accepts only the attachment's exact host-key/port-key pair and published port. A selected nonempty database URL override refuses before downtime; URL credentials are never reported. Target failures carry the public attachment ID, Process ID/name and port. Create preserves that object in its phase receipt; migrate uses its existing error-message field to describe the same public identity. Neither includes environment values.
 
-During clone and migrate registration, `instance.container_process_inactive` retains `process_failure`: the unit name, Process id when available, `ActiveState`, `SubState`, `Result`, `ExecMainStatus` and `NRestarts`. Arbitrary Process logs can hold secrets, so the receipt keeps exit facts and omits journal text. A failed native clone copies only its structured refusal through the existing private session file; it never registers that file as credentials. Session scope, distinct-session, branch and commit checks also have fixed public reasons.
+During clone registration, `instance.container_process_inactive` retains `process_failure`: the unit name, Process id when available, `ActiveState`, `SubState`, `Result`, `ExecMainStatus` and `NRestarts`. A unit that reads active on the detail read does not refuse. Arbitrary Process logs can hold secrets, so the receipt keeps exit facts and omits journal text. A failed native clone copies only its structured refusal through the existing private session file; it never registers that file as credentials.

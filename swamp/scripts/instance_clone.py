@@ -119,13 +119,10 @@ def main():
                     evidence = json.loads(result.stdout)
                 except (ValueError, TypeError):
                     evidence = {}
-                if isinstance(evidence, dict) and evidence.get('error_code') in {
-                    'instance.container_process_inactive', 'instance.container_sessions_failed'
-                } and (isinstance(evidence.get('process_failure'), dict) or evidence.get('reason') in {
-                    'session_scope_missing', 'sessions_not_distinct', 'branch_mismatch', 'commit_mismatch'
-                }):
+                if (isinstance(evidence, dict) and evidence.get('error_code') == 'instance.container_process_inactive'
+                        and isinstance(evidence.get('process_failure'), dict)):
                     # Only the guest's structured public receipt crosses; never its stderr.
-                    public = {key: evidence[key] for key in ('error_code', 'process_failure', 'reason') if key in evidence}
+                    public = {key: evidence[key] for key in ('error_code', 'process_failure') if key in evidence}
                     owner = private_folder()
                     receipt = folder / 't3.json'
                     receipt.write_text(json.dumps(public))

@@ -85,8 +85,8 @@ export const behavior = {
                 if (!value.ready && result.failed_step === "register") {
                     try {
                         const failure = z.object({
-                            error_code: z.enum(["instance.container_process_inactive", "instance.container_sessions_failed"]),
-                            process_failure: ObjectValue.optional(), reason: z.string().optional(),
+                            error_code: z.literal("instance.container_process_inactive"),
+                            process_failure: ObjectValue,
                         }).safeParse(JSON.parse(await Deno.readTextFile(args.folder + "/t3.json")));
                         if (failure.success) value.stdout = JSON.stringify({...result, ...failure.data});
                     } catch (error) {

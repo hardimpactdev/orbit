@@ -1362,7 +1362,7 @@
     ]
   },
   "swamp/tests/instance_clone_guest_test.py": {
-    "source_sha256": "fcf3231fcc8b9db76e0a455858f541d758d814c5921bd0ecd51a9b22294f7a6b",
+    "source_sha256": "f15a5c11cf7ec00c9beaeb3b730457dc48063779ae6f26f687c47dd2da929c24",
     "cases": [
       "test_sessions_check_only_loopback_t3_and_reject_http_and_scope_failures",
       "test_workspace_forwards_one_json_vault_value_without_printing_secrets",
@@ -1378,7 +1378,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "523bd4f58544f250a3c795fc4ee0dc6afe8a9a1bfe9e4ef8505a44e6f373b3f8",
+    "source_sha256": "6c0b177613603a6210c342c13c46032417e173eab2c2f14df37253171aaeb50d",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
