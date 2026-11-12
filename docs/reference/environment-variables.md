@@ -293,4 +293,6 @@ The Instance environment comes from its Node role.
 
 ## Development mail
 
-The development renderer projects a parsed `log` mailer to `smtp` only for an eligible new container. Stored values stay unchanged. Existing files use the separate [exact-line mail rule](/reference/development-containers#development-mail), through [`instance:mail:update`](/cli/instance/mail-update).
+The development renderer projects a parsed `log` mailer to `smtp` only for an eligible new container. Unquoted, single-quoted and double-quoted template or imported values are parsed before this choice; new files use the renderer’s normal double quotes, `MAIL_MAILER="smtp"`. Stored values stay unchanged. Existing files use the separate [exact-line mail rule](/reference/development-containers#development-mail), through [`instance:mail:update`](/cli/instance/mail-update).
+
+For an existing file, Orbit matches exactly `MAIL_MAILER=log`, with or without matching single or double quotes. It preserves the quote style and changes only `log` to `smtp`.
