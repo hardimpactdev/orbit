@@ -2132,6 +2132,7 @@ inputs = [
   "swamp/extensions/behaviors/operations/instance-vp-command/requirements.ts",
   "swamp/extensions/behaviors/operations/instance-vp-command/steps.ts",
   "swamp/workflows/workflow-operation-instance-create.yaml",
+  "swamp/workflows/workflow-operation-instance-migrate.yaml",
   "swamp/workflows/workflow-operation-instance-deploy-direct.yaml",
   "swamp/workflows/workflow-operation-process-container.yaml",
   "swamp/workflows/workflow-route-withdraw.yaml",
@@ -2861,3 +2862,16 @@ inputs = [
 ]
 [fixture.case_costs]
 "pending Route withdrawal removes partial publication and CSR residue or accepts an absent site with real Ansible" = 12
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_migrate_source_test.ts"
+cost = 16
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-migrate-phase.yml",
+  "swamp/ansible/tasks/instance-migrate-retirement-check.yml",
+]

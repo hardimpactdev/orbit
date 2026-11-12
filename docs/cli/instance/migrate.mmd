@@ -41,8 +41,14 @@ sequenceDiagram
   %%> - a non-default Instance's placeholder model key goes to the vault
   GW->>SW: Start run, full intent<br/>operation-instance-migrate
   GW-->>CLI: 202 Accepted<br/>task ID
+  SW->>SW: Write source credential<br/>source-credential
+  %%> What it does:
+  %%> - resolves the same repository-scoped Contents read credential as deploy; a confirmed public repository uses anonymous HTTPS
+  %%> - source.github_app_denied names the App and repository; source.github_unavailable distinguishes a GitHub failure; no refused credential is written
+  %%> - gh_cli keeps the existing local-copy migration without this GitHub App preflight
   SW->>N: Launch, probe container<br/>Ansible · tags container
   %%> What it does:
+  %%> - makes one HTTPS read of the Project default branch with the deploy credential; the Instance branch stays local for copying and retirement, before any Node change or quiesce; its 30-second bound allows slow successful reads; source.read_timed_out says the source could not be reached in 30 s, source.head_unavailable names missing refs or network failures; Git authentication refusal names the App and repository with source.github_app_denied
   %%> - before any Node change, checks the recorded branch and every planned retirement; a refusal leaves prior resources untouched
   %%> - checks checkout symlinks and dependency package links before creating the container, skipping `.git` and installed package contents; broken links or targets outside the checkout refuse with `instance.migrate_symlink_unsupported`, naming every path and target
   %%> - retirement preflight refuses tracked staged or unstaged changes, other worktrees, unpushed local branches or detached HEAD and stashes, with their existing named errors; ordinary untracked files, ignored or not, do not block; submodule changes, including untracked submodule files, still refuse because the parent archive cannot preserve them; it reads local refs only

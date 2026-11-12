@@ -75,6 +75,8 @@ A container default refreshes its [Project source facts at the deployed commit](
 | `deployment.commit_not_on_branch` | The pinned commit is not on the first-parent chain of the branch. |
 | `deployment.checkout_dirty` | A development default has uncommitted changes to tracked files. |
 | `deployment.branch_diverged` | The local default branch has commits that the fetched commit lacks. |
+| `source.github_app_denied` | Credential preparation could not read the repository. The message names the App and owner/repository; install the App or add the repository. |
+| `source.github_unavailable` | GitHub failed or timed out while resolving the source credential. |
 | `deployment.source_failed` | Fetching the repository or preparing the release failed. |
 | `deployment.step_failed` | A required `before_activation` or `after_activation` step failed. |
 | `deployment.branch_changed` | The development checkout does not match the commit after the steps. |

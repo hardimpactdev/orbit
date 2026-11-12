@@ -363,7 +363,7 @@
     ]
   },
   "swamp/extensions/behaviors/automatic-deploy/development_test.ts": {
-    "source_sha256": "966a5126d7f6d0f370047e2232dc817a5ad49365559489609e476df45366af36",
+    "source_sha256": "e6d7e729af53a5e90f7cb9ce70b4a587673553b06cf138c23babbc95fe759e1f",
     "cases": [
       "development policy admits only after Gateway ownership switches",
       "development policy returns only the final checkpoint handle",
@@ -375,6 +375,7 @@
       "interrupted development deploys settle, back off and re-admit the head",
       "interrupted development deploy without evidence backs off once then admits the current head",
       "a definite start failure releases pending intent for the next scheduled admission",
+      "credential failures stay terminal without repeated admissions",
       "an uncertain or executed failure without history retains pending intent",
       "development retries and backoff are owned by Swamp and reset after manual work",
       "pending publication uses the normal Route root before dev deployment",
@@ -1751,10 +1752,11 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "4f3878f305667a7b8a502afbed8689adfc59a00895567ac053f2b7f1afda299b",
+    "source_sha256": "64a4e075f4be9e007e31a3cb649bb8bd6854bb450b3dd3c1b94e5dcdf2a6b9d1",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
+      "migration reads no new source key from an older Gateway input",
       "a production and a checkout deployment read no key that only a container deployment has",
       "a container process:start, stop and restart read no `read` section, which only a migrated Schedule log read has",
       "create finalization evaluates checkout, default and clone receipts with Swamp's CEL types",
@@ -1921,7 +1923,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "a452ae8d4ece76ed216171f8669e58e1c939efd6b5d2237b661c98c3c90ef99b",
+    "source_sha256": "f7c89e168f3a4e06db343d7842deeffd40ee1cf4138edd0c6a69f4d1584b813e",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -2058,6 +2060,13 @@
     "source_sha256": "01d908556d2e655a2da703663973a5329a7d31969e2e6b903a01414602050eb5",
     "cases": [
       "pending Route withdrawal removes partial publication and CSR residue or accepts an absent site with real Ansible"
+    ]
+  },
+  "swamp/tests/ansible_instance_migrate_source_test.ts": {
+    "source_sha256": "d2260a8b607e2f2b552281605f3b56dc5f8b55857ec9634301204408de247d69",
+    "cases": [
+      "migration source preflight distinguishes failure and timeout before changing the checkout",
+      "a never-pushed branch at a pushed commit passes source and retirement checks and copies locally"
     ]
   }
 }

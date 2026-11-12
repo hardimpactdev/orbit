@@ -693,6 +693,8 @@ The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/c
 
 ### Migrate a checkout Instance
 
+Before downtime, migration resolves the [deploy credential](/reference/github-app#instance-source-credentials) and makes one read of the Project's default branch with a 30-second limit. The Instance's local branch need not be pushed; its existing retirement checks still apply. Projects using `gh_cli` skip this App preflight. An unreadable source or timeout leaves the checkout serving. The local checkout still supplies the migration's mirror and files.
+
 [`orbit instance:migrate INSTANCE`](/cli/instance/migrate) moves one existing checkout Instance into a container on its Node, with its code. A default Instance moves first, and a non-default Instance before its default refuses with `instance.default_not_migrated`. The command is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
 
 - **Stop.** Orbit removes the Instance's awake marker, and its Route shows the wake page. The Gateway starts no wake during the move.
