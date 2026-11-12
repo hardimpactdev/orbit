@@ -37,6 +37,17 @@ def needs_for(name='delivery'):
 
 
 class DeliveryGateTest(unittest.TestCase):
+    def test_blocking_monitor_allows_two_hour_wait_and_two_hour_execution(self):
+        running = dict(id=1, name='CI proof', run_attempt=1, status='in_progress', conclusion=None)
+        finished = running | dict(status='completed', conclusion='success')
+        with patch.dict(os.environ, PROOF_REQUIRED='true', PROOF_BLOCKING='true', SLOW_CHECKS_BLOCKING='true',
+                        FORK_PROOF='false', GH_REPO=REPO, CI_RUN_ID='42'), \
+             patch.object(delivery.subprocess, 'check_output', side_effect=[json.dumps([{'jobs': [job]}]) for job in (running, finished)]) as api, \
+             patch.object(delivery.time, 'monotonic', side_effect=[0, 0, 240 * 60]), \
+             patch.object(delivery.time, 'sleep'):
+            delivery.validate(needs_for())
+        self.assertEqual(api.call_count, 2)
+
     def run_gate(self, needs):
         block = CI.split('  delivery:\n', 1)[1].split('\n  main-required:', 1)[0]
         code = textwrap.dedent(block.split("          python3 - <<'PYTHON'\n", 1)[1].split('          PYTHON', 1)[0])

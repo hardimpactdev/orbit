@@ -23,8 +23,8 @@ def validate(needs):
     if proof_blocking and selected['proof-run'] and os.environ['FORK_PROOF'] != 'true':
         pending['CI proof'] = 'proof-run'
     needs['proof-run'] = {'result': 'skipped'}
-    # Bound the API wait by the existing longest explicit job budget (CI proof: 195 minutes).
-    deadline = time.monotonic() + 195 * 60
+    # Bound the API wait by the existing longest explicit job budget (CI proof: 275 minutes).
+    deadline = time.monotonic() + 275 * 60
     eligibility_deadline = time.monotonic() + 60
     while pending:
         pages = json.loads(subprocess.check_output([
