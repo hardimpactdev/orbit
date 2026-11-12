@@ -40,6 +40,20 @@ The App key and JWT grant App-level authority. An installation token carries nar
 
 App install/show are state-only. They return the last stored installation observation with `installations_status` (`unknown`, `current`, or `stale`) and `observed_at`. An empty list with `unknown` is not evidence of no installations. Observations become stale after five minutes. While registration is admitted and credentials are not stored, show returns `status: pending`. No HTTP request polls or waits for execution. Destroy removes only local App state; GitHub still requires the owner to delete its registration in the browser.
 
+## Instance source credentials
+
+Deploy, automatic deploy, development create, production clone and removal that reads source resolve fresh repository-scoped `Contents: read` credentials before writing a fetch credential. Migration uses the same resolver, then checks the remote branch before downtime. An already active create and a removal that needs no source read still need no credential. These errors fail the admitted Operation before its native run starts; no empty credential is written for an inaccessible private repository.
+
+| Code | HTTP status | Meaning |
+| --- | --- | --- |
+| `source.github_app_denied` | 403 | The message names the App and owner/repository. Install the App for that account or add the repository to its installation. GitHub's repository-installation 404 does not distinguish those two causes. |
+| `source.github_unavailable` | 502 | GitHub failed or timed out while resolving the credential. This does not establish that the App lacks access. |
+| `deployment.source_access_unsupported` | 409 | Migration and development deployment require `github_app`; `gh_cli` is unsupported. |
+| `source.read_timed_out` | Operation error | Migration could not reach the source in 30 s. The checkout keeps serving. |
+| `source.head_unavailable` | Operation error | Migration could not read the requested remote branch. The checkout keeps serving. |
+
+A missing installation permits anonymous access only when GitHub confirms the repository is public. This preserves public sources outside the App's installation accounts. Automatic deployment records a credential failure as terminal; it does not repeatedly admit the same failed deployment as a transient start failure.
+
 ## Services dependency credentials
 
 Only the configured Services peer can call `POST /api/v1/projects/{project}/dependency-read-token` with `{}`. It also needs Gateway access. The Gateway resolves the Project repository and its existing GitHub App installation, then returns one fresh repository-scoped installation token with `contents: read` and `pull_requests: read`, plus GitHub's implicit metadata read. Other source-access modes and hosts are refused. There is no CLI-login or anonymous fallback.
