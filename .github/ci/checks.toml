@@ -2144,7 +2144,7 @@ inputs = [
 [[fixture]]
 file = "swamp/tests/instance_migrate_env_test.py"
 cost = 1
-inputs = ["swamp/ansible/library/orbit_migrate_env.py"]
+inputs = ["swamp/ansible/library/orbit_migrate_env.py", "swamp/tests/fixtures/migrate-env-services.json"]
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_dotenv_test.py"
@@ -2585,10 +2585,12 @@ default = []
 file = "swamp/tests/ansible_instance_mail_test.py"
 after_merge = true
 reason = "over the 180 s ceiling, follow-up"
-cost = 120
+cost = 135
 # Per-case estimates; real Ansible executes only against fake Incus and Docker boundaries.
 slices = false
 inputs = [
+  "swamp/ansible/library/orbit_migrate_env.py",
+  "swamp/ansible/tasks/instance-migrate-env-check.yml",
   "apps/gateway/app/Domain/Instances/DevelopmentMail.php",
   "swamp/ansible/tasks/instance-mail.yml",
   "swamp/ansible/tasks/instance-bridge-rules.yml",
@@ -2597,6 +2599,7 @@ inputs = [
   "swamp/ansible/requirements.yml",
 ]
 [fixture.case_costs]
+"test_migrate_selected_smtp_passes_real_preflight_and_installs_forwarders" = 15
 "test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes" = 14
 "test_foreign_listener_or_unit_skips_both_ports_without_mutation" = 6
 "test_stopped_missing_binary_or_path_failure_never_changes_guest" = 6
@@ -2606,9 +2609,10 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_mail_line_test.py"
-cost = 44
+cost = 47
 slices = false
 inputs = [
+  "swamp/ansible/library/orbit_migrate_env.py",
   "swamp/workflows/workflow-operation-instance-mail-update.yaml",
   "swamp/workflows/workflow-operation-instance-migrate.yaml",
   "swamp/ansible/instance_mail_line.py",
@@ -2618,6 +2622,7 @@ inputs = [
   "swamp/ansible/requirements.yml",
 ]
 [fixture.case_costs]
+"test_migrate_log_loopback_passes_source_check_then_becomes_smtp" = 3
 "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte" = 5
 "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved" = 7
 "test_missing_key_missing_file_symlink_and_already_smtp_write_nothing" = 2

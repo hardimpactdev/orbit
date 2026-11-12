@@ -709,3 +709,5 @@ The development mail-line fixture runs unprivileged. It executes the shipped byt
 The migration mail fixture also checks the phase order: copy first, bounded mail attempt second, application starts last. A failed attempt retains the copied file and produces a warning receipt.
 
 Clone branch fixtures use unprivileged local Git repositories and run without an Ansible playbook. Their registered case names and conservative costs change together in `tools/tests/ci-fixture-cases.json` and `.github/ci/checks.toml`; collect names with `bin/ci-units collect --file swamp/tests/instance_clone_test.py`.
+
+When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise.

@@ -192,7 +192,7 @@ sys.exit(result.returncode)
     def test_real_incus_missing_delete_contract_and_first_run(self):
         for force in [[], ['--force']]:
             result = subprocess.run(['incus', '--project', 'fixture', 'file', 'delete', *force,
-                                     'fixture/srv/workspace/.env.orbit-mail'], env=self.env, capture_output=True)
+                                     'fixture/srv/workspace/.env.orbit-mail'], env=self.env, capture_output=True, check=False)
             self.assertEqual((result.returncode, result.stdout, result.stderr),
                              (1, b'', b'Error: file does not exist\n'))
         self.assertEqual(self.run_rule(b'MAIL_MAILER=log\n'), {'status': 'changed', 'lines': [1]})
@@ -205,7 +205,7 @@ sys.exit(result.returncode)
                       'Error: file does not exist', 'MAIL_PASSWORD=fixture-canary\n']:
             (self.root / 'delete-error').write_text(error)
             result = subprocess.run([sys.executable, '-c', SOURCE.read_text(), 'fixture', 'fixture'],
-                                    env=self.env, capture_output=True)
+                                    env=self.env, capture_output=True, check=False)
             self.assertEqual(result.returncode, 1)
             public = json.loads(result.stdout)
             self.assertEqual(public['error_code'], 'env.configuration_invalid')
@@ -272,7 +272,7 @@ sys.exit(result.returncode)
             (self.root / 'file-actions.json').write_text('[]')
             (self.root / 'acl-fault').write_text(fault)
             result = subprocess.run([sys.executable, '-c', SOURCE.read_text(), 'fixture', 'fixture'],
-                                    env=self.env, capture_output=True)
+                                    env=self.env, capture_output=True, check=False)
             self.assertEqual(result.returncode, 1)
             self.assertEqual(json.loads(result.stdout), {'error_code': 'env.configuration_invalid'})
             self.assertEqual(result.stderr, b'')
@@ -422,6 +422,21 @@ sys.exit(result.returncode)
         self.assertEqual(self.run_rule()['status'], 'changed')
         self.assertEqual(list(self.root.glob('.env.*')), [])
 
+
+
+    def test_migrate_log_loopback_passes_source_check_then_becomes_smtp(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('guard', ROOT / 'swamp/ansible/library/orbit_migrate_env.py')
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        before = b'MAIL_MAILER="log"\nMAIL_HOST="127.0.0.1"\nMAIL_PORT="1025"\n'
+        self.envfile.write_bytes(before)
+        self.assertEqual(guard.inspect_environment(str(self.root), [], [],
+                         development_mail={'host': '10.253.0.1', 'port': 1025}), [])
+        result = self.ansible(migrate=True)
+        self.assertEqual(result, {'mail': {'status': 'applied', 'ports': [1025, 2525]},
+                                  'mailer': {'status': 'changed', 'lines': [1]}})
+        self.assertTrue(self.envfile.read_bytes() == before.replace(b'"log"', b'"smtp"'))
 
     def test_migrate_orders_advisory_mail_after_copy_and_before_application_start(self):
         import yaml

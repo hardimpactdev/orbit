@@ -984,3 +984,5 @@ Development container [mail setup](/reference/development-containers#development
 Development mail repair uses the Node’s existing Python prerequisite through fixed Incus argv. The container needs only its stock shell and coreutils for atomic replacement. It needs no Project PHP runtime or new image digest; see [development mail](/reference/development-containers#development-mail). The shared rule preserves matching quotes around `log` and `smtp`.
 
 Container migration reuses this [development mail phase](/reference/development-containers#development-mail) after copying the workspace. It requires no Node converge.
+
+Instance migration checks selected environment services before downtime. Its mail check uses the admitted [development mail endpoint](/reference/development-containers#development-mail), so the preflight and mail setup share one eligibility decision.
