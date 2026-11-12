@@ -102,7 +102,7 @@ The caller picks only the target. The Gateway derives the host Node, the user, t
 | --- | --- | --- | --- |
 | Node | The Node's managed user | That user's home | The user's login shell, with login mode and protected stdin |
 | Instance on `app-dev` | The Node's managed user | The Instance's application directory in its checkout | The user's login shell, with login mode and protected stdin |
-| Instance in a development container | The Node’s managed user, `orbit` or `agent` | The application directory under `/srv/workspace` | `/bin/bash`, with login mode and protected stdin |
+| Instance in a development container | `orbit` | The application directory under `/srv/workspace` | `/bin/bash`, with login mode and protected stdin |
 | Instance on `app-prod` | The Instance's production user | The Instance's application directory under `<production-home>/current` | `/bin/bash -s`, without a login |
 
 For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, a Schedule runs in `<checkout>/apps/site` on `app-dev` or `<production-home>/current/apps/site` on `app-prod`, so `php artisan schedule:run` finds that app's `artisan` and `.env`. Root `public` keeps the checkout or release root. Node Schedule working directories do not change. Instances that are not Laravel apps keep their checkout or release root.
@@ -113,23 +113,29 @@ A Schedule does not follow its target to another Node. While a Schedule exists, 
 
 ## Checkout migration
 
-[`instance:migrate`](/cli/instance/migrate) carries registered Node-timer Schedules in the same Operation as the Instance. The timer stays on the Node, with its UUID and calendar. Its replacement service triggers the existing Schedule run path, which enters the Instance container and runs under the same supported user. Working directories and command paths inside the checkout become `/srv/workspace`. Timeout, enabled or paused intent, latest-run fields and existing Operations remain. `schedule:logs` keeps reading the Node journal under the same Schedule identity; later command output is recorded there too.
+[`instance:migrate`](/cli/instance/migrate) carries registered Node-timer Schedules into the container. Each keeps its UUID, name, calendar, timeout and desired state. The service runs as `orbit`, independently of the old host account, in the mapped application directory under `/srv/workspace`. Orbit still checks literal commands, paths and ownership of the host units. Native Swamp Schedules cannot yet migrate.
 
-Before downtime, Orbit refuses a Schedule that cannot run in the container, naming its UUID, name and reason. A native Swamp Schedule has a fixed workflow and must be removed before migration. Node-timer files must belong to their Schedule. Unsupported accounts, shells, external working directories and command paths refuse. Orbit resolves the working directory and literal command paths before checking containment. Symlinked paths refuse because their targets may still name the old checkout after copying.
+Migration captures the host timers' observed activation, disables their timers and stops their services before copying. After copying the workspace it installs the container pairs disabled. A failure before cutover removes the container before restoring the host timers' captured activation; their source files stay unchanged. At cutover the container timers are activated according to desired state, then the host pairs and obsolete scripts are removed during retirement. A Schedule problem after cutover never rolls back or fails an otherwise completed migration: its result names the Schedule's `id`, `name`, `outcome: not_activated` and `cause`.
 
-Migration disables the source timers and stops their services before copying. Failure before cutover removes the failed container before restoring the timers' captured enabled and active states; source files remain unchanged. After cutover, only the admitted Schedules’ services are replaced and their obsolete command and callback files are removed. Their timers remain on the Node. Schedule cutover precedes Git retirement, so a late retirement refusal leaves the moved Schedules running from the container.
+### Container timers
 
-A timer fire received while migration holds admission is recorded as a waiting Schedule Operation with the timer’s idempotency key. Every migration terminal transition settles its waiting fires in the same transaction, under the Instance lock. After cutover or rollback, Orbit rebuilds each fire’s context from the recorded runtime and queues it after commit. Cancelling or expiring an unstarted migration, or a failure proven to precede native submission, frees its new reservation and queues fires against the checkout. This includes failed execution-copy preparation.
+The container's system manager owns `orbit-schedule-<uuid>.timer` and `.service`; the service uses `User=orbit`, the Instance's runtime PATH and its application environment file. Values in the environment file use systemd syntax; Orbit never sources them as shell code. The stored calendar is unchanged; the installed timer makes its source timezone explicit, preserving its meaning. An unreadable source timezone refuses before downtime. `Persistent=false` prevents catch-up after stop, hibernation or wake. A tick while the same service is still running is skipped; DeferReactivation=true prevents an immediate delayed invocation when that run ends. The Schedule timeout bounds each invocation; stopping the container terminates it.
+
+Automatic fires create no Operation. The service journal and observed latest-run status are their record. `schedule:list` and `schedule:show` retain the stored desired state and report an inactive timer for a stopped container. `schedule:logs` reads the container journal through the bounded, redacted reader; a stopped container refuses with `schedule.target_inactive` without waking. Old host journal entries remain on the Node but are not combined with the container snapshot. Schedule follow remains unsupported.
+
+Clones do not inherit ad hoc Schedules. Before a copied container boots, Orbit strips inherited Schedule unit files, timer activation links and private Schedule scripts. Development Schedule definitions and new container Schedule mutations are separate work.
+
+### Why the timer lives in the container
+
+A container timer stops with its container, requires no Node-side trigger, and cannot wake it or queue a missed fire. Its service executes locally; it needs no container-to-Gateway callback or new privilege. Orbit installs and reads it from the Node using the existing Incus boundary of ADR 0250. This is the container exception to ADR 0244's native Schedule triggers. Host Schedules keep their existing trigger paths.
+
+A timer fire received while migration holds admission is recorded as a waiting Schedule Operation with the timer’s idempotency key. Every migration terminal transition settles its waiting fires in the same transaction, under the Instance lock. After rollback, Orbit rebuilds each fire’s context for the checkout and queues it after commit. Successful cutover marks waiting host fires skipped; it never replays them into the container. Cancelling or expiring an unstarted migration, or a failure proven to precede native submission, frees its new reservation and queues fires against the checkout. This includes failed execution-copy preparation.
 
 A failed or cancelled native start event leaves its runtime unverified, so the reservation stays. Expiry of a started or uncertain migration also keeps its reservation. If admission stays closed, waiting fires immediately record failed Operations with `instance.lifecycle_busy`. Expiry keeps the migration’s timeout result and also settles its fires immediately.
 
 If the Instance was deleted, waiting fires fail with `schedule.target_unavailable`, even if their Schedule was also deleted. Native receipts, stale hold release and recovery cannot replay them. Waiting time does not consume a fire’s run budget.
 
 The command must be one literal invocation of `php`, `node`, `bun`, `vp`, `composer`, `git`, `true`, `false`, `echo`, `printf` or an executable inside the checkout. Arguments may be whole quoted strings. Assignment prefixes refuse. PHP and Node need a direct script operand, even when its name has no extension; options before that operand refuse. Bun needs an explicit script path containing `/`; ambiguous subcommands refuse. PHP and Composer need a selected PHP build in the container runtime. An optional `> /dev/null` or `>> /dev/null` may end the command, followed by `2>&1`. Shell operators, patterns, expansion, inline evaluation and executable configuration flags refuse; Orbit does not interpret a shell program to guess which paths it uses.
-
-### Why the timer stays on the Node
-
-Containers cannot reach the Gateway. A timer inside the container could not use the existing Schedule trigger, and would need a new privileged bridge or a change to container isolation. Keeping the trigger on the Node reuses the existing Schedule Operations and the same Incus execution path as container Processes, without a second completion or log mechanism.
 
 ## The Schedule workflow
 

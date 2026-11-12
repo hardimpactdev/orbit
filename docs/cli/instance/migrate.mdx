@@ -161,7 +161,7 @@ When the restore itself fails, the task names the failed step and Orbit keeps th
 
 The retirement of the checkout is the last step. When only that step fails, the Instance stays in its container, the task fails with `instance.migrate_retire_failed`, and the source or retained checkout stays on the Node. A retirement check that finds a new blocker reports its refusal code with the same outcome, leaving the source untouched.
 
-Schedule timers stop before copying. A rollback restores their exact captured enabled and active states after the failed container is gone. Success replaces only the moved Schedules’ checkout-dependent services; their UUID timers stay on the Node.
+Schedule timers stop before copying. A rollback restores their exact captured enabled and active states after the failed container is gone. Success activates their container pairs and removes the host pairs. The source timezone is made explicit in the container timer; the stored calendar stays unchanged.
 
 The command starts a task and follows it until it ends, as [`instance:deploy`](/cli/instance/deploy) does. Ctrl-C stops following, not the move, and exits 130.
 
@@ -199,7 +199,9 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.migrate_stashes_present` | A planned retirement has stashes. The error names the count and leaves the source untouched. |
 | `schedule.container_trigger_unsupported` | A named Schedule uses a native workflow with fixed placement. Only registered Node timers move. |
 | `schedule.container_state_unsupported` | A named Schedule is not active on this Node or has an unfinished Operation. |
-| `schedule.container_account_unsupported` | A named Schedule’s account is unavailable or differs from the container’s `orbit` or `agent` account, own group and `/home/<user>`. |
+| `schedule.container_account_unsupported` | A named Schedule’s recorded host account is unavailable. Container execution maps explicitly to `orbit`. |
+| `schedule.container_timezone_unsupported` | The source timer timezone cannot be read safely; nothing has stopped yet. |
+| `schedule.container_command_unavailable` | The captured private Schedule command is missing or changed. Repeat migration after the Gateway and workflow upgrade together; nothing has stopped yet. |
 | `schedule.container_shell_unsupported` | A named Schedule’s shell is not `/bin/bash`. |
 | `schedule.container_path_unsupported` | A named Schedule’s working directory is missing, outside the checkout, has dot segments or uses a symlink. |
 | `schedule.container_command_unsupported` | A named Schedule’s command is outside the supported literal invocation form, references an external path or missing PHP build, or uses a symlink. See [Schedule migration](/reference/schedules#checkout-migration). |
@@ -215,5 +217,7 @@ Selected SMTP on `127.0.0.1` or `localhost`, port 1025 or 2525, passes when this
 Mail setup runs after the copied `.env` and before application Processes start. It matches exactly `MAIL_MAILER=log`, with or without matching single or double quotes, using the shared [development mail rule](/reference/development-containers#development-mail). The copied file keeps its quote style and line ending; only `log` becomes `smtp`. A failed attempt or missing or malformed receipt records `instance.mail_update_failed` in `warnings`. Application starts, Route cutover and retirement continue, and mail cannot trigger rollback.
 
 Human output shows the mailer outcome and line numbers, the named conflict skip, or the warning and repair command; JSON retains the same result fields, including `guard_line` when a preceding line is outside the shared whitelist. Repair it with [`instance:mail:update`](/cli/instance/mail-update).
+
+Registered legacy timer Schedules move into the container with their identity, calendar, timeout and desired state. Before cutover a failure restores the host timer; after cutover a Schedule problem is a named advisory result and migration succeeds. See [Schedule migration](/reference/schedules#checkout-migration).
 
 Before downtime, Orbit lets Vite+ resolve and prepare pinned Node versions in the new container’s private store. An invalid or ambiguous pin, or a failed download, verification or resolution, stops the move with `instance.node_runtime_prepare_failed`, naming the pin and its specific network, HTTP, checksum, disk or unknown-version reason. The checkout keeps serving. Projects without a Vite+/Node Process do not fetch an unused Node pin.

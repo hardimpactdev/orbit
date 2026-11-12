@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "13a172707c373fe57791eca9619f495244a7c8d0977e9737de7754bef473f6d6",
+    "source_sha256": "99302ecb7d7ee6e6192e2fcc092c648f76e2fa233f602470549695b11f01bf33",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -591,10 +591,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 \u2192 v5.12.0",
-      "exact script output: v5.42.0 \u2192 v5.43.0",
-      "exact script output: v5.49.0 \u2192 v5.50.0",
-      "exact script output: v5.50.0 \u2192 v5.50.1",
+      "exact script output: v5.11.0 → v5.12.0",
+      "exact script output: v5.42.0 → v5.43.0",
+      "exact script output: v5.49.0 → v5.50.0",
+      "exact script output: v5.50.0 → v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -1355,7 +1355,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "828211680eff46bc36892579e433bf811bfd285f81edc53c3178f312bfe4ee55",
+    "source_sha256": "309e3a159c99b5fa295fcabfb77c6ef4d632f9aaf388f49d5e96c14b24b37b54",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1367,6 +1367,7 @@
       "test_target_created_after_admission_is_not_silently_reused",
       "test_unreadable_remote_fails_without_creating_a_branch",
       "test_unreachable_frozen_commit_fails_without_using_current_tip",
+      "test_schedule_cleanup_listing_error_refuses_before_clone_boot",
       "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
       "test_clone_launch_applies_mail_without_another_playbook",
       "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful",
@@ -1843,14 +1844,17 @@
     ]
   },
   "swamp/tests/ansible_schedule_logs_test.ts": {
-    "source_sha256": "f38567c977c0d0bd2efa8e46ad78b49077868d7f881000d4001138f0135e113d",
+    "source_sha256": "9c19465180c4136985405ec46e404fcf4300416398a821d148a8bfdcc0fd9a85",
     "cases": [
       "migrated Schedule logs combine unit and command entries privately, in time order, with whole multiline messages",
       "Schedule journal byte cap retains complete multibyte entries and excludes the first entry that cannot fit",
       "Schedule journal keeps a complete entry at the exact UTF-8 byte bound",
       "Schedule journal stops reading an oversized frame on the Node before transfer",
       "Schedule journal reads long fields with --all and handles null and non-UTF-8 byte-array messages",
-      "Schedule journal bounds double JSON encoding and crosses the Gateway's real framed client"
+      "Schedule journal bounds double JSON encoding and crosses the Gateway's real framed client",
+      "container Schedule inspection reads guest state and journal, and stopped inspection never execs or wakes",
+      "carried Schedule installs disabled and post-cutover activation failure stays advisory",
+      "carried fixed-time calendars preserve explicit zones and capture an unzoned source without changing the stored form"
     ]
   },
   "swamp/tests/process_destroy_failed_cache_test.ts": {
@@ -1913,7 +1917,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "54d4e64f147cd7797d63c8db13dda4cff81c7f36dda7dcc9977f6b837cb13aed",
+    "source_sha256": "a452ae8d4ece76ed216171f8669e58e1c939efd6b5d2237b661c98c3c90ef99b",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -1940,7 +1944,8 @@
       "missing or malformed successful mail receipts become advisory warnings",
       "Node preparation fails before quiesce with its pin reason and restores only the new container",
       "the copied untracked count includes zero, excludes paths and survives later failure",
-      "invalid or incomplete copied-file receipts do not claim a count"
+      "invalid or incomplete copied-file receipts do not claim a count",
+      "carried Schedule activation failures and missing receipts warn without failing completed migration"
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {

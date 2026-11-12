@@ -48,6 +48,7 @@ final readonly class ListSchedulesAction
                 'target_id',
                 'name',
                 'calendar',
+                'trigger',
                 'timeout_seconds',
                 'desired_timer_state',
                 'status',
@@ -57,7 +58,7 @@ final readonly class ListSchedulesAction
                 'last_run_status',
             ])
             ->map(static fn (Schedule $schedule): array => ValidatedData::object(
-                ScheduleData::fromModel($schedule, includeCommand: false)->toArray(),
+                ScheduleData::fromModel($schedule, includeCommand: false, observe: true)->toArray(),
             ));
     }
 }

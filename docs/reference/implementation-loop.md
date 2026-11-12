@@ -731,6 +731,8 @@ The Route site fixture runs unprivileged. It checks the shipped file converger a
 
 The destroy guard is admission only. Tests pin the workflow to its pre-guard main bytes and prove retry/dispatch does not recheck Git after dismantling begins. Candidate pointer failures retain named warnings; target failures and confirmed dependents refuse before record or trigger changes.
 
+The container Schedule fixture checks timer installation and advisory activation with three Ansible launches. It executes the journal module directly for byte and transport limits. Its declared cost includes startup; inventory and case costs change together.
+
 Private Node-runtime fixtures use the shipped conversion and fetch helper with a fake Vite+ command; network downloads are tested separately in an owned fixture Instance.
 
 The Caddy candidate fixtures execute each changed writer with invalid and valid candidates. They keep every path and stand-in under a private temporary directory, run Ansible without facts or privilege, preserve relative-import directories and prove invalid input leaves live bytes unchanged with no reload.

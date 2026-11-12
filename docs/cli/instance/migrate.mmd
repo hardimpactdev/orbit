@@ -85,6 +85,7 @@ sequenceDiagram
     %%> - the shared path status and exact-line result, with line numbers only; conflicts skip the line rule
   end
   SW->>C: Start the container<br/>Processes · T3 · seed
+  %%> - first installs carried Schedule pairs disabled, after the workspace copy and before application Processes start; services run as orbit
   %%> - container units use `network.target` and nonblocking starts; reads all moved desired-running Processes active with no pending job, waits 5 seconds once for the whole set, then requires each still active with the same positive MainPID and NRestarts; failure names the Process with `instance.migrate_processes_failed` and restores before cutover
   %%> What it does:
   %%> - starts FrankenPHP and the Instance's existing Processes as `orbit`, with the same ids and desired states; their environment files come through the vault
@@ -100,7 +101,8 @@ sequenceDiagram
     %%> What it does:
     %%> - a due timer fire waits as a recorded Schedule Operation until migration terminal projection reopens admission; its context is rebuilt for the final runtime, on success or rollback
     %%> - every terminal transition settles deferred fires under the Instance lock; closed runtime admission explicitly fails them, including bound start failure and expiry; Schedule settlement preserves the migration result and late native recovery cannot replay a settled fire
-    %%> - replaces only the moved Schedules’ checkout-dependent services with host triggers for container execution, keeps their UUID timers and calendars, and resumes each recorded desired state
+    %%> - activates carried container timers with Persistent=false and the recorded desired state; removes their host pairs at retirement
+    %%> - a Schedule activation or host-unit cleanup failure is advisory after cutover: record id, name, not_activated and cause, keep the container serving and succeed migration
     %%> - removes the old host Process units and their environment folders
     %%> - repeats the same retirement preflight as an early warning; a new blocker leaves the container serving and the checkout intact
     %%> - atomically moves each old checkout under `<checkout>.orbit-retired-git/<sha256 of original path>`; the retained root is beside the migrating Instance's checkout

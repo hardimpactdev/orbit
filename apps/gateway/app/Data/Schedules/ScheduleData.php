@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Data\Schedules;
 
 use App\Domain\Schedules\ScheduleTargetType;
+use App\Domain\Schedules\ScheduleTrigger;
+use App\Infrastructure\Schedules\ContainerScheduleInspection;
 use App\Models\Instance;
 use App\Models\Schedule;
+use App\Support\ValidatedData;
 use DateTimeInterface;
 use SensitiveParameter;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -32,10 +35,14 @@ final class ScheduleData extends Data
         public ?string $errorCode,
         public ?string $lastRunAt,
         public ?string $lastRunStatus,
+        public string|Optional $timerState,
     ) {}
 
-    public static function fromModel(#[SensitiveParameter] Schedule $schedule, bool $includeCommand = true): self
+    public static function fromModel(#[SensitiveParameter] Schedule $schedule, bool $includeCommand = true, bool $observe = false): self
     {
+        $observed = $observe && $schedule->trigger === ScheduleTrigger::Container
+            ? app(ContainerScheduleInspection::class)->observe($schedule) : [];
+
         return new self(
             id: $schedule->id,
             targetType: Instance::isMorphType($schedule->target_type)
@@ -50,8 +57,9 @@ final class ScheduleData extends Data
             status: $schedule->status->value,
             failedStep: $schedule->failed_step,
             errorCode: $schedule->error_code,
-            lastRunAt: $schedule->last_run_at?->format(DateTimeInterface::ATOM),
-            lastRunStatus: $schedule->last_run_status?->value,
+            lastRunAt: ValidatedData::nullableString($observed['last_run_at'] ?? $schedule->last_run_at?->format(DateTimeInterface::ATOM)),
+            lastRunStatus: ValidatedData::nullableString($observed['last_run_status'] ?? $schedule->last_run_status?->value),
+            timerState: isset($observed['state']) ? ValidatedData::string($observed['state']) : Optional::create(),
         );
     }
 }

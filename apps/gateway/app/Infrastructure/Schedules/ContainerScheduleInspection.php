@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Infrastructure\Schedules;
 
 use App\Data\Schedules\ScheduleLogsData;
+use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Logs\LogReadLimit;
 use App\Domain\Schedules\ScheduleTarget;
+use App\Domain\Schedules\ScheduleTargetResolver;
+use App\Domain\Schedules\ScheduleTrigger;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
@@ -18,12 +21,38 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Str;
 use Throwable;
 
-/** Reads a migrated Schedule's old unit and current command identifier from the Node journal through Swamp. */
+/** Reads bounded Schedule state and journals through the shared Swamp container reader. */
 final readonly class ContainerScheduleInspection
 {
     public function __construct(private WebSocketClient $socket) {}
 
     public function read(Schedule $schedule, ScheduleTarget $target, int $lines): ScheduleLogsData
+    {
+        if ($schedule->trigger === ScheduleTrigger::Container
+            && $target->instance?->runtime()->first()?->power_state !== InstanceRuntimePowerState::Running) {
+            throw new ResourceOperationException('schedule.target_inactive', 'The Schedule container is not running; it was not woken.', 409);
+        }
+        $value = $this->inspect($schedule, $target, $lines);
+        if (($value['error_code'] ?? null) === 'schedule.target_inactive') {
+            throw new ResourceOperationException('schedule.target_inactive', 'The Schedule container is not running; it was not woken.', 409);
+        }
+
+        return new ScheduleLogsData(ValidatedData::string($value['output']), ($value['truncated'] ?? false) === true);
+    }
+
+    /** @return array<string,mixed> */
+    public function observe(Schedule $schedule): array
+    {
+        $target = app(ScheduleTargetResolver::class)->forInspection($schedule);
+        if ($target->instance?->runtime()->first()?->power_state !== InstanceRuntimePowerState::Running) {
+            return ['state' => 'inactive', 'last_run_at' => null, 'last_run_status' => null];
+        }
+
+        return $this->inspect($schedule, $target, 1);
+    }
+
+    /** @return array<string,mixed> */
+    private function inspect(Schedule $schedule, ScheduleTarget $target, int $lines): array
     {
         if ($target->container === null || $lines < 1 || $lines > 1000) {
             $this->unavailable();
@@ -78,7 +107,14 @@ final readonly class ContainerScheduleInspection
                         $this->unavailable();
                     }
 
-                    return new ScheduleLogsData($output, ($value['truncated'] ?? false) === true);
+                    if (! in_array($value['state'] ?? null, ['active', 'inactive', 'failed', 'unknown'], true)
+                        || ! in_array($value['last_run_status'] ?? null, [null, 'success', 'error'], true)
+                        || (isset($value['last_run_at']) && (! is_string($value['last_run_at'])
+                            || preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00\z/', $value['last_run_at']) !== 1))) {
+                        $this->unavailable();
+                    }
+
+                    return $value;
                 }
             }
             $this->unavailable();
@@ -99,6 +135,8 @@ final readonly class ContainerScheduleInspection
     public static function intent(Schedule $schedule, ScheduleTarget $target, int $lines, string $request): array
     {
         return ['schedule' => ['id' => $schedule->id],
+            ...($schedule->trigger === ScheduleTrigger::Container
+                ? ['container' => ['instance_id' => $target->instance?->id, ...($target->container ?? [])]] : []),
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target->node),
             'read' => ['lines' => $lines, 'request' => $request]];
     }

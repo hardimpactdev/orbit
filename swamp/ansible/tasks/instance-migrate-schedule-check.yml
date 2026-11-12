@@ -1,155 +1,316 @@
 ---
-# Check every source before the first timer or Process is stopped. The files remain untouched until cutover.
-- name: Render the Schedule's shared unit contract
+# One carried Schedule: verify before downtime, install disabled after copying, activate after cutover.
+- name: Verify the source Schedule before downtime
+  when: phase == 'quiesce'
+  block:
+  - name: Check the carried command digests
+    ansible.builtin.set_fact:
+      schedule_commands_valid: |-
+        {{ schedule.path is defined and schedule.environment_file is defined
+           and schedule.id in (lookup('ansible.builtin.env', 'ORBIT_SCHEDULE_COMMANDS') | default('{}', true) | from_json).get('schedule_commands', {})
+           and ((lookup('ansible.builtin.env', 'ORBIT_SCHEDULE_COMMANDS') | default('{}', true) | from_json).get('schedule_commands', {}).get(schedule.id, '') | hash('sha256')) == schedule.mapped_command_hash }}
+    no_log: true
+  - name: Require the admitted container Schedule commands
+    ansible.builtin.assert:
+      that: schedule_commands_valid | bool
+      fail_msg: schedule.container_command_unavailable
+      quiet: true
+  - name: Resolve the carried calendar in its source timezone
+    ansible.builtin.command:
+      argv:
+      - python3
+      - -c
+      - |
+        import sys
+        from pathlib import Path
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        calendar = sys.argv[1]
+        try:
+            ZoneInfo(calendar.split()[-1])
+        except (ZoneInfoNotFoundError, ValueError):
+            zone = str(Path(sys.argv[2]).resolve(strict=True)).removeprefix('/usr/share/zoneinfo/')
+            ZoneInfo(zone)
+            calendar += ' ' + zone
+        print(calendar)
+      - '{{ schedule.calendar }}'
+      - /etc/localtime
+    register: schedule_calendar
+    changed_when: false
+    failed_when: false
+  - name: Explain an unreadable source timezone
+    when: schedule_calendar.rc != 0
+    ansible.builtin.set_fact:
+      migrate_refusal_code: schedule.container_timezone_unsupported
+      migrate_refusal_message: 'Schedule [{{ schedule.id }}:{{ schedule.name }}] cannot move: its source timezone is unreadable or unsupported.'
+  - name: Require a readable source timezone
+    ansible.builtin.assert:
+      that: schedule_calendar.rc == 0
+      fail_msg: '{{ migrate_refusal_message | default(''schedule.container_timezone_unsupported'') }}'
+      quiet: true
+  # Check every source before the first timer or Process is stopped. The files remain untouched until cutover.
+  - name: Render the Schedule's shared unit contract
+    ansible.builtin.set_fact:
+      schedule_units: "{{ lookup('ansible.builtin.template', '../templates/instance-migrate-schedule.j2') | from_json }}"
+
+  - name: Read the Schedule unit files
+    ansible.builtin.slurp: { src: "/etc/systemd/system/{{ item }}" }
+    loop: "{{ [schedule.service, schedule.timer] }}"
+    register: schedule_source_units
+    failed_when: false
+    no_log: true
+
+  - name: Explain unsupported Schedule files
+    when: >-
+      schedule_source_units.results | selectattr('content', 'undefined') | list | length > 0
+      or (schedule_source_units.results[0].content | default('') | b64decode) not in schedule_units.source_services
+      or (schedule_source_units.results[1].content | default('') | b64decode) != schedule_units.timer
+    ansible.builtin.set_fact:
+      migrate_refusal_code: schedule.container_artifact_unsupported
+      migrate_refusal_message: >-
+        Schedule [{{ schedule.id }}:{{ schedule.name }}] cannot move: its host service or timer is missing or differs from its registered Schedule contract.
+
+  - name: Require the registered Schedule's exact units
+    ansible.builtin.assert:
+      that: migrate_refusal_message is not defined
+      fail_msg: "{{ migrate_refusal_message | default('schedule.container_artifact_unsupported') }}"
+      quiet: true
+
+  - name: Read obsolete Schedule command and callback files
+    ansible.builtin.slurp: { src: "/etc/orbit/schedules/{{ schedule.id }}{{ item }}" }
+    loop: [.sh, .complete]
+    register: schedule_obsolete_files
+    failed_when: false
+    no_log: true
+
+  - name: Explain a foreign obsolete Schedule file
+    when: >-
+      item.content is defined and
+      (item.content | b64decode | regex_search('(?m)^# X-Orbit-Schedule-ID=' ~ schedule.id ~ '$')) is none
+    ansible.builtin.set_fact:
+      migrate_refusal_code: schedule.container_artifact_unsupported
+      migrate_refusal_message: >-
+        Schedule [{{ schedule.id }}:{{ schedule.name }}] cannot move: an obsolete command or callback file does not belong to this Schedule.
+    loop: "{{ schedule_obsolete_files.results }}"
+    no_log: true
+
+  - name: Require ownership of obsolete Schedule files
+    ansible.builtin.assert:
+      that: migrate_refusal_message is not defined
+      fail_msg: "{{ migrate_refusal_message | default('schedule.container_artifact_unsupported') }}"
+      quiet: true
+
+  - name: Explain a changed executing legacy command or callback
+    when: >-
+      (schedule_source_units.results[0].content | b64decode) != schedule_units.source_services[0]
+      and ((schedule_obsolete_files.results[0].content | default('') | b64decode | hash('sha256')) != schedule.source_script_hash
+           or ((schedule_source_units.results[0].content | b64decode) == schedule_units.source_services[2]
+               and (schedule_obsolete_files.results[1].content | default('') | b64decode) != schedule_units.callback))
+    ansible.builtin.set_fact:
+      migrate_refusal_code: schedule.container_artifact_unsupported
+      migrate_refusal_message: >-
+        Schedule [{{ schedule.id }}:{{ schedule.name }}] cannot move: its executing command or callback differs from the registered Schedule.
+    no_log: true
+
+  - name: Require the registered legacy command and callback
+    ansible.builtin.assert:
+      that: migrate_refusal_message is not defined
+      fail_msg: "{{ migrate_refusal_message | default('schedule.container_artifact_unsupported') }}"
+      quiet: true
+
+  - name: Resolve the source checkout and Schedule working directory
+    ansible.builtin.command:
+      argv: [realpath, --canonicalize-existing, --, "{{ migrate.checkout }}", "{{ schedule.source_directory }}"]
+    register: schedule_real_directory
+    changed_when: false
+    failed_when: false
+
+  - name: Explain a Schedule directory outside the checkout
+    when: >-
+      schedule_real_directory.rc != 0 or schedule_real_directory.stdout_lines | length != 2
+      or schedule_real_directory.stdout_lines[0] != migrate.checkout
+      or schedule_real_directory.stdout_lines[1] != schedule.source_directory
+      or (schedule_real_directory.stdout_lines[1] != schedule_real_directory.stdout_lines[0]
+          and not schedule_real_directory.stdout_lines[1].startswith(schedule_real_directory.stdout_lines[0] ~ '/'))
+    ansible.builtin.set_fact:
+      migrate_refusal_code: schedule.container_path_unsupported
+      migrate_refusal_message: >-
+        Schedule [{{ schedule.id }}:{{ schedule.name }}] cannot move: its working directory is missing, uses a symlink or resolves outside the checkout.
+
+  - name: Require a working directory inside the real checkout
+    ansible.builtin.assert:
+      that: migrate_refusal_message is not defined
+      fail_msg: "{{ migrate_refusal_message | default('schedule.container_path_unsupported') }}"
+      quiet: true
+
+  - name: Resolve literal Schedule command paths
+    ansible.builtin.command:
+      argv: [realpath, --canonicalize-missing, --, "{{ item }}"]
+    loop: "{{ schedule.source_command_paths | default([]) }}"
+    register: schedule_real_commands
+    changed_when: false
+    failed_when: false
+    no_log: true
+
+  - name: Explain a command path outside the real checkout
+    when: >-
+      item.rc != 0 or item.stdout | trim != item.item
+      or (item.stdout | trim != schedule_real_directory.stdout_lines[0]
+          and not (item.stdout | trim).startswith(schedule_real_directory.stdout_lines[0] ~ '/'))
+    ansible.builtin.set_fact:
+      migrate_refusal_code: schedule.container_command_unsupported
+      migrate_refusal_message: >-
+        Schedule [{{ schedule.id }}:{{ schedule.name }}] cannot move: a literal command path uses a symlink or resolves outside the checkout.
+    loop: "{{ schedule_real_commands.results }}"
+    no_log: true
+
+  - name: Require command paths inside the real checkout
+    ansible.builtin.assert:
+      that: migrate_refusal_message is not defined
+      fail_msg: "{{ migrate_refusal_message | default('schedule.container_command_unsupported') }}"
+      quiet: true
+
+  - name: Read the timer's activation state
+    ansible.builtin.systemd_service: { name: "{{ schedule.timer }}" }
+    register: schedule_timer_state
+
+  - name: Read the Schedule service's activation state
+    ansible.builtin.systemd_service: { name: "{{ schedule.service }}" }
+    register: schedule_service_state
+
+  - name: Explain an unsupported timer state
+    when: >-
+      schedule_timer_state.status.UnitFileState | default('') not in ['enabled', 'disabled']
+      or schedule_timer_state.status.ActiveState | default('') not in ['active', 'inactive']
+      or schedule_service_state.status.ActiveState | default('') not in ['active', 'inactive', 'failed']
+      or schedule_timer_state.status.DropInPaths | default('') | length > 0
+      or schedule_service_state.status.DropInPaths | default('') | length > 0
+    ansible.builtin.set_fact:
+      migrate_refusal_code: schedule.container_artifact_unsupported
+      migrate_refusal_message: >-
+        Schedule [{{ schedule.id }}:{{ schedule.name }}] cannot move: its timer must be enabled or disabled and active or inactive,
+        its service must not be starting or stopping, and neither unit may have drop-ins.
+
+  - name: Require a stable Schedule timer state
+    ansible.builtin.assert:
+      that: migrate_refusal_message is not defined
+      fail_msg: "{{ migrate_refusal_message | default('schedule.container_artifact_unsupported') }}"
+      quiet: true
+
+  - name: Capture the timer's exact activation state
+    ansible.builtin.set_fact:
+      schedule_snapshots: >-
+        {{ schedule_snapshots + [{'schedule': schedule, 'enabled': schedule_timer_state.status.UnitFileState == 'enabled',
+            'calendar': schedule_calendar.stdout | trim, 'active': schedule_timer_state.status.ActiveState == 'active'}] }}
+
+- name: Render the container Schedule pair
   ansible.builtin.set_fact:
-    schedule_units: "{{ lookup('ansible.builtin.template', '../templates/instance-migrate-schedule.j2') | from_json }}"
-
-- name: Read the Schedule unit files
-  ansible.builtin.slurp: { src: "/etc/systemd/system/{{ item }}" }
-  loop: "{{ [schedule.service, schedule.timer] }}"
-  register: schedule_source_units
-  failed_when: false
-  no_log: true
-
-- name: Explain unsupported Schedule files
-  when: >-
-    schedule_source_units.results | selectattr('content', 'undefined') | list | length > 0
-    or (schedule_source_units.results[0].content | default('') | b64decode) not in schedule_units.source_services
-    or (schedule_source_units.results[1].content | default('') | b64decode) != schedule_units.timer
-  ansible.builtin.set_fact:
-    migrate_refusal_code: schedule.container_artifact_unsupported
-    migrate_refusal_message: >-
-      Schedule [{{ schedule.id }}:{{ schedule.name }}] cannot move: its host service or timer is missing or differs from its registered Schedule contract.
-
-- name: Require the registered Schedule's exact units
-  ansible.builtin.assert:
-    that: migrate_refusal_message is not defined
-    fail_msg: "{{ migrate_refusal_message | default('schedule.container_artifact_unsupported') }}"
-    quiet: true
-
-- name: Read obsolete Schedule command and callback files
-  ansible.builtin.slurp: { src: "/etc/orbit/schedules/{{ schedule.id }}{{ item }}" }
-  loop: [.sh, .complete]
-  register: schedule_obsolete_files
-  failed_when: false
-  no_log: true
-
-- name: Explain a foreign obsolete Schedule file
-  when: >-
-    item.content is defined and
-    (item.content | b64decode | regex_search('(?m)^# X-Orbit-Schedule-ID=' ~ schedule.id ~ '$')) is none
-  ansible.builtin.set_fact:
-    migrate_refusal_code: schedule.container_artifact_unsupported
-    migrate_refusal_message: >-
-      Schedule [{{ schedule.id }}:{{ schedule.name }}] cannot move: an obsolete command or callback file does not belong to this Schedule.
-  loop: "{{ schedule_obsolete_files.results }}"
-  no_log: true
-
-- name: Require ownership of obsolete Schedule files
-  ansible.builtin.assert:
-    that: migrate_refusal_message is not defined
-    fail_msg: "{{ migrate_refusal_message | default('schedule.container_artifact_unsupported') }}"
-    quiet: true
-
-- name: Explain a changed executing legacy command or callback
-  when: >-
-    (schedule_source_units.results[0].content | b64decode) != schedule_units.source_services[0]
-    and ((schedule_obsolete_files.results[0].content | default('') | b64decode | hash('sha256')) != schedule.source_script_hash
-         or ((schedule_source_units.results[0].content | b64decode) == schedule_units.source_services[2]
-             and (schedule_obsolete_files.results[1].content | default('') | b64decode) != schedule_units.callback))
-  ansible.builtin.set_fact:
-    migrate_refusal_code: schedule.container_artifact_unsupported
-    migrate_refusal_message: >-
-      Schedule [{{ schedule.id }}:{{ schedule.name }}] cannot move: its executing command or callback differs from the registered Schedule.
-  no_log: true
-
-- name: Require the registered legacy command and callback
-  ansible.builtin.assert:
-    that: migrate_refusal_message is not defined
-    fail_msg: "{{ migrate_refusal_message | default('schedule.container_artifact_unsupported') }}"
-    quiet: true
-
-- name: Resolve the source checkout and Schedule working directory
+    container_schedule_units: '{{ lookup(''ansible.builtin.template'', ''../templates/instance-migrate-schedule.j2'') | from_json }}'
+  when: phase == 'processes'
+  vars:
+    container_calendar: '{{ (lookup(''ansible.builtin.file'', lookup(''ansible.builtin.env'', ''ORBIT_RUN'') ~ ''/schedule-timers.json'') | from_json |
+      selectattr(''schedule.id'', ''equalto'', schedule.id) | first).calendar }}'
+- name: Keep the carried timer disabled before cutover
   ansible.builtin.command:
-    argv: [realpath, --canonicalize-existing, --, "{{ migrate.checkout }}", "{{ schedule.source_directory }}"]
-  register: schedule_real_directory
+    argv: '{{ as_root + [''systemctl'', ''disable'', ''--now'', ''--'', schedule.timer] }}'
   changed_when: false
   failed_when: false
-
-- name: Explain a Schedule directory outside the checkout
-  when: >-
-    schedule_real_directory.rc != 0 or schedule_real_directory.stdout_lines | length != 2
-    or schedule_real_directory.stdout_lines[0] != migrate.checkout
-    or schedule_real_directory.stdout_lines[1] != schedule.source_directory
-    or (schedule_real_directory.stdout_lines[1] != schedule_real_directory.stdout_lines[0]
-        and not schedule_real_directory.stdout_lines[1].startswith(schedule_real_directory.stdout_lines[0] ~ '/'))
-  ansible.builtin.set_fact:
-    migrate_refusal_code: schedule.container_path_unsupported
-    migrate_refusal_message: >-
-      Schedule [{{ schedule.id }}:{{ schedule.name }}] cannot move: its working directory is missing, uses a symlink or resolves outside the checkout.
-
-- name: Require a working directory inside the real checkout
-  ansible.builtin.assert:
-    that: migrate_refusal_message is not defined
-    fail_msg: "{{ migrate_refusal_message | default('schedule.container_path_unsupported') }}"
-    quiet: true
-
-- name: Resolve literal Schedule command paths
+  when: phase == 'processes'
+- name: Push the container Schedule units
   ansible.builtin.command:
-    argv: [realpath, --canonicalize-missing, --, "{{ item }}"]
-  loop: "{{ schedule.source_command_paths | default([]) }}"
-  register: schedule_real_commands
-  changed_when: false
-  failed_when: false
+    argv: '{{ incus_project + [''file'', ''push'', ''--create-dirs'', ''--uid'', ''0'', ''--gid'', ''0'', ''--mode'', ''0644'', ''-'', container.name ~
+      ''/etc/systemd/system/'' ~ item.name] }}'
+    stdin: '{{ item.content }}'
+    stdin_add_newline: false
+  loop:
+  - name: '{{ schedule.service }}'
+    content: '{{ container_schedule_units.container_service }}'
+  - name: '{{ schedule.timer }}'
+    content: '{{ container_schedule_units.container_timer }}'
+  loop_control:
+    label: '{{ item.name }}'
+  changed_when: true
+  when: phase == 'processes'
+- name: Push the private Schedule command
+  ansible.builtin.command:
+    argv: '{{ incus_project + [''file'', ''push'', ''--create-dirs'', ''--uid'', ''0'', ''--gid'', ''1000'', ''--mode'', ''0640'', ''-'', container.name
+      ~ ''/etc/orbit/schedules/'' ~ schedule.id ~ ''.sh''] }}'
+    stdin: |
+      # X-Orbit-Schedule-ID={{ schedule.id }}
+      {{ (lookup('ansible.builtin.env', 'ORBIT_SCHEDULE_COMMANDS') | from_json).schedule_commands[schedule.id] }}
+    stdin_add_newline: false
   no_log: true
-
-- name: Explain a command path outside the real checkout
-  when: >-
-    item.rc != 0 or item.stdout | trim != item.item
-    or (item.stdout | trim != schedule_real_directory.stdout_lines[0]
-        and not (item.stdout | trim).startswith(schedule_real_directory.stdout_lines[0] ~ '/'))
+  changed_when: true
+  when: phase == 'processes'
+- name: Load and validate the disabled container Schedule
+  ansible.builtin.command:
+    argv: '{{ as_root + item }}'
+  loop:
+  - - systemctl
+    - daemon-reload
+  - - systemd-analyze
+    - verify
+    - '{{ schedule.service }}'
+    - '{{ schedule.timer }}'
+  - - systemctl
+    - disable
+    - --now
+    - --
+    - '{{ schedule.timer }}'
+  changed_when: true
+  when: phase == 'processes'
+- name: Start the carried Schedule outcome
   ansible.builtin.set_fact:
-    migrate_refusal_code: schedule.container_command_unsupported
-    migrate_refusal_message: >-
-      Schedule [{{ schedule.id }}:{{ schedule.name }}] cannot move: a literal command path uses a symlink or resolves outside the checkout.
-  loop: "{{ schedule_real_commands.results }}"
-  no_log: true
-
-- name: Require command paths inside the real checkout
-  ansible.builtin.assert:
-    that: migrate_refusal_message is not defined
-    fail_msg: "{{ migrate_refusal_message | default('schedule.container_command_unsupported') }}"
-    quiet: true
-
-- name: Read the timer's activation state
-  ansible.builtin.systemd_service: { name: "{{ schedule.timer }}" }
-  register: schedule_timer_state
-
-- name: Read the Schedule service's activation state
-  ansible.builtin.systemd_service: { name: "{{ schedule.service }}" }
-  register: schedule_service_state
-
-- name: Explain an unsupported timer state
-  when: >-
-    schedule_timer_state.status.UnitFileState | default('') not in ['enabled', 'disabled']
-    or schedule_timer_state.status.ActiveState | default('') not in ['active', 'inactive']
-    or schedule_service_state.status.ActiveState | default('') not in ['active', 'inactive', 'failed']
-    or schedule_timer_state.status.DropInPaths | default('') | length > 0
-    or schedule_service_state.status.DropInPaths | default('') | length > 0
+    schedule_outcome:
+      id: '{{ schedule.id }}'
+      name: '{{ schedule.name }}'
+      outcome: '{{ ''activated'' if schedule.desired == ''enabled'' else ''disabled'' }}'
+  when: phase == 'retire'
+- name: Activate the container timer after cutover
+  block:
+  - name: Apply the recorded container timer state
+    ansible.builtin.command:
+      argv: '{{ as_root + [''systemctl'', ''enable'' if schedule.desired == ''enabled'' else ''disable'', ''--now'', ''--'', schedule.timer] }}'
+    changed_when: true
+  - name: Check the container timer state
+    ansible.builtin.command:
+      argv: '{{ as_root + [''systemctl'', ''is-active'', ''--'', schedule.timer] }}'
+    register: moved_timer
+    changed_when: false
+    failed_when: (moved_timer.stdout | trim) != ('active' if schedule.desired == 'enabled' else 'inactive')
+  rescue:
+  - name: Keep a failed timer from firing
+    ansible.builtin.command:
+      argv: '{{ as_root + [''systemctl'', ''disable'', ''--now'', ''--'', schedule.timer] }}'
+    failed_when: false
+    changed_when: true
+  - name: Record the activation warning without failing migration
+    ansible.builtin.set_fact:
+      schedule_outcome:
+        id: '{{ schedule.id }}'
+        name: '{{ schedule.name }}'
+        outcome: not_activated
+        cause: schedule.container_activation_failed
+  when: phase == 'retire'
+- name: Retire the source Schedule artifacts
+  block:
+  - name: Remove the carried host pair and obsolete scripts
+    ansible.builtin.file:
+      path: '{{ item }}'
+      state: absent
+    loop:
+    - /etc/systemd/system/{{ schedule.timer }}
+    - /etc/systemd/system/{{ schedule.service }}
+    - /etc/orbit/schedules/{{ schedule.id }}.sh
+    - /etc/orbit/schedules/{{ schedule.id }}.complete
+  - name: Reload the retired Schedule units
+    ansible.builtin.systemd_service:
+      daemon_reload: true
+  rescue:
+  - name: Record the host retirement warning without failing migration
+    ansible.builtin.set_fact:
+      schedule_outcome: '{{ schedule_outcome | combine({''outcome'': ''not_activated'', ''cause'': ''schedule.container_retirement_failed''}) }}'
+  when: phase == 'retire'
+- name: Append this Schedule's public outcome
   ansible.builtin.set_fact:
-    migrate_refusal_code: schedule.container_artifact_unsupported
-    migrate_refusal_message: >-
-      Schedule [{{ schedule.id }}:{{ schedule.name }}] cannot move: its timer must be enabled or disabled and active or inactive,
-      its service must not be starting or stopping, and neither unit may have drop-ins.
-
-- name: Require a stable Schedule timer state
-  ansible.builtin.assert:
-    that: migrate_refusal_message is not defined
-    fail_msg: "{{ migrate_refusal_message | default('schedule.container_artifact_unsupported') }}"
-    quiet: true
-
-- name: Capture the timer's exact activation state
-  ansible.builtin.set_fact:
-    schedule_snapshots: >-
-      {{ schedule_snapshots + [{'schedule': schedule, 'enabled': schedule_timer_state.status.UnitFileState == 'enabled',
-          'active': schedule_timer_state.status.ActiveState == 'active'}] }}
+    schedule_outcomes: '{{ (schedule_outcomes | default([])) + [schedule_outcome] }}'
+  when: phase == 'retire'

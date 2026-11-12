@@ -7,6 +7,7 @@ namespace App\Domain\Schedules;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\InstanceMigration\DeferredMigrationScheduleRuns;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -43,6 +44,10 @@ final readonly class ScheduleOperationAdmission
     /** @return array<string, mixed> */
     public function inputFor(Schedule $schedule, string $verb, bool $cascade = false, ?Node $caller = null, bool $created = false): array
     {
+        if ($schedule->trigger === ScheduleTrigger::Container && ! $cascade) {
+            throw new ResourceOperationException('schedule.target_unsupported',
+                'Container Schedule mutations are not available yet; list, show and logs remain available.', 409);
+        }
         $target = match ($verb) {
             'create' => $this->targets->forInstallation($schedule),
             'destroy' => $this->targets->forRemoval($schedule),

@@ -61,6 +61,11 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         $model = ($container['clone'] ?? null) === null ? "# The default Instance runs no agent.\n"
             : app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(TaskVmModelRoute::class)->key());
 
+        $plans = ValidatedData::object($input['migrate'])['schedules'] ?? [];
+        if (! is_array($plans) || ! array_is_list($plans)) {
+            throw new \InvalidArgumentException('The admitted Schedules must be a list.');
+        }
+
         return ['intent' => [
             'instance_id' => $instance->id, 'instance_name' => $instance->name, 'ssh_execution' => $input['ssh_execution'],
             'container' => $container, 'migrate' => ValidatedData::object($input['migrate']),
@@ -68,7 +73,9 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         ], 'execution_secrets' => [
             ...($publication === null ? [] : ValidatedData::object($publication['execution_secrets'])),
             'process_environments' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-migrate-processes-'.$operation->id,
-                app(ContainerProcesses::class)->environments($instance, $container['processes'] ?? [], migrate: true)),
+                json_encode([...ValidatedData::object(json_decode(app(ContainerProcesses::class)->environments($instance, $container['processes'] ?? [], migrate: true), true, flags: JSON_THROW_ON_ERROR)),
+                    'schedule_commands' => json_decode(app(MigrateSchedules::class)->commands($instance, array_map(ValidatedData::object(...), $plans)), true, flags: JSON_THROW_ON_ERROR)],
+                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)),
             'model_environment' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-migrate-model-'.$operation->id, $model),
         ]];
     }
@@ -196,7 +203,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                     if (! is_array($schedules) || ! array_is_list($schedules)) {
                         throw new \InvalidArgumentException('The admitted Schedules must be a list.');
                     }
-                    app(MigrateSchedules::class)->complete($instance, array_map(ValidatedData::object(...), $schedules));
+                    app(MigrateSchedules::class)->complete($instance, array_map(ValidatedData::object(...), $schedules), $operation->id);
                     $this->moved($instance, ValidatedData::object($operation->input['migrate']), ValidatedData::integerList($operation->input['sqlite_connection_ids'] ?? []));
                     // A default's clones start at the seed snapshot the run took of its commit.
                     $runtime->update(['power_state' => InstanceRuntimePowerState::Running,
