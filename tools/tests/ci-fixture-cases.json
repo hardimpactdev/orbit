@@ -1892,10 +1892,11 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_line_test.py": {
-    "source_sha256": "2e01ce293092ce498f393f9ae2e65f0d800753fe0a6131b92801fa03ef956434",
+    "source_sha256": "4a237bffa8bfd61632dcd7eab655cde451b89593d774e83e0fc66c1e2669a8ca",
     "cases": [
       "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte",
       "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved",
+      "test_prefix_whitelist_accepts_only_safe_whole_lines_and_reports_first_refusal",
       "test_missing_key_missing_file_symlink_and_already_smtp_write_nothing",
       "test_atomic_replacement_preserves_owner_group_and_mode_without_backup",
       "test_real_incus_missing_delete_contract_and_first_run",
@@ -1911,7 +1912,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "ccb2e711b6f87ba9ddcd1c1dcd6629d62bf79dfb4f15f2e153a61e0e2062d613",
+    "source_sha256": "ccdee12065c4cc149312ad2c0ceb472f9fba037567b1f357fe3fc171a54f6a1f",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",

@@ -981,7 +981,7 @@ The container playbook preserves agent settings outside Orbit's managed JSON key
 
 Development container [mail setup](/reference/development-containers#development-mail) runs in the Instance lifecycle. It installs the bridge helper and admits the SMTP endpoint additively; a Gateway release does not need a Node converge before those Instance Operations can apply mail. The shared NIC allowance remains limited to its existing proxies.
 
-Development mail repair uses the Node’s existing Python prerequisite through fixed Incus argv. The container needs only its stock shell and coreutils for atomic replacement. It needs no Project PHP runtime or new image digest; see [development mail](/reference/development-containers#development-mail). The shared rule preserves matching quotes around `log` and `smtp`.
+Development mail repair uses the Node’s existing Python prerequisite through fixed Incus argv. The container needs only its stock shell and coreutils for atomic replacement. It needs no Project PHP runtime or new image digest; see [development mail](/reference/development-containers#development-mail). The shared rule preserves matching quotes around `log` and `smtp`; its guard accepts only whole lines on the shared whitelist and reports the first refused line as `guard_line`.
 
 Container migration reuses this [development mail phase](/reference/development-containers#development-mail) after copying the workspace. It requires no Node converge.
 

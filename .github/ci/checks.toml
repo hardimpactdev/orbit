@@ -2616,7 +2616,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_mail_line_test.py"
-cost = 47
+cost = 57
 slices = false
 inputs = [
   "swamp/ansible/library/orbit_migrate_env.py",
@@ -2629,8 +2629,9 @@ inputs = [
   "swamp/ansible/requirements.yml",
 ]
 [fixture.case_costs]
-"test_migrate_log_loopback_passes_source_check_then_becomes_smtp" = 3
+"test_migrate_log_loopback_passes_source_check_then_becomes_smtp" = 1
 "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte" = 5
+"test_prefix_whitelist_accepts_only_safe_whole_lines_and_reports_first_refusal" = 12
 "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved" = 7
 "test_missing_key_missing_file_symlink_and_already_smtp_write_nothing" = 2
 "test_atomic_replacement_preserves_owner_group_and_mode_without_backup" = 2
