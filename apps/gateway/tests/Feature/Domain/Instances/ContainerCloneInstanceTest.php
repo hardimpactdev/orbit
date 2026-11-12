@@ -728,3 +728,11 @@ it('gives the clone PHP runtime its own Vite SSR origin instead of the default p
     expect($container['processes'][0]['content'])->toContain('"--port=5173"');
     expect($clone->environmentValues()->where('env_key', 'INERTIA_SSR_HOT_URL')->exists())->toBeFalse();
 });
+
+it('renders database removal fence recovery with PostgreSQL boolean keywords', function (): void {
+    $statements = app(DatabaseStatements::class)->destroy(DatabaseDriver::Pgsql, ['fixture'], ['owner']);
+
+    expect($statements['restore'])
+        ->toContain("format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', d.datname, CASE WHEN j.allow_connections THEN 'true' ELSE 'false' END)")
+        ->not->toContain("format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', d.datname, j.allow_connections)");
+});
