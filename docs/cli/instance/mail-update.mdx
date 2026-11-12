@@ -1,0 +1,47 @@
+---
+title: "orbit instance:mail:update"
+description: "Repair the development mail path and change only an exact stock mailer line."
+covers:
+  - apps/gateway/app/Domain/Instances/Environment/DevelopmentMailUpdate.php
+  - apps/gateway/app/Domain/InstanceMail/direct-operations.php
+  - apps/gateway/app/Http/Controllers/Api/InstanceMailController.php
+  - apps/gateway/routes/api/instance-mail.php
+  - apps/cli/app/Commands/Instances/UpdateInstanceMailCommand.php
+  - packages/php-sdk/src/Requests/Instances/UpdateInstanceMailRequest.php
+  - swamp/ansible/{instance-mail-update.yml,instance_mail_line.py,tasks/instance-mail-line.yml}
+  - swamp/workflows/workflow-operation-instance-mail-update.yaml
+---
+
+Repair mail for one existing development container Instance. Normally not needed: create and clone apply it. Contributors set nothing. The [development mail rule](/reference/development-containers#development-mail) defines the default and its limits.
+
+## Usage
+
+```sh
+orbit instance:mail:update 42
+orbit instance:mail:update 42 --json
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `instance-id` | Numeric Instance ID. |
+| `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
+
+Orbit prepares the SMTP path and the two loopback forwarders first. A Project listener or foreign unit succeeds with `mail_port_in_use` or `mail_unit_conflict` and leaves `.env` unchanged. Otherwise, Orbit applies the one-line rule. There is no prompt.
+
+The result names the path status, forwarder ports, and mailer outcome: `changed`, `left_as_written`, `not_present`, or `already_smtp`. A preserved occurrence reports only its 1-based line numbers. Mentions in comments and other values also count. No value or file content appears. Repeating a completed update writes nothing and restarts nothing.
+
+Only `changed` clears Laravel's config cache, when PHP and `artisan` exist, then restarts the Instance's running PHP unit and PHP worker Processes. Other Processes stay running. Config-clear failure does not fail the Operation. A failed path or write keeps completed path work and can be retried. The Node removes the one staging file, `/srv/workspace/.env.orbit-mail`, at entry and on exit, including after a forced container stop. The [mail rule](/reference/development-containers#development-mail) states the Node-loss window.
+
+## How it works
+
+<div className="flow-at" data-chart="instance/mail-update"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `operation.kind_unavailable` | The Instance has no container runtime. |
+| `instance.host_unavailable` | Placement is not development or the Node has no main Mailpit endpoint. |
+| `operation.target_busy`, `instance.lifecycle_busy` | Lifecycle or Process work is unfinished. |
+| `process.target_inactive` | The container is stopped; Orbit does not start it. |
+| `env.configuration_invalid` | The file could not be changed safely. |

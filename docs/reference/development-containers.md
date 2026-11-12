@@ -4,7 +4,7 @@ description: "ADR 0250, partly built: every Instance runs in an Incus container 
 covers:
   - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection}.php
-  - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
+  - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network}.py}
@@ -402,6 +402,14 @@ Pending activation lives on the Node at `/var/lib/orbit/instance-mail/<container
 Updated endpoint settings rewrite the proxy services and restart active proxies, leaving application Processes running. The runtime folder's existing `try-restart orbit-*.service` also leaves idle proxies inactive; an active proxy restart can close its current SMTP connections while its socket remains listening. Process cleanup matches `orbit-process-*` and does not remove these mail units. Clone preparation disables inherited mail socket links before first boot, then its mail phase enables its own listeners.
 
 Destroy deletes the container, its private Node activation state and its own ACL, including the SMTP rule. It does not withdraw the shared bridge tuple: that stays for ordinary host reconciliation, like database tuples, and remains needed while other Instances use Mailpit. There is no new helper withdrawal.
+
+The mailer rule edits `/srv/workspace/.env` only when the byte string `MAIL_MAILER` occurs exactly once in the whole file and that occurrence forms the exact whole line `MAIL_MAILER=log`. It replaces that line with `MAIL_MAILER=smtp`. It keeps LF or CRLF, all other bytes, and the file's owner, group and mode. The write uses the one reserved staging file `/srv/workspace/.env.orbit-mail` and an atomic rename, with no backup. Missing files and files without any `MAIL_MAILER` occurrence return `not_present`; one exact `MAIL_MAILER=smtp` returns `already_smtp`.
+
+Every other form stays as written. A mention in a comment or another value also counts. Multiple occurrences, a symlink, or an earlier line that opens a multiline quoted value stay untouched. `left_as_written` reports only the 1-based line numbers of all occurrences; numbers can repeat for one line. Only `changed` clears an available Laravel config cache and restarts running FrankenPHP and recognized PHP queue or Horizon workers. An unrelated Process is never restarted.
+
+The Node removes the fixed staging name before inspecting `.env` and again on every exit. It uses `incus file delete --force`, which works even after a forced container stop: [Incus container file access](https://github.com/lxc/incus/blob/v7.0.1/doc/howto/instances_access_files.md) mounts a stopped container’s root filesystem. A completed or failed step leaves no staging file for a seed or clone. An abrupt Node loss during staging can leave it until the next attempt; a seed or clone taken before that cleanup can inherit it.
+
+For a new development container on a Node with the main Mailpit, the normal environment renderer replaces a parsed `log` mailer with `smtp`. Other values remain as written. The Project template and stored values stay unchanged; the new file owns the key through the normal environment mechanism. Create and clone report `mail_keys_set`.
 
 ## Model access
 

@@ -2583,3 +2583,24 @@ inputs = [
 "test_failed_unit_write_keeps_network_path_and_a_retry_completes_it" = 14
 "test_failure_after_one_successful_service_write_finishes_pending_activation" = 40
 "test_failure_after_all_writes_before_reload_finishes_pending_activation" = 40
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_mail_line_test.py"
+cost = 36
+slices = false
+inputs = [
+  "swamp/ansible/instance_mail_line.py",
+  "swamp/ansible/tasks/instance-mail-line.yml",
+  "swamp/ansible/instance-mail-update.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+]
+[fixture.case_costs]
+"test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte" = 5
+"test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved" = 7
+"test_missing_key_missing_file_symlink_and_already_smtp_write_nothing" = 2
+"test_atomic_replacement_preserves_owner_group_and_mode_without_backup" = 2
+"test_real_ansible_step_refreshes_only_changed_file_and_skips_conflict" = 15
+"test_failed_transfer_preserves_file_and_returns_only_a_code" = 1
+"test_interruption_after_staging_cleans_the_fixed_name_even_with_stopped_guest" = 2
+"test_next_run_removes_a_leftover_before_even_inspecting_a_stopped_guest" = 2

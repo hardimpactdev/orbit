@@ -1,0 +1,51 @@
+sequenceDiagram
+  %% Development mail: shared path, then the exact one-line rule.
+  %% status: draft
+  %% command: instance:mail:update
+  %% kind: instance.mail_update
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>Instance container
+  CLI->>GW: instance:mail:update ID
+  %%> Command:
+  %%> - `orbit instance:mail:update INSTANCE`
+  %%> - syntax: `<instance-id> [--json]`
+  Note over GW: Admit mail update
+  %%> When:
+  %%> - a running development container on the Node with the main Mailpit; hold its Instance lock
+  %%> On failure:
+  %%> - unsupported placement, stopped runtime or busy lifecycle work starts no run
+  GW->>SW: Start run, full intent<br/>operation-instance-mail-update
+  GW-->>CLI: 202 Accepted<br/>Operation ID
+  SW->>N: Apply development mail<br/>Ansible · tags mail
+  %%> Why:
+  %%> - reuse the lifecycle mail path before changing the exact mailer line
+  alt path ready
+    %% path: main
+    N-->>SW: Path and mailer result<br/>status · ports · line numbers
+    %%> When:
+    %%> - only a changed file clears config and restarts running PHP and PHP workers
+    SW-->>GW: Run succeeded<br/>terminal result
+  else listener or unit conflict
+    %% path: conflict
+    N-->>SW: Mail setup skipped<br/>mail_port_in_use / unit conflict
+    %%> Result:
+    %%> - `mail_port_in_use` or `mail_unit_conflict`; the file stays untouched
+    SW-->>GW: Run succeeded<br/>named skip
+  else phase failed
+    %% path: failed
+    N--xSW: Mail update failed
+    %%> On failure:
+    %%> - keep completed path changes; remove private temporary files; a repeat repairs the path
+    SW--xGW: Run failed<br/>error code
+  end
+  loop until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: Status and result
+  end
