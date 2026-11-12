@@ -31,6 +31,7 @@ use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Database\Eloquent\Casts\Json;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -592,4 +593,47 @@ it('counts a late signal again after its window was evicted, retaining arrival o
     $collector->recordSignals($signals);
     $row->refresh();
     expect($row->occurrences)->toBe(289)->and($row->evidence['counted_blocks'])->toBe([...array_slice($blocks, 1), $current - 500]);
+});
+
+it('bounds the evidence decodes of a steady collection over a store with history', function (): void {
+    for ($i = 1; $i <= 15; $i++) {
+        $node = scheduledDoctorNode('node-'.$i, $i);
+        scheduledDoctorFacts($node);
+        if ($i === 1) {
+            for ($j = 1; $j <= 80; $j++) {
+                Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'process-'.$j,
+                    'runtime' => 'systemd', 'desired_state' => 'running', 'status' => 'active', 'runtime_config' => []]);
+            }
+        }
+    }
+    // 100 open rows that no current check visits, each with a filled history, as an older collection left them.
+    $blocks = range(5_926_000, 5_926_287);
+    $times = array_map(static fn (int $k): string => sprintf('2026-11-11T%02d:%02d:00.000000Z', intdiv($k, 12), ($k % 12) * 5), range(0, 19));
+    for ($k = 0; $k < 100; $k++) {
+        ProblemFingerprint::query()->create(['source' => ProblemSource::Doctor, 'fingerprint' => 'doctor#old'.$k, 'first_seen' => '2026-10-26 12:20:00',
+            'last_seen' => '2026-10-31 07:34:00', 'occurrences' => 400,
+            'evidence' => ['doctor_node' => (string) (($k % 15) + 1), 'doctor_code' => 'process.node_unreachable', 'doctor_family' => 'process',
+                'doctor_resource' => 'old'.$k, 'doctor_observed_at' => '2026-10-31T07:34:00.000000Z',
+                'observation_times' => $times, 'observation_counts' => array_fill(0, 20, 1), 'counted_blocks' => $blocks]]);
+    }
+    app(RunDoctorAction::class)->collectDoctor();
+    $this->travel(5)->minutes();
+    $this->view->putSubscriber(true, true, 15);
+    foreach (Node::query()->get() as $node) {
+        scheduledDoctorFacts($node);
+    }
+    $decodes = 0;
+    Json::decodeUsing(static function (mixed $value, ?bool $associative) use (&$decodes): mixed {
+        $decodes++;
+
+        return json_decode($value, $associative);
+    });
+    try {
+        app(RunDoctorAction::class)->collectDoctor();
+    } finally {
+        Json::decodeUsing(null);
+    }
+    fwrite(STDOUT, "\nDoctor collection evidence decodes (15 Nodes, 80 findings, 100 old rows, steady): {$decodes}\n");
+    // 180 rows. A few decodes per row is the work; a count that multiplies rows by Nodes and families is the fault.
+    expect($decodes)->toBeLessThanOrEqual(180 * 6);
 });
