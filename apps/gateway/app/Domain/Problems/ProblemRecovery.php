@@ -30,23 +30,26 @@ use App\Models\Route;
 use App\Models\Schedule;
 use App\Models\TaskVmImageBuild;
 use App\Models\Tool;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /** Positive recovery evidence belongs to the incident, independent of its filing episode. */
 final readonly class ProblemRecovery
 {
-    public function doctor(DoctorReportData $report, Carbon $startedAt): void
+    /** @param Collection<string, ProblemFingerprint> $rows */
+    public function doctor(DoctorReportData $report, Carbon $startedAt, Collection $rows): void
     {
         foreach ($report->nodes as $node) {
             foreach ($node->families as $family) {
                 if ($family->observedResources === [] && $family->observedChecks === [] && $family->observedInventories === []) {
                     continue;
                 }
-                $rows = ProblemFingerprint::query()->where('source', ProblemSource::Doctor)
-                    ->where('evidence->doctor_node', (string) $node->nodeId)
-                    ->where('evidence->doctor_family', $family->family->value)->lockForUpdate()->get();
                 foreach ($rows as $row) {
+                    if (($row->evidence['doctor_node'] ?? null) !== (string) $node->nodeId || ($row->evidence['doctor_family'] ?? null) !== $family->family->value) {
+                        continue;
+                    }
                     $observed = $row->evidence['doctor_observed_at'] ?? null;
                     $resource = $row->evidence['doctor_resource'] ?? null;
                     if ($resource !== null && ! is_int($resource) && ! is_string($resource)) {
@@ -217,14 +220,53 @@ final readonly class ProblemRecovery
             && $this->resourceExists($family, $id, $nodeId) === false;
     }
 
+    /**
+     * @param  list<array{fingerprint: string, doctor_family: string, doctor_resource: ?string, doctor_node: string}>  $issues
+     * @return array<string, bool|null>
+     */
+    public function doctorResourcePresence(array $issues): array
+    {
+        $resources = [];
+        $ids = [];
+        foreach ($issues as $issue) {
+            $resource = $this->resource($issue['doctor_family'], $issue['doctor_resource'], (int) $issue['doctor_node']);
+            $resources[$issue['fingerprint']] = $resource;
+            if ($resource !== null) {
+                [$model, $id] = $resource;
+                $ids[$model][] = $id;
+            }
+        }
+        $present = [];
+        foreach ($ids as $model => $keys) {
+            foreach ($model::query()->whereIn('id', array_values(array_unique($keys)))->pluck('id') as $id) {
+                if (is_int($id) || is_string($id)) {
+                    $present[$model][$id] = true;
+                }
+            }
+        }
+        $result = [];
+        foreach ($resources as $fingerprint => $resource) {
+            $result[$fingerprint] = $resource === null ? null : isset($present[$resource[0]][$resource[1]]);
+        }
+
+        return $result;
+    }
+
     public function resourceExists(string $family, int|string|null $id, ?int $nodeId): ?bool
+    {
+        $resource = $this->resource($family, $id, $nodeId);
+
+        return $resource === null ? null : $resource[0]::query()->whereKey($resource[1])->exists();
+    }
+
+    /** @return array{class-string<Model>, int|string}|null */
+    private function resource(string $family, int|string|null $id, ?int $nodeId): ?array
     {
         if ($id === null || $id === '') {
             return null;
         }
         if (is_string($id) && str_starts_with($id, DoctorResources::NodeCheckPrefix)) {
-            return $nodeId !== null && DoctorResources::isNodeCheckId($id, $nodeId)
-                ? Node::query()->whereKey($nodeId)->exists() : null;
+            return $nodeId !== null && DoctorResources::isNodeCheckId($id, $nodeId) ? [Node::class, $nodeId] : null;
         }
         $model = match ($family) {
             'node' => Node::class, 'role' => NodeRole::class, 'project' => Project::class,
@@ -237,12 +279,12 @@ final readonly class ProblemRecovery
             $attachmentId = DoctorResources::rowModelId(DoctorResourceKind::Attachments, $id);
 
             return match (true) {
-                $connectionId !== null => DatabaseConnection::query()->whereKey($connectionId)->exists(),
-                $attachmentId !== null => DatabaseConnectionTarget::query()->whereKey($attachmentId)->exists(),
+                $connectionId !== null => [DatabaseConnection::class, $connectionId],
+                $attachmentId !== null => [DatabaseConnectionTarget::class, $attachmentId],
                 default => null,
             };
         }
 
-        return $model === null ? null : $model::query()->whereKey($id)->exists();
+        return $model === null ? null : [$model, $id];
     }
 }

@@ -77,15 +77,17 @@ final readonly class ShowGatewayStatusAction
             }
             $key = $nodeId.'|'.$code;
             $since = $row->first_seen?->toISOString();
+            $count = $row->evidence['doctor_issue_count'] ?? 1;
+            $count = is_int($count) ? $count : 1;
             if (! isset($groups[$key])) {
                 $resource = $row->evidence['doctor_resource'] ?? null;
-                $groups[$key] = ['node_id' => $node->id, 'node_name' => $node->name, 'code' => $code, 'count' => 1,
+                $groups[$key] = ['node_id' => $node->id, 'node_name' => $node->name, 'code' => $code, 'count' => $count,
                     'since' => $since, 'newest_since' => $since,
                     'resource' => ['type' => is_string($row->evidence['doctor_family'] ?? null) ? $row->evidence['doctor_family'] : '',
                         'id' => is_int($resource) || is_string($resource) ? (string) $resource : null]];
             } else {
                 $group = &$groups[$key];
-                $group['count']++;
+                $group['count'] += $count;
                 $group['since'] = $group['since'] === null ? $since : ($since === null ? $group['since'] : min($group['since'], $since));
                 $group['newest_since'] = max($group['newest_since'], $since);
                 $group['resource'] = null;
