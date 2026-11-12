@@ -158,38 +158,46 @@ sys.exit(result.returncode)
             stamp = self.envfile.stat().st_mtime_ns
             expected = {'status': 'left_as_written', 'lines': numbers}
             if opening:
-                expected['quote_opening_line'] = opening[0]
+                expected['guard_line'] = opening[0]
             self.assertEqual(self.run_rule(), expected)
             self.assertTrue(self.envfile.read_bytes() == before)
             self.assertEqual(self.envfile.stat().st_mtime_ns, stamp)
             self.assertEqual(json.loads(self.calls.read_text()), [])
 
-    def test_active_quote_guard_accepts_balanced_values_and_reports_real_openers(self):
-        balanced = [
-            b'APP_NAME="Nick\'s App"', b'APP_NAME=\'Nick "App"\'',
-            b'APP_NAME="My \\"App\\""', b'EMPTY=""',
-            b'# NOTE=one " quote', b'  # NOTE=one \' quote',
-            b'\xef\xbb\xbf# NOTE=one " quote',
-        ]
-        for earlier in balanced:
-            before = earlier + b'\nMAIL_MAILER="log"\n'
-            self.assertEqual(self.run_rule(before), {'status': 'changed', 'lines': [2]})
-            self.assertTrue(self.envfile.read_bytes() == before.replace(b'"log"', b'"smtp"'))
-            self.assertEqual(self.run_rule(), {'status': 'already_smtp'})
-        for earlier in [b'# first\nOTHER="unclosed', b'# first\nOTHER=\'unclosed',
-                        b'# first\nOTHER="it\'s still open', b'# first\nOTHER="escaped \\"']:
-            before = earlier + b'\nMAIL_MAILER="log"\nlast"\n'
+    def test_prefix_whitelist_accepts_only_safe_whole_lines_and_reports_first_refusal(self):
+        allowed = [b'', b' \t', b'# NOTE=no quotes', b'  # comment', b'EMPTY=', b'BARE=https://fixture.test',
+                   b'APP_NAME="Nick\'s App"', b'APP_NAME=\'Nick "App"\'', b'EMPTY=""', b"EMPTY=''"]
+        for ending in [b'\n', b'\r\n']:
+            for earlier in allowed:
+                before = earlier + ending + b'MAIL_MAILER="log"' + ending
+                self.assertEqual(self.run_rule(before), {'status': 'changed', 'lines': [2]})
+                self.assertTrue(self.envfile.read_bytes() == before.replace(b'MAIL_MAILER="log"', b'MAIL_MAILER="smtp"'))
+                self.assertEqual(self.run_rule(), {'status': 'already_smtp'})
+        refused = [b'APP_NAME="My \\"App\\""', b'# NOTE=one " quote', b"  # NOTE=one ' quote", b'# NOTE=back\\slash',
+                   b'OTHER="unclosed', b"OTHER='unclosed", b'OTHER="it\'s still open', b'OTHER="escaped \\"',
+                   b'OTHER=value # comment', b'OTHER=value space', b'OTHER= value', b'OTHER=value ', b' OTHER=value',
+                   b'export OTHER=value', b'OTHER =value', b'OTHER=\'="\'', b'OTHER="bad\'quote',
+                   b"X=it's\rY=\"a'", b'X=bare"\rY="a', b'X=\'="\'#']
+        for earlier in refused:
+            before = b'# safe first\n' + earlier + b'\nMAIL_MAILER=log\nb"\n'
             self.envfile.write_bytes(before)
             stamp = self.envfile.stat().st_mtime_ns
-            self.assertEqual(self.run_rule(), {'status': 'left_as_written', 'lines': [3], 'quote_opening_line': 2})
+            self.assertEqual(self.run_rule(), {'status': 'left_as_written', 'lines': [3], 'guard_line': 2})
             self.assertTrue(self.envfile.read_bytes() == before)
             self.assertEqual(self.envfile.stat().st_mtime_ns, stamp)
             self.assertEqual(json.loads(self.calls.read_text()), [])
+        for before in [b"X=it's\rY=\"a'\nMAIL_MAILER=log\nb\"\n", b'X=\'="\'#\nMAIL_MAILER=log\nb"\n']:
+            self.assertEqual(self.run_rule(before), {'status': 'left_as_written', 'lines': [2], 'guard_line': 1})
+            self.assertTrue(self.envfile.read_bytes() == before)
         for mail_line in [19, 28]:
             before = b'\n'.join(b'APP_NAME="Nick\'s App"' if line == 1 else b'MAIL_MAILER="log"' if line == mail_line
                                 else f'KEY{line}="value{line}"'.encode() for line in range(1, 31)) + b'\n'
             self.assertEqual(self.run_rule(before), {'status': 'changed', 'lines': [mail_line]})
-            self.assertTrue(self.envfile.read_bytes() == before.replace(b'"log"', b'"smtp"'))
+            self.assertTrue(self.envfile.read_bytes() == before.replace(b'MAIL_MAILER="log"', b'MAIL_MAILER="smtp"'))
+        # A later opener cannot put an earlier assignment inside a value; the whole-file occurrence guard still applies.
+        before = b'MAIL_MAILER=log\nLATER="unclosed\rtext\n'
+        self.assertEqual(self.run_rule(before), {'status': 'changed', 'lines': [1]})
+        self.assertTrue(self.envfile.read_bytes() == before.replace(b'MAIL_MAILER=log', b'MAIL_MAILER=smtp'))
 
     def test_missing_key_missing_file_symlink_and_already_smtp_write_nothing(self):
         self.assertEqual(self.run_rule(), {'status': 'not_present'})
@@ -463,9 +471,7 @@ sys.exit(result.returncode)
         self.envfile.write_bytes(before)
         self.assertEqual(guard.inspect_environment(str(self.root), [], [],
                          development_mail={'host': '10.253.0.1', 'port': 1025}), [])
-        result = self.ansible(migrate=True)
-        self.assertEqual(result, {'mail': {'status': 'applied', 'ports': [1025, 2525]},
-                                  'mailer': {'status': 'changed', 'lines': [1]}})
+        self.assertEqual(self.run_rule(), {'status': 'changed', 'lines': [1]})
         self.assertTrue(self.envfile.read_bytes() == before.replace(b'"log"', b'"smtp"'))
 
     def test_migrate_orders_advisory_mail_after_copy_and_before_application_start(self):

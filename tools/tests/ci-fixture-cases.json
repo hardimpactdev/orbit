@@ -1344,8 +1344,18 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "d1469ab0a4a711a101474e11ee034214c659d7ec19a620c1e2c99a455a50f161",
+    "source_sha256": "9cdbd041c4e7839dddf776c3f1a1ed95adebb8ef93e9bcf1a3dfb07ed11cea78",
     "cases": [
+      "test_legacy_new_branch_still_uses_seed_without_selection",
+      "test_legacy_existing_remote_branch_still_uses_its_tip",
+      "test_new_branch_uses_fetched_base_tip_not_seed",
+      "test_existing_branch_uses_its_remote_tip",
+      "test_resume_keeps_admitted_commit_when_remote_advances",
+      "test_deleted_existing_branch_never_falls_back_to_seed_or_local_ref",
+      "test_deleted_base_is_not_a_new_branch_at_seed",
+      "test_target_created_after_admission_is_not_silently_reused",
+      "test_unreadable_remote_fails_without_creating_a_branch",
+      "test_unreachable_frozen_commit_fails_without_using_current_tip",
       "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
       "test_clone_uses_the_admitted_common_acl_name",
       "test_clone_refuses_unsafe_effective_nics_before_start",
@@ -1876,11 +1886,11 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_line_test.py": {
-    "source_sha256": "abea400b1f728ad85d0df4d102942664039c7d601e6477502b8a838d3505fea1",
+    "source_sha256": "4a237bffa8bfd61632dcd7eab655cde451b89593d774e83e0fc66c1e2669a8ca",
     "cases": [
       "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte",
       "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved",
-      "test_active_quote_guard_accepts_balanced_values_and_reports_real_openers",
+      "test_prefix_whitelist_accepts_only_safe_whole_lines_and_reports_first_refusal",
       "test_missing_key_missing_file_symlink_and_already_smtp_write_nothing",
       "test_atomic_replacement_preserves_owner_group_and_mode_without_backup",
       "test_real_incus_missing_delete_contract_and_first_run",
@@ -1896,7 +1906,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "740ed42191cacbc87c25d9a960d0ad201facd00e7473f4260c59ffbcc565aa95",
+    "source_sha256": "e0cea7c4856c72351dd3c4d77e5076f76f5ac6ddc37a3aa3e6f3e4d0a3a7eb45",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",

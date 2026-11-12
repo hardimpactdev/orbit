@@ -199,7 +199,7 @@ Deno.test("migration retains each exact-line outcome and the named path conflict
             assertEquals(receipt.ready, true);
         }
         const guarded = {mail: {status: "unchanged", ports: [1025, 2525]},
-            mailer: {status: "left_as_written", lines: [19], quote_opening_line: 3}};
+            mailer: {status: "left_as_written", lines: [19], guard_line: 3}};
         await Deno.writeTextFile(`${folder}/mail-result.json`, JSON.stringify(guarded));
         const guardedResult = result(defaultIntent, {...moved, mail: "succeeded"}, workspace, null, await writtenFailure(folder));
         assertEquals(guardedResult.mailer, guarded.mailer);

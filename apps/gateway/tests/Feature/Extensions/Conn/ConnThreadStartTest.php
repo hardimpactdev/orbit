@@ -2,8 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Data\Instances\CreateInstanceData;
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubAppCredentials;
+use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -12,7 +18,11 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitBranchName;
 use App\Domain\TaskVms\TaskVmModelRoute;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -20,6 +30,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\Route;
 use App\Models\TaskVm;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Events\QueryExecuted;
@@ -30,6 +41,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Symfony\Component\Yaml\Yaml;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -904,3 +916,474 @@ describe('the compatible Project directory', function (): void {
             ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
     })->with(['=yes', '=2', '=TRUE', '=%20true%20', '=', '[]=1']);
 });
+
+/** @param list<string> $names */
+function threadBranchRemote(array $names = ['main', 'release', 'feature/login'], int $exit = 0, bool $truncated = false, float $elapsed = 0): void
+{
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldReceive('run')->once()->with(Mockery::on(static fn ($call): bool => in_array('ls-remote', $call->arguments, true)
+        && $call->timeout <= 10 && ! in_array('--exit-code', $call->arguments, true)))
+        ->andReturnUsing(function () use ($names, $exit, $truncated, $elapsed) {
+            if ($elapsed > 0) {
+                test()->travel($elapsed)->seconds();
+            }
+
+            return new CommandResult($exit,
+                implode('', array_map(static fn (string $name): string => str_repeat('a', 40)."\trefs/heads/{$name}\n", $names)), '', 1, $truncated);
+        });
+    app()->instance(ProcessRunner::class, $runner);
+}
+
+/** No Instance, Operation, runtime, Route or branch reservation survives an admission refusal. */
+function threadBranchCounts(): array
+{
+    return [Instance::query()->count(), Operation::query()->count(), InstanceRuntime::query()->count(), Route::query()->count()];
+}
+
+describe('explicit clone branch admission', function (): void {
+    it('rejects malformed branch objects without recording anything', function (mixed $branch, string $field): void {
+        $default = threadDefault($this->beast, 'tool');
+        $before = threadBranchCounts();
+        threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login', 'branch' => $branch])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')->assertJsonValidationErrors($field, 'error.details');
+        expect(threadBranchCounts())->toBe($before);
+    })->with([
+        'null' => [null, 'branch'], 'scalar' => ['main', 'branch'], 'list' => [['new'], 'branch'],
+        'empty' => [[], 'branch'], 'unknown mode' => [['mode' => 'other'], 'branch.mode'],
+        'missing mode' => [['from' => 'main'], 'branch.mode'],
+        'new missing from' => [['mode' => 'new'], 'branch.from'],
+        'existing missing name' => [['mode' => 'existing'], 'branch.name'],
+        'new with name' => [['mode' => 'new', 'from' => 'main', 'name' => null], 'branch.name'],
+        'existing with from' => [['mode' => 'existing', 'name' => 'feature', 'from' => null], 'branch.from'],
+        'extra' => [['mode' => 'new', 'from' => 'main', 'extra' => 1], 'branch'],
+        'invalid base' => [['mode' => 'new', 'from' => 'bad..name'], 'branch.from'],
+        'invalid existing' => [['mode' => 'existing', 'name' => 'HEAD'], 'branch.name'],
+        'null base' => [['mode' => 'new', 'from' => null], 'branch.from'],
+        'array name' => [['mode' => 'existing', 'name' => ['main']], 'branch.name'],
+        'overlong base' => [['mode' => 'new', 'from' => str_repeat('x', 256)], 'branch.from'],
+    ]);
+
+    it('refuses absent sources and existing new targets before any reservation', function (array $branch, array $heads, string $code, array $details): void {
+        $default = threadDefault($this->beast, 'tool');
+        threadBranchRemote($heads);
+        $before = threadBranchCounts();
+        threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login', 'branch' => $branch])
+            ->assertUnprocessable()->assertJsonPath('error.code', $code)->assertJsonPath('error.details', $details);
+        expect(threadBranchCounts())->toBe($before);
+    })->with([
+        'existing missing' => [['mode' => 'existing', 'name' => 'absent'], ['main'], 'branch.not_found', ['field' => 'branch.name']],
+        'base missing' => [['mode' => 'new', 'from' => 'absent'], ['main'], 'branch.not_found', ['field' => 'branch.from']],
+        'empty remote' => [['mode' => 'new', 'from' => 'main'], [], 'branch.not_found', ['field' => 'branch.from']],
+        'target exists' => [['mode' => 'new', 'from' => 'release'], ['release', 'fix-login'], 'branch.exists', ['field' => 'name', 'branch' => 'fix-login']],
+    ]);
+
+    it('refuses a holder in every state on every Node and hides unreachable identities', function (string $state, bool $visible): void {
+        $default = threadDefault($this->beast, 'tool');
+        $holder = Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $visible ? $this->beast->id : $this->mini->id,
+            'name' => 'holder', 'checkout_path' => '/srv/holder', 'status' => $state === 'removing' ? 'active' : ($state === 'failed' ? 'reserved' : $state), 'branch_override' => 'feature/login',
+            'failed_step' => $state === 'failed' ? 'clone' : null]);
+        if ($state === 'removing') {
+            $holder->update(['starting_commit' => str_repeat('a', 40), 'branch' => 'feature/login']);
+            app(StartInstanceDestroyAction::class)->execute($holder, true);
+        }
+        threadBranchRemote();
+        $before = threadBranchCounts();
+        $response = threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login', 'branch' => ['mode' => 'existing', 'name' => 'feature/login']])
+            ->assertConflict()->assertJsonPath('error.code', 'branch.in_use')
+            ->assertJsonPath('error.details', $visible ? ['instance' => ['id' => $holder->id, 'name' => 'holder']] : []);
+        if (! $visible) {
+            expect($response->getContent())->toContain('"details":{}')->not->toContain('holder');
+        }
+        expect(threadBranchCounts())->toBe($before);
+    })->with(['reserved', 'active', 'failed', 'removing'])->with([true, false]);
+
+    it('reports the default as holder of the default branch', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        threadBranchRemote(['main']);
+        $before = threadBranchCounts();
+        threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login', 'branch' => ['mode' => 'existing', 'name' => 'main']])
+            ->assertConflict()->assertJsonPath('error.code', 'branch.in_use')
+            ->assertJsonPath('error.details', ['instance' => ['id' => $default->id, 'name' => 'default']]);
+        expect(threadBranchCounts())->toBe($before);
+    });
+
+    it('refuses an unreadable, truncated, malformed or slow remote before reservation', function (array $heads, int $exit, bool $truncated, float $elapsed): void {
+        $this->freezeTime();
+        $default = threadDefault($this->beast, 'tool');
+        threadBranchRemote($heads, $exit, $truncated, $elapsed);
+        $before = threadBranchCounts();
+        threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login', 'branch' => ['mode' => 'new', 'from' => 'release']])
+            ->assertStatus(502)->assertJsonPath('error.code', 'source.head_unavailable')->assertJsonPath('error.details', []);
+        expect(threadBranchCounts())->toBe($before);
+    })->with([
+        'unreadable' => [['release'], 1, false, 0.0], 'truncated' => [['release'], 0, true, 0.0],
+        'malformed' => [['bad..name'], 0, false, 0.0], 'slow' => [['release'], 0, false, 10.0],
+    ]);
+
+    it('records and resumes the same frozen selection without rereading the remote', function (array $branch, string $target, ?string $base): void {
+        $default = threadDefault($this->beast, 'tool');
+        threadBranchRemote();
+        $body = ['name' => 'fix-login', 'branch' => $branch];
+        $path = "projects/{$default->project_id}/instances";
+        $response = threadCall($this->phone, 'POST', $path, $body, ['Idempotency-Key' => 'branch-create'])->assertAccepted();
+        $operation = Operation::query()->findOrFail($response->json('data.id'));
+        $selection = ['mode' => $branch['mode'], 'target' => $target, 'base' => $base, 'source_sha' => str_repeat('a', 40)];
+        expect($operation->input['branch_selection'])->toBe($selection)
+            ->and($operation->input['direct_provisioning']['container']['branch_selection'])->toBe($selection)
+            ->and(Instance::query()->findOrFail($operation->target_id)->branch_override)->toBe($target)
+            ->and($operation->input['direct_provisioning']['container']['steps'])->toBe([]);
+        threadCall($this->phone, 'POST', $path, $body, ['Idempotency-Key' => 'branch-create'])->assertAccepted()->assertJsonPath('data.id', $operation->id);
+        $operation->update(['status' => OperationStatus::Failed, 'error_code' => 'instance.create_clone_failed', 'lock_key' => null]);
+        $resumed = threadCall($this->phone, 'POST', $path, $body, ['Idempotency-Key' => 'branch-resume'])->assertAccepted();
+        expect(Operation::query()->findOrFail($resumed->json('data.id'))->input['branch_selection'])->toBe($selection);
+    })->with([
+        'new' => [['mode' => 'new', 'from' => 'release'], 'fix-login', 'release'],
+        'existing' => [['mode' => 'existing', 'name' => 'feature/login'], 'feature/login', null],
+    ]);
+
+    it('refuses a changed mode, base or target on same-name resume', function (array $changed): void {
+        $default = threadDefault($this->beast, 'tool');
+        threadBranchRemote();
+        $path = "projects/{$default->project_id}/instances";
+        $response = threadCall($this->phone, 'POST', $path, ['name' => 'fix-login', 'branch' => ['mode' => 'new', 'from' => 'release']])->assertAccepted();
+        $operation = Operation::query()->findOrFail($response->json('data.id'));
+        $operation->update(['status' => OperationStatus::Failed, 'lock_key' => null]);
+        $before = threadBranchCounts();
+        threadCall($this->phone, 'POST', $path, ['name' => 'fix-login', 'branch' => $changed])->assertConflict()->assertJsonPath('error.code', 'instance.placement_conflict');
+        expect(threadBranchCounts())->toBe($before);
+    })->with([
+        'changed base' => [['mode' => 'new', 'from' => 'main']],
+        'changed mode' => [['mode' => 'existing', 'name' => 'fix-login']],
+        'changed target' => [['mode' => 'existing', 'name' => 'feature/login']],
+    ]);
+
+    it('does not read remote heads or acquire source credentials when branch is omitted or name checked', function (): void {
+        $default = threadDefault($this->beast, 'tool');
+        $runner = Mockery::mock(ProcessRunner::class);
+        $runner->shouldNotReceive('run');
+        app()->instance(ProcessRunner::class, $runner);
+        $github = Mockery::mock(GitHubApi::class);
+        $github->shouldNotReceive('repositoryInstallation');
+        $github->shouldNotReceive('repositoryReadToken');
+        app()->instance(GitHubApi::class, $github);
+        threadCall($this->phone, 'GET', "projects/{$default->project_id}/instances/check?name=fix-login")->assertOk();
+        $operation = threadCreate($this->phone, $default->project, 'fix-login');
+        expect($operation->input)->not->toHaveKey('branch_selection')
+            ->and($operation->input['direct_provisioning']['container'])->not->toHaveKey('branch_selection');
+    });
+});
+
+it('bounds explicit branch credential acquisition and git within one ten-second admission deadline', function (string $phase): void {
+    $this->freezeTime();
+    $default = threadDefault($this->beast, 'tool');
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(123, 'fixture', 'fixture', 'nckrtl', 'user', 'https://github.com/apps/fixture', 'fixture-key'));
+    $github = Mockery::mock(GitHubApi::class);
+    $github->shouldReceive('repositoryInstallation')->once()->andReturnUsing(function ($credentials, $repository, $deadline) use ($phase): int {
+        expect($deadline->remaining())->toBe(10.0);
+        if ($phase === 'installation') {
+            $this->travel(10)->seconds();
+        }
+
+        return 7;
+    });
+    if ($phase === 'token') {
+        $github->shouldReceive('repositoryReadToken')->once()->andReturnUsing(function ($credentials, $installation, $repository, $deadline): string {
+            expect($deadline->remaining())->toBe(10.0);
+            $this->travel(10)->seconds();
+
+            return 'fixture-token';
+        });
+    }
+    app()->instance(GitHubApi::class, $github);
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldNotReceive('run');
+    app()->instance(ProcessRunner::class, $runner);
+    $before = threadBranchCounts();
+    threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login', 'branch' => ['mode' => 'new', 'from' => 'release']])
+        ->assertStatus(502)->assertJsonPath('error.code', 'source.head_unavailable');
+    expect(threadBranchCounts())->toBe($before);
+    Http::assertNothingSent();
+})->with(['installation', 'token']);
+
+it('projects explicit branch result additions and keeps failed Instances for retry', function (string $mode, ?string $base): void {
+    $default = threadDefault($this->beast, 'tool');
+    threadBranchRemote();
+    $response = threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login', 'branch' => $mode === 'new'
+        ? ['mode' => 'new', 'from' => $base] : ['mode' => 'existing', 'name' => 'feature/login']])->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'branch-run']]);
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
+        'status' => 'failed', 'run_id' => 'branch-run', 'error_code' => 'instance.create_clone_failed',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['instance_id' => $operation->target_id, 'ready' => false, 'failed_step' => 'clone', 'error_code' => 'instance.create_clone_failed'],
+    ]);
+    threadCall($this->phone, 'GET', "operations/{$operation->id}")->assertOk()
+        ->assertJsonPath('data.error_code', 'instance.create_clone_failed')
+        ->assertJsonPath('data.result.branch', $mode === 'new' ? 'fix-login' : 'feature/login')
+        ->assertJsonPath('data.result.base_branch', $base)->assertJsonPath('data.result.instance_id', $operation->target_id);
+    expect(Instance::query()->findOrFail($operation->target_id)->error_code)->toBe('instance.create_clone_failed');
+})->with([['new', 'release'], ['existing', null]]);
+
+it('serializes two simultaneous explicit branch admissions before reserving an Instance', function (): void {
+    $default = threadDefault($this->beast, 'tool');
+    $database = tempnam(sys_get_temp_dir(), 'branch-race-');
+    $copy = new PDO('sqlite:'.$database);
+    $copy->exec('PRAGMA journal_mode=WAL');
+    $schema = DB::select("SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END");
+    foreach ($schema as $entry) {
+        if ($entry->type !== 'table') {
+            continue;
+        }
+        $copy->exec($entry->sql);
+        foreach (DB::table($entry->name)->get() as $row) {
+            $values = (array) $row;
+            $columns = implode(',', array_map(static fn (string $column): string => '"'.$column.'"', array_keys($values)));
+            $statement = $copy->prepare('INSERT INTO "'.$entry->name.'" ('.$columns.') VALUES ('.implode(',', array_fill(0, count($values), '?')).')');
+            $statement->execute(array_values($values));
+        }
+    }
+    foreach ($schema as $entry) {
+        if ($entry->type !== 'table') {
+            $copy->exec($entry->sql);
+        }
+    }
+    $copy = null;
+    $pairs = [stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP), stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP)];
+    $children = [];
+    try {
+        foreach ([0, 1] as $index) {
+            $pid = pcntl_fork();
+            if ($pid === -1) {
+                throw new RuntimeException('Could not fork an admission.');
+            }
+            if ($pid === 0) {
+                try {
+                    foreach ($pairs as $other => $pair) {
+                        fclose($pair[0]);
+                        if ($other !== $index) {
+                            fclose($pair[1]);
+                        }
+                    }
+                    $socket = $pairs[$index][1];
+                    stream_set_timeout($socket, 1);
+                    config(['database.connections.sqlite.database' => $database]);
+                    DB::purge('sqlite');
+                    // Both reads see an unoccupied target before either create takes the writer lock.
+                    $ready = false;
+                    DB::listen(function (QueryExecuted $query) use ($socket, &$ready): void {
+                        if (! $ready && DB::transactionLevel() === 0 && str_contains($query->sql, 'from "instances" where "project_id"') && str_contains($query->sql, 'order by "id"')) {
+                            $ready = true;
+                            fwrite($socket, 'R');
+                            if (fread($socket, 1) !== 'G') {
+                                throw new RuntimeException('Admission barrier timed out.');
+                            }
+                        }
+                    });
+                    threadBranchRemote();
+                    $response = threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances",
+                        ['name' => 'race-'.$index, 'branch' => ['mode' => 'existing', 'name' => 'feature/login']]);
+                    file_put_contents($database.'.'.$index, json_encode(['status' => $response->status(), 'body' => $response->json()], JSON_THROW_ON_ERROR));
+                    DB::disconnect('sqlite');
+                    exit(0);
+                } catch (Throwable $error) {
+                    file_put_contents($database.'.'.$index, json_encode(['error' => $error->getMessage()], JSON_THROW_ON_ERROR));
+                    exit(1);
+                }
+            }
+            $children[] = $pid;
+        }
+        foreach ($pairs as $pair) {
+            fclose($pair[1]);
+            stream_set_timeout($pair[0], 1);
+            expect(fread($pair[0], 1))->toBe('R');
+        }
+        foreach ($pairs as $pair) {
+            fwrite($pair[0], 'G');
+        }
+        foreach ($children as $pid) {
+            pcntl_waitpid($pid, $status);
+            expect(pcntl_wexitstatus($status))->toBe(0);
+        }
+        $results = array_map(static fn (int $index): array => json_decode(file_get_contents($database.'.'.$index), true, flags: JSON_THROW_ON_ERROR), [0, 1]);
+        expect(array_column($results, 'status'))->toEqualCanonicalizing([202, 409]);
+        $failure = array_values(array_filter($results, static fn (array $result): bool => $result['status'] === 409))[0];
+        expect($failure['body']['error']['code'])->toBe('branch.in_use');
+        $copy = new PDO('sqlite:'.$database);
+        expect((int) $copy->query('SELECT COUNT(*) FROM instances')->fetchColumn())->toBe(2)
+            ->and((int) $copy->query('SELECT COUNT(*) FROM operations')->fetchColumn())->toBe(2)
+            ->and((int) $copy->query('SELECT COUNT(*) FROM instance_runtimes')->fetchColumn())->toBe(2);
+    } finally {
+        foreach ($children as $pid) {
+            if (pcntl_waitpid($pid, $status, WNOHANG) === 0) {
+                posix_kill($pid, SIGTERM);
+                pcntl_waitpid($pid, $status);
+            }
+        }
+        foreach ([$database, $database.'-wal', $database.'-shm', $database.'.0', $database.'.1'] as $path) {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+    }
+});
+
+/** Normalize only generated prepare identities and bridge observation time, preserving key order and every other byte. */
+function threadLegacySnapshot(mixed $value, ?string $key = null): mixed
+{
+    if ($key === 'bridge_admitted_at') {
+        return '<bridge-admitted-at>';
+    }
+    if (is_string($value)) {
+        return preg_replace('/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/', '<prepare-uuid>', $value);
+    }
+    if (is_array($value)) {
+        foreach ($value as $field => $entry) {
+            $value[$field] = threadLegacySnapshot($entry, (string) $field);
+        }
+    }
+
+    return $value;
+}
+
+it('matches the main a38e037e no-branch intent steps result and resume snapshot byte for byte', function (): void {
+    $this->freezeTime();
+    $default = threadDefault($this->beast, 'tool');
+    $operation = threadCreate($this->phone, $default->project, 'fix-login');
+    $initial = threadLegacySnapshot($operation->input);
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'legacy-run']]);
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
+        'status' => 'failed', 'run_id' => 'legacy-run', 'error_code' => 'instance.create_clone_failed',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['instance_id' => $operation->target_id, 'ready' => false, 'failed_step' => 'clone', 'error_code' => 'instance.create_clone_failed'],
+    ]);
+    $failedResult = $operation->refresh()->result;
+    $resume = threadCreate($this->phone, $default->project, 'fix-login');
+    $workflow = Yaml::parseFile(base_path('../../swamp/workflows/workflow-operation-instance-create.yaml'));
+    $steps = [];
+    foreach ($workflow['jobs'] as $job) {
+        if ($job['name'] === 'clone') {
+            $steps = array_column($job['steps'], 'name');
+        }
+    }
+    $snapshot = json_encode(['input' => $initial, 'clone_steps' => $steps, 'failed_result' => $failedResult,
+        'resume' => threadLegacySnapshot($resume->input)], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+    $path = __DIR__.'/../../../Fixtures/conn-create-no-branch-a38e037e.json';
+    expect($snapshot)->toBe(file_get_contents($path));
+});
+
+it('adds explicit branch fields to a successful clone receipt without replacing existing fields', function (?array $branch): void {
+    $default = threadDefault($this->beast, 'tool');
+    if ($branch !== null) {
+        threadBranchRemote();
+    }
+    $body = ['name' => 'fix-login', ...($branch === null ? [] : ['branch' => $branch])];
+    $response = threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", $body)->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'success-run']]);
+    $frame = [];
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect')->once();
+    $socket->shouldReceive('isConnected')->andReturn(true);
+    $socket->shouldReceive('send')->once()->withArgs(static function (array $message) use (&$frame): bool {
+        $frame = $message;
+
+        return $message['type'] === 'vault.read-secret';
+    });
+    $socket->shouldReceive('receive')->once()->andReturnUsing(static function () use (&$frame): array {
+        return [['id' => $frame['id'], 'type' => 'vault.read-secret', 'payload' => ['data' => ['vaultName' => $frame['payload']['vaultName'],
+            'secretKey' => $frame['payload']['secretKey'], 'vaultType' => 'local_encryption', 'value' => 'fixture-session']]]];
+    });
+    $socket->shouldReceive('close');
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'fixture-run-token']);
+    $native = ['ready' => true, 'instance_id' => $operation->target_id, 'commit' => str_repeat('a', 40), 't3' => [
+        'environment_id' => 'env-branch', 'server_version' => '0.1.7', 'expires_at' => '2026-12-10T10:00:00.000Z',
+        'gateway_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-gateway-1-token'],
+        'swamp_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-swamp-1-token']]];
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
+        'status' => 'succeeded', 'run_id' => 'success-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => $native]);
+    $additions = $branch === null ? [] : ['branch' => $branch['mode'] === 'new' ? 'fix-login' : 'feature/login',
+        'base_branch' => $branch['mode'] === 'new' ? 'release' : null];
+    expect($operation->refresh()->result)->toBe([...$native, ...$additions, 'mail_keys_set' => []]);
+    threadCall($this->phone, 'GET', "operations/{$operation->id}")->assertOk()->assertJsonPath('data.status', 'succeeded');
+})->with([
+    'legacy' => [null], 'new' => [['mode' => 'new', 'from' => 'release']], 'existing' => [['mode' => 'existing', 'name' => 'feature/login']],
+]);
+
+it('preserves core creates that intentionally put two Instances on one branch', function (): void {
+    $default = threadDefault($this->beast, 'tool');
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldNotReceive('run');
+    app()->instance(ProcessRunner::class, $runner);
+    foreach (['old-one', 'old-two'] as $name) {
+        app(StartDevelopmentInstanceCreateAction::class)->execute(
+            new CreateInstanceData($default->project_id, $this->beast->id, $name, null, null, 'feature/login'),
+            'node:'.$this->phone->id, null);
+    }
+    expect(Instance::query()->where('project_id', $default->project_id)->where('branch_override', 'feature/login')->count())->toBe(2);
+});
+
+it('refuses a changed source identity between the remote read and reservation without admitting anything', function (): void {
+    $default = threadDefault($this->beast, 'tool');
+    $before = threadBranchCounts();
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldReceive('run')->once()->andReturnUsing(static function () use ($default) {
+        $default->project->update(['repository_url' => 'https://github.com/nckrtl/another.git']);
+
+        return new CommandResult(0, str_repeat('a', 40)."\trefs/heads/release\n", '', 1, false);
+    });
+    app()->instance(ProcessRunner::class, $runner);
+    threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login', 'branch' => ['mode' => 'new', 'from' => 'release']])
+        ->assertStatus(502)->assertJsonPath('error.code', 'source.head_unavailable');
+    expect(threadBranchCounts())->toBe($before);
+});
+
+it('refuses ref-like and malformed explicit branch names before any remote read or reservation', function (string $value, bool $sharedValid, string $mode): void {
+    expect(GitBranchName::isValid($value))->toBe($sharedValid);
+    $default = threadDefault($this->beast, 'tool');
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldNotReceive('run');
+    app()->instance(ProcessRunner::class, $runner);
+    $before = threadBranchCounts();
+    $field = $mode === 'new' ? 'from' : 'name';
+
+    threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login', 'branch' => ['mode' => $mode, $field => $value]])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')->assertJsonValidationErrors('branch.'.$field, 'error.details');
+
+    expect(threadBranchCounts())->toBe($before);
+})->with([
+    'full local ref' => ['refs/heads/x', true],
+    'remote tracking ref' => ['refs/remotes/origin/x', true],
+    'leading dash' => ['-x', false],
+    'double dot' => ['x..y', false],
+    'reflog syntax' => ['x@{y', false],
+    'lock suffix' => ['feature.lock', false],
+    'trailing slash' => ['feature/', false],
+])->with(['new', 'existing']);
+
+it('accepts ordinary nested branch names without treating embedded ref words as prefixes', function (string $value, string $mode): void {
+    $default = threadDefault($this->beast, 'tool');
+    threadBranchRemote([$value]);
+    $field = $mode === 'new' ? 'from' : 'name';
+
+    threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login', 'branch' => ['mode' => $mode, $field => $value]])
+        ->assertAccepted();
+})->with(['refs-fix/x', 'heads-up/x', 'feature/refs/heads/x', 'feature/heads/x'])->with(['new', 'existing']);
+
+it('accepts heads/x as a branch name for explicit branch selection', function (string $mode): void {
+    $default = threadDefault($this->beast, 'tool');
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldReceive('run')->once()->with(Mockery::on(static fn ($call): bool => in_array('ls-remote', $call->arguments, true)))
+        ->andReturn(new CommandResult(0, str_repeat('a', 40)."\trefs/heads/heads/x\n".str_repeat('b', 40)."\trefs/heads/x\n", '', 1, false));
+    app()->instance(ProcessRunner::class, $runner);
+    $field = $mode === 'new' ? 'from' : 'name';
+
+    $response = threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login', 'branch' => ['mode' => $mode, $field => 'heads/x']])
+        ->assertAccepted();
+
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    $selection = ['mode' => $mode, 'target' => $mode === 'new' ? 'fix-login' : 'heads/x', 'base' => $mode === 'new' ? 'heads/x' : null,
+        'source_sha' => str_repeat('a', 40)];
+    expect($operation->input['branch_selection'])->toBe($selection)
+        ->and($operation->input['direct_provisioning']['container']['branch_selection'])->toBe($selection);
+})->with(['new', 'existing']);

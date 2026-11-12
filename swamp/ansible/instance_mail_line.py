@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+import re
 import signal
 import subprocess
 import sys
@@ -24,6 +25,32 @@ cp --attributes-only --preserve=mode,ownership,timestamps,xattr -- "$1" "$2"
 acl=$(getfacl --absolute-names -- "$1")
 printf '%s\n' "$acl" | setfacl --set-file=- -- "$2"
 """
+
+
+def prefix_guard_line(lines):
+    """Accept only whole, single-line shapes above the candidate; never emulate dotenv quote state."""
+    for number, raw in enumerate(lines, 1):
+        line = raw[:-1] if raw.endswith(b'\r') else raw
+        if b'\r' in line:
+            return number
+        if number == 1 and line.startswith(b'\xef\xbb\xbf'):
+            line = line[3:]
+        if re.fullmatch(rb'[ \t]*', line) or re.fullmatch(rb"[ \t]*#[^'\"\\]*", line):
+            continue
+        assignment = re.fullmatch(rb'[A-Za-z_][A-Za-z0-9_.]*=(.*)', line)
+        if assignment is None:
+            return number
+        value = assignment[1]
+        if not any(byte in value for byte in (b"'", b'"', b'\\', b'#')) and not re.search(rb'\s', value):
+            continue
+        if len(value) >= 2 and value[:1] == value[-1:] and value[:1] in (b"'", b'"'):
+            inside = value[1:-1]
+            if value[:1] not in inside and b'\\' not in inside:
+                # phpdotenv's raw-line grouping also sees this marker inside single quotes.
+                if value[:1] != b"'" or b'="' not in inside:
+                    continue
+        return number
+    return None
 
 
 def apply(prefix, path, remove):
@@ -74,24 +101,9 @@ def apply(prefix, path, remove):
         index = numbers[0] - 1
         line = lines[index]
         body = line[:-1] if line.endswith(b'\r') and index < len(lines) - 1 else line
-        # A conservative guard, not a dotenv parser. Any earlier multiline quote opener makes the match unsafe.
-        for opening, earlier in enumerate(lines[:index], 1):
-            comment = earlier[3:] if opening == 1 and earlier.startswith(b'\xef\xbb\xbf') else earlier
-            if comment.lstrip().startswith(b'#') or b'=' not in earlier:
-                continue
-            active = None
-            escaped = False
-            for byte in earlier.split(b'=', 1)[1]:
-                if escaped:
-                    escaped = False
-                elif byte == 92:
-                    escaped = True
-                elif active is None and byte in (34, 39):
-                    active = byte
-                elif byte == active:
-                    active = None
-            if active is not None:
-                return {'status': 'left_as_written', 'lines': numbers, 'quote_opening_line': opening}
+        guard_line = prefix_guard_line(lines[:index])
+        if guard_line is not None:
+            return {'status': 'left_as_written', 'lines': numbers, 'guard_line': guard_line}
         replacements = {
             b'MAIL_MAILER=log': b'MAIL_MAILER=smtp',
             b'MAIL_MAILER="log"': b'MAIL_MAILER="smtp"',

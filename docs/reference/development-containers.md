@@ -409,9 +409,19 @@ Before rename, Orbit clears the staged file’s inherited access ACL, copies met
 
 The write uses the one reserved staging file `/srv/workspace/.env.orbit-mail` and an atomic rename, with no backup. Missing files and files without any `MAIL_MAILER` occurrence return `not_present`; one exact `MAIL_MAILER=smtp`, with or without matching single or double quotes, returns `already_smtp`.
 
-Every other form stays as written. A mention in a comment or another value also counts. Multiple occurrences, a symlink, or an earlier assignment that opens a quote without closing it on that line stay untouched. The guard tracks the active delimiter, ignores the other quote type inside it, skips comment lines and honors escapes.
+Every other form stays as written. A mention in a comment or another value also counts. Multiple occurrences or a symlink stay untouched. Before changing the mail line, Orbit accepts only these whole-line shapes above it, after removing a file-leading BOM for the check:
 
-`left_as_written` reports only the 1-based line numbers of all occurrences; numbers can repeat for one line. When an unclosed quote prevents the change, `quote_opening_line` reports its 1-based opening line. Only `changed` clears an available Laravel config cache and restarts running FrankenPHP and recognized PHP queue or Horizon workers. An unrelated Process is never restarted.
+- Empty lines or spaces and tabs only.
+- A comment with optional spaces or tabs before `#`, with no single quote, double quote or backslash in its text.
+- `KEY=value`, with no quotes, backslash, `#` or whitespace in the bare value. The value may be empty.
+- `KEY="value"`, with no double quote or backslash inside.
+- `KEY='value'`, with no single quote or backslash inside, and no `="` marker.
+
+`KEY` matches `[A-Za-z_][A-Za-z0-9_.]*`; no form permits `export`, spaces around `=`, or text after a closing quote. Matching quotes can contain the other quote type, so `APP_NAME="Nick's App"` passes. A bare CR above the mail line, outside CRLF, refuses. Orbit refuses whitespace in bare values and `="` inside single quotes because the installed phpdotenv reader cannot parse those forms as one assignment.
+
+This guard examines only preceding lines: a later quote cannot turn an earlier assignment into value text. Orbit still counts `MAIL_MAILER` across the whole file. The installed phpdotenv tests confirm each admitted shape leaves the mail line as an assignment.
+
+`left_as_written` keeps the 1-based MAIL_MAILER occurrence numbers in `lines`; numbers can repeat for one line. A preceding line outside the whitelist also reports its first 1-based line number as `guard_line`. No line content appears. Only `changed` clears an available Laravel config cache and restarts running FrankenPHP and recognized PHP queue or Horizon workers. An unrelated Process is never restarted.
 
 The Node removes the fixed staging name before inspecting `.env` and again on every exit. It uses `incus file delete --force`, accepting only exit 1 with the exact `Error: file does not exist` diagnostic as an already-absent file. Other deletion errors fail the step. File access works even after a forced container stop: [Incus container file access](https://github.com/lxc/incus/blob/v7.0.1/doc/howto/instances_access_files.md) mounts a stopped container’s root filesystem. A completed or failed step leaves no staging file for a seed or clone. An abrupt Node loss during staging can leave it until the next attempt; a seed or clone taken before that cleanup can inherit it.
 
@@ -536,6 +546,8 @@ All Routes targeting the Instance must be active and published, with no failure,
 After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the default branch. Automatic deployment depends on the [shared producer and policy setting](/reference/deployments#automatic-development-defaults). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
 
 There are no development setup steps. The default Instance has them done already, so a clone needs none. A clone prepares its container in five direct command phases: container, workspace and Processes, agent, T3, and sessions. Each native step reports its timestamps through the existing Operation progress.
+
+Conn supports an [explicit branch selection](/reference/conn#threads-in-an-orbit-project) for a clone. It prepares the Node mirror from the admitted remote source commit and checks out its bundle in the existing workspace phase. Dependencies and build still come from the default's seed; checkout runs no Project setup or deploy command again.
 
 A separate job publishes the Route, certificate and DNS, so Route depth cannot delay the container job. The Route checks the TLS handshake, without waiting for the application to start. The create receipt records T3, session and Route readiness times. Workspace access and environment files stay in the container preparation.
 

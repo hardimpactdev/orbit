@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Http\Requests;
 
+use App\Domain\Instances\InstanceBranchSelection;
 use App\Domain\Instances\InstanceName;
+use App\Domain\SourceControl\GitBranchName;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Instance;
 use App\Models\Node;
@@ -39,6 +41,9 @@ final class CreateConnInstanceRequest extends FormRequest
     {
         return [
             'name' => InstanceName::rules(),
+            'branch' => ['sometimes', 'required', 'array:mode,from,name'],
+            'branch.mode' => ['required_with:branch', 'string', 'in:new,existing'],
+
         ];
     }
 
@@ -46,7 +51,7 @@ final class CreateConnInstanceRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['name']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['name', 'branch']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -58,6 +63,25 @@ final class CreateConnInstanceRequest extends FormRequest
         return [function (Validator $validator): void {
             $project = $this->route('project');
             $name = $validator->getData()['name'] ?? null;
+            $data = $validator->getData();
+            if (array_key_exists('branch', $data) && is_array($data['branch'])) {
+                $branch = $data['branch'];
+                $mode = $branch['mode'] ?? null;
+                if (in_array($mode, ['new', 'existing'], true)) {
+                    $required = $mode === 'new' ? 'from' : 'name';
+                    $forbidden = $mode === 'new' ? 'name' : 'from';
+                    if (! is_string($branch[$required] ?? null) || ! GitBranchName::isValid($branch[$required])
+                        || str_starts_with($branch[$required], 'refs/')) {
+                        $validator->errors()->add('branch.'.$required, 'A short Git branch name without refs/ is required.');
+                    }
+                    if (array_key_exists($forbidden, $branch)) {
+                        $validator->errors()->add('branch.'.$forbidden, 'This field is not allowed in this mode.');
+                    }
+                    if ($mode === 'new' && is_string($name) && ! GitBranchName::isValid($name)) {
+                        $validator->errors()->add('name', 'The derived Git branch name is invalid.');
+                    }
+                }
+            }
             if ($project instanceof Project && is_string($name) && app(ConnInstanceNames::class)->isDefault($project, $name)) {
                 $validator->errors()->add('name', 'A thread starts in a new clone; this name means the default Instance.');
             }
@@ -68,6 +92,19 @@ final class CreateConnInstanceRequest extends FormRequest
     public function default(): Instance
     {
         return $this->default ?? throw new LogicException('The request was not authorized.');
+    }
+
+    public function branchSelection(): ?InstanceBranchSelection
+    {
+        $branch = $this->validated()['branch'] ?? null;
+        if ($branch === null) {
+            return null;
+        }
+        $branch = ValidatedData::object($branch);
+        $mode = ValidatedData::string($branch['mode']);
+
+        return new InstanceBranchSelection($mode, $mode === 'new' ? $this->name() : ValidatedData::string($branch['name']),
+            $mode === 'new' ? ValidatedData::string($branch['from']) : null);
     }
 
     public function name(): string
