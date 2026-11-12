@@ -80,7 +80,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation->refresh();
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
-            [$code, $result] = $this->outcome($data);
+            [$code, $result] = $this->outcome($data, $operation);
             if ($data['status'] === 'succeeded') {
                 $result = [...$result, ...Arr::only($operation->input, ['retained_git_path', 'retained_git_at'])];
             }
@@ -102,7 +102,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
      * @param  array<string,mixed>  $data
      * @return array{0:?string,1:array<string,mixed>}
      */
-    private function outcome(array $data): array
+    private function outcome(array $data, Operation $operation): array
     {
         if (($data['status'] ?? null) === 'succeeded') {
             return [null, ['removed' => true]];
@@ -111,6 +111,15 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             return [ValidatedData::nullableString($data['error_code'] ?? null), []];
         }
         $run = ValidatedData::object($data['result'] ?? []);
+        $source = $run['source_removal'] ?? null;
+        $source = is_string($source) ? json_decode($source, true) : null;
+        $sourceData = is_array($source) && is_array($source['data'] ?? null) ? $source['data'] : [];
+        if (($sourceData['error_code'] ?? null) === 'instance.worktree_dependents') {
+            $details = app(InstanceDestroyWorktrees::class)->details(Instance::query()->findOrFail($operation->target_id), is_array($sourceData['dependents'] ?? null) ? $sourceData['dependents'] : [], $operation->triggered_by);
+
+            return ['instance.worktree_dependents', ['removed' => false, 'failed_step' => 'Remove the source',
+                'error_code' => 'instance.worktree_dependents', 'details' => $details]];
+        }
         $withdrawal = $run['withdrawal'] ?? null;
         if (is_array($withdrawal) && ($withdrawal['ready'] ?? null) === false) {
             return ['route.withdrawal_failed', ['removed' => false, 'failed_step' => 'Withdraw the Route', 'error_code' => 'route.withdrawal_failed']];
