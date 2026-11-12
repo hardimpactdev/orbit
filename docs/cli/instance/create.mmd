@@ -32,6 +32,7 @@ sequenceDiagram
   Note over GW: Validate, reserve Instance<br/>render .env
   %%> Requirements:
   %%> - the calling Node has an access grant to the target Node
+  %%> - the name is one DNS label of at most 63 characters; a web Route has labels of at most 63 characters and at most 253 characters in total (`route.domain_invalid`), checked before reservation
   %%> - the target is an active `app-dev` Node and not a task VM; a production Node is refused (`instance.candidate_required`)
   %%> - the checkout path is free, and no other change runs on the Instance; the Gateway holds one lock per Instance
   %%> Allowed:

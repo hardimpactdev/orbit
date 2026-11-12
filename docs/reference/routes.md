@@ -3,6 +3,8 @@ title: "Routes"
 description: "What a Route records, how Orbit projects its private traffic path through a Node or Router, and which later changes it coordinates or refuses."
 covers:
   - apps/gateway/app/{Domain,Actions,Infrastructure,Data}/Routes/**
+  - apps/gateway/app/Infrastructure/Certificates/GatewayLeafCertificateSigner.php
+  - swamp/workflows/workflow-{route-certificate-publish,node-role-certificate-publish}.yaml
   - apps/gateway/app/Http/{Controllers/Api/RoutesController.php,Requests/Routes/**}
   - apps/gateway/{app/Models/{Route,RouteTarget,RouteCustomProxy}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock,RemoteAppDevCertificateManager,RemoteAppDevRouteFirewallManager}.php
@@ -29,6 +31,11 @@ This site module is an accepted exception to rule 22 because it batches the stoc
 An Instance create shares its already-written Route intent and shipped assets with the site child. The child reads that input and keeps its own scratch folder, SSH pins and cleanup. It cannot remove the parent's input. Standalone Route calls and other callers prepare their own child input. Both entry forms run the same site phase.
 
 The Node CSR action creates its certificate directory as `root:caddy` with mode `0750`, then creates the private key and sets `root:caddy` ownership and mode `0640` before it returns the public request. Signing stays a separate Gateway behavior. The key never leaves its Node.
+
+Orbit leaf requests use the fixed common name `Orbit` and exactly one DNS subject alternative name (SAN): the admitted domain. The Gateway signs that SAN into the leaf. A domain can use up to 253 characters, with at most 63 in each label; it has no 64-character certificate limit. Caddy, TLS probes and renewal use SAN, so existing leaves whose common name equals the domain remain valid.
+
+During a release overlap, the signer also accepts the previous request form: common name equal to the admitted domain, with either no SAN or that exact DNS SAN. Remove this request form after all certificate-producing workflows use the new form and all queued or in-flight runs with the previous definitions have finished. Existing certificate validation needs no overlap branch.
+
 
 "Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
 
