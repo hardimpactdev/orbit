@@ -28,7 +28,7 @@ The execution copies that one transaction admits share a single WebSocket, becau
 
 Every Gateway WebSocket client also tries a refused `429` handshake again after the server's `Retry-After`, or after a doubling backoff from half a second when serve names none. It tries at most four times and only while the caller's connect timeout leaves room, so a copy or start waits up to 15 seconds instead of failing at once. A wait for the rest of serve's minute is longer, so the Gateway keeps its own connection rate low instead.
 
-Reads that only refresh what a caller sees take a connection from one Gateway-wide read budget: at most 20 per minute, and one per subject per interval. An Operation read checks one run's history at most every 30 seconds, however often clients poll it; a task group's Swamp runs are read at most every five seconds. A read the budget refuses answers from recorded state. The rest of serve's minute stays for admissions, execution copies and the shared observers.
+Reads that only refresh what a caller sees take a connection from one Gateway-wide read budget: at most 20 per minute, and one per subject per interval. Operation shows use recorded state and make no Swamp request. A task group's Swamp runs are read at most every five seconds. A read the budget refuses answers from recorded state. The rest of serve's minute stays for admissions, execution copies and the shared observers.
 
 Map each named variable with one whole native expression under `task.inputs.env`:
 
@@ -116,18 +116,19 @@ A fire of a Schedule's own workflow is recorded as a task when its run ends, not
 
 ### Reconciler
 
-Migrate alone can settle a late native finish when its Operation is shown or its Instance is admitted for migration again. These reads run before the projector's write transaction. They add no recovery work to the shared reconciler; see the [migrate late-settlement rules](/reference/operations#native-run-budgets).
+The reconciler reads late migrate finishes, including an uncertain start with no run binding or target hold. Shows and admissions do not settle them. See the [migrate late-settlement rules](/reference/operations#native-run-budgets).
 
 `ReconcileSwampOperations` is the one place that settles an Operation with its Swamp run. The scheduler runs it every minute, and the event observer asks for a pass when it sees a run end. Polling stays: the datastore is format 2, which has no commit feed. The same pass frees the Nodes of a Route write that ended without a release and starts the Route writes that wait for them ([One Route write per Node](/reference/operations#one-route-write-per-node)).
 
-Each pass reads every open Operation of a direct kind against Swamp:
+Each pass checks every open Operation of a direct kind, held timeouts, unsettled migrate timeouts and recent unconfirmed timeout cancels.
 
 Operation reads do not request terminal history or expire Operations. The event observer and minute sweep queue the reconciler, which owns native terminal settlement. A migrate whose hold limit ends without a readable result records its unavailable-result failure and releases the Gateway hold; its runtime reservation stays. Fleet kinds without a declared terminal selector use their existing generic failure probe in the reconcile job.
 
 - A bound run gets an exact root history read and any declared child evidence reads. A terminal history is projected through `SwampCommandStep::projectTerminal`.
 - A nonterminal parent records completed child evidence and stays open. Serve may announce the root’s end before saving history. An unavailable read waits for the next pass.
 - An Operation past its budget is expired. A history that shows the run ended within its budget wins.
-- An unbound Operation marked `swamp.start_uncertain` gets the exact lookup of its start. So does a timed-out one that still holds its target. The lookup repeats each pass until it binds the run or the hold ends.
+- An unbound Operation marked `swamp.start_uncertain` gets the exact lookup of its start. A timed-out Operation that holds its target gets the same lookup until binding or hold expiry.
+- An unsettled migrate gets this lookup even without a target hold. Its first expiry fixes its recovery limit.
 - A recorded cancel that Swamp has not confirmed is forwarded for up to an hour. Cancels go after the reads and stop 150 seconds into the pass.
 - A timed-out Operation whose run nothing proves ended frees its target after an hour.
 

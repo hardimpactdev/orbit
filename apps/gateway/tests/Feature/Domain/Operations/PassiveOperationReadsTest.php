@@ -194,3 +194,21 @@ it('measures reconcile pass cost with and without one pending no-selector Operat
     }
     file_put_contents('/tmp/orbit-passive-reconcile-cost.json', json_encode(['fixture_reply_ms' => 20, 'samples_ms' => $samples], JSON_THROW_ON_ERROR));
 });
+
+it('keeps the legacy input GET passive for exactly the two kinds without full workflow inputs', function (string $kind): void {
+    $legacy = array_keys(array_filter(app(DirectOperation::class)->definitions(),
+        fn (array $definition): bool => ($definition['workflow_inputs'] ?? false) !== true));
+    sort($legacy);
+    expect($legacy)->toBe(['fleet.cli_converge', 'fleet.rollout']);
+    $node = containerDefaultNode();
+    $run = '249be7ac-a6ee-4cd0-a954-4556948eb3bb';
+    $input = ['nodes' => [], 'commit' => str_repeat('a', 40)];
+    $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'fleet', 'target_id' => 1,
+        'node_id' => $node->id, 'status' => 'running', 'input' => $input, 'state' => ['swamp_run_id' => $run]]);
+    $before = $operation->refresh()->getAttributes();
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+        ->getJson("/api/v1/direct-operations/{$operation->id}?run_id={$run}")
+        ->assertOk()->assertJsonPath('data.input', $input);
+    expect($operation->refresh()->getAttributes())->toBe($before)
+        ->and($this->socket->sent)->toBe([])->and($this->socket->connects)->toBe(0);
+})->with(['fleet.rollout', 'fleet.cli_converge']);

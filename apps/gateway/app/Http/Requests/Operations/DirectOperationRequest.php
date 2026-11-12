@@ -41,7 +41,11 @@ class DirectOperationRequest extends OperationPeerRequest
         $peer = $this->peerNodeId();
         $operation = $this->route('operation');
         if ($operation instanceof Operation) {
-            $projection = app(DirectOperation::class)->projection($operation);
+            $direct = app(DirectOperation::class);
+            if ($this->route()?->getActionMethod() === 'show' && ($direct->definition($operation->kind)['workflow_inputs'] ?? false) === true) {
+                throw new ResourceOperationException('operation.executor_forbidden', 'This Operation receives its full input at native submission.', 403);
+            }
+            $projection = $direct->projection($operation);
             if ($projection instanceof NativeOperationProjection && $projection->native($operation)) {
                 throw new ResourceOperationException('operation.executor_forbidden', 'This Operation accepts only its native terminal result.', 403);
             }

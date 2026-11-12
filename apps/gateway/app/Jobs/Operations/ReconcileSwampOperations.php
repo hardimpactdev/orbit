@@ -167,7 +167,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         }
         if (! isset($operation->state['swamp_run_id'])) {
             $operation = $expire->execute($operation)->refresh();
-            if ($operation->error_code === 'swamp.start_uncertain' || ExpireOperationAction::awaitsSettlement($operation)) {
+            if ($operation->error_code === 'swamp.start_uncertain' || ExpireOperationAction::awaitsSettlement($operation) || InstanceMigrateProjection::unsettled($operation)) {
                 $step->recoverUnbound($operation);
                 $operation->refresh();
             }
