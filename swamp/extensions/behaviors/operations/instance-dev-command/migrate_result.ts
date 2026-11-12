@@ -38,6 +38,7 @@ const ScheduleOutcome = z.object({
     outcome: z.enum(["activated", "disabled", "not_activated"]),
     cause: z.string().regex(/^[a-z]+\.[a-z0-9_]+$/).optional(),
 }).strict();
+const EnvironmentWarning = z.object({ code: z.string().regex(/^[a-z]+\.[a-z0-9_]+$/), message: z.string().min(1) }).strict();
 type WrittenFailure = Partial<z.infer<typeof MailReceipt>> & {
     error_code?: string;
     error_message?: string;
@@ -46,6 +47,7 @@ type WrittenFailure = Partial<z.infer<typeof MailReceipt>> & {
     retained_git_at?: string;
     untracked_files_copied?: number;
     schedules?: z.infer<typeof ScheduleOutcome>[];
+    warnings?: z.infer<typeof EnvironmentWarning>[];
 };
 type Phases = z.infer<typeof MigratePhases>;
 
@@ -107,6 +109,7 @@ export function migrateResult(
             ? receipt : { id: plan.id, name: plan.name, outcome: "not_activated", cause: "schedule.container_activation_unverified" };
     }) : [];
     const warnings = [
+        ...(written?.warnings ?? []),
         ...(mailWarning ? [{code: "instance.mail_update_failed", step: "mail"}] : []),
         ...schedules.filter((row) => row.outcome === "not_activated").map((row) => ({
             code: row.cause, schedule_id: row.id, schedule_name: row.name,
@@ -163,6 +166,12 @@ export async function writtenFailure(folder: string): Promise<WrittenFailure | n
             JSON.parse(await Deno.readTextFile(folder + "/schedule-result.json")));
         if (parsed.success) schedules = parsed.data;
     } catch { /* A missing or malformed activation receipt becomes a per-Schedule warning. */ }
-    const result = { ...failure, ...retained, ...mail, ...files, ...schedules };
+    let environment: Pick<WrittenFailure, "warnings"> = {};
+    try {
+        const parsed = z.object({warnings: z.array(EnvironmentWarning)}).safeParse(
+            JSON.parse(await Deno.readTextFile(folder + "/environment-warnings.json")));
+        if (parsed.success) environment = parsed.data;
+    } catch { /* No environment warning receipt was written before this failure. */ }
+    const result = { ...failure, ...retained, ...mail, ...files, ...schedules, ...environment };
     return Object.keys(result).length > 0 ? result : null;
 }

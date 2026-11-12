@@ -1,10 +1,14 @@
 """The actual Node-side parser and endpoint policy; no Ansible installation is needed."""
+import errno
 import importlib.util
 import json
+import socket
+import subprocess
 import tempfile
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 MODULE = Path(__file__).resolve().parents[1] / 'ansible/library/orbit_migrate_env.py'
 SPEC = importlib.util.spec_from_file_location('orbit_migrate_env', MODULE)
@@ -17,6 +21,11 @@ class InstanceMigrateEnvTest(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
+        # Old endpoint-policy fixtures describe an answering service. Real TCP
+        # behavior is exercised separately below, without faking the checker.
+        self.probe = patch.object(guard.HostProbes, 'answer', return_value=True)
+        self.probe.start()
+        self.addCleanup(self.probe.stop)
 
     def inspect(self, text, targets=(), path='.env', **options):
         env = self.root / path
@@ -27,8 +36,256 @@ class InstanceMigrateEnvTest(unittest.TestCase):
                                                                       'private_domains': ['orbit', 'private.test']}),
                                          development_mail=options.get('development_mail'), node_services=options.get('node_services'),
                                          environment_files=options.get('environment_files', [str(env)]),
-                                         unit_files=options.get('unit_files', []))
+                                         unit_files=options.get('unit_files', []), warnings=options.get('warnings'))
 
+
+    def test_stock_mysql_without_a_host_listener_warns_instead_of_refusing(self):
+        self.probe.stop()
+        with socket.socket() as unused:
+            unused.bind(('127.0.0.1', 3306))  # Reserved but deliberately not listening.
+            warnings = []
+            errors = self.inspect('DB_CONNECTION=mysql\nDB_HOST="127.0.0.1"\nDB_PORT="3306"\nDB_DATABASE=laravel\nDB_PASSWORD=do-not-print\n',
+                                  warnings=warnings)
+        self.assertEqual(errors, [])
+        self.assertEqual(warnings, [{'code': 'instance.migrate_env_service_unused',
+                                    'message': '.env: DB_HOST=127.0.0.1:3306: no TCP service answered on the Node.'}])
+        self.assertNotIn('do-not-print', str(warnings))
+
+    def test_answering_unattached_loopback_service_retains_the_refusal(self):
+        self.probe.stop()
+        with socket.socket() as server:
+            server.bind(('127.0.0.1', 0))
+            server.listen(8)
+            port = server.getsockname()[1]
+            warnings = []
+            errors = self.inspect(f'DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT={port}\n', warnings=warnings)
+        self.assertEqual(len(errors), 1)
+        self.assertIn('has no exact attached target', errors[0])
+        self.assertEqual(warnings, [])
+
+    def test_attached_services_and_public_answers_are_never_connected_to(self):
+        self.probe.stop()
+        with patch.object(guard.socket, 'socket', side_effect=AssertionError('No TCP probe')) as connect:
+            self.assertEqual(self.inspect('DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n', [{'host':'127.0.0.1','port':3306}]), [])
+            self.assertEqual(len(self.inspect('DB_CONNECTION=mysql\nDB_HOST=8.8.8.8\n')), 1)
+            for answers in (['93.184.216.34'], ['127.0.0.1', '93.184.216.34']):
+                with patch.object(guard.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, json.dumps(answers), '')):
+                    self.assertEqual(len(self.inspect('DB_CONNECTION=mysql\nDB_HOST=public.example.test\n')), 1)
+            connect.assert_not_called()
+
+    def test_private_dns_resolution_connects_only_after_every_address_is_private(self):
+        self.probe.stop()
+        with socket.socket() as server:
+            server.bind(('127.0.0.1', 0)); server.listen(8)
+            port = server.getsockname()[1]
+            with patch.object(guard.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '["127.0.0.1"]', '')):
+                self.assertEqual(len(self.inspect(f'DB_CONNECTION=mysql\nDB_HOST=service.private.test\nDB_PORT={port}\n')), 1)
+
+    def test_unused_redis_mail_and_memcached_follow_the_same_probe_and_redaction_rule(self):
+        self.probe.stop()
+        for selector, key, port in [('CACHE_STORE=redis', 'REDIS', 6379),
+                                    ('MAIL_MAILER=smtp', 'MAIL', 587),
+                                    ('CACHE_STORE=memcached', 'MEMCACHED', 11211)]:
+            with self.subTest(key=key), socket.socket() as unused:
+                unused.bind(('127.0.0.1', 0))
+                selected_port = unused.getsockname()[1]
+                warnings = []
+                self.assertEqual(self.inspect(f'{selector}\n{key}_HOST=127.0.0.1\n{key}_PORT={selected_port}\n{key}_PASSWORD=hidden-password\n',
+                                              warnings=warnings), [])
+                self.assertEqual(warnings[0]['code'], 'instance.migrate_env_service_unused')
+                self.assertIn(f'{key}_HOST=127.0.0.1:{selected_port}', warnings[0]['message'])
+                self.assertNotIn('hidden-password', str(warnings))
+        warnings = []
+        with socket.socket() as unused:
+            unused.bind(('127.0.0.1', 0))
+            port = unused.getsockname()[1]
+            errors = self.inspect(f'DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT={port}\nDB_URL=mysql://user:url-secret@localhost:3306/private-path?token=private-query\n',
+                                  warnings=warnings)
+        self.assertEqual(len(errors), 1)  # Existing URL override refusal is unchanged.
+        self.assertEqual(len(warnings), 1)
+        for secret in ('url-secret', 'private-path', 'private-query'):
+            self.assertNotIn(secret, str(errors) + str(warnings))
+
+
+    def test_only_explicit_connection_refusal_becomes_an_unused_warning(self):
+        self.probe.stop()
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.connect.side_effect = ConnectionRefusedError(errno.ECONNREFUSED, 'private-error')
+        warnings = []
+        with patch.object(guard.socket, 'socket', return_value=client):
+            self.assertEqual(self.inspect('DB_CONNECTION=mysql\nDB_HOST=10.0.0.9\n', warnings=warnings), [])
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn('private-error', str(warnings))
+
+    def test_timeouts_and_every_unreachable_errno_keep_the_refusal(self):
+        self.probe.stop()
+        for error in (TimeoutError(), *(OSError(code, 'private-error') for code in (
+                errno.ETIMEDOUT, errno.EHOSTUNREACH, errno.ENETUNREACH, errno.EHOSTDOWN, errno.ENETDOWN))):
+            with self.subTest(error=error):
+                client = MagicMock()
+                client.__enter__.return_value = client
+                client.connect.side_effect = error
+                warnings = []
+                with patch.object(guard.socket, 'socket', return_value=client):
+                    errors = self.inspect('DB_CONNECTION=mysql\nDB_HOST=10.0.0.9\n', warnings=warnings)
+                self.assertEqual(len(errors), 1)
+                self.assertIn('service could not be shown unused', errors[0])
+                self.assertEqual(warnings, [])
+                self.assertNotIn('private-error', str(errors))
+
+    def test_unexpected_connect_or_socket_creation_errors_stay_loud_and_redacted(self):
+        self.probe.stop()
+        for code in (errno.EMFILE, errno.EACCES, errno.ENFILE):
+            warnings = []
+            with patch.object(guard.socket, 'socket', side_effect=OSError(code, 'private-error')):
+                errors = self.inspect('DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n', warnings=warnings)
+            self.assertIn('could not create a TCP socket', errors[0])
+            self.assertEqual(warnings, [])
+            self.assertNotIn('private-error', str(errors))
+        for code in (errno.EACCES, errno.EPERM, errno.EIO):
+            client = MagicMock()
+            client.__enter__.return_value = client
+            client.connect.side_effect = OSError(code, 'private-error')
+            warnings = []
+            with patch.object(guard.socket, 'socket', return_value=client):
+                errors = self.inspect('DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n', warnings=warnings)
+            self.assertIn('TCP probe failed with socket error', errors[0])
+            self.assertEqual(warnings, [])
+            self.assertNotIn('private-error', str(errors))
+
+    def test_live_service_with_a_saturated_accept_queue_is_not_unused(self):
+        self.probe.stop()
+        with ExitStack() as stack:
+            server = stack.enter_context(socket.socket())
+            server.bind(('127.0.0.1', 0))
+            server.listen(1)
+            address = server.getsockname()
+            application = stack.enter_context(socket.create_connection(address, timeout=0.5))
+            accepted = stack.enter_context(server.accept()[0])
+            for _ in range(2):
+                stack.enter_context(socket.create_connection(address, timeout=0.5))
+            warnings = []
+            errors = self.inspect(f'DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT={address[1]}\n', warnings=warnings)
+            self.assertEqual(len(errors), 1)
+            self.assertIn('service could not be shown unused', errors[0])
+            self.assertEqual(warnings, [])
+            application.sendall(b'request')
+            self.assertEqual(accepted.recv(7), b'request')
+            accepted.sendall(b'reply')
+            self.assertEqual(application.recv(5), b'reply')
+            for _ in range(2):
+                stack.enter_context(server.accept()[0])
+            stack.enter_context(socket.create_connection(address, timeout=0.5))
+
+    def test_all_private_addresses_must_explicitly_refuse_before_warning(self):
+        self.probe.stop()
+        addresses = [guard.ipaddress.ip_address(value) for value in ('127.0.0.1', '127.0.0.2')]
+        for errors in ((ConnectionRefusedError(errno.ECONNREFUSED, ''), TimeoutError()),
+                       (TimeoutError(), ConnectionRefusedError(errno.ECONNREFUSED, '')),
+                       (ConnectionRefusedError(errno.ECONNREFUSED, ''),) * 2):
+            client = MagicMock()
+            client.__enter__.return_value = client
+            client.connect.side_effect = errors
+            warnings = []
+            with patch.object(guard.HostProbes, 'resolve', return_value=addresses), \
+                    patch.object(guard.socket, 'socket', return_value=client):
+                refused = self.inspect('DB_CONNECTION=mysql\nDB_HOST=private.test\n', warnings=warnings)
+            all_refused = all(isinstance(error, ConnectionRefusedError) for error in errors)
+            self.assertEqual(len(warnings), int(all_refused))
+            self.assertEqual(len(refused), int(not all_refused))
+
+    def test_mysql_and_mariadb_host_sockets_override_tcp_and_attached_targets(self):
+        self.probe.stop()
+        with tempfile.TemporaryDirectory() as external, ExitStack() as stack:
+            unused = stack.enter_context(socket.socket())
+            unused.bind(('127.0.0.1', 0))
+            port = unused.getsockname()[1]
+            for directory in (self.root, Path(external)):
+                path = directory / 'private-socket'
+                server = stack.enter_context(socket.socket(socket.AF_UNIX))
+                server.bind(str(path))
+                server.listen(1)
+                client = stack.enter_context(socket.socket(socket.AF_UNIX))
+                client.connect(str(path))
+                stack.enter_context(server.accept()[0])
+                for driver, stem, suffix in (('mysql', 'DB', '_SOCKET'), ('mariadb', 'DB', '_SOCKET'),
+                                             ('mysql', 'REPORT', '_UNIX_SOCKET')):
+                    key = stem + suffix
+                    for host in (f'{stem}_HOST=127.0.0.1\n{stem}_PORT={port}\n', ''):
+                        with self.subTest(driver=driver, path=path, key=key, host=host):
+                            warnings = []
+                            with patch.object(guard.HostProbes, 'answer', side_effect=AssertionError('No TCP observation')):
+                                errors = self.inspect(f'{stem}_CONNECTION={driver}\n{host}{key}="{path}"\n',
+                                                      [{'host': '127.0.0.1', 'port': port}], warnings=warnings)
+                            self.assertEqual(len(errors), 1)
+                            self.assertIn(f'.env: {key}:', errors[0])
+                            self.assertIn('socket path exists on the Node', errors[0])
+                            self.assertEqual(warnings, [])
+                            self.assertNotIn('private-socket', str(errors))
+            warnings = []
+            errors = self.inspect(f'DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT={port}\nDB_SOCKET=private-socket\n',
+                                  warnings=warnings)
+            self.assertIn('DB_SOCKET:', errors[0])
+            self.assertEqual(warnings, [])
+
+    def test_missing_mysql_socket_permits_tcp_observation_but_uninspectable_paths_refuse(self):
+        self.probe.stop()
+        with socket.socket() as unused:
+            unused.bind(('127.0.0.1', 0))
+            text = f'DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT={unused.getsockname()[1]}\n'
+            for value in (str(self.root / 'missing.sock'), ''):
+                warnings = []
+                self.assertEqual(self.inspect(text + f'DB_SOCKET="{value}"\n', warnings=warnings), [])
+                self.assertEqual(len(warnings), 1)
+            warnings = []
+            errors = self.inspect(text + 'DB_SOCKET="${PRIVATE_SOCKET}"\n', warnings=warnings)
+            self.assertIn('DB_SOCKET: the selected socket path cannot be inspected safely', errors[0])
+            self.assertEqual(warnings, [])
+            self.assertNotIn('PRIVATE_SOCKET', str(errors))
+            with patch.object(guard.os, 'stat', side_effect=PermissionError(errno.EACCES, 'secret')):
+                self.assertEqual(guard.socket_reason('/private.sock', str(self.root), True),
+                                 'the selected socket path cannot be inspected safely')
+
+    def test_postgres_socket_directory_and_redis_socket_forms_never_become_tcp_warnings(self):
+        self.probe.stop()
+        with tempfile.TemporaryDirectory() as directory, socket.socket(socket.AF_UNIX) as server:
+            path = Path(directory) / '.s.PGSQL.5432'
+            server.bind(str(path))
+            server.listen(1)
+            forms = [
+                ('DB_HOST', f'DB_CONNECTION=pgsql\nDB_HOST={directory}\n'),
+                ('REDIS_HOST', f'CACHE_STORE=redis\nREDIS_HOST={path}\n'),
+                ('REDIS_HOST', f'CACHE_STORE=redis\nREDIS_HOST=unix://{path}\n'),
+                ('REDIS_PATH', f'CACHE_STORE=redis\nREDIS_SCHEME=unix\nREDIS_PATH={path}\nREDIS_HOST=127.0.0.1\n'),
+                ('REDIS_URL', f'CACHE_STORE=redis\nREDIS_URL=unix://{path}\nREDIS_HOST=127.0.0.1\n'),
+                ('REDIS_HOST', f'CACHE_STORE=redis\nREDIS_SCHEME=unix\nREDIS_HOST={path}\n'),
+            ]
+            for key, text in forms:
+                for source in (text, text.replace(directory, directory + '/missing')):
+                    with self.subTest(key=key, text=source):
+                        warnings = []
+                        with patch.object(guard.HostProbes, 'answer', side_effect=AssertionError('No TCP observation')):
+                            errors = self.inspect(source, warnings=warnings)
+                        self.assertTrue(errors)
+                        self.assertIn(key + ':', errors[0])
+                        self.assertEqual(warnings, [])
+                        self.assertNotIn(directory, str(errors))
+            self.assertEqual(self.inspect('DB_CONNECTION=sqlite\nDB_SOCKET=' + str(path) + '\n'), [])
+
+    def test_probe_cache_and_limit_bound_total_network_waiting(self):
+        self.probe.stop()
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.connect.side_effect = ConnectionRefusedError(errno.ECONNREFUSED, '')
+        text = ''.join(f'APP{i}_DB_CONNECTION=mysql\nAPP{i}_DB_HOST=127.0.0.1\nAPP{i}_DB_PORT={31000+i}\n' for i in range(21))
+        warnings = []
+        with patch.object(guard.socket, 'socket', return_value=client) as sockets:
+            errors = self.inspect(text, warnings=warnings)
+        self.assertEqual(len(warnings), 20)
+        self.assertEqual(sockets.call_count, 20)
+        self.assertIn('probe limit of 20', errors[0])
+        self.assertTrue(all(call.args[0] <= 1 for call in client.settimeout.call_args_list))
 
     def test_loopback_requires_exact_attached_key_pair_and_port(self):
         target = {'host_env_key': 'DB_HOST', 'port_env_key': 'DB_PORT', 'port': 3308}
