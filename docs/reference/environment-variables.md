@@ -16,7 +16,9 @@ covers:
 
 The Gateway owns the environment configuration of every Instance. It stores each key and value encrypted, and it writes the Instance's `.env` file only when you synchronize. A value never appears in a response, an Activity entry, an error, or a log. [`env`](/cli/env) lists the commands.
 
-[Node service target records](/reference/processes-and-schedules#node-service-target-records) reserve explicit host and port key names per Instance. During create and migration, the container reaches an attached Node service at the same host and port named in `.env`, with a proxy on `127.0.0.1:<port>` for IPv4 loopback. Recording, applying or removing a target leaves both stored environment values and the `.env` file unchanged.
+[Node service target records](/reference/processes-and-schedules#node-service-target-records) reserve explicit host and port key names per Instance. During create and migration, the container reaches an attached Node service at the same host and port named in `.env`, with a proxy on `127.0.0.1:<port>` for IPv4 loopback.
+
+A remote Docker Node Process target uses its real private WireGuard address and published TCP port, so a URL keeps the exact value already written in `.env`. Only that selected host joins the container's managed `NO_PROXY` and `no_proxy` for Incus execution sessions, newly started systemd Processes and login shells. Detach removes it. Recording, applying or removing a target leaves both stored environment values and the `.env` file unchanged.
 
 [Migration](/cli/instance/migrate) preflight admits a selected Node service on loopback (`127.0.0.1` or `localhost`) or a Node address only when its endpoint matches an attached target. The loopback path requires the target's exact recorded host key, port key and published port. A selected Node service without that match still refuses migration.
 

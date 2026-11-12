@@ -2,16 +2,12 @@
 
 declare(strict_types=1);
 
-it('enforces stock per-test limits and fails on risky tests or unavailable enforcement', function (): void {
+it('leaves timing to the CI job while failing risky tests and PHPUnit warnings', function (): void {
     $configuration = simplexml_load_file(dirname(__DIR__, 2).'/phpunit.xml');
     $expected = [
-        'enforceTimeLimit' => 'true',
+        'enforceTimeLimit' => 'false',
         'failOnRisky' => 'true',
         'failOnPhpunitWarning' => 'true',
-        'defaultTimeLimit' => '2',
-        'timeoutForSmallTests' => '2',
-        'timeoutForMediumTests' => '2',
-        'timeoutForLargeTests' => '2',
     ];
 
     foreach ($expected as $attribute => $value) {

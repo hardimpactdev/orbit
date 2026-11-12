@@ -7,6 +7,7 @@ namespace App\Actions\Processes;
 use App\Data\Processes\AddProcessData;
 use App\Data\Processes\UpdateProcessData;
 use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
+use App\Domain\Instances\InstanceNodeServiceTargets;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessRuntime;
@@ -74,6 +75,7 @@ final readonly class UpdateProcessAction
         $update->assertPreservesOmittedFields($fresh, $attributes['runtime_config']);
         $candidate = clone $fresh;
         $candidate->fill($attributes);
+        InstanceNodeServiceTargets::assertEndpointPreserved($fresh, $candidate);
         $this->listeners->assertPreservesRoutes($candidate);
         $retiredRuntime = $fresh->runtime !== $attributes['runtime'] ? $fresh->runtime : $fresh->retired_runtime;
         $fresh->fill($attributes);

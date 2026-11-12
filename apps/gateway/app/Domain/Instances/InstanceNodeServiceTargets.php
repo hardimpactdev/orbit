@@ -14,21 +14,22 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\InstanceNodeServiceTarget;
 use App\Models\Node;
 use App\Models\Process;
 use App\Support\ValidatedData;
 
-/** Explicit local TCP endpoints; never inferred from an Instance's environment. */
+/** Explicit TCP endpoints; never inferred from an Instance's environment. */
 final class InstanceNodeServiceTargets
 {
     public static function assertValid(InstanceNodeServiceTarget $target, Instance $instance, bool $requireRunning = true): void
     {
-        if ($target->node_id !== $instance->node_id) {
-            throw new ResourceOperationException('instance.node_service_remote_node', "A Node service target must be on the Instance's own Node.", 422);
-        }
         $process = Process::query()->find($target->process_id);
+        if ($target->node_id !== $process?->owner_id) {
+            throw new ResourceOperationException('instance.node_service_remote_node', 'The recorded service Node must still own the Process.', 422);
+        }
         self::resolvePort($instance, $process, $target->protocol, $target->port, $requireRunning);
     }
 
@@ -37,9 +38,6 @@ final class InstanceNodeServiceTargets
         if (! $process instanceof Process || $process->owner_type !== Node::class) {
             throw new ResourceOperationException('instance.node_service_process_missing', 'Select a registered Orbit Node Process.', 422);
         }
-        if ($process->owner_id !== $instance->node_id) {
-            throw new ResourceOperationException('instance.node_service_remote_node', "The Process must belong to the Instance's own Node.", 422);
-        }
         self::assertStandalone($process);
         if ($protocol !== 'tcp') {
             throw new ResourceOperationException('instance.node_service_protocol_unsupported', 'A Node service target supports TCP only.', 422);
@@ -47,19 +45,7 @@ final class InstanceNodeServiceTargets
         if ($requireRunning && $process->desired_state !== DesiredProcessState::Running) {
             throw new ResourceOperationException('instance.node_service_process_stopped', 'Start the registered Node Process before attaching or migrating its service.', 422);
         }
-        $mappings = [];
-        $specs = $process->runtime_config['ports'] ?? [];
-        if ($process->runtime === ProcessRuntime::Docker && (! $requireRunning || $process->status === LifecycleStatus::Active) && is_array($specs)) {
-            foreach ($specs as $spec) {
-                if (! is_string($spec) || (str_contains($spec, '/') && ! str_ends_with($spec, '/tcp'))) {
-                    continue;
-                }
-                $mapping = DockerPublishedPort::parse($spec);
-                if ($mapping instanceof DockerPublishedPort) {
-                    $mappings[$mapping->publishedPort][] = $mapping;
-                }
-            }
-        }
+        $mappings = ! $requireRunning || $process->status === LifecycleStatus::Active ? self::publications($process) : [];
         if ($requested === null && count($mappings) > 1) {
             throw new ResourceOperationException('instance.node_service_port_required', 'This Process publishes multiple TCP ports. Select one explicitly.', 422);
         }
@@ -67,8 +53,20 @@ final class InstanceNodeServiceTargets
         if ($port === null || ! isset($mappings[$port])) {
             throw new ResourceOperationException('instance.node_service_port_unpublished', 'The Process does not publish the selected TCP port.', 422);
         }
-        $node = Node::query()->findOrFail($instance->node_id);
+        $node = Node::query()->findOrFail($process->owner_id);
         self::assertPortAllowed($node, $port);
+        if ($node->id !== $instance->node_id) {
+            self::bridge($instance->node);
+            $host = $node->wireguard_ip;
+            if (! is_string($host) || ! array_any(['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'],
+                static fn (string $cidr): bool => Ipv4Subnet::from($cidr)->containsUsableAddress($host))
+                || count($mappings[$port]) !== 1 || $mappings[$port][0]->bindAddress !== $host) {
+                throw new ResourceOperationException('instance.node_service_listener_private',
+                    'A remote target needs one exact TCP publication on its Node private IPv4 WireGuard address.', 422);
+            }
+
+            return $port;
+        }
         $bridge = self::bridge($node);
         if (! array_any($mappings[$port], static fn (DockerPublishedPort $mapping): bool => in_array($mapping->bindAddress, [null, '0.0.0.0', $bridge], true))) {
             throw new ResourceOperationException('instance.node_service_listener_private', 'The published port must bind to 0.0.0.0 or the Instance bridge address.', 422);
@@ -85,11 +83,73 @@ final class InstanceNodeServiceTargets
         $targets = [];
         foreach ($instance->nodeServiceTargets()->with('process')->orderBy('id')->get() as $target) {
             self::assertValid($target, $instance, $requireRunning);
-            $targets[] = ['id' => $target->id, 'process_id' => $target->process_id, 'process_name' => $target->process->name, 'host' => self::bridge($instance->node), 'port' => $target->port,
-                'docker' => true, 'host_env_key' => $target->host_env_key, 'port_env_key' => $target->port_env_key];
+            $targets[] = ['id' => $target->id, 'process_id' => $target->process_id, 'process_name' => $target->process->name, 'host' => $target->node_id === $instance->node_id ? self::bridge($instance->node) : ValidatedData::string($target->node->wireguard_ip), 'port' => $target->port,
+                'docker' => $target->node_id === $instance->node_id, 'host_env_key' => $target->host_env_key, 'port_env_key' => $target->port_env_key];
         }
 
         return $targets;
+    }
+
+    /** Managed proxy bypass; the network policy still admits only the selected TCP ports.
+     * @param  list<array{host:string,docker:bool}>  $endpoints
+     * @return array{NO_PROXY:string,no_proxy:string}
+     */
+    public static function proxyEnvironment(string $gateway, array $endpoints): array
+    {
+        $base = InstanceEgress::environment($gateway)['NO_PROXY'];
+        $hosts = array_values(array_unique(array_column(array_filter($endpoints, static fn (array $target): bool => ! $target['docker']), 'host')));
+        $value = $base.($hosts === [] ? '' : ','.implode(',', $hosts));
+
+        return ['NO_PROXY' => $value, 'no_proxy' => $value];
+    }
+
+    /** An attached TCP publication cannot be released while any Instance depends on it. */
+    public static function assertEndpointPreserved(Process $process, ?Process $candidate = null): void
+    {
+        if ($candidate === null && $process->desired_state !== DesiredProcessState::Running) {
+            return;
+        }
+        $before = self::publications($process);
+        $after = $candidate === null ? [] : self::publications($candidate);
+        $instances = [];
+        foreach (InstanceNodeServiceTarget::query()->where('process_id', $process->id)->with('instance.project')->orderBy('instance_id')->get() as $target) {
+            $identity = static function (array $publications): array {
+                $values = array_map(static fn (DockerPublishedPort $mapping): string => ($mapping->bindAddress ?? '0.0.0.0').':'.$mapping->publishedPort.':'.$mapping->containerPort, $publications);
+                sort($values);
+
+                return $values;
+            };
+            if ($candidate !== null && $identity($before[$target->port] ?? []) === $identity($after[$target->port] ?? [])) {
+                continue;
+            }
+            $instance = $target->instance;
+            $instances[$instance->id] = "Instance [{$instance->project->slug}/{$instance->name}] (id {$instance->id})";
+        }
+        if ($instances !== []) {
+            throw new ResourceOperationException('process.node_service_endpoint_in_use',
+                "Process [{$process->name}] is attached to ".implode(', ', $instances).
+                '. Detach those Node service targets before stopping the Process or changing their TCP publication.', 409);
+        }
+    }
+
+    /** @return array<int,list<DockerPublishedPort>> */
+    private static function publications(Process $process): array
+    {
+        $mappings = [];
+        $specs = $process->runtime_config['ports'] ?? [];
+        if ($process->runtime === ProcessRuntime::Docker && is_array($specs)) {
+            foreach ($specs as $spec) {
+                if (! is_string($spec) || (str_contains($spec, '/') && ! str_ends_with($spec, '/tcp'))) {
+                    continue;
+                }
+                $mapping = DockerPublishedPort::parse($spec);
+                if ($mapping instanceof DockerPublishedPort) {
+                    $mappings[$mapping->publishedPort][] = $mapping;
+                }
+            }
+        }
+
+        return $mappings;
     }
 
     private static function assertStandalone(Process $process): void
@@ -113,8 +173,9 @@ final class InstanceNodeServiceTargets
     {
         $fixed = [22, 80, 443, InstanceDevPorts::Listener, InstanceHostIntent::T3Port, 2375, 2376, ...VitePortAllocator::EXCLUDED_PORTS,
             ValidatedData::integer(config('orbit.websocket.port')), ValidatedData::integer(config('orbit.pi.port'))];
-        $reserved = in_array($port, $fixed, true) || array_any(InstanceDevPorts::infrastructurePorts($node),
-            static fn (string $reserved): bool => FirewallPort::contains(str_replace('-', ':', $reserved), $port));
+        $reserved = DatabaseServer::query()->where('node_id', $node->id)->where('port', $port)->exists()
+            || in_array($port, $fixed, true) || array_any(InstanceDevPorts::infrastructurePorts($node),
+                static fn (string $reserved): bool => FirewallPort::contains(str_replace('-', ':', $reserved), $port));
         try {
             app(FirewallProtectedPorts::class)->guard($node, (string) $port);
         } catch (ResourceOperationException $exception) {
