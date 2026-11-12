@@ -20,6 +20,8 @@ Migrate and clone launch copy the recipe Node into a private writable store and 
 
 Preparing an `app-dev` Node for [Instance containers](/reference/development-containers#prepare-a-node) keeps its existing checkout Instances. Each checkout moves only through [`instance:migrate`](/cli/instance/migrate), after the container host is ready. The role installs the profile's default-reject NIC policy from the admitted common ACL name. Before starting an image builder or clone probe, it uses the same [effective-NIC gate](/reference/development-containers#network) as Instance starts. It also replaces old bridge union ACL references on existing NICs with the common NIC ACL, retaining their reject defaults. Its read-only end check repeats the audit, including stopped containers. One converge applies this to an existing host without restarting its containers.
 
+Migration retirement protects the Node's remaining checkouts: an owner with dependents or a checkout with registered descendants refuses before downtime; a linked checkout keeps independent Git recovery data and removes only its own registration. See [retirement and recovery](/cli/instance/migrate#retained-git-data).
+
 Migration checks remote source access before quiesce using the Node's existing Git transport. Its temporary fetch credential is mode 0600 and is removed after success, refusal or timeout; no source token enters the container.
 
 Each argument of an Ansible command must parse as a string. One shared test reads every literal `argv` list. It fails on a YAML mapping, a number or a boolean.

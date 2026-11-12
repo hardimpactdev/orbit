@@ -75,9 +75,123 @@ Destroying the migrated Instance keeps this directory. After destroy deletes the
 
 ### Recovery
 
-To inspect retained commits, use `git --git-dir=RETAINED_CHILD/.git show REF` on the Instance's Node. An interrupted unregister leaves a pending identity receipt beside the retained checkout. Repeating retirement reports `instance.migrate_retire_failed` until that incomplete retirement is resolved; it cannot silently succeed with the old registration present.
+A retained linked checkout supports `git -C RETAINED_CHILD status` and history recovery without its former owner's store. To inspect a commit, use `git --git-dir=RETAINED_CHILD/.git show REF`. Keep an owner's retained root while any worktree depends on it.
 
-A retained linked checkout supports `git -C RETAINED_CHILD status` and history recovery without its former owner's store. Keep an owner's retained root while any worktree depends on it.
+#### Interrupted unregister
+
+An interrupted unregister reports `instance.migrate_retire_failed` and the exact identity receipt path. That receipt is `<retained-root>/<source-path-hash>.json`, beside the retained child; it is separate from `retained.json`. Its state stays `pending`, and repeating retirement refuses even after someone removes the stale registration.
+
+Run this recovery on the Instance's Node with access to the retained root and owner Git metadata. Replace uppercase paths below with quoted absolute paths.
+
+1. Read `RECEIPT`. Use its `source` as `OLD_PATH`, `identity.git_dir` as `PRIVATE_GIT_DIR`, and `identity.common_dir` as the owner's common Git directory. `RETAINED_CHILD` is the receipt path without `.json`. Confirm `identity.linked` is true and `state` is `pending`.
+
+   ```sh
+   cat -- RECEIPT
+   test ! -e OLD_PATH
+   test ! -L OLD_PATH
+   if test -e PRIVATE_GIT_DIR; then
+     cat -- PRIVATE_GIT_DIR/gitdir
+   fi
+   git -C OWNER rev-parse --path-format=absolute --git-common-dir
+   ```
+
+   If the registration still exists, its `gitdir` must name exactly `OLD_PATH/.git`. Its private directory must be an immediate child of the recorded common directory's `worktrees` folder. The owner's reported common directory must match the receipt. If any identity cannot be proved, keep the retained data and stop recovery.
+
+2. Check the independent copy before unregistering anything.
+
+   ```sh
+   git -C RETAINED_CHILD rev-parse --absolute-git-dir
+   git -C RETAINED_CHILD rev-parse --path-format=absolute --git-common-dir
+   test ! -e RETAINED_CHILD/.git/commondir
+   test ! -e RETAINED_CHILD/.git/objects/info/alternates
+   test ! -e RETAINED_CHILD/.git/objects/info/http-alternates
+   git -C RETAINED_CHILD fsck --full
+   git --no-optional-locks -C RETAINED_CHILD status --short
+   git -C RETAINED_CHILD rev-parse HEAD
+   ```
+
+   Both directory reads must resolve to `RETAINED_CHILD/.git`. Check the selected branch and commit against the migration result, and confirm all retained files are present. If `.git` is missing or is still the original gitfile, complete the [interrupted installation](#interrupted-git-installation) first.
+
+   If the private entry still exists, compare its index and HEAD with the retained copy:
+
+   ```sh
+   cmp -- PRIVATE_GIT_DIR/index RETAINED_CHILD/.git/index
+   git --git-dir=PRIVATE_GIT_DIR rev-parse HEAD
+   git -C RETAINED_CHILD rev-parse HEAD
+   ```
+
+   Both HEAD reads must agree. If the private entry is already absent, confirm `OLD_PATH` is absent from the owner's worktree list and skip its removal; reconcile the receipt in step 4.
+
+3. Once the original path is absent and the identity checks pass, remove exactly its missing registration at the owner.
+
+   ```sh
+   git -C OWNER worktree remove --force OLD_PATH
+   test ! -e PRIVATE_GIT_DIR
+   git -C OWNER worktree list --porcelain
+   git -C RETAINED_CHILD fsck --full
+   ```
+
+   Confirm `OLD_PATH` is absent from the list and every other registration is unchanged. This removes the missing original registration; the retained child and sibling files stay in place.
+
+4. Reconcile only this receipt after unregister succeeds. The following manual step preserves its identity fields and changes `state` to `complete`.
+
+   ```sh
+   python3 - RECEIPT <<'PY'
+   import json
+   import os
+   import sys
+   from pathlib import Path
+
+   receipt = Path(sys.argv[1])
+   data = json.loads(receipt.read_text())
+   assert data["state"] == "pending" and data["identity"]["linked"] is True
+   assert not os.path.lexists(data["source"])
+   assert not os.path.lexists(data["identity"]["git_dir"])
+   assert (receipt.with_suffix("") / ".git").is_dir()
+   updated = receipt.with_suffix(".complete")
+   updated.write_text(json.dumps({**data, "state": "complete"}) + "\n")
+   updated.chmod(receipt.stat().st_mode & 0o777)
+   updated.replace(receipt)
+   PY
+   ```
+
+Orbit has no receipt reconciliation command. This manual update lets a repeated retirement phase pass the incomplete-retirement guard. It does not start a retry or change the failed Operation's result. An operator command for this recovery is a follow-up; the migrated container keeps serving.
+
+#### Interrupted Git installation
+
+If rename completed but installing the independent `.git` failed, the verified copy stays at `<retained-root>/.recovery-*/.git`. Identify the matching copy by checking its HEAD and index against the exact `PRIVATE_GIT_DIR` from the pending receipt. Keep all candidates if no unique match can be proved.
+
+```sh
+git --git-dir=RECOVERY_GIT fsck --full
+git --git-dir=RECOVERY_GIT rev-parse HEAD
+git --git-dir=PRIVATE_GIT_DIR rev-parse HEAD
+cmp -- PRIVATE_GIT_DIR/index RECOVERY_GIT/index
+```
+
+The common directory must resolve to `RECOVERY_GIT`, with no owner pointer or alternates:
+
+```sh
+git --git-dir=RECOVERY_GIT rev-parse --path-format=absolute --git-common-dir
+test ! -e RECOVERY_GIT/commondir
+test ! -e RECOVERY_GIT/objects/info/alternates
+test ! -e RECOVERY_GIT/objects/info/http-alternates
+```
+
+If `RETAINED_CHILD/.git` is still the old gitfile, confirm its pointer resolves to the recorded private directory from the original path, then remove only that file:
+
+```sh
+rm -- RETAINED_CHILD/.git
+```
+
+Once the retained `.git` path is absent, install the verified copy:
+
+```sh
+test ! -e RETAINED_CHILD/.git
+test ! -L RETAINED_CHILD/.git
+mv -- RECOVERY_GIT RETAINED_CHILD/.git
+```
+
+Repeat the independent-copy checks above, then remove the missing original registration and reconcile the receipt. Keep the retained files throughout recovery.
 
 ### Manual purge
 
