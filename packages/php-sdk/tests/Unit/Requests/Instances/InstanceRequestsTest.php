@@ -12,6 +12,7 @@ use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Orbit\Sdk\Responses\Instances\InstancesResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -38,12 +39,25 @@ describe('Instance rename requests', function (): void {
 describe('Instance requests', function (): void {
     it('creates an Instance with inherited root and maps the typed response', function (): void {
         $mockClient = new MockClient([
-            CreateInstanceRequest::class => MockResponse::make(instance_envelope(), 201),
+            CreateInstanceRequest::class => MockResponse::make([
+                'data' => ['id' => 901, 'kind' => 'instance.create', 'target_type' => 'instance',
+                    'target_id' => 7, 'status' => 'queued', 'sequence' => 1, 'steps' => []],
+                'meta' => ['request_id' => instance_request_id()],
+            ], 202),
+            ShowInstanceRequest::class => MockResponse::make(instance_envelope()),
         ]);
         $connector = instance_gateway_connector($mockClient);
         $request = new CreateInstanceRequest(projectId: 3, nodeId: 4, name: 'main');
 
-        $response = $connector->send($request)->dto();
+        $operation = $connector->send($request)->dto();
+        expect($operation)->toBeInstanceOf(OperationResponse::class)
+            ->and($operation->id)->toBe(901)
+            ->and($operation->kind)->toBe('instance.create')
+            ->and($operation->targetType)->toBe('instance')
+            ->and($operation->targetId)->toBe(7)
+            ->and($operation->status)->toBe('queued')
+            ->and($operation->requestId)->toBe(instance_request_id());
+        $response = $connector->send(new ShowInstanceRequest($operation->targetId))->dto();
 
         expect($request->getMethod())
             ->toBe(Method::POST)
@@ -77,16 +91,18 @@ describe('Instance requests', function (): void {
             'effective_root' => '/home/orbit-app-3/current/public',
         ];
         $mockClient = new MockClient([
-            CreateInstanceRequest::class => MockResponse::make([
+            ShowInstanceRequest::class => MockResponse::make([
                 'data' => $data,
                 'meta' => ['request_id' => instance_request_id()],
-            ], 201),
+            ]),
         ]);
         $response = instance_gateway_connector($mockClient)
-            ->send(new CreateInstanceRequest(projectId: 3, nodeId: 4, name: 'main'))
+            ->send(new ShowInstanceRequest(7))
             ->dto();
 
-        expect($response->productionUser)
+        expect($response)->toBeInstanceOf(InstanceResponse::class)
+            ->and($response->requestId)->toBe(instance_request_id())
+            ->and($response->productionUser)
             ->toBe('orbit-app-3')
             ->and($response->productionHome)
             ->toBe('/home/orbit-app-3')
