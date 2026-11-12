@@ -1328,9 +1328,11 @@ The `base` snapshots are taken last, including when only grant files changed. A 
 
 The earlier standalone fleet build took 1,840 s (Operation 11816), so a new host's first refresh takes about 30 minutes more than the build of the outer VM.
 
-##### Not built
+##### Nested Node base state
 
-- The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
+Before taking the three snapshots, every image refresh runs the real `node:converge --base` through the nested fleet's operator CLI for Gateway, app-dev and app-prod. Each must succeed before the next starts. This applies kernel and update policy, agent configuration and binary, and the managed CLI state. It selects no role or Tool work, so it does not build Instance images or configure an AI router.
+
+A failed or interrupted converge fails the refresh before snapshots or promotion. The last promoted base remains available. Task starts do not repeat these converges. A later refresh reads and repairs the Node state again; a checkout digest does not skip that work. Bases made before this change must complete a refresh before they have this guarantee.
 
 ##### Apply and check the nested fleet
 
