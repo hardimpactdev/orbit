@@ -74,6 +74,8 @@ additionalFiles:
   - ansible/tasks/instance-container-phase.yml
   - ansible/tasks/instance-container-handlers.yml
   - ansible/tasks/instance-container-process.yml
+  - ansible/instance-restore.yml
+  - ansible/instance/restore-source.py
   - ansible/route-create-site.yml
   - ansible/route-withdraw.yml
   - ansible/instance-migrate.yml

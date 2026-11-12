@@ -205,12 +205,10 @@ final readonly class DevelopmentSiteRepository
                         'transitionCluster.routerAssignment',
                         static fn (Builder $query): Builder => $query->where('node_id', $nodeId),
                     )
-                    ->orWhereExists(static fn ($members) => $members
+                    ->orWhereExists(InstanceRemovalMember::query()->live()
                         ->selectRaw('1')
-                        ->from('instance_removal_members')
                         ->whereColumn('instance_removal_members.route_id', 'routes.id')
-                        ->where('instance_removal_members.node_id', $nodeId)
-                        ->whereNull('instance_removal_members.row_deleted_at'));
+                        ->where('instance_removal_members.node_id', $nodeId)->toBase());
 
                 if ($secondRouterClusterIds !== []) {
                     $query->orWhereIn('routes.cluster_id', $secondRouterClusterIds);
@@ -377,7 +375,7 @@ final readonly class DevelopmentSiteRepository
             && in_array($route->status, [RouteStatus::Active, RouteStatus::Activating], true)
             && ! InstanceRemovalMember::query()
                 ->where('route_id', $route->id)
-                ->whereNull('row_deleted_at')
+                ->live()
                 ->exists()
         ) {
             $sites[] = $this->unavailableRouteSite($route, $router);
@@ -472,7 +470,7 @@ final readonly class DevelopmentSiteRepository
         $member = InstanceRemovalMember::query()
             ->where('route_id', $route->id)
             ->where('environment', 'development')
-            ->whereNull('row_deleted_at')
+            ->live()
             ->whereNull('route_cleared_at')
             ->orderBy('id')
             ->first();

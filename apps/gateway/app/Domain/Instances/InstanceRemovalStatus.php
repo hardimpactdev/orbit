@@ -8,5 +8,6 @@ enum InstanceRemovalStatus: string
 {
     case Removing = 'removing';
     case Failed = 'failed';
+    case Abandoned = 'abandoned';
     case Completed = 'completed';
 }

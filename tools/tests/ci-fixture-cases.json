@@ -2053,5 +2053,16 @@
       "migration source preflight distinguishes failure and timeout before changing the checkout",
       "a never-pushed branch at a pushed commit passes source and retirement checks and copies locally"
     ]
+  },
+  "swamp/tests/instance_restore_test.py": {
+    "source_sha256": "323b87d34e45e91c09264f45c4b53a72052e831f64f3f42a2307f5ed107a32cf",
+    "cases": [
+      "test_intact_source_read_preserves_checkout_and_reports_marker_baseline",
+      "test_source_deletion_refuses_without_creating_anything",
+      "test_changed_branch_origin_commit_or_workspace_refuses",
+      "test_removed_container_refuses_before_reading_checkout",
+      "test_admin_read_uses_stdin_and_never_returns_private_client_output",
+      "test_publication_failure_compensation_removes_only_new_awake_markers_and_repeats"
+    ]
   }
 }

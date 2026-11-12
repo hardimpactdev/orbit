@@ -312,7 +312,7 @@ final class Instance extends Model
     /** @return HasOne<InstanceRemovalMember, $this> */
     public function removalMember(): HasOne
     {
-        return $this->hasOne(InstanceRemovalMember::class)->whereNull('row_deleted_at');
+        return $this->hasOne(InstanceRemovalMember::class)->live();
     }
 
     /**

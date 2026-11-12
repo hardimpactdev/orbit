@@ -66,9 +66,12 @@ sequenceDiagram
       %%> - a later destroy captures a fresh identity and inventory
     else execution fails
       %% path: failed
-      SW->>N: Compensate publication<br/>Ansible · marker, withdrawal
+      SW->>N: Compensate publication<br/>Ansible · compensate
       %%> What it does:
-      %%> - remove a newly written awake marker and withdraw a partial site and DNS before releasing publication holds
+      %%> - remove only a newly written awake marker
+      SW->>N: Withdraw partial publication<br/>route-withdraw
+      %%> What it does:
+      %%> - withdraw a partial site and DNS before releasing publication holds
       %%> - preserve checkout, databases and completed fence settlement
       SW--xGW: Run failed
       %%> Result:
