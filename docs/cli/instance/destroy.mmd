@@ -132,6 +132,9 @@ sequenceDiagram
   %%> - always after the check, also when it refused
   opt Instance has a Route
   SW->>N: Withdraw the Route<br/>Ansible read, compose, apply
+  %%> Caddy publication:
+  %%> - on the Node, wait at most 5 s for the publish lock; compare the composed-from SHA-256 with the live file, then validate, rename and reload under that lock
+  %%> - a changed base refuses with `caddy.composed_from_live_mismatch`; a busy lock refuses with `caddy.publish_busy`; the live Caddyfile stays unchanged and the normal failure path runs
   %%> What it does:
   %%> - removes the Caddy site of Instance 42, its PHP pool and its certificate, then reloads Caddy; no restart
   %%> - per Node, in parallel: one Ansible read of the pools, the Caddyfile and the private DNS files, one composition of the captured states against them, one Ansible apply
