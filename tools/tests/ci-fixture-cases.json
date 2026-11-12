@@ -1947,7 +1947,7 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_test.py": {
-    "source_sha256": "3b77b20a21a1e39f6b2febf78e29bd28d3f94e715be9cdd4a9b8f8fe901c3eb0",
+    "source_sha256": "b4e313471a8b830a46387ea5f00bd0d343693da2f37f433b431848161a14c53f",
     "cases": [
       "test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes",
       "test_new_admission_metadata_and_incus_empty_fields_are_unchanged",
