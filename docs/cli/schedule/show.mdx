@@ -11,3 +11,5 @@ orbit schedule:show <schedule> [--project=ID] [--json]
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `schedule` | yes | Schedule UUID, or the definition name with `--project`. |
+
+For a migrated container Schedule, timer state and latest execution come from bounded container inspection. A stopped container is inactive; reading it never wakes it. Stored desired state remains unchanged.

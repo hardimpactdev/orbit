@@ -13,7 +13,7 @@ orbit schedule:logs <schedule> [--lines=COUNT] [--follow] [--json]
 | `--lines=COUNT` | `100` | 1 through 1,000 lines. |
 | `--follow` | off | Reserved; refuses until the fixed Agent is pinned. |
 
-Orbit returns a bounded snapshot of the service journal. For a [migrated Instance Schedule](/reference/schedules#checkout-migration), it combines retained service entries and later container-command entries from the Node journal; the read keeps at most 4 MiB and waits at most 120 seconds. It redacts the owning Instance's stored environment values.
+Orbit returns a bounded snapshot of the service journal. For a [migrated Instance Schedule](/reference/schedules#checkout-migration), it reads inside the container, keeps at most 4 MiB and waits at most 120 seconds. It redacts the owning Instance's stored environment values. A stopped container refuses with `schedule.target_inactive` without waking. Automatic fires create no Operation; the journal and observed latest-run status are their record.
 
 `--follow` currently refuses with `schedule.follow_unavailable`: Schedule follow needs orbit-agent 0.14.0. The fixed Agent must be released, pinned and installed before follow is enabled. See [Agent releases](/reference/node-agent#releases).
 

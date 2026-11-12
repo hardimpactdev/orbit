@@ -12,8 +12,9 @@ sequenceDiagram
   else bounded snapshot
     CLI->>GW: schedule:logs <schedule>
     alt migrated Instance Schedule
-      GW->>SW: Read the Schedule journal<br/>shared runtime inspection
-      SW->>N: Read Schedule journal<br/>Ansible · schedule-logs
+      Note over GW: Stopped container refuses<br/>schedule.target_inactive · no wake
+      GW->>SW: Read the container Schedule journal<br/>shared runtime inspection
+      SW->>N: Read Schedule logs<br/>Ansible · schedule-logs
       N-->>SW: Bounded journal read
       %%> Limits:
       %%> - complete entries within 4 MiB of UTF-8 bytes and the 8 MiB JSON transport limit, with 16 KiB reserved for the envelope
