@@ -26,6 +26,7 @@ sources: [gateway]
 baseline: [operations]
 
 uncovered:
+  development-mail: "Real-Ansible fixtures execute the shared exact-line task after a fixture copy. Result fixtures prove a failed mail attempt records a warning without changing moved, ready or restored; the workflow orders both application starts after its bounded allowFailure phase."
   "code:instance.migrate_env_service_unreachable": "Environment policy fixtures cover loopback, stale addresses, exact attached targets, driver skips, prefixes, IPv6, quoted values, nested files and redaction. Ansible fixtures prove refusal before Process stop or marker removal; live migration requires the Instance pool/image."
 
   "code:schedule.container_trigger_unsupported": "Pest covers fixed native workflow refusal before reservation; migration live proof needs the Instance pool/image."

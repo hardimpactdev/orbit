@@ -201,3 +201,5 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.migrate_<step>_failed` | A step of the move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before, except after `instance.migrate_retire_failed`. |
 | `http.404` | The Instance is unknown. |
 | `node_access.required` | The caller has no access grant to the Instance's Node. |
+
+Mail setup runs after the copied `.env` and before application Processes start. It uses the [development mail rule](/reference/development-containers#development-mail). A failure records `instance.mail_update_failed` in `warnings` and leaves an otherwise successful migration complete. Repair it with [`instance:mail:update`](/cli/instance/mail-update).
