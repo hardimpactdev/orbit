@@ -769,3 +769,27 @@ it('rejects a reply without a typed report', function (): void {
     expect(Artisan::call('doctor', ['--json' => true]))->toBe(Command::FAILURE);
     expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('gateway.invalid_response');
 });
+
+it('prints bridge endpoint warning counts and sampled pairs for the node family without marking the Node unhealthy', function (bool $json): void {
+    $mock = doctor_cli_mock(doctor_cli_report(
+        healthy: true,
+        nodes: [doctor_cli_node('bridge-host', [doctor_cli_family('node', 'healthy', 5, [
+            doctor_cli_issue(
+                code: 'node.instance_bridge_endpoint_unresolved',
+                summary: 'Warning: Instance bridge refresh could not resolve 200 endpoint(s). Sample: 10.253.0.1:13310, 10.253.0.1:13340.',
+                kind: 'informational',
+                resourceType: 'node',
+                expected: 'all endpoints resolved',
+                observed: '200 unresolved',
+            ),
+        ])])],
+        summary: ['nodes' => 1, 'families' => 1, 'checks' => 5, 'drift' => 0, 'unverifiable' => 0, 'informational' => 1],
+    ));
+
+    expect(Artisan::call('doctor', ['--node' => '7', '--family' => ['node'], '--json' => $json]))->toBe(Command::SUCCESS);
+    $output = Artisan::output();
+    expect($output)->toContain('node.instance_bridge_endpoint_unresolved', '200 endpoint(s)')
+        ->not->toContain('node.instance_bridge_unhealthy');
+    expect(preg_replace('/[\\s│]+/u', '', $output))->toContain('10.253.0.1:13310', '10.253.0.1:13340');
+    expect($mock->getLastPendingRequest()?->body()->all())->toBe('{"node_id":7,"families":["node"]}');
+})->with([false, true]);

@@ -8,6 +8,7 @@ enum NodeDoctorIssueCode: string implements DoctorIssueCode
 {
     case LifecycleNotActive = 'node.lifecycle_not_active';
     case DiskLow = 'node.disk_low';
+    case InstanceBridgeEndpointUnresolved = 'node.instance_bridge_endpoint_unresolved';
     case InstanceBridgeUnhealthy = 'node.instance_bridge_unhealthy';
     case SshUnreachable = 'node.ssh_unreachable';
     case PlatformMismatch = 'node.platform_mismatch';

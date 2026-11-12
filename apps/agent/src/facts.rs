@@ -105,7 +105,7 @@ pub fn host_data(os: &str, arch: &str, filesystems: &[Filesystem], bridge: Value
     })
 }
 
-/// The refresh service writes only a public refusal code here. The observer reads no endpoint or credential data.
+/// Read only public bridge health codes and a bounded sample of endpoint identities, never output or credentials.
 pub const INSTANCE_BRIDGE_HEALTH: &str = "/var/lib/orbit/instance-bridge/health.json";
 
 pub fn instance_bridge_health(path: &std::path::Path) -> Value {
@@ -123,26 +123,64 @@ pub fn instance_bridge_health(path: &std::path::Path) -> Value {
 }
 
 fn bridge_health_data(body: &[u8]) -> Value {
-    if body.len() <= 4096 {
-        if let Ok(value) = serde_json::from_slice::<Value>(body) {
-            match value.get("error_code") {
-                Some(Value::Null) => return json!({"error_code": null}),
-                Some(Value::String(code))
-                    if matches!(
-                        code.as_str(),
-                        "instance.container_endpoint_unresolved"
-                            | "instance.container_bridge_write_failed"
-                            | "instance.bridge_command_timeout"
-                            | "instance.bridge_state_unresolved"
-                    ) =>
-                {
-                    return json!({"error_code": code});
-                }
-                _ => {}
-            }
-        }
+    let unreadable = json!({"error_code": "instance.container_bridge_health_unreadable"});
+    if body.len() > 4096 {
+        return unreadable;
     }
-    json!({"error_code": "instance.container_bridge_health_unreadable"})
+    let Ok(value) = serde_json::from_slice::<Value>(body) else {
+        return unreadable;
+    };
+    let Some(code) = value.get("error_code") else {
+        return unreadable;
+    };
+    if !code.is_null()
+        && !matches!(
+            code.as_str(),
+            Some(
+                "instance.container_endpoint_unresolved"
+                    | "instance.container_bridge_write_failed"
+                    | "instance.bridge_command_timeout"
+                    | "instance.bridge_state_unresolved"
+            )
+        )
+    {
+        return unreadable;
+    }
+    let mut report = json!({"error_code": code});
+    if value.get("warning_count").is_none() && value.get("warnings").is_none() {
+        return report;
+    }
+    let Some(count) = value.get("warning_count").and_then(Value::as_u64) else {
+        return unreadable;
+    };
+    let Some(warnings) = value.get("warnings").and_then(Value::as_array) else {
+        return unreadable;
+    };
+    if count > i32::MAX as u64 || warnings.len() > 20 || warnings.len() as u64 > count {
+        return unreadable;
+    }
+    let mut samples = Vec::new();
+    for warning in warnings {
+        let Some(host) = warning.get("host").and_then(Value::as_str) else {
+            return unreadable;
+        };
+        let Some(port) = warning.get("port").and_then(Value::as_u64) else {
+            return unreadable;
+        };
+        if host.parse::<std::net::Ipv4Addr>().is_err()
+            || !(1..=65535).contains(&port)
+            || warning.get("code").and_then(Value::as_str)
+                != Some("instance.container_endpoint_unresolved")
+        {
+            return unreadable;
+        }
+        samples.push(json!({
+            "code": "instance.container_endpoint_unresolved", "host": host, "port": port
+        }));
+    }
+    report["warning_count"] = json!(count);
+    report["warnings"] = json!(samples);
+    report
 }
 
 /// The awake markers live here; the agent checks only watch-list paths below it.
@@ -1022,7 +1060,10 @@ mod tests {
             "instance.bridge_state_unresolved",
         ] {
             let body = json!({"error_code": code, "private": "not reported"}).to_string();
-            assert_eq!(bridge_health_data(body.as_bytes()), json!({"error_code": code}));
+            assert_eq!(
+                bridge_health_data(body.as_bytes()),
+                json!({"error_code": code})
+            );
         }
         for body in [
             b"damaged".as_slice(),
@@ -1034,6 +1075,78 @@ mod tests {
                 json!({"error_code":"instance.container_bridge_health_unreadable"})
             );
         }
+    }
+
+    #[test]
+    fn bridge_health_reader_reports_bounded_warnings_and_accepts_old_health() {
+        let path = std::env::temp_dir().join(format!(
+            "orbit-bridge-health-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let warning = json!({"code": "instance.container_endpoint_unresolved",
+            "host": "10.253.0.1", "port": 13330, "private": "not reported"});
+        let health =
+            json!({"error_code": null, "warning_count": 200, "warnings": vec![warning; 20]});
+        std::fs::write(&path, health.to_string()).unwrap();
+        let report = instance_bridge_health(&path);
+        assert_eq!(report["warning_count"], 200);
+        assert_eq!(report["warnings"].as_array().unwrap().len(), 20);
+        assert_eq!(
+            report["warnings"][0],
+            json!({"code": "instance.container_endpoint_unresolved", "host": "10.253.0.1", "port": 13330})
+        );
+        assert!(report.to_string().len() < 4096);
+        assert!(!report.to_string().contains("private"));
+        for old in [
+            json!({"error_code": null}),
+            json!({"error_code": "instance.container_bridge_write_failed"}),
+        ] {
+            std::fs::write(&path, old.to_string()).unwrap();
+            assert_eq!(instance_bridge_health(&path), old);
+        }
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn bridge_health_warning_reader_refuses_unbounded_or_private_warning_data() {
+        let warning = json!({"code": "instance.container_endpoint_unresolved", "host": "10.253.0.1", "port": 13330});
+        for health in [
+            json!({"error_code": null, "warning_count": 200, "warnings": vec![warning.clone(); 21]}),
+            json!({"error_code": null, "warning_count": 0, "warnings": [warning.clone()]}),
+            json!({"error_code": null, "warning_count": -1, "warnings": []}),
+            json!({"error_code": null, "warning_count": 2147483648u64, "warnings": []}),
+            json!({"error_code": null, "warning_count": 1}),
+            json!({"error_code": null, "warnings": []}),
+        ] {
+            assert_eq!(
+                bridge_health_data(health.to_string().as_bytes()),
+                json!({"error_code": "instance.container_bridge_health_unreadable"})
+            );
+        }
+        for (field, value) in [
+            ("host", json!("token-looking-secret")),
+            ("port", json!(0)),
+            ("port", json!(65536)),
+            ("code", json!("private-output")),
+        ] {
+            let mut invalid = warning.clone();
+            invalid[field] = value;
+            let health = json!({"error_code": null, "warning_count": 1, "warnings": [invalid]});
+            assert_eq!(
+                bridge_health_data(health.to_string().as_bytes()),
+                json!({"error_code": "instance.container_bridge_health_unreadable"})
+            );
+        }
+        assert_eq!(
+            bridge_health_data(&vec![b' '; 4097]),
+            json!({"error_code": "instance.container_bridge_health_unreadable"})
+        );
+        let clear = json!({"error_code": null, "warning_count": 0, "warnings": []});
+        assert_eq!(bridge_health_data(clear.to_string().as_bytes()), clear);
     }
 
     #[test]

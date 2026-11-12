@@ -69,7 +69,7 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 
 | Kind | Data | Read |
 | --- | --- | --- |
-| `host` | `os`, `arch`, and the `mount`, `size` and `free` bytes of each data filesystem (ext2–4, XFS, Btrfs, ZFS, F2FS; no snap mounts; at most 64) | every 60 seconds |
+| `host` | `os`, `arch`, Instance bridge health and its bounded endpoint warnings, and the `mount`, `size` and `free` bytes of each data filesystem (ext2–4, XFS, Btrfs, ZFS, F2FS; no snap mounts; at most 64) | every 60 seconds |
 | `metrics` | Per-core busy ratios, memory and swap bytes, load averages, uptime, pressure and data disks | every 60 seconds |
 | `units` | `docker`, `awake`, and each watched unit and container with its `runtime` and `state`. See below. | every 10 seconds |
 | `checkout` | One Git checkout at `<apps_root>/<project>/<name>`, named by its path in `subject`. See [Checkouts](#checkouts). | on change |
@@ -87,6 +87,8 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 Retained Schedule log reads, Node-timer account resolution, and named-user resolution in `CreateProcessAction` and `UpdateProcessAction` use this fact while the Node agent is online, using the Gateway's [agent liveness](#gateway-view). An absent or non-current fact, an unlisted user, or an invalid account entry returns `schedule.target_unavailable` for Schedules or `process.user_unavailable` for Processes without contacting the Node. The Node's managed user still uses `account.lookup`.
 
 `units` lists each `orbit-process-*` unit, each Process container, and each role service and Process unit from the [watch list](#watch-list). `docker` is `available` or `absent`. A systemd unit also has its `load` and `sub` state; one that is not installed reads `not-found`. `awake` lists the watched awake markers that exist. Agents before 0.10.0 send neither `load`, `sub` nor `awake`.
+
+The host reader takes at most 4,096 bytes from `/var/lib/orbit/instance-bridge/health.json`. It reports only the public `error_code` and, when present, `warning_count` and at most 20 samples with a public code, IPv4 host and port. Older agents omit the warning fields; a new Gateway accepts their facts but cannot show their endpoint warnings. A new agent reporting warnings to an older Gateway gets a 422 for that host fact; other fact kinds continue. Upgrade the Gateway before installing the new agent. The agent change reaches Nodes through a published CLI agent delivery and the Gateway's updated delivery pin, not through a Gateway source release alone.
 
 The Gateway stores a host's `free` bytes rounded down to 256 MiB. Free space moves with every log line, so without the rounding each `host` report would write a row.
 

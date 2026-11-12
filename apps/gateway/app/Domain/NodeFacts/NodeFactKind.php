@@ -60,8 +60,14 @@ enum NodeFactKind: string
         return match ($this) {
             self::Host => [
                 'os' => ['required', 'string', 'max:64'],
-                'instance_bridge' => ['sometimes', 'nullable', 'array:error_code', 'required_array_keys:error_code'],
+                'instance_bridge' => ['sometimes', 'nullable', 'array:error_code,warning_count,warnings', 'required_array_keys:error_code'],
                 'instance_bridge.error_code' => ['sometimes', 'nullable', 'string', 'in:instance.container_endpoint_unresolved,instance.container_bridge_write_failed,instance.container_bridge_health_unreadable,instance.bridge_command_timeout,instance.bridge_state_unresolved'],
+                'instance_bridge.warning_count' => ['present_with:instance_bridge.warnings', 'integer', 'min:0', 'max:2147483647'],
+                'instance_bridge.warnings' => ['present_with:instance_bridge.warning_count', 'array', 'list', 'max:20'],
+                'instance_bridge.warnings.*' => ['array:code,host,port', 'required_array_keys:code,host,port'],
+                'instance_bridge.warnings.*.code' => ['required', 'in:instance.container_endpoint_unresolved'],
+                'instance_bridge.warnings.*.host' => ['required', 'ipv4'],
+                'instance_bridge.warnings.*.port' => ['required', 'integer', 'between:1,65535'],
                 'arch' => ['required', 'string', 'max:32'],
                 'filesystems' => ['present', 'array', 'list', 'max:64'],
                 'filesystems.*.mount' => ['required', 'string', 'starts_with:/', 'max:4096'],

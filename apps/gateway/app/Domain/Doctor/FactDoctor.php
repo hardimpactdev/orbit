@@ -122,11 +122,30 @@ final readonly class FactDoctor
             }
             $check->observed($node->id, 'node.disk_low');
         });
-        $check->read($node->id, ['node.instance_bridge_unhealthy'], function () use ($check, $node): void {
+        $check->read($node->id, ['node.instance_bridge_unhealthy', 'node.instance_bridge_endpoint_unresolved'], function () use ($check, $node): void {
             $bridge = $check->fact(NodeFactKind::Host)['instance_bridge'] ?? null;
             if (is_array($bridge) && is_string($bridge['error_code'] ?? null)) {
                 $check->issue('node.instance_bridge_unhealthy', $node->id, $node->name,
                     'Instance bridge endpoint refresh failed: '.$bridge['error_code'], 'healthy', $bridge['error_code']);
+            }
+            if (is_array($bridge) && is_int($bridge['warning_count'] ?? null)) {
+                $count = $bridge['warning_count'];
+                if ($count > 0) {
+                    $samples = [];
+                    foreach (is_array($bridge['warnings'] ?? null) ? $bridge['warnings'] : [] as $warning) {
+                        if (! is_array($warning) || ! is_string($warning['host'] ?? null) || ! is_int($warning['port'] ?? null)) {
+                            throw new UnexpectedValueException('bridge warning');
+                        }
+                        $samples[] = $warning['host'].':'.$warning['port'];
+                    }
+                    $summary = 'Warning: Instance bridge refresh could not resolve '.$count.' endpoint(s).';
+                    if ($samples !== []) {
+                        $summary .= ' Sample: '.implode(', ', $samples).'.';
+                    }
+                    $check->issue('node.instance_bridge_endpoint_unresolved', $node->id, $node->name,
+                        $summary, 'all endpoints resolved', (string) $count.' unresolved', DoctorIssueKind::Informational);
+                }
+                $check->observed($node->id, 'node.instance_bridge_endpoint_unresolved');
             }
             $check->observed($node->id, 'node.instance_bridge_unhealthy');
         });

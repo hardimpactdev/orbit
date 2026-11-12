@@ -31,11 +31,13 @@ A check whose fact has not arrived yet, or cannot be read, gives one unverifiabl
 
 | Family | Checks |
 | --- | --- |
-| `node` | Recorded lifecycle; [Instance bridge refresh health](/reference/development-containers#prepare-a-node) (`node.instance_bridge_unhealthy`); platform and architecture; root filesystem free space; the agent's liveness: never seen (`node.agent_missing`) or silent (`node.agent_view_stale`); a reboot due for more than 3 days (`node.reboot_due`, from the [fleet reboot](/reference/gateway-recovery#fleet-reboot) passes). |
+| `node` | Recorded lifecycle; [Instance bridge refresh health](/reference/development-containers#prepare-a-node) (`node.instance_bridge_unhealthy` for errors; `node.instance_bridge_endpoint_unresolved` for endpoint warnings); platform and architecture; root filesystem free space; the agent's liveness: never seen (`node.agent_missing`) or silent (`node.agent_view_stale`); a reboot due for more than 3 days (`node.reboot_due`, from the [fleet reboot](/reference/gateway-recovery#fleet-reboot) passes). |
 | `role` | Recorded lifecycle and current state of each service required by an active Linux role. |
 | `process` | Current registered systemd unit or Docker container presence and running/stopped state. A systemd `activating/auto-restart` snapshot is crash-loop evidence. A cumulative restart count alone is not. |
 
 | `firewall` | Rule lifecycle, UFW active state, and missing or extra lines by port, protocol and source. |
+
+Instance bridge endpoint warnings name the unresolved count and at most 20 sampled host:port pairs. They use the informational kind and do not make the Node unhealthy. They disappear when the agent reports no warnings.
 
 A stopped, non-keep-alive development Process desired running is healthy only when the agent reports its awake marker absent. An agent before 0.10.0 reports no markers, so that check is unverifiable there, and so is a Process unit it does not list. This inspection takes no timed samples and does not infer a restart rate.
 
