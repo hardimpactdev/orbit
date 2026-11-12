@@ -16,6 +16,9 @@ COMMAND = next(task['ansible.builtin.command']['argv'][2] for task in TASK_LIST
                if task['name'] == 'Retain the checkout without deleting any files')
 PREPARE = next(task['ansible.builtin.command']['argv'][2] for task in TASK_LIST
                if task['name'] == 'Prepare the retained Git path before moving any checkout')
+IDENTITY_CHECK = next(task['ansible.builtin.command']['argv'][2]
+                      for task in yaml.safe_load(TASKS.with_name('instance-migrate-retirement-check.yml').read_text())
+                      if task['name'] == 'Read canonical Git identity and linked registration')
 GIT_ENV = {**os.environ, 'GIT_AUTHOR_NAME': 'Orbit', 'GIT_AUTHOR_EMAIL': 'orbit@example.test',
            'GIT_COMMITTER_NAME': 'Orbit', 'GIT_COMMITTER_EMAIL': 'orbit@example.test'}
 
@@ -23,6 +26,17 @@ GIT_ENV = {**os.environ, 'GIT_AUTHOR_NAME': 'Orbit', 'GIT_AUTHOR_EMAIL': 'orbit@
 def git(folder, *args):
     return subprocess.run(['git', '-c', 'protocol.file.allow=always', *args], cwd=folder, env=GIT_ENV,
                           check=True, capture_output=True, text=True).stdout.strip()
+
+
+def identity(source):
+    private = Path(git(source, 'rev-parse', '--absolute-git-dir')).resolve()
+    common = Path(git(source, 'rev-parse', '--path-format=absolute', '--git-common-dir')).resolve()
+    return {'git_dir': str(private), 'common_dir': str(common), 'linked': private != common}
+
+
+def snapshot(folder, exclude=()):
+    return {str(path.relative_to(folder)): path.read_bytes()
+            for path in folder.rglob('*') if path.is_file() and not any(path == item or item in path.parents for item in exclude)}
 
 
 def repository(folder):
@@ -52,11 +66,164 @@ class RetentionTest(unittest.TestCase):
         if eligible:
             # Production writes this prepared receipt to the worker before it executes the rename.
             self.assertTrue(self.source.exists())
-            subprocess.run([sys.executable, '-c', COMMAND, str(self.source), str(self.root)], check=True, capture_output=True, text=True)
+            subprocess.run([sys.executable, '-c', COMMAND, str(self.source), str(self.root), json.dumps(identity(self.source))], check=True, capture_output=True, text=True)
         self.assertEqual(receipt['retained_git_path'], str(self.root))
         self.assertRegex(receipt['retained_git_at'], r'^\d{4}-\d{2}-\d{2}T')
         self.assertFalse(self.source.exists())
         return receipt
+
+    def test_linked_retirement_keeps_all_files_and_independent_recovery_without_changing_owner_or_sibling(self):
+        owner = self.source
+        child, sibling = self.folder / 'child', self.folder / 'sibling'
+        git(owner, 'worktree', 'add', '--quiet', '-b', 'child', str(child))
+        git(owner, 'worktree', 'add', '--quiet', '-b', 'sibling', str(sibling))
+        # Recovery must preserve objects referenced only by the child's HEAD reflog, plus per-worktree refs/config.
+        git(child, 'commit', '--quiet', '--allow-empty', '-m', 'reflog only')
+        reflog_commit = git(child, 'rev-parse', 'HEAD')
+        git(child, 'reset', '--hard', 'HEAD~1')
+        git(owner, 'config', 'extensions.worktreeConfig', 'true')
+        git(child, 'config', '--worktree', 'core.worktree', str(child))
+        git(child, 'update-ref', 'refs/worktree/recovery', reflog_commit)
+        (owner / '.git/info/exclude').write_text('.env\nstorage/\nvendor/\nnode_modules/\n')
+        (child / 'untracked.txt').write_text('keep untracked')
+        for name in ('.env', 'storage/cache', 'vendor/package', 'node_modules/package'):
+            path = child / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('keep ignored ' + name)
+        child_private = Path(identity(child)['git_dir'])
+        index = (child_private / 'index').read_bytes()
+        private_head_log = (child_private / 'logs/HEAD').read_bytes()
+        original_files = snapshot(child, (child / '.git',))
+        before = snapshot(owner, (child_private,))
+        sibling_before = snapshot(sibling)
+        self.source = child
+        self.root = Path(str(child) + '.orbit-retired-git')
+        self.retained = self.root / hashlib.sha256(os.fsencode(child)).hexdigest()
+
+        self.retire()
+
+        self.assertEqual(snapshot(owner), before)
+        self.assertEqual(snapshot(sibling), sibling_before)
+        self.assertFalse(child_private.exists())
+        listing = git(owner, 'worktree', 'list', '--porcelain')
+        self.assertNotIn(str(child), listing)
+        self.assertIn(str(sibling), listing)
+        self.assertEqual(snapshot(self.retained, (self.retained / '.git',)), original_files)
+        self.assertEqual((self.retained / '.git/index').read_bytes(), index)
+        self.assertEqual((self.retained / '.git/logs/HEAD').read_bytes(), private_head_log)
+        self.assertFalse((self.retained / '.git/objects/info/alternates').exists())
+        self.assertFalse((self.retained / '.git/commondir').exists())
+        # Prove the recovery tree needs neither the owner's store nor its path.
+        owner.rename(self.folder / 'owner-offline')
+        self.assertEqual(git(self.retained, 'symbolic-ref', '--short', 'HEAD'), 'child')
+        self.assertEqual(git(self.retained, 'show', reflog_commit + ':content.txt'), 'committed content')
+        self.assertEqual(git(self.retained, 'rev-parse', 'refs/worktree/recovery'), reflog_commit)
+        self.assertEqual(git(self.retained, 'ls-files'), '.gitignore\ncontent.txt')
+        self.assertEqual(git(self.retained, 'status', '--porcelain'), '?? untracked.txt')
+        git(self.retained, 'fsck', '--full')
+
+    def test_failed_git_install_keeps_files_and_verified_recovery_before_unregistering(self):
+        owner = self.source
+        child = self.folder / 'child'
+        git(owner, 'worktree', 'add', '--quiet', '-b', 'child', str(child))
+        (child / 'untracked.txt').write_text('keep through failure')
+        expected = identity(child)
+        self.root.mkdir()
+        before = snapshot(owner)
+        interrupted = COMMAND.replace("recovery.rename(destination / '.git')", "raise OSError('fixture: Git install interrupted')")
+
+        result = subprocess.run([sys.executable, '-c', interrupted, str(child), str(self.root), json.dumps(expected)],
+                                check=False, capture_output=True, text=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        retained = self.root / hashlib.sha256(os.fsencode(child)).hexdigest()
+        self.assertEqual((retained / 'untracked.txt').read_text(), 'keep through failure')
+        recovery = next(self.root.glob('.recovery-*')) / '.git'
+        self.assertEqual(git(self.folder, '--git-dir=' + str(recovery), 'show', 'HEAD:content.txt'), 'committed content')
+        self.assertFalse((recovery / 'objects/info/alternates').exists())
+        self.assertEqual(snapshot(owner), before)
+        self.assertTrue(Path(expected['git_dir']).exists())
+
+    def test_owner_physically_inside_the_linked_checkout_is_a_named_descendant(self):
+        owner = self.source
+        child = self.folder / 'child'
+        git(owner, 'worktree', 'add', '--quiet', '-b', 'child', str(child))
+        nested_owner = child / 'nested-owner'
+        owner.rename(nested_owner)
+        git(nested_owner, 'worktree', 'repair', str(child))
+        before = snapshot(self.folder)
+
+        result = subprocess.run([sys.executable, '-c', IDENTITY_CHECK, str(child), str(self.root)],
+                                check=True, capture_output=True, text=True)
+
+        self.assertIn(str(nested_owner), json.loads(result.stdout).get('descendants', []))
+        self.assertEqual(snapshot(self.folder), before)
+        self.assertEqual(git(nested_owner, 'symbolic-ref', '--short', 'HEAD'), 'main')
+
+    def test_interrupted_unregister_records_incomplete_identity_for_the_repeat_guard(self):
+        owner = self.source
+        child = self.folder / 'child'
+        git(owner, 'worktree', 'add', '--quiet', '-b', 'child', str(child))
+        expected = identity(child)
+        self.root.mkdir()
+        interrupted = COMMAND.replace("shutil.rmtree(private)", "raise OSError('fixture: unregister interrupted')")
+
+        first = subprocess.run([sys.executable, '-c', interrupted, str(child), str(self.root), json.dumps(expected)],
+                               check=False, capture_output=True, text=True)
+
+        self.assertNotEqual(first.returncode, 0)
+        digest = hashlib.sha256(os.fsencode(child)).hexdigest()
+        retained = self.root / digest
+        evidence = json.loads((self.root / (digest + '.json')).read_text())
+        self.assertEqual(evidence, {'source': str(child), 'identity': expected, 'state': 'pending'})
+        self.assertEqual(git(retained, 'show', 'HEAD:content.txt'), 'committed content')
+        self.assertTrue(Path(expected['git_dir']).exists())
+        before = snapshot(owner)
+
+        repeat = subprocess.run([sys.executable, '-c', IDENTITY_CHECK, str(child), str(self.root)],
+                                check=True, capture_output=True, text=True)
+        result = json.loads(repeat.stdout)
+
+        self.assertFalse(result['valid'])
+        self.assertEqual(result['error_code'], 'instance.migrate_retire_failed')
+        self.assertIn('Incomplete linked retirement', result['message'])
+        self.assertEqual(snapshot(owner), before)
+
+    def test_recovery_materializes_relative_alternates(self):
+        store = self.folder / 'store'
+        self.source.rename(store)
+        git(self.folder, 'clone', '--quiet', '--shared', str(store), str(self.source))
+        objects = self.source / '.git/objects'
+        (objects / 'info/alternates').write_text(os.path.relpath(store / '.git/objects', objects) + '\n')
+        child = self.folder / 'child'
+        git(self.source, 'worktree', 'add', '--quiet', '-b', 'child', str(child))
+        self.source = child
+        self.root = Path(str(child) + '.orbit-retired-git')
+        self.retained = self.root / hashlib.sha256(os.fsencode(child)).hexdigest()
+
+        self.retire()
+
+        store.rename(self.folder / 'store-offline')
+        (self.folder / 'checkout').rename(self.folder / 'owner-offline')
+        self.assertEqual(git(self.retained, 'show', 'HEAD:content.txt'), 'committed content')
+        self.assertFalse((self.retained / '.git/objects/info/alternates').exists())
+        git(self.retained, 'fsck', '--full')
+
+    def test_changed_linked_identity_refuses_before_rename_or_registration_removal(self):
+        owner = self.source
+        child, sibling = self.folder / 'child', self.folder / 'sibling'
+        git(owner, 'worktree', 'add', '--quiet', '-b', 'child', str(child))
+        git(owner, 'worktree', 'add', '--quiet', '-b', 'sibling', str(sibling))
+        expected = identity(child)
+        expected['git_dir'] = str(Path(expected['git_dir']).with_name('sibling'))
+        self.root.mkdir()
+        before = snapshot(self.folder, (self.root,))
+
+        result = subprocess.run([sys.executable, '-c', COMMAND, str(child), str(self.root), json.dumps(expected)],
+                                check=False, capture_output=True, text=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(snapshot(self.folder, (self.root,)), before)
 
     def test_tag_only_commits_and_packed_refs_are_still_present_after_retirement(self):
         tree = git(self.source, 'rev-parse', 'HEAD^{tree}')
@@ -146,7 +313,7 @@ class RetentionTest(unittest.TestCase):
     def test_an_existing_destination_is_never_replaced(self):
         self.retire()
         repository(self.source)
-        result = subprocess.run([sys.executable, '-c', COMMAND, str(self.source), str(self.root)],
+        result = subprocess.run([sys.executable, '-c', COMMAND, str(self.source), str(self.root), json.dumps(identity(self.source))],
                                 check=False, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertTrue((self.source / '.git').is_dir())

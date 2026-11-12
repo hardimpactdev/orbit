@@ -4,37 +4,91 @@
   ansible.builtin.set_fact:
     retired_git: "{{ ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'safe.directory=*'] }}"
 
-- name: Read the checkout's Git folder
-  ansible.builtin.stat: { path: "{{ retired.path }}/.git" }
-  register: retired_dot_git
-
-# Git names the repository of the worktree that just went by its real path, so the candidate is asked the same way.
-- name: Read the repository's own Git folder
-  when: retired.common_of is defined and retired_dot_git.stat.exists and retired_dot_git.stat.isdir | default(false)
+# Classify the live Git topology, including gitfiles that name an owner repository.
+- name: Read canonical Git identity and linked registration
   ansible.builtin.command:
-    argv: "{{ retired_git + ['-C', retired.path, 'rev-parse', '--path-format=absolute', '--git-common-dir'] }}"
-  register: retired_own
+    argv:
+      - python3
+      - -c
+      - |
+        import hashlib
+        import json
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        source = Path(sys.argv[1])
+        root = Path(sys.argv[2])
+        def git(*args):
+            result = subprocess.run(
+                ['git', '-c', 'safe.directory=*', '-C', str(source), *args],
+                env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0'},
+                check=True, capture_output=True, text=True)
+            return result.stdout.strip()
+
+        result = {'present': os.path.lexists(source / '.git'), 'valid': True}
+        if result['present']:
+            try:
+                top = Path(git('rev-parse', '--show-toplevel')).resolve(strict=True)
+                private = Path(git('rev-parse', '--absolute-git-dir')).resolve(strict=True)
+                common = Path(git('rev-parse', '--path-format=absolute', '--git-common-dir')).resolve(strict=True)
+                linked = private != common
+                if top != source.resolve(strict=True):
+                    raise ValueError('checkout root changed')
+                if linked:
+                    if private.parent != common / 'worktrees':
+                        raise ValueError('unexpected worktree administration path')
+                    if (private / 'gitdir').resolve(strict=True).read_text().strip() != str(source.resolve() / '.git'):
+                        raise ValueError('worktree registration changed')
+                descendants = [
+                    token[9:] for token in git('worktree', 'list', '--porcelain', '-z').split('\0')
+                    if token.startswith('worktree ') and Path(token[9:]).resolve() != top
+                    and Path(token[9:]).resolve().is_relative_to(top)]
+                result.update(git_dir=str(private), common_dir=str(common), linked=linked, descendants=descendants)
+            except (OSError, ValueError, subprocess.CalledProcessError):
+                result['valid'] = False
+        else:
+            # A retained identity receipt distinguishes a finished repeat from an interrupted unregister.
+            evidence = root / (hashlib.sha256(os.fsencode(source)).hexdigest() + '.json')
+            if evidence.exists():
+                progress = json.loads(evidence.read_text())
+                if progress['source'] != str(source) or progress['state'] != 'complete':
+                    result.update(valid=False, error_code='instance.migrate_retire_failed',
+                                  message='Incomplete linked retirement for ' + str(source)
+                                  + '; inspect retained identity receipt ' + str(evidence))
+        print(json.dumps(result))
+      - "{{ retired.path }}"
+      - "{{ migrate.checkout }}.orbit-retired-git"
+  register: retirement_identity
   changed_when: false
+
+- name: Explain a changed Git identity
+  when: not (retirement_identity.stdout | from_json).valid
+  ansible.builtin.set_fact:
+    migrate_refusal_code: "{{ (retirement_identity.stdout | from_json).error_code | default('instance.migrate_retirement_blocked') }}"
+    migrate_refusal_message: >-
+      {{ (retirement_identity.stdout | from_json).message |
+         default('Cannot retire checkout ' ~ (retired.path | to_json) ~ ': Git identity or worktree registration changed.') }}
+
+- name: Require the checkout's Git identity
+  ansible.builtin.assert:
+    that: (retirement_identity.stdout | from_json).valid
+    fail_msg: "{{ migrate_refusal_message | default('instance.migrate_retirement_blocked') }}"
+    quiet: true
 
 - name: Decide what goes
   ansible.builtin.set_fact:
-    retired_worktree: "{{ retired_dot_git.stat.exists and retired_dot_git.stat.isreg | default(false) }}"
+    retired_worktree: "{{ (retirement_identity.stdout | from_json).present and (retirement_identity.stdout | from_json).linked }}"
     retired_repository: >-
-      {{ retired_dot_git.stat.exists and retired_dot_git.stat.isdir | default(false)
+      {{ (retirement_identity.stdout | from_json).present and not (retirement_identity.stdout | from_json).linked
          and (retired.common_of is not defined
-              or (migrate_common | default('') != '' and migrate_common | default('') == retired_own.stdout | default('') | trim)) }}
-
-- name: Read the worktree's repository
-  when: retired_worktree | bool
-  ansible.builtin.command:
-    argv: "{{ retired_git + ['-C', retired.path, 'rev-parse', '--path-format=absolute', '--git-common-dir'] }}"
-  register: retired_common
-  changed_when: false
+              or migrate_common | default('') == (retirement_identity.stdout | from_json).common_dir) }}
 
 - name: Keep the worktree's repository
   when: retired_worktree | bool
   ansible.builtin.set_fact:
-    migrate_common: "{{ retired_common.stdout | trim }}"
+    migrate_common: "{{ (retirement_identity.stdout | from_json).common_dir }}"
 
 - name: Check a checkout before retirement
   when: retired_worktree | bool or retired_repository | bool
@@ -58,7 +112,9 @@
     - name: Name the blocking worktrees and files
       ansible.builtin.set_fact:
         retirement_other_worktrees: >-
-          {{ retirement_worktrees.stdout | regex_findall('(?:\A|\x00)worktree ([^\x00]+)') | reject('equalto', retirement_checkout.stdout | trim) | list }}
+          {{ (retirement_worktrees.stdout | regex_findall('(?:\A|\x00)worktree ([^\x00]+)')
+              | reject('equalto', retirement_checkout.stdout | trim) | list) if retired_repository | bool
+              else (retirement_identity.stdout | from_json).descendants }}
         retirement_changes: "{{ retirement_status.stdout_lines }}"
     - name: Explain a blocked retirement
       when: retirement_other_worktrees | length > 0 or retirement_changes | length > 0

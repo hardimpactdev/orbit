@@ -100,9 +100,16 @@ class CloneGuestTest(unittest.TestCase):
             "processes": {"/etc/orbit/processes/1/env": "QUEUE=private\n"},
         }
         calls = []
+        elapsed = [0.0]
+        timeouts = []
 
         def command(argv, **kwargs):
             calls.append((argv, kwargs.get("input")))
+            timeouts.append(kwargs["timeout"])
+            duration = 101 if "exec" in argv else 2.5
+            if duration >= kwargs["timeout"]:
+                raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+            elapsed[0] += duration
             value = '{"changes":[]}' if "exec" in argv else "abc"
             return subprocess.CompletedProcess(argv, 0, value, "")
 
@@ -126,11 +133,13 @@ class CloneGuestTest(unittest.TestCase):
                         "network-check-source",
                         "orbit",
                         folder,
+                        json.dumps({"node": "node-helper-source"}),
                         "workspace",
                     ],
                 ),
                 patch.object(sys, "stdin", io.StringIO(json.dumps(payload))),
                 patch.object(subprocess, "run", command),
+                patch.object(GUEST.time, "monotonic", side_effect=lambda: elapsed[0]),
                 contextlib.redirect_stdout(output),
             ):
                 runpy.run_path(
@@ -140,6 +149,15 @@ class CloneGuestTest(unittest.TestCase):
                 json.loads(content) for argv, content in calls if "exec" in argv
             ]
             self.assertEqual(delivered, [payload])
+            self.assertEqual(timeouts[-1], 105)
+            self.assertEqual(elapsed[0], 111)
+
+            installed = [(argv, content) for argv, content in calls if "file" in argv and "push" in argv and argv[-1].endswith("/usr/local/libexec/orbit-instance-node-runtime.py")]
+            self.assertEqual(len(installed), 1)
+            self.assertEqual(installed[0][1], "node-helper-source")
+            self.assertIn("/usr/local/libexec/orbit-instance-node-runtime.py", installed[0][0][-1])
+            self.assertLess(calls.index(installed[0]), next(i for i, (argv, _) in enumerate(calls) if "exec" in argv))
+
             self.assertNotIn("private", output.getvalue())
 
     def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=False):
@@ -278,8 +296,11 @@ class CloneGuestTest(unittest.TestCase):
                 "processes": [],
             }
 
+            helper_timeouts = []
+
             def command(argv, **_kwargs):
                 if "/usr/local/libexec/orbit-instance-node-runtime.py" in argv:
+                    helper_timeouts.append(_kwargs["timeout"])
                     return subprocess.CompletedProcess(argv, 0, '{"status":"unchanged"}', "")
                 value = "proof\n" if "symbolic-ref" in argv else "abc123\n"
                 return subprocess.CompletedProcess(argv, 0, value, "")
@@ -301,6 +322,7 @@ class CloneGuestTest(unittest.TestCase):
                 GUEST.phase_main("workspace", json.dumps(container))
             self.assertEqual(json.loads(output.getvalue())["changes"], [])
             self.assertFalse((base / "etc/orbit/php").exists())
+            self.assertEqual(helper_timeouts, [75])
 
     def test_php_workspace_writes_the_shared_php_settings_and_restarts_running_units(
         self,
