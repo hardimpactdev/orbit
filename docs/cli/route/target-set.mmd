@@ -60,6 +60,8 @@ sequenceDiagram
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
     SW->>N: Make CSRs on new Nodes<br/>openssl req · key stays on Node
+    %%> Key custody:
+    %%> - the CSR action creates the leaf directory and gives its Node-local key root:caddy ownership and mode 0640 before it returns
     SW->>GW: Sign the CSRs<br/>operation:direct:certificate-sign
     %%> Why a call to the Gateway:
     %%> - certificate signing is the one allowed step-to-Gateway call; the Orbit CA stays in the Gateway

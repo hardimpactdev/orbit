@@ -725,4 +725,6 @@ Migration fixtures check that untracked files survive copying and retirement, wh
 
 The mail fixture executes the production prefix whitelist, the reviewed bare-CR and comment-grouping regressions, and a realistic thirty-line file. It preserves `lines` beside `guard_line` and uses three Ansible launches. Gateway tests compare every admitted shape with installed phpdotenv; Swamp fixtures need no PHP or Composer installation.
 
+The Route site fixture runs unprivileged. It checks the shipped file converger and real OpenSSL CSR action, and runs one real Ansible production phase for workspace access, `APP_URL`, environment links and PHP-FPM publication. Other cases exercise validation failure and retry without repeating playbook launches.
+
 The destroy guard is admission only. Tests pin the workflow to its pre-guard main bytes and prove retry/dispatch does not recheck Git after dismantling begins. Candidate pointer failures retain named warnings; target failures and confirmed dependents refuse before record or trigger changes.

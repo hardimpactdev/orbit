@@ -17,25 +17,10 @@ jobs:
 - name: create
   labels: {role: swamp}
   steps:
-    # The leaf version folder Caddy reads, root:caddy 0750.
-  - name: 'folder'
-    labels: {role: swamp}
-    dependsOn: []
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/directory'
-      behaviorName: '${{ ("route-cert-dir-" + string(inputs.intent.leaves[inputs.leaf].node_id) + "-" + inputs.intent.leaves[inputs.leaf].scope.split("/").join("-")).split(".").join("-") }}'
-      methodName: apply
-      globalArgs: {path: '${{ inputs.intent.leaves[inputs.leaf].directory }}', owner: root, group: caddy, mode: '0750', ensure: present,
-        nodeHost: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].port }}',
-        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].identity_file }}', become: true}
-      inputs: {}
-    # One openssl req: a Node-local key and the public CSR on stdout; the key never leaves the Node.
+    # One Node action creates the folder, CSR and final key metadata; only the public CSR leaves it.
   - name: 'csr'
     labels: {role: swamp}
-    dependsOn:
-    - {step: 'folder', condition: {type: always}}
+    dependsOn: []
     guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
     writes: true
     task:
@@ -57,25 +42,8 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: '${{ ["timeout", "30", "openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", inputs.intent.leaves[inputs.leaf].directory + "/key.pem", "-subj", "/CN=" + inputs.intent.leaves[inputs.leaf].domain] }}'
+        argv: '${{ ["timeout", "30", "sh", "-eu", "-c", "install -d -o root -g caddy -m 0750 -- \"$1\" && openssl req -new -newkey rsa:2048 -nodes -keyout \"$1/key.pem\" -subj \"/CN=$2\" && chown root:caddy -- \"$1/key.pem\" && chmod 0640 -- \"$1/key.pem\"", "sh", inputs.intent.leaves[inputs.leaf].directory, inputs.intent.leaves[inputs.leaf].domain] }}'
         timeoutSec: 40
-    # The leaf key, root:caddy 0640, without its content.
-  - name: 'key'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'folder', condition: {type: always}}
-    - {step: 'csr', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("route-cert-key-" + string(inputs.intent.leaves[inputs.leaf].node_id) + "-" + inputs.intent.leaves[inputs.leaf].scope.split("/").join("-")).split(".").join("-") }}'
-      methodName: apply
-      globalArgs: {path: '${{ inputs.intent.leaves[inputs.leaf].directory + "/key.pem" }}', owner: root, group: caddy, mode: '0640', ensure: present,
-        nodeHost: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].port }}',
-        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].identity_file }}', become: true}
-      inputs: {}
     # With an Operation named: 209 has the CSR signed by the Gateway (the one call that route-create-sign makes), beside the key.
   - name: 'sign'
     labels: {role: swamp}

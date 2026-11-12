@@ -1997,5 +1997,20 @@
       "any other change is still work that is not pushed",
       "every destroy Ansible step enables failed task stderr"
     ]
+  },
+  "swamp/tests/ansible_route_site_test.py": {
+    "source_sha256": "9ebdb0ecbc366af2030d46d6f17c87b19f54424ff98c2d1be5340c74a47c68ee",
+    "cases": [
+      "test_certificate_links_account_copy_modes_and_literal_caddy_text",
+      "test_existing_file_mode_drift_clears_unwanted_special_bits",
+      "test_same_content_destination_symlinks_are_replaced_without_touching_targets",
+      "test_failed_validation_keeps_candidate_but_never_reloads_or_marks_awake",
+      "test_retry_after_reload_failure_completes_without_rewriting_public_files",
+      "test_php_only_publication_needs_no_caddy_group",
+      "test_production_workspace_app_url_links_and_php_tasks_are_unchanged",
+      "test_csr_action_owns_folder_and_key_before_public_request_returns",
+      "test_real_production_phase_keeps_access_app_url_php_links_and_reload",
+      "test_reused_input_is_read_only_and_child_cleanup_keeps_its_own_folder"
+    ]
   }
 }
