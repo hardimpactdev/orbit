@@ -2782,7 +2782,7 @@ inputs = [
 "test_target_directory_marker_resolve_and_git_failures_keep_path_and_cause" = 4
 "test_alternates_dependency_and_symlinked_candidate_are_confirmed" = 1
 "test_inspect_never_walks_checkout_contents_or_accepts_a_remove_action" = 1
-"test_workflow_and_source_removal_are_identical_to_the_pre_reland_main" = 1
+"test_source_removal_stays_unchanged_and_workflow_never_checks_dependencies" = 1
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts"

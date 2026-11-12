@@ -1970,7 +1970,7 @@
     ]
   },
   "swamp/tests/instance_destroy_git_test.py": {
-    "source_sha256": "495ea0b4710cbedf82049fc82b888741bdd00cc4da9266014a5fc34ac20519fa",
+    "source_sha256": "1010ada43464b0c71382e3daa0a80ece2b1dca68618049083684592c0a1a83ed",
     "cases": [
       "test_confirmed_registered_and_moved_dependents_are_found_even_with_force",
       "test_existing_owner_registration_refuses_without_reading_candidate_git",
@@ -1983,7 +1983,7 @@
       "test_target_directory_marker_resolve_and_git_failures_keep_path_and_cause",
       "test_alternates_dependency_and_symlinked_candidate_are_confirmed",
       "test_inspect_never_walks_checkout_contents_or_accepts_a_remove_action",
-      "test_workflow_and_source_removal_are_identical_to_the_pre_reland_main"
+      "test_source_removal_stays_unchanged_and_workflow_never_checks_dependencies"
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts": {
