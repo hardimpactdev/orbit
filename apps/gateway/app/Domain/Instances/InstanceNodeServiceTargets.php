@@ -77,6 +77,24 @@ final class InstanceNodeServiceTargets
         return $port;
     }
 
+    /** Exact recorded attachments projected into public container intent. No environment values are read.
+     * @return list<array{id:int,host:string,port:int,docker:bool,host_env_key:string,port_env_key:string}>
+     */
+    public static function endpoints(Instance $instance, ?int $excluding = null): array
+    {
+        $targets = [];
+        foreach ($instance->nodeServiceTargets()->orderBy('id')->get() as $target) {
+            if ($target->id === $excluding) {
+                continue;
+            }
+            self::assertValid($target, $instance);
+            $targets[] = ['id' => $target->id, 'host' => self::bridge($instance->node), 'port' => $target->port,
+                'docker' => true, 'host_env_key' => $target->host_env_key, 'port_env_key' => $target->port_env_key];
+        }
+
+        return $targets;
+    }
+
     private static function assertStandalone(Process $process): void
     {
         $guards = app()->tagged(ProcessRemovalGuard::class);

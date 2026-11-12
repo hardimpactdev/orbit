@@ -278,7 +278,9 @@ def main():
                                 and item not in own_units
                             )
                             or (index == 2 and item not in own_ids)
-                            or (index == 3 and item in {"orbit-mail-1025.socket", "orbit-mail-2525.socket"})
+                            or (index == 3 and (item in {"orbit-mail-1025.socket", "orbit-mail-2525.socket"}
+                                               or item.startswith("orbit-node-service-")))
+                            or (index == 1 and item.startswith("orbit-node-service-"))
                         ):
                             remove.append(name + directory + "/" + item)
                 if remove:
@@ -334,6 +336,16 @@ def main():
                 raise RuntimeError("instance.container_network_unsafe")
             if read["status"] != "Running":
                 change(project + ["start", name])
+            if container.get("node_services"):
+                bundle = json.loads(sys.argv[6])
+                applied = run(["python3", "-c", bundle["node_services"],
+                               json.dumps(container), json.dumps(bundle)], check=False)
+                if applied.returncode:
+                    code = applied.stderr.removesuffix("\n")
+                    raise RuntimeError(code if code in {
+                        "process.target_inactive", "instance.host_unavailable", "instance.bridge_busy",
+                        "instance.node_service_port_in_use", "instance.node_service_unit_conflict",
+                        "instance.node_service_unreachable"} else "instance.node_service_apply_failed")
             if container.get("mail") is not None:
                 try:
                     bundle = json.loads(sys.argv[6])

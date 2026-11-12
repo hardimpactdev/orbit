@@ -176,7 +176,8 @@ final readonly class InstanceContainer
         $gateway = Ipv4Subnet::from(ValidatedData::string($instance->node->instance_bridge))->usableRange()[0];
         $environment = InstanceImage::environment($gateway);
         $mail = app(DevelopmentMail::class)->forInstance($instance);
-        $access = $this->targetAccesses($instance, $runtime, $database, $mail);
+        $nodeServices = InstanceNodeServiceTargets::endpoints($instance);
+        $access = $this->targetAccesses($instance, $runtime, $database, $mail, $nodeServices);
         $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url);
         $vitePort = app(ContainerProcesses::class)->vitePort($instance);
 
@@ -194,8 +195,9 @@ final readonly class InstanceContainer
             'acl_rules' => ['description' => 'Orbit Instance '.$instance->id,
                 'egress' => array_map(static fn (array $target): array => ['action' => 'allow', 'destination' => $target['host'].'/32', 'protocol' => 'tcp',
                     'destination_port' => (string) $target['port'], 'state' => 'enabled',
-                    ...($mail !== null && $target['host'] === $mail['host'] && $target['port'] === $mail['port']
-                        ? ['description' => 'Orbit development SMTP'] : [])], $access),
+                    ...(($target['node_service'] ?? false) ? ['description' => 'Orbit Node service:'.$target['port']]
+                        : ($mail !== null && $target['host'] === $mail['host'] && $target['port'] === $mail['port']
+                            ? ['description' => 'Orbit development SMTP'] : []))], $access),
                 'ingress' => [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
                     'destination_port' => (string) self::WebPort, 'state' => 'enabled'],
                     ...($vitePort === null ? [] : [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
@@ -214,6 +216,7 @@ final readonly class InstanceContainer
             // the egress proxy (docs/reference/development-containers.md#egress-and-dns).
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.self::path($project),
                 ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment)],
+            'node_services' => $nodeServices,
             'mail' => $mail,
             'mail_units' => $mail === null ? [] : app(DevelopmentMail::class)->units($mail),
             'units' => $this->units($instance, $runtime, $application, $vitePort),
@@ -315,11 +318,17 @@ final readonly class InstanceContainer
 
     /** Attached targets and the Node's development SMTP publication share one endpoint policy.
      * @param  array{host:string,port:int,docker:bool}|null  $mail
-     * @return list<array{host:string,port:int,docker:bool,rule?:array<string,string>}>
+     * @param  list<array{id:int,host:string,port:int,docker:bool,host_env_key:string,port_env_key:string}>|null  $nodeServices
+     * @return list<array{host:string,port:int,docker:bool,node_service?:bool,rule?:array<string,string>}>
      */
-    private function targetAccesses(Instance $instance, InstanceRuntime $runtime, ?DatabaseConnection $primary, ?array $mail): array
+    private function targetAccesses(Instance $instance, InstanceRuntime $runtime, ?DatabaseConnection $primary, ?array $mail, ?array $nodeServices = null): array
     {
         $targets = $this->databaseAccesses($instance, $runtime, $primary);
+        $attached = [];
+        foreach ($nodeServices ?? InstanceNodeServiceTargets::endpoints($instance) as $endpoint) {
+            $attached[$endpoint['port']] = ['host' => $endpoint['host'], 'port' => $endpoint['port'], 'docker' => true, 'node_service' => true];
+        }
+        $targets = [...$targets, ...array_values($attached)];
         if ($mail !== null && ! in_array($mail, array_map(static fn (array $target): array => array_intersect_key($target, $mail), $targets), true)) {
             $targets[] = $mail;
         }

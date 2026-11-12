@@ -1145,3 +1145,5 @@ Two spikes on Beast on 2026-11-09 ran the user and agent layout in one container
 | `orbit` user | Could not run `t3`, `claude` or `codex`, read `/home/agent`, reach the model route or T3's port, or see agent processes |
 | Shared workspace | Each user edited the other's files; Git was clean for both |
 | Egress | Only DNS and the guard; no turn failed |
+
+Explicit [Node service targets](/reference/processes-and-schedules#node-service-target-records) add an ACL rule from the Instance to the gateway and published port, plus a root-owned `orbit-node-service-PORT` socket proxy on `127.0.0.1:PORT`. Create and migrate apply and probe the shared phase before application work. Target failures are fatal, unlike advisory development mail. Clone attachment records remain independent; inherited target units and enable links are removed before boot. Existing environment files stay unchanged.

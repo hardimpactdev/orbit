@@ -28,6 +28,11 @@ options:
   development_mail:
     description: The same admitted endpoint used by the container development mail phase, or null when ineligible.
     type: dict
+  node_services:
+    description: Admitted Node service key pairs and ports with IPv4 loopback proxies.
+    type: list
+    elements: dict
+    default: []
   node_addresses:
     description: Addresses belonging to the source Node.
     type: list
@@ -275,7 +280,7 @@ def env_files(checkout):
             yield os.path.join(directory, '.env')
 
 
-def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, development_mail=None):
+def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, development_mail=None, node_services=None):
     """Safe refusal lines, with no environment contents except validated host and numeric port."""
     attached = {(canonical_host(str(target['host']))[0], int(target['port'])) for target in targets}
     local = set()
@@ -316,7 +321,10 @@ def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, de
                 reason = 'the service host is not a resolved literal'
             elif port is None:
                 reason = 'the service port is missing or is not a literal port'
-            elif (host, port) in attached:
+            elif (value in ('127.0.0.1', 'localhost') and any(
+                    key == target['host_env_key'] and port == target['port']
+                    and values.get(target['port_env_key']) == str(target['port'])
+                    for target in (node_services or []))) or (host, port) in attached:
                 continue
             elif (key == 'MAIL_HOST' and value in ('127.0.0.1', 'localhost', '::1')
                   and values.get('MAIL_PORT') in ('1025', '2525')):
@@ -357,6 +365,7 @@ def main():
         'node_addresses': {'type': 'list', 'elements': 'str', 'required': True},
         'proxy_policy': {'type': 'dict', 'required': True},
         'development_mail': {'type': 'dict'},
+        'node_services': {'type': 'list', 'elements': 'dict', 'default': []},
     }, supports_check_mode=True)
     try:
         refusals = inspect_environment(**module.params)

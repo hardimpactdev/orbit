@@ -1589,11 +1589,12 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 38
+cost = 40
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance_node_services.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
@@ -1622,6 +1623,8 @@ inputs = [
   "test_rejects_private_or_mismatched_guest_diagnostics" = 2
   "test_node_command_failure_names_executable_and_exit_without_output" = 2
   "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful" = 2
+
+  "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement" = 2
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_native_faults_test.ts"
@@ -2160,8 +2163,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_env_test.py"
-cost = 1
-inputs = ["swamp/ansible/library/orbit_migrate_env.py", "swamp/tests/fixtures/migrate-env-services.json"]
+cost = 6
+inputs = ["swamp/ansible/library/orbit_migrate_env.py", "swamp/ansible/instance_node_services.py", "swamp/ansible/tasks/instance-container-phase.yml", "swamp/tests/fixtures/migrate-env-services.json"]
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_dotenv_test.py"

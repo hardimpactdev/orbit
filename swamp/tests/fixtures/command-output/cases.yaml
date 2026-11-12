@@ -268,6 +268,7 @@ contexts:
       - stdout: '["orbit-agent.service","ssh.service"]'
       - stdout: '["orbit-process-1-keep.service","orbit-process-2-old.service"]'
       - stdout: '["1","2"]'
+      - stdout: '["orbit-node-service-3308.socket","project.socket"]'
     container:
       name: copy
       processes:
@@ -1017,6 +1018,7 @@ cases:
   - /etc/systemd/system/multi-user.target.wants/orbit-agent.service
   - /etc/systemd/system/orbit-process-2-old.service
   - /etc/orbit/processes/2
+  - /etc/systemd/system/sockets.target.wants/orbit-node-service-3308.socket
 - file: tasks/instance-container-phase.yml
   task: Keep the default's units from starting in the copy
   field: ansible.builtin.command.argv

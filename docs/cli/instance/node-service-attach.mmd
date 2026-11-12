@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Recorded attachment; a container applies its own network and loopback proxy.
+  %% Record-only attachment: recorded Process intent, no Node execution.
   %% status: draft
   %% command: instance:node-service:attach
   %% kind: instance.node_service_attach
@@ -8,7 +8,6 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>Node service phase
   Note over CLI: Resolve command inputs
   alt local input refused
     CLI--xCLI: Invalid input or cancelled<br/>No attach request
@@ -39,11 +38,12 @@ sequenceDiagram
       GW--xCLI: Named refusal<br/>No attachment change
     else request admitted
       Note over GW: Lock and check Instance
-      alt lifecycle busy
+      alt busy or container runtime
         GW--xCLI: Instance refused<br/>No attachment change
         %%> On failure:
         %%> - instance.lifecycle_busy refuses an inactive Instance, running migration or detach.
-      else Instance available
+        %%> - instance.node_service_runtime_unsupported refuses an existing container runtime.
+      else checkout available
         Note over GW: Check standalone Process<br/>and TCP publication
         %%> Why:
         %%> - Admission uses recorded ownership, desired state and Docker publication; it contacts no Node.
@@ -68,14 +68,7 @@ sequenceDiagram
             alt transaction fails
               GW--xCLI: Transaction failed<br/>Attachment write rolls back
             else transaction commits
-              opt running container
-                GW->>SW: node-service (apply)
-                Note over SW: Admit network, install units<br/>Probe target before success
-                %%> On failure:
-                %%> - Keep the attachment for a retry; the Operation fails with a bounded reason.
-                SW-->>GW: Applied or unchanged
-              end
-              GW-->>CLI: Target result<br/>Optional apply Operation ID
+              GW-->>CLI: Target result<br/>changed true, request ID
             end
           end
         end

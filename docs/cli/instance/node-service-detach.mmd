@@ -54,7 +54,7 @@ sequenceDiagram
       else target admitted
         opt running container
           GW->>SW: node-service (withdraw)
-          Note over SW: Stop owned units, remove rule<br/>Keep other attachments' endpoints
+          Note over SW: Withdraw owned path<br/>Keep shared ports
           %%> On failure:
           %%> - Keep the attachment; retry completes the withdrawal.
           SW-->>GW: Withdrawal complete

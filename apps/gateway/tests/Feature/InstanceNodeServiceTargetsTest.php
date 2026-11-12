@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\DetachInstanceNodeServiceTargetAction;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceNodeServiceTargets;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\NodeServiceTargetOperation;
 use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
@@ -28,6 +31,7 @@ use Illuminate\Support\Facades\Queue;
 use Laravel\Mcp\Request as McpRequest;
 
 uses(LazilyRefreshDatabase::class);
+require_once __DIR__.'/Domain/Instances/ContainerInstanceHelpers.php';
 
 /** @return array{Instance, Node, array<string, int|string>} */
 function nodeServiceAttachmentFixture(): array
@@ -225,7 +229,7 @@ describe('Node service attachment records', function (): void {
         $this->assertModelExists($target);
     });
 
-    it('refuses attach after the Instance starts running in a container', function (): void {
+    it('applies and withdraws container access through bounded Operations while retaining records on failure', function (): void {
         [$instance, $node, $input] = nodeServiceAttachmentFixture();
         $target = InstanceNodeServiceTarget::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, ...$input]);
         $instance->runtime()->create(['node_id' => $node->id, 'incus_project' => 'orbit-instances',
@@ -235,8 +239,17 @@ describe('Node service attachment records', function (): void {
         $uri = "/api/v1/instances/{$instance->id}/node-service-targets";
 
         $this->postJson($uri, $input)->assertUnprocessable()->assertJsonPath('error.code', 'instance.node_service_runtime_unsupported');
-        $this->deleteJson($uri.'/'.$target->id)->assertAccepted()->assertJsonPath('data.status', 'succeeded');
-
+        // A stopped Node Process must not block its own withdrawal.
+        OrbitProcess::query()->findOrFail($input['process_id'])->update(['desired_state' => 'stopped']);
+        $response = $this->deleteJson($uri.'/'.$target->id)->assertAccepted();
+        $withdraw = Operation::query()->findOrFail($response->json('data.id'));
+        expect($withdraw->input['container']['node_services'])->toBe([])
+            ->and($withdraw->input['container']['node_service_removed_ports'])->toBe([1025]);
+        $this->assertModelExists($target);
+        $withdraw->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'target-proof']])->save();
+        $projection = ['status' => 'succeeded', 'run_id' => 'target-proof', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['node_services' => ['status' => 'applied', 'ports' => []]]];
+        app(NodeServiceTargetOperation::class)->apply($withdraw, $projection);
         $this->assertModelMissing($target);
     });
 
@@ -471,3 +484,58 @@ it('refuses an owner-driven Node Process on attach and when revalidating a store
     Process::assertNothingRan();
     Queue::assertNothingPushed();
 })->with(['database', 'registered service']);
+
+it('projects exact deduplicated targets into the container ACL and preserves clone noninheritance', function (): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default',
+        'checkout_path' => '/workspace/default', 'status' => 'active', 'first_setup_pending' => false]);
+    $process = nodeServiceAttachmentProcess($node, ['0.0.0.0:3308:3306']);
+    foreach (['DB', 'OTHER'] as $prefix) {
+        $instance->nodeServiceTargets()->create(['node_id' => $node->id, 'process_id' => $process->id, 'protocol' => 'tcp',
+            'port' => 3308, 'host_env_key' => $prefix.'_HOST', 'port_env_key' => $prefix.'_PORT']);
+    }
+    $policy = app(InstanceContainer::class);
+    $runtime = $policy->reserve($instance, $node);
+    $runtime->update(['seed_commit' => str_repeat('a', 40)]);
+    $intent = $policy->intent($instance, $runtime);
+    expect($intent['bridge_endpoints'])->toBe([['host' => '10.253.0.1', 'port' => 3308, 'docker' => true]])
+        ->and($intent['acl_rules']['egress'])->toBe([['action' => 'allow', 'destination' => '10.253.0.1/32',
+            'protocol' => 'tcp', 'destination_port' => '3308', 'state' => 'enabled', 'description' => 'Orbit Node service:3308']])
+        ->and($intent['node_services'])->toHaveCount(2);
+    $clone = $instance->replicate();
+    $clone->name = 'clone';
+    $clone->checkout_path = '/workspace/clone';
+    $clone->save();
+    $copy = $policy->reserve($clone, $node, $instance);
+    expect($policy->intent($clone, $copy)['node_services'])->toBe([])
+        ->and($policy->intent($clone, $copy)['acl_rules']['egress'])->toBe([]);
+});
+
+it('refuses detach on stopped containers without deleting its record or starting it', function (): void {
+    [$instance, $node, $input] = nodeServiceAttachmentFixture();
+    $instance->runtime()->create(['node_id' => $node->id, 'incus_project' => 'orbit-instances',
+        'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2',
+        'runtime_version' => 'v1', 'agent_version' => 'v1', 'power_state' => 'stopped']);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $target = $instance->nodeServiceTargets()->create(['node_id' => $node->id, ...$input]);
+    $this->deleteJson("/api/v1/instances/{$instance->id}/node-service-targets/{$target->id}")
+        ->assertConflict()->assertJsonPath('error.code', 'process.target_inactive');
+    $this->assertModelExists($target);
+    $this->assertDatabaseCount('operations', 0);
+});
+
+it('retains an attachment after a failed container withdrawal without claiming it detached', function (): void {
+    [$instance, $node, $input] = nodeServiceAttachmentFixture();
+    $target = $instance->nodeServiceTargets()->create(['node_id' => $node->id, ...$input]);
+    $instance->runtime()->create(['node_id' => $node->id, 'incus_project' => 'orbit-instances',
+        'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2',
+        'runtime_version' => 'v1', 'agent_version' => 'v1', 'power_state' => 'running']);
+    $operation = app(DetachInstanceNodeServiceTargetAction::class)->execute($instance, $target->id);
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'failed-target-proof']])->save();
+    $data = ['status' => 'failed', 'run_id' => 'failed-target-proof', 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => ['error_code' => 'instance.node_service_apply_failed']];
+    $result = app(NodeServiceTargetOperation::class)->apply($operation, $data);
+    expect($result->result['detached'])->toBeFalse()->and($result->error_code)->toBe('instance.node_service_apply_failed');
+    $this->assertModelExists($target);
+});

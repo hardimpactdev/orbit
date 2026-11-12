@@ -10,6 +10,7 @@
   orbit_migrate_env:
     checkout: "{{ migrate.checkout }}"
     targets: "{{ migrate.environment.targets }}"
+    node_services: "{{ container.node_services | default([]) }}"
     development_mail: "{{ container.mail | default(none) }}"
     node_addresses: >-
       {{ migrate.environment.node_addresses

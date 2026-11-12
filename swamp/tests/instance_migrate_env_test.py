@@ -25,8 +25,19 @@ class InstanceMigrateEnvTest(unittest.TestCase):
         return guard.inspect_environment(str(self.root), targets, options.get('node_addresses', ['10.44.0.5']),
                                          options.get('proxy_policy', {'private_v4': ['10.0.0.0/8', '127.0.0.0/8'],
                                                                       'private_domains': ['orbit', 'private.test']}),
-                                         development_mail=options.get('development_mail'))
+                                         development_mail=options.get('development_mail'), node_services=options.get('node_services'))
 
+
+    def test_loopback_requires_exact_attached_key_pair_and_port(self):
+        target = {'host_env_key': 'DB_HOST', 'port_env_key': 'DB_PORT', 'port': 3308}
+        for host in ('127.0.0.1', 'localhost'):
+            text = f'DB_CONNECTION=mysql\nDB_HOST={host}\nDB_PORT=3308\n'
+            self.assertEqual(self.inspect(text, node_services=[target]), [])
+            self.assertEqual(len(self.inspect(text)), 1)
+            for altered in (dict(target, port=3309), dict(target, host_env_key='OTHER_HOST'), dict(target, port_env_key='OTHER_PORT')):
+                self.assertEqual(len(self.inspect(text, node_services=[altered])), 1)
+        self.assertEqual(len(self.inspect('DB_CONNECTION=mysql\nDB_HOST=::1\nDB_PORT=3308', node_services=[target])), 1)
+        self.assertEqual(len(self.inspect('DB_CONNECTION=mysql\nDB_HOST=127.0.0.2\nDB_PORT=3308', node_services=[target])), 1)
 
     def test_development_mail_satisfies_only_the_ipv4_forwarded_endpoints(self):
         endpoint = {'host': '10.253.0.1', 'port': 2025, 'docker': True}
@@ -388,6 +399,221 @@ class InstanceMigrateEnvTest(unittest.TestCase):
 
     def test_multiline_private_values_do_not_forge_service_keys(self):
         self.assertEqual(self.inspect('PRIVATE="first\nMAIL_HOST=127.0.0.1\nMAIL_PORT=1025\nlast"\n'), [])
+
+
+"""Fast unprivileged fixtures of the exact shipped Node-service converger."""
+import contextlib
+import importlib.util
+import os
+import sys
+import unittest
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = importlib.util.spec_from_file_location('targets', ROOT / 'ansible/instance_node_services.py')
+TARGETS = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(TARGETS)
+
+
+class NodeServiceTest(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.guest = self.root / 'guest'
+        proxy = self.guest / 'usr/lib/systemd/systemd-socket-proxyd'
+        proxy.parent.mkdir(parents=True)
+        proxy.touch(mode=0o755)
+        self.target = {'id': 7, 'host': '10.253.0.1', 'port': 3308, 'docker': True,
+                       'host_env_key': 'DB_HOST', 'port_env_key': 'DB_PORT'}
+        self.container = {'name': 'instance-7', 'project': 'orbit-instances', 'acl': 'instance-7',
+                          'network': 'orbitinst0', 'bridge_cidr': '10.253.0.0/24',
+                          'bridge_admitted_at': 1800000000000000, 'node_services': [self.target]}
+        self.acl = {'description': 'fixture', 'ingress': [{'action': 'allow'}], 'egress': [{'action': 'reject'}]}
+        self.calls = []
+        self.active = set()
+        self.enabled = set()
+        self.failure = None
+        self.power = 'Running'
+        self.foreign = False
+        self.reachable = True
+
+    def guest_run(self, argv, content=None):
+        self.calls.append(argv)
+        if argv[:2] == ['systemctl', 'show']:
+            return '\n\n'.join('Id=' + name + '\nActiveState=' + ('active' if name in self.active else 'inactive')
+                                + '\nUnitFileState=' + ('enabled' if name in self.enabled else 'disabled')
+                                + '\nListen=127.0.0.1:' + name.split('-')[-1].split('.')[0] + ' (Stream)'
+                                for name in argv[argv.index('--') + 1:])
+        if argv[0] == 'ss':
+            return 'LISTEN 0 128 0.0.0.0:3308 0.0.0.0:*\n' if self.foreign else ''
+        if argv[:2] == ['systemctl', 'enable']:
+            self.active.update(argv[4:])
+            self.enabled.update(argv[4:])
+        elif argv[:2] == ['systemctl', 'disable']:
+            self.active.difference_update(argv[4:])
+            self.enabled.difference_update(argv[4:])
+        elif argv[:2] not in (['systemctl', 'stop'], ['systemctl', 'try-restart'], ['systemctl', 'daemon-reload']):
+            self.fail(str(argv))
+        return ''
+
+    def node_run(self, argv, content=None, public_guest=False):
+        self.calls.append(argv[:6])
+        if argv[:2] == ['incus', 'query']:
+            return json.dumps({'status': self.power} if '/instances/' in argv[-1] else self.acl)
+        if argv[:4] == ['incus', 'network', 'acl', 'edit']:
+            self.assertEqual(argv[-2:], ['--project', 'default'])
+            self.acl = json.loads(content)
+            return ''
+        if argv[0] == 'python3':
+            self.assertIn('--intent', argv)
+            self.assertNotIn('--reconcile', argv)
+            self.assertEqual(json.loads(content)['endpoints'], [{'host': '10.253.0.1', 'port': 3308, 'docker': True}])
+            if self.failure == 'network':
+                raise RuntimeError('instance.bridge_busy')
+            return ''
+        self.assertEqual(argv[:2], ['incus', 'exec'])
+        self.assertNotIn('/srv/workspace', argv)
+        real_stat = Path.stat
+        real_atomic = TARGETS.atomic
+
+        def owned(path, *args, **kwargs):
+            values = list(real_stat(path, *args, **kwargs))
+            values[4] = values[5] = 0
+            return os.stat_result(values)
+
+        def chown(path, uid, gid, **kwargs):
+            self.assertEqual((uid, gid), (0, 0))
+            self.assertFalse(kwargs['follow_symlinks'])
+
+        def write(path, value, mode):
+            if path.name == self.failure:
+                raise RuntimeError('fixture failed write')
+            self.assertEqual(mode, 0o644)
+            real_atomic(path, value, mode)
+
+        def connect(address, timeout):
+            self.assertEqual(timeout, 2)
+            self.assertIn(address, [('10.253.0.1', 3308), ('127.0.0.1', 3308)])
+            if not self.reachable:
+                raise ConnectionRefusedError()
+            return contextlib.nullcontext()
+
+        with patch.object(Path, 'stat', owned), patch.object(TARGETS.os, 'chown', side_effect=chown), patch.object(TARGETS, 'atomic', side_effect=write):
+            return json.dumps(TARGETS.guest(argv[-1], json.loads(content), self.guest, self.guest_run, connect))
+
+    def apply(self):
+        return TARGETS.apply(self.container, {'node_services': 'shipped source', 'bridge': 'shipped bridge'}, self.node_run, self.root / 'state')
+
+    def test_exact_network_first_private_units_no_workspace_and_repeat(self):
+        self.assertEqual(self.apply(), {'status': 'applied', 'ports': [3308]})
+        rule = self.acl['egress'][-1]
+        self.assertEqual(rule, {'action': 'allow', 'destination': '10.253.0.1/32', 'protocol': 'tcp',
+                                'destination_port': '3308', 'state': 'enabled', 'description': 'Orbit Node service:3308'})
+        network = next(i for i, argv in enumerate(self.calls) if argv[:4] == ['incus', 'network', 'acl', 'edit'])
+        self.assertLess(network, self.calls.index(['systemctl', 'daemon-reload']))
+        self.assertEqual(self.acl['egress'][0], {'action': 'reject'})
+        for path in (self.guest / 'etc/systemd/system').iterdir():
+            self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+            self.assertIn(TARGETS.MARKER, path.read_text())
+        service = (self.guest / 'etc/systemd/system/orbit-node-service-3308.service').read_text()
+        self.assertIn('--connections-max=256 10.253.0.1:3308', service)
+        self.assertEqual((self.guest / 'etc/systemd/system/orbit-node-service-3308.socket').read_text().count('ListenStream=127.0.0.1:3308'), 1)
+        self.calls.clear()
+        self.assertEqual(self.apply(), {'status': 'unchanged', 'ports': [3308]})
+        self.assertFalse(any(argv[:2] in (['systemctl', 'enable'], ['systemctl', 'try-restart'], ['systemctl', 'daemon-reload']) for argv in self.calls))
+        self.assertFalse((self.guest / 'srv').exists())
+
+    def test_stopped_conflict_and_failed_network_do_not_write_units(self):
+        self.power = 'Stopped'
+        with self.assertRaisesRegex(RuntimeError, 'process.target_inactive'):
+            self.apply()
+        self.power = 'Running'
+        self.foreign = True
+        with self.assertRaisesRegex(RuntimeError, 'instance.node_service_port_in_use'):
+            self.apply()
+        self.foreign = False
+        self.failure = 'network'
+        with self.assertRaisesRegex(RuntimeError, 'instance.bridge_busy'):
+            self.apply()
+        self.assertFalse((self.guest / 'etc').exists())
+
+    def test_partial_write_retries_activation_and_disabled_active_socket_is_repaired(self):
+        self.failure = 'orbit-node-service-3308.socket'
+        with self.assertRaisesRegex(RuntimeError, 'fixture failed write'):
+            self.apply()
+        self.assertTrue((self.root / 'state/instance-7/activation.json').exists())
+        self.failure = None
+        self.assertEqual(self.apply()['status'], 'applied')
+        self.enabled.clear()
+        self.assertEqual(self.apply()['status'], 'applied')
+        self.assertEqual(self.enabled, {'orbit-node-service-3308.socket'})
+        self.assertEqual(self.apply()['status'], 'unchanged')
+
+    def test_failed_target_is_fatal_and_retry_keeps_pending(self):
+        self.reachable = False
+        with self.assertRaisesRegex(RuntimeError, 'instance.node_service_unreachable'):
+            self.apply()
+        self.assertTrue((self.root / 'state/instance-7/activation.json').exists())
+        self.reachable = True
+        self.assertEqual(self.apply()['status'], 'applied')
+
+    def test_detach_keeps_shared_port_then_removes_only_owned_access_without_dnat(self):
+        self.apply()
+        self.container.update(node_service_withdraw=True, node_service_removed_ports=[3308])
+        self.failure = 'network'  # withdrawal must not resolve Docker or unrelated targets.
+        self.assertEqual(self.apply()['status'], 'unchanged')  # another attachment still uses the port.
+        self.container['node_services'] = []
+        self.calls.clear()
+        self.assertEqual(self.apply(), {'status': 'applied', 'ports': []})
+        self.assertEqual(self.acl['egress'], [{'action': 'reject'}])
+        self.assertFalse(list((self.guest / 'etc/systemd/system').iterdir()))
+        self.assertFalse(self.active)
+        self.assertEqual(self.apply()['status'], 'unchanged')
+
+    def test_public_failure_boundary_keeps_only_allowlisted_codes(self):
+        for code in ('instance.host_unavailable', 'process.target_inactive', 'instance.node_service_unreachable', 'private-output'):
+            with self.subTest(code=code), self.assertRaises(RuntimeError) as error:
+                TARGETS.command([sys.executable, '-c', 'raise SystemExit(' + repr(code) + ')'], public_guest=True)
+            self.assertEqual(str(error.exception), code if code in TARGETS.PUBLIC else 'instance.node_service_apply_failed')
+
+    def test_real_ansible_phase_accepts_minimal_intent_without_workspace_fields(self):
+        import shutil
+        import subprocess
+        import sys
+        executable = shutil.which('ansible-playbook')
+        self.assertIsNotNone(executable, 'Pinned Ansible is required')
+        directory = self.root / 'phase'
+        directory.mkdir()
+        for file in ('instance_node_services.py', 'instance_bridge.py'):
+            shutil.copyfile(ROOT / 'ansible' / file, directory / file)
+        self.container['node_services'] = []
+        play = [{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
+                 'vars': {'container': self.container, 'phase': 'node-service', 'ansible_python_interpreter': sys.executable},
+                 'tasks': [{'name': 'Run the dedicated phase', 'ansible.builtin.import_tasks': str(ROOT / 'ansible/tasks/instance-container-phase.yml')},
+                           {'name': 'Require the unchanged public result', 'tags': ['always'],
+                            'ansible.builtin.assert': {'that': ["node_services_result == {'status': 'unchanged', 'ports': []}"]}}]}]
+        path = directory / 'phase.yml'
+        path.write_text(yaml.safe_dump(play))
+        result = subprocess.run([executable, '-i', 'localhost,', '--tags', 'node-service', str(path)],
+                                check=False, text=True, capture_output=True, timeout=15,
+                                env=dict(os.environ, ANSIBLE_STDOUT_CALLBACK='default', ANSIBLE_NOCOLOR='1'))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('changed=0', result.stdout)
+        self.assertNotIn('config:clear', result.stdout)
+
+    def test_no_attachment_is_noop_and_phase_before_application_work(self):
+        self.container['node_services'] = []
+        self.assertEqual(self.apply(), {'status': 'unchanged', 'ports': []})
+        self.assertEqual(self.calls, [])
+        tasks = yaml.safe_load((ROOT / 'ansible/tasks/instance-container-phase.yml').read_text())
+        target = next(task for task in tasks if task.get('name') == 'Prepare attached Node services before application work')
+        self.assertEqual(target['block'][0]['name'], 'Apply and probe attached Node services')
+        self.assertIn('container', target['tags'])
+        migrate = (ROOT / 'ansible/tasks/instance-migrate-phase.yml').read_text()
+        self.assertLess(migrate.index('Prepare the move\'s container'), migrate.index('Check the way to each database server'))
 
 
 if __name__ == '__main__':

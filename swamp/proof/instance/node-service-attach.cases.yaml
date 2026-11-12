@@ -4,7 +4,7 @@ target: app-dev
 sources: [gateway]
 baseline: [operations]
 uncovered:
-  main: "Fixture Node Process and container: apply exact ACL, additive bridge endpoint, loopback-only units and a successful TCP probe."
+  main: "Fixture Node Process and container: attach to a checkout, then migrate applies its exact ACL, additive bridge endpoint, loopback-only units and successful TCP probe before downtime."
   repeat: "Repeated application changes nothing; a partial attempt completes on retry."
   refusals: "Stopped containers are not started; busy, foreign listener/unit and unavailable targets leave serving workloads unchanged."
 cases:

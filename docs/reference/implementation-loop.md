@@ -728,3 +728,5 @@ The mail fixture executes the production prefix whitelist, the reviewed bare-CR 
 The Route site fixture runs unprivileged. It checks the shipped file converger and real OpenSSL CSR action, and runs one real Ansible production phase for workspace access, `APP_URL`, environment links and PHP-FPM publication. Other cases exercise validation failure and retry without repeating playbook launches.
 
 The destroy guard is admission only. Tests pin the workflow to its pre-guard main bytes and prove retry/dispatch does not recheck Git after dismantling begins. Candidate pointer failures retain named warnings; target failures and confirmed dependents refuse before record or trigger changes.
+
+Node service endpoint fixtures run unprivileged in the existing migrate environment unit. They use temporary guest files and bounded stand-ins for Incus/systemd; one pinned-Ansible run proves the dedicated tag accepts minimal public intent without workspace fields. The helper is measured separately on fixture containers for real networking, source address and idle connection survival.

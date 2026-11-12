@@ -3,6 +3,7 @@
 # Work in the container runs through `incus exec` from the Node: root for units and snapshots, `orbit` for the workspace.
 - name: Name the container commands
   tags: [always]
+  when: phase != 'node-service'
   ansible.builtin.set_fact:
     incus_project: [incus, --project, "{{ container.project }}"]
     resource_args: >-
@@ -146,7 +147,7 @@
   block:
     - name: Read the units that start at boot, the Process units and the Process folders
       ansible.builtin.command: { argv: [incus, query, "--", "{{ files_route }}{{ item }}"] }
-      loop: [/etc/systemd/system/multi-user.target.wants, /etc/systemd/system, /etc/orbit/processes]
+      loop: [/etc/systemd/system/multi-user.target.wants, /etc/systemd/system, /etc/orbit/processes, /etc/systemd/system/sockets.target.wants]
       register: copy_read
       changed_when: false
       failed_when: copy_read.rc != 0 and 'not found' not in (copy_read.stderr | lower)
@@ -160,7 +161,11 @@
                | map('regex_replace', '^', '/etc/systemd/system/') | list)
              + ((copy_read.results[2].stdout | default('[]', true) | from_json)
                | reject('in', container.processes | default([]) | map(attribute='id') | map('string') | list)
-               | map('regex_replace', '^', '/etc/orbit/processes/') | list) }}
+               | map('regex_replace', '^', '/etc/orbit/processes/') | list)
+             + ((copy_read.results[1].stdout | default('[]', true) | from_json) | select('match', '^orbit-node-service-[0-9]+[.](socket|service)$')
+               | map('regex_replace', '^', '/etc/systemd/system/') | list)
+             + ((copy_read.results[3].stdout | default('[]', true) | from_json) | select('match', '^orbit-node-service-[0-9]+[.](socket|service)$')
+               | map('regex_replace', '^', '/etc/systemd/system/sockets.target.wants/') | list) }}
     - name: Keep the default's units from starting in the copy
       when: copy_remove | length > 0
       ansible.builtin.command:
@@ -987,3 +992,36 @@
     - name: Report the advisory mail outcome
       ansible.builtin.debug:
         msg: "orbit-mail=failed:{{ mail_result.reason }}"
+
+# Attached databases must be reachable before any workspace commands or application Process starts.
+- name: Prepare attached Node services before application work
+  tags: [container, clone, node-service]
+  when: phase == 'node-service' or (phase in ['container', 'clone'] and container.node_services | default([]) | length > 0)
+  block:
+    - name: Apply and probe attached Node services
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_node_services.py') }}"
+          - "{{ container | to_json }}"
+          - >-
+            {{ {'node_services': lookup('ansible.builtin.file', playbook_dir ~ '/instance_node_services.py'),
+                'bridge': lookup('ansible.builtin.file', playbook_dir ~ '/instance_bridge.py')} | to_json }}
+      register: node_services_apply
+      failed_when: false
+      changed_when: node_services_apply.rc == 0 and (node_services_apply.stdout | from_json).status == 'applied'
+
+    - name: Require attached Node service access
+      ansible.builtin.assert:
+        that: node_services_apply.rc == 0
+        fail_msg: >-
+          {{ node_services_apply.stderr if node_services_apply.stderr in
+             ['process.target_inactive', 'instance.host_unavailable', 'instance.node_service_port_in_use',
+              'instance.node_service_unit_conflict', 'instance.node_service_unreachable', 'instance.bridge_busy']
+             else 'instance.node_service_apply_failed' }}
+        quiet: true
+
+    - name: Retain the public Node service result
+      ansible.builtin.set_fact:
+        node_services_result: "{{ node_services_apply.stdout | from_json }}"

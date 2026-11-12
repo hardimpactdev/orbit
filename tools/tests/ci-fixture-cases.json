@@ -1353,7 +1353,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "828211680eff46bc36892579e433bf811bfd285f81edc53c3178f312bfe4ee55",
+    "source_sha256": "0f640301e9923aa832b2db2c254190cc0d1b491e0c8b6da1db5bd322e082346a",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1366,6 +1366,7 @@
       "test_unreadable_remote_fails_without_creating_a_branch",
       "test_unreachable_frozen_commit_fails_without_using_current_tip",
       "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
+      "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement",
       "test_clone_launch_applies_mail_without_another_playbook",
       "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful",
       "test_clone_uses_the_admitted_common_acl_name",
@@ -1782,8 +1783,9 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "e12a031c865034f2731e29f80d0f7ec4dc909644e418187aad64f9c4116906ec",
+    "source_sha256": "edd9e6b4b4dfbd62eadcdefab6d3c78c90f16d8de3edd32cbf60445573be3cff",
     "cases": [
+      "test_loopback_requires_exact_attached_key_pair_and_port",
       "test_development_mail_satisfies_only_the_ipv4_forwarded_endpoints",
       "test_ipv6_mail_is_refused_even_with_the_development_mail_path",
       "test_mail_outside_the_forwarded_tuple_keeps_the_original_verdict",
@@ -1820,7 +1822,15 @@
       "test_mixed_network_selections_cannot_use_only_the_default_drivers_port",
       "test_explicit_connection_evidence_overrides_listener_exemptions",
       "test_traversal_stat_and_read_errors_return_safe_preflight_refusals",
-      "test_multiline_private_values_do_not_forge_service_keys"
+      "test_multiline_private_values_do_not_forge_service_keys",
+      "test_exact_network_first_private_units_no_workspace_and_repeat",
+      "test_stopped_conflict_and_failed_network_do_not_write_units",
+      "test_partial_write_retries_activation_and_disabled_active_socket_is_repaired",
+      "test_failed_target_is_fatal_and_retry_keeps_pending",
+      "test_detach_keeps_shared_port_then_removes_only_owned_access_without_dnat",
+      "test_public_failure_boundary_keeps_only_allowlisted_codes",
+      "test_real_ansible_phase_accepts_minimal_intent_without_workspace_fields",
+      "test_no_attachment_is_noop_and_phase_before_application_work"
     ]
   },
   "swamp/tests/instance_migrate_dotenv_test.py": {

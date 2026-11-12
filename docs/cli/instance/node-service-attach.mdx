@@ -13,7 +13,7 @@ covers:
 orbit instance:node-service:attach <instance> --process=PROCESS [--port=PORT] --host-env-key=KEY --port-env-key=KEY [--protocol=tcp] [--json]
 ```
 
-Attach records the Instance, a standalone registered Docker Node Process on the Instance's own Node, its published TCP host port and two environment key names. It grants no network access, changes no environment values or runtime, and runs no reach probe. See [Node service target records](/reference/processes-and-schedules#node-service-target-records) for the shared admission and ownership rules.
+Attach records the Instance, a standalone registered Docker Node Process on the Instance's own Node, its published TCP host port and two environment key names. A checkout attachment records intent only and changes no environment values. Migration later applies and probes its scoped loopback access before quiescing the checkout. See [Node service target records](/reference/processes-and-schedules#node-service-target-records) for the shared admission and ownership rules.
 
 ```bash
 orbit instance:node-service:attach 12 --process=221 --port=1025 --host-env-key=MAIL_HOST --port-env-key=MAIL_PORT
@@ -68,10 +68,4 @@ The result has `id`, `instance_id`, `node_id`, `process_id`, `protocol`, `port`,
 | `instance.node_service_listener_private` | The port binds only to an address other than the bridge or `0.0.0.0`. |
 | `instance.node_service_environment_conflict` | Another attachment owns one of the key names. |
 
-## Container access
-
-A container attachment admits only its published TCP endpoint in this Instance's ACL and the bridge's additive endpoint set. Orbit installs root-owned `orbit-node-service-PORT.socket` and `.service` units listening on IPv4 `127.0.0.1:PORT`. The proxy forwards to the Node's Instance bridge gateway on the same published port. The environment file stays unchanged.
-
-For a running container the record response also contains `operation_id`. Follow that Operation to confirm the path and TCP probe succeeded. A stopped container is refused and is never started by attach. A failed apply retains the record; repeating attach retries it. Two records using one port share one proxy and rule. A foreign listener or unit refuses without stopping the Project's Process.
-
-Create and migrate apply attached targets before application Processes start; a failed target is fatal. Migration probes before quiescing the source checkout. A clone does not inherit attachment records and removes inherited target units before boot. Enabled sockets return with the container after stop, hibernate or wake.
+Container access is described in [Node service targets](/reference/processes-and-schedules#node-service-target-records). This first network cut keeps attach checkout-only. It does not add a command for applying a new attachment to a running container.
