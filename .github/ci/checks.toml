@@ -20,13 +20,13 @@ default = ["swamp/tests/ansible_inputs_test.py"]
 [[fixture]]
 file = "swamp/tests/ansible_instance_migrate_test.ts"
 after_merge = true
-reason = "100 retained cases need 7165 declared seconds including startup, above the six-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963; unmeasured cases remain estimates. All migration cases run after merge until their work is reduced or selection is narrowed."
-cost = 6565
+reason = "102 retained cases need 7337 declared seconds including startup, above the six-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963; unmeasured cases remain estimates. All migration cases run after merge until their work is reduced or selection is narrowed."
+cost = 6725
 # 159.019s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (120s); these are estimates, not completed measurements.
-slices = 100
+slices = 102
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -51,6 +51,8 @@ inputs = [
 ]
 
 [fixture.case_costs]
+  "migration counts 0 files that Git does not ignore beside a large ignored tree" = 80 # conservative estimate; unprivileged archive fixture
+  "migration counts 1 files that Git does not ignore beside a large ignored tree" = 80 # conservative estimate; unprivileged archive fixture
   "stock selector preflight: stock Laravel" = 120 # UNMEASURED estimate; registration refreshed from current source
   "stock selector preflight: real53" = 120 # UNMEASURED estimate; registration refreshed from current source
   "stock selector preflight: selected Redis" = 120 # UNMEASURED estimate; registration refreshed from current source
@@ -2143,18 +2145,6 @@ inputs = [
   "swamp/bin/lint-workflow-placement.ts",
 ]
 
-[[fixture]]
-file = "swamp/tests/writes_declared_test.ts"
-cost = 4
-inputs = [
-  "bin/swamp-shape-gate",
-  "swamp/ansible/ansible.cfg",
-  "swamp/ansible/requirements.txt",
-  "swamp/ansible/requirements.yml",
-  "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/tests/writes-reviewed.json",
-]
-
 # CI check inputs. Includes are ORed; any !exclude wins, regardless of order.
 # ** crosses directories; * and ? stay within one name (selection_regex).
 # Costs are pull_request median wall seconds from ci-speed.md (2026-11-11).
@@ -2731,7 +2721,7 @@ inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts"
 
 [[fixture]]
 file = "swamp/tests/ansible_route_site_test.py"
-cost = 14
+cost = 15
 slices = false
 inputs = [
   "swamp/ansible/requirements.txt",
@@ -2743,7 +2733,7 @@ inputs = [
 ]
 [fixture.case_costs]
 "test_certificate_links_account_copy_modes_and_literal_caddy_text" = 1
-"test_failed_validation_keeps_candidate_but_never_reloads_or_marks_awake" = 1
+"test_failed_validation_keeps_live_bytes_and_metadata_and_cleans_candidate" = 1
 "test_retry_after_reload_failure_completes_without_rewriting_public_files" = 1
 "test_php_only_publication_needs_no_caddy_group" = 1
 "test_production_workspace_app_url_links_and_php_tasks_are_unchanged" = 1
@@ -2752,6 +2742,8 @@ inputs = [
 "test_reused_input_is_read_only_and_child_cleanup_keeps_its_own_folder" = 1
 "test_existing_file_mode_drift_clears_unwanted_special_bits" = 1
 "test_same_content_destination_symlinks_are_replaced_without_touching_targets" = 1
+
+"test_site_publish_renames_the_validated_inode_with_final_metadata_before_interruption" = 1
 
 [[fixture]]
 file = "swamp/tests/instance_destroy_git_test.py"
@@ -2786,3 +2778,29 @@ inputs = [
 "the files Orbit renders do not count as unpushed work, at any depth" = 1
 "any other change is still work that is not pushed" = 1
 "every destroy Ansible step enables failed task stderr" = 1
+
+[[fixture]]
+file = "swamp/tests/caddy_candidate_test.py"
+cost = 28
+slices = false
+inputs = [
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/library/orbit_route_site.py",
+  "swamp/ansible/tasks/caddy-publish.yml",
+  "swamp/proof/spike/shape-live",
+  "swamp/ansible/tasks/gateway-swamp.yml",
+  "swamp/ansible/route-create-site.yml",
+  "swamp/ansible/route-withdraw.yml",
+  "swamp/workflows/workflow-operation-route-caddy.yaml",
+  "swamp/workflows/workflow-operation-route-caddy-delta.yaml",
+  "swamp/workflows/workflow-route-create-ingress.yaml",
+]
+[fixture.case_costs]
+"test_native_whole_node_caddy_publication" = 1
+"test_native_delta_used_by_all_three_migrate_caddy_passes" = 1
+"test_native_ingress_publication" = 1
+"test_ansible_route_site" = 6
+"test_ansible_route_withdrawal" = 6
+"test_ansible_bootstrap_swamp_front" = 6
+"test_validated_inode_has_final_metadata_at_interrupted_rename" = 6
+"test_shape_live_proof_stages_validates_and_renames" = 1

@@ -6,19 +6,33 @@ covers:
   - apps/gateway/app/Console/Commands/CaddyBuildCommand.php
   - apps/gateway/app/Infrastructure/Nodes/Roles/CaddyRoleFailure.php
   - apps/gateway/app/Domain/Nodes/CaddyRelease.php
+  - swamp/ansible/{route-create-site.yml,route-withdraw.yml,library/orbit_route_site.py}
+  - swamp/ansible/tasks/{caddy-publish,gateway-swamp}.yml
+  - swamp/workflows/workflow-{operation-route-caddy,operation-route-caddy-delta,route-create-ingress}.yaml
+  - swamp/proof/spike/shape-live
 ---
 
 # Caddy configuration
 
 For a Laravel root of `apps/site/public`, Caddy serves that nested web root, not the application directory or repository root. Development access grants validate `apps/site/public/storage` against `apps/site/storage/app/public`, using the shared [application directory](/reference/projects#application-directory). They grant access to the paths that serving needs without making `.git` public. Root `public` keeps Laravel's storage link at `public/storage` in the repository root.
 
-Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy. The Gateway renders that whole file for one Node from its database. Native publication runs through Swamp on the 209 worker, using official SSH to the target Node. No role writes Caddy files on a Node. This page describes what a build contains, when it runs, how it reaches the Node, and how to fix a Node whose build fails. [Node provisioning](/reference/node-provisioning#package-sources) describes how Orbit installs Caddy.
+Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy. The Gateway renders that whole file for one Node from its database. Native publication runs through Swamp on the 209 worker, using official SSH to the target Node. Role publication uses the same validation-before-publication rule. This page describes what a build contains, when it runs, how it reaches the Node, and how to fix a Node whose build fails. [Node provisioning](/reference/node-provisioning#package-sources) describes how Orbit installs Caddy.
 
 ## Native publication
 
-The manual `orbit:caddy-build` command submits `route.caddy_converge`. Gateway releases do not converge Caddy sites; [node converge](/cli/node/converge) publishes the Gateway Node's sites as for any Node. The workflow writes the rendered bytes directly to `/etc/caddy/Caddyfile` through official SSH with sudo. It then runs `caddy validate` as the `caddy` user and reloads Caddy only after validation succeeds.
+The manual `orbit:caddy-build` command submits `route.caddy_converge`. Gateway releases do not converge Caddy sites; [node converge](/cli/node/converge) publishes the Gateway Node's sites as for any Node.
 
-This workflow creates no version directory or backup and does not restore the previous file on failure. If validation or reload fails, the new bytes remain at `/etc/caddy/Caddyfile`; the Operation records the failure. Correct the owning stored intent and submit another publication. A successful command exit means the Operation was submitted, not that publication has completed.
+Publication first writes a candidate beside `/etc/caddy/Caddyfile`, with the live file's owner and restricted mode, before content is written. Caddy validates that candidate as the `caddy` user. Keeping both files in the same directory gives relative imports the same base. Only successful validation permits renaming that same candidate inode over the live file, then reload. No owner or mode repair happens on the live path after publication. Route TLS probes still follow reload.
+
+### Failed publication
+
+Validation failure removes the attempt's candidate, keeps the live file byte-identical and skips reload. A failed reload leaves the validated new file on disk and records the failure; a retry completes activation. Candidates use attempt-specific names, so one attempt never removes another's file. A killed process can leave a harmless restricted candidate; normal failure cleanup removes it.
+
+### Shared writers
+
+The managed metadata contract is the Unix owner, group and mode. Replacement does not retain operator-added ACLs or extended attributes; Orbit makes no claim that those survive publication.
+
+This rule covers Route site and Ingress publication, withdrawal, all native Caddy deltas used by migration and Router changes, manual builds and Node converge. The bootstrap Swamp front also validates before publication. Exporter and role publication already use Ansible's validate-before-copy behavior. Separate AI router services validate their own files before copying; they do not write the Node's live Caddyfile. Certificate publication changes certificate files and links, without writing the live Caddyfile. These paths retain their existing ownership, modes and reload behavior.
 
 The render rules below apply to native publication too. The version layout, address preflight, publication lock, backups, unchanged-file skip, and recovery behavior described for the retained Gateway builder apply only to that builder. They are not guarantees of `route.caddy_converge`.
 

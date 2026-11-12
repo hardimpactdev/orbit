@@ -208,7 +208,7 @@ Container Process journal and state reads create no Operation, so they do not ho
 
 Observed successful container migrates took 182–215 seconds, container clones (`instance.create`) 20–40 seconds, and container destroys 23–75 seconds. These are observations, not guarantees; the separate `instance.clone` kind has no recorded timing here.
 
-The wait remains 600 seconds, with a poll every 5 seconds. It is a release limit, not an Operation deadline. Migrate has a 5,100-second budget. Clone can include Project setup. Its history-based budget has a 900-second floor, or 1,800 seconds without successful history. Destroy captures 60 seconds for a checkout or 600 for a container, plus teardown, Routes and owned databases. Any of them can legitimately run longer than the release wait.
+The wait remains 600 seconds, with a poll every 5 seconds. It is a release limit, not an Operation deadline. Migrate has a 5,400-second budget. Clone can include Project setup. Its history-based budget has a 900-second floor, or 1,800 seconds without successful history. Destroy captures 60 seconds for a checkout or 600 for a container, plus teardown, Routes and owned databases. Any of them can legitimately run longer than the release wait.
 
 On timeout, stderr names every remaining Operation ID with `gateway.release_busy`. The release fails, the old code stays live, and automatic releases pause because migrations already ran. The Operations continue. Wait for them to settle, inspect the failed release, then resume automatic releases. The guard never proceeds through busy work, cancels it, extends its budget or stops new admissions.
 

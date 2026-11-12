@@ -30,6 +30,8 @@ class RouteSiteTest(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.calls = []
         self.owners = []
+        self.file_owners = {}
+        self.physical_group = None
         self.failure = ""
         self.user = SimpleNamespace(
             pw_uid=os.getuid(), pw_gid=os.getgid(), pw_dir="/home/orbit"
@@ -73,6 +75,14 @@ class RouteSiteTest(unittest.TestCase):
 
     def tool_run(self, argv):
         self.calls.append(argv)
+        if "validate" in argv:
+            validated = Path(argv[argv.index("--config") + 1]).stat()
+            self.validation_metadata = (
+                validated.st_ino,
+                validated.st_uid,
+                validated.st_gid,
+                validated.st_mode & 0o7777,
+            )
         if "validate" in argv and self.failure == "validate":
             raise RuntimeError("validation failure")
         if "reload" in argv and self.failure == "reload":
@@ -88,12 +98,34 @@ class RouteSiteTest(unittest.TestCase):
                 target.chmod(0o600)
 
     def apply(self):
-        # Assert every production ownership request while filesystem writes remain unprivileged.
+        # Assert production ownership while modeling it for comparisons on an unprivileged fixture.
+        real_stat = SITE.os.fstat
+        real_chown = SITE.os.fchown
+
+        def chown(fd, uid, gid):
+            current = real_stat(fd)
+            self.owners.append((uid, gid))
+            self.file_owners[(current.st_dev, current.st_ino)] = (uid, gid)
+            if self.physical_group is not None:
+                real_chown(
+                    fd, os.getuid(), self.physical_group if gid == 123 else os.getgid()
+                )
+
+        def node_stat(fd):
+            current = real_stat(fd)
+            owner = self.file_owners.get((current.st_dev, current.st_ino))
+            if owner is None:
+                return current
+            fields = list(current)
+            fields[4], fields[5] = owner
+            return os.stat_result(fields)
+
         with (
+            patch.object(SITE.os, "fstat", side_effect=node_stat),
             patch.object(
                 SITE.os,
                 "fchown",
-                side_effect=lambda fd, uid, gid: self.owners.append((uid, gid)),
+                side_effect=chown,
             ),
             patch.object(
                 SITE.os,
@@ -240,19 +272,83 @@ class RouteSiteTest(unittest.TestCase):
                 ),
             )
 
-    def test_failed_validation_keeps_candidate_but_never_reloads_or_marks_awake(self):
+    def test_failed_validation_keeps_live_bytes_and_metadata_and_cleans_candidate(self):
+        live = self.root / "etc/caddy/Caddyfile"
+        live.write_text("# previously validated file\n")
+        live.chmod(0o640)
+        before = live.stat()
         self.failure = "validate"
         with self.assertRaises(RuntimeError):
             self.apply()
+        self.assertEqual(live.read_text(), "# previously validated file\n")
+        current = live.stat()
         self.assertEqual(
-            (self.root / "etc/caddy/Caddyfile").read_text(),
-            "# literal {{ preserved }}\n",
+            (
+                current.st_ino,
+                current.st_uid,
+                current.st_gid,
+                current.st_mode,
+                current.st_mtime_ns,
+            ),
+            (
+                before.st_ino,
+                before.st_uid,
+                before.st_gid,
+                before.st_mode,
+                before.st_mtime_ns,
+            ),
         )
+        self.assertEqual(list(live.parent.glob(".orbit-candidate-*")), [])
         self.assertFalse(any("reload" in c for c in self.calls))
         self.assertFalse((self.root / "awake").exists())
         self.failure = ""
         self.apply()
         self.assertTrue(any("reload" in c for c in self.calls))
+
+    def test_site_publish_renames_the_validated_inode_with_final_metadata_before_interruption(
+        self,
+    ):
+        groups = [gid for gid in os.getgroups() if gid != os.getgid()]
+        if not groups:
+            self.skipTest("supplementary group required to distinguish the Caddy group")
+        self.physical_group = groups[0]
+        live = self.root / "etc/caddy/Caddyfile"
+        live.write_text("# old live file\n")
+        live.chmod(0o640)
+        os.chown(live, os.getuid(), self.physical_group)
+        real_replace = os.replace
+
+        def publish_and_interrupt(source, destination):
+            if Path(destination) != live:
+                return real_replace(source, destination)
+            metadata = Path(source).stat()
+            self.assertEqual(
+                (
+                    metadata.st_ino,
+                    metadata.st_uid,
+                    metadata.st_gid,
+                    metadata.st_mode & 0o7777,
+                ),
+                self.validation_metadata,
+            )
+            self.assertEqual(metadata.st_gid, self.physical_group)
+            self.assertEqual(metadata.st_mode & 0o7777, 0o640)
+            real_replace(source, destination)
+            raise RuntimeError("fixture interruption after rename")
+
+        with (
+            patch.object(SITE.os, "replace", side_effect=publish_and_interrupt),
+            self.assertRaisesRegex(RuntimeError, "fixture interruption"),
+        ):
+            self.apply()
+        current = live.stat()
+        self.assertEqual(
+            (current.st_ino, current.st_uid, current.st_gid, current.st_mode & 0o7777),
+            self.validation_metadata,
+        )
+        self.assertEqual(live.read_text(), self.plan["caddy"][0]["content"])
+        self.assertFalse(any("reload" in c for c in self.calls))
+        self.assertEqual(list(live.parent.glob(".orbit-candidate-*")), [])
 
     def test_retry_after_reload_failure_completes_without_rewriting_public_files(self):
         self.failure = "reload"
