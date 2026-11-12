@@ -14,6 +14,7 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\InstanceNodeServiceTarget;
 use App\Models\Node;
@@ -44,19 +45,7 @@ final class InstanceNodeServiceTargets
         if ($requireRunning && $process->desired_state !== DesiredProcessState::Running) {
             throw new ResourceOperationException('instance.node_service_process_stopped', 'Start the registered Node Process before attaching or migrating its service.', 422);
         }
-        $mappings = [];
-        $specs = $process->runtime_config['ports'] ?? [];
-        if ($process->runtime === ProcessRuntime::Docker && (! $requireRunning || $process->status === LifecycleStatus::Active) && is_array($specs)) {
-            foreach ($specs as $spec) {
-                if (! is_string($spec) || (str_contains($spec, '/') && ! str_ends_with($spec, '/tcp'))) {
-                    continue;
-                }
-                $mapping = DockerPublishedPort::parse($spec);
-                if ($mapping instanceof DockerPublishedPort) {
-                    $mappings[$mapping->publishedPort][] = $mapping;
-                }
-            }
-        }
+        $mappings = ! $requireRunning || $process->status === LifecycleStatus::Active ? self::publications($process) : [];
         if ($requested === null && count($mappings) > 1) {
             throw new ResourceOperationException('instance.node_service_port_required', 'This Process publishes multiple TCP ports. Select one explicitly.', 422);
         }
@@ -89,10 +78,10 @@ final class InstanceNodeServiceTargets
     /** Exact recorded attachments projected into public container intent. No environment values are read.
      * @return list<array{id:int,process_id:int,process_name:string,host:string,port:int,docker:bool,host_env_key:string,port_env_key:string}>
      */
-    public static function endpoints(Instance $instance, bool $requireRunning = true, ?int $except = null): array
+    public static function endpoints(Instance $instance, bool $requireRunning = true): array
     {
         $targets = [];
-        foreach ($instance->nodeServiceTargets()->when($except !== null, static fn ($query) => $query->whereKeyNot($except))->with('process')->orderBy('id')->get() as $target) {
+        foreach ($instance->nodeServiceTargets()->with('process')->orderBy('id')->get() as $target) {
             self::assertValid($target, $instance, $requireRunning);
             $targets[] = ['id' => $target->id, 'process_id' => $target->process_id, 'process_name' => $target->process->name, 'host' => $target->node_id === $instance->node_id ? self::bridge($instance->node) : ValidatedData::string($target->node->wireguard_ip), 'port' => $target->port,
                 'docker' => $target->node_id === $instance->node_id, 'host_env_key' => $target->host_env_key, 'port_env_key' => $target->port_env_key];
@@ -112,6 +101,55 @@ final class InstanceNodeServiceTargets
         $value = $base.($hosts === [] ? '' : ','.implode(',', $hosts));
 
         return ['NO_PROXY' => $value, 'no_proxy' => $value];
+    }
+
+    /** An attached TCP publication cannot be released while any Instance depends on it. */
+    public static function assertEndpointPreserved(Process $process, ?Process $candidate = null): void
+    {
+        if ($candidate === null && $process->desired_state !== DesiredProcessState::Running) {
+            return;
+        }
+        $before = self::publications($process);
+        $after = $candidate === null ? [] : self::publications($candidate);
+        $instances = [];
+        foreach (InstanceNodeServiceTarget::query()->where('process_id', $process->id)->with('instance.project')->orderBy('instance_id')->get() as $target) {
+            $identity = static function (array $publications): array {
+                $values = array_map(static fn (DockerPublishedPort $mapping): string => ($mapping->bindAddress ?? '0.0.0.0').':'.$mapping->publishedPort.':'.$mapping->containerPort, $publications);
+                sort($values);
+
+                return $values;
+            };
+            if ($candidate !== null && $identity($before[$target->port] ?? []) === $identity($after[$target->port] ?? [])) {
+                continue;
+            }
+            $instance = $target->instance;
+            $instances[$instance->id] = "Instance [{$instance->project->slug}/{$instance->name}] (id {$instance->id})";
+        }
+        if ($instances !== []) {
+            throw new ResourceOperationException('process.node_service_endpoint_in_use',
+                "Process [{$process->name}] is attached to ".implode(', ', $instances).
+                '. Detach those Node service targets before stopping the Process or changing their TCP publication.', 409);
+        }
+    }
+
+    /** @return array<int,list<DockerPublishedPort>> */
+    private static function publications(Process $process): array
+    {
+        $mappings = [];
+        $specs = $process->runtime_config['ports'] ?? [];
+        if ($process->runtime === ProcessRuntime::Docker && is_array($specs)) {
+            foreach ($specs as $spec) {
+                if (! is_string($spec) || (str_contains($spec, '/') && ! str_ends_with($spec, '/tcp'))) {
+                    continue;
+                }
+                $mapping = DockerPublishedPort::parse($spec);
+                if ($mapping instanceof DockerPublishedPort) {
+                    $mappings[$mapping->publishedPort][] = $mapping;
+                }
+            }
+        }
+
+        return $mappings;
     }
 
     private static function assertStandalone(Process $process): void
@@ -135,8 +173,9 @@ final class InstanceNodeServiceTargets
     {
         $fixed = [22, 80, 443, InstanceDevPorts::Listener, InstanceHostIntent::T3Port, 2375, 2376, ...VitePortAllocator::EXCLUDED_PORTS,
             ValidatedData::integer(config('orbit.websocket.port')), ValidatedData::integer(config('orbit.pi.port'))];
-        $reserved = in_array($port, $fixed, true) || array_any(InstanceDevPorts::infrastructurePorts($node),
-            static fn (string $reserved): bool => FirewallPort::contains(str_replace('-', ':', $reserved), $port));
+        $reserved = DatabaseServer::query()->where('node_id', $node->id)->where('port', $port)->exists()
+            || in_array($port, $fixed, true) || array_any(InstanceDevPorts::infrastructurePorts($node),
+                static fn (string $reserved): bool => FirewallPort::contains(str_replace('-', ':', $reserved), $port));
         try {
             app(FirewallProtectedPorts::class)->guard($node, (string) $port);
         } catch (ResourceOperationException $exception) {

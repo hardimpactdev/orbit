@@ -295,7 +295,26 @@ def guest(action, plan, root=Path('/'), run=command, connect=socket.create_conne
     return {'changed': bool(changed or pending or drift or mutation or failed or started or plan.get('pending_removal', False))}
 
 
-def apply(container, bundle, run=command, state=Path('/var/lib/orbit/instance-node-services')):
+def admits_endpoint(acl, endpoint):
+    return any(rule.get('action') == 'allow' and rule.get('state') == 'enabled'
+               and rule.get('protocol') == 'tcp' and rule.get('destination') == endpoint['host'] + '/32'
+               and rule.get('destination_port') == str(endpoint['port'])
+               for rule in acl.get('egress', []))
+
+
+def withdrawal_endpoints(container, endpoint, acl, run, bridge_state):
+    """Keep applied bridge records; only the detached tuple may be withdrawn."""
+    inventories = json.loads(run(['incus', 'query', '--', '/1.0/network-acls?project=default&recursion=1']))
+    retained = admits_endpoint(acl, endpoint) or any(
+        re.fullmatch(r'instance-[0-9]+', other.get('name', '')) and other['name'] != container['acl']
+        and admits_endpoint(other, endpoint) for other in inventories)
+    records = [json.loads(path.read_text()) for path in sorted((bridge_state / 'endpoints').glob('*.json'))]
+    return [{key: row[key] for key in ('host', 'port', 'docker')} for row in records
+            if retained or (row['host'], row['port']) != (endpoint['host'], endpoint['port'])]
+
+
+def apply(container, bundle, run=command, state=Path('/var/lib/orbit/instance-node-services'),
+          bridge_state=Path('/var/lib/orbit/instance-bridge')):
     targets = container.get('node_services', [])
     removed = container.get('node_service_removed_ports', [])
     removed_hosts = container.get('node_service_removed_hosts', [])
@@ -334,11 +353,15 @@ def apply(container, bundle, run=command, state=Path('/var/lib/orbit/instance-no
         acl['egress'] = [r for r in acl['egress'] if not r.get('description', '').startswith('Orbit Node service:')] + desired
         run(['incus', 'network', 'acl', 'edit', container['acl'], '--project', 'default'], json.dumps(acl))
     if withdrawing and removed_hosts:
+        endpoint = container['node_service_withdraw_endpoint']
         incoming = {'network': container['network'], 'cidr': container['bridge_cidr'],
-                    'endpoints': container['bridge_endpoints'], 'admitted_at': container['bridge_admitted_at'], 'baseline': {}}
-        run(['python3', '-c', bundle['bridge'], '--state-dir', '/var/lib/orbit/instance-bridge',
+                    'endpoints': withdrawal_endpoints(container, endpoint, acl, run, bridge_state),
+                    'admitted_at': container['bridge_admitted_at'], 'baseline': {}}
+        run(['python3', '-c', bundle['bridge'], '--state-dir', str(bridge_state),
              '--intent', '--reconcile', '--withdraw'], json.dumps(incoming), public_guest=True)
         for rule in container.get('node_service_removed_rules', []):
+            if admits_endpoint(acl, {'host': rule['to_ip'], 'port': rule['to_port']}):
+                continue
             run(['ufw', '--force', 'route', 'delete', rule['rule'], 'in', 'on', rule['interface_in'],
                  'out', 'on', rule['interface_out'], 'from', rule['from_ip'],
                  'to', rule['to_ip'], 'port', rule['to_port'], 'proto', rule['proto']])

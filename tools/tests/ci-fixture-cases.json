@@ -2091,13 +2091,17 @@
     ]
   },
   "swamp/tests/instance_node_service_access_test.py": {
-    "source_sha256": "fa4941315a3b6d880d717927b4db54a95adf43a08b74f6b2753482ded4c7a923",
+    "source_sha256": "e3c10315c29ca3366c115e376c2eee573e98f144be2c57d4c1947246daa727ab",
     "cases": [
       "test_real_remote_host_exact_acl_and_untranslated_bridge_endpoint",
       "test_proxy_bypass_reaches_exec_manager_and_app_login_and_repeat_is_unchanged",
       "test_attached_remote_probe_failure_has_public_target_identity",
       "test_detach_removes_acl_endpoint_forward_and_all_managed_proxy_hosts",
       "test_multiple_hosts_on_one_port_keep_distinct_rules_without_sockets",
+      "test_same_host_keeps_proxy_bypass_until_its_last_port_is_detached",
+      "test_withdrawal_retains_other_instances_applied_endpoint_without_revalidating_it",
+      "test_other_container_retains_shared_bridge_endpoint_but_not_this_containers_forward_rule",
+      "test_remote_destroy_and_failed_migrate_restore_remove_only_their_owned_path",
       "test_previous_gateway_local_intent_has_no_new_required_fields"
     ]
   }

@@ -2882,5 +2882,5 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_node_service_access_test.py"
-cost = 1
-inputs = ["swamp/ansible/instance_node_services.py"]
+cost = 20
+inputs = ["swamp/ansible/instance_node_services.py", "swamp/ansible/instance-container-destroy.yml", "swamp/ansible/tasks/instance-migrate-discard.yml", "swamp/tests/fixtures/instance-container-incus.ts"]

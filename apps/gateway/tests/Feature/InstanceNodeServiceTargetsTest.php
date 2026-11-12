@@ -3,11 +3,19 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\DetachInstanceNodeServiceTargetAction;
+use App\Actions\Processes\RestartProcessAction;
+use App\Actions\Processes\StopProcessAction;
+use App\Actions\Processes\UpdateProcessAction;
+use App\Data\Processes\AddProcessData;
+use App\Data\Processes\UpdateProcessData;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceNodeServiceTargets;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NodeServiceTargetOperation;
 use App\Domain\Processes\ProcessRemovalGuard;
+use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Mcp\ApiDispatcher;
@@ -52,11 +60,21 @@ function nodeServiceAttachmentFixture(): array
 }
 
 /** @param list<string> $ports */
-function nodeServiceAttachmentProcess(Node $node, array $ports = ['0.0.0.0:1025:1025/tcp']): OrbitProcess
+function nodeServiceAttachmentProcess(Node $node, array $ports = ['0.0.0.0:1025:1025/tcp'], string $name = 'mailpit'): OrbitProcess
 {
-    return OrbitProcess::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'mailpit',
+    return OrbitProcess::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => $name,
         'runtime' => 'docker', 'runtime_config' => ['image' => 'axllent/mailpit', 'ports' => $ports],
         'restart_policy' => 'unless-stopped', 'desired_state' => 'running', 'status' => 'active']);
+}
+
+function captureNodeServiceAdmission(Instance $instance): void
+{
+    $runtime = $instance->runtime()->firstOrFail();
+    $operation = Operation::query()->create(['kind' => 'instance.migrate', 'target_type' => 'instance',
+        'target_id' => $instance->id, 'node_id' => $instance->node_id, 'status' => 'succeeded',
+        'input' => ['container' => ['node_services' => InstanceNodeServiceTargets::endpoints($instance, requireRunning: false)]],
+        'result' => ['moved' => true, 'restored' => false]]);
+    $runtime->update(['operation_id' => $operation->id]);
 }
 
 beforeEach(function (): void {
@@ -239,6 +257,7 @@ describe('Node service attachment records', function (): void {
         $uri = "/api/v1/instances/{$instance->id}/node-service-targets";
 
         $this->postJson($uri, $input)->assertUnprocessable()->assertJsonPath('error.code', 'instance.node_service_runtime_unsupported');
+        captureNodeServiceAdmission($instance);
         // A stopped Node Process must not block its own withdrawal.
         OrbitProcess::query()->findOrFail($input['process_id'])->update(['desired_state' => 'stopped']);
         $response = $this->deleteJson($uri.'/'.$target->id)->assertAccepted();
@@ -531,6 +550,7 @@ it('retains an attachment after a failed container withdrawal without claiming i
     $instance->runtime()->create(['node_id' => $node->id, 'incus_project' => 'orbit-instances',
         'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2',
         'runtime_version' => 'v1', 'agent_version' => 'v1', 'power_state' => 'running']);
+    captureNodeServiceAdmission($instance);
     $operation = app(DetachInstanceNodeServiceTargetAction::class)->execute($instance, $target->id);
     $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'failed-target-proof']])->save();
     $data = ['status' => 'failed', 'run_id' => 'failed-target-proof', 'started_at' => now()->toIso8601String(),
@@ -600,6 +620,11 @@ it('refuses ineligible remote publications without changing the Process', functi
         $process->update(['runtime_config' => ['image' => 'fixture', 'ports' => ['198.51.100.11:8094:8080/tcp']]]);
     } elseif ($case === 'other-private') {
         $process->update(['runtime_config' => ['image' => 'fixture', 'ports' => ['10.44.0.12:8094:8080/tcp']]]);
+    } elseif ($case === 'loopback') {
+        $process->update(['runtime_config' => ['image' => 'fixture', 'ports' => ['127.0.0.1:8094:8080/tcp']]]);
+    } elseif ($case === 'lan') {
+        Node::withoutEvents(fn () => $remote->update(['lan_ip' => '192.168.20.11']));
+        $process->update(['runtime_config' => ['image' => 'fixture', 'ports' => ['192.168.20.11:8094:8080/tcp']]]);
     } elseif ($case === 'public-node') {
         Node::withoutEvents(fn () => $remote->update(['wireguard_ip' => '198.51.100.11']));
         $process->update(['runtime_config' => ['image' => 'fixture', 'ports' => ['198.51.100.11:8094:8080/tcp']]]);
@@ -623,6 +648,8 @@ it('refuses ineligible remote publications without changing the Process', functi
     ['public-node', 'instance.node_service_listener_private'],
     ['other-private', 'instance.node_service_listener_private'],
     ['wildcard', 'instance.node_service_listener_private'],
+    ['loopback', 'instance.node_service_listener_private'],
+    ['lan', 'instance.node_service_listener_private'],
     ['ambiguous', 'instance.node_service_listener_private'],
     ['authority', 'node_access.required'],
 ]);
@@ -660,8 +687,9 @@ it('projects only the exact remote path and proxy host and withdraws the complet
     expect($cloneIntent['acl_rules']['egress'])->toBe([])
         ->and($cloneIntent['config']['environment.NO_PROXY'])->not->toContain('10.44.0.11')
         ->and($cloneIntent['environment'])->not->toContain('NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1,10.44.0.11');
+    captureNodeServiceAdmission($instance);
     $operation = app(NodeServiceTargetOperation::class)->start($instance, $target);
-    expect($operation->input['container']['bridge_endpoints'])->toBe([])
+    expect($operation->input['container']['node_service_withdraw_endpoint'])->toBe(['host' => '10.44.0.11', 'port' => 8094, 'docker' => false])
         ->and($operation->input['container']['node_service_removed_rules'])->toBe([$rule])
         ->and($operation->input['container']['environment'])->toBe([
             'NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1', 'no_proxy=localhost,127.0.0.1,::1,10.253.0.1'])
@@ -677,8 +705,9 @@ it('retains remote access when another attachment shares its host and port', fun
     $instance->runtime()->create(['node_id' => $caller->id, 'incus_project' => 'orbit-instances',
         'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2',
         'runtime_version' => 'v1', 'agent_version' => 'v1', 'power_state' => 'running']);
+    captureNodeServiceAdmission($instance);
     $operation = app(NodeServiceTargetOperation::class)->start($instance, $target);
-    expect($operation->input['container']['bridge_endpoints'])->toBe([['host' => '10.44.0.11', 'port' => 8094, 'docker' => false]])
+    expect($operation->input['container'])->not->toHaveKey('bridge_endpoints')
         ->and($operation->input['container']['node_service_removed_rules'])->toBe([])
         ->and($operation->input['container']['node_services'][0]['id'])->toBe($retained->id)
         ->and($operation->input['container']['environment'])->toContain('NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1,10.44.0.11');
@@ -692,4 +721,101 @@ it('retains remote access when another attachment shares its host and port', fun
     $this->assertModelMissing($target);
     $this->assertModelExists($retained);
     $this->assertModelExists($process);
+});
+
+it('admits each withdrawal from its captured endpoint when both migrated Processes have drifted', function (): void {
+    [$first, $node, $remote, $one, $input] = remoteNodeServiceFixture();
+    $second = $first->replicate();
+    $second->name = 'other';
+    $second->checkout_path = '/workspace/other';
+    $second->save();
+    $two = nodeServiceAttachmentProcess($remote, ['10.44.0.11:8096:8080/tcp'], 'other-service');
+    $targets = [];
+    foreach ([[$first, $one, 8094, '10.253.0.2'], [$second, $two, 8096, '10.253.0.3']] as [$instance, $process, $port, $address]) {
+        $targets[$instance->id] = $instance->nodeServiceTargets()->create(['node_id' => $remote->id,
+            ...$input, 'process_id' => $process->id, 'port' => $port]);
+        $instance->runtime()->create(['node_id' => $node->id, 'incus_project' => 'orbit-instances',
+            'container_name' => 'instance-'.$instance->id, 'bridge_address' => $address,
+            'runtime_version' => 'v1', 'agent_version' => 'v1', 'power_state' => 'running']);
+        captureNodeServiceAdmission($instance);
+    }
+    // Reproduce records left by the earlier missing mutation guard, without invoking a live Process.
+    $one->update(['runtime_config' => ['ports' => ['10.44.0.11:18094:8080/tcp']]]);
+    $two->update(['runtime_config' => ['ports' => ['10.44.0.11:18096:8080/tcp']]]);
+    // A changed Node address also must not redirect revocation to the new address.
+    Node::withoutEvents(fn () => $remote->update(['wireguard_ip' => '10.44.0.12']));
+    foreach ([[$first, 8094, '10.253.0.2'], [$second, 8096, '10.253.0.3']] as [$instance, $port, $address]) {
+        $withdrawal = app(DetachInstanceNodeServiceTargetAction::class)->execute($instance, $targets[$instance->id]->id);
+        $container = $withdrawal->input['container'];
+        expect($container['node_services'])->toBe([])
+            ->and($container['node_service_withdraw_endpoint'])->toBe(['host' => '10.44.0.11', 'port' => $port, 'docker' => false])
+            ->and($container['node_service_removed_rules'])->toHaveCount(1)
+            ->and($container['node_service_removed_rules'][0])->toMatchArray(['from_ip' => $address, 'to_ip' => '10.44.0.11', 'to_port' => (string) $port])
+            ->and($container)->not->toHaveKey('bridge_endpoints');
+        $this->assertModelExists($targets[$instance->id]);
+    }
+    Process::assertNothingRan();
+    Http::assertNothingSent();
+});
+
+it('refuses to stop an attached service before recording any Operation for local and remote targets', function (bool $remoteTarget): void {
+    [$instance, $caller, $remote, $process, $input] = remoteNodeServiceFixture();
+    if (! $remoteTarget) {
+        $process = nodeServiceAttachmentProcess($caller, ['0.0.0.0:8094:8080/tcp'], 'local-service');
+    }
+    $instance->nodeServiceTargets()->create(['node_id' => $process->owner_id, ...$input, 'process_id' => $process->id]);
+    $before = $process->refresh()->getRawOriginal();
+    try {
+        app(StopProcessAction::class)->admit($process);
+        test()->fail('Detach must precede a stop.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('process.node_service_endpoint_in_use')
+            ->and($exception->getMessage())->toContain('Instance [app/default]', 'Detach those Node service targets');
+    }
+    expect($process->refresh()->getRawOriginal())->toEqual($before);
+    $this->assertDatabaseCount('operations', 0);
+})->with([false, true]);
+
+it('refuses changing an attached publication but permits unrelated intent and restart', function (bool $remoteTarget): void {
+    [$instance, $caller, $remote, $process, $input] = remoteNodeServiceFixture();
+    $bind = $remoteTarget ? '10.44.0.11' : '0.0.0.0';
+    if (! $remoteTarget) {
+        $process = nodeServiceAttachmentProcess($caller, ['0.0.0.0:8094:8080/tcp'], 'local-service');
+    }
+    $process->update(['runtime_config' => [...$process->runtime_config, 'command' => ['sleep', 'infinity'], 'environment' => [], 'volumes' => []]]);
+    $instance->nodeServiceTargets()->create(['node_id' => $process->owner_id, ...$input, 'process_id' => $process->id]);
+    $before = $process->refresh()->getRawOriginal();
+    foreach ([[], [$bind.':8095:8080/tcp'], ['127.0.0.1:8094:8080/tcp']] as $ports) {
+        $data = new AddProcessData(ProcessTargetType::Node, $process->owner_id, $process->name, ProcessRuntime::Docker,
+            [], 'fixture:stable', null, [], $ports, [], 'unless-stopped', false);
+        try {
+            app(UpdateProcessAction::class)->recordIntent($process, new UpdateProcessData($data, ['ports']));
+            test()->fail('An attached publication must remain assigned to its Process.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe('process.node_service_endpoint_in_use')
+                ->and($exception->getMessage())->toContain('Instance [app/default]', 'Detach those Node service targets');
+        }
+        expect($process->refresh()->getRawOriginal())->toEqual($before);
+    }
+    $runtime = Mockery::mock(ProcessRuntimeManager::class);
+    $runtime->shouldReceive('assertCanStart')->twice();
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $data = new AddProcessData(ProcessTargetType::Node, $process->owner_id, $process->name, ProcessRuntime::Docker,
+        [], 'fixture:next', null, [], [], [], 'unless-stopped', false);
+    $updated = app(UpdateProcessAction::class)->recordIntent($process, new UpdateProcessData($data, ['image']));
+    expect($updated->runtime_config['image'])->toBe('fixture:next')
+        ->and($updated->runtime_config['ports'])->toBe([$bind.':8094:8080/tcp']);
+    $operation = app(RestartProcessAction::class)->admit($updated);
+    expect($operation->kind)->toBe('process.restart');
+})->with([false, true]);
+
+it('reserves the service Nodes registered Database server port even for a different Process', function (): void {
+    [$instance, $caller, $remote, $process, $input] = remoteNodeServiceFixture();
+    DatabaseServer::query()->create(['slug' => 'fixture-postgres', 'node_id' => $remote->id, 'driver' => 'pgsql',
+        'tag' => '18', 'port' => 5434, 'root_password' => 'fixture-only', 'status' => 'active']);
+    $process->update(['runtime_config' => ['image' => 'fixture', 'ports' => ['10.44.0.11:5434:5432/tcp']]]);
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
+    $this->postJson("/api/v1/instances/{$instance->id}/node-service-targets", [...$input, 'port' => 5434])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'instance.node_service_port_reserved');
+    $this->assertDatabaseCount('instance_node_service_targets', 0);
 });

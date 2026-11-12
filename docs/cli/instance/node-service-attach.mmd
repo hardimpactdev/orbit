@@ -64,7 +64,7 @@ sequenceDiagram
             %%> On failure:
             %%> - instance.node_service_environment_conflict requires detaching the old record before a correction.
           else unused keys
-            Note over GW: Record service Node and attachment
+            Note over GW: Record service Node<br/>and attachment
             alt transaction fails
               GW--xCLI: Transaction failed<br/>Attachment write rolls back
             else transaction commits

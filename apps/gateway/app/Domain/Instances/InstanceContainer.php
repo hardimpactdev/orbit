@@ -346,7 +346,7 @@ final readonly class InstanceContainer
      * @param  list<array{id:int,process_id:int,process_name:string,host:string,port:int,docker:bool,host_env_key:string,port_env_key:string}>|null  $nodeServices
      * @return list<array{host:string,port:int,docker:bool,node_service?:bool,rule?:array<string,string>}>
      */
-    public function targetAccesses(Instance $instance, InstanceRuntime $runtime, ?DatabaseConnection $primary, ?array $mail, ?array $nodeServices = null): array
+    private function targetAccesses(Instance $instance, InstanceRuntime $runtime, ?DatabaseConnection $primary, ?array $mail, ?array $nodeServices = null): array
     {
         $targets = $this->databaseAccesses($instance, $runtime, $primary);
         $attached = [];
@@ -393,12 +393,12 @@ final readonly class InstanceContainer
      *
      * @return list<array{host: string, port: int, docker: bool}>
      */
-    public function nodeEndpoints(Node $node, ?int $exceptNodeService = null): array
+    public function nodeEndpoints(Node $node): array
     {
         $endpoints = [];
         foreach (InstanceRuntime::query()->where('node_id', $node->id)->with('instance')->orderBy('id')->get() as $runtime) {
             foreach ($this->targetAccesses($runtime->instance, $runtime, null, app(DevelopmentMail::class)->forInstance($runtime->instance),
-                InstanceNodeServiceTargets::endpoints($runtime->instance, requireRunning: false, except: $exceptNodeService)) as $access) {
+                InstanceNodeServiceTargets::endpoints($runtime->instance, requireRunning: false)) as $access) {
                 $endpoints[$access['host'].':'.$access['port']] = ['host' => $access['host'], 'port' => $access['port'], 'docker' => $access['docker']];
             }
         }
