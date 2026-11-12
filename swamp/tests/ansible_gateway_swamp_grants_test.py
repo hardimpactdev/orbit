@@ -108,13 +108,42 @@ class GatewaySwampGrantsTest(unittest.TestCase):
             play = [{'hosts': 'localhost', 'gather_facts': False,
                      'vars': {'control': {'user': getpass.getuser(), 'repository': str(repository)}}, 'tasks': tasks}]
             (folder / 'play.yml').write_text(json.dumps(play))
-            env = {**os.environ, 'PATH': str(folder / 'bin') + ':' + os.environ['PATH'], 'FIXTURE': str(folder),
+            # Run through the complete product fleet reconcile and its refresh snapshot decision. Only the Incus boundary is fake;
+            # the nested grants play uses real Ansible file changes and returns its real recap to the outer phase.
+            guests = {'gateway': 'nested-gateway', 'app-dev': 'nested-app-dev', 'app-prod': 'nested-app-prod'}
+            fleet = [{'hosts': 'localhost', 'gather_facts': False,
+                      'vars': {'intent': {'fleet': {'guests': guests}, 'direct': False},
+                               'converge_stamps': {'operator': 'current'}, 'converge_due': {'operator': False, 'tokens': False},
+                               'checkout_current': ['code', 'agent', 'migrations']},
+                      'tasks': [{'ansible.builtin.import_tasks': str(ANSIBLE / 'tasks/task-vm-fleet.yml')},
+                                yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())[1]['tasks'][0]]}]
+            (folder / 'fleet.yml').write_text(json.dumps(fleet))
+            (folder / 'bin/incus').write_text('#!' + sys.executable + '\n' + r"""
+import json, os, subprocess, sys
+from pathlib import Path
+folder = Path(os.environ['FIXTURE'])
+args = sys.argv[1:]
+if args == ['list', '--format', 'json']:
+    print(json.dumps([{'name': name, 'status': 'Running'} for name in ['nested-gateway', 'nested-app-dev', 'nested-app-prod']]))
+elif args[:2] == ['exec', 'nested-gateway'] and '--tags' in args and args[args.index('--tags') + 1] == 'grants':
+    assert args[-1] == '/home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml'
+    result = subprocess.run([os.environ['FIXTURE_ANSIBLE'], '-i', 'localhost,', '-c', 'local', '-e', 'ansible_become=false',
+                             '-e', 'ansible_python_interpreter=' + sys.executable, str(folder / 'play.yml')], check=False)
+    sys.exit(result.returncode)
+elif args[:3] == ['snapshot', 'create', '--reuse'] and args[-1] == 'base':
+    with (folder / 'snapshots.log').open('a') as log:
+        log.write(args[-2] + '\n')
+else:
+    sys.exit('Unexpected Incus invocation: ' + repr(args))
+""")
+            (folder / 'bin/incus').chmod(0o755)
+            env = {**os.environ, 'PATH': str(folder / 'bin') + ':' + os.environ['PATH'], 'FIXTURE': str(folder), 'FIXTURE_ANSIBLE': COMMAND,
                    'ANSIBLE_STDOUT_CALLBACK': 'default', 'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg')}
 
             def run(success):
                 (folder / 'reload.json').write_text(json.dumps({'success': success}))
                 return subprocess.run([COMMAND, '-i', 'localhost,', '-c', 'local', '-e', 'ansible_become=false',
-                                       '-e', 'ansible_python_interpreter=' + sys.executable, str(folder / 'play.yml')],
+                                       '-e', 'ansible_python_interpreter=' + sys.executable, str(folder / 'fleet.yml')],
                                       check=False, capture_output=True, text=True, timeout=60, env=env)
 
             failed = run(False)
@@ -136,11 +165,24 @@ class GatewaySwampGrantsTest(unittest.TestCase):
             self.assertEqual(grant.read_text(), current)
             self.assertTrue(all('--checkout=' + str(repository) in line for line in (folder / 'render.log').read_text().splitlines()))
             self.assertEqual(len((folder / 'collections.log').read_text().splitlines()), 4)
+            # Gateway code, migration and token stamps were current. The grants-only repair must still update every base snapshot.
+            self.assertEqual((folder / 'snapshots.log').read_text().splitlines(), list(guests.values()))
+            current_run = run(True)
+            self.assertEqual(current_run.returncode, 0, current_run.stdout + current_run.stderr)
+            self.assertIn('changed=0', current_run.stdout)
+            self.assertEqual((folder / 'snapshots.log').read_text().splitlines(), list(guests.values()))
 
     def test_the_grants_tag_uses_the_candidate_renderer_not_the_saved_plan_grants(self):
         plays = yaml.safe_load((ANSIBLE / 'gateway-bootstrap.yml').read_text())
         grants = next(play for play in plays if 'grants' in play.get('tags', []))
         self.assertEqual(grants['tasks'][0]['ansible.builtin.import_tasks'], 'tasks/gateway-swamp-grants.yml')
+        apply = yaml.safe_load((ANSIBLE.parent / 'workflows/workflow-task-nested-apply.yaml').read_text())['jobs'][0]['steps']
+        reconcile = next(step for step in apply if step['name'] == 'Reconcile the Swamp grants')
+        self.assertEqual(reconcile['task']['inputs']['argv'][-3:], ['--tags', 'grants', '/home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml'])
+        self.assertEqual(reconcile['dependsOn'][0]['step'], 'Place the agent delivery')
+        for name in ('Re-mint the Swamp tokens', 'Migrate'):
+            self.assertIn({'step': 'Reconcile the Swamp grants', 'condition': {'type': 'succeeded'}},
+                          next(step for step in apply if step['name'] == name)['dependsOn'])
         collections = next(play for play in plays if 'collections' in play.get('tags', []))
         self.assertEqual(collections['tasks'][0]['ansible.builtin.import_tasks'], 'tasks/gateway-ansible-collections.yml')
 

@@ -1322,7 +1322,7 @@ Then it makes the nested Gateway and its Nodes:
 
 The bootstrap input names the operator address of the VM, 10.45.0.10, so the nested Gateway records the `operator` Node that the operator join gives its key. Cloud-init disables the `wg` and `wg-quick` AppArmor profiles at boot, because the profile of Ubuntu 26.04 kills `wg-quick` in a nested container. The containers live in the pool `topology-seed` of the seed disk. The nested Gateway makes its own root CA for 10 years and signs its leaves for 397 days, and its Swamp tokens last 30 days. The fleet is private to the task VM, and the daily refresh replaces the seed long before any of these runs out.
 
-The rest of the phase then runs as on any converge: the operator join, the renewal of the Swamp tokens and the code of the commit, each recorded as done. The `base` snapshots of the containers are taken last. The earlier standalone fleet build took 1,840 s (Operation 11816), so a new host's first refresh takes about 30 minutes more than the build of the outer VM.
+The rest of the phase then runs as on any converge: the operator join, token renewal when due, grant reconciliation and the code of the commit. Grant reconciliation renders the checkout’s scoped manifests and reloads them with the existing serve-driver credential, even when the code and token stamps are current. The `base` snapshots are taken last, including when only grant files changed. The earlier standalone fleet build took 1,840 s (Operation 11816), so a new host's first refresh takes about 30 minutes more than the build of the outer VM.
 
 ##### Not built
 
@@ -1332,7 +1332,9 @@ The rest of the phase then runs as on any converge: the operator join, the renew
 
 The child `task-nested-apply` applies the checkout to the nested fleet, and the restore of the `base` snapshot reuses it. The containers start with the checkout already attached. At boot, the bind mount units of the containers put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the checkout.
 
-The child checks each of the three units on the Gateway and on app-dev and starts none. In a container no udev confirms the device behind the checkout's mount, so a start job would wait 90 s for it and fail. The child then runs the migrations of the checked-out code on the nested Gateway. It restarts the queue worker, the agent-view subscriber and the Swamp worker, and checks, one unit at a time, that they and the nested Swamp serve are active.
+The child checks each of the three units on the Gateway and on app-dev and starts none. In a container no udev confirms the device behind the checkout's mount, so a start job would wait 90 s for it and fail. The child then renders and reloads the checkout’s scoped Swamp grants with the existing serve-driver credential before optional token renewal and the migrations. It uses the candidate manifests, not the grants saved in the bootstrap control plan.
+
+It restarts the queue worker, the agent-view subscriber and the Swamp worker, and checks, one unit at a time, that they and the nested Swamp serve are active.
 
 The behavior name of `Check the services` carries the index of the unit, not its name. Swamp opens an SSH control socket under `/tmp/swamp-ssh/<behavior name>`, and a path over 108 bytes cannot be a Unix socket.
 

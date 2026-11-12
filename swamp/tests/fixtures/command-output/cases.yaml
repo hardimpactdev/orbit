@@ -1,5 +1,14 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  grants-current:
+    fleet_grants:
+      stdout: 'localhost : ok=3 changed=0 unreachable=0 failed=0'
+  grants-changed:
+    fleet_grants:
+      stdout: 'localhost : ok=3 changed=2 unreachable=0 failed=0'
+  grants-many-changes:
+    fleet_grants:
+      stdout: 'localhost : ok=3 changed=12 unreachable=0 failed=0'
   nft-rising:
     intent:
       address: 10.253.0.1
@@ -711,6 +720,21 @@ contexts:
       rc: 0
       stdout_lines: [ActiveState=active, Job=, MainPID=1742, NRestarts=0invalid]
 cases:
+- file: tasks/task-vm-fleet.yml
+  task: Reconcile the nested Swamp grants
+  field: changed_when
+  context: grants-current
+  expected: false
+- file: tasks/task-vm-fleet.yml
+  task: Reconcile the nested Swamp grants
+  field: changed_when
+  context: grants-changed
+  expected: true
+- file: tasks/task-vm-fleet.yml
+  task: Reconcile the nested Swamp grants
+  field: changed_when
+  context: grants-many-changes
+  expected: true
 - file: tasks/instance-migrate-process-ready.yml
   task: Wait for the moved Processes to finish starting
   field: until

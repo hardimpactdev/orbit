@@ -36,6 +36,13 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-place-the-agent-delivery").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-place-the-agent-delivery").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ inputs.fleet.guests.gateway }}', '--user', '1000', '--', 'install', '-D', '-m', '0444', '/home/orbit/orbit/apps/gateway/resources/agent/frozen-manifest.json', '/home/orbit/orbit/apps/agent/delivery/manifest.json'], timeoutSec: 40}}
     dependsOn: [{step: 'Check the state', condition: {type: succeeded}}]
+  # Local grants mask the candidate checkout and survive restore. The grants play renders fresh manifests; it does not renew tokens.
+  - name: 'Reconcile the Swamp grants'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-reconcile-the-swamp-grants").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-reconcile-the-swamp-grants").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '180', 'incus', 'exec', '${{ inputs.fleet.guests.gateway }}', '--', 'env', 'ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg', 'ANSIBLE_DISPLAY_FAILED_STDERR=true', '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml', '--tags', 'grants', '/home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml'], timeoutSec: 190}}
+    dependsOn: [{step: 'Place the agent delivery', condition: {type: succeeded}}]
   # A failed task writes its message to stderr, which the run records with the failed step.
   # The Swamp tokens of the nested Gateway are renewed from the mounted checkout, so the tokens of the ready copies never decide how long a fleet lives (play `remint` of `gateway-bootstrap.yml`, with the control plan the build left on the machine). Only a fleet that starts from ready copies needs it: a restore of `base` brings back tokens that were renewed before it.
   - name: 'Re-mint the Swamp tokens'
@@ -44,14 +51,14 @@ jobs:
     guard: '${{ !(has(inputs.remint) && inputs.remint) }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-re-mint-the-swamp-tokens").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-re-mint-the-swamp-tokens").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '900', 'incus', 'exec', '${{ inputs.fleet.guests.gateway }}', '--', 'env', 'ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg', 'ANSIBLE_DISPLAY_FAILED_STDERR=true', '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml', '--tags', 'remint', '/home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml'], timeoutSec: 910}}
-    dependsOn: [{step: 'Place the agent delivery', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Reconcile the Swamp grants', condition: {type: succeeded}}]
   # The ready copies hold an older database; the checked-out code owns the schema.
   - name: 'Migrate'
     labels: {role: swamp}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-migrate").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-migrate").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '120', 'incus', 'exec', '${{ inputs.fleet.guests.gateway }}', '--user', '1000', '--cwd', '/home/orbit/orbit/apps/gateway', '--', 'php', 'artisan', 'migrate', '--force'], timeoutSec: 130}}
-    dependsOn: [{step: 'Place the agent delivery', condition: {type: succeeded}}, {step: 'Re-mint the Swamp tokens', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Reconcile the Swamp grants', condition: {type: succeeded}}, {step: 'Re-mint the Swamp tokens', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
   # The queue worker, the scheduler and the agent-view subscriber load their code once; they run the checked-out code after this.
   - name: 'Restart the services'
     labels: {role: swamp}
