@@ -170,6 +170,8 @@ def converge_task_sources():
                 action = key.rsplit('.', 1)[-1]
                 if action in {'include_tasks', 'import_tasks', 'import_playbook'}:
                     include(source, value)
+                elif key in {'action', 'local_action'} and re.search(r'\b(include|import)_', str(value)):
+                    raise AssertionError(f'Write the include as a module key, not through action: {source}')
                 elif action in {'roles', 'include_role', 'import_role'}:
                     raise AssertionError(f'Extend the converge name walker before adding roles: {source}')
                 elif key in {'tasks', 'pre_tasks', 'post_tasks', 'handlers', 'block', 'rescue', 'always'}:
@@ -190,11 +192,15 @@ class ConvergeTaskNamesTest(unittest.TestCase):
         files, names = converge_task_sources()
         self.assertTrue(files)
         self.assertTrue(names)
+        # One rule: the reporter withholds a name outside this pattern, so every converge task name must fit it.
+        reporter = (ROOT.parent / 'extensions/behaviors/operations/ansible-input/converge_result.ts').read_text()
+        pattern = re.search(r'const TaskName = /(.+)/;', reporter).group(1)
         for path, name in names:
             with self.subTest(file=str(path.relative_to(ROOT)), name=name):
                 self.assertIsInstance(name, str)
                 self.assertNotIn('{{', name)
                 self.assertNotIn('{%', name)
+                self.assertRegex(name, pattern)
 
 
 if __name__ == '__main__':

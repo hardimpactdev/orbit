@@ -190,7 +190,7 @@ it('accepts bounded task failures and retains them in the Operation result', fun
     $operation = app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => 'failed', 'result' => $result]);
     expect($operation->result)->toBe($result)->and($operation->status)->toBe(OperationStatus::Failed);
 })->with([
-    'command' => [['task' => 'probe : Fail a command', 'host' => 'target', 'reason' => 'command_failed', 'rc' => 7]],
+    'command' => [['task' => 'Fail a command', 'host' => 'target', 'reason' => 'command_failed', 'rc' => 7]],
     'hidden' => [['task' => null, 'host' => 'hub', 'reason' => 'hidden']],
     'null task' => [['task' => null, 'host' => 'target', 'reason' => 'command_failed', 'rc' => 7]],
     'assertion' => [['task' => 'Check configuration', 'host' => 'hub', 'reason' => 'assertion']],

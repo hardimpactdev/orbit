@@ -64,7 +64,7 @@
               "end": "2026-01-01T00:00:01Z"
             },
             "id": "00000000-0000-0000-0000-000000000002",
-            "name": "probe : Fail a command",
+            "name": "Fail a command",
             "path": "roles/probe/tasks/main.yml:1"
           }
         }

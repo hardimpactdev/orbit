@@ -25,9 +25,12 @@ const Fields = z.record(z.string(), z.unknown());
 const Play = z.object({ tasks: z.array(z.unknown()) });
 const Task = z.object({ task: Fields, hosts: z.record(z.string(), Fields) });
 
+// The characters of a converge task name. The static-name test reads this pattern and holds every task name to it.
+const TaskName = /^[A-Za-z0-9 ,'+-]{1,120}$/;
+
+/** A name outside the pattern, or with a long token, could be a path or a rendered value: it is withheld. */
 function safeText(value: unknown): string | null {
-    if (typeof value !== "string" || !value.length || /[\/=@]|[A-Za-z0-9+_-]{16,}/.test(value)) return null;
-    return value.replace(/[^\x20-\x7e]/g, "?").slice(0, 120);
+    return typeof value === "string" && TaskName.test(value) && !/[A-Za-z0-9+-]{16,}/.test(value) ? value : null;
 }
 
 function hidden(value: Record<string, unknown>): boolean {
@@ -41,6 +44,7 @@ function hidden(value: Record<string, unknown>): boolean {
 function fatalFailure(report: z.infer<typeof Report>): z.infer<typeof Failure> | undefined {
     type Candidate = { order: number; failure: z.infer<typeof Failure> };
     const failed = new Map<string, Candidate>();
+    const unreachable = new Map<string, Candidate>();
     const censored = new Map<string, Candidate>();
     let order = 0;
     for (const rawPlay of report.plays) {
@@ -63,13 +67,15 @@ function fatalFailure(report: z.infer<typeof Report>): z.infer<typeof Failure> |
                     : result.rc === 124 ? "timeout"
                     : action === "assert" || action === "fail" || Object.hasOwn(result, "assertion") || Object.hasOwn(result, "evaluated_to") ? "assertion"
                     : rc.success ? "command_failed" : "module_failed";
-                failed.set(alias, { order: position, failure: { task: isHidden ? null : safeText(row.data.task.name), host: alias, reason,
+                (result.unreachable === true ? unreachable : failed).set(alias, { order: position, failure: { task: isHidden ? null : safeText(row.data.task.name), host: alias, reason,
                     ...(reason === "command_failed" && rc.success ? { rc: rc.data } : {}) } });
             }
         }
     }
     // A host stops at its fatal task. Earlier ignored/rescued failures do not explain its final stats.
-    return ["hub", "target"].map((host) => failed.get(host) ?? censored.get(host))
+    // An unreachable host ended there: a failed record of that host was ignored or rescued before it.
+    return ["hub", "target"].map((host) => (report.stats[host]?.unreachable ?? 0) > 0
+        ? unreachable.get(host) ?? censored.get(host) ?? failed.get(host) : failed.get(host) ?? unreachable.get(host) ?? censored.get(host))
         .filter((candidate): candidate is Candidate => candidate !== undefined)
         .sort((a, b) => a.order - b.order)[0]?.failure;
 }

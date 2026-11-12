@@ -605,10 +605,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 → v5.12.0",
-      "exact script output: v5.42.0 → v5.43.0",
-      "exact script output: v5.49.0 → v5.50.0",
-      "exact script output: v5.50.0 → v5.50.1",
+      "exact script output: v5.11.0 \u2192 v5.12.0",
+      "exact script output: v5.42.0 \u2192 v5.43.0",
+      "exact script output: v5.49.0 \u2192 v5.50.0",
+      "exact script output: v5.50.0 \u2192 v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -643,7 +643,7 @@
     ]
   },
   "swamp/tests/ansible_command_output_test.py": {
-    "source_sha256": "c37a1a3815f0ad0e0ba52faa8ae210140f3db1164e4ae8c506d8357bf3829e1e",
+    "source_sha256": "eebc0ab434bef6592eced0996664e43e5b80758cc3d2eca444a569262ed36406",
     "cases": [
       "test_every_regex_is_exercised_or_classified_without_command_output",
       "test_unclassified_native_regex_tests_fail_coverage",
@@ -1512,7 +1512,7 @@
     ]
   },
   "swamp/tests/node_converge_test.ts": {
-    "source_sha256": "9550079fe51653a0a763b1cc54fc36216ba768ed8a74e6dde468fcfc56d2a364",
+    "source_sha256": "87d98cb7df890f50cc4c67bab12cb877d5bd4f1134638e64174e96106b9e6e67",
     "cases": [
       "converge reports all phases, live no-op counts and measured elapsed time; hub changes are not target changes",
       "converge stops reporting success at input and preserves the first failure",
@@ -1559,6 +1559,7 @@
       "the last fatal record explains always callback statistics",
       "a rescued callback without fatal statistics succeeds with no failure",
       "a censored unreachable callback identifies its failed host without leaking its name",
+      "an unreachable host is not explained by its earlier ignored failure",
       "a rendered-secret callback retains the failure while withholding the name and private markers",
       "a path callback retains the failure while withholding the name and private markers",
       "value-like names are withheld without changing the failure class",

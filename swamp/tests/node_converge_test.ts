@@ -207,7 +207,7 @@ Deno.test("the workflow has ordered phase invocations and an always-dependent pr
 const commandReport = JSON.parse(Deno.readTextFileSync(new URL("./fixtures/node-converge-command.json", import.meta.url)));
 const hiddenReport = JSON.parse(Deno.readTextFileSync(new URL("./fixtures/node-converge-hidden.json", import.meta.url)));
 const privateMarkers = ["LEAK_MSG", "LEAK_STDOUT", "LEAK_STDERR", "LEAK_CMD", "LEAK_ARGS", "LEAK_ITEM", "LEAK_HIDDEN", "LEAK_RENDEREDSECRET1234567890", "LEAK_PATH", "LEAK_ROLE_PATH", "LEAK_EXCEPTION"];
-const commandFailure = { task: "probe : Fail a command", host: "target", reason: "command_failed", rc: 7 } as const;
+const commandFailure = { task: "Fail a command", host: "target", reason: "command_failed", rc: 7 } as const;
 
 async function failureReport(report: unknown, exitCode = 2) {
     const folder = await Deno.makeTempDir();
@@ -269,8 +269,12 @@ Deno.test("no_log and censored tasks hide names and return codes", async () => {
 
 Deno.test("converge bounds task text and refuses host addresses", async () => {
     const report = structuredClone(commandReport);
-    report.plays[0].tasks[0].task.name = "\u001b\n\u2603" + "word ".repeat(30);
-    assertEquals((await failureReport(report)).failure, { ...commandFailure, task: "???" + "word ".repeat(30).slice(0, 117) });
+    for (const name of ["\u001b\n\u2603 word", "word ".repeat(30), "probe : Fail a command"]) {
+        report.plays[0].tasks[0].task.name = name;
+        assertEquals((await failureReport(report)).failure, { ...commandFailure, task: null });
+    }
+    report.plays[0].tasks[0].task.name = "word ".repeat(24);
+    assertEquals((await failureReport(report)).failure, { ...commandFailure, task: "word ".repeat(24) });
     report.plays[0].tasks[0].hosts = { "192.0.2.1": { failed: true, rc: 7 } };
     assertEquals(Object.hasOwn(await failureReport(report), "failure"), false);
 });
@@ -313,6 +317,16 @@ Deno.test("a censored unreachable callback identifies its failed host without le
         { task: null, host: "target", reason: "hidden" });
 });
 
+Deno.test("an unreachable host is not explained by its earlier ignored failure", async () => {
+    const report = structuredClone(commandReport);
+    const ignored = report.plays[0].tasks[0];
+    report.stats.target = { changed: 0, failures: 0, unreachable: 1 };
+    report.plays[0].tasks = [ignored, { task: { name: "LEAK_HIDDEN" }, hosts: { target: { censored: "LEAK_MSG" } } }];
+    assertEquals((await failureReport(report)).failure, { task: null, host: "target", reason: "hidden" });
+    report.plays[0].tasks = [ignored, { task: { name: "Reach the host" }, hosts: { target: { unreachable: true, msg: "LEAK_MSG" } } }];
+    assertEquals((await failureReport(report)).failure, { task: "Reach the host", host: "target", reason: "unreachable" });
+});
+
 for (const name of ["rendered-secret", "path"]) {
     Deno.test(`a ${name} callback retains the failure while withholding the name and private markers`, async () => {
         assertEquals((await failureReport(callbackFixture(name))).failure, { task: null, host: "target", reason: "assertion" });
@@ -320,7 +334,8 @@ for (const name of ["rendered-secret", "path"]) {
 }
 
 Deno.test("value-like names are withheld without changing the failure class", async () => {
-    for (const name of ["Check secret=value", "Check user@example", "Check deadbeefdeadbeef", "Check abcdEFGH0123+abc", "Check abcDEF0123_-abcDEF"]) {
+    for (const name of ["Check secret=value", "Check user@example", "Check deadbeefdeadbeef", "Check abcdEFGH0123+abc", "Check abcDEF0123_-abcDEF",
+        "Read .env", "Read C:\\private\\key", "Read ~root", "Check a:b", "Check \"x\"", "Check $HOME", "Check x_y"]) {
         const report = structuredClone(commandReport);
         report.plays[0].tasks[0].task.name = name;
         assertEquals((await failureReport(report)).failure, { ...commandFailure, task: null });
