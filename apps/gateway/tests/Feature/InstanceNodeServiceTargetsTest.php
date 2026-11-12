@@ -76,7 +76,7 @@ describe('Node service attachment records', function (): void {
             'host_env_key' => 'OTHER_HOST', 'port_env_key' => 'OTHER_PORT']);
         $process = OrbitProcess::query()->findOrFail($input['process_id']);
         $process->update(['runtime_config' => [...$process->runtime_config, 'environment' => ['SERVICE_PASSWORD' => 'list-secret-sentinel']]]);
-        $before = $process->getRawOriginal();
+        $before = $process->refresh()->getRawOriginal();
         $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
 
         $response = $this->getJson("/api/v1/instances/{$instance->id}/node-service-targets")->assertOk();
@@ -150,7 +150,7 @@ describe('Node service attachment records', function (): void {
         Queue::assertNothingPushed();
     });
 
-    it('returns named refusals for a remote Node and a non-TCP protocol', function (string $case, string $code): void {
+    it('refuses unauthorized remote Nodes and non-TCP protocols', function (string $case, string $code, int $status): void {
         [$instance, $node, $input] = nodeServiceAttachmentFixture();
         $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
         if ($case === 'remote') {
@@ -162,12 +162,12 @@ describe('Node service attachment records', function (): void {
         }
 
         $this->postJson("/api/v1/instances/{$instance->id}/node-service-targets", $input)
-            ->assertUnprocessable()->assertJsonPath('error.code', $code);
+            ->assertStatus($status)->assertJsonPath('error.code', $code);
 
         $this->assertDatabaseCount('instance_node_service_targets', 0);
     })->with([
-        'remote' => ['remote', 'instance.node_service_remote_node'],
-        'UDP' => ['udp', 'instance.node_service_protocol_unsupported'],
+        'remote' => ['remote', 'node_access.required', 403],
+        'UDP' => ['udp', 'instance.node_service_protocol_unsupported', 422],
     ]);
 
     it('refuses invalid input without recording a target', function (array $change): void {
@@ -460,7 +460,7 @@ it('refuses an owner-driven Node Process on attach and when revalidating a store
         app()->instance($contribution::class, $contribution);
         app()->tag([$contribution::class], ProcessRemovalGuard::class);
     }
-    $before = $process->getRawOriginal();
+    $before = $process->refresh()->getRawOriginal();
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
 
     $response = $this->postJson("/api/v1/instances/{$instance->id}/node-service-targets", $input)
@@ -559,4 +559,137 @@ it('keeps the exact recorded endpoint through a stopped Process Node-intent capt
     expect($policy->nodeEndpoints($node))->toBe($expected);
     $target = InstanceNodeServiceTargets::endpoints($instance)[0];
     expect($target['process_id'])->toBe($process->id)->and($target['process_name'])->toBe('mailpit');
+});
+
+/** @return array{Instance,Node,Node,OrbitProcess,array<string,int|string>} */
+function remoteNodeServiceFixture(): array
+{
+    [$instance, $caller, $input] = nodeServiceAttachmentFixture();
+    $remote = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'fixture-shark', 'status' => 'active',
+        'platform' => 'linux', 'wireguard_ip' => '10.44.0.11', 'public_ssh_host' => '198.51.100.11', 'user' => 'orbit']));
+    $caller->accessibleNodes()->attach($remote);
+    $process = nodeServiceAttachmentProcess($remote, ['10.44.0.11:8094:8080/tcp']);
+
+    return [$instance, $caller, $remote, $process, [...$input, 'process_id' => $process->id, 'port' => 8094,
+        'host_env_key' => 'SERVICE_HOST', 'port_env_key' => 'SERVICE_PORT']];
+}
+
+it('attaches an authorized remote Docker publication without changing its Process', function (): void {
+    [$instance, $caller, $remote, $process, $input] = remoteNodeServiceFixture();
+    $before = $process->refresh()->getRawOriginal();
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
+    $uri = "/api/v1/instances/{$instance->id}/node-service-targets";
+    $target = $this->postJson($uri, $input)->assertOk()->assertJsonPath('data.node_id', $remote->id)->json('data.id');
+    $this->postJson($uri, $input)->assertOk()->assertJsonPath('data.id', $target)->assertJsonPath('data.changed', false);
+    expect($process->refresh()->getRawOriginal())->toBe($before);
+    expect(InstanceNodeServiceTargets::endpoints($instance))->toBe([[
+        'id' => $target, 'process_id' => $process->id, 'process_name' => 'mailpit', 'host' => '10.44.0.11', 'port' => 8094,
+        'docker' => false, 'host_env_key' => 'SERVICE_HOST', 'port_env_key' => 'SERVICE_PORT',
+    ]]);
+    Http::assertNothingSent();
+    Process::assertNothingRan();
+});
+
+it('refuses ineligible remote publications without changing the Process', function (string $case, string $code): void {
+    [$instance, $caller, $remote, $process, $input] = remoteNodeServiceFixture();
+    if ($case === 'wrong-port') {
+        $input['port'] = 8095;
+    } elseif ($case === 'systemd') {
+        $process->update(['runtime' => 'systemd', 'runtime_config' => []]);
+    } elseif ($case === 'public') {
+        $process->update(['runtime_config' => ['image' => 'fixture', 'ports' => ['198.51.100.11:8094:8080/tcp']]]);
+    } elseif ($case === 'other-private') {
+        $process->update(['runtime_config' => ['image' => 'fixture', 'ports' => ['10.44.0.12:8094:8080/tcp']]]);
+    } elseif ($case === 'public-node') {
+        Node::withoutEvents(fn () => $remote->update(['wireguard_ip' => '198.51.100.11']));
+        $process->update(['runtime_config' => ['image' => 'fixture', 'ports' => ['198.51.100.11:8094:8080/tcp']]]);
+    } elseif ($case === 'wildcard') {
+        $process->update(['runtime_config' => ['image' => 'fixture', 'ports' => ['0.0.0.0:8094:8080/tcp']]]);
+    } elseif ($case === 'ambiguous') {
+        $process->update(['runtime_config' => ['image' => 'fixture', 'ports' => ['10.44.0.11:8094:8080/tcp', '0.0.0.0:8094:8081/tcp']]]);
+    } else {
+        $caller->accessibleNodes()->detach($remote);
+    }
+    $before = $process->refresh()->getRawOriginal();
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
+    $response = $this->postJson("/api/v1/instances/{$instance->id}/node-service-targets", $input);
+    $response->assertStatus($case === 'authority' ? 403 : 422)->assertJsonPath('error.code', $code);
+    $this->assertDatabaseCount('instance_node_service_targets', 0);
+    expect($process->refresh()->getRawOriginal())->toBe($before);
+})->with([
+    ['wrong-port', 'instance.node_service_port_unpublished'],
+    ['systemd', 'instance.node_service_port_unpublished'],
+    ['public', 'instance.node_service_listener_private'],
+    ['public-node', 'instance.node_service_listener_private'],
+    ['other-private', 'instance.node_service_listener_private'],
+    ['wildcard', 'instance.node_service_listener_private'],
+    ['ambiguous', 'instance.node_service_listener_private'],
+    ['authority', 'node_access.required'],
+]);
+
+it('projects only the exact remote path and proxy host and withdraws the complete path', function (): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default',
+        'checkout_path' => '/workspace/default', 'status' => 'active', 'first_setup_pending' => false]);
+    $remote = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'fixture-shark', 'status' => 'active',
+        'platform' => 'linux', 'wireguard_ip' => '10.44.0.11', 'public_ssh_host' => '198.51.100.11', 'user' => 'orbit']));
+    $process = nodeServiceAttachmentProcess($remote, ['10.44.0.11:8094:8080/tcp']);
+    $target = $instance->nodeServiceTargets()->create(['node_id' => $remote->id, 'process_id' => $process->id,
+        'protocol' => 'tcp', 'port' => 8094, 'host_env_key' => 'SERVICE_HOST', 'port_env_key' => 'SERVICE_PORT']);
+    $policy = app(InstanceContainer::class);
+    $runtime = $policy->reserve($instance, $node);
+    $runtime->update(['seed_commit' => str_repeat('a', 40), 'power_state' => 'running']);
+    $intent = $policy->intent($instance, $runtime);
+    $rule = ['rule' => 'allow', 'interface_in' => 'orbitinst0', 'from_ip' => $runtime->bridge_address,
+        'to_ip' => '10.44.0.11', 'to_port' => '8094', 'proto' => 'tcp',
+        'comment' => 'orbit:instance-'.$instance->id.'-node-service-10.44.0.11-8094', 'route' => 'yes', 'interface_out' => 'orbit'];
+    expect($intent['bridge_endpoints'])->toBe([['host' => '10.44.0.11', 'port' => 8094, 'docker' => false]])
+        ->and($intent['acl_rules']['egress'])->toBe([['action' => 'allow', 'destination' => '10.44.0.11/32',
+            'protocol' => 'tcp', 'destination_port' => '8094', 'state' => 'enabled', 'description' => 'Orbit Node service:8094']])
+        ->and($intent['firewall'])->toContain($rule)
+        ->and($intent['environment'])->toContain('NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1,10.44.0.11',
+            'no_proxy=localhost,127.0.0.1,::1,10.253.0.1,10.44.0.11')
+        ->and($intent['config']['environment.NO_PROXY'])->toBe('localhost,127.0.0.1,::1,10.253.0.1,10.44.0.11');
+    $clone = $instance->replicate();
+    $clone->name = 'unattached';
+    $clone->checkout_path = '/workspace/unattached';
+    $clone->save();
+    $copy = $policy->reserve($clone, $node, $instance);
+    $cloneIntent = $policy->intent($clone, $copy);
+    expect($cloneIntent['acl_rules']['egress'])->toBe([])
+        ->and($cloneIntent['config']['environment.NO_PROXY'])->not->toContain('10.44.0.11')
+        ->and($cloneIntent['environment'])->not->toContain('NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1,10.44.0.11');
+    $operation = app(NodeServiceTargetOperation::class)->start($instance, $target);
+    expect($operation->input['container']['bridge_endpoints'])->toBe([])
+        ->and($operation->input['container']['node_service_removed_rules'])->toBe([$rule])
+        ->and($operation->input['container']['environment'])->toBe([
+            'NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1', 'no_proxy=localhost,127.0.0.1,::1,10.253.0.1'])
+        ->and($operation->input['container']['node_service_removed_ports'])->toBe([]);
+    expect($target->fresh())->not->toBeNull();
+});
+
+it('retains remote access when another attachment shares its host and port', function (): void {
+    [$instance, $caller, $remote, $process, $input] = remoteNodeServiceFixture();
+    $target = $instance->nodeServiceTargets()->create(['node_id' => $remote->id, ...$input]);
+    $retained = $instance->nodeServiceTargets()->create(['node_id' => $remote->id, ...$input,
+        'host_env_key' => 'OTHER_HOST', 'port_env_key' => 'OTHER_PORT']);
+    $instance->runtime()->create(['node_id' => $caller->id, 'incus_project' => 'orbit-instances',
+        'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2',
+        'runtime_version' => 'v1', 'agent_version' => 'v1', 'power_state' => 'running']);
+    $operation = app(NodeServiceTargetOperation::class)->start($instance, $target);
+    expect($operation->input['container']['bridge_endpoints'])->toBe([['host' => '10.44.0.11', 'port' => 8094, 'docker' => false]])
+        ->and($operation->input['container']['node_service_removed_rules'])->toBe([])
+        ->and($operation->input['container']['node_services'][0]['id'])->toBe($retained->id)
+        ->and($operation->input['container']['environment'])->toContain('NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1,10.44.0.11');
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'remote-withdraw-fixture']])->save();
+    $result = app(NodeServiceTargetOperation::class)->apply($operation, [
+        'status' => 'succeeded', 'run_id' => 'remote-withdraw-fixture',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['status' => 'unchanged', 'ports' => [8094]],
+    ]);
+    expect($result->result['detached'])->toBeTrue();
+    $this->assertModelMissing($target);
+    $this->assertModelExists($retained);
+    $this->assertModelExists($process);
 });

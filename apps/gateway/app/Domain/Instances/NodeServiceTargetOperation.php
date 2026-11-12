@@ -30,14 +30,26 @@ final readonly class NodeServiceTargetOperation implements DirectOperationProjec
         }
         $gateway = Ipv4Subnet::from(ValidatedData::string($instance->node->instance_bridge))->usableRange()[0];
         // Withdrawal uses recorded identities, not live Docker eligibility: a stopped target must remain detachable.
-        $endpoints = $instance->nodeServiceTargets()->where('id', '!=', $target->id)->with('process')->orderBy('id')->get()
-            ->map(static fn (InstanceNodeServiceTarget $row): array => ['id' => $row->id, 'process_id' => $row->process_id, 'process_name' => $row->process->name, 'host' => $gateway, 'port' => $row->port,
-                'docker' => true, 'host_env_key' => $row->host_env_key, 'port_env_key' => $row->port_env_key])->all();
+        $endpoints = InstanceNodeServiceTargets::endpoints($instance, requireRunning: false, except: $target->id);
+        $policy = app(InstanceContainer::class);
+        $remote = $target->node_id !== $instance->node_id;
+        $host = $remote ? ValidatedData::string($target->node->wireguard_ip) : $gateway;
+        $remaining = $policy->targetAccesses($instance, $runtime, null, app(DevelopmentMail::class)->forInstance($instance), $endpoints);
+        $shared = array_any($remaining, static fn (array $row): bool => $row['host'] === $host && $row['port'] === $target->port);
         $container = ['name' => $runtime->container_name, 'project' => $runtime->incus_project,
             'acl' => $runtime->container_name, 'network' => InstanceHostIntent::Network,
             'bridge_cidr' => $instance->node->instance_bridge, 'bridge_admitted_at' => (int) now()->format('Uu'),
             'node_services' => $endpoints, 'node_service_withdraw' => true,
-            'node_service_removed_ports' => [$target->port]];
+            'environment' => array_map(static fn (string $key, string $value): string => $key.'='.$value,
+                array_keys(InstanceNodeServiceTargets::proxyEnvironment($gateway, $endpoints)),
+                InstanceNodeServiceTargets::proxyEnvironment($gateway, $endpoints)),
+            'node_service_removed_ports' => $remote ? [] : [$target->port],
+            ...($remote ? [
+                'node_service_removed_hosts' => [$host],
+                'bridge_endpoints' => $policy->nodeEndpoints($instance->node, exceptNodeService: $target->id),
+                'node_service_removed_rules' => $shared ? [] : [$policy->tcpRule($instance, $runtime, $host, $target->port, false,
+                    'node-service-'.$host.'-'.$target->port)],
+            ] : [])];
         $attachment = AttachInstanceNodeServiceTargetAction::data($target, true)->toArray();
 
         return app(StartOperationAction::class)->execute('instance.node_service_detach',

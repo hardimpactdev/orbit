@@ -2879,3 +2879,8 @@ inputs = [
   "swamp/ansible/tasks/instance-migrate-phase.yml",
   "swamp/ansible/tasks/instance-migrate-retirement-check.yml",
 ]
+
+[[fixture]]
+file = "swamp/tests/instance_node_service_access_test.py"
+cost = 1
+inputs = ["swamp/ansible/instance_node_services.py"]

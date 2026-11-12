@@ -26,8 +26,10 @@ final readonly class AttachInstanceNodeServiceTargetAction
         return $this->operations->run([$instance->id], function () use ($instance, $processId, $protocol, $port, $hostEnvKey, $portEnvKey): InstanceNodeServiceTargetData {
             $instance = Instance::query()->lockForUpdate()->findOrFail($instance->id);
             self::assertMutable($instance);
-            $port = InstanceNodeServiceTargets::resolvePort($instance, Process::query()->find($processId), $protocol, $port);
-            $nodeId = $instance->node_id;
+            $process = Process::query()->find($processId);
+            $port = InstanceNodeServiceTargets::resolvePort($instance, $process, $protocol, $port);
+            assert($process instanceof Process);
+            $nodeId = $process->owner_id;
             $target = new InstanceNodeServiceTarget(['instance_id' => $instance->id, 'process_id' => $processId, 'node_id' => $nodeId, 'protocol' => $protocol,
                 'port' => $port, 'host_env_key' => $hostEnvKey, 'port_env_key' => $portEnvKey]);
             $existing = $instance->nodeServiceTargets()->where('host_env_key', $hostEnvKey)->where('port_env_key', $portEnvKey)->first();
