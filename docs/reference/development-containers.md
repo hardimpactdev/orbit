@@ -734,8 +734,8 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
 | Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
 | While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
-| Retirement check | Checks Git identity before downtime and retention. Blocks tracked changes and owner dependencies. Linked checkouts check their own HEAD; owners check all branches and stashes. Untracked files pass; errors name 20 paths and total counts |
-| Branch | The mirror fetches the recorded branch from the checkout itself. A linked checkout refuses only its own unpushed HEAD; an owner checks every local branch and detached HEAD. The move needs no token |
+| Retirement check | Checks identity before downtime and retention. Linked checkouts protect their HEAD; owners protect all branches and stashes. Tracked changes and owner dependencies block; untracked files pass |
+| Branch | The mirror fetches the recorded branch locally. A linked checkout refuses its own unpushed HEAD; an owner checks every local branch and detached HEAD |
 | Files | One archive of the paths of `git diff HEAD` and `git ls-files --others`, extracted as `orbit`. Tracked files that the checkout deleted are removed |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace`, and the Gateway rewrites its stored values the same way |
 | Database server | The NIC ACL and the Node's firewall rule to every attached target. The container phase checks every port from inside before quiesce, else `instance.database_unreachable`, with zero downtime |

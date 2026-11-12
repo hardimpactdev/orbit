@@ -831,6 +831,10 @@ Deno.test({
     try {
       const sibling = f.apps + "/sibling";
       git(f.main, "worktree", "add", "--quiet", "-b", "sibling", sibling);
+      const otherCommit = git(f.main, "commit-tree", git(f.main, "rev-parse", "HEAD^{tree}"), "-p", "HEAD", "-m", "other local-only branch");
+      git(f.main, "update-ref", "refs/heads/other-local", otherCommit);
+      Deno.writeTextFileSync(f.main + "/index.php", "shared stash");
+      git(f.main, "stash", "push", "--quiet", "-m", "shared-store");
       Deno.writeTextFileSync(f.checkout + "/untracked-kept.txt", "untracked survives");
       const admin = git(f.checkout, "rev-parse", "--absolute-git-dir");
       const owner = gitFiles(f.main, admin);
@@ -863,7 +867,7 @@ Deno.test({
   },
 });
 
-for (const blocker of ["unstaged", "staged", "unpushed", "stash", "identity", "nested"] as const) {
+for (const blocker of ["unstaged", "staged", "unpushed", "identity", "nested"] as const) {
   Deno.test({
     name: "linked worktree preflight refuses " + blocker + " without touching its active owner or sibling",
     ignore: !hasAnsible,
@@ -876,10 +880,7 @@ for (const blocker of ["unstaged", "staged", "unpushed", "stash", "identity", "n
           Deno.writeTextFileSync(f.checkout + "/index.php", "tracked edit");
           if (blocker === "staged") git(f.checkout, "add", "index.php");
         } else if (blocker === "unpushed") git(f.checkout, "commit", "--quiet", "--allow-empty", "-m", "not pushed");
-        else if (blocker === "stash") {
-          Deno.writeTextFileSync(f.checkout + "/index.php", "stashed edit");
-          git(f.checkout, "stash", "push", "--quiet");
-        } else if (blocker === "identity") {
+        else if (blocker === "identity") {
           const admin = git(f.checkout, "rev-parse", "--absolute-git-dir");
           Deno.writeTextFileSync(admin + "/gitdir", sibling + "/.git\n");
         }
@@ -887,7 +888,7 @@ for (const blocker of ["unstaged", "staged", "unpushed", "stash", "identity", "n
         const refused = f.run("container");
         assert(!refused.ok, refused.output);
         assertEquals(f.result().error_code, blocker === "unpushed" ? "instance.migrate_unpushed_commits"
-          : blocker === "stash" ? "instance.migrate_stashes_present" : "instance.migrate_retirement_blocked");
+          : "instance.migrate_retirement_blocked");
         assertEquals(gitFiles(f.apps), before);
         assert(exists(f.migrate.awake.path));
         assertEquals(f.state().containers ?? {}, {});

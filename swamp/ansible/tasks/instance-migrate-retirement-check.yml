@@ -131,6 +131,7 @@
         fail_msg: "{{ migrate_refusal_message | default('instance.migrate_retirement_blocked') }}"
         quiet: true
     - name: Read every local branch
+      when: retired_repository | bool
       ansible.builtin.command:
         argv: "{{ retired_git + ['-C', retired.path, 'for-each-ref', '--format=%(refname)', 'refs/heads/'] }}"
       register: retirement_branches
@@ -144,7 +145,10 @@
     - name: Count commits unreachable from every remote-tracking ref
       ansible.builtin.command:
         argv: "{{ retired_git + ['-C', retired.path, 'rev-list', '--count', item, '--not', '--remotes'] }}"
-      loop: "{{ retirement_branches.stdout_lines + (['HEAD'] if retirement_head.rc == 1 else []) }}"
+      loop: >-
+        {{ (['HEAD'] if retirement_head.rc == 1 else [retirement_head.stdout | trim])
+           if retired_worktree | bool
+           else retirement_branches.stdout_lines + (['HEAD'] if retirement_head.rc == 1 else []) }}
       register: retirement_counts
       changed_when: false
     - name: Start the list of unpushed branches
@@ -169,29 +173,33 @@
         that: retirement_unpushed | length == 0
         fail_msg: "{{ migrate_refusal_message | default('instance.migrate_unpushed_commits') }}"
         quiet: true
-    - name: Read every stash entry
-      ansible.builtin.command:
-        argv: "{{ retired_git + ['-C', retired.path, 'stash', 'list', '--format=%H'] }}"
-      register: retirement_stashes
-      changed_when: false
-    - name: Read the stash ref even when its reflog has expired
-      ansible.builtin.command:
-        argv: "{{ retired_git + ['-C', retired.path, 'rev-parse', '--verify', '--quiet', 'refs/stash'] }}"
-      register: retirement_stash_ref
-      changed_when: false
-      failed_when: retirement_stash_ref.rc not in [0, 1]
-    - name: Count every stash entry and any surviving stash ref
-      ansible.builtin.set_fact:
-        retirement_stash_count: "{{ [retirement_stashes.stdout_lines | length, 1 if retirement_stash_ref.rc == 0 else 0] | max }}"
-    - name: Explain stashes
-      when: retirement_stash_count | int > 0
-      ansible.builtin.set_fact:
-        migrate_refusal_code: instance.migrate_stashes_present
-        migrate_refusal_message: >-
-          Cannot retire checkout {{ retired.path | to_json }}.
-          Stashes: {{ retirement_stash_count }}.
-    - name: Refuse stashes
-      ansible.builtin.assert:
-        that: retirement_stash_count | int == 0
-        fail_msg: "{{ migrate_refusal_message | default('instance.migrate_stashes_present') }}"
-        quiet: true
+    # Linked worktrees leave the shared stash store with its owner.
+    - name: Check stashes before retiring their owner
+      when: retired_repository | bool
+      block:
+        - name: Read every stash entry
+          ansible.builtin.command:
+            argv: "{{ retired_git + ['-C', retired.path, 'stash', 'list', '--format=%H'] }}"
+          register: retirement_stashes
+          changed_when: false
+        - name: Read the stash ref even when its reflog has expired
+          ansible.builtin.command:
+            argv: "{{ retired_git + ['-C', retired.path, 'rev-parse', '--verify', '--quiet', 'refs/stash'] }}"
+          register: retirement_stash_ref
+          changed_when: false
+          failed_when: retirement_stash_ref.rc not in [0, 1]
+        - name: Count every stash entry and any surviving stash ref
+          ansible.builtin.set_fact:
+            retirement_stash_count: "{{ [retirement_stashes.stdout_lines | length, 1 if retirement_stash_ref.rc == 0 else 0] | max }}"
+        - name: Explain stashes
+          when: retirement_stash_count | int > 0
+          ansible.builtin.set_fact:
+            migrate_refusal_code: instance.migrate_stashes_present
+            migrate_refusal_message: >-
+              Cannot retire checkout {{ retired.path | to_json }}.
+              Stashes: {{ retirement_stash_count }}.
+        - name: Refuse stashes
+          ansible.builtin.assert:
+            that: retirement_stash_count | int == 0
+            fail_msg: "{{ migrate_refusal_message | default('instance.migrate_stashes_present') }}"
+            quiet: true
