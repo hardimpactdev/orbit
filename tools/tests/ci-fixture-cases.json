@@ -1787,7 +1787,7 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "a7e9b273f6ceaad8ddbf6adab74d6bfa263f75b2a32294df07f59ea775dc09ec",
+    "source_sha256": "8bfd53d7c1b377b6dd85a1fe33ca5811e27170a67fbaef4c9da1f0adbcab50f4",
     "cases": [
       "test_loopback_requires_exact_attached_key_pair_and_port",
       "test_database_urls_refuse_without_exposing_credentials_or_bypassing_attached_keys",
@@ -1848,6 +1848,7 @@
       "test_inactive_socket_names_target_in_create_and_migrate_receipts",
       "test_upstream_appearing_after_delay_passes_with_one_client",
       "test_never_established_refuses_after_whole_probe_bound",
+      "test_accepted_client_closed_after_upstream_refusal_keeps_cause_in_both_receipts",
       "test_every_probe_reason_names_condition_and_public_unit_states",
       "test_unit_jobs_and_socket_enable_lag_settle_within_same_bound",
       "test_foreign_or_ambiguous_connections_never_prove_this_probe",

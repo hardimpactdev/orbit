@@ -915,6 +915,46 @@ class NodeServiceTest(unittest.TestCase):
         self.assertEqual(target['units']['socket']['UnitFileState'], 'enabled')
         self.assert_failure_receipts(evidence)
 
+    def test_accepted_client_closed_after_upstream_refusal_keeps_cause_in_both_receipts(self):
+        self.active = {'orbit-node-service-3308.socket', 'orbit-node-service-3308.service'}
+        self.enabled = {'orbit-node-service-3308.socket'}
+        descriptors = self.guest / 'proc/1234/fd'
+        descriptors.mkdir(parents=True)
+        descriptor = descriptors / '3'
+        table = self.guest / 'proc/net/tcp'
+        table.parent.mkdir(parents=True)
+        table.write_text('header\n')
+
+        class Connection:
+            def __enter__(self):
+                descriptor.symlink_to('socket:[10]')
+                table.write_text('header\n0: 0100007F:0CEC 0100007F:9C40 01 0:0 0:0 0 0 0 10\n')
+                return self
+
+            def __exit__(self, *_):
+                descriptor.unlink(missing_ok=True)
+
+            def getsockname(self):
+                return ('127.0.0.1', 40000)
+
+        def close_after_acceptance(seconds):
+            self.advance(seconds)
+            if self.now >= 0.05:
+                descriptor.unlink(missing_ok=True)
+                table.write_text('header\n')
+
+        # Real /proc reader: accepted at the first sample, gone at 50 ms,
+        # and no upstream socket ever exists. The socket reader is not mocked.
+        with self.assertRaises(TARGETS.TargetFailure) as error:
+            TARGETS.probe_proxy(self.target, self.guest, self.guest_run,
+                                lambda *args, **kwargs: Connection(),
+                                clock=lambda: self.now, pause=close_after_acceptance)
+        evidence = error.exception.evidence()
+        self.assertEqual(evidence['node_service_target']['reason'], 'upstream_not_established')
+        self.assertIs(evidence['node_service_target']['client_closed'], True)
+        self.assertEqual(evidence['node_service_target']['waited_ms'], 3000)
+        self.assert_failure_receipts(evidence)
+
     def test_every_probe_reason_names_condition_and_public_unit_states(self):
         for reason in sorted(TARGETS.REASONS):
             with self.subTest(reason=reason):

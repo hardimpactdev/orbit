@@ -63,6 +63,8 @@ def public_target(target):
             value['waited_ms'] = waited
         if isinstance(target.get('units'), dict):
             value['units'] = public_units(target['units'])
+        if type(target.get('client_closed')) is bool:
+            value['client_closed'] = target['client_closed']
     return value
 
 
@@ -211,10 +213,10 @@ def proxy_reason(rows, port):
     return None
 
 
-def probe_failure(target, rows, reason, waited_ms):
+def probe_failure(target, rows, reason, waited_ms, client_closed=False):
     units = {kind: rows.get(unit_name(target['port']) + '.' + kind, {}) for kind in ('socket', 'service')}
     return TargetFailure('instance.node_service_unreachable', target | {
-        'reason': reason, 'units': public_units(units), 'waited_ms': waited_ms})
+        'reason': reason, 'units': public_units(units), 'waited_ms': waited_ms, 'client_closed': client_closed})
 
 
 def probe_proxy(target, root, run, connect, clock=time.monotonic, pause=lambda seconds: select.select([], [], [], seconds)):
@@ -227,6 +229,8 @@ def probe_proxy(target, root, run, connect, clock=time.monotonic, pause=lambda s
     pid = None
     before = {}
     ambiguous = False
+    accepted_seen = False
+    client_closed = False
     with contextlib.ExitStack() as stack:
         while clock() < deadline:
             try:
@@ -251,6 +255,8 @@ def probe_proxy(target, root, run, connect, clock=time.monotonic, pause=lambda s
                         source = client.getsockname()
                         accepted = {inode for inode, (local, peer, state) in fresh.items()
                                     if local == ('127.0.0.1', port) and peer == source and state == '01'}
+                        accepted_seen |= bool(accepted)
+                        client_closed |= accepted_seen and not accepted
                         # /proc has no pairing identifier. Reject an observed competitor,
                         # including SYN_SENT sockets and pre-existing unpaired clients.
                         competing = any(local == ('127.0.0.1', port) and peer != source
@@ -261,7 +267,7 @@ def probe_proxy(target, root, run, connect, clock=time.monotonic, pause=lambda s
                         ambiguous |= competing or pending or downstream != upstream_before or any(sockets.get(inode) != row for inode, row in before.items())
                         upstream = {inode for inode, (_, peer, state) in fresh.items()
                                     if peer == (target['host'], port) and state == '01'}
-                        reason = 'accept_not_seen' if not accepted else 'upstream_not_established'
+                        reason = 'upstream_not_established' if accepted_seen else 'accept_not_seen'
                         if not ambiguous and len(accepted) == len(upstream) == 1 and set(fresh) == accepted | upstream:
                             return
             except (OSError, subprocess.SubprocessError):
@@ -269,7 +275,7 @@ def probe_proxy(target, root, run, connect, clock=time.monotonic, pause=lambda s
             remaining = deadline - clock()
             if remaining > 0:
                 pause(min(0.05, remaining))
-    raise probe_failure(target, rows, reason, round((clock() - started) * 1000))
+    raise probe_failure(target, rows, reason, round((clock() - started) * 1000), client_closed)
 
 
 def owns(row, port):
