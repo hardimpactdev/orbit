@@ -689,7 +689,7 @@ The Gateway files a Backlog task when the same production problem keeps returnin
 
 The loop reads Doctor, Activity, the Gateway log, and assistance reasons. A release command also pushes its [release alerts](/reference/gateway-recovery#release-alerts) into the loop. It does not read the `schedules` table. It does not wait for an external alert manager.
 
-Doctor incidents close only after a new successful observation of the resource or proof that its persisted resource is gone. A `rollout_halted` incident closes after a later fleet rollout visit converges its Node. A skipped check, an unreachable Node, and a cleared occurrence episode do not prove recovery. Only untouched generated Backlog groups close automatically; groups that an operator has changed stay open.
+Doctor incidents resolve only after a new successful observation of the resource or proof that its persisted resource is gone. A `rollout_halted` incident closes after a later fleet rollout visit converges its Node. A skipped check, an unreachable Node, and a cleared occurrence episode do not prove recovery. Only untouched, eligible generated Backlog groups close automatically; groups that an operator has changed stay open.
 
 ### Fingerprints
 
@@ -749,9 +749,9 @@ Readiness counts these occurrences and their times. It does not count log lines.
 
 The tests below use only the current episode. That episode is the occurrence history stored on the row: the time and the signal count of each 5-minute window.
 
-Doctor is ready after two of those times at least 10 minutes apart. A miss does not delete the row, and it does not reset the episode.
+Doctor rows are never eligible for filing, including existing rows and rows recorded through the observation API. Filing tasks from Doctor findings is a later product decision. The filer leaves any already linked task group unchanged.
 
-A `swamp` problem from the [Swamp datastore watch](/reference/operations#swamp-datastore-watch) is ready the same way, after two fires at least 10 minutes apart. The first later fire that does not report it resolves it.
+A `swamp` problem from the [Swamp datastore watch](/reference/operations#swamp-datastore-watch) is ready after two fires at least 10 minutes apart. The first later fire that does not report it resolves it.
 
 A release alert is ready after one occurrence. A release command raises it once for a deliberate verdict, so there is no noise to wait out.
 
@@ -808,7 +808,7 @@ The filer inserts the task and its subtasks, then updates the fingerprint, in on
 
 Each task belongs to the Project whose slug is `orbit`, and the task starts in `backlog`. The first line of the brief is `Filed by the outer loop.`
 
-The rest of the brief is eight sections, in this order: Symptom, Fingerprint, First seen, Last seen, Count, Occurrences, Evidence, and Suspected entry point. Times use UTC. Symptom is the Doctor summary, the redacted Activity error message, the redacted log message, the assistance reason before normalization, or the release alert's redacted summary.
+The rest of the brief is eight sections, in this order: Symptom, Fingerprint, First seen, Last seen, Count, Occurrences, Evidence, and Suspected entry point. Times use UTC. Symptom is the redacted Activity error message, the redacted log message, the assistance reason before normalization, or the release alert's redacted summary.
 
 Count is `occurrences`, the number of windows. Occurrences lists one line per window, oldest first, at most the newest 20. Each line is the first signal's time, formatted `YYYY-MM-DD HH:MM:SS UTC`, a space, and the signal count in that window, such as `2026-10-01 12:00:01 UTC 129`. Evidence includes a `Request ids:` line when the sample has any, and omits that line when none are known. The suspected entry point is its own section.
 
@@ -825,7 +825,6 @@ The finished brief is at most 8,000 characters. The Evidence and Occurrences hea
 
 | Source | Title | Suspected entry point |
 | --- | --- | --- |
-| Doctor | `Doctor {code} on {type} {id}` | Resource type, id, and code |
 | Activity | `{command} failed with {error_code}` | The command name |
 | Log | `{exception class} at {frame}` | The app frame, or the stored `source_path` when the key is shortened |
 | Assistance | The normalized reason | The open task ids in the sample |
@@ -839,18 +838,18 @@ The second subtask reproduces the failure and then fixes it. Its deliverable id 
 
 ### Collection
 
-Swamp collects problems every 10 minutes through Services-only Gateway read and state APIs. It observes each Node, checks resource groups selected by each Doctor family, then collects other signals. Each group has one 12-second command deadline. A failed group records an unverifiable observation for every selected resource. Collection does not file problems; only hourly `problems:file` does that under its lock. [Gateway queue](/reference/gateway-queue#scheduled-work) gives the measured timings and group sizes.
+The Gateway collects Doctor findings for every Node every five minutes from stored agent facts, even while Tasks is disabled. It makes no network call. Findings, recovery, and the last successful full collection time commit in one transaction. The existing `problem_collector_state.observation` record holds that time. [`gateway:status`](/cli/gateway/status) shows it with grouped open findings.
 
-The cached Node observations last at most one hour and are removed after collection; they are not a second problem ledger. Swamp observes the Gateway Horizon Process separately, without a cache or overlap lock, so it can record a stopped Horizon without queue workers. `problems:file` also runs hourly in Swamp, with its 30-minute overlap and command locks. All run only while the Tasks extension is enabled. Daily batch metadata pruning keeps `ORBIT_JOB_BATCH_HOURS` (24 hours by default). See [Scheduled work](/reference/gateway-queue#scheduled-work).
+The observation API also runs Doctor on request while Tasks is enabled, then collects the Gateway log, Activity, and assistance signals. Those other signals have no schedule. `problems:file` runs hourly while Tasks is enabled. See [Scheduled work](/reference/gateway-queue#scheduled-work).
 
 | Source | Bound per run |
 | --- | --- |
-| Doctor | Typed resource groups; 12-second probe deadline, 13-second worker timeout |
+| Doctor | Every Node and family, using stored agent facts |
 | Activity | 500 rows with `id` above the stored cursor |
 | Log | 1 MiB, stopping at the end of a whole record |
 | Assistance | 200 open rows |
 
-Doctor runs through `RunDoctorAction` for every Node and every family. A peer access grant does not drop Nodes from that fleet. The collector records only `drift` and `unverifiable` issues. It skips `informational` issues, such as unregistered packages, because Doctor health ignores them too. One `problem_collector_state` row stores the Activity cursor, the log path, the file inode, and the byte offset. Doctor results commit per resource.
+Doctor runs through `RunDoctorAction` for every Node and every family. A peer access grant does not drop Nodes from that fleet. The collector records only `drift` and `unverifiable` issues, and skips `informational` issues. One `problem_collector_state` row stores the Activity cursor, the log path, the file inode, and the byte offset. Scheduled Doctor collection leaves those cursors and assistance signals unchanged.
 
 The first collector run sets the Activity cursor to the current maximum id, and the log offset to the end of the current file. It does not count those past rows. The log file is `storage/logs/laravel.log` when that path is a regular file. Otherwise it is the newest `storage/logs/laravel-*.log`. The collector finishes unread bytes in a rotated file before it switches. The Gateway reads its own log right after Doctor's comparison, in the same request; no Swamp step reads it. A single record longer than 8 MiB is skipped, so the cursor never stalls on it.
 
@@ -1479,7 +1478,7 @@ Code can see that a failure came back. It cannot write the test that proves the 
 
 The [outer loop](#outer-loop) files a Backlog draft. The reproduce subtask carries a review placeholder, and a person replaces it with a scoped `fails_on_base` command before the task can run. The filer cannot know the right test, so it never writes a whole-suite command such as `vendor/bin/pest`. Filing straight to Todo is rejected, because an agent would start before a person names the test. A whole-suite command is rejected, because a green or red result would not prove this failure.
 
-A page on every server-class row is rejected. One command can fail dozens of times in an hour, and a Doctor finding from one run can be gone on the next. A Doctor fingerprint stays unfiled until two occurrences are at least 10 minutes apart.
+One command can fail dozens of times in an hour. Counting each signal as a separate problem would fill the board.
 
 Ten occurrences of one Activity, log, or assistance key are enough to file. An occurrence is one 5-minute window, so the many lines of one burst count once and are not enough to file. Ten windows means the same failure came back across separate windows. Three occurrences file only when they fall in two UTC quarter hours or on two UTC dates. Three isolated occurrences do not file.
 
