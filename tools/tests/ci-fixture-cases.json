@@ -2044,7 +2044,7 @@
     ]
   },
   "swamp/tests/ansible_instance_migrate_source_test.ts": {
-    "source_sha256": "cb06c8182f55785efd21d952bc3f2853fb5603fae9d94a8730e6f96ac349fb6a",
+    "source_sha256": "d2260a8b607e2f2b552281605f3b56dc5f8b55857ec9634301204408de247d69",
     "cases": [
       "migration source preflight distinguishes failure and timeout before changing the checkout",
       "a never-pushed branch at a pushed commit passes source and retirement checks and copies locally"

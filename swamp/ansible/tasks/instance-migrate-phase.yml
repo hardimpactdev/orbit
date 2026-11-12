@@ -62,6 +62,8 @@
               - "{{ 'refs/heads/' ~ migrate.source.branch }}"
             expand_argument_vars: false
           environment:
+            LC_ALL: C
+            LANG: C
             GIT_TERMINAL_PROMPT: "0"
             GIT_CONFIG_NOSYSTEM: "1"
             GIT_CONFIG_GLOBAL: /dev/null

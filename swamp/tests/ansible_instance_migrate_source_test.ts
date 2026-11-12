@@ -18,6 +18,8 @@ args = sys.argv[1:]
 assert args[:3] == ["--kill-after=1", "30", "git"]
 assert args[-4:] == ["--heads", "--", "git@github.com:Platform11/servauto-app.git", "refs/heads/heads/x"]
 assert os.environ["GIT_TERMINAL_PROMPT"] == "0"
+assert os.environ["LC_ALL"] == "C"
+assert os.environ["LANG"] == "C"
 assert os.environ["GIT_CONFIG_GLOBAL"] == "/dev/null"
 assert os.environ["GIT_CONFIG_NOSYSTEM"] == "1"
 assert os.environ["GIT_ALLOW_PROTOCOL"] == "https"
@@ -41,7 +43,7 @@ sys.exit(int(os.environ["SOURCE_RC"]))
     const plays = [
       {name: "source", hosts: "all", connection: "local", gather_facts: false,
        vars: {ansible_python_interpreter: "python3", phase: "container", migrate: {source: {repository: "git@github.com:Platform11/servauto-app.git", branch: "heads/x", access_denied_message: "The GitHub App orbit-nckrtl cannot read Platform11/servauto-app: install it for that organisation or add the repository."}}},
-       environment: {PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ORBIT_RUN: `${folder}/run`, SOURCE_CALLS: `${folder}/calls`, SOURCE_RC: "{{ source_rc }}", SOURCE_CASE: "{{ inventory_hostname }}", SOURCE_STDERR: "{{ source_stderr | default('') }}"},
+       environment: {PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ORBIT_RUN: `${folder}/run`, SOURCE_CALLS: `${folder}/calls`, SOURCE_RC: "{{ source_rc }}", SOURCE_CASE: "{{ inventory_hostname }}", SOURCE_STDERR: "{{ source_stderr | default('') }}", LC_ALL: "{{ caller_locale | default('C') }}", LANG: "{{ caller_locale | default('C') }}"},
        tasks: [{block: [{"ansible.builtin.include_tasks": {file: "{{ 'source-only.yml' if source_rc | int == 0 else 'full-phase.yml' }}"}}, {"ansible.builtin.set_fact": {source_passed: true}}],
          rescue: [{"ansible.builtin.assert": {that: ["source_rc | int != 0", "migrate_refusal_code == expected_code"]}}]},
          {"ansible.builtin.assert": {that: ["source_passed | default(false) == (source_rc | int == 0)"]}},
@@ -54,6 +56,7 @@ sys.exit(int(os.environ["SOURCE_RC"]))
       slow: {source_rc: 124, expected_code: "source.read_timed_out"},
       killed: {source_rc: 137, expected_code: "source.read_timed_out"},
       network: {source_rc: 128, source_stderr: "fatal: Could not resolve host: github.com", expected_code: "source.head_unavailable"},
+      localized_authentication: {source_rc: 128, caller_locale: "de_DE.UTF-8", source_stderr: "fatal: Authentication failed", expected_code: "source.github_app_denied"},
       authentication: {source_rc: 128, source_stderr: "fatal: Authentication failed for ghs_private_diagnostic", expected_code: "source.github_app_denied"},
       username: {source_rc: 128, source_stderr: "fatal: could not read Username for https://github.com: terminal prompts disabled", expected_code: "source.github_app_denied"},
       forbidden: {source_rc: 128, source_stderr: "fatal: The requested URL returned error: 403", expected_code: "source.github_app_denied"},
@@ -62,9 +65,9 @@ sys.exit(int(os.environ["SOURCE_RC"]))
       env: {ORBIT_RUN: `${folder}/run`, ANSIBLE_CONFIG: `${folder}/ansible.cfg`, ANSIBLE_STDOUT_CALLBACK: "default", ANSIBLE_COLLECTIONS_PATH: "", ANSIBLE_NOCOLOR: "1", ANSIBLE_FORKS: "3"}}).output();
     assert(done.success, new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr));
     const calls = (await Deno.readTextFile(`${folder}/calls`)).trim().split("\n").map(line => JSON.parse(line));
-    assertEquals(calls.length, 8);
+    assertEquals(calls.length, 9);
     assertEquals(new TextDecoder().decode(done.stdout).includes("ghs_private_diagnostic"), false);
-    for (const name of ["authentication", "username", "forbidden"]) {
+    for (const name of ["localized_authentication", "authentication", "username", "forbidden"]) {
       const denied = JSON.parse(await Deno.readTextFile(`${folder}/${name}.json`));
       assertEquals(denied.code, "source.github_app_denied");
       assertEquals(denied.message, "The GitHub App orbit-nckrtl cannot read Platform11/servauto-app: install it for that organisation or add the repository.");
