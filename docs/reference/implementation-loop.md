@@ -717,3 +717,5 @@ Clone branch fixtures use unprivileged local Git repositories and run without an
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise.
 
 The mail fixture executes the production prefix whitelist, the reviewed bare-CR and comment-grouping regressions, and a realistic thirty-line file. It preserves `lines` beside `guard_line` and uses three Ansible launches. Gateway tests compare every admitted shape with installed phpdotenv; Swamp fixtures need no PHP or Composer installation.
+
+The destroy dependency fixture uses real broken Git pointers and FIFO configs to prove bounded fallback reads at admission and removal. Unknown paths retain typed warning diagnostics through the Operation and CLI, while an unreadable pointer that can conceal a dependency still refuses. It retains the three existing Ansible launches.

@@ -814,6 +814,18 @@ describe('instance:show', function (): void {
 });
 
 describe('instance:destroy', function (): void {
+    it('renders an unknown checkout warning with its path and Instance in human and JSON output', function (bool $json): void {
+        $result = ['removed' => true, 'warnings' => [['code' => 'instance.checkout_unknown', 'path' => '/work/missing', 'cause' => 'unreadable', 'instance_ids' => [69]]]];
+        MockClient::global(instance_operation_responses(DestroyInstanceRequest::class, 'instance.destroy', $result));
+        expect(Artisan::call('instance:destroy', ['instance' => '5', '--yes' => true, '--force' => true, '--json' => $json]))->toBe(0);
+        if ($json) {
+            $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+            expect($output['result'])->toBe($result);
+        } else {
+            expect(instance_source_text(Artisan::output()))->toContain('Warning: instance.checkout_unknown.', '/work/missing (Instance #69): unreadable.');
+        }
+    })->with([false, true]);
+
     it('keeps typed worktree refusal details in human and JSON output', function (bool $json): void {
         $details = ['dependents' => [['id' => 69, 'name' => 'default', 'project_id' => 12]],
             'other_dependents' => 2, 'unowned_paths' => ['/work/unowned tree']];

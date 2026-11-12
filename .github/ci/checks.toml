@@ -2673,7 +2673,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_destroy_git_test.py"
-cost = 15
+cost = 40
 slices = false
 inputs = [
   "swamp/ansible/instance/destroy-git.py",
@@ -2686,10 +2686,21 @@ inputs = [
 "test_unowned_worktree_blocks_with_its_path" = 1
 "test_standalone_checkout_and_absent_repeat_are_removed" = 1
 "test_unreadable_git_and_failed_unregister_never_fall_back_to_rm" = 1
-"test_real_ansible_phase_refuses_owner_removes_dependent_then_owner" = 7
 "test_moved_worktree_is_found_from_recorded_path_at_admission_and_removal" = 1
 "test_deleted_prunable_registration_is_nonblocking" = 1
 "test_checkout_contents_are_never_walked_during_inspection" = 1
+"test_broken_recorded_pointer_into_target_is_a_named_dependent" = 1
+"test_broken_recorded_pointer_elsewhere_does_not_block_unrelated_removal" = 1
+"test_missing_recorded_folder_warns_at_inspection_and_removal" = 1
+"test_unrelated_fifo_config_times_out_then_own_store_proves_it_unrelated" = 8
+"test_unreadable_moved_pointer_can_hide_a_dependency_and_refuses_with_identity" = 1
+"test_own_repository_with_alternates_into_target_and_symlinked_paths_refuses" = 1
+"test_owner_registry_refuses_existing_broken_dependent_without_reading_its_git" = 1
+"test_commondir_relative_pointer_into_target_survives_a_git_error" = 1
+"test_non_git_pointer_reader_rejects_fifo_and_oversized_regular_files_without_blocking" = 1
+"test_target_own_git_timeout_keeps_refusal_with_its_path_and_cause" = 8
+"test_inaccessible_container_style_inventory_warns_without_blocking_host_removal" = 1
+"test_real_ansible_phase_refuses_owner_removes_dependent_then_owner" = 7
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts"

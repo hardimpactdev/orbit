@@ -64,7 +64,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         }
         $checked = $input['force'] === true ? [] : array_values(array_filter($members, static fn (array $member): bool => ($member['failed_creation'] ?? false) !== true));
 
-        return ['intent' => [...$public, ...$native, 'source_capture' => $sourceCapture, 'teardown_steps' => $teardown,
+        return ['intent' => [...$public, ...$native, 'checkout_instances' => app(InstanceDestroyWorktrees::class)->inventory(Instance::query()->findOrFail($operation->target_id)), 'source_capture' => $sourceCapture, 'teardown_steps' => $teardown,
             'push_check_paths' => array_map(static fn (array $member): string => ValidatedData::string($member['checkout_path']), $checked),
             'source_paths' => array_map(static fn (array $member): string => ValidatedData::string($member['checkout_path']), $members)],
             'execution_secrets' => [...$secrets, ...$serverCopies, ...$git]];
@@ -91,6 +91,11 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
                 } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
                     InstanceRemoval::query()->whereKey($operation->input['removal_id'])->update(['status' => InstanceRemovalStatus::Failed,
                         'error_code' => $data['error_code'] ?? 'operation.cancelled', 'current_step' => $this->failedStep($result), 'failed_step' => $this->failedStep($result)]);
+                    if (in_array($code, ['instance.remove_refused', 'instance.worktree_dependents'], true)) {
+                        $previous = InstanceState::tryFrom(is_string($operation->input['destroy_previous_status'] ?? null) ? $operation->input['destroy_previous_status'] : 'active');
+                        Instance::query()->whereKey($operation->target_id)->where('status', InstanceState::Removing)
+                            ->update(['status' => ($previous === null || $previous === InstanceState::Removing ? InstanceState::Active : $previous)->value]);
+                    }
                 }
             }
 
@@ -104,21 +109,36 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
      */
     private function outcome(array $data, Operation $operation): array
     {
-        if (($data['status'] ?? null) === 'succeeded') {
-            return [null, ['removed' => true]];
-        }
-        if (! in_array($data['status'] ?? null, ['failed', 'interrupted'], true)) {
-            return [ValidatedData::nullableString($data['error_code'] ?? null), []];
-        }
         $run = ValidatedData::object($data['result'] ?? []);
         $source = $run['source_removal'] ?? null;
         $source = is_string($source) ? json_decode($source, true) : null;
         $sourceData = is_array($source) && is_array($source['data'] ?? null) ? $source['data'] : [];
-        if (($sourceData['error_code'] ?? null) === 'instance.worktree_dependents') {
-            $details = app(InstanceDestroyWorktrees::class)->details(Instance::query()->findOrFail($operation->target_id), is_array($sourceData['dependents'] ?? null) ? $sourceData['dependents'] : [], $operation->triggered_by);
+        $instance = Instance::query()->find($operation->target_id);
+        $policy = app(InstanceDestroyWorktrees::class);
+        $warnings = $instance instanceof Instance ? $policy->warnings($instance,
+            [...(is_array($operation->input['checkout_warnings'] ?? null) ? $operation->input['checkout_warnings'] : []), ...(is_array($sourceData['warnings'] ?? null) ? $sourceData['warnings'] : [])]) : (is_array($operation->result['warnings'] ?? null) ? $operation->result['warnings'] : []);
+        $warnings = array_values(array_unique($warnings, SORT_REGULAR));
+        $diagnostics = $warnings === [] ? [] : ['warnings' => $warnings];
+        if (is_int($sourceData['other_warnings'] ?? null) && $sourceData['other_warnings'] > 0) {
+            $diagnostics['other_warnings'] = $sourceData['other_warnings'];
+        }
+        if (($data['status'] ?? null) === 'succeeded') {
+            return [null, ['removed' => true, ...$diagnostics]];
+        }
+        if (! in_array($data['status'] ?? null, ['failed', 'interrupted'], true)) {
+            return [ValidatedData::nullableString($data['error_code'] ?? null), $diagnostics];
+        }
+        if (($sourceData['error_code'] ?? null) === 'instance.worktree_dependents' && $instance instanceof Instance) {
+            $details = $policy->details($instance, is_array($sourceData['dependents'] ?? null) ? $sourceData['dependents'] : [], $operation->triggered_by);
 
             return ['instance.worktree_dependents', ['removed' => false, 'failed_step' => 'Remove the source',
-                'error_code' => 'instance.worktree_dependents', 'details' => $details]];
+                'error_code' => 'instance.worktree_dependents', 'details' => $details, ...$diagnostics]];
+        }
+        if (($sourceData['error_code'] ?? null) === 'instance.remove_refused' && $instance instanceof Instance) {
+            $details = $policy->failureDetails($instance, $sourceData);
+
+            return ['instance.remove_refused', ['removed' => false, 'failed_step' => 'Remove the source',
+                'error_code' => 'instance.remove_refused', 'details' => $details, 'error_message' => $policy->failureMessage($details), ...$diagnostics]];
         }
         $withdrawal = $run['withdrawal'] ?? null;
         if (is_array($withdrawal) && ($withdrawal['ready'] ?? null) === false) {

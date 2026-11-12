@@ -50,7 +50,8 @@ sequenceDiagram
     %%> - before Schedule removal or any Operation write; inspect the owner’s Git registry and recorded checkout paths, never trust source_layout
     %%> On refusal:
     %%> - HTTP 409 instance.worktree_dependents reports visible dependent Instances, a count of others, and unowned paths; --force never overrides it
-    %%> - unreadable Git refuses closed; a container skips this read
+    %%> - the target’s unreadable Git refuses; an unrelated checkout is classified from bounded Git pointer reads, with named warnings when unknown
+    %%> - unreadable existing pointers that can hide a dependency still refuse; containers skip this read
   end
   Note over GW: Validate, capture the set<br/>Instance 42 · task #5132
   %%> Requirements:
@@ -192,7 +193,7 @@ sequenceDiagram
   %%> - the Node's own user, not root
   Note over SW: Read source removal
   %%> On failure:
-  %%> - retain the fixed code and dependency details from the recheck
+  %%> - retain the fixed code, named dependencies and unknown-checkout warnings from the recheck
   SW->>N: Check it is gone<br/>@swamp/cfgmgmt check absent
   %%> What it does:
   %%> - the `check` of the directory, file, systemd and `docker_container` behaviors with `ensure: absent`: checkout, units and containers are gone

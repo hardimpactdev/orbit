@@ -5,14 +5,14 @@ covers:
   - apps/gateway/app/Actions/{Instances/{ProjectDirectInstanceDestroyAction,StartInstanceDestroyAction},DatabaseConnections/PrepareOwnedDatabaseDestructionAction}.php
   - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,DevelopmentInstanceDestroyProjection.php,InstanceDestroyWorktrees.php,ContainerInstanceDestroy.php,ContainerDestroyExecutionCopies.php,DirectInstanceDestroyIntent.php,Removal/**}
   - apps/gateway/app/{Http/Requests/Instances/RemoveInstanceRequest,Models/InstanceRemoval,Models/InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_06_000002_allow_source_refusal_to_restore_instance_status}.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
   - swamp/{workflows/workflow-operation-instance-destroy.yaml,ansible/instance-container-destroy.yml}
 ---
 
 # Instance removal
 
-`instance:destroy` admits one Operation and one native Swamp run. Before any removal side effect or Operation write, host checkout admission uses the existing SSH remote-program reader to inspect live Git dependencies. It refuses unreadable Git and never relies on `source_layout`. It reads only a host checkout with a nonempty stored path, a non-reserved source state and an active Node; containers skip it. A reserved source that was never created needs no read. An active checkout’s disk state can be known only on its Node; a missing path returns no dependencies.
+`instance:destroy` admits one Operation and one native Swamp run. Before any removal side effect or Operation write, host checkout admission uses the existing SSH remote-program reader to inspect live Git dependencies. It refuses unreadable Git in the target and never relies on `source_layout`. It reads only a host checkout with a nonempty stored path, a non-reserved source state and an active Node; containers skip it. A reserved source that was never created needs no read. An active checkout’s disk state can be known only on its Node; a missing path returns no dependencies.
 
 The Gateway then records the selected Instance, owned resources and desired removal state. All effects run from control Node209 through official SSH with its approved identity and the targets' full stored host pins. The Gateway projects the admitted records after the bound native terminal result; workflow steps do not read intent or send phase callbacks to the Gateway. The PHP provisioner, source-removal executor, phase checkpoint methods and callback runner are deleted. Shared source classification and native source inspection remain pure inputs to the native workflows.
 
@@ -23,6 +23,12 @@ orbit instance:destroy <instance> [--yes] [--force] [--json]
 The CLI requires consent. `--yes` confirms without a prompt and is required for JSON or noninteractive calls. `--force` permits dirty or unpublished development source; it never permits another checkout, owner or Node. The API returns HTTP 202. Follow the Operation to its terminal status. Reusing an idempotency key recovers the same admission after a lost reply or target deletion.
 
 `instance.worktree_dependents` refuses with HTTP 409 when another live worktree keeps Git data inside the target checkout, including with `--force`. It reports visible dependent Instances across every Project on the Node, an `other_dependents` count and `unowned_paths`. No Schedule, Route or Operation is changed by this refusal. The check reads recorded checkout paths to find renamed dependents. Deleted registrations with no surviving recorded checkout do not block removal. It does not walk the checkout tree; dependency folders and their size do not affect the read.
+
+An unreadable recorded checkout elsewhere does not block unrelated removal. After a Git error or its three-second timeout, Orbit reads only bounded regular pointer files, without Git or a tree walk. Absolute and relative `gitdir` and `commondir` pointers into the target prove a dependent. Existing owner registrations for live paths also block without reading Git in those checkouts. A directory with its own Git store is unrelated unless its `objects/info/alternates` points into the target; the same bounded check follows alternates without Git.
+
+Missing checkout paths and missing or malformed pointers proceed with typed `instance.checkout_unknown` warnings naming the path, recorded Instance IDs and cause. A timed-out read of an unrelated own repository, such as a FIFO config, proceeds without warning when its store and absence of alternates prove it unrelated. Pointer files are opened non-blocking, must be regular and are capped at 4 KiB. Symlinks resolve before comparison.
+
+An existing pointer or alternates file that cannot be read could hide a real dependent, including a moved worktree with a stale owner registration. That exact unknown case still refuses with `instance.remove_refused`, naming the checkout, Instance IDs and `unreadable` or `timed_out` cause. The target’s own Git failure also refuses with its path and cause. Candidate Git reads share one three-second allowance; later candidates use pointer reads once it is spent. No read is retried. Warnings survive in the Operation result and human/JSON CLI output.
 
 A running migration or an unsettled migration runtime refuses removal with `instance.lifecycle_busy`, including forced removal. Orbit checks migration ownership before cleanup and again under the Instance admission lock.
 
@@ -79,3 +85,5 @@ Admission removes each admitted Schedule's native workflow, and the run removes 
 ## Keep unfinished transfer history
 
 Removing an Instance preserves closed transfer history by clearing its Instance association after native success. An unfinished transfer must be settled by its owning workflow first. The Gateway does not infer cleanup from a missing Instance or start a child removal Operation.
+
+A refused source-removal check restores the Instance’s captured status while retaining its failed removal record and unchanged checkout. The database permits that transition only for a recorded `instance.remove_refused` or `instance.worktree_dependents` failure. A fresh `instance:destroy` with the same flags reuses the saved removal and refreshes the host-only checkout inventory; no manual status repair is needed. Reusing the old idempotency key only returns the failed Operation. Earlier Route or Process cleanup stays completed.

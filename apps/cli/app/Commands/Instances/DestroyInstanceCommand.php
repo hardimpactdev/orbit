@@ -8,6 +8,7 @@ use App\Commands\Concerns\FollowsOperations;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\GatewayFailureRenderer;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Orbit\Sdk\Responses\Instances\InstanceResponse;
@@ -27,6 +28,30 @@ final class DestroyInstanceCommand extends GatewayCommand
 
     #[\Override]
     protected $description = 'Destroy an Instance.';
+
+    protected function writeOperationResult(OperationResponse $operation): void
+    {
+        $warnings = $operation->result['warnings'] ?? [];
+        foreach (array_slice(is_array($warnings) ? $warnings : [], 0, 20) as $warning) {
+            if (is_array($warning) && ($warning['code'] ?? null) === 'instance.checkout_unknown') {
+                $details = GatewayFailureRenderer::checkoutDetails($warning);
+                if (isset($details['path'], $details['cause'])) {
+                    $this->writeHumanMessage('Warning: instance.checkout_unknown. '.$details['path']
+                        .(($details['instance_ids'] ?? []) === [] ? '' : ' (Instance #'.implode(', #', $details['instance_ids']).')').': '.$details['cause'].'.');
+                }
+            }
+        }
+        $remaining = $operation->result['other_warnings'] ?? null;
+        if (is_int($remaining) && $remaining > 0) {
+            $this->writeHumanMessage('Additional unknown checkouts: '.$remaining);
+        }
+        $details = $operation->result['details'] ?? null;
+        if (is_array($details) && in_array($operation->errorCode, ['instance.remove_refused', 'instance.worktree_dependents'], true)) {
+            GatewayFailureRenderer::write($this, $operation->errorCode, is_string($operation->result['error_message'] ?? null)
+                ? $operation->result['error_message'] : 'Other worktrees depend on this checkout.',
+                details: GatewayFailureRenderer::safeDetails($operation->errorCode, array_filter($details, static fn (mixed $key): bool => is_string($key), ARRAY_FILTER_USE_KEY)));
+        }
+    }
 
     public function handle(
         GatewayConfigRepository $repository,

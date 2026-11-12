@@ -13,7 +13,9 @@ Node management runs through [named Rust agent commands](/reference/node-agent#c
 
 One narrow exception reads Git dependencies of a host checkout Instance at destroy admission. This read must refuse with HTTP 409 before any removal side effect, including the Schedule trigger withdrawal that admission performs. `InstanceDestroyWorktrees::assertAvailable` accepts only the resolved Instance; it builds fixed Python/Git argv from the Instance’s stored checkout path.
 
-The read is read-only, has a ten-second outer timeout and three seconds per Git invocation. It reads only the owner’s Git registry and each recorded checkout’s Git common directory, without traversing checkout contents, and runs as the Node’s existing SSH account with its existing identity and pins. It adds no identity or capability. Containers, reserved sources, missing checkout paths and inactive Nodes skip it. An unreachable Node or outer SSH timeout refuses with `instance.host_unavailable`; a Git error refuses with `instance.remove_refused`. Only confirmed dependents use `instance.worktree_dependents`.
+The read is read-only, has a ten-second outer timeout and three seconds per Git invocation. It reads only the owner’s Git registry and each recorded checkout’s Git common directory, without traversing checkout contents, and runs as the Node’s existing SSH account with its existing identity and pins. It adds no identity or capability. Containers, reserved sources, missing checkout paths and inactive Nodes skip it.
+
+An unreachable Node or outer SSH timeout refuses with `instance.host_unavailable`; a Git error in the target refuses with `instance.remove_refused`. Other checkout failures use bounded, non-blocking pointer reads inside the same call, without a tree scan or retry. Only confirmed dependents use `instance.worktree_dependents`.
 
 The follow-up moves this check and Schedule withdrawal together into Swamp. This fix keeps the synchronous refusal small instead of moving that lifecycle boundary. No other new caller is allowed by this exception.
 

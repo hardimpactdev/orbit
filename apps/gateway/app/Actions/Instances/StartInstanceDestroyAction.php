@@ -62,7 +62,8 @@ final readonly class StartInstanceDestroyAction
         }
         app(ContainerInstanceDestroy::class)->assertAvailable($instance, $force);
         $snapshot = $this->snapshot($instance, $force);
-        $snapshot['checkout_instances'] = app(InstanceDestroyWorktrees::class)->assertAvailable($instance);
+        $snapshot['destroy_previous_status'] ??= $instance->status === InstanceState::Removing ? InstanceState::Active->value : $instance->status->value;
+        $snapshot = [...$snapshot, ...app(InstanceDestroyWorktrees::class)->assertAvailable($instance)];
         // A native Schedule fires from its own workflow on serve, not from the Node; it stops before the Instance goes.
         $members = array_column(is_array($snapshot['members'] ?? null) ? $snapshot['members'] : [], 'instance_id');
         app(NativeSchedules::class)->removeForInstances($members === [] ? [$instance->id] : ValidatedData::integerList($members));
@@ -86,7 +87,7 @@ final readonly class StartInstanceDestroyAction
         }
         $instance->load($this->removalRelations());
         $retained = InstanceRemovalMember::query()->where('instance_id', $instance->id)->whereNull('row_deleted_at')->with('removal.members')->first();
-        if ($instance->status === InstanceState::Removing) {
+        if ($instance->status === InstanceState::Removing || ($retained instanceof InstanceRemovalMember && $retained->removal->status === InstanceRemovalStatus::Failed)) {
             if (! $retained instanceof InstanceRemovalMember || $retained->removal->requested_instance_id !== $instance->id) {
                 $this->conflict($instance);
             }
