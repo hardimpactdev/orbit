@@ -68,7 +68,7 @@ sequenceDiagram
   %%> - repeats the branch and retirement checks
   %%> - checks every registered Node-timer Schedule and captures timer activation before stopping any writer; unsupported Schedules refuse with their name and reason
   %%> - repeats source symlink and environment checks before stopping any writer
-  %%> - unattached loopback/private endpoints get a host TCP check: no answer warns with instance.migrate_env_service_unused, an answering endpoint keeps the existing refusal; public or mixed-address names keep the original handling; at most 20 unique endpoints share two seconds each per check
+  %%> - unattached loopback/private endpoints get a host TCP check: only explicit connection refusal warns with instance.migrate_env_service_unused; an answering or inconclusive endpoint keeps the refusal; selected host sockets refuse before TCP probing; public or mixed-address names keep the original handling; at most 20 unique endpoints share two seconds each per check
   %%> - stops and disables host Schedule timers and Process units, then removes the awake marker
   %%> - records that quiesce began, so a failure before it never restarts host units or rewrites the awake marker
   SW->>C: Build the workspace<br/>Ansible · tags workspace

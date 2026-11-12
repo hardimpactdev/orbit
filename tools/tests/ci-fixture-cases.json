@@ -602,10 +602,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 → v5.12.0",
-      "exact script output: v5.42.0 → v5.43.0",
-      "exact script output: v5.49.0 → v5.50.0",
-      "exact script output: v5.50.0 → v5.50.1",
+      "exact script output: v5.11.0 \u2192 v5.12.0",
+      "exact script output: v5.42.0 \u2192 v5.43.0",
+      "exact script output: v5.49.0 \u2192 v5.50.0",
+      "exact script output: v5.50.0 \u2192 v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -1788,14 +1788,21 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "9fbf7c4358a403cb1d28785c8e95146dd2989b31ae332e6b3b79d5e26232d26b",
+    "source_sha256": "ffdcec7966b24dc40d70bd4ae936b7d44ef0d40ff8d81ea543fad7fdaa73db22",
     "cases": [
       "test_stock_mysql_without_a_host_listener_warns_instead_of_refusing",
       "test_answering_unattached_loopback_service_retains_the_refusal",
       "test_attached_services_and_public_answers_are_never_connected_to",
       "test_private_dns_resolution_connects_only_after_every_address_is_private",
       "test_unused_redis_mail_and_memcached_follow_the_same_probe_and_redaction_rule",
-      "test_only_refused_timeout_and_unreachable_errors_become_unused_warnings",
+      "test_only_explicit_connection_refusal_becomes_an_unused_warning",
+      "test_timeouts_and_every_unreachable_errno_keep_the_refusal",
+      "test_unexpected_connect_or_socket_creation_errors_stay_loud_and_redacted",
+      "test_live_service_with_a_saturated_accept_queue_is_not_unused",
+      "test_all_private_addresses_must_explicitly_refuse_before_warning",
+      "test_mysql_and_mariadb_host_sockets_override_tcp_and_attached_targets",
+      "test_missing_mysql_socket_permits_tcp_observation_but_uninspectable_paths_refuse",
+      "test_postgres_socket_directory_and_redis_socket_forms_never_become_tcp_warnings",
       "test_probe_cache_and_limit_bound_total_network_waiting",
       "test_loopback_requires_exact_attached_key_pair_and_port",
       "test_database_urls_refuse_without_exposing_credentials_or_bypassing_attached_keys",
