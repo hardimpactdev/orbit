@@ -41,30 +41,44 @@ final readonly class ProblemRecovery
     /** @param Collection<string, ProblemFingerprint> $rows */
     public function doctor(DoctorReportData $report, Carbon $startedAt, Collection $rows): void
     {
+        // An array-cast attribute is decoded on every read. Decode each row once and group it by Node and family,
+        // so a run costs one decode per row instead of one per row, family and field.
+        $grouped = [];
+        foreach ($rows as $row) {
+            $evidence = $row->evidence;
+            $node = $evidence['doctor_node'] ?? null;
+            $family = $evidence['doctor_family'] ?? null;
+            if (is_string($node) && is_string($family)) {
+                $grouped[$node."\0".$family][] = [$row, $evidence];
+            }
+        }
+        $started = $startedAt->toISOString();
         foreach ($report->nodes as $node) {
             foreach ($node->families as $family) {
                 if ($family->observedResources === [] && $family->observedChecks === [] && $family->observedInventories === []) {
                     continue;
                 }
-                foreach ($rows as $row) {
-                    if (($row->evidence['doctor_node'] ?? null) !== (string) $node->nodeId || ($row->evidence['doctor_family'] ?? null) !== $family->family->value) {
-                        continue;
-                    }
-                    $observed = $row->evidence['doctor_observed_at'] ?? null;
-                    $resource = $row->evidence['doctor_resource'] ?? null;
+                $candidates = $grouped[$node->nodeId."\0".$family->family->value] ?? [];
+                if ($candidates === []) {
+                    continue;
+                }
+                $observedResources = array_fill_keys(array_map(strval(...), $family->observedResources), true);
+                foreach ($candidates as [$row, $evidence]) {
+                    $observed = $evidence['doctor_observed_at'] ?? null;
+                    $resource = $evidence['doctor_resource'] ?? null;
                     if ($resource !== null && ! is_int($resource) && ! is_string($resource)) {
                         continue;
                     }
-                    $code = $row->evidence['doctor_code'] ?? null;
+                    $code = $evidence['doctor_code'] ?? null;
                     if (! is_string($code)) {
                         continue;
                     }
                     $partial = in_array($code, $family->observedChecks[(string) $resource] ?? [], true)
                         || (isset($family->observedInventories[$code]) && ! in_array((string) $resource, array_map(strval(...), $family->observedInventories[$code]), true));
-                    $checked = $partial || in_array((string) $resource, array_map(strval(...), $family->observedResources), true);
+                    $checked = $partial || isset($observedResources[(string) $resource]);
                     $failed = array_any($family->issues, static fn ($issue): bool => $issue->kind !== DoctorIssueKind::Informational
                         && ($partial ? $issue->code === $code && (string) $issue->resourceId === (string) $resource : $issue->resourceId === null || (string) $issue->resourceId === (string) $resource));
-                    if ($checked && ! $failed && is_string($observed) && $observed < $startedAt->toISOString()) {
+                    if ($checked && ! $failed && is_string($observed) && $observed < $started) {
                         $this->resolve($row, 'fresh_doctor_success');
                     }
                 }
