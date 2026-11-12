@@ -26,28 +26,25 @@ final class OperationReconcileHealth
 
     private ?CarbonImmutable $oldest = null;
 
-    private bool $complete = true;
-
     /**
      * Called only with the completion time of an identity-checked terminal root read by this pass.
-     * A failed read here must never stop the pass: the stored settlement facts then stay as they were.
+     * Nothing here may stop the pass: an Operation whose state cannot be read counts as unsettled.
+     *
+     * @param  bool  $projected  False when this pass failed to project the Operation.
      */
-    public function observe(Operation $operation, CarbonImmutable $completedAt): void
+    public function observe(Operation $operation, CarbonImmutable $completedAt, bool $projected): void
     {
         try {
             $operation = $operation->refresh();
-        } catch (Throwable $exception) {
-            $this->complete = false;
-            Log::warning('The settlement of a terminal Swamp run could not be read.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
-
-            return;
-        }
-        if ($operation->status->terminal() && ! ExpireOperationAction::awaitsSettlement($operation) && ! InstanceMigrateProjection::unsettled($operation)) {
-            return;
-        }
-        // A check whose root succeeded stays running by design while hosted CI is pending.
-        if (TaskCheckProjection::awaitsHostedCi($operation)) {
-            return;
+            if ($operation->status->terminal() && ! ExpireOperationAction::awaitsSettlement($operation) && ! InstanceMigrateProjection::unsettled($operation)) {
+                return;
+            }
+            // A check whose root succeeded stays running by design while hosted CI is pending. A failed projection is no such wait.
+            if ($projected && TaskCheckProjection::awaitsHostedCi($operation)) {
+                return;
+            }
+        } catch (Throwable) {
+            // Counted below: the run ended and its settlement is unproven.
         }
         $this->count++;
         if ($this->oldest === null || $completedAt->lessThan($this->oldest)) {
@@ -60,21 +57,21 @@ final class OperationReconcileHealth
     {
         $finished = now()->toISOString();
         $duration = round((hrtime(true) - $started) / 1_000_000, 3);
-        if ($this->count > 0) {
-            Log::warning('Terminal Swamp runs still need Operation settlement.', [
-                'count' => $this->count, 'oldest_completed_at' => $this->oldest?->toISOString(),
-            ]);
-        }
         try {
             DB::transaction(function () use ($finished, $duration): void {
                 $state = ProblemCollectorState::query()->lockForUpdate()->orderBy('id')->first() ?? new ProblemCollectorState;
                 $state->observation = [...($state->observation ?? []),
                     'operation_reconcile_finished_at' => $finished, 'operation_reconcile_duration_ms' => $duration,
-                    ...($this->complete ? ['operation_settlement_oldest_completed_at' => $this->oldest?->toISOString(), 'operation_settlement_count' => $this->count] : [])];
+                    'operation_settlement_oldest_completed_at' => $this->oldest?->toISOString(), 'operation_settlement_count' => $this->count];
                 $state->save();
             });
+            if ($this->count > 0) {
+                Log::warning('Terminal Swamp runs still need Operation settlement.', [
+                    'count' => $this->count, 'oldest_completed_at' => $this->oldest?->toISOString(),
+                ]);
+            }
         } catch (Throwable $exception) {
-            Log::warning('The Operation reconcile pass facts could not be recorded.', ['exception_type' => $exception::class]);
+            rescue(fn () => Log::warning('The Operation reconcile pass facts could not be recorded.', ['exception_type' => $exception::class]), report: false);
         }
     }
 

@@ -78,6 +78,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             $forward = [];
             foreach (self::open($kinds)->lazyById() as $operation) {
                 $completedAt = null;
+                $settled = true;
                 $onTerminal = static function (CarbonImmutable $at) use (&$completedAt): void {
                     $completedAt = $at;
                 };
@@ -90,6 +91,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
                         $forward[] = $operation;
                     }
                 } catch (Throwable $exception) {
+                    $settled = false;
                     $this->warn($operation, $exception);
                 } finally {
                     if ($operation->kind === 'instance.migrate' && InstanceMigrateProjection::unsettled($operation->refresh())) {
@@ -97,7 +99,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
                         app(InstanceMigrateProjection::class)->endUnavailable($operation);
                     }
                     if ($completedAt !== null) {
-                        $health->observe($operation, $completedAt);
+                        $health->observe($operation, $completedAt, $settled);
                     }
                 }
             }

@@ -347,25 +347,24 @@ it('keeps the last completed pass time when a later pass aborts outside per-Oper
         ->and(array_column(reconcileHealthIssues($gateway), 'code'))->toBe(['gateway.operation_reconcile_stalled']);
 });
 
-it('does not count a check that stays running for hosted CI after its root succeeded', function (bool $pending, int $count): void {
+it('does not count a check that stays running for hosted CI unless its projection failed', function (bool $pending, bool $projected, int $count): void {
     $operation = reconcileHealthOperation(reconcileHealthNode());
     $operation->update(['kind' => 'tasks.check', 'result' => ['pending' => $pending, 'ci' => ['state' => 'pending']]]);
     $health = new OperationReconcileHealth;
 
-    $health->observe($operation, CarbonImmutable::parse('2026-11-12T11:50:00Z'));
+    $health->observe($operation, CarbonImmutable::parse('2026-11-12T11:50:00Z'), $projected);
     $health->record(hrtime(true));
 
     expect(ProblemCollectorState::query()->sole()->observation['operation_settlement_count'])->toBe($count);
     $this->travelTo(new DateTimeImmutable('2026-11-12T12:01:00Z'));
     expect(array_column($health->issues(ProblemCollectorState::query()->sole()->observation), 'code'))
         ->toBe($count === 0 ? [] : ['gateway.operation_settlement_stuck']);
-})->with([[true, 0], [false, 1]]);
+})->with(['a current wait' => [true, true, 0], 'a wait whose result could not be applied' => [true, false, 1], 'no wait' => [false, true, 1]]);
 
-it('finishes the pass and keeps the stored settlement facts when a settlement read fails', function (): void {
+it('finishes the pass and counts an Operation whose settlement cannot be read', function (): void {
     Log::spy();
     $gateway = reconcileHealthNode();
-    $kept = ['operation_settlement_oldest_completed_at' => '2026-11-12T11:40:00.000000Z', 'operation_settlement_count' => 3];
-    ProblemCollectorState::query()->create(['observation' => $kept]);
+    ProblemCollectorState::query()->create(['observation' => ['operation_settlement_oldest_completed_at' => null, 'operation_settlement_count' => 0]]);
     $first = reconcileHealthOperation($gateway);
     $second = reconcileHealthOperation($gateway, 43);
     reconcileHealthSocket([$first->state['swamp_run_id'] => reconcileHealthRun($first), $second->state['swamp_run_id'] => reconcileHealthRun($second)]);
@@ -386,7 +385,6 @@ it('finishes the pass and keeps the stored settlement facts when a settlement re
     reconcileHealthPass();
 
     expect($second->refresh()->status)->toBe(OperationStatus::Failed)->and($first->refresh()->status)->toBe(OperationStatus::Running)
-        ->and(ProblemCollectorState::query()->sole()->observation)->toMatchArray([...$kept, 'operation_reconcile_finished_at' => '2026-11-12T12:00:00.000000Z']);
-    Log::shouldHaveReceived('warning')->with('The settlement of a terminal Swamp run could not be read.', [
-        'operation_id' => $first->id, 'exception_type' => RuntimeException::class])->once();
+        ->and(ProblemCollectorState::query()->sole()->observation)->toMatchArray(['operation_reconcile_finished_at' => '2026-11-12T12:00:00.000000Z',
+            'operation_settlement_oldest_completed_at' => '2026-11-12T12:00:00.000000Z', 'operation_settlement_count' => 1]);
 });
