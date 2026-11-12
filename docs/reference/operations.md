@@ -28,6 +28,8 @@ Production deployments include a `process_restart` step after PHP refresh. It re
 
 Native terminal projection reads Swamp history and any private result material outside the state transaction. Result writes lock and recheck the admitted run, and each family commits its domain state with its result. Remote cleanup runs after that commit.
 
+A poll that observes a failed or interrupted native run uses the same declared result reader as the terminal handler. It keeps the full result and the family's state changes. Running and succeeded runs keep their existing read behavior. An Operation already closed with a generic failure stays unchanged; there is no backfill. Kinds without a declared terminal result keep their existing failure handling.
+
 Removing a [Node service target record](/reference/processes-and-schedules#node-service-target-records) returns an already completed `instance.node_service_detach` Operation. This record-only operation works after a successful migration and performs no network, environment or runtime change. It still refuses an active lifecycle operation or an unfinished failed migration with a retained runtime.
 
 ## Instance failure alerts
@@ -177,11 +179,11 @@ A failed or interrupted root retains its first causal step as `failed_step` and 
 
 When a kind's workflow has no result-reporting step, the kind declares its terminal result as `native`. Its projector then reads Swamp's own run data keyed by step name ([Swamp command steps](/reference/swamp-command-steps#read-swamps-run-data-instead-of-a-result-step)). `node.converge` uses each native step outcome to record the footprint parts that succeeded, including the network part and its handshake assertion.
 
-A terminal result declaration can also name `data`, the data behavior of its terminal step. When Swamp does not inline a large step output in the run history, the projector reads the step's `output` data artifact from that behavior ([Swamp command steps](/reference/swamp-command-steps#scheduled-observations)). A terminal step that succeeded wrote that output, also in a failed run. When the projector cannot read it, it reads the run again on the next pass, until the Operation's run budget ends.
+A terminal result declaration can name `data`, the behavior that wrote its public result. The optional `artifact` field names that result; it defaults to `output`. When inline stdout is absent or empty, the reader fetches the named artifact at the version recorded by the step. If a succeeded result step is not readable yet, projection waits for another read, until the Operation's run budget ends. It does not commit an empty generic failure.
 
 A status read of an interrupted `proof.command` uses the full terminal reader, including completed batch reports, before closing the Operation. This preserves completed case failures even when the status read arrives before the terminal subscriber; [proof outcomes](/cli/proof/run#verdicts) keep interruption inconclusive.
 
-A failed step with exit 124 and a command beginning with a literal `timeout N` reports `<step> timed out after <N>s`; other failures keep their redacted diagnostic. The shared projector and the existing exact history read use the same diagnostic extractor. An older native failure can receive missing detail once through its next normal Operation read, without changing its terminal result or sending another failure alert.
+A failed step with exit 124 and a command beginning with a literal `timeout N` reports `<step> timed out after <N>s`; other failures keep their redacted diagnostic. The shared projector and the existing exact history read use the same diagnostic extractor. An Operation already closed with a generic failure keeps its result and diagnostics unchanged.
 
 The shared extractor redacts known Instance and Process environment values, configured Swamp credentials and credential-shaped text before retaining the last 4 KiB. It drops a truncated first line whose identifying prefix may be missing, then redacts the retained text again. Budget expiry omits `error.stderr_recorded`, because that result makes no claim about native stderr. Native family scripts still own safe output preservation; this projection does not change their placement or execution.
 

@@ -104,7 +104,7 @@ A listed run is followed only when its workflow UUID is declared and its name ma
 
 The projector reads the exact history and still refuses a run that is not terminal, so the list is only a hint. A failed read or an unavailable Swamp ends the job without moving the cursor; the next minute reads again.
 
-Swamp inlines a step output in the run history only when it is small. A declaration can name the data behavior of its terminal step (`data`); when the history carries no output for that step, the shared history helper reads its single `output` artifact with `data.get`, at the version the history names. A check result with long output needs this. Swamp keeps only the latest versions of that data, so the read follows the native notice at once. A missing artifact refuses the projection like any unreadable history.
+Swamp inlines a step output in history only when it is small. A declaration names the result behavior with `data` and can name its `artifact`; the default artifact is `output`. With absent or empty inline stdout, the reader uses `data.get` at the version recorded by the step. A succeeded result step whose artifact is not readable waits for another read, also when its run failed. It does not settle as an empty generic failure. Swamp keeps only the latest versions of that data, so the read follows the native notice at once.
 
 Only verified terminal histories reach the family projector. The workflow UUID/name, selector and public rows must match. Each row carries `operation_id`, `node_id`, `kind`, `root_run_id`, `status` and `result`. Row status is `succeeded` or `failed` for the observation; it does not rewrite the original root. Separate provenance prevents older, duplicate or original-admission replay from replacing newer observations or reopening terminal Operations.
 
@@ -187,7 +187,7 @@ The descriptor does not prove that a target currently authorizes the existing ke
 
 ### Native failure observation
 
-Workflows have no Gateway failure-report step. The shared terminal subscriber follows kinds that declare `terminal_result`. Normal operation reads retain their existing native failure check. A failed or interrupted run without selected public output records `operation.native_failed`. A converted family maps the native failure in its Gateway projection; retained result steps may still supply a fixed public error code. Schedule runs map a failed native command to `schedule.run_failed`. The Gateway returns `404` for `POST /api/v1/direct-operations/{operation}/failure`.
+Workflows have no Gateway failure-report step. A poll first checks for native failure. For a kind with `terminal_result`, it then uses the same `SwampCommandStep::projectTerminal` reader as the terminal handler. The family gets the same selected public result and failure detail. Kinds without a selector keep their existing failure path. Running and succeeded runs keep their existing read behavior, and already closed Operations are not backfilled. A converted family maps native failure in its Gateway projection. Schedule runs map a failed native command to `schedule.run_failed`. The Gateway returns `404` for `POST /api/v1/direct-operations/{operation}/failure`.
 
 Unexpected errors in retained `directOperation` actions fail the native step with a fixed public code. They do not send a failed result callback. The normal shared native failure reader owns their terminal settlement. Explicit no-effect cancellation and returned domain refusals retain their existing contracts until those families switch.
 

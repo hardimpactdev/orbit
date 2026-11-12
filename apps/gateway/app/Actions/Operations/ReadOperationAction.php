@@ -7,11 +7,11 @@ namespace App\Actions\Operations;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationRunBudgets;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\ReadNativeRunFailure;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampReadBudget;
+use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
 use App\Models\Operation;
 use Illuminate\Support\Str;
 
@@ -41,9 +41,7 @@ final readonly class ReadOperationAction
             }
         }
         $operation = app(ExpireOperationAction::class)->execute($operation);
-        if (($operation->status->terminal() && ! ($operation->error_code === 'operation.native_failed'
-            && in_array($operation->status, [OperationStatus::Failed, OperationStatus::Interrupted], true)
-            && ! array_key_exists('native_failure', $operation->state ?? []))) || ! is_string($runId) || ! Str::isUuid($runId)
+        if ($operation->status->terminal() || ! is_string($runId) || ! Str::isUuid($runId)
             || $definition === null || $operation->node_id === null) {
             return $operation;
         }
@@ -56,12 +54,14 @@ final readonly class ReadOperationAction
             return $operation->refresh();
         }
         try {
-            if ($operation->kind === 'proof.command' && $receipt['status'] === OperationStatus::Interrupted) {
-                // A diagnostic-only failure would lose completed case reports before the subscriber can record them.
-                return app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => 'interrupted'], $definition['terminal_result'] ?? throw new \LogicException('Proof commands require a full terminal result.'));
+            if (! isset($definition['terminal_result'])) {
+                return $this->failures->execute($operation, $runId, $receipt['status'], $receipt['failure'], $receipt['finished_at']);
             }
 
-            return $this->failures->execute($operation, $runId, $receipt['status'], $receipt['failure'], $receipt['finished_at']);
+            return app(SwampCommandStep::class)->projectTerminal($operation,
+                ['id' => $runId, 'status' => $receipt['status']->value], $definition['terminal_result']);
+        } catch (SwampTerminalReadUnavailable) {
+            return $operation->refresh();
         } catch (ResourceOperationException $exception) {
             if (! in_array($exception->errorCode, ['operation.run_mismatch', 'operation.run_unbound'], true)) {
                 throw $exception;

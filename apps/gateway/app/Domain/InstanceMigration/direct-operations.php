@@ -9,6 +9,6 @@ return [
     'instance.migrate' => ['workflow' => 'operation-instance-migrate', 'workflow_inputs' => true,
         'projection' => InstanceMigrateProjection::class,
         // `finish` reports the failed step, the commit and whether a failed move restored; the check after it says the container is gone.
-        'terminal_result' => ['job' => 'migrate', 'step' => 'finish'],
+        'terminal_result' => ['job' => 'migrate', 'step' => 'finish', 'data' => 'im-finish', 'artifact' => 'migrate'],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-migrate-(?:model|processes|source)-[1-9][0-9]*$']]],
 ];

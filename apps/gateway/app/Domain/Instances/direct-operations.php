@@ -18,7 +18,7 @@ use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
 return [
     'instance.node_service_detach' => ['workflow' => 'operation-instance-node-service', 'workflow_inputs' => true,
-        'projection' => NodeServiceTargetOperation::class, 'terminal_result' => ['job' => 'node-service', 'step' => 'result']],
+        'projection' => NodeServiceTargetOperation::class, 'terminal_result' => ['job' => 'node-service', 'step' => 'result', 'data' => 'instance-node-service-result']],
     'instance.transfer' => ['workflow' => 'operation-instance-transfer', 'workflow_inputs' => true,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'],
@@ -33,10 +33,10 @@ return [
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-git-(?:operation|credential)-[1-9][0-9]*$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-clone-environment-operation-[1-9][0-9]*$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-forward-route_material_[0-9]+$']],
-        'terminal_result' => ['job' => 'clone', 'step' => 'Report the result'], 'projection' => InstanceCloneProjection::class],
+        'terminal_result' => ['job' => 'clone', 'step' => 'Report the result', 'data' => 'icl-36', 'artifact' => 'result'], 'projection' => InstanceCloneProjection::class],
     'instance.create' => ['workflow' => 'operation-instance-create', 'workflow_inputs' => true,
         'projection' => DevelopmentInstanceCreateProjection::class,
-        'terminal_result' => ['job' => 'create', 'step' => 'finish'],
+        'terminal_result' => ['job' => 'create', 'step' => 'finish', 'data' => 'ic-finish', 'artifact' => 'create'],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(?:instance-git-(?:operation|credential)-[1-9][0-9]*|instance-create-environment-(?:input|testing)-[1-9][0-9]*|instance-create-(?:model|processes)-[1-9][0-9]*)$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^nckrtl-instance-t3-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-register-session-(?:gateway|swamp)-[1-9][0-9]*-token$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'],
