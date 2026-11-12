@@ -55,7 +55,7 @@ final class DestroyInstanceCommand extends GatewayCommand
                 ? 'delete its production content, Route and runtime'
                 : 'delete its owned development source, Route and runtime';
             if ($this->option('force') === true && ! $isProduction) {
-                $effect .= ', including dirty or unpublished work and registered linked worktrees';
+                $effect .= ', including dirty or unpublished work';
             }
             if (! $this->confirmAction("Remove Instance [{$existing->name}] (#{$existing->id}) and {$effect}?", 'Instance removal cancelled.')) {
                 return self::FAILURE;

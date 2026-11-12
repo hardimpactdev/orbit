@@ -47,7 +47,7 @@ sequenceDiagram
   opt host checkout Instance
     GW->>N: Read worktrees<br/>Git · SSH
     %%> Why first:
-    %%> - before Schedule removal or any Operation write; inspect Git on the Node, never trust source_layout
+    %%> - before Schedule removal or any Operation write; inspect recorded checkout paths and all Git directories in the removal subtree, never trust source_layout
     %%> On refusal:
     %%> - HTTP 409 instance.worktree_dependents reports visible dependent Instances, a count of others, and unowned paths; --force never overrides it
     %%> - unreadable Git refuses closed; a container skips this read
@@ -119,7 +119,6 @@ sequenceDiagram
   %%> Refuses:
   %%> - dirty source
   %%> - a `HEAD` that no origin branch or tag contains
-  %%> - linked worktrees on the checkout
   %%> Result of a refusal:
   %%> - the run stops here and nothing changes
   %%> Why first:
@@ -186,7 +185,7 @@ sequenceDiagram
   %%> - the awake and cold markers and the Caddy access log outlive the Instance otherwise
   SW->>N: Remove the source<br/>@swamp/ssh exec · worktree, rm
   %%> What it does:
-  %%> - recheck live Git dependencies, then remove a dependent with `git worktree remove --force` through its actual common Git directory; never fall back to rm on Git failure
+  %%> - recheck recorded checkout paths and all Git directories in the removal subtree, then remove a dependent with `git worktree remove --force` through its actual common Git directory; never fall back to rm on Git failure
   %%> - an owner with dependents refuses; a standalone checkout is removed as before
   %%> - the paths come from the Gateway's records; a rerun converges
   %%> Runs as:

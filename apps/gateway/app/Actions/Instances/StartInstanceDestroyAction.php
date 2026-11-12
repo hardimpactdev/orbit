@@ -62,7 +62,7 @@ final readonly class StartInstanceDestroyAction
         }
         app(ContainerInstanceDestroy::class)->assertAvailable($instance, $force);
         $snapshot = $this->snapshot($instance, $force);
-        app(InstanceDestroyWorktrees::class)->assertAvailable($instance);
+        $snapshot['checkout_instances'] = app(InstanceDestroyWorktrees::class)->assertAvailable($instance);
         // A native Schedule fires from its own workflow on serve, not from the Node; it stops before the Instance goes.
         $members = array_column(is_array($snapshot['members'] ?? null) ? $snapshot['members'] : [], 'instance_id');
         app(NativeSchedules::class)->removeForInstances($members === [] ? [$instance->id] : ValidatedData::integerList($members));

@@ -26,7 +26,7 @@
     - name: Check Git dependencies and remove the source
       ansible.builtin.command:
         argv: [python3, -c, "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance/destroy-git.py') }}"]
-        stdin: "{{ {'action': 'remove', 'paths': intent.source_paths} | to_json }}"
+        stdin: "{{ {'action': 'remove', 'paths': intent.source_paths, 'instances': intent.checkout_instances} | to_json }}"
         expand_argument_vars: false
       register: source_removal
       changed_when: (source_removal.stdout | from_json).outcome == 'removed'

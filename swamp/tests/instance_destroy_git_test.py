@@ -94,13 +94,72 @@ class DestroyGitTest(unittest.TestCase):
         self.assertTrue(self.linked.exists())
         self.assertTrue((self.owner / '.git').is_dir())
 
+    def test_moved_worktree_is_found_from_recorded_path_at_admission_and_removal(self):
+        self.add_worktree()
+        moved = self.root / 'moved'
+        self.linked.rename(moved)
+        inventory = [{'id': 69, 'path': str(moved), 'source_layout': 'checkout'}]
+        before = self.snapshot(self.owner, True)
+        for action in ['inspect', 'remove']:
+            result = self.run_helper(self.owner, action, inventory, force=True)
+            self.assertEqual(result['outcome'], 'inspected' if action == 'inspect' else 'refused')
+            self.assertEqual(result['data']['dependents'], [{'path': str(moved), 'instance_ids': [69]}])
+            self.assertTrue(self.snapshot(self.owner, True) == before)
+            self.assertEqual(self.git(moved, 'rev-parse', 'HEAD'), self.git(self.owner, 'rev-parse', 'HEAD'))
+
+    def test_nested_and_bare_repositories_with_outside_worktrees_block_deletion(self):
+        for shape in ['nested', 'bare']:
+            with self.subTest(shape=shape):
+                repository = self.owner / ('vendor/nested' if shape == 'nested' else 'node_modules/bare.git')
+                repository.parent.mkdir(parents=True, exist_ok=True)
+                if shape == 'nested':
+                    self.git(self.root, 'clone', '-q', str(self.owner), str(repository))
+                else:
+                    self.git(self.root, 'clone', '-q', '--bare', str(self.owner), str(repository))
+                dependent = self.root / shape
+                self.git(repository, 'worktree', 'add', '-q', '--detach', str(dependent))
+                before = self.snapshot(self.owner, True)
+                for inventory in [[], [{'id': 69, 'path': str(dependent)}]]:
+                    for action in ['inspect', 'remove']:
+                        result = self.run_helper(self.owner, action, inventory, force=True)
+                        self.assertEqual(result['outcome'], 'inspected' if action == 'inspect' else 'refused')
+                        self.assertIn({'path': str(dependent), 'instance_ids': [69] if inventory else []}, result['data']['dependents'])
+                        self.assertTrue(self.snapshot(self.owner, True) == before)
+                        self.git(dependent, 'status', '--porcelain')
+                self.git(repository, 'worktree', 'remove', '--force', str(dependent))
+                shutil.rmtree(repository)
+        # A bare removal root itself also owns Git data, despite having no .git child.
+        bare = self.root / 'bare-root.git'
+        self.git(self.root, 'clone', '-q', '--bare', str(self.owner), str(bare))
+        self.git(bare, 'worktree', 'add', '-q', '--detach', str(self.linked))
+        self.assertEqual(self.run_helper(bare)['data']['error_code'], 'instance.worktree_dependents')
+        self.git(self.linked, 'status', '--porcelain')
+
+    def test_deleted_prunable_registration_is_nonblocking_but_scan_bounds_fail_closed(self):
+        self.add_worktree()
+        shutil.rmtree(self.linked)
+        self.assertEqual(self.run_helper(self.owner, 'inspect')['data']['dependents'], [])
+        self.assertEqual(self.run_helper(self.owner)['outcome'], 'removed')
+        self.owner.mkdir()
+        current = self.owner
+        for _ in range(130):
+            current = current / 'd'
+            current.mkdir()
+        result = self.run_helper(self.owner)
+        self.assertEqual(result, {'outcome': 'refused', 'data': {'error_code': 'instance.remove_refused'}})
+        self.assertTrue(current.is_dir())
+
     def test_real_ansible_phase_refuses_owner_removes_dependent_then_owner(self):
         import yaml
         self.add_worktree()
         shutil.copytree(ROOT / 'swamp/ansible/instance', self.root / 'instance')
+        # Move without git repair so the real removal phase must use the admitted inventory.
+        moved = self.root / 'moved'
+        self.linked.rename(moved)
+        self.linked = moved
         wrapper = yaml.safe_load((ROOT / 'swamp/ansible/instance-checkout-destroy.yml').read_text())[1]
         wrapper.update({'hosts': 'fixture', 'connection': 'local'})
-        wrapper['vars'] = {'ansible_python_interpreter': sys.executable, 'run': str(self.root), 'intent': {'source_paths': [str(self.owner)]}}
+        wrapper['vars'] = {'ansible_python_interpreter': sys.executable, 'run': str(self.root), 'intent': {'source_paths': [str(self.owner)], 'checkout_instances': [{'id': 69, 'path': str(self.linked)}]}}
         env = {**os.environ, 'ANSIBLE_STDOUT_CALLBACK': 'default', 'ANSIBLE_COLLECTIONS_PATH': str(self.root / 'collections')}
         for target, refused in [(self.owner, True), (self.linked, False), (self.owner, False)]:
             wrapper['vars']['intent']['source_paths'] = [str(target)]
@@ -115,6 +174,8 @@ class DestroyGitTest(unittest.TestCase):
                 self.assertEqual(receipt['data']['error_code'], 'instance.worktree_dependents')
                 self.assertTrue((self.owner / '.git').is_dir())
                 self.assertTrue((self.linked / '.git').is_file())
+                # Git refuses unregistering a moved tree until its registration is repaired.
+                self.git(self.owner, 'worktree', 'repair', str(self.linked))
             else:
                 self.assertFalse(target.exists())
 

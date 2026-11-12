@@ -19,17 +19,19 @@ final readonly class InstanceDestroyWorktrees
 {
     public function __construct(private RemoteProgramRunner $reader, private NodeAccessAuthorizer $access) {}
 
-    public function assertAvailable(Instance $instance): void
+    /** @return list<array{id:int,path:string}> */
+    public function assertAvailable(Instance $instance): array
     {
         if ($instance->runtime()->exists()) {
-            return;
+            return [];
         }
         $instances = Instance::query()->where('node_id', $instance->node_id)->whereDoesntHave('runtime')
             ->whereNotNull('checkout_path')->orderBy('id')->get();
+        $inventory = array_values($instances->map(static fn (Instance $row): array => ['id' => $row->id, 'path' => (string) $row->checkout_path])->all());
         $program = new RemoteProgramCatalog(base_path('../../swamp/ansible'))->program('instance.destroy-git');
         try {
             $result = $this->reader->run($instance->node, $program, ['action' => 'inspect', 'paths' => [$instance->checkout_path],
-                'instances' => $instances->map(static fn (Instance $row): array => ['id' => $row->id, 'path' => $row->checkout_path])->all()]);
+                'instances' => $inventory]);
         } catch (RemoteProgramFailed $exception) {
             throw new ResourceOperationException('instance.host_unavailable', 'The Node could not be read for safe checkout removal.', 409,
                 previous: $exception, details: ['reason' => $exception->reason->value]);
@@ -42,6 +44,8 @@ final readonly class InstanceDestroyWorktrees
             throw new ResourceOperationException('instance.worktree_dependents', 'Other worktrees depend on Git data in this checkout.', 409,
                 details: $this->details($instance, $result->data['dependents'], $consumer instanceof Node ? 'node:'.$consumer->id : null));
         }
+
+        return $inventory;
     }
 
     /** @param array<array-key, mixed> $dependencies

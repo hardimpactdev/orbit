@@ -139,3 +139,33 @@ it('refuses a real Git error without claiming that dependents were found', funct
     }
     expect(Operation::query()->count())->toBe(0)->and(is_dir($this->root.'/owner'))->toBeTrue();
 });
+
+it('refuses moved and nested Git dependencies from live Node facts before any admission write', function (string $shape): void {
+    if ($shape === 'moved') {
+        rename($this->root.'/dependent', $this->root.'/moved');
+        $this->dependent->update(['checkout_path' => $this->root.'/moved']);
+    } else {
+        new LocalProcess(['git', '-C', $this->root.'/owner', 'worktree', 'remove', '--force', $this->root.'/dependent'])->mustRun();
+        $repository = $this->root.'/owner/nested';
+        $args = ['git', 'clone', '-q'];
+        if ($shape === 'bare') {
+            $args[] = '--bare';
+        }
+        new LocalProcess([...$args, $this->root.'/owner', $repository])->mustRun();
+        new LocalProcess(['git', '-C', $repository, 'worktree', 'add', '-q', '--detach', $this->root.'/dependent'])->mustRun();
+    }
+    $this->node->accessibleNodes()->syncWithoutDetaching([$this->node->id]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip])
+        ->deleteJson('/api/v1/instances/'.$this->owner->id, ['force' => true])
+        ->assertConflict()->assertJsonPath('error.code', 'instance.worktree_dependents')
+        ->assertJsonPath('error.details.dependents.0.id', $this->dependent->id);
+    expect(Operation::query()->count())->toBe(0)->and(InstanceRemoval::query()->count())->toBe(0);
+    new LocalProcess(['git', '-C', $this->dependent->checkout_path, 'status', '--porcelain'])->mustRun();
+})->with(['moved', 'nested', 'bare']);
+
+it('retains the Node checkout inventory for the removal recheck', function (): void {
+    new LocalProcess(['git', '-C', $this->root.'/owner', 'worktree', 'remove', '--force', $this->root.'/dependent'])->mustRun();
+    $inventory = app(InstanceDestroyWorktrees::class)->assertAvailable($this->owner);
+    expect($inventory)->toContain(['id' => $this->owner->id, 'path' => $this->owner->checkout_path],
+        ['id' => $this->dependent->id, 'path' => $this->dependent->checkout_path]);
+});
