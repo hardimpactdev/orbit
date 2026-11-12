@@ -473,7 +473,25 @@ The `vp-dev` preset leaves application `.env` loading to Vite. Its private manag
 
 Migration capture of existing Processes requires exact admitted-unit and activation proof. A pre-change admission that cannot match the current unit becomes a repeatable recorded skip. A release before migration input materialization refuses changed intent before downtime. An already submitted migration finishes with its admitted units and activation hash.
 
-Container targets use `orbit-node-service-PORT.socket` and `.service`. Sockets bind only `127.0.0.1:PORT`, are enabled at boot, and use `systemd-socket-proxyd` with an explicit 256-connection limit per service and a dynamic unprivileged user. Unit files remain root-owned. Create and migrate prove an accepted loopback connection and a new established upstream connection owned by the active proxy before application Processes start; migration refuses before quiesce on failure. Clone does not inherit attachment records and strips inherited target units before boot. The shared bridge helper persists and refreshes Docker translations; destroy removes the Instance own ACL, while shared tuples follow host reconciliation as database/mail endpoints do.
+Container targets use `orbit-node-service-PORT.socket` and `.service`. Sockets bind only `127.0.0.1:PORT`, are enabled at boot, and use `systemd-socket-proxyd` with an explicit 256-connection limit per service and a dynamic unprivileged user. Unit files remain root-owned. Create and migrate prove an accepted loopback connection and a new established upstream connection owned by the active proxy before application Processes start; migration refuses before quiesce on failure.
+
+The probe polls every 50 ms for up to three seconds per target, including unit readiness and the connection to the Node. `instance.node_service_unreachable` retains the target identity, `reason`, `waited_ms` and each unit’s `ActiveState`, `SubState`, `UnitFileState` and `Result` in the Operation.
+
+An observed acceptance stays recorded if the proxy closes its client before the upstream connects; the reason remains `upstream_not_established` and `client_closed` is true. Values are public classes; no command output or connection content is retained.
+
+Clone does not inherit attachment records and strips inherited target units before boot. The shared bridge helper persists and refreshes Docker translations; destroy removes the Instance own ACL, while shared tuples follow host reconciliation as database/mail endpoints do.
+
+| Probe reason | Meaning |
+| --- | --- |
+| `proxy_not_running` | The proxy has no active, running process. |
+| `proxy_job_pending` | The proxy has an unfinished systemd job. |
+| `socket_not_ready` | The socket is inactive or listens at a different address. |
+| `socket_not_enabled` | The socket is not enabled at boot. |
+| `accept_not_seen` | The proxy has not accepted this probe’s client connection. |
+| `upstream_not_established` | No unambiguous new established connection to the exact Node endpoint was observed. |
+| `connect_failed` | The probe could not connect to the loopback socket. |
+
+The accepted socket must match the probe’s client address and port. Only one new upstream socket may appear beside that accepted socket; an observed competing client cannot satisfy the check. Kernel socket tables do not expose the proxy’s internal pairing. A competing connection that opens and closes between samples cannot be ruled out. Start or restart command failures retain the observed reason and unit states without retrying the failed command.
 
 A pending activation record in `/var/lib/orbit/instance-node-services/INSTANCE/activation.json` allows the next run to finish after a partial unit write. Network admission precedes every guest write. A foreign unit or listener refuses without stopping a Project Process. The reusable phase does not read or write the workspace and does not restart application Processes. New optional `container.node_services` intent defaults to an empty list for already-admitted runs.
 

@@ -117,10 +117,13 @@ Deno.test("create finalization evaluates checkout, default and clone receipts wi
     // Keep that key: Swamp's CEL treats an omitted map key as an error, not null.
     const intent = { instance_id: 8, already_active: false, container, database: null, server_database: null, processes: [], setup_steps: [], route: null };
     const phaseSteps = { ...steps, "clone-register": container?.clone ? registration : { status: "skipped" } };
+    // Swamp supplies run.id independently of the admitting Gateway release.
+    const run = { id: "previous-gateway-run" };
     const values = Object.fromEntries(Object.entries(expressions).map(([key, value]) => [
-      key, environment.evaluate(value.trim().slice(3, -2).trim(), { inputs: { intent }, steps: phaseSteps }),
+      key, environment.evaluate(value.trim().slice(3, -2).trim(), { inputs: { intent }, steps: phaseSteps, run }),
     ]));
     const args = behavior.methods.create_result.arguments.parse(values);
+    assertEquals(args.folder, "/tmp/orbit-ansible-previous-gateway-run");
     assertEquals(args.container === null, container === null);
     const result = createResult(intent, args);
     assertEquals(result.ready, true);

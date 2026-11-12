@@ -508,14 +508,15 @@ class NodeServiceTest(unittest.TestCase):
         self.connection_open = False
         self.fragments = {}
         self.dropins = {}
+        self.now = 0.0
 
-    def guest_run(self, argv, content=None):
+    def guest_run(self, argv, content=None, timeout=None):
         self.calls.append(argv)
         if argv[:2] == ['systemctl', 'show']:
             return '\n\n'.join('Id=' + name + '\nActiveState=' +
                                 ('failed' if self.proxy_failed and name.endswith('.service') else 'active' if name in self.active else 'inactive')
                                 + '\nSubState=running\nMainPID=' + ('1234' if name.endswith('.service') and name in self.active else '0')
-                                + '\nJob=\nFragmentPath=' + self.fragments.get(name, '')
+                                + '\nResult=success\nJob=\nFragmentPath=' + self.fragments.get(name, '')
                                 + '\nDropInPaths=' + self.dropins.get(name, '')
                                 + '\nUnitFileState=' + ('enabled' if name in self.enabled else 'disabled')
                                 + '\nListen=127.0.0.1:' + name.split('-')[-1].split('.')[0] + ' (Stream)'
@@ -587,7 +588,8 @@ class NodeServiceTest(unittest.TestCase):
                 return ('127.0.0.1', 40000)
 
         def connect(address, timeout):
-            self.assertEqual(timeout, 2)
+            self.assertGreater(timeout, 0)
+            self.assertLessEqual(timeout, 2)
             self.assertEqual(address, ('127.0.0.1', 3308))
             return Connection()
 
@@ -596,14 +598,22 @@ class NodeServiceTest(unittest.TestCase):
             self.assertEqual(root, self.guest)
             if not self.connection_open:
                 return {}
-            rows = {'10': (('127.0.0.1', 3308), ('127.0.0.1', 40000))}
+            rows = {'10': (('127.0.0.1', 3308), ('127.0.0.1', 40000), '01')}
             if self.reachable:
-                rows['11'] = (('10.253.0.2', 50000), ('10.253.0.1', 3308))
+                rows['11'] = (('10.253.0.2', 50000), ('10.253.0.1', 3308), '01')
             return rows
 
-        with patch.object(Path, 'stat', owned), patch.object(TARGETS.os, 'chown', side_effect=chown), patch.object(TARGETS, 'atomic', side_effect=write), \
+        probe = TARGETS.probe_proxy
+
+        def bounded_probe(*args):
+            return probe(*args, clock=lambda: self.now, pause=self.advance)
+
+        with patch.object(TARGETS, 'probe_proxy', side_effect=bounded_probe), patch.object(Path, 'stat', owned), patch.object(TARGETS.os, 'chown', side_effect=chown), patch.object(TARGETS, 'atomic', side_effect=write), \
                 patch.object(TARGETS, 'tcp_sockets', side_effect=sockets):
             return json.dumps(TARGETS.guest(argv[-1], json.loads(content), self.guest, self.guest_run, connect))
+
+    def advance(self, seconds):
+        self.now += seconds
 
     def apply(self):
         return TARGETS.apply(self.container, {'node_services': 'shipped source', 'bridge': 'shipped bridge'}, self.node_run, self.root / 'state')
@@ -664,6 +674,7 @@ class NodeServiceTest(unittest.TestCase):
         self.connection_open = False
         self.fragments = {}
         self.dropins = {}
+        self.now = 0.0
         self.assertEqual(self.apply()['status'], 'applied')
 
     def test_detach_keeps_shared_port_then_removes_only_owned_access_without_dnat(self):
@@ -679,21 +690,25 @@ class NodeServiceTest(unittest.TestCase):
         self.assertFalse(self.active)
         self.assertEqual(self.apply()['status'], 'unchanged')
 
-    def test_kernel_probe_reads_only_established_sockets_owned_by_the_proxy(self):
+    def test_kernel_probe_reads_all_connection_states_owned_by_the_proxy(self):
         descriptors = self.guest / 'proc/1234/fd'
         descriptors.mkdir(parents=True)
         (descriptors / '3').symlink_to('socket:[10]')
         (descriptors / '4').symlink_to('socket:[11]')
+        (descriptors / '5').symlink_to('socket:[12]')
+        (descriptors / '6').symlink_to('socket:[13]')
         table = self.guest / 'proc/net/tcp'
         table.parent.mkdir(parents=True)
         table.write_text('header\n'
                          '0: 0100007F:0CEC 0100007F:9C40 01 0:0 0:0 0 0 0 10\n'
                          '1: 0200FD0A:C350 0100FD0A:0CEC 01 0:0 0:0 0 0 0 11\n'
-                         '2: 0100007F:0CEC 00000000:0000 0A 0:0 0:0 0 0 0 10\n'
-                         '3: 0200FD0A:C351 0100FD0A:0CEC 01 0:0 0:0 0 0 0 999\n')
+                         '2: 0100007F:0CEC 00000000:0000 0A 0:0 0:0 0 0 0 12\n'
+                         '3: 0200FD0A:C351 0100FD0A:0CEC 01 0:0 0:0 0 0 0 999\n'
+                         '4: 0200FD0A:C352 0100FD0A:0CEC 02 0:0 0:0 0 0 0 13\n')
         self.assertEqual(TARGETS.tcp_sockets(1234, self.guest), {
-            '10': (('127.0.0.1', 3308), ('127.0.0.1', 40000)),
-            '11': (('10.253.0.2', 50000), ('10.253.0.1', 3308))})
+            '10': (('127.0.0.1', 3308), ('127.0.0.1', 40000), '01'),
+            '11': (('10.253.0.2', 50000), ('10.253.0.1', 3308), '01'),
+            '13': (('10.253.0.2', 50002), ('10.253.0.1', 3308), '02')})
 
     def test_failed_proxy_refuses_before_quiesce_with_public_identity_and_retains_pending(self):
         self.proxy_failed = True
@@ -701,8 +716,11 @@ class NodeServiceTest(unittest.TestCase):
         with self.assertRaises(TARGETS.TargetFailure) as error:
             self.apply()
         self.assertEqual(str(error.exception), 'instance.node_service_unreachable')
-        self.assertEqual(error.exception.evidence()['node_service_target'],
+        target = error.exception.evidence()['node_service_target']
+        self.assertEqual({key: target[key] for key in ('id', 'process_id', 'process_name', 'port')},
                          {'id': 7, 'process_id': 19, 'process_name': 'fixture-db', 'port': 3308})
+        self.assertEqual(target['reason'], 'proxy_not_running')
+        self.assertEqual(target['units']['service']['ActiveState'], 'failed')
         self.assertTrue((self.root / 'state/instance-7/activation.json').exists())
         migrate = yaml.safe_load((ROOT / 'workflows/workflow-operation-instance-migrate.yaml').read_text())
         steps = {step['name']: step for job in migrate['jobs'] for step in job['steps']}
@@ -789,12 +807,12 @@ class NodeServiceTest(unittest.TestCase):
         self.assert_socket_failure('try-restart', 'instance.node_service_unreachable')
 
     def test_inactive_socket_names_target_in_create_and_migrate_receipts(self):
-        self.assert_socket_failure('inactive', 'process.target_inactive')
+        self.assert_socket_failure('inactive', 'instance.node_service_unreachable')
 
     def assert_socket_failure(self, action, expected_code):
         original = self.guest_run
 
-        def fail(argv, content=None):
+        def fail(argv, content=None, **kwargs):
             if action == 'inactive' and argv[:2] == ['systemctl', 'enable']:
                 return ''  # Command succeeds but the socket never becomes active/listening.
             if argv[:2] == ['systemctl', action]:
@@ -805,15 +823,180 @@ class NodeServiceTest(unittest.TestCase):
         with self.assertRaises(TARGETS.TargetFailure) as error:
             self.apply()
         evidence = error.exception.evidence()
-        self.assertEqual(evidence, {'error_code': expected_code, 'node_service_target':
-                                   {'id': 7, 'process_id': 19, 'process_name': 'fixture-db', 'port': 3308}})
+        self.assertEqual(evidence['error_code'], expected_code)
+        self.assertEqual(evidence['node_service_target']['id'], 7)
+        self.assertIn(evidence['node_service_target']['reason'], TARGETS.REASONS)
+        self.assertEqual(set(evidence['node_service_target']['units']), {'socket', 'service'})
         self.assertTrue((self.root / 'state/instance-7/activation.json').exists())
         self.assertNotIn('PRIVATE', json.dumps(evidence))
         self.assert_failure_receipts(evidence)
 
-    def test_real_create_and_migrate_failure_receipts_keep_target_and_block_later_work(self):
-        self.assert_failure_receipts({'error_code': 'instance.node_service_unreachable', 'node_service_target':
-                                     {'id': 7, 'process_id': 19, 'process_name': 'fixture-db', 'port': 3308}})
+    def probe(self, condition=None, delay=0, startup=0):
+        self.active = {'orbit-node-service-3308.socket', 'orbit-node-service-3308.service'}
+        self.enabled = {'orbit-node-service-3308.socket'}
+        opened = False
+        fixture = self
+
+        class Connection:
+            def __enter__(self):
+                nonlocal opened
+                opened = True
+                return self
+
+            def __exit__(self, *_):
+                nonlocal opened
+                opened = False
+
+            def getsockname(self):
+                return ('127.0.0.1', 40000)
+
+        def run(argv, **kwargs):
+            self.assertGreater(kwargs['timeout'], 0)
+            output = self.guest_run(argv)
+            if self.now < startup:
+                return output.replace('MainPID=1234', 'MainPID=0')
+            if self.now < delay or delay == 0:
+                if condition == 'proxy_not_running':
+                    output = output.replace('MainPID=1234', 'MainPID=0')
+                elif condition == 'proxy_job_pending':
+                    output = output.replace('Job=', 'Job=42')
+                elif condition == 'socket_not_ready':
+                    output = output.replace('Listen=127.0.0.1', 'Listen=0.0.0.0')
+                elif condition == 'socket_not_enabled':
+                    output = output.replace('UnitFileState=enabled', 'UnitFileState=disabled')
+            return output
+
+        def sockets(*_):
+            existing = {'old': (('127.0.0.1', 3308), ('127.0.0.1', 40002), '01')} if condition == 'preexisting_client' else {}
+            if condition == 'preexisting_upstream':
+                existing['old'] = (('10.253.0.2', 50000), ('10.253.0.1', 3308), '01')
+            if not opened:
+                return existing
+            rows = existing | {'accept': (('127.0.0.1', 3308), ('127.0.0.1', 40000), '01')}
+            if condition in ('accept_not_seen', 'foreign_only'):
+                rows = {}
+            if self.now >= delay and condition != 'upstream_not_established':
+                rows['upstream'] = (('10.253.0.2', 50000), ('10.253.0.1', 3308), '01')
+            if condition in ('foreign_only', 'competing_client'):
+                rows['foreign'] = (('127.0.0.1', 3308), ('127.0.0.1', 40001), '01')
+            if condition == 'wrong_endpoint':
+                rows['upstream'] = (('10.253.0.2', 50000), ('10.253.0.9', 3308), '01')
+            if condition == 'preexisting_upstream':
+                return {'old': (('10.253.0.2', 50000), ('10.253.0.1', 3308), '01')} | (rows if opened else {})
+            return rows
+
+        def connect(*_, **kwargs):
+            self.assertGreater(kwargs['timeout'], 0)
+            if condition == 'connect_failed':
+                raise OSError('PRIVATE-CONNECT-OUTPUT')
+            return Connection()
+
+        with patch.object(TARGETS, 'tcp_sockets', side_effect=sockets):
+            try:
+                TARGETS.probe_proxy(self.target, self.guest, run, connect,
+                                    clock=lambda: fixture.now, pause=self.advance)
+            finally:
+                self.assertFalse(opened)
+
+    def test_upstream_appearing_after_delay_passes_with_one_client(self):
+        self.probe(delay=0.15)
+        self.assertGreaterEqual(self.now, 0.15)
+        self.assertLess(self.now, 0.3)
+
+    def test_never_established_refuses_after_whole_probe_bound(self):
+        with self.assertRaises(TARGETS.TargetFailure) as error:
+            self.probe('upstream_not_established', startup=0.2)
+        evidence = error.exception.evidence()
+        target = evidence['node_service_target']
+        self.assertEqual(target['reason'], 'upstream_not_established')
+        self.assertEqual(target['waited_ms'], 3000)
+        self.assertEqual(self.now, 3)
+        self.assertEqual(target['units']['service']['ActiveState'], 'active')
+        self.assertEqual(target['units']['socket']['UnitFileState'], 'enabled')
+        self.assert_failure_receipts(evidence)
+
+    def test_accepted_client_closed_after_upstream_refusal_keeps_cause_in_both_receipts(self):
+        self.active = {'orbit-node-service-3308.socket', 'orbit-node-service-3308.service'}
+        self.enabled = {'orbit-node-service-3308.socket'}
+        descriptors = self.guest / 'proc/1234/fd'
+        descriptors.mkdir(parents=True)
+        descriptor = descriptors / '3'
+        table = self.guest / 'proc/net/tcp'
+        table.parent.mkdir(parents=True)
+        table.write_text('header\n')
+
+        class Connection:
+            def __enter__(self):
+                descriptor.symlink_to('socket:[10]')
+                table.write_text('header\n0: 0100007F:0CEC 0100007F:9C40 01 0:0 0:0 0 0 0 10\n')
+                return self
+
+            def __exit__(self, *_):
+                descriptor.unlink(missing_ok=True)
+
+            def getsockname(self):
+                return ('127.0.0.1', 40000)
+
+        def close_after_acceptance(seconds):
+            self.advance(seconds)
+            if self.now >= 0.05:
+                descriptor.unlink(missing_ok=True)
+                table.write_text('header\n')
+
+        # Real /proc reader: accepted at the first sample, gone at 50 ms,
+        # and no upstream socket ever exists. The socket reader is not mocked.
+        with self.assertRaises(TARGETS.TargetFailure) as error:
+            TARGETS.probe_proxy(self.target, self.guest, self.guest_run,
+                                lambda *args, **kwargs: Connection(),
+                                clock=lambda: self.now, pause=close_after_acceptance)
+        evidence = error.exception.evidence()
+        self.assertEqual(evidence['node_service_target']['reason'], 'upstream_not_established')
+        self.assertIs(evidence['node_service_target']['client_closed'], True)
+        self.assertEqual(evidence['node_service_target']['waited_ms'], 3000)
+        self.assert_failure_receipts(evidence)
+
+    def test_every_probe_reason_names_condition_and_public_unit_states(self):
+        for reason in sorted(TARGETS.REASONS):
+            with self.subTest(reason=reason):
+                self.now = 0
+                with self.assertRaises(TARGETS.TargetFailure) as error:
+                    self.probe(reason)
+                target = error.exception.evidence()['node_service_target']
+                self.assertEqual(target['reason'], reason)
+                self.assertEqual(target['waited_ms'], 3000)
+                self.assertEqual(set(target['units']), {'socket', 'service'})
+                self.assertTrue(all(set(row) == set(TARGETS.UNIT_STATES) for row in target['units'].values()))
+                self.assertNotIn('PRIVATE', json.dumps(target))
+
+    def test_unit_jobs_and_socket_enable_lag_settle_within_same_bound(self):
+        for condition in ('proxy_not_running', 'proxy_job_pending', 'socket_not_ready', 'socket_not_enabled'):
+            with self.subTest(condition=condition):
+                self.now = 0
+                self.probe(condition, delay=0.1)
+                self.assertGreaterEqual(self.now, 0.1)
+                self.assertLess(self.now, 0.3)
+
+    def test_foreign_or_ambiguous_connections_never_prove_this_probe(self):
+        for condition in ('foreign_only', 'competing_client', 'preexisting_client', 'preexisting_upstream', 'wrong_endpoint'):
+            with self.subTest(condition=condition):
+                self.now = 0
+                with self.assertRaises(TARGETS.TargetFailure):
+                    self.probe(condition)
+                self.assertEqual(self.now, 3)
+
+    def test_guest_boundary_redacts_diagnostic_fields_and_keeps_public_states(self):
+        target = self.target | {'reason': 'upstream_not_established', 'waited_ms': 3000,
+                                'units': {'socket': {'ActiveState': 'active', 'SubState': 'PRIVATE'},
+                                          'service': {'Result': 'timeout', 'stderr': 'PRIVATE'}},
+                                'stderr': 'PRIVATE'}
+        evidence = TARGETS.TargetFailure('instance.node_service_unreachable', target).evidence()
+        result = type('Result', (), {'returncode': 1, 'stdout': json.dumps(evidence),
+                                    'stderr': 'instance.node_service_unreachable\n'})()
+        with patch.object(TARGETS.subprocess, 'run', return_value=result), self.assertRaises(TARGETS.TargetFailure) as error:
+            TARGETS.command(['incus', 'exec'], public_guest=True)
+        self.assertEqual(error.exception.evidence(), evidence)
+        self.assertNotIn('PRIVATE', json.dumps(evidence))
+        self.assertNotIn('10.253.0.1', json.dumps(evidence))
 
     def assert_failure_receipts(self, evidence):
         import shutil
@@ -860,6 +1043,33 @@ class NodeServiceTest(unittest.TestCase):
                     self.assertFalse(receipt['preflight_refused'])
                 self.assertFalse(sentinel.exists())
                 self.assertNotIn('PRIVATE', json.dumps(receipt))
+
+                # Follow the actual terminal result builder too, past the phase's file.
+                script = """
+import { behavior } from './swamp/extensions/behaviors/operations/instance-dev-command/assets.ts';
+import { migrateResult, writtenFailure } from './swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts';
+const [kind, folder] = Deno.args;
+if (kind === 'create') {
+    const value = await behavior.methods.create_result.execute({
+        intent: {instance_id: 7, setup_steps: [], container: {}}, folder,
+        checkout: null, database: 'skipped', setup: 'skipped', processes: [], route: 'skipped',
+        container: {launch: 'failed', workspace: null, deploy: [], processes: 'skipped', seed: 'skipped'},
+    }, {writeResource: async () => {}});
+    console.log(value.stdout);
+} else {
+    const phases = Object.fromEntries(['quiesce', 'workspace', 'files', 'agent', 'processes', 'seed', 't3',
+        'register', 'route', 'retire', 'restore_route', 'restore'].map(name => [name, 'skipped']));
+    console.log(migrateResult({instance_id: 7, container: {}, migrate: {}}, {...phases, container: 'failed'},
+        null, null, await writtenFailure(folder)).stdout);
+}
+"""
+                projected = subprocess.run(['deno', 'eval', '--no-check', script, kind, str(directory)],
+                                           cwd=ROOT.parent, check=False, text=True, capture_output=True, timeout=15)
+                self.assertEqual(projected.returncode, 0, projected.stdout + projected.stderr)
+                terminal = json.loads(projected.stdout)
+                self.assertEqual(terminal['error_code'], evidence['error_code'])
+                observed = terminal['node_service_target'] if kind == 'create' else json.loads(terminal['error_message'].split(': ', 1)[1])
+                self.assertEqual(observed, identity)
 
     def test_no_attachment_is_noop_and_phase_before_application_work(self):
         self.container['node_services'] = []

@@ -330,6 +330,7 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `schedule.container_path_unsupported` | A named Schedule’s working directory is missing, outside the checkout, has dot segments or uses a symlink. |
 | `schedule.container_command_unsupported` | A named Schedule’s command is outside the supported literal invocation form, references an external path or missing PHP build, or uses a symlink. See [Schedule migration](/reference/schedules#checkout-migration). |
 | `schedule.container_artifact_unsupported` | A named Schedule’s host files differ from its registered contract, its timer has an unsupported activation state, or its service is starting or stopping. Nothing has stopped yet. |
+| `instance.node_service_unreachable` | An attached Node service failed its probe within three seconds. The Operation names the target, last reason, unit states and elapsed time. See [Node service targets](/reference/processes-and-schedules#node-service-target-records). |
 | `instance.database_unreachable` | The new container could not reach the database server's port. |
 | `instance.migrate_process_binary_unavailable` | A Process executable or PHP version is unavailable in the container. The error names the Process and path; the checkout keeps serving. |
 | `instance.migrate_<step>_failed` | A step of the move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before, except after `instance.migrate_retire_failed`. |

@@ -695,6 +695,7 @@ jobs:
           behaviorName: '${{ "ic-finish" }}'
           methodName: create_result
           inputs:
+            folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
             intent: '${{ inputs.intent }}'
             checkout: '${{ "checkout" in steps ? steps.checkout : null }}'
             database: '${{ (inputs.intent.container != null && inputs.intent.container.clone != null ? ((inputs.intent.database == null || ("clone-database-install" in steps && steps["clone-database-install"].status == "succeeded")) && (inputs.intent.server_database == null || ("clone-server-database-check" in steps && steps["clone-server-database-check"].status == "succeeded" && (inputs.intent.server_database.fill == null || ("clone-server-database-fill" in steps && steps["clone-server-database-fill"].status == "succeeded")))) ? "succeeded" : "failed") : inputs.intent.server_database == null ? ("database-install" in steps ? steps["database-install"].status : "skipped") : (inputs.intent.server_database.fill != null ? ("server-database-fill" in steps ? steps["server-database-fill"].status : "skipped") : ("server-database-check" in steps ? steps["server-database-check"].status : "skipped"))) }}'
