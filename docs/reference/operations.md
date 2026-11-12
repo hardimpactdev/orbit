@@ -139,7 +139,9 @@ Admission and capacity waits do not raise this execution alert. Native history k
 
 An unbound admission with attempts `0` has a separate 600-second budget, matching Swamp’s default `queueTimeout`, regardless of its kind’s execution budget. It runs from `started_at`, or `created_at` when no start was recorded. The reconciler includes these rows, even when cancellation was already requested.
 
-The [reconciler](/reference/swamp-command-steps#reconciler) projects an expired budget as `failed` with `error_code: operation.timed_out` and records `cancel_requested`. Operation reads apply the same deadline between passes. Expiration keeps the native binding, any captured F1 error detail, the failed or active step, and existing result evidence. An Operation admitted with a generic target hold keeps it until the shared reader verifies the exact bound native root is terminal. That receipt releases the hold and records the native status without reopening the timed-out Operation.
+The [reconciler](/reference/swamp-command-steps#reconciler) projects an expired budget as `failed` with `error_code: operation.timed_out` and records `cancel_requested`. Operation reads return recorded state without checking or applying deadlines. Expiration keeps the native binding, any captured F1 error detail, the failed or active step, and existing result evidence. An Operation admitted with a generic target hold keeps it until the shared reader verifies the exact bound native root is terminal. That receipt releases the hold and records the native status without reopening the timed-out Operation.
+
+Operation shows return recorded state without remote reads, expiry or projection. The Swamp terminal event and the minute sweep queue the same reconciler. It alone reads and records native terminal results. A stuck operations queue delays terminal state; polling does not settle it. Fleet rollout and CLI converge keep their generic failure result when they declare no terminal selector.
 
 Instance migration settles [deferred Schedule fires](/reference/schedules#checkout-migration) in the transaction that first marks its Operation terminal. It locks the Instance, then queues each fire against the recorded runtime or explicitly fails it if admission remains closed.
 
@@ -149,7 +151,7 @@ A deleted Instance never prevents the Operation from becoming terminal; its wait
 
 A run can beat its expiry. For example, Swamp's start reply arrives after the 600-second admission budget, so the Operation expires unbound, and the run then ends within its kind's budget. When the exact native terminal finished before the bound deadline, the shared reader reopens the Operation and projects that terminal normally. The `timed_out` mark and its cancel request go, and the records reach their real end state. A terminal at or after the deadline keeps the timeout.
 
-`instance.migrate` has a 5,700-second run budget and its own late settlement. Its declared workflow timeouts total 4,830 seconds, including the 150-second Node preparation phase, restoration and cleanup. Rounding up to five minutes gives 5,100 seconds; admission and settlement add 600 seconds. After expiry or confirmed cancellation, showing that Operation or admitting the Instance for migration again reads its late native finish. These reads add no work to the shared reconciler. Operation show uses the [shared Swamp read budget](/reference/swamp-command-steps); a refused read leaves the record unchanged. The native finish decides `moved`, `restored` and `ready`.
+`instance.migrate` has a 5,700-second run budget and its own late settlement. Its declared workflow timeouts total 4,830 seconds, including the 150-second Node preparation phase, restoration and cleanup. Rounding up to five minutes gives 5,100 seconds; admission and settlement add 600 seconds. After expiry or confirmed cancellation, the reconciler reads its late native finish, including after the target hold was released. Shows and admissions make no such read. The native finish decides `moved`, `restored` and `ready`.
 
 A deadline-triggered abort remains `failed` with `operation.timed_out`; a user abort remains `cancelled`. An independent phase failure keeps its own code. Orbit chooses the cause from native history and the locked expiry audit. A late success remains a success. Runtime changes apply only while that migrate Operation still owns the Instance's reservation. Private vault reads precede the write transaction. If a migrate already settled with a stale reservation, a new migrate must take ownership. Other kinds keep the expiry behavior above.
 
@@ -159,7 +161,7 @@ A projection that implements `DirectOperationTimeout` records its documented fai
 
 `task_vm.slot_release`, `tasks.cancel` and `tasks.maintenance_finish` hold the generic Operation target key (`task_vm:<id>` or `task_group:<id>`). Expiry keeps that key: a new admission returns `operation.target_busy` until the shared reader verifies the exact bound native terminal and releases it. Settlement leaves the timed-out Operation closed. Native `interrupted` release and Task cleanup results project as `failed`; recovery starts a new Operation. The task VM sweep logs each admission refusal with its details and continues with other rows.
 
-The hold has a limit. When nothing proves the end of the run within 60 minutes of the expiry, a Gateway job (every five minutes) frees the target and records `native_terminal_status: unproven`. A run that was asked to cancel an hour ago and never reported is lost, and a lost run must not hold a group or a VM for ever.
+The hold has a limit. When nothing proves the end of the run within 60 minutes of the expiry, the minute reconcile job frees the target and records `native_terminal_status: unproven`. A run that was asked to cancel an hour ago and never reported is lost, and a lost run must not hold a group or a VM for ever.
 
 For an unbound timed-out admission, the existing exact lookup by Operation identity releases the hold only when Serve proves there is no matching run. A matching run binds without reopening the timeout; ambiguity or an unavailable lookup keeps the hold. A valid native terminal with `completedAt` at or before the deadline wins in the shared history read, even when its projection arrives late, so it causes no timeout or timeout alert.
 
@@ -167,7 +169,7 @@ This is the Gateway's budget result, not proof that the native run or its descen
 
 The request is a `workflow.cancel` message on the Gateway's run token. Serve authorizes it with the `run` action on the run's workflow, which the Gateway already holds to start the run. Serve's HTTP cancel endpoint needs `admin` on `access:*`, the superuser right, so the Gateway does not use it.
 
-The SSH step limits above end the steps of a run whose cancel did not arrive. Native Serve ceilings, step queue limits and phase command limits remain separate controls. The reconciler checks deadlines on every pass, on the operations queue. Bound Operation reads arbitrate native terminal history before expiry; unbound admission expiry needs no native read.
+The SSH step limits above end the steps of a run whose cancel did not arrive. Native Serve ceilings, step queue limits and phase command limits remain separate controls. The reconciler checks deadlines on every pass, on the operations queue. The reconciler arbitrates bound native terminal history before expiry; unbound admission expiry needs no native read.
 
 ## Native failure detail and live steps
 
@@ -181,7 +183,7 @@ A terminal result declaration can also name `data`, the data behavior of its ter
 
 A status read of an interrupted `proof.command` uses the full terminal reader, including completed batch reports, before closing the Operation. This preserves completed case failures even when the status read arrives before the terminal subscriber; [proof outcomes](/cli/proof/run#verdicts) keep interruption inconclusive.
 
-A failed step with exit 124 and a command beginning with a literal `timeout N` reports `<step> timed out after <N>s`; other failures keep their redacted diagnostic. The shared projector and the existing exact history read use the same diagnostic extractor. An older native failure can receive missing detail once through its next normal Operation read, without changing its terminal result or sending another failure alert.
+A failed step with exit 124 and a command beginning with a literal `timeout N` reports `<step> timed out after <N>s`; other failures keep their redacted diagnostic. The shared projector and the existing exact history read use the same diagnostic extractor. A show keeps an older closed failure as recorded; it does not backfill missing detail.
 
 The shared extractor redacts known Instance and Process environment values, configured Swamp credentials and credential-shaped text before retaining the last 4 KiB. It drops a truncated first line whose identifying prefix may be missing, then redacts the retained text again. Budget expiry omits `error.stderr_recorded`, because that result makes no claim about native stderr. Native family scripts still own safe output preservation; this projection does not change their placement or execution.
 

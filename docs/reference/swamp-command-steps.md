@@ -122,6 +122,8 @@ Migrate alone can settle a late native finish when its Operation is shown or its
 
 Each pass reads every open Operation of a direct kind against Swamp:
 
+Operation reads do not request terminal history or expire Operations. The event observer and minute sweep queue the reconciler, which owns native terminal settlement. A migrate whose hold limit ends without a readable result records its unavailable-result failure and releases the Gateway hold; its runtime reservation stays. Fleet kinds without a declared terminal selector use their existing generic failure probe in the reconcile job.
+
 - A bound run gets an exact root history read and any declared child evidence reads. A terminal history is projected through `SwampCommandStep::projectTerminal`.
 - A nonterminal parent records completed child evidence and stays open. Serve may announce the root’s end before saving history. An unavailable read waits for the next pass.
 - An Operation past its budget is expired. A history that shows the run ended within its budget wins.
@@ -187,7 +189,7 @@ The descriptor does not prove that a target currently authorizes the existing ke
 
 ### Native failure observation
 
-Workflows have no Gateway failure-report step. The shared terminal subscriber follows kinds that declare `terminal_result`. Normal operation reads retain their existing native failure check. A failed or interrupted run without selected public output records `operation.native_failed`. A converted family maps the native failure in its Gateway projection; retained result steps may still supply a fixed public error code. Schedule runs map a failed native command to `schedule.run_failed`. The Gateway returns `404` for `POST /api/v1/direct-operations/{operation}/failure`.
+Workflows have no Gateway failure-report step. The shared terminal subscriber follows kinds that declare `terminal_result`. The reconciler owns the native failure check; Operation reads return stored state. A failed or interrupted run without selected public output records `operation.native_failed`. A converted family maps the native failure in its Gateway projection; retained result steps may still supply a fixed public error code. Schedule runs map a failed native command to `schedule.run_failed`. The Gateway returns `404` for `POST /api/v1/direct-operations/{operation}/failure`.
 
 Unexpected errors in retained `directOperation` actions fail the native step with a fixed public code. They do not send a failed result callback. The normal shared native failure reader owns their terminal settlement. Explicit no-effect cancellation and returned domain refusals retain their existing contracts until those families switch.
 

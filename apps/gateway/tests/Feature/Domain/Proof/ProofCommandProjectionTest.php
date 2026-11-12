@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Operations\ExpireOperationAction;
-use App\Actions\Operations\ReadOperationAction;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
@@ -21,6 +20,7 @@ use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use App\Models\Instance;
@@ -246,7 +246,7 @@ describe('native proof interruption', function (): void {
         Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
     })->with(['absent', 'partial', 'complete']);
 
-    it('reads completed failure evidence before a status read closes an interrupted proof', function (bool $batchOnly): void {
+    it('settles completed interrupted proof evidence through only the reconcile job', function (bool $batchOnly): void {
         Queue::fake();
         [$proof, [[$run]]] = proofRuns(['firewall:allow']);
         RateLimiter::clear('swamp-read');
@@ -268,10 +268,8 @@ describe('native proof interruption', function (): void {
                 'jobs' => [['name' => 'report', 'steps' => [['name' => 'report', 'status' => 'succeeded', 'outputs' => ['stdout' => PROOF_FAILED]]]]]];
         }
         expect($run->state[ProofBatchProjection::BatchReports] ?? [])->toBe([]);
-        withProofSwamp(proofSwampSocket($batchOnly ? [$batch => PROOF_RUN_ID] : [], $histories), function () use ($run): void {
-            app(ReadOperationAction::class)->execute($run);
-            // A later subscriber cannot repair evidence after the first terminal projection, so the read must retain it.
-            app(SwampCommandStep::class)->projectTerminal($run->refresh(), ['id' => PROOF_RUN_ID], app(DirectOperation::class)->definition('proof.command')['terminal_result']);
+        withProofSwamp(proofSwampSocket($batchOnly ? [$batch => PROOF_RUN_ID] : [], $histories), function (): void {
+            app()->call([new ReconcileSwampOperations, 'handle']);
         });
         expect($run->refresh()->status)->toBe(OperationStatus::Interrupted)
             ->and($run->result['outcome'])->toBe('interrupted')

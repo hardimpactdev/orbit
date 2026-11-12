@@ -59,12 +59,6 @@ final readonly class StartInstanceMigrateAction
             return $replay;
         }
 
-        $previous = Operation::query()->where('kind', InstanceMigration::Kind)->where('target_type', 'instance')
-            ->where('target_id', $instance->id)->latest('id')->first();
-        if ($previous !== null) {
-            app(InstanceMigrateProjection::class)->settle($previous);
-        }
-
         return $this->admit($instance, $caller, $requestId);
     }
 
@@ -72,6 +66,16 @@ final readonly class StartInstanceMigrateAction
     {
         return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
             $instance = Instance::query()->with(['project', 'node'])->lockForUpdate()->findOrFail($instance->id);
+            $previous = Operation::query()->where('kind', InstanceMigration::Kind)->where('target_type', 'instance')
+                ->where('target_id', $instance->id)->latest('id')->first();
+            if ($previous !== null && (! $previous->status->terminal() || InstanceMigrateProjection::unsettled($previous))) {
+                $limit = InstanceMigrateProjection::settlementLimit($previous)?->toISOString();
+                $when = $limit === null ? 'Its run deadline starts when its wait ends; the hold limit is 60 minutes after expiry.'
+                    : "Its target hold limit is {$limit}; the reconciler closes an unavailable result on its first pass after that limit.";
+                throw new ResourceOperationException('instance.migrate_settlement_pending',
+                    "Operation [{$previous->id}] awaits the reconciler. Retry after settlement. {$when}",
+                    409, details: ['previous_operation_id' => $previous->id, 'retryable' => true, 'settlement_hold_limit' => $limit]);
+            }
             $node = $instance->node;
             $this->assertCheckout($instance, $node);
             // Naming decides default behavior; migration never consumes the default's seed.

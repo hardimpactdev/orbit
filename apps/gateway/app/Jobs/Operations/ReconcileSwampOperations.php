@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Jobs\Operations;
 
 use App\Actions\Operations\ExpireOperationAction;
+use App\Actions\Operations\FailNativeOperationAction;
 use App\Domain\Gateway\GatewayQueue;
+use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationRunBudgets;
@@ -16,6 +18,7 @@ use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Tasks\TaskVmAdmission;
 use App\Infrastructure\Swamp\CancelSwampRun;
+use App\Infrastructure\Swamp\ReadNativeRunFailure;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
 use App\Models\Operation;
@@ -25,6 +28,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -63,12 +67,20 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             $forward = [];
             foreach (self::open($kinds)->lazyById() as $operation) {
                 try {
+                    if (InstanceMigrateProjection::unsettled($operation)) {
+                        app(InstanceMigrateProjection::class)->rememberSettlementLimit($operation);
+                    }
                     $operation = $this->reconcile($operation, $step, $expire);
                     if ($cancellation->awaitsForwarding($operation)) {
                         $forward[] = $operation;
                     }
                 } catch (Throwable $exception) {
                     $this->warn($operation, $exception);
+                } finally {
+                    if ($operation->kind === 'instance.migrate' && InstanceMigrateProjection::unsettled($operation->refresh())) {
+                        app(InstanceMigrateProjection::class)->rememberSettlementLimit($operation);
+                        app(InstanceMigrateProjection::class)->endUnavailable($operation);
+                    }
                 }
             }
             // Reads first: a cancel can wait for Swamp's reply for half a minute.
@@ -118,6 +130,10 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         return Operation::query()->whereIn('kind', $kinds)->where(fn ($query) => $query
             ->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting])
             ->orWhere(fn ($query) => $query->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')->whereNotNull('lock_key'))
+            ->orWhere(fn ($query) => $query->where('kind', 'instance.migrate')->where('status', OperationStatus::Failed)
+                ->where('error_code', 'operation.timed_out')->whereNull('state->native_timeout->no_run_verified_at')
+                ->where(fn ($query) => $query->whereNull('state->native_timeout->native_terminal_status')
+                    ->orWhere('state->native_timeout->native_terminal_status', 'unproven')))
             ->orWhere(fn ($query) => $query->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')
                 ->where('state->native_cancel_requested_at', '>', now()->subMinutes(NativeRunCancellation::ForwardMinutes)->toISOString())
                 ->whereNull('state->native_cancel_confirmed_at')->whereNull('state->native_timeout->native_terminal_status')));
@@ -132,7 +148,21 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         }
         $direct = app(DirectOperation::class);
         $selector = $direct->definition($operation->kind)['terminal_result'] ?? null;
-        if ($selector === null || ! $direct->usesNativeTerminal($operation)) {
+        if ($selector === null) {
+            // Fleet's two undeclared terminal results keep their existing generic failure, now owned by this job.
+            $operation = $expire->execute($operation);
+            $run = $operation->state['swamp_run_id'] ?? null;
+            if (! $operation->status->terminal() && $operation->node_id !== null && is_string($run) && Str::isUuid($run)) {
+                $definition = $direct->definition($operation->kind) ?? throw new \LogicException('The reconciler requires a registered kind.');
+                $receipt = app(ReadNativeRunFailure::class)->read($operation, $definition['workflow'], $run);
+                if ($receipt !== null) {
+                    return app(FailNativeOperationAction::class)->execute($operation, $run, $receipt['status'], $receipt['failure'], $receipt['finished_at']);
+                }
+            }
+
+            return $operation;
+        }
+        if (! $direct->usesNativeTerminal($operation)) {
             return $expire->execute($operation);
         }
         if (! isset($operation->state['swamp_run_id'])) {
