@@ -7,6 +7,7 @@ import contextlib
 import json
 import os
 import re
+import select
 import socket
 import stat
 import subprocess
@@ -151,11 +152,11 @@ def socket_rows(run, ports, timeout=None):
     if not ports:
         return {}
     names = [unit_name(p) + ext for p in ports for ext in ('.socket', '.service')]
-    argv = ['systemctl', 'show', '--property=Id', '--property=ActiveState',
+    output = run(['systemctl', 'show', '--property=Id', '--property=ActiveState',
                   '--property=SubState', '--property=MainPID', '--property=Job', '--property=Result',
                   '--property=FragmentPath', '--property=DropInPaths',
-                  '--property=Listen', '--property=UnitFileState', '--'] + names
-    output = run(argv, **({'timeout': timeout} if timeout is not None else {}))
+                  '--property=Listen', '--property=UnitFileState', '--'] + names,
+                 **({'timeout': timeout} if timeout is not None else {}))
     return {row.get('Id'): row for block in output.strip().split('\n\n')
             if (row := dict(line.split('=', 1) for line in block.splitlines() if '=' in line))}
 
@@ -216,7 +217,7 @@ def probe_failure(target, rows, reason, waited_ms):
         'reason': reason, 'units': public_units(units), 'waited_ms': waited_ms})
 
 
-def probe_proxy(target, root, run, connect, clock=time.monotonic, sleep=time.sleep):
+def probe_proxy(target, root, run, connect, clock=time.monotonic, pause=lambda seconds: select.select([], [], [], seconds)):
     port = target['port']
     started = clock()
     deadline = started + 3
@@ -267,7 +268,7 @@ def probe_proxy(target, root, run, connect, clock=time.monotonic, sleep=time.sle
                 reason = reason or 'upstream_not_established'
             remaining = deadline - clock()
             if remaining > 0:
-                sleep(min(0.05, remaining))
+                pause(min(0.05, remaining))
     raise probe_failure(target, rows, reason, round((clock() - started) * 1000))
 
 

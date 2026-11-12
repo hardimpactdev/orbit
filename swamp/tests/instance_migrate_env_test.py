@@ -606,7 +606,7 @@ class NodeServiceTest(unittest.TestCase):
         probe = TARGETS.probe_proxy
 
         def bounded_probe(*args):
-            return probe(*args, clock=lambda: self.now, sleep=self.advance)
+            return probe(*args, clock=lambda: self.now, pause=self.advance)
 
         with patch.object(TARGETS, 'probe_proxy', side_effect=bounded_probe), patch.object(Path, 'stat', owned), patch.object(TARGETS.os, 'chown', side_effect=chown), patch.object(TARGETS, 'atomic', side_effect=write), \
                 patch.object(TARGETS, 'tcp_sockets', side_effect=sockets):
@@ -894,7 +894,7 @@ class NodeServiceTest(unittest.TestCase):
         with patch.object(TARGETS, 'tcp_sockets', side_effect=sockets):
             try:
                 TARGETS.probe_proxy(self.target, self.guest, run, connect,
-                                    clock=lambda: fixture.now, sleep=self.advance)
+                                    clock=lambda: fixture.now, pause=self.advance)
             finally:
                 self.assertFalse(opened)
 

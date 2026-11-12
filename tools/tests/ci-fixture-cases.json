@@ -1787,7 +1787,7 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "8c5527634e7a49d535981e77850fb33a60dfe55966b814d4ca97210185fe1055",
+    "source_sha256": "a7e9b273f6ceaad8ddbf6adab74d6bfa263f75b2a32294df07f59ea775dc09ec",
     "cases": [
       "test_loopback_requires_exact_attached_key_pair_and_port",
       "test_database_urls_refuse_without_exposing_credentials_or_bypassing_attached_keys",
