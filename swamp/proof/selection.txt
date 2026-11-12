@@ -183,6 +183,145 @@ packages/php-sdk/src/Support/**                            none: shared code; a 
 packages/php-sdk/src/Requests/Operations/**                none: shared code; a proof runs only when a command's own code or cases change
 packages/php-sdk/src/Responses/Operations/**               none: shared code; a proof runs only when a command's own code or cases change
 
+# Node execution of the four Instance lifecycle commands, including their child workflows and shipped assets.
+# CI warns while a command has no real success case; once it has one, missing real-case selection fails.
+swamp/ansible/instance-container-destroy.yml  instance:destroy
+swamp/ansible/instance-container.yml  instance:create instance:migrate
+swamp/ansible/instance-mail-update.yml  instance:migrate
+swamp/ansible/instance-migrate.yml  instance:migrate
+swamp/ansible/instance_bridge.py  instance:create instance:migrate
+swamp/ansible/instance_mail.py  instance:create instance:migrate
+swamp/ansible/instance_mail_line.py  instance:migrate
+swamp/ansible/instance_migrate_*.py  instance:migrate
+swamp/ansible/instance_migrate_files.py  instance:migrate
+swamp/ansible/instance_migrate_links.py  instance:migrate
+swamp/ansible/instance_network.py  instance:create instance:migrate
+swamp/ansible/instance_node_runtime.py  instance:create instance:migrate
+swamp/ansible/instance_node_services.py  instance:create instance:migrate
+swamp/ansible/operation-instance-create.yml  instance:create
+swamp/ansible/route-create-site.yml  instance:clone instance:create
+swamp/ansible/route-withdraw.yml  instance:create instance:destroy
+swamp/ansible/schedule-logs.yml  instance:create
+swamp/ansible/tasks/address-node.yml  instance:clone instance:create instance:destroy instance:migrate
+swamp/ansible/tasks/caddy-publish.yml  instance:create instance:destroy
+swamp/ansible/tasks/instance-bridge-rules.yml  instance:create instance:migrate
+swamp/ansible/tasks/instance-container-handlers.yml  instance:create instance:migrate
+swamp/ansible/tasks/instance-container-phase.yml  instance:create instance:migrate
+swamp/ansible/tasks/instance-container-process.yml  instance:create instance:migrate
+swamp/ansible/tasks/instance-create-setup-step.yml  instance:create
+swamp/ansible/tasks/instance-mail-line.yml  instance:migrate
+swamp/ansible/tasks/instance-mail.yml  instance:create instance:migrate
+swamp/ansible/tasks/instance-migrate-*.yml  instance:migrate
+swamp/ansible/tasks/instance-migrate-discard.yml  instance:migrate
+swamp/ansible/tasks/instance-migrate-env-check.yml  instance:migrate
+swamp/ansible/tasks/instance-migrate-link-result.yml  instance:migrate
+swamp/ansible/tasks/instance-migrate-phase.yml  instance:migrate
+swamp/ansible/tasks/instance-migrate-process-ready.yml  instance:create instance:migrate
+swamp/ansible/tasks/instance-migrate-retire.yml  instance:migrate
+swamp/ansible/tasks/instance-migrate-retirement-check.yml  instance:migrate
+swamp/ansible/tasks/instance-migrate-schedule-check.yml  instance:create instance:migrate
+swamp/ansible/tasks/instance-migrate-schedules.yml  instance:create instance:migrate
+swamp/ansible/tasks/instance-network-nic-check.yml  instance:create instance:migrate
+swamp/ansible/tasks/instance-node-runtime.yml  instance:create instance:migrate
+swamp/ansible/tasks/route-access.yml  instance:clone instance:create
+swamp/ansible/templates/instance-migrate-schedule.j2  instance:create instance:migrate
+swamp/ansible/transport-exit-codes.json  instance:clone
+swamp/extensions/behaviors/operations/ansible-input/write.ts  instance:clone instance:create instance:destroy instance:migrate
+swamp/extensions/behaviors/operations/certificates/sign.ts  instance:clone instance:create instance:migrate
+swamp/extensions/behaviors/operations/instance-deploy/vp_requirements.ts  instance:clone
+swamp/extensions/behaviors/operations/instance-dev-command/assets.ts  instance:create instance:migrate
+swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts  instance:create instance:migrate
+swamp/extensions/behaviors/operations/instance-dev-command/result.ts  instance:create instance:migrate
+swamp/extensions/behaviors/operations/instance-lifecycle/source_identity.ts  instance:clone
+swamp/extensions/behaviors/operations/instance-lifecycle/source_profile.ts  instance:clone
+swamp/extensions/behaviors/operations/instance-source-command/assets.ts  instance:clone
+swamp/extensions/behaviors/operations/instance-t3/mod.ts  instance:create instance:migrate
+swamp/extensions/behaviors/operations/instance-vp-command/requirements.ts  instance:clone
+swamp/extensions/behaviors/operations/node-bootstrap/artifact_fetch_policy.ts  instance:clone
+swamp/extensions/behaviors/operations/node-bootstrap/tool_setup_assets.ts  instance:clone
+swamp/extensions/behaviors/operations/node-bootstrap/tool_setup_input.ts  instance:clone
+swamp/extensions/behaviors/operations/node-bootstrap/tool_setup_plan.ts  instance:clone node:role:add
+swamp/extensions/behaviors/operations/process-commands/assets.ts  instance:clone instance:create
+swamp/extensions/behaviors/operations/process-commands/inspection.ts  instance:clone instance:create
+swamp/extensions/behaviors/operations/process-commands/lifecycle-input.ts  instance:clone instance:create
+swamp/extensions/behaviors/operations/processes-schedules/container-input.ts  instance:clone instance:create
+swamp/extensions/behaviors/operations/processes-schedules/contract.ts  instance:clone
+swamp/extensions/behaviors/operations/processes-schedules/installation-input.ts  instance:clone instance:create
+swamp/extensions/behaviors/operations/processes-schedules/process-input.ts  instance:clone instance:create
+swamp/extensions/behaviors/operations/processes-schedules/required-mount-paths.ts  instance:clone instance:create
+swamp/extensions/behaviors/operations/processes-schedules/unit-templates.json  instance:clone
+swamp/extensions/behaviors/operations/routes/caddy-input.ts  instance:clone instance:create instance:destroy instance:migrate
+swamp/extensions/behaviors/operations/routes/mutation-command/assets.ts  instance:create instance:destroy instance:migrate
+swamp/extensions/behaviors/operations/routes/mutation-command/dns.ts  instance:create instance:destroy instance:migrate
+swamp/extensions/behaviors/operations/routes/publication-command/assets.ts  instance:create instance:destroy instance:migrate
+swamp/extensions/behaviors/operations/routes/publication-command/sections.ts  instance:create instance:destroy instance:migrate
+swamp/extensions/behaviors/operations/routes/update-command/result.ts  instance:create instance:destroy instance:migrate
+swamp/extensions/behaviors/operations/schedule-run/assets.ts  instance:clone
+swamp/extensions/behaviors/operations/tools/constraints.ts  instance:clone
+swamp/extensions/behaviors/operations/tools/contract.ts  instance:clone
+swamp/extensions/behaviors/operations/tools/homebrew.ts  instance:clone
+swamp/extensions/behaviors/operations/tools/native.ts  instance:clone
+swamp/extensions/behaviors/operations/tools/write.ts  instance:clone
+swamp/scripts/instance_clone*.py  instance:create
+swamp/scripts/instance_clone.py  instance:create
+swamp/scripts/instance_clone_guest.py  instance:create
+swamp/workflows/workflow-instance-clone-candidate.yaml  instance:clone
+swamp/workflows/workflow-instance-clone-check.yaml  instance:clone
+swamp/workflows/workflow-instance-clone-database-cleanup.yaml  instance:clone instance:create
+swamp/workflows/workflow-instance-clone-database-install.yaml  instance:clone instance:create
+swamp/workflows/workflow-instance-clone-database-snapshot.yaml  instance:clone instance:create
+swamp/workflows/workflow-instance-clone-environment.yaml  instance:clone
+swamp/workflows/workflow-instance-clone-runtime.yaml  instance:clone
+swamp/workflows/workflow-instance-clone-source.yaml  instance:clone
+swamp/workflows/workflow-node-artifact-fetch.yaml  instance:clone
+swamp/workflows/workflow-operation-database-create.yaml  instance:create
+swamp/workflows/workflow-operation-database-destroy.yaml  instance:destroy
+swamp/workflows/workflow-operation-instance-clone.yaml  instance:clone
+swamp/workflows/workflow-operation-instance-create.yaml  instance:create
+swamp/workflows/workflow-operation-instance-destroy.yaml  instance:destroy
+swamp/workflows/workflow-operation-instance-migrate.yaml  instance:migrate
+swamp/workflows/workflow-operation-process-container.yaml  instance:create
+swamp/workflows/workflow-operation-process-create.yaml  instance:clone instance:create
+swamp/workflows/workflow-operation-process-destroy.yaml  instance:clone instance:create instance:destroy
+swamp/workflows/workflow-operation-process-start.yaml  instance:create
+swamp/workflows/workflow-operation-process-vite.yaml  instance:clone instance:create
+swamp/workflows/workflow-operation-route-caddy-delta.yaml  instance:migrate
+swamp/workflows/workflow-operation-route-caddy.yaml  instance:clone instance:create
+swamp/workflows/workflow-operation-route-create.yaml  instance:create
+swamp/workflows/workflow-operation-route-php-delta.yaml  instance:migrate
+swamp/workflows/workflow-operation-schedule-create.yaml  instance:clone
+swamp/workflows/workflow-operation-tool-manager-setup.yaml  instance:clone
+swamp/workflows/workflow-route-certificate-publish.yaml  instance:migrate
+swamp/workflows/workflow-route-certificate-remove.yaml  instance:migrate
+swamp/workflows/workflow-route-create-csr.yaml  instance:clone instance:create
+swamp/workflows/workflow-route-create-dns.yaml  instance:create
+swamp/workflows/workflow-route-create-ingress.yaml  instance:create
+swamp/workflows/workflow-route-create-sign.yaml  instance:clone instance:create
+swamp/workflows/workflow-route-create-site.yaml  instance:clone instance:create
+swamp/workflows/workflow-route-dns-grace.yaml  instance:migrate
+swamp/workflows/workflow-route-dns-publish.yaml  instance:migrate
+swamp/workflows/workflow-route-environment-write.yaml  instance:migrate
+swamp/workflows/workflow-route-ingress-apply.yaml  instance:create instance:destroy instance:migrate
+swamp/workflows/workflow-route-lan-apply.yaml  instance:create instance:destroy instance:migrate
+swamp/workflows/workflow-route-mutation-forward.yaml  instance:migrate
+swamp/workflows/workflow-route-mutation-restore.yaml  instance:migrate
+swamp/workflows/workflow-route-withdraw-node.yaml  instance:create instance:destroy
+swamp/workflows/workflow-route-withdraw.yaml  instance:create instance:destroy
+
+swamp/ansible/instance/destroy-git.py  instance:destroy
+swamp/extensions/behaviors/operations/certificates/manifest.yaml  instance:clone instance:create instance:migrate
+swamp/extensions/behaviors/operations/instance-dev-command/manifest.yaml  instance:create instance:migrate
+swamp/extensions/behaviors/operations/instance-source-command/manifest.yaml  instance:clone
+swamp/extensions/behaviors/operations/instance-t3/manifest.yaml  instance:create instance:migrate
+swamp/extensions/behaviors/operations/instance-vp-command/manifest.yaml  instance:clone
+swamp/extensions/behaviors/operations/node-bootstrap/manifest.yaml  instance:clone node:role:add
+swamp/extensions/behaviors/operations/process-commands/manifest.yaml  instance:clone instance:create
+swamp/extensions/behaviors/operations/routes/mutation-command/manifest.yaml  instance:create instance:destroy instance:migrate
+swamp/extensions/behaviors/operations/routes/publication-command/manifest.yaml  instance:create instance:destroy instance:migrate
+swamp/extensions/behaviors/operations/routes/update-command/manifest.yaml  instance:create instance:destroy instance:migrate
+swamp/extensions/behaviors/operations/schedule-run/manifest.yaml  instance:clone
+swamp/extensions/behaviors/operations/tools/manifest.yaml  instance:clone
+
 # The proof tooling is shared code of every case; its own tests are not a proof.
 swamp/proof/selection.txt                        none: shared code; a proof runs only when a command's own code or cases change
 swamp/proof/batches.yaml                         none: batch setup changes select their users by definition

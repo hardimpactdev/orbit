@@ -41,6 +41,8 @@ The release ([stage 5](../../../docs/reference/pipeline/5-automatic-release.mmd)
 
 ## Lessons
 
+A proof mapping is not coverage when its cases file is absent, empty or contains only refusals. For Instance lifecycle execution changes, report the exact uncovered files in CI; once a real successful Operation case exists, preserve its selection across mapping edits and case removal. Count setup and cleanup separately before making the first live proof required.
+
 When a Docs test is aborted by PHPUnit on a shared runner, distinguish its per-test timer from assertion failures. Docs uses the existing CI job ceiling for timing and still fails risky tests and PHPUnit warnings. Keep the timer policy and its configuration test consistent.
 
 When promoting a fast read-only audit into CI controls, remove it from fixture discovery, the registry and the case inventory. Prove that its input paths select the control job, that it runs once in the full gate, and that a failing audit fails the control run. Run the gate's tool-contract fixture as well as the CI tooling tests: it checks fixture permissions, collection paths and complete file discovery. Measure the audit and report existing source failures separately.

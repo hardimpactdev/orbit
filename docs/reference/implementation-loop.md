@@ -37,6 +37,8 @@ Store detailed logs in CI artifacts or in shared evidence outside the checkout, 
 
 CI compares proof case definitions at the merge base and head before starting the proof job. The runner expands both files once; CI publishes its selection for the Gateway to consume. Missing or invalid results select whole files. [Choose the cases](/reference/feature-flow#choose-the-cases) defines those rules.
 
+The plan also reports [Instance execution coverage](/reference/feature-flow#instance-execution-coverage). Files used by the four lifecycle commands warn while real cases are absent; once a command has a successful Operation case, losing its selection fails the plan. This local check adds no fleet allocation or wait.
+
 ## After review
 
 Address the blocking findings. Reviewers check the fixes and repeat the affected checks on the updated pull request. The final review must cover the head that the gate reads. The gate and the merge are [stage 4](/reference/command-development-pipeline#4-pr-and-ci). After the merge, keep the review evidence and release the resources allocated to the feature. For a local worktree, run `bin/worktree-remove ISSUE`.
