@@ -23,7 +23,8 @@ const MailReceipt = z.object({
         ports: z.tuple([z.literal(1025), z.literal(2525)]),
         reason: z.enum(["mail_port_in_use", "mail_unit_conflict"]).optional()}),
     mailer: z.object({status: z.enum(["changed", "left_as_written", "not_present", "already_smtp"]),
-        lines: z.array(z.number().int().positive()).optional()}).optional(),
+        lines: z.array(z.number().int().positive()).optional(),
+        guard_line: z.number().int().positive().optional()}).optional(),
 }).refine((receipt) => {
     if (receipt.mail.status === "skipped") return receipt.mail.reason !== undefined && receipt.mailer === undefined;
     if (receipt.mail.reason !== undefined || receipt.mailer === undefined) return false;
