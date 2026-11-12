@@ -1,0 +1,53 @@
+---
+# Invoked only by the local lifecycle fixture, on a disposable task VM.
+- name: Enable the disposable Node's container placement
+  hosts: nested-gateway
+  connection: community.general.incus
+  gather_facts: false
+  tasks:
+    - name: Require the fixture Gateway
+      ansible.builtin.command: {argv: [cat, /etc/hostname]}
+      register: fixture_hostname
+      changed_when: false
+    - name: Refuse any other Gateway
+      ansible.builtin.assert:
+        that: fixture_hostname.stdout == 'nested-gateway'
+        quiet: true
+    - name: Set the fixture's container Node list
+      ansible.builtin.lineinfile:
+        path: /home/orbit/orbit/apps/gateway/.env
+        regexp: '^ORBIT_INSTANCES_CONTAINER_NODES='
+        line: "ORBIT_INSTANCES_CONTAINER_NODES=[{{ proof_instance_node_id }}]"
+        unsafe_writes: true
+        mode: '0600'
+    - name: Clear the disposable Gateway's cached configuration
+      ansible.builtin.command:
+        argv: [php, artisan, config:clear]
+        chdir: /home/orbit/orbit/apps/gateway
+      become: true
+      become_user: orbit
+      changed_when: false
+
+- name: Prepare the disposable app-dev Instance host
+  hosts: nested-app-dev
+  connection: community.general.incus
+  gather_facts: false
+  tasks:
+    - name: Require the fixture Node
+      ansible.builtin.command: {argv: [cat, /etc/hostname]}
+      register: fixture_hostname
+      changed_when: false
+    - name: Refuse any other Node
+      ansible.builtin.assert:
+        that: fixture_hostname.stdout == 'nested-app-dev'
+        quiet: true
+    - name: Read the existing Incus pools
+      ansible.builtin.command: {argv: [incus, storage, list, --format, json]}
+      register: fixture_pools
+      changed_when: false
+    - name: Make the proof-only directory pool
+      ansible.builtin.command: {argv: [incus, storage, create, orbit-instances, dir]}
+      when: "'orbit-instances' not in (fixture_pools.stdout | from_json | map(attribute='name') | list)"
+      changed_when: true
+    - name: Use the normal Instance host tasks and checksum-pinned image
+      ansible.builtin.import_tasks: tasks/instance-host.yml

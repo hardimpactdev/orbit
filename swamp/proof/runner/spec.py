@@ -40,11 +40,13 @@ STEPS = {
     'node_access_remove': (('setup',), {'consumer', 'serving'}, set()),
     'node_fixture': (('setup',), {'kind', 'as'}, {'consumer', 'serving'}),
     'recorded_request': (('act',), {'node', 'caller', 'expect'}, {'agent', 'age'}),
+    'instance_fixture': (('setup',), {'as'}, set()),
+    'instance_runtime': (('expect',), {'fixture', 'instance', 'state'}, {'source', 'operation'}),
 }
 FILE_KEYS = {'command', 'chart', 'target', 'sources', 'baseline', 'vars', 'fixtures', 'uncovered', 'cases', 'spread', 'parallel'}
 CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stages', 'variants', 'fails_today', 'fails_on_base', 'negative', 'timeout', 'node', 'exclusive'}
 DEFAULT_PARALLEL = 4
-GLOBAL_STEPS = {'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses', 'node_fixture', 'recorded_request'}
+GLOBAL_STEPS = {'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses', 'node_fixture', 'recorded_request', 'instance_fixture', 'instance_runtime'}
 READ_STEPS = {'probe', 'ufw', 'record', 'doctor', 'unchanged', 'package'}
 # Only commands with a known write target can use a scoped no-Operation audit. A read such as firewall:list has no
 # Operation kind of its own: audit it without filters so an unexpected write is still seen.
@@ -251,6 +253,8 @@ def bound_names(steps, extra):
     for step in steps:
         if step.name == 'node_fixture':
             names.update(f"{step.args['as']}.{part}" for part in ('id', 'name', 'cluster_name', 'tld'))
+        if step.name == 'instance_fixture':
+            names.update(f"{step.args['as']}.{part}" for part in ('slug', 'clone'))
         if step.name == 'cli':
             names.update((step.args.get('save') or {}).values())
         if step.name == 'listener':

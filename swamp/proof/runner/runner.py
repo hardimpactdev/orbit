@@ -157,6 +157,8 @@ def execute(case, fleet, spec, evidence, negative=False):
         steps.cleanup(run)
     except Exception as error:  # the next restore removes what is left
         failures.append(f'cleanup: {error}')
+        if verdict == 'passed':
+            verdict, cause = 'failed', 'infrastructure'
     result = {'id': case.id, 'verdict': verdict, 'secs': round(time.time() - started, 1)}
     if negative:
         result['negative'] = True

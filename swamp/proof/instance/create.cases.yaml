@@ -1,0 +1,39 @@
+command: instance:create
+chart: docs/cli/instance/container/create.mmd
+target: app-dev
+sources: [gateway]
+baseline: []
+
+# Local measurement only. The parent owns advisory admission and the guard map.
+cases:
+  - id: development-clone-runtime
+    batch: fresh-fleet
+    covers: [main]
+    exclusive: true
+    summary: A development clone crosses real SSH script delivery and has a usable T3 workspace before destruction.
+    timeout: 3600
+    setup:
+      - instance_fixture: {as: fixture}
+      - cli:
+          run: [project:create, "${fixture.slug}", node-package, "https://github.com/octocat/Hello-World.git", --root=., --default-branch=master]
+          expect: {exit: 0}
+          save: {id: project}
+      - cli:
+          run: [instance:create, "${project}", "${app-dev.id}", default]
+          expect: {exit: 0, status: succeeded}
+          save: {target_id: default}
+    stages:
+      - act:
+          - cli:
+              run: [instance:create, "${project}", "${app-dev.id}", "${fixture.clone}"]
+              expect: {exit: 0, status: succeeded}
+              save: {id: create-operation, target_id: clone}
+        expect:
+          - instance_runtime: {fixture: "${fixture.slug}", instance: "${clone}", source: "${default}", operation: "${create-operation}", state: running}
+          - doctor: {node: app-dev, drift: 0}
+      - act:
+          - cli:
+              run: [instance:destroy, "${clone}", --force]
+              expect: {exit: 0, status: succeeded}
+        expect:
+          - instance_runtime: {fixture: "${fixture.slug}", instance: "${clone}", state: absent}

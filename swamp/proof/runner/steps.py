@@ -13,6 +13,7 @@ from pathlib import Path
 
 import fleet as fleet_module
 import spec
+import instance_fixture
 
 # The prompt driver and the ufw shim loop by nature, so they live with the guest programs, outside the Swamp-shape
 # rules for step code.
@@ -808,6 +809,7 @@ def cleanup(run):
     run.background.clear()
     for node in sorted(run.shimmed):
         remove_shim(run, node)
+    instance_fixture.cleanup(run)
 
 
 def unbuilt(name):
@@ -820,3 +822,4 @@ FUNCTIONS = {name: unbuilt(name) for name in spec.STEPS}
 FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6_addresses, 'listener': listener, 'ufw_rule': ufw_rule, 'probe': probe, 'cli': cli, 'ufw': ufw, 'record': record, 'doctor': doctor,
                   'service': service, 'package': package, 'ansible_changes': ansible_changes, 'unchanged': unchanged, 'ufw_delete': ufw_delete, 'agent_report': agent_report, 'node_down': node_down,
                   'node_access_remove': node_access_remove, 'node_fixture': node_fixture, 'recorded_request': recorded_request})
+FUNCTIONS.update({'instance_fixture': instance_fixture.prepare, 'instance_runtime': instance_fixture.runtime})
