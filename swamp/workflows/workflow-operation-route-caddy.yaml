@@ -117,22 +117,24 @@ jobs:
     dependsOn: [{step: Check the connection, condition: {type: succeeded}}]
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("caddy-file-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
-      methodName: apply
-      globalArgs: &file
-        nodeHost: '${{ inputs.intent.caddy_publication.connection.nodeHost }}'
-        nodeUser: '${{ inputs.intent.caddy_publication.connection.nodeUser }}'
-        nodePort: '${{ inputs.intent.caddy_publication.connection.nodePort }}'
-        nodeIdentityFile: '${{ inputs.intent.caddy_publication.connection.nodeIdentityFile }}'
-        become: true
-        path: '${{ "/etc/caddy/.orbit-candidate-" + run.id }}'
-        ensure: present
-        content: '${{ steps["Read the input"].outputs.caddy.content }}'
-        owner: root
-        group: caddy
-        mode: '0640'
-      inputs: {}
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("caddy-stage-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv:
+        - /bin/sh
+        - -eu
+        - -c
+        - |-
+          umask 077
+          /usr/bin/install -m 0640 -o root -g caddy /dev/null "$1"
+          /usr/bin/cat > "$1"
+        - orbit-caddy-stage
+        - '${{ "/etc/caddy/.orbit-candidate-" + run.id }}'
+        stdin: '${{ steps["Read the input"].outputs.caddy.content }}'
   - name: Validate the Caddyfile
     writes: true
     labels: {role: swamp}
@@ -181,7 +183,18 @@ jobs:
       behaviorType: '@swamp/cfgmgmt/file'
       behaviorName: '${{ ("caddy-file-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
       methodName: check
-      globalArgs: {<<: *file, path: /etc/caddy/Caddyfile}
+      globalArgs:
+        nodeHost: '${{ inputs.intent.caddy_publication.connection.nodeHost }}'
+        nodeUser: '${{ inputs.intent.caddy_publication.connection.nodeUser }}'
+        nodePort: '${{ inputs.intent.caddy_publication.connection.nodePort }}'
+        nodeIdentityFile: '${{ inputs.intent.caddy_publication.connection.nodeIdentityFile }}'
+        become: true
+        path: /etc/caddy/Caddyfile
+        ensure: present
+        content: '${{ steps["Read the input"].outputs.caddy.content }}'
+        owner: root
+        group: caddy
+        mode: '0640'
       inputs: {}
   - name: Check the publication
     labels: {role: swamp}

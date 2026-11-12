@@ -232,7 +232,16 @@ destroy-before | destroy-after)
         exit 0
     }
     put() {
-        incus exec "$node" -- sh -c 'cat > /etc/caddy/Caddyfile && chown root:caddy /etc/caddy/Caddyfile && chmod 640 /etc/caddy/Caddyfile' <"$d/$1"
+        incus exec "$node" -- sh -eu -c '
+            umask 077
+            candidate=$(mktemp /etc/caddy/.orbit-shape-candidate.XXXXXXXX)
+            trap "rm -f -- $candidate" EXIT
+            chown root:caddy "$candidate"
+            chmod 0640 "$candidate"
+            cat > "$candidate"
+            timeout 60 runuser -u caddy -- caddy validate --config "$candidate" --adapter caddyfile
+            mv -Tf -- "$candidate" /etc/caddy/Caddyfile
+        ' <"$d/$1"
     }
     sites() { incus exec "$node" -- grep -c "orbit: routes shape-" /etc/caddy/Caddyfile || true; }
     # One withdrawal of the Route "shape-a" from the Node: the old form is read, compose, apply; the new form is one phase.

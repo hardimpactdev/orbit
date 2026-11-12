@@ -22,13 +22,35 @@ jobs:
     forEach: {item: site, in: '${{ inputs.intent.ingress.filter(s, string(s.node_id) == string(inputs.node_id)) }}'}
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("route-ingress-caddyfile-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: apply
-      globalArgs: {path: '${{ "/etc/caddy/.orbit-candidate-" + run.id + "-" + string(self._index) }}', content: '${{ self.site.content }}', owner: root, group: caddy, mode: '0640', ensure: present,
-        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
-        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
-      inputs: {}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("route-ingress-validate-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.nodes[string(inputs.node_id)].user }}
+          port: ${{ inputs.intent.nodes[string(inputs.node_id)].port }}
+          identityFile: ${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.nodes[string(inputs.node_id)].host }}
+          transport:
+            hostKeys: ${{ inputs.intent.nodes[string(inputs.node_id)].host_keys }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv:
+        - /bin/sh
+        - -eu
+        - -c
+        - |-
+          umask 077
+          /usr/bin/install -m 0640 -o root -g caddy /dev/null "$1"
+          /usr/bin/cat > "$1"
+        - orbit-caddy-stage
+        - '${{ "/etc/caddy/.orbit-candidate-" + run.id + "-" + string(self._index) }}'
+        stdin: '${{ self.site.content }}'
     # caddy validate before the reload.
   - name: 'caddy-validate'
     writes: true

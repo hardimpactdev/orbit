@@ -39,6 +39,7 @@ class CaddyCandidateTest(unittest.TestCase):
         self.config = self.folder / "etc/caddy"
         self.config.mkdir(parents=True)
         self.live = self.config / "Caddyfile"
+        self.publish_group = os.getgid()
         self.old = b"# previously valid\n"
         self.live.write_bytes(self.old)
         self.live.chmod(0o640)
@@ -54,11 +55,50 @@ class CaddyCandidateTest(unittest.TestCase):
             "assert p.name != 'Caddyfile', 'must validate a candidate'\n"
             "assert p.parent == Path(" + repr(str(self.config)) + ")\n"
             "assert (p.stat().st_mode & 0o777) in (0o640, 0o644)\n"
+            "import json,os\n"
+            "m=p.stat()\n"
+            "Path("
+            + repr(str(self.folder / "validated.json"))
+            + ").write_text(json.dumps([m.st_ino,m.st_uid,m.st_gid,m.st_mode&0o777]))\n"
             "s=p.read_text()\n"
             "assert 'INVALID' not in s, 'invalid candidate'\n"
             "if 'import relative.conf' in s: assert (p.parent/'relative.conf').read_text()=='fixture include'\n"
         )
         caddy.chmod(0o755)
+        install = self.bin / "install"
+        install.write_text(
+            "#!/usr/bin/env python3\nimport sys,os\n"
+            "a=sys.argv[1:]\nassert a[:6]==['-m','0640','-o','root','-g','caddy']\n"
+            "os.execv('/usr/bin/install',['install','-m','0640',*a[6:]])\n"
+        )
+        install.chmod(0o755)
+        cat = self.bin / "cat"
+        cat.write_text(
+            "#!/usr/bin/env python3\nimport os,sys\n"
+            "m=os.fstat(1)\nassert m.st_mode&0o777==0o640\n"
+            "sys.stdout.buffer.write(sys.stdin.buffer.read())\n"
+        )
+        cat.chmod(0o755)
+        chown = self.bin / "chown"
+        chown.write_text('#!/bin/sh\n[ "$1" = root:caddy ]\n')
+        chown.chmod(0o755)
+        mv = self.bin / "mv"
+        mv.write_text(
+            "#!/usr/bin/env python3\nimport json,os,sys\nfrom pathlib import Path\n"
+            "a,b=map(Path,sys.argv[-2:]);m=a.stat()\n"
+            "v=[m.st_ino,m.st_uid,m.st_gid,m.st_mode&0o777]\n"
+            "assert v==json.loads(Path("
+            + repr(str(self.folder / "validated.json"))
+            + ").read_text())\n"
+            "os.replace(a,b)\n"
+            "Path("
+            + repr(str(self.folder / "published.json"))
+            + ").write_text(json.dumps(v))\n"
+            "sys.exit(97 if Path("
+            + repr(str(self.folder / "interrupt-after-rename"))
+            + ").exists() else 0)\n"
+        )
+        mv.chmod(0o755)
         runuser = self.bin / "runuser"
         runuser.write_text(
             '#!/bin/sh\n[ "$1 $2 $3 $4" = \'-u caddy -- caddy\' ] || exit 91\nshift 3\nexec "$@"\n'
@@ -115,8 +155,24 @@ class CaddyCandidateTest(unittest.TestCase):
                     outside.chmod(0o600)
                     self.live.unlink()
                     self.live.symlink_to(outside)
-                candidate.write_text(text)
-                candidate.chmod(0o640)
+                stage = list(write["inputs"]["argv"])
+                stage[-1] = str(candidate)
+                index = stage.index("-c") + 1
+                stage[index] = (
+                    stage[index]
+                    .replace("/usr/bin/install", "install")
+                    .replace("/usr/bin/cat", "cat")
+                )
+                staged = subprocess.run(
+                    stage,
+                    input=text.encode(),
+                    env=env,
+                    capture_output=True,
+                    timeout=5,
+                    check=False,
+                )
+                self.assertEqual(staged.returncode, 0, staged.stderr)
+                self.assertEqual(candidate.stat().st_mode & 0o777, 0o640)
                 metadata = self.live.stat()
                 done = subprocess.run(
                     argv, env=env, capture_output=True, timeout=5, check=False
@@ -127,10 +183,18 @@ class CaddyCandidateTest(unittest.TestCase):
                     self.assertEqual(
                         (
                             self.live.stat().st_ino,
+                            self.live.stat().st_uid,
+                            self.live.stat().st_gid,
                             self.live.stat().st_mode,
                             self.live.stat().st_mtime_ns,
                         ),
-                        (metadata.st_ino, metadata.st_mode, metadata.st_mtime_ns),
+                        (
+                            metadata.st_ino,
+                            metadata.st_uid,
+                            metadata.st_gid,
+                            metadata.st_mode,
+                            metadata.st_mtime_ns,
+                        ),
                     )
                     self.assertFalse(self.calls.exists())
                 else:
@@ -168,7 +232,7 @@ class CaddyCandidateTest(unittest.TestCase):
                 key: (
                     pwd.getpwuid(os.getuid()).pw_name
                     if key == "owner"
-                    else grp.getgrgid(os.getgid()).gr_name
+                    else grp.getgrgid(self.publish_group).gr_name
                     if key == "group"
                     else self.rewrite(child)
                 )
@@ -180,7 +244,7 @@ class CaddyCandidateTest(unittest.TestCase):
             return value.replace("/etc/caddy", str(self.config))
         return value
 
-    def ansible(self, source, task_name, context):
+    def ansible(self, source, task_name, context, interrupt=False):
         if not shutil.which("ansible-playbook"):
             self.skipTest("pinned Ansible required")
         original = find_named(self.source(source), task_name)
@@ -190,13 +254,15 @@ class CaddyCandidateTest(unittest.TestCase):
             task["ansible.builtin.import_tasks"] = "tasks/caddy-publish.yml"
         helper = self.source("swamp/ansible/tasks/caddy-publish.yml")
         self.assertEqual(helper[0]["ansible.builtin.tempfile"]["path"], "/etc/caddy")
-        publish = find_named(helper, "Atomically publish the validated Caddyfile")[
+        write = find_named(helper, "Write the restricted Caddy candidate")[
             "ansible.builtin.copy"
         ]
-        self.assertEqual(publish["owner"], "root")
-        self.assertEqual(publish["mode"], "{{ caddy_mode | default('0640') }}")
-        self.assertFalse(publish["follow"])
-        self.assertTrue(publish["remote_src"])
+        self.assertEqual(write["owner"], "root")
+        self.assertEqual(write["mode"], "{{ caddy_mode | default('0640') }}")
+        publish = find_named(helper, "Atomically publish the validated Caddyfile")
+        self.assertEqual(
+            publish["ansible.builtin.command"]["argv"][:3], ["mv", "-Tf", "--"]
+        )
         helpers = self.folder / "tasks"
         helpers.mkdir()
         (helpers / "caddy-publish.yml").write_text(
@@ -224,7 +290,7 @@ class CaddyCandidateTest(unittest.TestCase):
             "ANSIBLE_REMOTE_TEMP": str(self.folder / "remote"),
             "ANSIBLE_NOCOLOR": "1",
         }
-        for invalid in [True, False]:
+        for invalid in [False] if interrupt else [True, False]:
             with self.subTest(invalid=invalid):
                 value = (
                     "http://127.0.0.1:22999 {\n INVALID_DIRECTIVE\n}\n"
@@ -260,17 +326,44 @@ class CaddyCandidateTest(unittest.TestCase):
                     text=True,
                     timeout=25,
                 )
-                if invalid:
+                if interrupt:
+                    self.assertNotEqual(done.returncode, 0, done.stdout)
+                    self.assertFalse(self.calls.exists())
+                    validated = json.loads((self.folder / "validated.json").read_text())
+                    published = json.loads((self.folder / "published.json").read_text())
+                    metadata = self.live.stat()
+                    self.assertEqual(published, validated)
+                    self.assertEqual(
+                        published,
+                        [
+                            metadata.st_ino,
+                            metadata.st_uid,
+                            metadata.st_gid,
+                            metadata.st_mode & 0o777,
+                        ],
+                    )
+                    self.assertEqual(metadata.st_gid, self.publish_group)
+                    self.assertEqual(metadata.st_mode & 0o777, 0o640)
+                    self.assertNotEqual(self.live.read_bytes(), self.old)
+                elif invalid:
                     self.assertNotEqual(done.returncode, 0, done.stdout)
                     self.assertIn("invalid candidate", done.stdout)
                     self.assertEqual(self.live.read_bytes(), self.old)
                     self.assertEqual(
                         (
                             self.live.stat().st_ino,
+                            self.live.stat().st_uid,
+                            self.live.stat().st_gid,
                             self.live.stat().st_mode,
                             self.live.stat().st_mtime_ns,
                         ),
-                        (before.st_ino, before.st_mode, before.st_mtime_ns),
+                        (
+                            before.st_ino,
+                            before.st_uid,
+                            before.st_gid,
+                            before.st_mode,
+                            before.st_mtime_ns,
+                        ),
                     )
                     self.assertFalse(self.calls.exists())
                 else:
@@ -281,6 +374,50 @@ class CaddyCandidateTest(unittest.TestCase):
                     self.assertEqual(self.calls.read_text(), "reload caddy\n")
                 self.assertEqual(list(self.config.glob(".orbit-candidate-*")), [])
                 self.assertFalse(self.live.is_symlink())
+
+    def test_validated_inode_has_final_metadata_at_interrupted_rename(self):
+        groups = [gid for gid in os.getgroups() if gid != os.getgid()]
+        if not groups:
+            self.skipTest("supplementary group required to distinguish the Caddy group")
+        self.publish_group = groups[0]
+        (self.folder / "interrupt-after-rename").touch()
+        self.ansible(
+            "swamp/ansible/route-withdraw.yml",
+            "Publish the Caddyfile",
+            {},
+            interrupt=True,
+        )
+
+    def test_shape_live_proof_stages_validates_and_renames(self):
+        text = (ROOT / "swamp/proof/spike/shape-live").read_text()
+        script = (
+            text.split('incus exec "$node" -- sh -eu -c ')[1].split(" <")[0].strip()
+        )
+        self.assertTrue(script.startswith("'") and script.endswith("'"))
+        script = script[1:-1].replace("/etc/caddy", str(self.config))
+        env = os.environ | {"PATH": str(self.bin) + ":" + os.environ["PATH"]}
+        for invalid in [True, False]:
+            value = (
+                "INVALID"
+                if invalid
+                else "import relative.conf\n# valid proof fixture\n"
+            )
+            done = subprocess.run(
+                ["sh", "-eu", "-c", script],
+                input=value.encode(),
+                env=env,
+                capture_output=True,
+                timeout=5,
+                check=False,
+            )
+            if invalid:
+                self.assertNotEqual(done.returncode, 0)
+                self.assertEqual(self.live.read_bytes(), self.old)
+                self.assertFalse(self.calls.exists())
+            else:
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(self.live.read_text(), value)
+            self.assertEqual(list(self.config.glob(".orbit-shape-candidate.*")), [])
 
     def test_ansible_route_site(self):
         self.ansible(

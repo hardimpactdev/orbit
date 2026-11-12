@@ -21,13 +21,15 @@ Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy.
 
 The manual `orbit:caddy-build` command submits `route.caddy_converge`. Gateway releases do not converge Caddy sites; [node converge](/cli/node/converge) publishes the Gateway Node's sites as for any Node.
 
-Publication first writes a candidate beside `/etc/caddy/Caddyfile`, with the live file's owner and restricted mode. Caddy validates that candidate as the `caddy` user. Keeping both files in the same directory gives relative imports the same base. Only successful validation permits atomic replacement of the live file, then reload. Route TLS probes still follow reload.
+Publication first writes a candidate beside `/etc/caddy/Caddyfile`, with the live file's owner and restricted mode, before content is written. Caddy validates that candidate as the `caddy` user. Keeping both files in the same directory gives relative imports the same base. Only successful validation permits renaming that same candidate inode over the live file, then reload. No owner or mode repair happens on the live path after publication. Route TLS probes still follow reload.
 
 ### Failed publication
 
 Validation failure removes the attempt's candidate, keeps the live file byte-identical and skips reload. A failed reload leaves the validated new file on disk and records the failure; a retry completes activation. Candidates use attempt-specific names, so one attempt never removes another's file. A killed process can leave a harmless restricted candidate; normal failure cleanup removes it.
 
 ### Shared writers
+
+The managed metadata contract is the Unix owner, group and mode. Replacement does not retain operator-added ACLs or extended attributes; Orbit makes no claim that those survive publication.
 
 This rule covers Route site and Ingress publication, withdrawal, all native Caddy deltas used by migration and Router changes, manual builds and Node converge. The bootstrap Swamp front also validates before publication. Exporter and role publication already use Ansible's validate-before-copy behavior. Separate AI router services validate their own files before copying; they do not write the Node's live Caddyfile. Certificate publication changes certificate files and links, without writing the live Caddyfile. These paths retain their existing ownership, modes and reload behavior.
 

@@ -2734,11 +2734,12 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/caddy_candidate_test.py"
-cost = 21
+cost = 28
 slices = false
 inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/tasks/caddy-publish.yml",
+  "swamp/proof/spike/shape-live",
   "swamp/ansible/tasks/gateway-swamp.yml",
   "swamp/ansible/route-create-site.yml",
   "swamp/ansible/route-withdraw.yml",
@@ -2753,3 +2754,5 @@ inputs = [
 "test_ansible_route_site" = 6
 "test_ansible_route_withdrawal" = 6
 "test_ansible_bootstrap_swamp_front" = 6
+"test_validated_inode_has_final_metadata_at_interrupted_rename" = 6
+"test_shape_live_proof_stages_validates_and_renames" = 1

@@ -15,20 +15,27 @@
         owner: root
         group: "{{ caddy_group | default('caddy') }}"
         mode: "{{ caddy_mode | default('0640') }}"
+      register: caddy_written
     - name: Validate the Caddy candidate
       ansible.builtin.command:
         argv: [timeout, "60", runuser, -u, caddy, --, caddy, validate, --config, "{{ caddy_candidate.path }}", --adapter, caddyfile]
       changed_when: false
-    # remote_src copy uses Ansible's atomic move; its source is the validated regular file.
-    - name: Atomically publish the validated Caddyfile
-      ansible.builtin.copy:
-        src: "{{ caddy_candidate.path }}"
-        remote_src: true
-        dest: /etc/caddy/Caddyfile
-        owner: root
-        group: "{{ caddy_group | default('caddy') }}"
-        mode: "{{ caddy_mode | default('0640') }}"
+    - name: Read the current Caddyfile identity
+      ansible.builtin.stat:
+        path: /etc/caddy/Caddyfile
         follow: false
+      register: caddy_current
+    # Rename the validated inode itself: no live-path ownership repair follows publication.
+    - name: Atomically publish the validated Caddyfile
+      ansible.builtin.command:
+        argv: [mv, -Tf, --, "{{ caddy_candidate.path }}", /etc/caddy/Caddyfile]
+      when: >-
+        not caddy_current.stat.exists or not (caddy_current.stat.isreg | default(false))
+        or caddy_current.stat.checksum != caddy_written.checksum
+        or caddy_current.stat.uid != caddy_written.uid
+        or caddy_current.stat.gid != caddy_written.gid
+        or caddy_current.stat.mode != caddy_written.mode
+      changed_when: true
       notify: "{{ caddy_notify | default([]) }}"
   always:
     - name: Remove this Caddy candidate

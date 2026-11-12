@@ -83,11 +83,8 @@ function withDocsMergeFixture(Closure $test): void
         file_put_contents($root.'/apps/docs/config/adr-legacy-allowlist.php', '<?php return [];');
         file_put_contents($root.'/apps/docs/config/adr-retired-slugs.php', '<?php return [];');
         docsMergeGit($root, ['init', '-q', '-b', 'main']);
-        docsMergeGit($root, ['config', 'user.name', 'Docs']);
-        docsMergeGit($root, ['config', 'user.email', 'docs@example.test']);
-        docsMergeGit($root, ['config', 'commit.gpgsign', 'false']);
-        docsMergeGit($root, ['config', 'gc.auto', '0']);
-        docsMergeGit($root, ['config', 'maintenance.auto', 'false']);
+        // Local fixture settings need no five extra Git processes per case.
+        file_put_contents($root.'/.git/config', "\n[user]\n    name = Docs\n    email = docs@example.test\n[commit]\n    gpgsign = false\n[gc]\n    auto = 0\n[maintenance]\n    auto = false\n", FILE_APPEND);
         docsMergeIndex($root);
         docsMergeCommit($root, 'common ancestor');
         docsMergeGit($root, ['branch', 'pr']);
@@ -119,7 +116,6 @@ it('retired 0197 reuse passes head-only and fails the merge check', function (bo
             // Keep all files under fixture .git, never in the tooling's workspace cache.
             $clean = $root.'/.git/clean-base';
             docsMergeGit($root, ['clone', '--quiet', '--shared', '--branch', 'main', $root, $clean]);
-            new Process(['python3', base_path('../../bin/docs-navigation'), '--root', $clean])->mustRun();
             docsMergeIndex($clean);
             $cache = $root.'/.git/cached-config.php';
             $environment = ['APP_CONFIG_CACHE' => $cache];
