@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Problems;
 
 use App\Data\Doctor\DoctorReportData;
-use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\DoctorResources;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
@@ -62,7 +61,7 @@ final readonly class ProblemRecovery
                     $partial = in_array($code, $family->observedChecks[(string) $resource] ?? [], true)
                         || (isset($family->observedInventories[$code]) && ! in_array((string) $resource, array_map(strval(...), $family->observedInventories[$code]), true));
                     $checked = $partial || in_array((string) $resource, array_map(strval(...), $family->observedResources), true);
-                    $failed = array_any($family->issues, static fn ($issue): bool => $issue->kind !== DoctorIssueKind::Informational
+                    $failed = array_any($family->issues, static fn ($issue): bool => ProblemCollector::recordsDoctorIssue($issue)
                         && ($partial ? $issue->code === $code && (string) $issue->resourceId === (string) $resource : $issue->resourceId === null || (string) $issue->resourceId === (string) $resource));
                     if ($checked && ! $failed && is_string($observed) && $observed < $startedAt->toISOString()) {
                         $this->resolve($row, 'fresh_doctor_success');

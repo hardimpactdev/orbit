@@ -771,25 +771,30 @@ it('rejects a reply without a typed report', function (): void {
 });
 
 it('prints bridge endpoint warning counts and sampled pairs for the node family without marking the Node unhealthy', function (bool $json): void {
+    // Use the Gateway's formatter so a real twenty-sample summary crosses the SDK boundary.
+    require_once base_path('../gateway/app/Domain/Doctor/FactDoctor.php');
+    $samples = array_map(static fn (int $port): string => '10.253.0.1:'.$port, range(13310, 13329));
+    $warning = \App\Domain\Doctor\FactDoctor::bridgeWarningSummary(200, $samples);
     $mock = doctor_cli_mock(doctor_cli_report(
         healthy: true,
-        nodes: [doctor_cli_node('bridge-host', [doctor_cli_family('node', 'healthy', 5, [
+        nodes: [doctor_cli_node('bridge-host', [doctor_cli_family('node', 'healthy', 4, [
             doctor_cli_issue(
                 code: 'node.instance_bridge_endpoint_unresolved',
-                summary: 'Warning: Instance bridge refresh could not resolve 200 endpoint(s). Sample: 10.253.0.1:13310, 10.253.0.1:13340.',
+                summary: $warning,
                 kind: 'informational',
                 resourceType: 'node',
                 expected: 'all endpoints resolved',
                 observed: '200 unresolved',
             ),
         ])])],
-        summary: ['nodes' => 1, 'families' => 1, 'checks' => 5, 'drift' => 0, 'unverifiable' => 0, 'informational' => 1],
+        summary: ['nodes' => 1, 'families' => 1, 'checks' => 4, 'drift' => 0, 'unverifiable' => 0, 'informational' => 1],
     ));
 
     expect(Artisan::call('doctor', ['--node' => '7', '--family' => ['node'], '--json' => $json]))->toBe(Command::SUCCESS);
     $output = Artisan::output();
+    expect(strlen($warning))->toBeLessThanOrEqual(255);
     expect($output)->toContain('node.instance_bridge_endpoint_unresolved', '200 endpoint(s)')
         ->not->toContain('node.instance_bridge_unhealthy');
-    expect(preg_replace('/[\\s│]+/u', '', $output))->toContain('10.253.0.1:13310', '10.253.0.1:13340');
+    expect(preg_replace('/[\\s│]+/u', '', $output))->toContain('10.253.0.1:13310', '10.253.0.1:13313', '196more.');
     expect($mock->getLastPendingRequest()?->body()->all())->toBe('{"node_id":7,"families":["node"]}');
 })->with([false, true]);

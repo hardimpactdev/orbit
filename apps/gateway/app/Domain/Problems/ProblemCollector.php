@@ -7,6 +7,7 @@ namespace App\Domain\Problems;
 use App\Data\Doctor\DoctorIssueData;
 use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorIssueKind;
+use App\Domain\Doctor\NodeDoctorIssueCode;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Shared\StoredInteger;
 use App\Models\Activity;
@@ -284,8 +285,7 @@ final readonly class ProblemCollector
         foreach ($report->nodes as $node) {
             foreach ($node->families as $family) {
                 foreach ($family->issues as $issue) {
-                    // Doctor health ignores informational findings, so they are not problems either.
-                    if ($issue->kind === DoctorIssueKind::Informational) {
+                    if (! self::recordsDoctorIssue($issue)) {
                         continue;
                     }
 
@@ -309,6 +309,13 @@ final readonly class ProblemCollector
         ksort($issues);
 
         return array_values($issues);
+    }
+
+    /** Persistent endpoint warnings stay visible without changing the wire kind or Node health. */
+    public static function recordsDoctorIssue(DoctorIssueData $issue): bool
+    {
+        return $issue->kind !== DoctorIssueKind::Informational
+            || $issue->code === NodeDoctorIssueCode::InstanceBridgeEndpointUnresolved->value;
     }
 
     private function doctorFingerprint(DoctorIssueData $issue): string

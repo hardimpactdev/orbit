@@ -128,20 +128,18 @@ final readonly class FactDoctor
                 $check->issue('node.instance_bridge_unhealthy', $node->id, $node->name,
                     'Instance bridge endpoint refresh failed: '.$bridge['error_code'], 'healthy', $bridge['error_code']);
             }
-            if (is_array($bridge) && is_int($bridge['warning_count'] ?? null)) {
-                $count = $bridge['warning_count'];
+            $warnings = $check->fact(NodeFactKind::Host)['instance_bridge_warnings'] ?? null;
+            if (is_array($warnings) && is_int($warnings['warning_count'] ?? null)) {
+                $count = $warnings['warning_count'];
                 if ($count > 0) {
                     $samples = [];
-                    foreach (is_array($bridge['warnings'] ?? null) ? $bridge['warnings'] : [] as $warning) {
+                    foreach (is_array($warnings['warnings'] ?? null) ? $warnings['warnings'] : [] as $warning) {
                         if (! is_array($warning) || ! is_string($warning['host'] ?? null) || ! is_int($warning['port'] ?? null)) {
                             throw new UnexpectedValueException('bridge warning');
                         }
                         $samples[] = $warning['host'].':'.$warning['port'];
                     }
-                    $summary = 'Warning: Instance bridge refresh could not resolve '.$count.' endpoint(s).';
-                    if ($samples !== []) {
-                        $summary .= ' Sample: '.implode(', ', $samples).'.';
-                    }
+                    $summary = self::bridgeWarningSummary($count, $samples);
                     $check->issue('node.instance_bridge_endpoint_unresolved', $node->id, $node->name,
                         $summary, 'all endpoints resolved', (string) $count.' unresolved', DoctorIssueKind::Informational);
                 }
@@ -161,6 +159,23 @@ final readonly class FactDoctor
         });
 
         return $check->report();
+    }
+
+    /** @param list<string> $samples IPv4 host:port pairs from the validated host fact. */
+    public static function bridgeWarningSummary(int $count, array $samples): string
+    {
+        // Existing SDKs accept at most 255 bytes: four maximal IPv4:port pairs fit with the count.
+        $shown = array_slice($samples, 0, 4);
+        $summary = 'Warning: Instance bridge refresh could not resolve '.$count.' endpoint(s).';
+        if ($shown !== []) {
+            $summary .= ' Sample: '.implode(', ', $shown).'.';
+        }
+        $remaining = $count - count($shown);
+        if ($remaining > 0 && $shown !== []) {
+            $summary .= ' And '.$remaining.' more.';
+        }
+
+        return $summary;
     }
 
     private function roleFamily(DoctorFamilyInspection $check): DoctorFamilyReportData

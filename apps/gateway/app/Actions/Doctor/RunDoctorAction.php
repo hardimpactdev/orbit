@@ -66,7 +66,13 @@ final readonly class RunDoctorAction
         $nodes = Node::query()->when($horizonOnly, fn ($query) => $query->whereKey($this->access->activeGatewayId()))->orderBy('name')->orderBy('id')->get();
         $cost['nodes'] = $nodes->count();
         $report = $this->doctor->report(array_values($nodes->all()), $horizonOnly ? [DoctorFamily::Process] : []);
-        $cost['issues'] = $report->summary['drift'] + $report->summary['unverifiable'];
+        foreach ($report->nodes as $nodeReport) {
+            foreach ($nodeReport->families as $family) {
+                foreach ($family->issues as $issue) {
+                    $cost['issues'] += (int) ProblemCollector::recordsDoctorIssue($issue);
+                }
+            }
+        }
         $writeStarted = hrtime(true);
         try {
             DB::transaction(function () use ($report, $at, $horizonOnly, $started, $writeStarted): void {

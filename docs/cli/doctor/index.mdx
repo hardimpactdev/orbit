@@ -13,7 +13,7 @@ covers:
 
 Doctor compares current Node and runtime facts with the Gateway's recorded intent. It leaves out [container Processes](/reference/development-containers#processes), whose units belong to the container rather than the Node. It reports differences and never repairs them. Native provisioning, deployment, Route, Tool, Schedule and database operations own their configuration checks. Doctor reuses the native firewall comparison for operator rules, matched by port, protocol and source.
 
-On an Instance host, the Node family also reads the [bridge refresh health](/reference/development-containers#prepare-a-node) from the agent's host fact. `node.instance_bridge_unhealthy` names its error. `node.instance_bridge_endpoint_unresolved` shows an informational warning with the unresolved count and bounded host:port sample, without marking the Node unhealthy; Docker mapping repair remains the host timer's job.
+On an Instance host, the Node family also reads the [bridge refresh health](/reference/development-containers#prepare-a-node) from the agent's host fact. `node.instance_bridge_unhealthy` names its error. `node.instance_bridge_endpoint_unresolved` shows an informational warning with the unresolved count and at most four host:port pairs, plus the remaining count, without marking the Node unhealthy; Docker mapping repair remains the host timer's job.
 
 ## Commands
 
@@ -29,7 +29,7 @@ For each Node, Doctor prints the agent's liveness line before its findings and m
 
 ### Informational findings stay healthy
 
-An informational finding is not drift or unverifiable. A parked task VM does not become unhealthy merely because Doctor skips it.
+An informational finding is not drift or unverifiable. Scheduled collection retains the warning for unresolved bridge endpoints so it appears in gateway:status; other informational findings stay out of that store. A parked task VM does not become unhealthy merely because Doctor skips it.
 
 ### No stored reports
 
