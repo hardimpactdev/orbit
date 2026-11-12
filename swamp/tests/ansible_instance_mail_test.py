@@ -163,7 +163,7 @@ class MailPhase(unittest.TestCase):
                'ANSIBLE_STDOUT_CALLBACK': 'default', 'ANSIBLE_COLLECTIONS_PATH': str(self.root / 'empty'), 'ANSIBLE_NOCOLOR': '1',
                'ANSIBLE_LIBRARY': str(ROOT / 'swamp/ansible/library'),
                'ANSIBLE_LOCAL_TEMP': str(self.root / 'ansible-local'), 'ANSIBLE_REMOTE_TEMP': str(self.root / 'ansible-remote')}
-        done = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(self.root / 'play.json')], env=env, capture_output=True, text=True)
+        done = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(self.root / 'play.json')], env=env, capture_output=True, text=True, check=False)
         self.assertEqual(done.returncode == 0, success, done.stdout + done.stderr)
         self.state = json.loads((self.root / 'state.json').read_text())
         return json.loads((self.root / 'result.json').read_text()) if success else done.stdout

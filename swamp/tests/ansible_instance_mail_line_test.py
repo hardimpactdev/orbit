@@ -192,7 +192,7 @@ sys.exit(result.returncode)
     def test_real_incus_missing_delete_contract_and_first_run(self):
         for force in [[], ['--force']]:
             result = subprocess.run(['incus', '--project', 'fixture', 'file', 'delete', *force,
-                                     'fixture/srv/workspace/.env.orbit-mail'], env=self.env, capture_output=True)
+                                     'fixture/srv/workspace/.env.orbit-mail'], env=self.env, capture_output=True, check=False)
             self.assertEqual((result.returncode, result.stdout, result.stderr),
                              (1, b'', b'Error: file does not exist\n'))
         self.assertEqual(self.run_rule(b'MAIL_MAILER=log\n'), {'status': 'changed', 'lines': [1]})
@@ -205,7 +205,7 @@ sys.exit(result.returncode)
                       'Error: file does not exist', 'MAIL_PASSWORD=fixture-canary\n']:
             (self.root / 'delete-error').write_text(error)
             result = subprocess.run([sys.executable, '-c', SOURCE.read_text(), 'fixture', 'fixture'],
-                                    env=self.env, capture_output=True)
+                                    env=self.env, capture_output=True, check=False)
             self.assertEqual(result.returncode, 1)
             public = json.loads(result.stdout)
             self.assertEqual(public['error_code'], 'env.configuration_invalid')
@@ -272,7 +272,7 @@ sys.exit(result.returncode)
             (self.root / 'file-actions.json').write_text('[]')
             (self.root / 'acl-fault').write_text(fault)
             result = subprocess.run([sys.executable, '-c', SOURCE.read_text(), 'fixture', 'fixture'],
-                                    env=self.env, capture_output=True)
+                                    env=self.env, capture_output=True, check=False)
             self.assertEqual(result.returncode, 1)
             self.assertEqual(json.loads(result.stdout), {'error_code': 'env.configuration_invalid'})
             self.assertEqual(result.stderr, b'')

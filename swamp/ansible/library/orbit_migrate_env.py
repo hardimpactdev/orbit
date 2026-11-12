@@ -162,7 +162,7 @@ def canonical_host(value):
         address = ipaddress.ip_address(value)
         return str(address), str(address)
     except ValueError:
-        name = value[:-1] if value.endswith('.') else value
+        name = value.removesuffix('.')
         if HOSTNAME.fullmatch(name):
             return name.lower(), value
     return None, '[invalid host]'

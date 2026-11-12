@@ -1864,7 +1864,7 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_test.py": {
-    "source_sha256": "9ed08c220562d6d81909a49fd7e2a7d90048ca060b21ac82751ac6805a37de9b",
+    "source_sha256": "76abb617947c85a43acf0ea6f5391621b4137cffb2860f9f280fe30935af5d6a",
     "cases": [
       "test_migrate_selected_smtp_passes_real_preflight_and_installs_forwarders",
       "test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes",
@@ -1876,7 +1876,7 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_line_test.py": {
-    "source_sha256": "11ed452ad62a10e153e2de3f5c68e4e038ec8c0065d9626742ec1472b42c2688",
+    "source_sha256": "2e01ce293092ce498f393f9ae2e65f0d800753fe0a6131b92801fa03ef956434",
     "cases": [
       "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte",
       "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved",
