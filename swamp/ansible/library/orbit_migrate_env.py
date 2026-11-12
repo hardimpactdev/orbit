@@ -6,11 +6,17 @@ file contents on the Node while parsing quoted values, selecting named files
 and classifying IP endpoints with Python's standard library. A slurp/template
 implementation would transport complete private environments to the worker.
 """
+import errno
 import glob
 import ipaddress
+import json
 import os
 import re
 import shlex
+import socket
+import subprocess
+import sys
+import time
 
 DOCUMENTATION = r'''
 module: orbit_migrate_env
@@ -271,6 +277,48 @@ def connection(values, key):
     return True, port, reason
 
 
+
+def socket_transports(values):
+    """Selected socket settings override TCP; never display their private paths."""
+    stems = {'DB', 'REDIS'} | {key[:-5] for key in values if key.endswith('_HOST')} | {
+        key[:-11] for key in values if key.endswith('_CONNECTION')}
+    for stem in sorted(stems):
+        host_key = stem + '_HOST'
+        drivers = database_drivers(values, stem)
+        if drivers & {'mysql', 'mariadb'}:
+            for key in (stem + '_SOCKET', stem + '_UNIX_SOCKET'):
+                if values.get(key) not in (None, '', '0'):
+                    yield host_key, key, values[key], True
+        host = values.get(host_key) or ''
+        if 'pgsql' in drivers and host.startswith('/'):
+            yield host_key, host_key, host, False
+        if connection(values, host_key)[0] and (stem == 'REDIS' or stem.endswith('_REDIS') or 'redis' in drivers):
+            if host.startswith(('/', 'unix://')):
+                yield host_key, host_key, host.removeprefix('unix://'), False
+            url = values.get(stem + '_URL') or ''
+            if url.startswith('unix://'):
+                yield host_key, stem + '_URL', url[7:], False
+            if (values.get(stem + '_SCHEME') or '').lower() == 'unix':
+                path_key = stem + '_PATH' if values.get(stem + '_PATH') else host_key
+                yield host_key, path_key, values.get(path_key) or '', False
+
+
+def socket_reason(value, directory, tcp_fallback):
+    if not value or any(char in value for char in ('$', chr(96), '\0', '?', '#')):
+        return 'the selected socket path cannot be inspected safely'
+    if not os.path.isabs(value):
+        return 'the relative socket path could not be shown unused safely'
+    try:
+        os.stat(os.path.join(directory, value))
+    except OSError as error:
+        if error.errno not in (errno.ENOENT, errno.ENOTDIR):
+            return 'the selected socket path cannot be inspected safely'
+        if tcp_fallback:
+            return None
+        return 'the selected socket transport could not be shown unused by a TCP probe'
+    return 'the selected socket path exists on the Node but is not available in the container'
+
+
 def env_files(checkout, environment_files=None, unit_files=()):
     """Only the application's files and files explicitly named by admitted source units."""
     if not os.path.isdir(checkout):
@@ -321,8 +369,111 @@ def env_files(checkout, environment_files=None, unit_files=()):
             yield path
 
 
-def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, development_mail=None, node_services=None, environment_files=None, unit_files=()):
+
+class ProbeError(RuntimeError):
+    """A closed diagnostic, never an OS error containing private input."""
+
+
+PRIVATE_NETWORKS = tuple(ipaddress.ip_network(value) for value in (
+    '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '169.254.0.0/16', 'fc00::/7', 'fe80::/10'))
+PROBE_SECONDS = 2
+PROBE_LIMIT = 20
+
+
+def private_address(address):
+    address = getattr(address, 'ipv4_mapped', None) or address
+    return address.is_loopback or any(address.version == network.version and address in network for network in PRIVATE_NETWORKS)
+
+
+class HostProbes:
+    """One bounded, cached host observation per endpoint in this preflight."""
+
+    def __init__(self):
+        self.cache = {}
+
+    def answer(self, host, port):
+        if host != host.strip():
+            return None
+        try:
+            literal = ipaddress.ip_address(host)
+        except ValueError:
+            literal = None
+            if not HOSTNAME.fullmatch(host.removesuffix('.')):
+                return None
+        if literal is not None and not private_address(literal):
+            return None
+        key = (host, port)
+        if key in self.cache:
+            if isinstance(self.cache[key], ProbeError):
+                raise self.cache[key]
+            return self.cache[key]
+        if len(self.cache) >= PROBE_LIMIT:
+            if literal is None:
+                return None  # No more resolution: retain the existing hostname policy.
+            raise ProbeError('the host probe limit of 20 unique endpoints was reached')
+        deadline = time.monotonic() + PROBE_SECONDS
+        self.cache[key] = None
+        addresses = [literal] if literal is not None else self.resolve(host)
+        if not addresses or any(not private_address(address) for address in addresses):
+            return None
+        if len(addresses) > 8:
+            raise ProbeError('the host has too many addresses to probe safely')
+        inconclusive = None
+        for index, address in enumerate(addresses):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ProbeError('the host probe could not inspect every address within its bound')
+            try:
+                client = socket.socket(socket.AF_INET6 if address.version == 6 else socket.AF_INET, socket.SOCK_STREAM)
+            except OSError as error:
+                raise ProbeError('the host probe could not create a TCP socket') from error
+            try:
+                with client:
+                    client.settimeout(min(1, remaining / (len(addresses) - index)))
+                    client.connect((str(address), port))
+                self.cache[key] = True
+                return True
+            except TimeoutError:
+                inconclusive = 'the TCP probe timed out'
+                continue
+            except OSError as error:
+                if error.errno == errno.ECONNREFUSED:
+                    continue
+                if error.errno in {errno.ETIMEDOUT, errno.EHOSTUNREACH, errno.ENETUNREACH, errno.EHOSTDOWN, errno.ENETDOWN}:
+                    inconclusive = 'the TCP probe timed out or reported an unreachable host or network'
+                    continue
+                raise ProbeError('the host TCP probe failed with socket error ' + str(error.errno)) from error
+        if inconclusive:
+            self.cache[key] = ProbeError('the service could not be shown unused: ' + inconclusive)
+            raise self.cache[key]
+        self.cache[key] = False
+        return False
+
+    @staticmethod
+    def resolve(host):
+        # getaddrinfo has no timeout API. Isolate only name resolution in a bounded
+        # child; no TCP connection is made until every answer is proved private.
+        source = """import json,socket,sys
+try:
+ print(json.dumps(list(dict.fromkeys(row[4][0] for row in socket.getaddrinfo(sys.argv[1], None, type=socket.SOCK_STREAM)))))
+except socket.gaierror as error:
+ if error.errno not in (socket.EAI_NONAME, socket.EAI_AGAIN, getattr(socket,'EAI_NODATA',socket.EAI_NONAME)):raise
+ print('[]')
+"""
+        try:
+            reply = subprocess.run([sys.executable, '-c', source, host], capture_output=True,
+                                   text=True, timeout=0.5, check=False)
+            if reply.returncode:
+                raise ProbeError('the host name could not be resolved safely')
+            return [ipaddress.ip_address(value) for value in json.loads(reply.stdout)]
+        except (OSError, TypeError, ValueError, subprocess.SubprocessError) as error:
+            raise ProbeError('the host name could not be resolved within the probe bound') from error
+
+
+def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, development_mail=None, node_services=None, environment_files=None, unit_files=(), warnings=None):
     """Safe refusal lines, with no environment contents except validated host and numeric port."""
+    warnings = [] if warnings is None else warnings
+    probes = HostProbes()
     attached = {(canonical_host(str(target['host']))[0], int(target['port'])) for target in targets}
     local = set()
     for value in node_addresses:
@@ -350,6 +501,12 @@ def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, de
         except (OSError, UnicodeError):
             refusals.append(f'{relative}: cannot read .env safely. {RECOVERY}')
             continue
+        socket_hosts = set()
+        for host_key, socket_key, socket_path, tcp_fallback in socket_transports(values):
+            reason = socket_reason(socket_path, os.path.dirname(path), tcp_fallback)
+            if reason:
+                socket_hosts.add(host_key)
+                refusals.append(f'{relative}: {socket_key}: {reason}. {RECOVERY}')
         # URL configuration overrides HOST/PORT in Laravel. K1a admits key pairs, not URL selectors.
         # Keep URL contents and credentials private; the first cut refuses non-SQLite selectors explicitly.
         for key, value in values.items():
@@ -357,7 +514,7 @@ def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, de
                 refusals.append(f'{relative}: {key}: a database URL can override the attached host/port keys; '
                                 'use the exact attached HOST/PORT keys without a URL override. No URL value is shown.')
         for key, value in values.items():
-            if not key.endswith('_HOST') or listener_or_browser_key(values, key):
+            if not key.endswith('_HOST') or key in socket_hosts or listener_or_browser_key(values, key):
                 continue
             used, port, driver_reason = connection(values, key)
             if not used:
@@ -398,6 +555,14 @@ def inspect_environment(checkout, targets, node_addresses, proxy_policy=None, de
                     reason = 'the direct service has no exact endpoint admitted by the container access plan'
             if reason:
                 endpoint = f'[{display}]' if ':' in display else display
+                if host is not None and port is not None:
+                    try:
+                        if probes.answer(value, port) is False:
+                            warnings.append({'code': 'instance.migrate_env_service_unused',
+                                             'message': f'{relative}: {key}={endpoint}:{port}: no TCP service answered on the Node.'})
+                            continue
+                    except ProbeError as error:
+                        reason = str(error)
                 refusals.append(f'{relative}: {key}={endpoint}:{port if port is not None else "[unknown port]"}: '
                                 f'{driver_reason}{reason}. {RECOVERY}')
     return refusals
@@ -417,10 +582,11 @@ def main():
         'node_services': {'type': 'list', 'elements': 'dict', 'default': []},
     }, supports_check_mode=True)
     try:
-        refusals = inspect_environment(**module.params)
+        warnings = []
+        refusals = inspect_environment(**module.params, warnings=warnings)
     except ValueError:
         module.fail_json(msg='Cannot inspect the copied .env service endpoints safely.')
-    module.exit_json(changed=False, refusals=refusals)
+    module.exit_json(changed=False, refusals=refusals, environment_warnings=warnings)
 
 
 if __name__ == '__main__':

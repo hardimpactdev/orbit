@@ -307,3 +307,22 @@ Deno.test("carried Schedule activation failures and missing receipts warn withou
         }
     } finally { await Deno.remove(folder, {recursive: true}); }
 });
+
+Deno.test("environment warning receipts survive later phase results and remain generic", async () => {
+    const folder = Deno.makeTempDirSync();
+    try {
+        const warnings = [
+            {code: "instance.migrate_env_service_unused", message: ".env: DB_HOST=127.0.0.1:3306: no TCP service answered on the Node."},
+            {code: "instance.future_environment_warning", message: "A safe future environment warning."},
+        ];
+        await Deno.writeTextFile(folder + "/environment-warnings.json", JSON.stringify({warnings}));
+        await Deno.writeTextFile(folder + "/result.json", JSON.stringify({commit}));
+        const written = await writtenFailure(folder);
+        assertEquals(result(defaultIntent, moved, workspace, null, written).warnings, warnings);
+        assertEquals(result(defaultIntent, {...moved, retire:"skipped", route:"failed", restore:"succeeded"},
+                            workspace, null, written).warnings, warnings);
+        await Deno.writeTextFile(folder + "/environment-warnings.json",
+                                 JSON.stringify({warnings:[{code:"not a code",message:"not accepted"}]}));
+        assertEquals((await writtenFailure(folder))?.warnings, undefined);
+    } finally { Deno.removeSync(folder, {recursive:true}); }
+});

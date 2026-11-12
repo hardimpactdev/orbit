@@ -53,6 +53,17 @@ HELP;
             $this->writeHumanMessage('Mailer: '.$mailer['status'].($lines === [] ? '' : ' (line '.implode(', ', $lines).')').'.');
         }
         $warnings = $operation->result['warnings'] ?? null;
+        foreach (is_array($warnings) ? $warnings : [] as $warning) {
+            if (! is_array($warning)) {
+                continue;
+            }
+            $code = $warning['code'] ?? null;
+            $warningMessage = $warning['message'] ?? null;
+            if (is_string($code) && preg_match('/^[a-z]+\\.[a-z0-9_]+$/D', $code) === 1
+                && $code !== 'instance.mail_update_failed' && is_string($warningMessage)) {
+                $this->writeHumanMessage('Warning: '.$code.'. '.$warningMessage);
+            }
+        }
         if (is_array($warnings) && array_any($warnings, static fn (mixed $warning): bool => is_array($warning) && ($warning['code'] ?? null) === 'instance.mail_update_failed')) {
             $this->writeHumanMessage('Warning: instance.mail_update_failed. Run orbit instance:mail:update '.$operation->targetId.' to repair mail.');
         }

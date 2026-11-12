@@ -23,6 +23,18 @@
     proxy_policy: "{{ migrate.environment.proxy_policy }}"
   register: migrate_env_check
 
+- name: Retain public environment warnings before downtime
+  ansible.builtin.copy:
+    content: "{{ {'warnings': migrate_env_check.environment_warnings} | to_json }}"
+    dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/environment-warnings.json"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
 - name: Explain unsupported service endpoints
   when: migrate_env_check.refusals | length > 0
   ansible.builtin.set_fact:
