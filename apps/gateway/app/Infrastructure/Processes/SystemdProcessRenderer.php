@@ -165,6 +165,7 @@ final readonly class SystemdProcessRenderer
             'VITE_DEV_SERVER_CERT',
             'VITE_DEV_SERVER_KEY',
             'ORBIT_DEV_SERVER_ORIGIN',
+            'DEV_SERVER_ORIGIN',
             'ORBIT_DEV_SERVER_HOST',
             'ORBIT_DEV_SERVER_PATH',
             'ORBIT_DEV_SERVER_PORT',
@@ -213,9 +214,11 @@ final readonly class SystemdProcessRenderer
 
         if (is_string($target->routeDomain) && $target->routeDomain !== '') {
             $origin = DevelopmentServerEndpoint::origin($target->routeDomain);
+            $directives[] = 'Environment=DEV_SERVER_ORIGIN='.$this->escapeDirectivePath($origin);
             $directives[] = 'Environment=ORBIT_DEV_SERVER_ORIGIN='.$this->escapeDirectivePath($origin);
             $directives[] = 'Environment=ORBIT_DEV_SERVER_HOST='.$this->escapeDirectivePath($target->routeDomain);
             $directives[] = 'Environment=ORBIT_DEV_SERVER_PATH='.DevelopmentServerEndpoint::PATH;
+            $commandValues[] = "DEV_SERVER_ORIGIN={$origin}";
             $commandValues[] = "ORBIT_DEV_SERVER_ORIGIN={$origin}";
             $commandValues[] = "ORBIT_DEV_SERVER_HOST={$target->routeDomain}";
             $commandValues[] = 'ORBIT_DEV_SERVER_PATH='.DevelopmentServerEndpoint::PATH;

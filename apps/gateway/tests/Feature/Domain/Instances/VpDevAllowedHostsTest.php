@@ -115,7 +115,7 @@ describe('the vp-dev unit host allowance', function (): void {
         allowedHostsRoute($instance, 'docs.tool.test', 'docs/public');
         foreach (['one', 'two', 'three'] as $name) {
             $instance->processes()->create(['name' => $name, 'runtime' => 'systemd', 'working_directory' => $instance->checkout_path,
-                'runtime_config' => ['command' => ['/usr/bin/true']], 'status' => 'active']);
+                'runtime_config' => ['command' => ['/usr/bin/true']], 'restart_policy' => 'never', 'desired_state' => 'stopped', 'status' => 'active']);
         }
 
         DB::enableQueryLog();
@@ -209,13 +209,18 @@ it('lets Vite load application dotenv and retains Orbit and private Process sett
     }
 })->with(['host checkout' => false, 'container' => true]);
 
-it('changes only the application EnvironmentFile line of the admitted pre-change container unit', function (): void {
+it('changes only the application EnvironmentFile line and adds the public origin alias of the admitted pre-change container unit', function (): void {
     [$instance, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'default', 5195, true);
     $legacy = file_get_contents(base_path('tests/Fixtures/vp-dev-before-native-dotenv.service'));
     $legacy = str_replace('X-Orbit-Process-ID=41', 'X-Orbit-Process-ID='.$process->id, $legacy);
 
     expect(app(ContainerProcesses::class)->unit($instance, $process, migrate: true)['content'])
-        ->toBe(str_replace("EnvironmentFile=-/srv/workspace/.env\n", '', $legacy));
+        ->toBe(str_replace(
+            ['EnvironmentFile=-/srv/workspace/.env'."\n", 'Environment=ORBIT_DEV_SERVER_ORIGIN=', '"ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite"'],
+            ['', 'Environment=DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite'."\n".'Environment=ORBIT_DEV_SERVER_ORIGIN=',
+                '"DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite" "ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite"'],
+            $legacy,
+        ));
 });
 
 it('refuses pre-release unit admission before materializing migration execution inputs', function (): void {
@@ -243,4 +248,115 @@ it('records the admitted old unit activation when a submitted migration straddle
 
     expect($process->refresh()->systemd_activation_hash)->toBe(hash('sha256', $legacy));
     expect($process->systemd_activation_pending)->toBeFalse();
+});
+
+it('adds only the generic public origin to an existing checkout dev-server unit', function (): void {
+    [, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'checkout', 5195, false);
+    // Captured on main at 718d7b891f; only the Process id is normalized.
+    $baseline = <<<'UNIT'
+[Unit]
+Description=Orbit process vite
+X-Orbit-Process-ID=__PROCESS_ID__
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=orbit
+WorkingDirectory=/fast/apps/tool/checkout
+Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin
+Environment=NODE_USE_SYSTEM_CA=1
+Environment=ORBIT_DEV_SERVER_ORIGIN=https://checkout.tool.test/__orbit/vite
+Environment=ORBIT_DEV_SERVER_HOST=checkout.tool.test
+Environment=ORBIT_DEV_SERVER_PATH=/__orbit/vite
+Environment=__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=checkout.tool.test
+Environment=ORBIT_DEV_SERVER_PORT=5195
+EnvironmentFile=/etc/orbit/vite/app-instance-1.env
+UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY
+ExecStart="/usr/bin/env" "ORBIT_DEV_SERVER_ORIGIN=https://checkout.tool.test/__orbit/vite" "ORBIT_DEV_SERVER_HOST=checkout.tool.test" "ORBIT_DEV_SERVER_PATH=/__orbit/vite" "__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=checkout.tool.test" "/usr/local/bin/vp" "dev" "--host=127.0.0.1" "--port=${ORBIT_DEV_SERVER_PORT}" "--strictPort" "--base=/__orbit/vite/"
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+UNIT;
+    $baseline = str_replace('__PROCESS_ID__', (string) $process->id, $baseline)."\n";
+    $origin = 'https://checkout.tool.test/__orbit/vite';
+
+    $unit = allowedHostsUnit($process);
+
+    expect($unit)->toContain("Environment=DEV_SERVER_ORIGIN={$origin}\n", '"DEV_SERVER_ORIGIN='.$origin.'"',
+        "Environment=ORBIT_DEV_SERVER_ORIGIN={$origin}\n", '"ORBIT_DEV_SERVER_ORIGIN='.$origin.'"');
+    expect(str_replace(["Environment=DEV_SERVER_ORIGIN={$origin}\n", '"DEV_SERVER_ORIGIN='.$origin.'" '], '', $unit))
+        ->toBe($baseline);
+});
+
+it('adds only the generic public origin to an existing container dev-server unit', function (): void {
+    [, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'container', 5195, true);
+    // Captured on main at 718d7b891f; only the Process id is normalized.
+    $baseline = <<<'UNIT'
+[Unit]
+Description=Orbit process vite
+X-Orbit-Process-ID=__PROCESS_ID__
+After=network.target
+
+[Service]
+Type=simple
+User=orbit
+Group=orbit
+UMask=0007
+WorkingDirectory=/fast/apps/tool/container
+Environment=HOME=/home/orbit
+Environment=PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin
+Environment=NODE_USE_SYSTEM_CA=1
+Environment=ORBIT_DEV_SERVER_ORIGIN=https://container.tool.test/__orbit/vite
+Environment=ORBIT_DEV_SERVER_HOST=container.tool.test
+Environment=ORBIT_DEV_SERVER_PATH=/__orbit/vite
+Environment=__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=container.tool.test
+Environment=ORBIT_DEV_SERVER_PORT=5195
+UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY
+ExecStart="/usr/bin/env" "ORBIT_DEV_SERVER_ORIGIN=https://container.tool.test/__orbit/vite" "ORBIT_DEV_SERVER_HOST=container.tool.test" "ORBIT_DEV_SERVER_PATH=/__orbit/vite" "__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=container.tool.test" "ORBIT_DEV_SERVER_PORT=5195" "/opt/orbit-runtime/current/bin/vp" "dev" "--host=0.0.0.0" "--port=5195" "--strictPort" "--base=/__orbit/vite/"
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+UNIT;
+    $baseline = str_replace('__PROCESS_ID__', (string) $process->id, $baseline)."\n";
+    $origin = 'https://container.tool.test/__orbit/vite';
+
+    $unit = allowedHostsUnit($process);
+
+    expect($unit)->toContain("Environment=DEV_SERVER_ORIGIN={$origin}\n", '"DEV_SERVER_ORIGIN='.$origin.'"',
+        "Environment=ORBIT_DEV_SERVER_ORIGIN={$origin}\n", '"ORBIT_DEV_SERVER_ORIGIN='.$origin.'"');
+    expect(str_replace(["Environment=DEV_SERVER_ORIGIN={$origin}\n", '"DEV_SERVER_ORIGIN='.$origin.'" '], '', $unit))
+        ->toBe($baseline);
+});
+
+it('ignores Process overrides for both public origin names while keeping private settings', function (bool $container, bool $preset): void {
+    [, $process] = allowedHostsInstance(containerDefaultNode(), containerDefaultProject(), 'default', 5195, $container, $preset);
+    $process->update(['runtime_config' => [...$process->runtime_config, 'environment' => [
+        'DEV_SERVER_ORIGIN' => 'https://untrusted.invalid/alias',
+        'ORBIT_DEV_SERVER_ORIGIN' => 'https://untrusted.invalid/orbit',
+        'PRIVATE_SETTING' => 'fixture-value',
+    ]]]);
+    $renderer = app(SystemdProcessRenderer::class);
+    $target = app(ProcessTargetResolver::class)->forInspection($process);
+
+    $unit = $renderer->render($process, $target);
+    $environment = $renderer->environmentContent($process, $target);
+
+    expect($unit)->toContain('Environment=DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite',
+        'Environment=ORBIT_DEV_SERVER_ORIGIN=https://default.tool.test/__orbit/vite');
+    expect($environment)->toBe('# Orbit Process '.$process->id."\n".'PRIVATE_SETTING="fixture-value"'."\n");
+    expect($unit.$environment)->not->toContain('untrusted.invalid');
+})->with(['checkout preset' => [false, true], 'container preset' => [true, true], 'ordinary Route-backed Process' => [true, false]]);
+
+it('gives neither public origin to an ordinary Node Process without a Route', function (): void {
+    $node = containerDefaultNode();
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'worker',
+        'runtime' => 'systemd', 'working_directory' => '/home/orbit',
+        'runtime_config' => ['command' => ['/usr/bin/true']], 'restart_policy' => 'never', 'desired_state' => 'stopped', 'status' => 'active']);
+
+    expect(allowedHostsUnit($process))->not->toContain('DEV_SERVER_ORIGIN');
 });

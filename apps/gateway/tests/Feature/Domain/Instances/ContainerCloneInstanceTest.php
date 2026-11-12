@@ -1063,3 +1063,30 @@ it('preserves an active container Process after definition removal on create and
     expect($deployment->kind)->toBe('instance.deploy')
         ->and($instance->processes()->sole()->getAttributes())->toBe($before);
 });
+
+it('keeps create dotenv byte-identical while the public origin belongs only to the dev-server unit', function (): void {
+    $node = containerDefaultNode();
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $default = seededDefault($node);
+    $project = $default->project;
+    $project->update(['type' => ProjectType::LaravelApp, 'php_version' => '8.5', 'root' => 'public', 'is_laravel' => true]);
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($project, str_repeat('d', 40), 'fixture',
+        "APP_NAME=Fixture\nAPP_KEY=fixture-key\nASSET_MARKER=kept\n");
+    ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'dev', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'preset' => 'vp-dev', 'command' => VpDevPreset::definitionCommand()]]);
+
+    $operation = containerCreate($project, $node, 'origin-alias');
+    $clone = Instance::query()->findOrFail($operation->target_id);
+    $domain = $clone->routes()->whereNull('web_root')->sole()->domain;
+    $contents = app(DevelopmentCreateEnvironment::class)->content($clone);
+    $expected = 'APP_DEBUG="true"'."\n".'APP_ENV="development"'."\n".'APP_KEY="fixture-key"'."\n"
+        .'APP_NAME="Fixture"'."\n".'APP_URL="https://'.$domain.'"'."\n".'ASSET_MARKER="kept"'."\n";
+
+    expect($contents)->toBe($expected)->not->toContain('DEV_SERVER_ORIGIN');
+    $unit = containerIntentOf($operation)['processes'][0]['content'];
+    expect($unit)->toContain('Environment=DEV_SERVER_ORIGIN=https://'.$domain.'/__orbit/vite',
+        'Environment=ORBIT_DEV_SERVER_ORIGIN=https://'.$domain.'/__orbit/vite');
+    expect($clone->environmentValues()->whereIn('env_key', ['DEV_SERVER_ORIGIN', 'ORBIT_DEV_SERVER_ORIGIN'])->count())->toBe(0);
+});
