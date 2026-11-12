@@ -9,4 +9,5 @@ enum ConnInstanceNameReason: string
     case Taken = 'taken';
     case Invalid = 'invalid';
     case Default = 'default';
+    case DomainInvalid = 'domain_invalid';
 }

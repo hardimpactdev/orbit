@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Doctor\RunDoctorAction;
 use App\Console\Kernel as GatewayConsoleKernel;
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\Tasks\TaskSchedule;
@@ -64,6 +65,9 @@ $app = Application::configure(basePath: dirname(__DIR__))
     )
     ->withSchedule(function (Schedule $schedule): void {
         app(TaskSchedule::class)->register($schedule);
+        // Local comparison of stored facts: no Node contact, queue or Tasks extension needed.
+        $schedule->call(static fn () => app(RunDoctorAction::class)->scheduled())
+            ->name('doctor:collect')->everyFiveMinutes()->withoutOverlapping(10);
         // Work runs on the Gateway queue; the scheduler only dispatches (docs/reference/gateway-queue.md#scheduled-work).
         // Housekeeping of the Gateway's own tables and Horizon metrics: Gateway-local, no Node and no Swamp work.
         GatewaySchedule::command($schedule, 'orbit:activity-finalize-interrupted', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();

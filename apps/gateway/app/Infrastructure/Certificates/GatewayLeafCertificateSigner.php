@@ -21,9 +21,11 @@ final readonly class GatewayLeafCertificateSigner
             throw $this->invalidRequest();
         }
         $subject = @openssl_csr_get_subject($request, false);
+        // Old-form retirement: docs/reference/routes.md#certificate-request-forms.
+        $oldRequest = is_array($subject) && ($subject['commonName'] ?? null) === $domain;
         $public = @openssl_csr_get_public_key($request);
         $key = $public === false ? false : openssl_pkey_get_details($public);
-        if (! RouteDomain::isValid($domain) || ! is_array($subject) || ($subject['commonName'] ?? null) !== $domain
+        if (! RouteDomain::isValid($domain) || ! is_array($subject) || (! $oldRequest && ($subject['commonName'] ?? null) !== 'Orbit')
             || ! is_array($key) || ($key['type'] ?? null) !== OPENSSL_KEYTYPE_RSA || ($key['bits'] ?? null) !== 2048) {
             throw $this->invalidRequest();
         }
@@ -31,6 +33,7 @@ final readonly class GatewayLeafCertificateSigner
             timeout: 10, input: $request, maxOutputBytes: 32768));
         $sanCount = preg_match_all('/X509v3 Subject Alternative Name:\s*([^\r\n]+)/', $inspection->stdout, $matches);
         if (! $inspection->succeeded() || $inspection->truncated || $sanCount === false || $sanCount > 1
+            || (! $oldRequest && $sanCount !== 1)
             || ($sanCount === 1 && trim($matches[1][0]) !== 'DNS:'.$domain)) {
             throw $this->invalidRequest();
         }

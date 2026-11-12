@@ -51,7 +51,9 @@ On a Node of the [build list](/reference/development-containers#the-build-list),
 
 Every other Instance of the Project is a clone of that `default` ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd)). Orbit copies the default's newest seed snapshot, a ZFS clone, and gives the copy its own address, ACL and T3 port. It clones the default's database on the same Database server, brings in the Instance's branch, and writes `.env`, the agent settings and `/etc/orbit/instance`. Then it starts FrankenPHP and T3, publishes the Route, and records the T3 server with the [Conn layer](/reference/conn#instance-servers). The branch is the matching origin branch, or a new branch at the seed's commit. [Create](/reference/development-containers#create) has the details.
 
-A failed create leaves the container stopped, with its workspace; the same command resumes it.
+A failed or cancelled create keeps its reservation, runtime, and any container, workspace, owned databases, test databases and role until the owner acts. A refused retry removes none of them. After work starts, Orbit attempts to stop the container and withdraw the Route. Compensation can fail; its step then stays failed. Shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live.
+
+Its Operation result names `recovery.state=retained_for_retry`, the create identity and the destroy path. Retry with a new idempotency key and the original options, including the source selection and Database server. A clone can be removed with `instance:destroy INSTANCE --yes --force`; container-default removal remains unavailable.
 
 The API answers `202` with a queued Operation after recording the create, before work on the Node starts. Clients follow that Operation as usual. While it waits to start, another create for the same name is refused with `operation.target_busy`; a replay with the same Idempotency-Key returns the original Operation.
 
@@ -71,7 +73,7 @@ The Instance and its Route become active only after every step succeeds. A succe
 
 Repeating the command for an Instance that is already created succeeds with `Skipped — already created (instance.exists)`.
 
-A failed create withdraws the Route it published: the Caddy site, the PHP pool, the private DNS records and the certificate folders. It keeps the reserved Instance, its checkout, its Processes and its database, marked failed; `instance:destroy` removes them. The task keeps the failed step and its error code, so nothing on the Node is needed to see what failed. A setup step that is missing or not executable fails with `instance.setup_step_unavailable`, naming the step and the Node. Any other setup failure is `instance.setup_step_failed`.
+A failed create attempts to withdraw the Route it published: the Caddy site, the PHP pool, the private DNS records and the certificate folders. Compensation can fail; its step then stays failed. It keeps the Instance, its checkout, its Processes and its database for retry. The Instance stays `reserved` or `source_resolved`, with its failed step and error code; an unactivated Route stays `pending`. The task keeps the failed step and its error code, so nothing on the Node is needed to see what failed. A setup step that is missing or not executable fails with `instance.setup_step_unavailable`, naming the step and the Node. Any other setup failure is `instance.setup_step_failed`.
 
 Run the command again with a new idempotency key once the task has ended, or run `instance:destroy` first.
 

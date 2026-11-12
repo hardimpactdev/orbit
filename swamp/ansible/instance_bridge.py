@@ -24,6 +24,8 @@ REFRESH_BUDGET_SECONDS = 30
 LIFECYCLE_BUDGET_SECONDS = 300
 # Incus requests retain #3348's --max-time 5; this is not a global writer limit.
 CURL_TIMEOUT_SECONDS = 5
+# Keep the complete health document below the existing agent's 4096-byte limit.
+MAX_HEALTH_WARNINGS = 20
 
 
 class PolicyError(Exception):
@@ -275,6 +277,27 @@ def confirm_records(root, current, staged, retiring, resolved, config):
     return changed
 
 
+def refresh_health(root, reconcile, warnings):
+    """Keep existing error fences; report a bounded sample of unresolved intent."""
+    health = root / 'health.json'
+    previous = json.loads(health.read_text()) if health.exists() else {'error_code': None}
+    if not reconcile and (root / 'reconcile.pending').exists():
+        code = previous.get('error_code') or 'instance.bridge_state_unresolved'
+    elif reconcile or not unresolved_health(root):
+        code = None
+    else:
+        code = previous['error_code']
+    report = {'error_code': code}
+    if warnings:
+        report.update(warning_count=len(warnings), warnings=[])
+        for warning in warnings[:MAX_HEALTH_WARNINGS]:
+            sample = {**report, 'warnings': report['warnings'] + [warning]}
+            if len((json.dumps(sample, sort_keys=True) + '\n').encode()) >= 4096:
+                break
+            report = sample
+    return state_file(root, 'health', report)
+
+
 def apply_locked(root, incoming, reconcile, withdraw, deadline):
     remaining(deadline)
     if withdraw and (incoming is None or not reconcile):
@@ -313,9 +336,23 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
                 host, port = resolve([previous], '')[0]
                 target = {'host': host, 'port': port}
             retiring.append((path, row, target))
-    nat = subprocess.check_output(['iptables-save', '-t', 'nat'], text=True, timeout=remaining(deadline)) if not withdraw and any(row['docker'] for row in endpoints) else ''
+    docker = any(row['docker'] for row in endpoints)
+    try:
+        nat = subprocess.check_output(['iptables-save', '-t', 'nat'], text=True, timeout=remaining(deadline)) if not withdraw and docker else ''
+    except (OSError, subprocess.SubprocessError):
+        if incoming is not None:
+            raise
+        nat = ''  # A failed read, like an empty snapshot, cannot judge publications.
+    if incoming is None and docker and not any(line.startswith('-A DOCKER ') for line in nat.splitlines()):
+        # A shared Docker snapshot with no rows cannot judge any publication.
+        # Do not touch the ACL or endpoint records, including direct endpoints.
+        return refresh_health(root, False, [
+            {'code': 'instance.container_endpoint_unresolved', 'host': row['host'], 'port': row['port']}
+            for row in endpoints if row['docker']])
     resolved = {}
-    for endpoint in endpoints:  # Resolve the entire set before any file or ACL mutation.
+    active = []
+    warnings = []
+    for endpoint in endpoints:  # Admission stays strict; refresh isolates unjudgeable publications.
         if withdraw:
             previous = recorded.get((endpoint['host'], endpoint['port']), {})
             if previous.get('docker') != endpoint['docker'] or 'translated' not in previous:
@@ -324,10 +361,19 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
             target = previous['translated']
             targets = resolve([{'host': target['host'], 'port': target['port'], 'docker': False}], '')
         else:
-            targets = resolve([endpoint], nat)
+            try:
+                targets = resolve([endpoint], nat)
+            except PolicyError:
+                if incoming is not None:
+                    raise
+                warnings.append({'code': 'instance.container_endpoint_unresolved',
+                                 'host': endpoint['host'], 'port': endpoint['port']})
+                continue
         host, port = targets[0]
         endpoint['translated'] = {'host': host, 'port': port}
         resolved[(host, port)] = max(resolved.get((host, port), 0), endpoint['admitted_at'])
+        active.append(endpoint)
+    endpoints = active
     changed = 0
     # Stage outside the inventory. Only confirmed ACL tuples become refresh input.
     staged = []
@@ -348,12 +394,7 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
         state_file(root, 'pending', remove=True)
     # Only a full refresh/converge proves Node-wide health; a successful attach checks its own subset.
     if incoming is None or reconcile:
-        health = root / 'health.json'
-        if not reconcile and (root / 'reconcile.pending').exists():
-            if not health.exists() or json.loads(health.read_text()).get('error_code') is None:
-                changed += state_file(root, 'health', {'error_code': 'instance.bridge_state_unresolved'})
-        elif reconcile or not unresolved_health(root):
-            changed += state_file(root, 'health', {'error_code': None})
+        changed += refresh_health(root, reconcile, warnings)
     return changed
 
 

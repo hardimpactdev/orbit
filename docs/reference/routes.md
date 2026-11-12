@@ -5,11 +5,11 @@ covers:
   - apps/gateway/app/{Domain,Actions,Infrastructure,Data}/Routes/**
   - apps/gateway/app/Http/{Controllers/Api/RoutesController.php,Requests/Routes/**}
   - apps/gateway/{app/Models/{Route,RouteTarget,RouteCustomProxy}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/gateway/app/Infrastructure/AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock,RemoteAppDevCertificateManager,RemoteAppDevRouteFirewallManager}.php
+  - apps/gateway/app/Infrastructure/{AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock,RemoteAppDevCertificateManager,RemoteAppDevRouteFirewallManager},Certificates/GatewayLeafCertificateSigner}.php
   - apps/gateway/app/{Domain/AppDev/{DevelopmentServerEndpoint,PrivateDnsAnswerExpiry}.php,Infrastructure/Clusters/NativeClusterRouterOperationLock.php}
   - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentRouteProjector,NativeDevelopmentSourceAccess}.php
   - apps/gateway/{app/Domain/Instances/DevelopmentSourceAccess.php,database/migrations/*_instance_path_proxies_table.php}
-  - swamp/{ansible/route-create-site.yml,ansible/library/orbit_route_site.py,workflows/workflow-{operation-route-create,route-create-site,route-create-csr}.yaml}
+  - swamp/{ansible/route-create-site.yml,ansible/library/orbit_route_site.py,workflows/workflow-{operation-route-create,route-create-site,route-create-csr,route-certificate-publish,node-role-certificate-publish}.yaml}
 ---
 
 # Routes
@@ -387,6 +387,14 @@ The first [Node Caddy build](/reference/caddy-configuration#replaced-configurati
 Route publication, withdrawal, and rollback send private DNS children only to active Nodes with an active `vpn` role. A separate Gateway is a DNS client, so its `gateway` role does not make it a publication target. When both roles share a Node, that Node receives one child. The Node footprint stages the listener release and units; the publication child validates and writes its catalog before activating an installed but inactive socket. A missing socket remains a refusal.
 
 The Gateway prepares the runtime, certificates, Caddy sites, and firewall rules of a new Route before it publishes private DNS. It publishes DNS last and then marks the Route and Instance active. It does not wait for the application to answer successfully.
+
+### Certificate request forms
+
+The live Node workflows still put the domain in the common name. Development Instance create therefore has a 64-character domain limit, checked before an Operation starts with `route.domain_invalid`. DNS labels remain limited to 63 characters, and a full DNS name to 253. The signer accepts longer DNS names in the new request form so the accepting Gateway can release before the producers change.
+
+The Gateway accepts two CSR forms: common name equal to the admitted domain, with either no SAN or exactly that DNS SAN; or the fixed short common name `Orbit` with exactly one DNS SAN equal to the admitted domain. It always signs the admitted domain into the leaf SAN. Caddy, TLS probes and certificate reuse check SAN, so existing leaves remain valid.
+
+Remove the old request form only when no Node, queued or in-flight run, or supported rollback release can send it. The producers are `route-create-csr`, `route-certificate-publish`, `node-role-certificate-publish` and the remaining agent producer in [dev_certificates.rs](https://github.com/hardimpactdev/orbit/blob/main/apps/agent/src/commands/dev_certificates.rs#L313). Refreshing workflows alone does not retire that agent or old rollback releases.
 
 ### Node scope
 
