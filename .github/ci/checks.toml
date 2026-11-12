@@ -2733,9 +2733,11 @@ inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts"
 
 [[fixture]]
 file = "swamp/tests/ansible_route_site_test.py"
-cost = 15
+cost = 23
 slices = false
 inputs = [
+  "swamp/tests/fixtures/route-access.json",
+  "apps/gateway/app/Domain/Routes/RouteWebRootCommands.php",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/library/orbit_route_site.py",
   "swamp/ansible/route-create-site.yml",
@@ -2756,6 +2758,9 @@ inputs = [
 "test_same_content_destination_symlinks_are_replaced_without_touching_targets" = 1
 
 "test_site_publish_renames_the_validated_inode_with_final_metadata_before_interruption" = 1
+
+"test_real_site_phase_skips_missing_optional_storage_but_requires_the_web_root" = 7
+"test_route_ansible_failures_reach_stderr_and_module_diagnostics_never_expose_content" = 1
 
 [[fixture]]
 file = "swamp/tests/instance_destroy_git_test.py"
@@ -2834,3 +2839,12 @@ inputs = [
 "test_ansible_bootstrap_swamp_front" = 6
 "test_validated_inode_has_final_metadata_at_interrupted_rename" = 6
 "test_shape_live_proof_stages_validates_and_renames" = 1
+
+[[fixture]]
+file = "swamp/tests/instance_destroy_routeless_test.ts"
+cost = 2
+slices = false
+inputs = ["swamp/workflows/workflow-operation-instance-destroy.yaml"]
+[fixture.case_costs]
+"destroy skips withdrawal without publications including old admission without mutation keys" = 1
+"Route-less checkout and linked worktree skip the child and still remove the real source" = 1

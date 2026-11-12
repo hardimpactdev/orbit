@@ -971,7 +971,7 @@ For a web-serving Project, its `checkout` phase also gives Caddy its access to t
 
 The withdrawal playbook `route-withdraw.yml` keeps its remote tasks few, because each costs about 0.4 s: one command checks every file it will replace, and one removes every certificate folder.
 
-The Route playbooks `route-create-site.yml` and `route-withdraw.yml` work the same way. The withdrawal has two phases, `read` and `apply`: between them Swamp composes the result and writes `read.json` and `plan.json` into the run folder, because a Caddyfile is too large for a step output or an environment value.
+The Route playbooks `route-create-site.yml` and `route-withdraw.yml` work the same way. Route access rows distinguish optional Laravel storage paths from required web roots. The site phase stats optional paths and grants only those present; it never creates checkout folders. The withdrawal has two phases, `read` and `apply`: between them Swamp composes the result and writes `read.json` and `plan.json` into the run folder, because a Caddyfile is too large for a step output or an environment value.
 
 Task VM host preparation belongs to the [base refresh](/reference/compute-drivers#prepare-an-incus-host). Its shared Ansible phase prepares both native-ZFS and loop-backed pools; loop hosts receive a 2 GiB ARC cap to retain memory for their own services. Before the first guest boot, it opens catalog-owned DHCP input on the task bridge and DNS input to the bridge address, as well as forwarding. Settings removal and reachable Node removal withdraw the three input rules through the same Ansible phase. This lets a guest obtain its address and resolve package servers on a host with default-deny input.
 

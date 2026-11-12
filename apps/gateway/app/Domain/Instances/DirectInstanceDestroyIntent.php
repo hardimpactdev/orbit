@@ -89,6 +89,9 @@ final readonly class DirectInstanceDestroyIntent
         $beforeSites = $sites->all();
         $previousRoutes = [];
         foreach ($attached as $route) {
+            if (! $route->sites_published) {
+                continue;
+            }
             $removalInventory = app(NativeRouteRemovalIntent::class)->capture($route);
             $leaves = [];
             $nodeIds = [];

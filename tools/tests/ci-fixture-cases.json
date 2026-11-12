@@ -591,10 +591,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 → v5.12.0",
-      "exact script output: v5.42.0 → v5.43.0",
-      "exact script output: v5.49.0 → v5.50.0",
-      "exact script output: v5.50.0 → v5.50.1",
+      "exact script output: v5.11.0 \u2192 v5.12.0",
+      "exact script output: v5.42.0 \u2192 v5.43.0",
+      "exact script output: v5.49.0 \u2192 v5.50.0",
+      "exact script output: v5.50.0 \u2192 v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -1995,7 +1995,7 @@
     ]
   },
   "swamp/tests/ansible_route_site_test.py": {
-    "source_sha256": "10bffda334426845865b174a4851f2011b17acbb1275ba36b607678846365bab",
+    "source_sha256": "6f4dbe4ea2789f037a25d58b772ccf044528799415da8ef4b3826c404ae1544f",
     "cases": [
       "test_certificate_links_account_copy_modes_and_literal_caddy_text",
       "test_existing_file_mode_drift_clears_unwanted_special_bits",
@@ -2007,6 +2007,8 @@
       "test_production_workspace_app_url_links_and_php_tasks_are_unchanged",
       "test_csr_action_owns_folder_and_key_before_public_request_returns",
       "test_real_production_phase_keeps_access_app_url_php_links_and_reload",
+      "test_real_site_phase_skips_missing_optional_storage_but_requires_the_web_root",
+      "test_route_ansible_failures_reach_stderr_and_module_diagnostics_never_expose_content",
       "test_reused_input_is_read_only_and_child_cleanup_keeps_its_own_folder"
     ]
   },
@@ -2039,6 +2041,13 @@
       "test_deploy_fetch_refuses_legacy_store_even_with_a_helper",
       "test_nested_ignored_pin_refuses_even_when_a_parent_pin_is_selected",
       "test_production_phase_removes_read_only_source_mount_after_failure_without_downtime"
+    ]
+  },
+  "swamp/tests/instance_destroy_routeless_test.ts": {
+    "source_sha256": "22df42829a6864b2d6ddd811d80e7b280179724ca7c91410a5d168021c5171fc",
+    "cases": [
+      "destroy skips withdrawal without publications including old admission without mutation keys",
+      "Route-less checkout and linked worktree skip the child and still remove the real source"
     ]
   }
 }

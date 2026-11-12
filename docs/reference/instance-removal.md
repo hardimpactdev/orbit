@@ -50,9 +50,13 @@ It runs the Project teardown commands, passed as run inputs, one command per ste
 
 Known limits: Git data of nested or bare repositories inside the checkout with outside dependents is not scanned. A moved worktree behind an unreadable parent is unknown, so admission proceeds with its warning. No lock excludes external Git writers. A worktree created after admission is not caught: the window includes the queue wait and the entire run until source removal. An admitted retry uses the saved intent. Dispatch never checks dependencies again, even if Git facts changed. Transfer uses the same admission-only boundary in its separate PR #3451.
 
+A sole pending or failed Route with `sites_published=false` has no publication to withdraw. Its record still goes with the Instance. A Route that published and later failed keeps `sites_published=true` and is withdrawn normally.
+
+The Route must belong to the Project, target exactly this Instance and have safe placement. Multiple owning Routes refuse. These checks follow the worktree admission check and precede Schedule or record changes.
+
 Three cases skip work:
 
-- An Instance without a Route skips the Route withdrawal and its DNS records. A sole pending or failed Route with `sites_published=false` has no publication to withdraw; its record still goes with the Instance. A Route that published and later failed keeps `sites_published=true` and is withdrawn normally. The Route must still belong to the Project, target exactly this Instance and have safe placement; multiple owning Routes refuse. These checks follow the worktree admission check and precede Schedule or record changes.
+- An Instance without a Route skips the Route withdrawal and its DNS records.
 - An Instance removal waits no DNS grace: the name goes away, so no client has a new target to move to.
 - An Instance removal applies each published Caddyfile and DNS state once: the Route withdrawal composes the captured states in order against what the Node holds and writes the result once.
 
