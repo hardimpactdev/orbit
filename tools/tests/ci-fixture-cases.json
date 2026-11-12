@@ -1867,7 +1867,7 @@
     ]
   },
   "swamp/tests/ansible_instance_mail_line_test.py": {
-    "source_sha256": "9d777dc56fb12bc2fda8442d069d9f8136f5bd1f0368c27ae9fa36d659a89539",
+    "source_sha256": "554ef8c1c6e01c2d239b9c15fd474aef45677f5d369cfba01163848dc039a41f",
     "cases": [
       "test_exact_lf_crlf_and_no_final_newline_preserve_every_other_byte",
       "test_all_nonexact_forms_duplicates_and_multiline_quote_guards_are_preserved",

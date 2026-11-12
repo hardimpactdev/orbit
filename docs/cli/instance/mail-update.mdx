@@ -26,7 +26,7 @@ orbit instance:mail:update 42 --json
 | `instance-id` | Numeric Instance ID. |
 | `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
 
-Orbit prepares the SMTP path and the two loopback forwarders first. A Project listener or foreign unit succeeds with `mail_port_in_use` or `mail_unit_conflict` and leaves `.env` unchanged. Otherwise, Orbit applies the one-line rule. There is no prompt.
+Orbit prepares the SMTP path and the two loopback forwarders first. A Project listener or foreign unit succeeds with `mail_port_in_use` or `mail_unit_conflict` and leaves `.env` unchanged. Otherwise, Orbit matches exactly `MAIL_MAILER=log`, with or without matching single or double quotes, and replaces only `log` with `smtp`, preserving the quote style and line ending. The same three `smtp` forms return `already_smtp`. There is no prompt.
 
 The result names the path status, forwarder ports, and mailer outcome: `changed`, `left_as_written`, `not_present`, or `already_smtp`. A preserved occurrence reports only its 1-based line numbers. Mentions in comments and other values also count. No value or file content appears. Repeating a completed update writes nothing and restarts nothing.
 
