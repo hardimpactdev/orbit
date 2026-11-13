@@ -124,13 +124,14 @@ it('retains the admission claim when the Gateway machine phase fails after DNS i
     expect(app(GatewayPrivateDnsState::class)->owned($node->id))->toBeTrue();
 });
 
-it('records that a failed convergence left the Node untouched only when it failed before its first change', function (string $step, string $status, bool $untouched): void {
+it('keeps the untouched fact only when a failed run stopped before its first change', function (string $step, string $status, bool $untouched): void {
     Http::preventStrayRequests();
     $node = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'untouched', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.6',
         'wireguard_ip' => '10.44.0.6', 'user' => 'orbit',
     ]));
-    $assignment = $node->roles()->create(['role' => RoleName::Database, 'status' => 'provisioning']);
+    // A first add opens the fact; this run can only keep it or clear it.
+    $assignment = $node->roles()->create(['role' => RoleName::Database, 'status' => 'provisioning', 'node_untouched' => true]);
     $operation = Operation::query()->create(['kind' => 'node.role_add', 'target_type' => 'node', 'target_id' => $node->id,
         'node_id' => $node->id, 'status' => 'running', 'sequence' => 1, 'attempts' => 1,
         'input' => ['_role' => ['assignment_id' => $assignment->id, 'role' => 'database', 'created' => true,

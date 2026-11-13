@@ -102,9 +102,7 @@ final readonly class AdmitNodeRoleOperationAction
             }
             $assignment = $this->assign->execute($node, $role);
             $created = $assignment->wasRecentlyCreated;
-            if (! $created) {
-                $assignment->claimConvergence();
-            }
+            $created ? $assignment->startFirstAdd() : $assignment->claimConvergence();
             if ($role === RoleName::Gateway) {
                 app(GrantGatewayRoleAccessAction::class)->execute($node);
             }
@@ -164,6 +162,7 @@ final readonly class AdmitNodeRoleOperationAction
                     'reason' => 'instances_attached', 'role' => $role->value,
                 ]);
             }
+            NodeRoleRemoveInput::refuseOffline($offline, $deleted);
             $input = ['node_id' => $node->id, 'role' => $role->value, 'purge_data' => $purgeData, 'offline' => $offline];
             if ($assignment->neverTouchedNode()) {
                 return $this->recordRemoval($node, $assignment, $input, $requestId);

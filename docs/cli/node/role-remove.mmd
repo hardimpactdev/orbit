@@ -30,15 +30,18 @@ sequenceDiagram
   %%> - the role is `active` or `failed`; a `provisioning` or `removing` role is refused until its claim is stale
   %%> - `app-dev` and `app-prod` have no Route targets, `ingress` no public Routes, and `analytics` no tracking hosts
   %%> - one add, converge or remove Operation per Node (`operation.target_busy`); a second removal after the first finished finds no such role (`http.404`)
+  %%> - `--offline` is refused on both paths below (`operation.kind_unavailable`)
   %%> Then:
   %%> - the Gateway reads the recorded state of the assignment and picks one of the two paths below
   alt the role never touched the Node
     Note over GW: Delete the role
     %%> When:
-    %%> - the Gateway recorded that the assignment failed before its first step that changes the Node, and no later run started
-    %%> - an assignment from before that record, and one with any later run, takes the withdrawal below
+    %%> - every run for the assignment, from its first add on, failed at `Read the OS release` or `Require supported Ubuntu`
+    %%> - one run that ended any other way keeps the assignment on the withdrawal below for good
+    %%> - so does an assignment from `node:add`, a relocation or Metrics, or from before this record
     %%> Result:
     %%> - the assignment and its settings are deleted; no run starts and nothing else is checked on the Node
+    %%> - `--purge-data` is accepted and has no effect
     GW-->>CLI: 202 Accepted<br/>task ID, already succeeded
     %%> What you get:
     %%> - the task ID, at once; the task has ended `succeeded`

@@ -21,7 +21,7 @@ use Illuminate\Support\Carbon;
  * @property LifecycleStatus $status
  * @property string|null $failed_step
  * @property string|null $error_code
- * @property bool $node_untouched A convergence run failed before its first step that changes the Node, and no run has claimed the assignment since.
+ * @property bool $node_untouched No run for this assignment is known to have changed the Node. Only startFirstAdd() sets it; every other write keeps or clears it.
  * @property Carbon|null $updated_at
  * @property-read Node $node
  * @property-read Cluster|null $cluster
@@ -140,7 +140,7 @@ final class NodeRole extends Model
             'status' => $status->value,
             'failed_step' => null,
             'error_code' => null,
-            'node_untouched' => false,
+            'node_untouched' => $status === LifecycleStatus::Provisioning && $this->neverTouchedNode(),
             'updated_at' => $this->freshTimestampString(),
         ]);
 
@@ -161,7 +161,18 @@ final class NodeRole extends Model
         ]);
     }
 
-    /** The recorded fact that removal needs no run: nothing of the role was ever applied to the Node. */
+    /**
+     * Opens the fact for a first add: no run has worked on this new assignment yet. This is the only
+     * write that sets `node_untouched`. A convergence claim carries it forward only from a role that
+     * neverTouchedNode(), and a run that ends any way other than `failed` at a read-only step clears it
+     * for the life of the row. A claim of a stale `provisioning` row clears it, because that run's result never arrived.
+     */
+    public function startFirstAdd(): void
+    {
+        $this->update(['node_untouched' => true]);
+    }
+
+    /** The recorded fact that removal needs no run: every run for this assignment failed before it changed the Node. */
     public function neverTouchedNode(): bool
     {
         return $this->status === LifecycleStatus::Failed && $this->node_untouched;
@@ -173,7 +184,8 @@ final class NodeRole extends Model
      * the drift. A failed `gateway` convergence that demoted the role locked the Gateway out of its
      * own access checks.
      *
-     * `$nodeUntouched` records that the run failed before its first step that changes the Node.
+     * `$nodeUntouched` says this run failed before its first step that changes the Node. It can only
+     * keep the fact or clear it, never set it.
      */
     public function markConvergenceFailed(string $step, string $errorCode, bool $nodeUntouched = false): void
     {
@@ -185,7 +197,7 @@ final class NodeRole extends Model
             'status' => LifecycleStatus::Failed,
             'failed_step' => "converge:{$step}",
             'error_code' => $errorCode,
-            'node_untouched' => $nodeUntouched,
+            'node_untouched' => $nodeUntouched && $this->node_untouched,
         ]);
     }
 

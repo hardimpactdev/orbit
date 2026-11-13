@@ -18,6 +18,17 @@ final readonly class NodeRoleRemoveInput
     public function __construct(private AgentDelivery $delivery, private NodeRoleFirewallInput $firewall,
         private RoleRegistry $roles, private NodeRoleRuntimeInput $runtime) {}
 
+    /**
+     * Role removal reaches its online Node, or the record proves it need not, so `--offline` and a
+     * deleted Node are refused before either path. AdmitNodeRoleOperationAction::remove() calls it once.
+     */
+    public static function refuseOffline(bool $offline, bool $deleted): void
+    {
+        if ($offline || $deleted) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Role removal requires its admitted online Node.', 422);
+        }
+    }
+
     /** @return array<string,mixed> */
     public function capture(Node $node, NodeRole $assignment, bool $purgeData = false, bool $offline = false, bool $deleted = false, ?NodeRole $desiredAssignment = null): array
     {
@@ -26,7 +37,7 @@ final readonly class NodeRoleRemoveInput
             || ! $this->roles->definition($role)->mutable) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Removal requires its claimed Node role assignment.', 422);
         }
-        if (($role === RoleName::AppDev && $node->instances()->exists()) || $offline || $deleted) {
+        if ($role === RoleName::AppDev && $node->instances()->exists()) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Role cleanup requires its admitted online Node and detached Instances.', 422);
         }
 

@@ -31,7 +31,9 @@ In a terminal, an omitted Node is chosen from an interactive list and an omitted
 
 The command removes a role that is `active` or `failed`. A role that is `provisioning` or `removing` is refused until its claim is stale. A failed removal leaves the role `failed` at `remove:STEP` with the step's own error code. Finished steps stay and nothing is rolled back; run the same command again, because each removal step is safe to repeat. A failed public SSH restore leaves the Node reachable.
 
-A role whose convergence failed before its first step that changes the Node is removed from the Gateway record alone. The Gateway keeps that fact on the assignment. It starts no run and does not contact the Node, and the Operation ends `succeeded` at once. This covers a role that failed at `Read the OS release` or `Require supported Ubuntu`. Any later `node:role:add --converge` run, and any assignment recorded before the Gateway kept this fact, takes the full withdrawal above. After the record is gone, `node:role:add` adds the role again.
+A role whose runs never changed the Node is removed from the Gateway record alone. The Gateway keeps that fact on the assignment. It is true only while every run for the assignment, from its first add on, failed at `Read the OS release` or `Require supported Ubuntu`. One run that ended any other way makes it false for good. So does a lost run result. It is also false for an assignment that `node:add`, a relocation or Metrics created, and for one that existed before the Gateway kept this fact.
+
+When the fact holds, the Gateway starts no run and does not contact the Node, and the Operation ends `succeeded` at once. `--purge-data` is accepted there and has no effect. `--offline` is refused with `operation.kind_unavailable` on both paths. After the record is gone, `node:role:add` adds the role again.
 
 Only one add, converge or remove runs on a Node at a time; a second call is refused with `operation.target_busy`. A role the Node does not hold, including one a finished removal already took, returns `http.404`, except `ingress`: a confirmed removal of an `ingress` role that the Node does not hold succeeds and changes nothing.
 
