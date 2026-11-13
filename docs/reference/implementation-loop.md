@@ -779,6 +779,8 @@ The migration source fixture runs one unprivileged Ansible play, fakes Git and t
 
 A linked checkout can move before its owner; a registered descendant still refuses. Linked fixtures verify file retention, independent Git recovery and exact unregister. Scope fixtures run the shipped retirement tasks on real Git repositories: linked checkouts protect their own HEAD while owners protect every branch and stash. An interrupted unregister keeps an incomplete-retirement failure on repeat. Batch phase plays in one Ansible invocation to keep each fixture within three playbook launches; update registered case names and costs together.
 
+The last-worktree fixtures move a worktree and retire its owner in one batch, past a prunable entry whose folder is gone. A sibling, a locked prunable entry or an owner edit still refuses.
+
 The mail fixture executes the production prefix whitelist, the reviewed bare-CR and comment-grouping regressions, and a realistic thirty-line file. It preserves `lines` beside `guard_line` and uses three Ansible launches. Gateway tests compare every admitted shape with installed phpdotenv; Swamp fixtures need no PHP or Composer installation.
 
 The Route site fixture runs unprivileged. It checks the shipped file converger and real OpenSSL CSR action, and runs one real Ansible production phase for workspace access, `APP_URL`, environment links and PHP-FPM publication. Other cases exercise validation failure and retry without repeating playbook launches.

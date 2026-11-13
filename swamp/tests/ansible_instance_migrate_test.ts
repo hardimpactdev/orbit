@@ -967,28 +967,89 @@ Deno.test({
   },
 });
 
-Deno.test({
-  name: "an owner refuses retirement while its child is in the same retirement batch",
-  ignore: !hasAnsible,
-  fn() {
-    const f = fixture("feature");
-    try {
-      f.migrate.retire.push({ path: f.main, mirror: `${f.folder}/mirror/7.git`, common_of: f.checkout });
-      f.write();
-      const quiesce = f.run("container");
-      assert(!quiesce.ok, quiesce.output);
-      assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
-      assert(f.result().error_message.includes(f.checkout));
-      assert(f.result().error_message.includes("Other worktrees (1 total; first 20)"));
-      assert(exists(f.checkout));
-      assert(exists(`${f.main}/.git`));
-      assert(exists(f.migrate.awake.path));
-      assertEquals(f.state().containers ?? {}, {});
-    } finally {
-      f.cleanup();
-    }
-  },
-});
+// The last worktree of a moved default plans the owner's old checkout with common_of: its own registration is not "another" worktree.
+for (const blocker of [null, "prunable", "sibling", "locked-prunable", "sibling-before-retire", "owner-change"] as const) {
+  Deno.test({
+    name: blocker === null || blocker === "prunable"
+      ? `the last worktree moves into a standalone workspace and retires its owner checkout in the same batch${blocker ? " past a prunable entry whose folder is gone" : ""}`
+      : `the owner of the last worktree still refuses retirement for ${blocker}`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture("feature");
+      try {
+        f.migrate.retire.push({ path: f.main, mirror: `${f.folder}/mirror/7.git`, common_of: f.checkout });
+        f.write();
+        const retainedOf = (path: string) =>
+          `${f.checkout}.orbit-retired-git/${createHash("sha256").update(new TextEncoder().encode(path)).digest("hex")}`;
+        // Registered elsewhere, like the /tmp worktrees of a real owner: the folder can be removed without Git.
+        const stale = `${f.folder}/stale-worktree`;
+        if (blocker === "prunable" || blocker === "locked-prunable") {
+          git(f.main, "worktree", "add", "--quiet", "-b", "stale", stale);
+          if (blocker === "locked-prunable") git(f.main, "worktree", "lock", stale);
+          Deno.removeSync(stale, { recursive: true });
+        }
+        if (blocker === "sibling") git(f.main, "worktree", "add", "--quiet", "-b", "sibling", `${f.apps}/sibling`);
+        if (blocker === "owner-change") Deno.writeTextFileSync(`${f.main}/index.php`, "<?php echo 'owner edit';\n");
+        if (blocker === "owner-change" || blocker === "sibling" || blocker === "locked-prunable") {
+          const before = gitFiles(f.apps);
+          const refused = f.run("container");
+          assert(!refused.ok, refused.output);
+          assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
+          const other = blocker === "sibling" ? `${f.apps}/sibling` : stale;
+          assert(f.result().error_message.includes(blocker === "owner-change"
+            ? 'Changed files (1 total; first 20): [" M index.php"]' : `Other worktrees (1 total; first 20): ["${other}"]`));
+          if (blocker === "owner-change") assert(f.result().error_message.includes("Other worktrees (0 total; first 20)"));
+          assertEquals(gitFiles(f.apps), before);
+          assert(exists(f.migrate.awake.path));
+          assertEquals(f.state().containers ?? {}, {});
+          return;
+        }
+        const head = git(f.checkout, "rev-parse", "HEAD");
+        f.build();
+        // The workspace is a repository of its own on the recorded branch: no gitfile, no alternates, complete objects.
+        const workspace = `${f.rootfs}/srv/workspace`;
+        assert(Deno.statSync(`${workspace}/.git`).isDirectory);
+        assertEquals(f.workspace("rev-parse", "--path-format=absolute", "--git-common-dir"), `${workspace}/.git`);
+        assert(!exists(`${workspace}/.git/objects/info/alternates`));
+        f.workspace("fsck", "--full", "--strict");
+        assertEquals(f.workspace("rev-parse", "HEAD"), head);
+        assertEquals(f.workspace("symbolic-ref", "--short", "HEAD"), "feature");
+        assertEquals(f.read("index.php"), "<?php echo 2;\n");
+        if (blocker === "sibling-before-retire") {
+          // A worktree added to the owner after the container and quiesce checks still blocks at retirement.
+          const sibling = `${f.apps}/sibling`;
+          git(f.main, "worktree", "add", "--quiet", "-b", "sibling", sibling);
+          const owner = gitFiles(f.main);
+          const refused = f.run("retire");
+          assert(!refused.ok, refused.output);
+          assertEquals(f.result().error_code, "instance.migrate_retirement_blocked");
+          assert(f.result().error_message.includes(`Other worktrees (1 total; first 20): ["${sibling}"]`));
+          // Cutover has happened: the container stays the Instance, the owner stays intact at its path.
+          assertEquals(f.state().containers["instance-8"].status, "Running");
+          assertEquals(gitFiles(f.main), owner);
+          assertEquals(git(sibling, "symbolic-ref", "--short", "HEAD"), "sibling");
+          assert(!exists(retainedOf(f.main)));
+          return;
+        }
+        const retire = f.run("retire");
+        assert(retire.ok, retire.output);
+        assertEquals(f.state().containers["instance-8"].status, "Running");
+        // Nothing is deleted: both old checkouts are retained beside the worktree's path, each a usable repository.
+        assert(!exists(f.checkout));
+        assert(!exists(f.main));
+        assertEquals(git(retainedOf(f.checkout), "rev-parse", "HEAD"), head);
+        assertEquals(git(retainedOf(f.checkout), "rev-parse", "--path-format=absolute", "--git-common-dir"), `${retainedOf(f.checkout)}/.git`);
+        assertEquals(git(retainedOf(f.main), "symbolic-ref", "--short", "HEAD"), "main");
+        assert(Deno.statSync(`${retainedOf(f.main)}/.git`).isDirectory);
+        // The moving worktree's registration is gone; a prunable entry stays in the retained .git, never pruned.
+        assertEquals(git(retainedOf(f.main), "worktree", "list", "--porcelain").match(/^worktree /gm)?.length, blocker ? 2 : 1);
+        assertEquals(f.workspace("rev-parse", "HEAD"), head);
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
+}
 
 Deno.test({
   name: "a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact",

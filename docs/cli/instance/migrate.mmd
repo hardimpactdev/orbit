@@ -126,7 +126,7 @@ sequenceDiagram
     %%> - atomically moves each old checkout under `<checkout>.orbit-retired-git/<sha256 of original path>`; the retained root is beside the migrating Instance's checkout
     %%> - keeps every tracked, untracked and ignored file; for a linked worktree, copies the common objects/refs/reflogs and its index and private metadata into an independent .git, materializes alternates, and verifies recovery before removing only its identity-matched, now-missing owner registration
     %%> - records `retained_git_path` and `retained_git_at` on the Instance; `instance:show` and the Instance API expose them
-    %%> - writes the awake marker; owner retirement refuses while any other worktree is registered; linked retirement never changes the owner store or prunes another registration
+    %%> - writes the awake marker; owner retirement refuses while any other worktree is registered (not the moving worktree, not a prunable, unlocked entry whose folder is gone); linked retirement never changes the owner store or prunes another registration
     %%> If it fails:
     %%> - the container stays the Instance; the run fails with `instance.migrate_retire_failed`, and the source or retained checkout stays on the Node; a pending linked-unregister identity receipt makes repeat retirement fail explicitly
     SW-->>GW: Run succeeded<br/>terminal event

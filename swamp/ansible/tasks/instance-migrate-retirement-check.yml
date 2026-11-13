@@ -45,7 +45,7 @@
                     token[9:] for token in git('worktree', 'list', '--porcelain', '-z').split('\0')
                     if token.startswith('worktree ') and Path(token[9:]).resolve() != top
                     and Path(token[9:]).resolve().is_relative_to(top)]
-                result.update(git_dir=str(private), common_dir=str(common), linked=linked, descendants=descendants)
+                result.update(top=str(top), git_dir=str(private), common_dir=str(common), linked=linked, descendants=descendants)
             except (OSError, ValueError, subprocess.CalledProcessError):
                 result['valid'] = False
         else:
@@ -91,10 +91,12 @@
          and (retired.common_of is not defined
               or migrate_common | default('') == (retirement_identity.stdout | from_json).common_dir) }}
 
+# The owner of the moving worktree retires after it in the same batch: that worktree is not "another" worktree.
 - name: Keep the worktree's repository
   when: retired_worktree | bool
   ansible.builtin.set_fact:
     migrate_common: "{{ (retirement_identity.stdout | from_json).common_dir }}"
+    migrate_linked: "{{ (retirement_identity.stdout | from_json).top if retired.path == migrate.checkout else '' }}"
 
 - name: Check a checkout before retirement
   when: retired_worktree | bool or retired_repository | bool
@@ -109,6 +111,31 @@
         argv: "{{ retired_git + ['-C', retired.path, 'worktree', 'list', '--porcelain', '-z'] }}"
       register: retirement_worktrees
       changed_when: false
+    # A registration that Git marks prunable, that is not locked and whose folder is gone holds nothing to move or lose.
+    # It stays in the owner's .git; Orbit never prunes it.
+    - name: Read worktree registrations whose folder is gone
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import json, os, subprocess, sys
+            listed = subprocess.run(json.loads(sys.argv[1]) + ['-C', sys.argv[2], 'worktree', 'list', '--porcelain', '-z'],
+                                    env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0'}, check=True, capture_output=True, text=True)
+            gone = []
+            for record in listed.stdout.split('\0\0'):
+                fields = record.strip('\0').split('\0')
+                if not fields[0].startswith('worktree '):
+                    continue
+                path = fields[0][9:]
+                flags = {field.split(' ', 1)[0] for field in fields[1:]}
+                if 'prunable' in flags and 'locked' not in flags and not os.path.lexists(path):
+                    gone.append(path)
+            print(json.dumps(gone))
+          - "{{ retired_git | to_json }}"
+          - "{{ retired.path }}"
+      register: retirement_gone
+      changed_when: false
     - name: Read staged and unstaged tracked changes
       ansible.builtin.command:
         argv: [python3, "-I", '-', "{{ retired.path }}", guards]
@@ -119,7 +146,10 @@
       ansible.builtin.set_fact:
         retirement_other_worktrees: >-
           {{ (retirement_worktrees.stdout | regex_findall('(?:\A|\x00)worktree ([^\x00]+)')
-              | reject('equalto', retirement_checkout.stdout | trim) | list) if retired_repository | bool
+              | reject('equalto', retirement_checkout.stdout | trim)
+              | reject('equalto', migrate_linked | default('') if retired.common_of is defined else '')
+              | reject('in', retirement_gone.stdout | default('[]') | from_json) | list)
+             if retired_repository | bool
               else (retirement_identity.stdout | from_json).descendants }}
         retirement_changes: "{{ (retirement_status.stdout | from_json).tracked }}"
         retirement_submodules: "{{ (retirement_status.stdout | from_json).submodules }}"
