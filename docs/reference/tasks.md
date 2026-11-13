@@ -922,6 +922,17 @@ The setting defaults to true and does not depend on the Project slug. Provisioni
 
 Orbit writes an untracked `.mcp.json` into the workspace before a reviewer starts, unless the workspace already has one, tracked or not. It points at `{gateway origin}/mcp/search`, which lists only `search_tools` and `execute_tools`. The file is excluded from Git. The [MCP server](/reference/mcp) describes both endpoints.
 
+### Task copy
+
+A task of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on has no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) destroys it. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases). Turns, publish, prep and build do not run in a copy yet.
+
+| Part | Rule |
+| --- | --- |
+| Cap | `ORBIT_TASKS_COPIES_MAX` in the Gateway's `.env`, default 1: the task copies one Node holds at once. A start over it fails with `tasks.copy_capacity_full`, with no wait |
+| Model key | The copy's agent gets the fixed task model key, as every clone does. It is not per task. Per-task model keys are an open decision |
+| Failed create | The task is `failed`; Orbit destroys the copy with force. A failed destroy leaves the copy owned by the task until `task:cancel` or `instance:destroy --force` |
+| End | The task is `cancelled` when the copy's destroy succeeds. The cancel result records the copy's unpushed work |
+
 ### Workspace ownership
 
 When provisioning creates the workspace, it records the task as the workspace's owner, before any remote work. An owner is set only when the Instance is created: the database refuses any new owner afterwards. Deleting the task clears it. A task owns at most one Instance.
@@ -930,7 +941,7 @@ The owner is the only record of task workspace ownership:
 
 - A task holds only the workspace it owns. Orbit refuses to attach any other Instance to a task.
 - Claims, cancel, complete, and the sweep find and remove a task's workspace only through its owner, attached or not.
-- A task operation runs only in the workspace the task owns, on the task's ready task VM.
+- A task operation runs only in the workspace the task owns, on the task's ready task VM or in its task copy.
 - The name and branch `task-{id}` never make an Instance a task workspace. A task never removes your own Instance named or branched `task-{id}`.
 
 Task operations include agent turns, checks, pushes, commit signing, and `.mcp.json` writes. Orbit refuses them on any other Instance.
@@ -1612,4 +1623,4 @@ Pi writes and reviews code inside the VM. Swamp clears the old receipt, then sen
 
 ### Internal container workspace phases
 
-[Task Instance workspace phases](/reference/task-instance-workspace) define the internal evidence and export contract. `tasks.check` uses their [check phases](/reference/task-instance-workspace#check-phases) when a group owns a container Instance workspace. No public command creates that ownership yet.
+[Task Instance workspace phases](/reference/task-instance-workspace) define the internal evidence and export contract. `tasks.check` uses their [check phases](/reference/task-instance-workspace#check-phases) when a group owns a container Instance workspace: a [task copy](#task-copy).

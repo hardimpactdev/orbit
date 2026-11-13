@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design (agreed with Nick, 2026-11-07): a task start copies the host's base VM snapshot and gives the copy a fresh identity. There are no fixed VM identities: a place is only room under the host's capacity (`task_places`), and the VM is named `<host>-tvm-<n>` by its place number.
+  %% Orchestrator 2026-11-13: a task of a nested-fleet Project starts as a copy of its default Instance instead: a clone `task-<id>` that the task owns. Task VMs stay off in the live fleet.
   %% status: draft
   %% command: task:start
   %% kind: tasks.provision
@@ -12,62 +13,92 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant HUB as VPN hub<br/>over ssh
   participant VM as Task VM<br/>shark-tvm-3
-  Note over GW: Claim a task place<br/>mint an identity · database only
-  %%> Started by:
-  %%> - `task:start` for a todo group, from proof CI or feature work
-  %%> Result:
-  %%> - a group of a Project with `nested_fleet` on is refused at once with `operation.kind_unavailable` (503): no place, identity, workspace, wait or Operation is recorded, because only `instance:create` makes Instances of such a Project, as containers; a waiting Operation that reaches the claim fails with the same code
-  %%> - a group of any Project but the proof Project is refused at once with `task_vm.project_unsupported`: the base carries only the proof Project's checkout, so no free place can serve it, and it never joins the wait queue
-  %%> - a task place in the separate task pool; a full pool waits up to two hours without an identity or workspace
-  %%> - the lowest free place number under the capacity of the host with the most room: `shark-tvm-3`
-  %%> - a fresh identity: the Node record with its `app-dev` role, a WireGuard key pair, the agent secret and an SSH host key, pinned on the Node from the start so nothing is read back
-  %%> - the claim's Pi token and Pi models file in the vault; the file holds the model router guard origin and the one fixed model key, the same for every VM
-  opt no task place is free
-    Note over GW: Wait in the task queue<br/>first come, first served
+  Note over GW: Decide where the task runs<br/>copy or task VM
+  %%> What it does:
+  %%> - `InstancePlacement::taskRuntime` reads the Project's `nested_fleet` flag once: on, the task starts as a copy of the Project's default Instance; off, it takes a task VM
+  %%> - no other step reads the flag; the task VM steps refuse a copy Project as before
+  alt the Project's tasks run as copies
+    Note over GW: Admit the copy's create<br/>instance.create · task-TASK
+    %%> Requirements:
+    %%> - the task is in todo and holds no workspace; otherwise `tasks.not_todo` or `tasks.group_closed`
+    %%> - the Project's default Instance is active and running, with a seed snapshot; otherwise HTTP 409 `tasks.copy_source_unavailable`, also for a stopped default, and nothing is recorded
+    %%> - no Instance is named `task-TASK` yet; otherwise `tasks.copy_name_taken`
+    %%> - the default's Node holds fewer task copies than the Gateway's `ORBIT_TASKS_COPIES_MAX` (default 1); every copy that a task owns counts, also one that fails or is being destroyed; otherwise `tasks.copy_capacity_full`, with no wait
     %%> What it does:
-    %%> - records the Operation as `waiting`, with the caller's request as its input; no VM, identity or workspace yet
-    %%> - retries the claim every 20 s, in queue order, for up to two hours; then fails with `tasks.capacity_timeout`
-    %%> Returns:
-    %%> - `operation:show` gives the input, `poll_after_seconds` 20 and `capacity_wait`: the queue position and the groups that hold the task places, each with its status and last activity
-    %%> - `task:show` gives the same `capacity_wait` on the group; `task:status` gives the places of every host and the whole queue
-    %%> Next:
-    %%> - a place frees when a holder publishes, ends or is cancelled; the claim then runs as above
-  end
-  GW->>SW: Start run, full intent<br/>operation-task-provision
-  SW->>VM: Start and converge<br/>one Ansible run
-  %%> What it does:
-  %%> - one `ansible-playbook` run with two parts, and no second start: the host part runs on the task VM host over ssh, then the converge runs on the VM over WireGuard
-  %%> - host part: `incus copy` of the base VM's recorded snapshot and a clone of its seed snapshot (ZFS clones); an identity volume of the VM with the identity and the claim (the Pi token and the Pi models file), pushed from the vault on stdin; then `incus start`. It waits for nothing in the guest
-  %%> - Pi calls the guard with the fixed key from the VM's own WireGuard address; the start makes no model router call and registers no key
-  %%> - at boot, the base's `orbit-identity` unit applies the identity volume before sshd, WireGuard and the agent start, then unmounts it; sshd answers over WireGuard about 12 s after the start (measured 2026-11-07)
-  %%> - the containers start by themselves (`boot.autostart`) and already hold the proof Swamp Club key of the base
-  %%> - converge part: the same Ansible converge as the release refresh, with the address and host key of the admission; it waits up to 300 s for a successful SSH connection over WireGuard, polling every second, then waits for cloud-init; a fast boot continues at once
-  %%> - the glue is one write of the intent and the step that builds the playbook input and starts Ansible; nothing is read from the host
-  %%> - with no delta every part is skipped, each phase as one skipped task (a dynamic include), and it catches up a small delta when main moved since the last release
-  %%> - the nested Gateway's services restart only when `apps/gateway` changed since the base, and its agent delivery manifest is placed only when the pinned agent build changed; a commit that changes neither does neither
-  %%> - the containers' `base` snapshots belong to the refresh: a task start never retakes them
-  %%> - then the new task branch on the checkout; it waits for no nested service
-  SW->>HUB: Add the hub peer<br/>peer file · wg addconf
-  %%> Runs beside the step before it: Swamp starts both at once.
-  %%> What it does:
-  %%> - the VM's public key and address on the WireGuard hub, while the VM boots; the converge part waits for the connection, and the readiness steps below wait for this step
-  SW->>VM: Reach the VM by WireGuard<br/>ssh from 209 · pinned key
-  %%> What it does:
-  %%> - the path every later step takes (sync, check, turn, script): ssh from a Swamp worker to the VM's WireGuard address with its pinned host key
-  %%> - runs beside the readiness read
-  SW->>VM: Check ready<br/>one exec
-  %%> What it does:
-  %%> - what a task needs: the agent, Pi, the tunnel and the three containers running; Swamp's `assert` decides
-  %%> - the tunnel counts as up once WireGuard has a handshake with the hub; the hub answers no ping from a task VM
-  alt the run passes
-    SW-->>GW: Run succeeded<br/>ready
-    Note over GW: Record the VM ready<br/>about 33 s
-    %%> Measured 2026-11-07, three starts on a current base: 32-34 s from admission to ready, above the earlier target of 10-15 s:
-    %%> - Swamp writes the intent 1 s; the Ansible run 28 s: its own start 2 s, host part 8 s, wait for sshd 12 s, converge 6 s; the playbook input is removed 2 s; readiness 2 s
-    %%> - what is left to cut: the wait for sshd (VM boot) and the host part (about 14 `incus` calls for the identity)
-    %%> - one start with a commit three commits past the base, with a changed migration, took 45 s: the nested Gateway's migrate 7 s and restart 1 s, and the rest in the checkout and the delta's work
-  else a step failed
-    SW--xGW: Run failed<br/>failed step
-    %%> On failure:
-    %%> - the release runs: the VM, its seed clone, its identity volume, the hub peer, the keys and the Node record go, and the place is free
+    %%> - one transaction: the clone `task-TASK` on branch `task-TASK`, owned by the task and bound to it, the task `reserved`, and the `instance.create` Operation that `task:start` returns and follows
+    %%> - Swamp starts the run only after that commit: a Gateway that stops before it leaves no record and no run
+    %%> Result:
+    %%> - the create runs as every clone's does: the copy of the default's seed, its inner fleet when the Project has one, its T3 server registered with Conn (the container create chart)
+    %%> - the copy's agent gets the fixed task model key, as every clone does: it is not per task
+    GW->>SW: Start run, full intent<br/>operation-instance-create
+    alt the create succeeds
+      SW-->>GW: Run succeeded<br/>copy ready
+      Note over GW: Run the task<br/>running
+    else the create fails
+      SW--xGW: Run failed<br/>failed step
+      Note over GW: Fail the task<br/>queue the copy's destroy
+      %%> On failure:
+      %%> - the task is `failed` and still owns the copy; a queued job admits `instance:destroy` of the copy with force
+      %%> - when that destroy fails, or the run never reported, the task keeps the copy: `task:cancel` admits the destroy again, and `orbit instance:destroy ID --yes --force` does too
+    end
+  else every other Project
+    Note over GW: Claim a task place<br/>mint an identity · database only
+    %%> Started by:
+    %%> - `task:start` for a todo group, from proof CI or feature work
+    %%> Result:
+    %%> - the claim itself refuses a Project with `nested_fleet` on with `operation.kind_unavailable` (503), for the other kinds that claim a place, such as `tasks.prep`: no place, identity, workspace, wait or Operation is recorded; a waiting Operation that reaches the claim fails with the same code
+    %%> - a group of any Project but the proof Project is refused at once with `task_vm.project_unsupported`: the base carries only the proof Project's checkout, so no free place can serve it, and it never joins the wait queue
+    %%> - a task place in the separate task pool; a full pool waits up to two hours without an identity or workspace
+    %%> - the lowest free place number under the capacity of the host with the most room: `shark-tvm-3`
+    %%> - a fresh identity: the Node record with its `app-dev` role, a WireGuard key pair, the agent secret and an SSH host key, pinned on the Node from the start so nothing is read back
+    %%> - the claim's Pi token and Pi models file in the vault; the file holds the model router guard origin and the one fixed model key, the same for every VM
+    opt no task place is free
+      Note over GW: Wait in the task queue<br/>first come, first served
+      %%> What it does:
+      %%> - records the Operation as `waiting`, with the caller's request as its input; no VM, identity or workspace yet
+      %%> - retries the claim every 20 s, in queue order, for up to two hours; then fails with `tasks.capacity_timeout`
+      %%> Returns:
+      %%> - `operation:show` gives the input, `poll_after_seconds` 20 and `capacity_wait`: the queue position and the groups that hold the task places, each with its status and last activity
+      %%> - `task:show` gives the same `capacity_wait` on the group; `task:status` gives the places of every host and the whole queue
+      %%> Next:
+      %%> - a place frees when a holder publishes, ends or is cancelled; the claim then runs as above
+    end
+    GW->>SW: Start run, full intent<br/>operation-task-provision
+    SW->>VM: Start and converge<br/>one Ansible run
+    %%> What it does:
+    %%> - one `ansible-playbook` run with two parts, and no second start: the host part runs on the task VM host over ssh, then the converge runs on the VM over WireGuard
+    %%> - host part: `incus copy` of the base VM's recorded snapshot and a clone of its seed snapshot (ZFS clones); an identity volume of the VM with the identity and the claim (the Pi token and the Pi models file), pushed from the vault on stdin; then `incus start`. It waits for nothing in the guest
+    %%> - Pi calls the guard with the fixed key from the VM's own WireGuard address; the start makes no model router call and registers no key
+    %%> - at boot, the base's `orbit-identity` unit applies the identity volume before sshd, WireGuard and the agent start, then unmounts it; sshd answers over WireGuard about 12 s after the start (measured 2026-11-07)
+    %%> - the containers start by themselves (`boot.autostart`) and already hold the proof Swamp Club key of the base
+    %%> - converge part: the same Ansible converge as the release refresh, with the address and host key of the admission; it waits up to 300 s for a successful SSH connection over WireGuard, polling every second, then waits for cloud-init; a fast boot continues at once
+    %%> - the glue is one write of the intent and the step that builds the playbook input and starts Ansible; nothing is read from the host
+    %%> - with no delta every part is skipped, each phase as one skipped task (a dynamic include), and it catches up a small delta when main moved since the last release
+    %%> - the nested Gateway's services restart only when `apps/gateway` changed since the base, and its agent delivery manifest is placed only when the pinned agent build changed; a commit that changes neither does neither
+    %%> - the containers' `base` snapshots belong to the refresh: a task start never retakes them
+    %%> - then the new task branch on the checkout; it waits for no nested service
+    SW->>HUB: Add the hub peer<br/>peer file · wg addconf
+    %%> Runs beside the step before it: Swamp starts both at once.
+    %%> What it does:
+    %%> - the VM's public key and address on the WireGuard hub, while the VM boots; the converge part waits for the connection, and the readiness steps below wait for this step
+    SW->>VM: Reach the VM by WireGuard<br/>ssh from 209 · pinned key
+    %%> What it does:
+    %%> - the path every later step takes (sync, check, turn, script): ssh from a Swamp worker to the VM's WireGuard address with its pinned host key
+    %%> - runs beside the readiness read
+    SW->>VM: Check ready<br/>one exec
+    %%> What it does:
+    %%> - what a task needs: the agent, Pi, the tunnel and the three containers running; Swamp's `assert` decides
+    %%> - the tunnel counts as up once WireGuard has a handshake with the hub; the hub answers no ping from a task VM
+    alt the run passes
+      SW-->>GW: Run succeeded<br/>ready
+      Note over GW: Record the VM ready<br/>about 33 s
+      %%> Measured 2026-11-07, three starts on a current base: 32-34 s from admission to ready, above the earlier target of 10-15 s:
+      %%> - Swamp writes the intent 1 s; the Ansible run 28 s: its own start 2 s, host part 8 s, wait for sshd 12 s, converge 6 s; the playbook input is removed 2 s; readiness 2 s
+      %%> - what is left to cut: the wait for sshd (VM boot) and the host part (about 14 `incus` calls for the identity)
+      %%> - one start with a commit three commits past the base, with a changed migration, took 45 s: the nested Gateway's migrate 7 s and restart 1 s, and the rest in the checkout and the delta's work
+    else a step failed
+      SW--xGW: Run failed<br/>failed step
+      %%> On failure:
+      %%> - the release runs: the VM, its seed clone, its identity volume, the hub peer, the keys and the Node record go, and the place is free
+    end
   end

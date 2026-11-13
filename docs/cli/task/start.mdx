@@ -7,15 +7,35 @@ sidebarTitle: "task:start"
 orbit task:start <task> [--idempotency-key=KEY] [--json]
 ```
 
-Start the VM for a parent task in Todo. The task must use external orchestration and have no claimed workspace. Orbit admits the existing `tasks.provision` operation and returns its reference. The command follows that operation until it ends. It starts no subtask, check, turn, or publication.
+Start the work place of a parent task in Todo. The task must use external orchestration and have no claimed workspace. The command follows the Operation it gets until that Operation ends. It starts no subtask, check, turn, or publication.
 
-Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet): every host has 0 task places, so no task VM starts. A task VM serves only the proof Project, because the base VM carries only its checkout. Orbit refuses a task of another Project at once with HTTP 409 `task_vm.project_unsupported` and records no Operation.
+Orbit first checks the Project's [`nested_fleet`](/reference/projects#nested-fleet-setting) flag. That one check decides where the task runs.
 
-Orbit first checks the Project's [`nested_fleet`](/reference/projects#nested-fleet-setting) flag. A task of a Project with the flag on is refused at once with HTTP 503 `operation.kind_unavailable`, also for the proof Project, and Orbit records no Operation.
+## A task copy
+
+A task of a Project with the flag on starts as a copy of the Project's default Instance. Orbit clones the default into the Instance `task-<id>`, on the new branch `task-<id>`, as [`instance:create`](/cli/instance/create) clones it. The task owns the copy. Orbit returns the `instance.create` Operation. When it succeeds, the task is `running`. The copy's T3 server registers with Conn as every clone's does, labelled with the Project name and `task-<id>`.
+
+Orbit refuses the start at once and records nothing in these cases:
+
+| Code | When |
+| --- | --- |
+| `tasks.copy_source_unavailable` (409) | The default Instance is missing, not active, stopped, or has no seed snapshot |
+| `tasks.copy_name_taken` (409) | An Instance named `task-<id>` exists |
+| `tasks.copy_capacity_full` (409) | The default's Node holds as many task copies as the Gateway allows. There is no wait |
+
+The Gateway setting `ORBIT_TASKS_COPIES_MAX` in the Gateway's `.env` sets how many task copies one Node holds at once. The default is 1. Every copy that a task owns counts, also one whose create failed or that is being destroyed.
+
+When the create fails, the task is `failed` and Orbit destroys the copy with force. If that destroy fails, the task keeps owning the copy. Run `task:cancel` or `orbit instance:destroy <id> --yes --force` to destroy it.
+
+The copy's agent gets the fixed task model key, as every clone does; the key is not per task. Per-task model keys are an open decision. A stopped copy, for example after a reboot of its Node, stays stopped until Orbit starts it.
+
+## A task VM
+
+Every other Project's task takes a task VM through the existing `tasks.provision` operation. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet): every host has 0 task places, so no task VM starts. A task VM serves only the proof Project, because the base VM carries only its checkout. Orbit refuses a task of another Project at once with HTTP 409 `task_vm.project_unsupported` and records no Operation.
 
 When no task place is free, or an earlier task is waiting, the operation waits in the shared task queue, first come, first served. It holds no VM, and the task stays in Todo. `operation:show` and `task:show` report `capacity_wait`: the queue position and the tasks that hold the places, with each one's status and last activity. `task:status` shows the places of every host and the whole queue. The wait ends with `tasks.capacity_timeout` after two hours. [Task places](/reference/tasks#task-places) defines these fields. A failed start releases its place. Changing a task's status with `task:update --status=todo` changes board state only; it does not start a VM.
 
-`--idempotency-key` reuses the same operation for a transport retry. Ctrl-C stops following and leaves the operation running. Use `task:cancel` to end the parent task.
+`--idempotency-key` reuses the same operation for a transport retry, also the `instance.create` of a task copy. Ctrl-C stops following and leaves the operation running. Use `task:cancel` to end the parent task.
 
 ## How it works
 
