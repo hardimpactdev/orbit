@@ -105,6 +105,7 @@ sequenceDiagram
     %%> Why the same level: Swamp starts a level of steps only when the whole level before it has ended, in each job and across jobs; the workspace and T3 depend on steps of the same depth, so both start when that level ends
     %%> What it does:
     %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
+    %%> - inside the container it runs two parts in order: `checkout` (bundle, checkout mark, `.env`), then `services` (PHP settings, file rights, Process files, web config, Node store, units)
     %%> - after the checkout it checks the branch and commit, then writes the root-owned mark `/var/lib/orbit/workspace-checkout` with the Instance id and commit; when the mark already names this Instance, a retry skips the fetch and checkout, so the branch never moves and the result's commit stays the mark's
     %%> - writes `.env` for `orbit` with group `work`: the default's file from the seed, with the clone's own connection keys, the keys of the connections it shares with its default and `APP_URL`, without the default's other connection and Reverb keys or a copy of its credentials; `APP_KEY` stays the default's, because the cloned data is encrypted with it
     %%> - a copied value that points at the default's Route host (its Route without a web root) points at the clone's Route host; the rest of the value stays

@@ -1857,7 +1857,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_guest_test.py"
-cost = 30
+cost = 40
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -1873,7 +1873,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 78
+cost = 86
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1931,6 +1931,10 @@ inputs = [
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing" = 2
   "test_the_same_key_changes_nothing" = 2
   "test_a_key_written_while_the_inner_incus_was_not_ready_says_so" = 2
+  "test_checkout_pushes_the_bundle_and_passes_only_the_env_half" = 2
+  "test_services_install_the_node_helper_and_pass_only_the_process_files" = 2
+  "test_workspace_still_passes_the_whole_value_in_one_guest_call" = 2
+  "test_check_reads_no_private_input_and_passes_a_dead_units_code_and_receipt" = 2
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_native_faults_test.ts"

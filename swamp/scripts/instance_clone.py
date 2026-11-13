@@ -59,14 +59,14 @@ def main():
     account = sys.argv[4]
     folder = Path(sys.argv[5])
     phase = sys.argv[-1]
-    if phase not in {"container", "club-key", "workspace", "t3", "sessions", "cleanup"}:
+    if phase not in {"container", "club-key", "workspace", "checkout", "services", "check", "t3", "sessions", "cleanup"}:
         raise ValueError("instance.clone_phase_invalid")
     name = container["name"]
     project = ["incus", "--project", container["project"]]
     changes = []
     # The Club key script's own word, which the club-key phase prints for the Operation's result.
     club_outcome = None
-    workspace_deadline = time.monotonic() + 115 if phase == "workspace" else None
+    workspace_deadline = time.monotonic() + 115 if phase in {"workspace", "checkout", "services"} else None
     secret = sys.stdin.read()
 
     def run(argv, content=None, check=True):
@@ -107,7 +107,7 @@ def main():
         return owner
 
     def inside(member, private=""):
-        if member == "workspace":
+        if member in {"workspace", "services"}:
             # Install the shipped helper outside the app-owned store. Its only store
             # entry runs as orbit inside the existing workspace launch below.
             change(project + ["file", "push", "--create-dirs", "--uid", "0", "--gid", "0",
@@ -116,7 +116,7 @@ def main():
         payload = ["python3", "-c", guest, member, json.dumps(container)]
         result = run(project + ["exec", name, "--"] + payload, private, check=False)
         if result.returncode:
-            if member == 'sessions':
+            if member in {'sessions', 'check'}:
                 try:
                     evidence = json.loads(result.stdout)
                 except (ValueError, TypeError):
@@ -125,6 +125,10 @@ def main():
                         and isinstance(evidence.get('process_failure'), dict)):
                     # Only the guest's structured public receipt crosses; never its stderr.
                     public = {key: evidence[key] for key in ('error_code', 'process_failure') if key in evidence}
+                    if member == 'check':
+                        # The check keeps no private folder: its public receipt is its own output.
+                        print(json.dumps(public))
+                        raise RuntimeError(public['error_code'])
                     owner = private_folder()
                     receipt = folder / 't3.json'
                     receipt.write_text(json.dumps(public))
@@ -521,13 +525,24 @@ def main():
         if outcome != "unchanged":
             changes.append("club-key")
         club_outcome = outcome
-    elif phase == "workspace":
-        # Admission frames the private values and the clone's key names in one vault copy for native SSH stdin.
+    elif phase == "services":
+        # The rest of the workspace reads only the Process environment files of the one framed vault value.
+        print(json.dumps(inside("services", json.dumps({"processes": json.loads(secret)["processes"]}))))
+        return
+    elif phase == "check":
+        print(json.dumps(inside("check", "")))
+        return
+    elif phase in {"workspace", "checkout"}:
+        # Admission frames the private values and the clone's key names in one vault copy for native SSH stdin. `workspace` forwards
+        # all of it; `checkout` and `services` read the same value and forward only their half, so two steps need no second copy.
         workspace = json.loads(secret)
         environment = workspace["environment"]
         processes = workspace["processes"]
         # A value framed before the merge names existed has none; the guest then writes the render.
         merge = workspace.get("merge")
+        private = {"environment": environment, "merge": merge}
+        if phase == "workspace":
+            private = {"environment": environment, "processes": processes, "merge": merge}
         git = [
             "git",
             "-c",
@@ -569,10 +584,7 @@ def main():
                     name + container["bundle"],
                 ]
             )
-            output = inside(
-                "workspace",
-                json.dumps({"environment": environment, "processes": processes, "merge": merge}),
-            )
+            output = inside(phase, json.dumps(private))
             # The guest's commit is its first checkout's, so a retry never reports a later commit of the user.
             print("orbit-commit=" + output.pop("commit"))
             print(json.dumps(output))

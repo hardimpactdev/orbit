@@ -24,6 +24,7 @@ NO_MERGE = {"own": [], "drop": [], "guard": []}
 
 # The patched boundary below replaces subprocess.run; real Git still runs through this.
 REAL_RUN = subprocess.run
+REAL_WALK = os.walk
 
 
 @contextlib.contextmanager
@@ -280,17 +281,22 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         """The seed copy: the default's workspace, on a branch of the default."""
         self.git(self.workspace, "checkout", "--quiet", "-B", branch, commit)
 
-    def phase(self, phase):
-        container = {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
+    def phase(self, phase, container=None, private=None, commands=None, walk=False):
+        container = container or {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
                      "bundle": "/tmp/proof.bundle", "php": None, "environment_file": "/srv/workspace/.env",
                      "units": [], "processes": [], "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}}}
-        if phase == "workspace":
+        if phase in {"workspace", "checkout"}:
             # The Node pushes the mirror's branch in as a bundle before each workspace phase.
             (self.base / "tmp").mkdir(exist_ok=True)
             self.git(self.origin, "bundle", "create", "--quiet", str(self.base / "tmp/proof.bundle"), "refs/heads/proof")
 
         def command(argv, **_kwargs):
             actual = argv[4:] if argv[0] == "runuser" else argv
+            if commands is not None and actual[0] != "git":
+                commands.append(actual)
+            if actual[0] == "git" and actual[-3:] == ["config", "--global", "user.name"]:
+                # The agent part of the T3 step wrote the agent's Git identity.
+                return subprocess.CompletedProcess(argv, 0, "Orbit Agent\n", "")
             if actual[0] == "git":
                 actual = [str(self.base / "tmp/proof.bundle") if a == container["bundle"] else a for a in actual]
                 return REAL_RUN(actual, cwd=self.workspace, check=False, capture_output=True, text=True, timeout=10,
@@ -300,18 +306,27 @@ class WorkspaceCheckoutTest(unittest.TestCase):
                 stdout = '{"status":"unchanged"}'
             elif actual[0] == "curl":
                 stdout = '{"environmentId":"clone-env","serverVersion":"0.1.7"}'
+            elif actual[:2] in (["systemctl", "is-enabled"], ["systemctl", "is-active"]) and commands is not None:
+                # A fresh copy: no unit of the clone is enabled or running yet.
+                return subprocess.CompletedProcess(argv, 3, "", "")
             return subprocess.CompletedProcess(argv, 0, stdout, "")
+
+        def walked(top):
+            # The real rights walk over the fixture, reported at the container's paths.
+            for directory, ds, fs in REAL_WALK(self.base / top.lstrip("/")):
+                yield "/" + str(Path(directory).relative_to(self.base)), ds, fs
 
         connection = MagicMock()
         connection.getresponse.side_effect = lambda: type("Reply", (io.BytesIO,), {"status": 200})(
             json.dumps({"authenticated": True, "scopes": ["access:read", "access:write"]}).encode())
-        private = {"environment": "", "merge": NO_MERGE} if phase == "workspace" else {
-            key: {"token": "private-" + key} for key in ["gateway", "swamp"]}
+        if private is None:
+            private = {"environment": "", "merge": NO_MERGE} if phase in {"workspace", "checkout"} else {
+                key: {"token": "private-" + key} for key in ["gateway", "swamp"]}
         output = io.StringIO()
         with (
             patch.object(GUEST.pathlib, "Path", lambda p: self.base / str(p).lstrip("/")),
             patch.object(GUEST.subprocess, "run", command),
-            patch.object(GUEST.os, "walk", return_value=[]),
+            patch.object(GUEST.os, "walk", walked if walk else lambda _top: []),
             patch.object(GUEST.os, "chown"),
             patch.object(GUEST.http.client, "HTTPConnection", return_value=connection),
             patch.object(GUEST.sys, "stdin", io.StringIO(json.dumps(private))),
@@ -368,6 +383,130 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         mark.write_text(json.dumps({"instance_id": 1, "commit": self.expected}) + "\n")
         with self.assertRaises(AssertionError):
             self.phase("sessions")
+
+
+    # The workspace's two parts. A container with PHP, a web config, a unit and a Process with its own environment file.
+    def full_container(self):
+        return {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
+                "bundle": "/tmp/proof.bundle", "php": "/opt/runtime/php/8.5/bin/php", "environment_file": "/srv/workspace/.env",
+                "web_config": {"path": "/etc/frankenphp/Caddyfile", "content": "site\n"},
+                "units": [{"name": "orbit-frankenphp.service", "content": "[Service]\n"}],
+                "processes": [{"name": "orbit-process-19.service", "id": 19, "content": "[Service]\n",
+                               "environment": "/etc/orbit/processes/19/abc.env"}],
+                "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}}}
+
+    def full_private(self):
+        return {"environment": CLONE_RENDER, "processes": {"/etc/orbit/processes/19/abc.env": "QUEUE=fixture\n"},
+                "merge": CLONE_MERGE}
+
+    def files(self):
+        """Every file the phases leave outside Git's own folder, by container path; the mark's commit is this fixture's."""
+        found = {}
+        for path in sorted(self.base.rglob("*")):
+            relative = path.relative_to(self.base)
+            if relative.parts[0] == "origin" or ".git" in relative.parts or not path.is_file():
+                continue
+            text = path.read_text().replace(self.expected, "<commit>")
+            found["/" + str(relative)] = (text, path.stat().st_mode & 0o777)
+        return found
+
+    def changed(self, result):
+        """The changes a phase names, at container paths: the fixture's root maps container paths to its own folder."""
+        return [change.replace(str(self.base), "") for change in result["changes"]]
+
+    def fresh(self):
+        """A new fixture with the same seed: the default's `.env` on an older commit of `main`."""
+        self.setUp()
+        self.seed("main", self.older)
+        (self.workspace / ".env").write_text(DEFAULT_ENV)
+
+    def test_checkout_then_services_equal_the_one_workspace_phase(self):
+        self.fresh()
+        whole_commands = []
+        whole = self.phase("workspace", self.full_container(), self.full_private(), whole_commands)
+        whole["changes"] = self.changed(whole)
+        whole_state = (self.files(), self.mark(), self.branch(), self.head(self.workspace) == self.expected)
+
+        self.fresh()
+        part_commands = []
+        first = self.phase("checkout", self.full_container(), self.full_private(), part_commands)
+        second = self.phase("services", self.full_container(), self.full_private(), part_commands)
+        second["changes"] = self.changed(second)
+        self.assertEqual((self.files(), self.mark(), self.branch(), self.head(self.workspace) == self.expected), whole_state)
+        # The same units start, the same Node store call runs, in the same order.
+        self.assertEqual(part_commands, whole_commands)
+        self.assertIn(["systemctl", "start", "orbit-process-19.service"], whole_commands)
+        self.assertIn(["systemctl", "start", "orbit-frankenphp.service"], whole_commands)
+        # One printed result as before: the same keys, the same changes, the commit and the environment names from the checkout.
+        self.assertEqual(set(whole), {"phase", "changes", "environment", "commit"})
+        self.assertEqual((whole["phase"], whole["commit"], whole["environment"]), ("workspace", self.expected, first["environment"]))
+        # The checkout's changes come first, then the rest; the PHP settings now follow `.env` (nothing reads the order).
+        self.assertEqual(whole["changes"], first["changes"] + second["changes"])
+        self.assertEqual((first["phase"], first["commit"]), ("checkout", self.expected))
+        self.assertIn("checkout", first["changes"])
+        self.assertIn("/srv/workspace/.env", first["changes"])
+        self.assertEqual(second, {"phase": "services", "changes": second["changes"]})
+        self.assertIn("start:orbit-process-19.service", second["changes"])
+
+    def test_checkout_starts_no_unit_and_writes_nothing_outside_the_workspace(self):
+        self.fresh()
+        commands = []
+        self.phase("checkout", self.full_container(), self.full_private(), commands)
+        self.assertEqual(commands, [])
+        self.assertEqual({path for path in self.files() if not path.startswith("/srv/workspace/")}, {GUEST.CHECKOUT_MARK})
+
+    def test_services_leave_git_status_unchanged(self):
+        self.fresh()
+        script = self.workspace / "run.sh"
+        script.write_text("#!/bin/sh\n")
+        script.chmod(0o755)
+        (self.workspace / "plain").write_text("plain\n")
+        (self.workspace / "plain").chmod(0o644)
+        self.git(self.workspace, "add", "run.sh", "plain")
+        self.git(self.workspace, "commit", "--quiet", "-m", "user files")
+        self.expected = self.head(self.workspace)
+        self.git(self.workspace, "update-ref", "refs/heads/proof", self.expected)
+        self.git(self.workspace, "checkout", "--quiet", "proof")
+        self.phase("checkout", self.full_container(), self.full_private())
+        before = self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout
+        self.phase("services", self.full_container(), self.full_private(), [], walk=True)
+        self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, before)
+        # The rights walk ran: it adds group bits and never an exec bit Git tracks.
+        self.assertEqual(script.stat().st_mode & 0o777, 0o775)
+        self.assertEqual((self.workspace / "plain").stat().st_mode & 0o777, 0o664)
+
+    def test_a_retry_of_the_checkout_never_moves_the_branch_this_instance_checked_out(self):
+        self.fresh()
+        self.phase("checkout", self.full_container(), self.full_private())
+        self.commit(self.workspace, "user work")
+        work = self.head(self.workspace)
+        result = self.phase("checkout", self.full_container(), self.full_private())
+        self.assertNotIn("checkout", result["changes"])
+        self.assertEqual((self.branch(), self.head(self.workspace), result["commit"]), ("proof", work, self.expected))
+
+    def test_services_refuse_a_workspace_this_instance_did_not_check_out(self):
+        self.fresh()
+        commands = []
+        with self.assertRaises(FileNotFoundError):
+            self.phase("services", self.full_container(), self.full_private(), commands)
+        # A seed copy keeps its default's mark until this Instance checks out.
+        mark = self.base / GUEST.CHECKOUT_MARK.lstrip("/")
+        mark.parent.mkdir(parents=True)
+        mark.write_text(json.dumps({"instance_id": 1, "commit": self.older}) + "\n")
+        with self.assertRaises(AssertionError):
+            self.phase("services", self.full_container(), self.full_private(), commands)
+        self.assertEqual(commands, [])
+
+    def test_check_passes_after_the_users_own_commit_and_refuses_without_the_mark(self):
+        self.fresh()
+        self.phase("workspace", self.full_container(), self.full_private())
+        # The user works on the branch while a later check runs: the check reads the mark, not the commit.
+        self.commit(self.workspace, "user work")
+        container = dict(self.full_container(), php=None, units=[], processes=[])
+        self.assertEqual(self.phase("check", container, ""), {"phase": "check", "changes": []})
+        (self.base / GUEST.CHECKOUT_MARK.lstrip("/")).write_text(json.dumps({"instance_id": 1}) + "\n")
+        with self.assertRaises(AssertionError):
+            self.phase("check", container, "")
 
 
 class CloneGuestTest(unittest.TestCase):
@@ -656,6 +795,14 @@ class CloneGuestTest(unittest.TestCase):
         self.assertIsNone(reported['ExecMainStatus'])
         self.assertIsNone(reported['NRestarts'])
         self.assertNotIn('PRIVATE', output)
+
+    def test_check_passes_a_good_clone_and_refuses_a_dead_unit_with_the_sessions_code(self):
+        _, output, error = self.readiness('check', entrypoint=True, inactive=True, is_active=0, expected_exit=0)
+        self.assertEqual((json.loads(output), error), ({'phase': 'check', 'changes': []}, ''))
+        _, output, error = self.readiness('check', entrypoint=True, inactive=True)
+        self.assertEqual(json.loads(output)['error_code'], 'instance.container_process_inactive')
+        self.assertEqual(json.loads(output)['process_failure']['unit'], 'orbit-process-vp-dev.service')
+        self.assertEqual(error, 'instance.container_process_inactive\n')
 
     def test_non_php_sessions_keep_both_authenticated_sessions_without_php(self):
         for existing in [False, True]:

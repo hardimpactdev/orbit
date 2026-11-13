@@ -1495,7 +1495,7 @@
     ]
   },
   "swamp/tests/instance_clone_guest_test.py": {
-    "source_sha256": "45c13230b5272eb8aa7f3e4ed8cf7c48578461b6726a83e8450108df6c2f5981",
+    "source_sha256": "4194ca0a2b928f820516144b204f46f2bb9866c543ff3b310f4527860734a2f5",
     "cases": [
       "test_a_clone_keeps_its_defaults_hand_set_keys_and_owns_its_connections",
       "test_a_dropped_key_of_the_default_goes_even_when_the_clone_does_not_own_it",
@@ -1515,9 +1515,16 @@
       "test_a_first_run_on_a_seed_branch_of_the_same_name_still_checks_out_the_fetched_commit",
       "test_a_retry_never_moves_the_branch_this_instance_checked_out",
       "test_sessions_refuse_a_workspace_without_this_instances_mark",
+      "test_checkout_then_services_equal_the_one_workspace_phase",
+      "test_checkout_starts_no_unit_and_writes_nothing_outside_the_workspace",
+      "test_services_leave_git_status_unchanged",
+      "test_a_retry_of_the_checkout_never_moves_the_branch_this_instance_checked_out",
+      "test_services_refuse_a_workspace_this_instance_did_not_check_out",
+      "test_check_passes_after_the_users_own_commit_and_refuses_without_the_mark",
       "test_sessions_check_only_loopback_t3_and_reject_http_and_scope_failures",
       "test_workspace_forwards_one_json_vault_value_without_printing_secrets",
       "test_inactive_process_names_unit_states_and_exit_without_private_log",
+      "test_check_passes_a_good_clone_and_refuses_a_dead_unit_with_the_sessions_code",
       "test_non_php_sessions_keep_both_authenticated_sessions_without_php",
       "test_non_php_check_has_no_php_probe",
       "test_php_readiness_still_checks_the_project_runtime",
@@ -1535,7 +1542,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "0b4f5d47567c439170d9bb81aca5b31fe5ed78713b937962332dc51ca9d167c1",
+    "source_sha256": "730caf88cd33ccd8c54e5815722767a7b51009b9c48fdbd881d2193c32bdbe28",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1570,6 +1577,10 @@
       "test_a_failed_t3_part_names_t3_and_keeps_the_t3_code",
       "test_a_timeout_names_the_part_that_was_running",
       "test_the_agent_phase_alone_is_no_longer_a_step",
+      "test_checkout_pushes_the_bundle_and_passes_only_the_env_half",
+      "test_services_install_the_node_helper_and_pass_only_the_process_files",
+      "test_workspace_still_passes_the_whole_value_in_one_guest_call",
+      "test_check_reads_no_private_input_and_passes_a_dead_units_code_and_receipt",
       "test_delivers_the_key_only_as_the_scripts_stdin_after_the_tmpfs_check",
       "test_the_same_key_changes_nothing",
       "test_a_key_written_while_the_inner_incus_was_not_ready_says_so",
