@@ -74,9 +74,9 @@
 
 # The base converge of each nested Node, in the order of the task VM refresh, so `base` holds the new agent and Orbit's files.
 # The converge needs each Node's agent; after the restart the agents come back within seconds. The wait reads the Nodes every
-# `fleet_ready_delay` seconds, bounded by `fleet_ready_seconds` (300 by default), and needs no Doctor.
+# `fleet_ready_delay` seconds, `fleet_ready_seconds` (300 by default) worth of tries of at most 15 s each, and needs no Doctor.
 - name: Wait for the agents of the nested Nodes
-  ansible.builtin.command: { argv: "{{ ['timeout', '90'] + fleet_curl + ['--fail', fleet_api ~ '/nodes'] }}" }
+  ansible.builtin.command: { argv: "{{ ['timeout', '15'] + fleet_curl + ['--fail', fleet_api ~ '/nodes'] }}" }
   register: fleet_nodes_read
   changed_when: false
   failed_when: false

@@ -19,9 +19,10 @@ final readonly class ContainerDeployOutcome
 
     /**
      * @param  array<string, mixed>  $data
+     * @param  list<string>  $secrets  Values the recorded failure detail must not show: the Instance's environment and the Swamp tokens.
      * @return array{0: array<string, mixed>, 1: array<string, mixed>}
      */
-    public static function from(array $data): array
+    public static function from(array $data, array $secrets = []): array
     {
         $result = ValidatedData::object($data['result'] ?? []);
         $steps = ValidatedData::object($result['steps'] ?? []);
@@ -55,7 +56,7 @@ final readonly class ContainerDeployOutcome
             if ($detail !== null) {
                 $native = ValidatedData::object($data['failure'] ?? []);
                 $data['failure'] = ['failed_step' => is_string($native['failed_step'] ?? null) ? $native['failed_step'] : $step,
-                    'detail' => mb_strcut(app(LogRedactor::class)->redact($detail, []), 0, NativeStepFailure::MaximumBytes, 'UTF-8'),
+                    'detail' => mb_strcut(app(LogRedactor::class)->redact($detail, $secrets), 0, NativeStepFailure::MaximumBytes, 'UTF-8'),
                     'stderr_recorded' => true];
             }
             // The start after a passed refresh failed: the new seed and `base` stay, so the seed's commit is recorded.

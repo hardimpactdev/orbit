@@ -842,16 +842,22 @@ it('keeps the new seed when only the start after a passed refresh failed, and sh
         'status' => OperationStatus::Running, 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)],
         'state' => ['swamp_run_id' => 'run-1', 'native_failure' => ['failed_step' => 'Start the refreshed fleet', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false]]]);
     $detail = "The new seed and base stay; the inner fleet on the new commit did not start: Check the agents: Readiness check 'agents' failed: the agent of app-prod is not online";
+    // A Swamp token in a message never reaches the Operation.
+    config(['swamp.run_token' => 'swamp-run-token-value-0123456789']);
 
     app(InstanceDeployProjection::class)->apply($operation, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
         'failure' => ['failed_step' => 'Start the refreshed fleet', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false], 'result' => [
-            'steps' => ['Read the container result' => ['stdout' => json_encode(['error_code' => 'instance.container_fleet_resume_failed', 'commit' => $commit, 'detail' => $detail], JSON_THROW_ON_ERROR)]],
+            'steps' => ['Read the container result' => ['stdout' => json_encode(['error_code' => 'instance.container_fleet_resume_failed', 'commit' => $commit,
+                'detail' => $detail.' swamp-run-token-value-0123456789'], JSON_THROW_ON_ERROR)]],
             'summary' => ['failed_steps' => ['Start the refreshed fleet']]]]);
 
     $operation->refresh();
     expect($operation->error_code)->toBe('instance.container_fleet_resume_failed')
         ->and($operation->failed_step)->toBe('Start the refreshed fleet')
-        ->and($operation->state['native_failure'])->toBe(['failed_step' => 'Start the refreshed fleet', 'detail' => $detail, 'stderr_recorded' => true])
+        ->and($operation->state['native_failure']['failed_step'])->toBe('Start the refreshed fleet')
+        ->and($operation->state['native_failure']['stderr_recorded'])->toBeTrue()
+        ->and($operation->state['native_failure']['detail'])->toStartWith($detail)
+        ->and($operation->state['native_failure']['detail'])->not->toContain('swamp-run-token-value-0123456789')
         ->and(InstanceRuntime::query()->where('instance_id', $instance->id)->firstOrFail()->seed_commit)->toBe($commit);
 });
 
