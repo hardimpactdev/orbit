@@ -261,6 +261,11 @@ describe('registration', function (): void {
             {
                 throw T3ServerException::unreachable($baseUrl);
             }
+
+            public function shell(string $baseUrl, string $adminSession): array
+            {
+                throw T3ServerException::unreachable($baseUrl);
+            }
         });
     });
 
@@ -318,6 +323,11 @@ describe('registration', function (): void {
             public function session(string $baseUrl, string $adminSession): T3AdminSession
             {
                 return new T3AdminSession($adminSession, CarbonImmutable::now()->addDays(30), ['access:read', 'access:write']);
+            }
+
+            public function shell(string $baseUrl, string $adminSession): array
+            {
+                return ['threads' => [], 'archivedThreads' => []];
             }
         });
 

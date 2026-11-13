@@ -39,7 +39,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
     abstract protected function refuse(Instance $instance, InstanceRuntime $runtime): void;
 
     /** @return array<string, string> */
-    protected function result(): array
+    protected function result(Operation $operation): array
     {
         return ['power_state' => $this->powerState()->value];
     }
@@ -123,7 +123,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
         return null;
     }
 
-    protected static function hasActiveTask(Instance $instance): bool
+    public static function hasActiveTask(Instance $instance): bool
     {
         return Task::topLevel()->whereMorphedTo('taskable', $instance)->whereIn('status', TaskGroupStatus::active())->exists()
             || ($instance->task_workspace_owner_id !== null
@@ -148,7 +148,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
         $operation = DB::transaction(function () use ($operation, $data, $phase, $succeeded, $kept): Operation {
             $operation = app(DirectOperation::class)->project($operation,
                 [...$data, 'error_code' => $succeeded ? null : ($phase['error_code'] ?? $data['error_code'] ?? null)],
-                $succeeded ? [...$this->result(), ...$kept] : [...array_intersect_key($phase, ['error_code' => true]), ...$kept]);
+                $succeeded ? [...$this->result($operation), ...$kept] : [...array_intersect_key($phase, ['error_code' => true]), ...$kept]);
             if ($this->reached($operation)) {
                 InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => $this->powerState()]);
             }

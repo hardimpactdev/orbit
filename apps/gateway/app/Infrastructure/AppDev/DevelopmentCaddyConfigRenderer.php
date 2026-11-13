@@ -374,8 +374,21 @@ final readonly class DevelopmentCaddyConfigRenderer
         $marker = '/'.basename($site->asleepMarker);
         $probeHeader = RuntimeHibernation::ProbeHeader;
         $activation = $this->activation((int) $matches[1], $host);
+        $log = RuntimeHibernation::accessLogPath(RuntimeHibernation::key((int) $matches[1]));
 
+        // The access log's mtime is the HTTP activity of the idle sleep. Caddy creates the file when it loads the site, so a new
+        // site starts a full idle window. A probe and a request that meets the asleep marker write nothing: the wake that such a
+        // request starts counts by itself. One roll of 1 MiB keeps each Instance's log near 1 MiB.
         return <<<CADDY
+            @orbit_probe header {$probeHeader} 1
+            log_skip @orbit_probe
+            log_skip @orbit_asleep
+            log {
+                output file {$log} {
+                    roll_size 1MiB
+                    roll_keep 1
+                }
+            }
             @orbit_asleep {
                 not header {$probeHeader} 1
                 file {

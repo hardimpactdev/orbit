@@ -8,6 +8,7 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
+use App\Models\Operation;
 
 /**
  * `instance:sleep`: the command reads no T3 state, so its result says a turn was not checked (docs/cli/instance/sleep.mdx). Its result
@@ -38,9 +39,10 @@ final readonly class InstanceSleep extends InstancePower
         }
     }
 
-    protected function result(): array
+    protected function result(Operation $operation): array
     {
-        return [...parent::result(), 't3_turn' => 'not_checked'];
+        // The idle sweep read T3 and found no turn and no recent activity before it admitted the sleep.
+        return [...parent::result($operation), 't3_turn' => $operation->triggered_by === ContainerIdleSweep::TriggeredBy ? 'idle' : 'not_checked'];
     }
 
     protected function phaseKeys(): array

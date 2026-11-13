@@ -876,18 +876,20 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 - Its Route's access log exists and did not change for the idle window. A clone without the log is unknown and stays awake.
 - No wake of it ended within the idle window.
 - Its T3 server answers.
-- No turn in it is preparing, queued, starting or running.
+- No turn in it runs, and no run waits for a delegated thread or a background task.
 - Its newest user message, turn end, or request that waits for the user is older than the idle window.
 
-Missing data never puts a clone to sleep. A Node that does not answer, or a T3 server that cannot be read, keeps the clone awake, and the run says why. A turn that runs is never cut, whatever its age. A thread that waits for the user keeps the clone awake only while its request is younger than the idle window; the freeze keeps the request, and the user's answer in Conn wakes the clone. A Conn client that is only connected is no activity: Conn keeps a socket open to every server it knows and pings it.
+A running turn is preparing, queued, starting or running. Missing data never puts a clone to sleep. A Node that does not answer, or a T3 server that cannot be read, keeps the clone awake, and the run says why.
+
+A turn that runs is never cut, whatever its age. A thread that waits for the user keeps the clone awake only while its request is younger than the idle window; the freeze keeps the request, and the user's answer in Conn wakes the clone. A Conn client that is only connected is no activity: Conn keeps a socket open to every server it knows and pings it.
 
 The Gateway reads T3 with the admin session it already holds and renews for each clone: one `GET /api/orchestration/shell` per candidate, and none for a sleeping clone. It writes nothing in the container. It reads the access logs of all clones on a Node in one call to the Node agent.
 
 Each sleep is an `instance.sleep` Operation with `triggered_by` `hibernation-sweep`, and its result says `t3_turn: idle`. A run starts at most five sleeps; the next run takes the rest. `orbit:runtime-hibernator --dry-run` on the Gateway host lists every container Instance with its decision and reason, and changes nothing. `--instance=ID`, repeated, limits a run to those Instances and acts while the switch is off; `--idle-seconds=N` gives that run its own idle window.
 
-**HTTP activity.** Caddy's site of a container Instance writes each request to `/data/caddy/orbit/hibernation/app-instance-<id>.log`, and the idle sleep reads the file's modification time. Caddy creates the file when it loads the site, so a new site gets a full idle window. The log rolls at 1 MiB and keeps one compressed roll.
+**HTTP activity.** Caddy's site of a container Instance writes each request to `/data/caddy/orbit/hibernation/app-instance-<id>.log`, and the idle sleep reads the file's modification time. Caddy creates the file when it loads the site, so a new site gets a full idle window. The log rolls at 1 MiB and keeps one compressed roll. A destroy removes the log, but not a roll.
 
-A request with `X-Orbit-Probe: 1` and a request that meets the asleep marker write nothing: such a request starts a wake, and the wake counts by itself. A Route's TLS probe makes no request. An open browser tab on the site keeps the clone awake while its Vite socket or its requests reach the site; that is intended. An uptime check without the probe header keeps it awake too.
+A request with `X-Orbit-Probe: 1` and a request that meets the asleep marker write nothing: such a request starts a wake, and the wake counts by itself. A Route's TLS probe makes no request. An open browser tab keeps the clone awake while it sends requests; that is intended. Caddy logs a WebSocket, such as Vite's HMR socket, only when it closes, so an open tab that sends nothing else lets the clone sleep. An uptime check without the probe header keeps it awake too.
 
 
 **The Route while asleep.** The Node's Caddy site of a container Instance checks for the asleep marker, `/data/caddy/orbit/hibernation/app-instance-<id>.asleep`. Without it, Caddy serves the request as before; the check is a file test on the Node and calls nothing. With it, Caddy calls the [runtime activation endpoint](/reference/app-dev-runtime-hibernation#wake), which shows the same progress page as for a checkout Instance and starts or joins the Instance's one `instance.wake`. A request with `X-Orbit-Probe: 1` skips the check. A failed wake keeps the marker, and the Route shows the failure page with Try again.
