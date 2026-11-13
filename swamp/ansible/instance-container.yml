@@ -89,7 +89,8 @@
                   else 'process.' ~ process_action ~ '_failed'
                   if (ansible_run_tags | first) == 'process' and process_action in ['start', 'restart']
                   else 'instance.container_' ~ (ansible_run_tags | first) ~ '_failed'}
-                  | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({})) | combine(club_key_carried) | to_json }}
+                  | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({}))
+                  | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {}) | combine(club_key_carried) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           delegate_to: localhost

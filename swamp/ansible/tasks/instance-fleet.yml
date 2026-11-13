@@ -50,8 +50,13 @@
     fleet_state_mounts: [home-orbit-orbit-apps-gateway-.env.mount, home-orbit-orbit-apps-gateway-storage.mount,
                          home-orbit-orbit-apps-gateway-bootstrap-cache.mount]
 
-# The fleet rules by role: devices with the keys they must have, and configuration keys. A restore of `base` reverts both, so the
-# refresh applies them before it takes `base`, and the start refuses a fleet that lacks one.
+# The fleet rules by role: devices with the keys they must have, configuration keys, and the proxy drop-ins of the nested Gateway's
+# Swamp units. They are the shape of the fleet that runs (docs/reference/development-containers.md#fleet-rules). A restore of `base`
+# reverts devices and keys, so the refresh applies the rules with the fleet stopped before it takes `base`.
+#
+# Each rule is one of two kinds. Orbit owns a rule when it may write it on an existing fleet: the refresh writes an owned rule that
+# differs, and the start lets it pass. A build rule (`fleet_build_rules`) is written only where the key is absent; a fleet that holds
+# another value is refused with `instance.container_fleet_drift` before any change, and the start refuses a fleet that lacks it.
 - name: Name the fleet rules
   vars:
     fleet_checkout_device:
@@ -59,8 +64,12 @@
     # Docker in a nested Node skips its AppArmor profile when the kernel reads AppArmor as off.
     fleet_apparmor_device:
       apparmor-off: {type: disk, source: /etc/orbit/apparmor-off, path: /sys/module/apparmor/parameters/enabled, readonly: "true"}
-    # The nested `orbit` and the container's `orbit` are one owner of the workspace: an ID shift fails two levels below the host.
-    fleet_idmap: {raw.idmap: both 1000 1000}
+    # The workspace is `agent:work` (2750:2760) with files of `orbit` (1000), facts of the image. The nested Gateway and app-dev keep
+    # all three IDs, so nested root resolves every checkout inode and the state mounts come up. An ID shift fails two levels below the
+    # host. Changing a map remaps a container's disk, so it is a build rule.
+    fleet_idmap: {raw.idmap: "both 1000 1000\nuid 2750 2750\ngid 2760 2760"}
+    # The inner Incus starts the fleet when the Instance container boots; the start also starts any nested container that is stopped.
+    fleet_autostart: {boot.autostart: "true"}
     fleet_environment: "{{ dict(intent.fleet.proxy.keys() | map('regex_replace', '^', 'environment.') | zip(intent.fleet.proxy.values())) }}"
   ansible.builtin.set_fact:
     fleet_rules:
@@ -68,19 +77,19 @@
         devices: >-
           {{ fleet_checkout_device | combine({'club-key': {'type': 'disk', 'source': fleet_club_folder,
              'path': fleet_club_mount, 'required': 'false', 'shift': 'false'}}) }}
-        config: "{{ fleet_idmap | combine(fleet_environment) }}"
+        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment) }}"
       app-dev:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
-        config: "{{ fleet_idmap | combine(fleet_environment) }}"
+        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment) }}"
       app-prod:
         devices: "{{ fleet_apparmor_device }}"
-        config: "{{ fleet_environment }}"
+        config: "{{ fleet_autostart | combine(fleet_environment) }}"
+    fleet_build_rules: [raw.idmap]
     # Swamp in the nested Gateway reaches Swamp Club through the proxy: a unit environment for serve and its workers.
     fleet_unit_environments: >-
       {{ ['orbit-swamp-serve.service', 'orbit-swamp-worker@.service']
-         | map('regex_replace', '^(.*)$', '/etc/systemd/system/\1.d/orbit-proxy.conf') | list }}
+         | map('regex_replace', '^(.*)$', '/etc/systemd/system/\1.d/50-inner-fleet-proxy.conf') | list }}
+    # One line, the shape of the drop-ins that run; the start and the refresh compare the file byte for byte, apart from the ends.
     fleet_unit_environment: |
       [Service]
-      {% for key, value in intent.fleet.proxy.items() %}
-      Environment="{{ key }}={{ value }}"
-      {% endfor %}
+      Environment={{ intent.fleet.proxy | dict2items | map(attribute='key') | zip(intent.fleet.proxy.values()) | map('join', '=') | map('regex_replace', '^(.*)$', '"\1"') | join(' ') }}

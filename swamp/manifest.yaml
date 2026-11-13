@@ -81,6 +81,7 @@ additionalFiles:
   - ansible/tasks/instance-fleet.yml
   - ansible/tasks/instance-fleet-rules.yml
   - ansible/tasks/instance-fleet-rules-read.yml
+  - ansible/tasks/instance-fleet-check.yml
   - ansible/tasks/instance-fleet-start.yml
   - ansible/tasks/instance-fleet-ready.yml
   - ansible/tasks/instance-fleet-refresh.yml

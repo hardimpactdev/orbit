@@ -729,8 +729,8 @@ it('gives only a nested-fleet default on a switched-on Node the fleet of its dep
             'operator' => ['address' => '10.45.0.10', 'hub' => '10.45.0.1', 'network' => '10.45.0.0/24'],
             'checkout' => ['path' => '/home/orbit/orbit'],
             'proxy' => ['HTTP_PROXY' => 'http://10.253.0.1:3128', 'HTTPS_PROXY' => 'http://10.253.0.1:3128', 'http_proxy' => 'http://10.253.0.1:3128',
-                'https_proxy' => 'http://10.253.0.1:3128', 'NO_PROXY' => 'localhost,127.0.0.1,.orbit,10.45.0.0/24,10.232.2.0/24',
-                'no_proxy' => 'localhost,127.0.0.1,.orbit,10.45.0.0/24,10.232.2.0/24'],
+                'https_proxy' => 'http://10.253.0.1:3128', 'NO_PROXY' => 'localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24',
+                'no_proxy' => 'localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24'],
         ]);
     }
 })->with([

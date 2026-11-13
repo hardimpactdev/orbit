@@ -1,10 +1,33 @@
 ---
-# The fleet rules (instance-fleet.yml) on the nested containers: apply them, then check them. Before the first start of a fleet, and in
-# the refresh before it takes `base`, the fleet is stopped and `fleet_rules_apply` is true. The start and the reset only check: a
-# restore of `base` reverts devices and configuration keys, so a `base` without a rule fails here with the container and the rule.
+# The fleet rules (instance-fleet.yml) on the nested containers: compare, then apply or check. Before the first start of a fleet, and
+# in the refresh before it takes `base`, the fleet is stopped and `fleet_rules_apply` is true. The check of a deployment, the start
+# and the reset only compare and never change a key.
+# Before any change, a fleet whose difference Orbit does not write is refused with `instance.container_fleet_drift`, and the result
+# names each difference (`fleet_drift`): a build rule with another value, or a nested container that cannot be read; without
+# `fleet_rules_apply`, also a build rule that is absent. Without `fleet_rules_apply` an owned rule that differs passes: the refresh
+# writes it with the fleet stopped. With it, only owned rules and absent build rules are written, and then every rule must hold.
 # Input: instance-fleet.yml. Each change is one inner `incus` call; a rerun changes nothing.
 - { name: Name the fleet commands, ansible.builtin.import_tasks: instance-fleet.yml }
 - { name: Read the fleet rules, ansible.builtin.include_tasks: instance-fleet-rules-read.yml }
+
+- name: Name the differences that Orbit does not write
+  vars:
+    fleet_refused: >-
+      {{ fleet_drift | selectattr('class', 'in', ['foreign'] if fleet_rules_apply | default(true) else ['foreign', 'build']) | list }}
+  ansible.builtin.set_fact:
+    fleet_drift_failure:
+      fleet_drift: >-
+        {{ fleet_refused | map(attribute='container') | zip(fleet_refused | map(attribute='kind'), fleet_refused | map(attribute='name'))
+           | map('join', ' ') | list }}
+- name: Show the differences that Orbit does not write
+  when: fleet_drift_failure.fleet_drift | length > 0
+  ansible.builtin.debug:
+    msg: "The nested fleet differs from its rules where Orbit does not write: {{ fleet_drift_failure.fleet_drift | join(', ') }}"
+- name: Refuse a fleet that differs where Orbit does not write
+  ansible.builtin.assert:
+    that: fleet_drift_failure.fleet_drift | length == 0
+    fail_msg: instance.container_fleet_drift
+    quiet: true
 
 - name: Apply the fleet rules
   when: fleet_rules_apply | default(true) and fleet_drift | length > 0
@@ -30,7 +53,7 @@
     - name: Set the configuration keys
       ansible.builtin.command:
         argv: "{{ ['timeout', '60'] + fleet_incus + ['config', 'set', item.container, item.name ~ '=' ~ item.want] }}"
-      loop: "{{ fleet_drift | selectattr('kind', 'eq', 'config') | list }}"
+      loop: "{{ fleet_drift | selectattr('kind', 'eq', 'config') | selectattr('class', 'in', ['owned', 'build']) | list }}"
       loop_control: { label: "{{ item.container }} {{ item.name }}" }
       changed_when: true
     - name: Write the unit environments
@@ -44,6 +67,7 @@
     - { name: Read the fleet rules again, ansible.builtin.include_tasks: instance-fleet-rules-read.yml }
 
 - name: Check the fleet rules
+  when: fleet_rules_apply | default(true)
   ansible.builtin.assert:
     that: fleet_drift | length == 0
     fail_msg: >-

@@ -8,7 +8,7 @@ import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 const hasAnsible = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 const root = new URL("../ansible/", import.meta.url);
 const shapes = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-containers.json", import.meta.url)));
-const phases = ["rules", "rules-read", "start", "ready", "refresh", "converge-node", "reset", ""];
+const phases = ["check", "rules", "rules-read", "start", "ready", "refresh", "converge-node", "reset", ""];
 const guests = { gateway: "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod" };
 const names = Object.values(guests);
 const outer = ["--project", "orbit-instances-nested", "exec", "instance-9", "--"];
@@ -19,12 +19,13 @@ const proxy = {
   HTTPS_PROXY: "http://10.253.0.1:3128",
   http_proxy: "http://10.253.0.1:3128",
   https_proxy: "http://10.253.0.1:3128",
-  NO_PROXY: "localhost,127.0.0.1,.orbit,10.45.0.0/24,10.232.2.0/24",
-  no_proxy: "localhost,127.0.0.1,.orbit,10.45.0.0/24,10.232.2.0/24",
+  NO_PROXY: "localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+  no_proxy: "localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
 };
-const dropIn = '[Service]\n' + Object.entries(proxy).map(([key, value]) => `Environment="${key}=${value}"`).join("\n") + "\n";
+const dropIn = "[Service]\nEnvironment=" + Object.entries(proxy).map(([key, value]) => `"${key}=${value}"`).join(" ") + "\n";
 const environment = Object.fromEntries(Object.entries(proxy).map(([key, value]) => [`environment.${key}`, value]));
-const units = ["/etc/systemd/system/orbit-swamp-serve.service.d/orbit-proxy.conf", "/etc/systemd/system/orbit-swamp-worker@.service.d/orbit-proxy.conf"];
+const units = ["/etc/systemd/system/orbit-swamp-serve.service.d/50-inner-fleet-proxy.conf", "/etc/systemd/system/orbit-swamp-worker@.service.d/50-inner-fleet-proxy.conf"];
+const idmap = "both 1000 1000\nuid 2750 2750\ngid 2760 2760";
 
 /** The shape a fleet has after the fleet rules: the exported shape with the devices and keys the rules give each container. */
 function ruled() {
@@ -36,7 +37,7 @@ function ruled() {
   containers["nested-app-dev"].devices.checkout = checkout;
   containers["nested-app-dev"].devices["apparmor-off"] = apparmor;
   containers["nested-app-prod"].devices["apparmor-off"] = apparmor;
-  for (const name of ["nested-gateway", "nested-app-dev"]) containers[name].config["raw.idmap"] = "both 1000 1000";
+  for (const name of ["nested-gateway", "nested-app-dev"]) containers[name].config["raw.idmap"] = idmap;
   for (const name of names) Object.assign(containers[name].config, environment);
   containers["nested-gateway"].files = Object.fromEntries(units.map((unit) => [unit, dropIn]));
   return containers;
@@ -189,7 +190,7 @@ Deno.test({
         "incus config device set nested-gateway club-key source=/run/orbit-club path=/home/orbit/.config/swamp/club required=false shift=false",
         "incus config device set nested-app-dev checkout source=/srv/workspace path=/home/orbit/orbit shift=false",
         ...["nested-gateway", "nested-app-dev", "nested-app-prod"].flatMap((name) =>
-          [...(name === "nested-app-prod" ? [] : ["raw.idmap=both 1000 1000"]), ...proxyKeys].map((key) => `incus config set ${name} ${key}`)),
+          [...(name === "nested-app-prod" ? [] : [`raw.idmap=${idmap}`]), ...proxyKeys].map((key) => `incus config set ${name} ${key}`)),
         ...units.map((unit) => `incus file push --create-dirs --mode 0644 - nested-gateway${unit}`),
         ...reads,
       ]);
@@ -263,24 +264,24 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a fleet without its rules is refused with the container and the rule, before any start",
+  name: "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written",
   ignore: !hasAnsible,
   fn() {
     const f = fixture(structuredClone(shapes));
     try {
       const refused = f.run("start");
       assert(!refused.ok);
-      assertStringIncludes(refused.output, "The nested fleet lacks its rules: nested-gateway device checkout, nested-gateway device club-key, nested-gateway config raw.idmap,");
-      assertStringIncludes(refused.output, "nested-app-prod device apparmor-off");
-      assertStringIncludes(refused.output, "nested-gateway unit /etc/systemd/system/orbit-swamp-worker@.service.d/orbit-proxy.conf");
+      assertStringIncludes(refused.output, "The nested fleet differs from its rules where Orbit does not write: nested-gateway config raw.idmap, nested-app-dev config raw.idmap\"");
+      assertStringIncludes(refused.output, '"msg": "instance.container_fleet_drift"');
       assertEquals(f.calls(), reads);
       const one = ruled();
       delete one["nested-app-dev"].devices["apparmor-off"];
       const g = fixture(one);
       try {
-        const missing = g.run("start");
-        assert(!missing.ok);
-        assertStringIncludes(missing.output, "The nested fleet lacks its rules: nested-app-dev device apparmor-off\"");
+        const started = g.run("start");
+        assert(started.ok, started.output);
+        assert(!g.calls().some((call) => / config (set|device) | file push /.test(call)));
+        assertEquals(g.state().containers["nested-app-dev"].devices["apparmor-off"], undefined);
       } finally {
         g.cleanup();
       }
@@ -298,7 +299,7 @@ Deno.test({
     try {
       assert(f.run("start").ok);
       f.calls();
-      // A device the rules own went missing while the fleet ran: the refresh puts it back before it takes base.
+      // A device Orbit owns went missing while the fleet ran: the refresh puts it back before it takes base.
       f.change((state) => delete state.containers["nested-app-prod"].devices["apparmor-off"]);
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
@@ -402,11 +403,117 @@ Deno.test({
       try {
         const refused = g.run("reset");
         assert(!refused.ok);
-        assertStringIncludes(refused.output, "The nested fleet lacks its rules: nested-gateway device checkout");
+        assertStringIncludes(refused.output, '"msg": "instance.container_fleet_drift"');
         assert(!g.calls().some((call) => call.startsWith("incus start")));
       } finally {
         g.cleanup();
       }
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+// The three nested containers of the first inner fleet as they run (read from Instance 2454 on 2026-11-13, without volatile keys and
+// cloud-init data), with the `club-key` device as the key move to /run sets it. step8/runbook.sh built them by hand.
+const live = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-live.json", import.meta.url)));
+const tunnelUp = { addresses: ["10.45.0.10/24"], up: true, key: "/etc/wireguard/wg-nested.key", port: "51821", peer: "HUBPUB=", endpoint: "10.232.2.11:51820", allowed: "10.45.0.0/24" };
+const writes = (calls: string[]) => calls.filter((call) => / config (set|device) | file push | snapshot | stop /.test(call));
+// deno-lint-ignore no-explicit-any
+const withStatus = (status: string): Record<string, any> =>
+  Object.fromEntries(Object.entries(structuredClone(live)).map(([name, value]) => [name, { ...value as object, status }]));
+
+Deno.test({
+  name: "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(withStatus("Running"), { club: true });
+    f.change((state) => state.tunnel = structuredClone(tunnelUp));
+    try {
+      const check = f.run("check");
+      assert(check.ok, check.output);
+      assertEquals(check.changed, 0);
+      assertEquals(f.calls(), ["incus admin waitready --timeout 80", ...reads]);
+      const start = f.run("start");
+      assert(start.ok, start.output);
+      assertEquals(start.changed, 0);
+      assertEquals(writes(f.calls()), []);
+      assertEquals(f.state().containers, withStatus("Running"));
+    } finally {
+      f.cleanup();
+    }
+    const g = fixture(withStatus("Stopped"), { club: true });
+    try {
+      const start = g.run("start");
+      assert(start.ok, start.output);
+      const calls = g.calls();
+      assertEquals(calls.filter((call) => call.startsWith("incus start")), names.map((name) => `incus start ${name}`));
+      assertEquals(writes(calls), []);
+      assertEquals(g.state().containers, withStatus("Running"));
+    } finally {
+      g.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a live fleet with a foreign difference is refused by the check and by the rules before any change",
+  ignore: !hasAnsible,
+  fn() {
+    const containers = withStatus("Running");
+    // The ID map of the rules before the live shape: without 2750 and 2760 the nested Gateway cannot read the workspace.
+    containers["nested-gateway"].config["raw.idmap"] = "both 1000 1000";
+    const f = fixture(containers, { club: true });
+    try {
+      for (const phase of ["check", "rules"]) {
+        const refused = f.run(phase);
+        assert(!refused.ok, phase);
+        assertStringIncludes(refused.output, "where Orbit does not write: nested-gateway config raw.idmap\"");
+        assertStringIncludes(refused.output, '"msg": "instance.container_fleet_drift"');
+        assertEquals(writes(f.calls()), [], phase);
+      }
+      assertEquals(f.state().containers, containers);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a fleet built from the rules has the live shape, with boot.autostart true",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(structuredClone(shapes));
+    try {
+      const built = f.run("rules");
+      assert(built.ok, built.output);
+      const state = f.state().containers;
+      for (const name of names) {
+        const want = structuredClone(live[name]);
+        want.config["boot.autostart"] = "true";
+        assertEquals(state[name].devices, want.devices, name);
+        assertEquals(state[name].files ?? {}, want.files ?? {}, name);
+        const keys = ["raw.idmap", "boot.autostart", ...Object.keys(environment)];
+        const pick = (config: Record<string, string>) => Object.fromEntries(keys.filter((key) => key in config).map((key) => [key, config[key]]));
+        assertEquals(pick(state[name].config), pick(want.config), name);
+      }
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "on the live fleet a refresh writes only boot.autostart, then takes base",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(withStatus("Running"), { club: true, base: true });
+    f.change((state) => state.tunnel = structuredClone(tunnelUp));
+    try {
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      assertEquals(writes(f.calls()).filter((call) => !/ (stop|snapshot) /.test(call)), names.map((name) => `incus config set ${name} boot.autostart=true`));
+      for (const name of names) assertEquals(f.state().containers[name].snapshots.base.config["boot.autostart"], "true");
     } finally {
       f.cleanup();
     }

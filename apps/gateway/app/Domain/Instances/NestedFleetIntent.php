@@ -21,8 +21,8 @@ use App\Support\ValidatedData;
  */
 final readonly class NestedFleetIntent
 {
-    /** Seconds that the fleet steps add to a deployment's run budget: the first seed 120, start 600, refresh 3,600, restore 150 and the start after it 120. */
-    public const int RunSeconds = 4590;
+    /** Seconds that the fleet steps add to a deployment's run budget: the check 300, the first seed 120, start 600, refresh 3,600, restore 150 and the start after it 120. */
+    public const int RunSeconds = 4890;
 
     /** @return array<string, mixed>|null */
     public function forDeployment(Instance $instance, InstanceRuntime $runtime): ?array
@@ -33,7 +33,9 @@ final readonly class NestedFleetIntent
         }
         $this->assertNoCopyInFlight($instance);
         $proxy = InstanceEgress::origin(Ipv4Subnet::from(ValidatedData::string($instance->node->instance_bridge))->usableRange()[0]);
-        $local = implode(',', ['localhost', '127.0.0.1', '.orbit', TaskVmNestedFleet::WireGuardSubnet, TaskVmNestedFleet::Subnet]);
+        // The nested Gateway's own address is named as well as its network: PHP's HTTP clients may not match an address to a range.
+        $local = implode(',', ['localhost', '127.0.0.1', '::1', '.orbit', TaskVmNestedFleet::Layout['gateway']['wireguard'],
+            TaskVmNestedFleet::WireGuardSubnet, TaskVmNestedFleet::Subnet]);
 
         return [
             'guests' => TaskVmNestedFleet::Guests,

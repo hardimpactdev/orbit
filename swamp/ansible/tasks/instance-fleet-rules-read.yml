@@ -1,6 +1,8 @@
 ---
 # Read the fleet rules of instance-fleet.yml from the inner Incus and set `fleet_drift`: one entry for each rule that a nested container
-# lacks, with the container and the rule's name. instance-fleet-rules.yml reads before it applies and again to check.
+# lacks, with the container, the rule's name and its class. instance-fleet-rules.yml reads before it applies and again to check.
+# Classes: `owned`, a rule Orbit writes on an existing fleet; `build`, a build rule whose key is absent; `foreign`, a build rule whose
+# key holds another value, or a nested container that cannot be read. Only `owned` and `build` are ever written.
 - name: Read the nested containers
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['query', '/1.0/instances/' ~ intent.fleet.guests[item]] }}" }
   loop: "{{ fleet_roles }}"
@@ -21,25 +23,28 @@
       {%- for read in fleet_rules_read.results -%}
       {%-   set name = intent.fleet.guests[read.item] -%}
       {%-   if read.rc != 0 -%}
-      {%-     set _ = out.append({'container': name, 'kind': 'container', 'name': name}) -%}
+      {%-     set _ = out.append({'container': name, 'kind': 'container', 'name': name, 'class': 'foreign'}) -%}
       {%-   else -%}
       {%-     set have = read.stdout | from_json -%}
       {%-     for device, want in fleet_rules[read.item].devices.items() -%}
       {%-       set got = have.devices[device] | default(none) -%}
       {%-       if got is none or got | combine(want) != got -%}
-      {%-         set _ = out.append({'container': name, 'kind': 'device', 'name': device, 'want': want, 'present': got is not none}) -%}
+      {%-         set _ = out.append({'container': name, 'kind': 'device', 'name': device, 'want': want, 'present': got is not none,
+                                    'class': 'owned'}) -%}
       {%-       endif -%}
       {%-     endfor -%}
       {%-     for key, value in fleet_rules[read.item].config.items() -%}
-      {%-       if have.config[key] | default(none) != value -%}
-      {%-         set _ = out.append({'container': name, 'kind': 'config', 'name': key, 'want': value}) -%}
+      {%-       set got = have.config[key] | default(none) -%}
+      {%-       if got != value -%}
+      {%-         set rule_class = 'owned' if key not in fleet_build_rules else ('build' if got is none else 'foreign') -%}
+      {%-         set _ = out.append({'container': name, 'kind': 'config', 'name': key, 'want': value, 'class': rule_class}) -%}
       {%-       endif -%}
       {%-     endfor -%}
       {%-   endif -%}
       {%- endfor -%}
       {%- for read in fleet_units_read.results -%}
       {%-   if read.rc != 0 or read.stdout | trim != fleet_unit_environment | trim -%}
-      {%-     set _ = out.append({'container': intent.fleet.guests.gateway, 'kind': 'unit', 'name': read.item}) -%}
+      {%-     set _ = out.append({'container': intent.fleet.guests.gateway, 'kind': 'unit', 'name': read.item, 'class': 'owned'}) -%}
       {%-   endif -%}
       {%- endfor -%}
       {{ out }}

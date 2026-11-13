@@ -47,6 +47,7 @@ if (command[0] === "test" && command[1] === "-s") {
 
 if (command[0] === "incus") {
   const inner = command.slice(1);
+  if (inner[0] === "admin" && inner[1] === "waitready") done();
   if (inner[0] === "list") {
     done(Object.entries(containers).map(([name, value]) => `${name},${value.status.toUpperCase()}`).join("\n"));
   }

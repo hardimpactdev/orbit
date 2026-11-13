@@ -1796,6 +1796,31 @@ jobs:
           # Only a nested-fleet container's start gets its Club key, from its one vault copy; Ansible passes it on stdin. Any other run
           # names a key it always has, which Ansible never delivers (docs/reference/swamp-command-steps.md#secret-inputs).
           ORBIT_CLUB_KEY: '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.intent.deployment.variant == "container" && inputs.intent.container.project == "orbit-instances-nested" && inputs.intent.container.club_key.available ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.credential.key) }}'
+  - name: Check the inner fleet
+    # A nested-fleet default compares its inner fleet with the fleet rules before the run changes anything. A fleet that differs where
+    # Orbit does not write is refused with instance.container_fleet_drift; nothing changed, so no seed is restored.
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Start the container
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps.exists(k, steps[k].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "instance-deploy-container-fleet-check-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_check "$ORBIT_ANSIBLE/instance-container.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_RUN_ID: ${{ run.id }}
+          ORBIT_ANSIBLE: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets : "" }}'
+          ANSIBLE_CONFIG: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets + "/ansible.cfg" : "" }}'
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
   - name: Keep the current seed
     # A nested-fleet default first retakes its seed as it is, fleet included, so a failed refresh restores that seed and never one
     # from before the fleet (docs/cli/instance/container/fleet-refresh.mmd). It refuses while the Club key is on the disk.
@@ -1806,6 +1831,12 @@ jobs:
     - step: Start the container
       condition:
         type: succeeded
+    - step: Check the inner fleet
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
     guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps.exists(k, steps[k].status == "failed") }}
     task:
       type: behavior
@@ -2028,6 +2059,9 @@ jobs:
     - step: Start the container
       condition:
         type: always
+    - step: Check the inner fleet
+      condition:
+        type: always
     - step: Keep the current seed
       condition:
         type: always
@@ -2055,7 +2089,7 @@ jobs:
     - step: Check the container
       condition:
         type: always
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Start the container", "Keep the current seed", "Fetch into the mirror"])) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Start the container", "Check the inner fleet", "Keep the current seed", "Fetch into the mirror"])) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -2072,7 +2106,7 @@ jobs:
     - step: Restore the old seed
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Start the container", "Keep the current seed", "Fetch into the mirror"])) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Start the container", "Check the inner fleet", "Keep the current seed", "Fetch into the mirror"])) }}
     task:
       type: behavior
       behaviorType: command/shell

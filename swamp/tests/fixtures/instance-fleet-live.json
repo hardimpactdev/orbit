@@ -1,0 +1,150 @@
+{
+  "nested-gateway": {
+    "config": {
+      "boot.autostart": "false",
+      "environment.HTTPS_PROXY": "http://10.253.0.1:3128",
+      "environment.HTTP_PROXY": "http://10.253.0.1:3128",
+      "environment.NO_PROXY": "localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+      "environment.http_proxy": "http://10.253.0.1:3128",
+      "environment.https_proxy": "http://10.253.0.1:3128",
+      "environment.no_proxy": "localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+      "image.architecture": "amd64",
+      "image.description": "Ubuntu resolute amd64 (cloud) (20261107_07:42)",
+      "image.os": "Ubuntu",
+      "image.release": "resolute",
+      "image.serial": "20261107_07:42",
+      "image.type": "squashfs",
+      "image.variant": "cloud",
+      "limits.cpu": "2",
+      "limits.memory": "4GiB",
+      "raw.idmap": "both 1000 1000\nuid 2750 2750\ngid 2760 2760",
+      "security.nesting": "true",
+      "user.orbit.step8": "trial-78"
+    },
+    "devices": {
+      "checkout": {
+        "path": "/home/orbit/orbit",
+        "shift": "false",
+        "source": "/srv/workspace",
+        "type": "disk"
+      },
+      "club-key": {
+        "path": "/home/orbit/.config/swamp/club",
+        "required": "false",
+        "shift": "false",
+        "source": "/run/orbit-club",
+        "type": "disk"
+      },
+      "eth0": {
+        "hwaddr": "10:66:6a:5d:00:11",
+        "ipv4.address": "10.232.2.11",
+        "name": "eth0",
+        "network": "oe-nested",
+        "type": "nic"
+      },
+      "root": {
+        "path": "/",
+        "pool": "topology-seed",
+        "type": "disk"
+      }
+    },
+    "files": {
+      "/etc/systemd/system/orbit-swamp-serve.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
+      "/etc/systemd/system/orbit-swamp-worker@.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n"
+    },
+    "links": {
+      "/home/orbit/.config/swamp/api-key": "club/swamp-club-api-key"
+    }
+  },
+  "nested-app-dev": {
+    "config": {
+      "boot.autostart": "false",
+      "environment.HTTPS_PROXY": "http://10.253.0.1:3128",
+      "environment.HTTP_PROXY": "http://10.253.0.1:3128",
+      "environment.NO_PROXY": "localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+      "environment.http_proxy": "http://10.253.0.1:3128",
+      "environment.https_proxy": "http://10.253.0.1:3128",
+      "environment.no_proxy": "localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+      "image.architecture": "amd64",
+      "image.description": "Ubuntu resolute amd64 (cloud) (20261107_07:42)",
+      "image.os": "Ubuntu",
+      "image.release": "resolute",
+      "image.serial": "20261107_07:42",
+      "image.type": "squashfs",
+      "image.variant": "cloud",
+      "limits.cpu": "2",
+      "limits.memory": "3GiB",
+      "raw.idmap": "both 1000 1000\nuid 2750 2750\ngid 2760 2760",
+      "security.nesting": "true",
+      "user.orbit.step8": "trial-78"
+    },
+    "devices": {
+      "apparmor-off": {
+        "path": "/sys/module/apparmor/parameters/enabled",
+        "readonly": "true",
+        "source": "/etc/orbit/apparmor-off",
+        "type": "disk"
+      },
+      "checkout": {
+        "path": "/home/orbit/orbit",
+        "shift": "false",
+        "source": "/srv/workspace",
+        "type": "disk"
+      },
+      "eth0": {
+        "hwaddr": "10:66:6a:5d:00:12",
+        "ipv4.address": "10.232.2.12",
+        "name": "eth0",
+        "network": "oe-nested",
+        "type": "nic"
+      },
+      "root": {
+        "path": "/",
+        "pool": "topology-seed",
+        "type": "disk"
+      }
+    }
+  },
+  "nested-app-prod": {
+    "config": {
+      "boot.autostart": "false",
+      "environment.HTTPS_PROXY": "http://10.253.0.1:3128",
+      "environment.HTTP_PROXY": "http://10.253.0.1:3128",
+      "environment.NO_PROXY": "localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+      "environment.http_proxy": "http://10.253.0.1:3128",
+      "environment.https_proxy": "http://10.253.0.1:3128",
+      "environment.no_proxy": "localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+      "image.architecture": "amd64",
+      "image.description": "Ubuntu resolute amd64 (cloud) (20261107_07:42)",
+      "image.os": "Ubuntu",
+      "image.release": "resolute",
+      "image.serial": "20261107_07:42",
+      "image.type": "squashfs",
+      "image.variant": "cloud",
+      "limits.cpu": "2",
+      "limits.memory": "3GiB",
+      "security.nesting": "true",
+      "user.orbit.step8": "trial-78"
+    },
+    "devices": {
+      "apparmor-off": {
+        "path": "/sys/module/apparmor/parameters/enabled",
+        "readonly": "true",
+        "source": "/etc/orbit/apparmor-off",
+        "type": "disk"
+      },
+      "eth0": {
+        "hwaddr": "10:66:6a:5d:00:13",
+        "ipv4.address": "10.232.2.13",
+        "name": "eth0",
+        "network": "oe-nested",
+        "type": "nic"
+      },
+      "root": {
+        "path": "/",
+        "pool": "topology-seed",
+        "type": "disk"
+      }
+    }
+  }
+}

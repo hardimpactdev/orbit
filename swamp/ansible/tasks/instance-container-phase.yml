@@ -988,11 +988,12 @@
         ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
 # The inner fleet of a nested-fleet default (docs/reference/development-containers.md#refresh-after-a-release). Only such an intent has
-# `fleet`, and only its deployment runs these tags: `fleet_start` starts the fleet and waits for its Doctor, `fleet_refresh` applies
-# the checkout, converges the nested Nodes and retakes their `base` with the fleet stopped (tasks/instance-fleet-*.yml).
+# `fleet`, and only its deployment runs these tags: `fleet_check` compares the fleet with its rules before the run changes anything,
+# `fleet_start` starts the fleet and waits for its Doctor, `fleet_refresh` applies the checkout, converges the nested Nodes and retakes
+# their `base` with the fleet stopped (tasks/instance-fleet-*.yml).
 - name: Run the phase of the nested fleet
-  tags: [fleet_start, fleet_refresh]
-  when: phase in ['fleet_start', 'fleet_refresh']
+  tags: [fleet_check, fleet_start, fleet_refresh]
+  when: phase in ['fleet_check', 'fleet_start', 'fleet_refresh']
   ansible.builtin.include_tasks:
     file: "tasks/instance-fleet-{{ phase | replace('fleet_', '') }}.yml"
     apply: {tags: [always]}

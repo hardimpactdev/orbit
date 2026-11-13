@@ -1144,17 +1144,18 @@ In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:10000
 
 ### Fleet rules
 
-Each rule below is a device or config key of a nested container, or a file it reads. All of them are in `base`, because a restore of `base` reverts device and config keys.
+Each rule below is a device or config key of a nested container, or a file it reads. All of them are in `base`, because a restore of `base` reverts device and config keys. The rules are the shape of the first inner fleet, which was built by hand and runs.
 
 | Rule | Where | Why |
 | --- | --- | --- |
 | The workspace `/srv/workspace` is the disk device `checkout`, with `shift=false` | `nested-gateway`, `nested-app-dev` | An edit reaches them at once. A shifted mount fails two levels below the host |
-| `raw.idmap "both 1000 1000"` in the inner Incus | `nested-gateway`, `nested-app-dev` | The outer `orbit` and the nested `orbit` are one owner, so both write the workspace with no `chown`. The key is the inner Incus's own; the outer container still has no `raw.*` key |
+| `raw.idmap` `both 1000 1000`, `uid 2750 2750` and `gid 2760 2760` in the inner Incus | `nested-gateway`, `nested-app-dev` | The workspace is `agent:work` (2750:2760) with files of `orbit` (1000). With only the `orbit` line, nested root cannot resolve the state mounts. The outer container still has no `raw.*` key |
 | The Club key folder device `club-key`: `/run/orbit-club` at `/home/orbit/.config/swamp/club`, `shift=false`, and the link `/home/orbit/.config/swamp/api-key` to `club/swamp-club-api-key` | `nested-gateway` | The nested Swamp reads the [Club key](#the-club-key-of-the-nested-gateway) that Orbit delivers to the outer container's `/run` |
 | A read-only disk device that shows `N` at `/sys/module/apparmor/parameters/enabled`, from `/etc/orbit/apparmor-off` | `nested-app-dev`, `nested-app-prod` | `docker run` fails without it: Docker's own profile cannot load two levels below the host |
-| `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` in a drop-in for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service` | `nested-gateway` | Swamp verifies a new Club key at Swamp Club, and the fleet reaches the internet only through the Node's [egress proxy](#egress-and-dns) |
-| The same proxy settings as `environment.*` keys in the inner Incus | All three | A nested Node downloads the agent and packages; fleet names stay off the proxy |
-| `security.nesting=true`, a memory limit and `boot.autostart=true` | All three | Docker runs in them, and they start with the outer container |
+| `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` in the drop-in `50-inner-fleet-proxy.conf` for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service`, one `Environment=` line | `nested-gateway` | Swamp verifies a new Club key at Swamp Club, and the fleet reaches the internet only through the Node's [egress proxy](#egress-and-dns) |
+| The same proxy settings as `environment.*` keys in the inner Incus. `NO_PROXY` is `localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24` | All three | A nested Node downloads the agent and packages; fleet names stay off the proxy. PHP's HTTP clients may not match `10.45.0.1` to its range |
+| `security.nesting=true` and a memory limit | All three | Docker runs in them |
+| `boot.autostart=true` | All three | They start with the outer container, also after a restore of its seed. With `false`, the start still starts them, and the refresh writes `true` |
 
 A unit in the fleet reads its secret from `SetCredential` or a file, never `LoadCredential`: there systemd gives the unit no credential and no error. The fleet check fails on a unit that breaks this rule. The nested Nodes keep `wg-quick` from their own Node converge; the fleet build's cloud-init `bootcmd` turns off the `wg` and `wg-quick` profiles.
 
@@ -1239,6 +1240,7 @@ The run deploys the release commit itself. A commit missing from the Project's r
 | No refresh during a copy | A clone copy reads the seed that a refresh replaces. While a clone's create is open, the admission refuses with `instance.clone_in_flight` |
 | One run at a time | An open deployment of the default holds its Instance lock. A second admission refuses with `operation.target_busy` |
 | The fleet stays | A step that fails from the checkout on restores the newest seed: the one the run took first, or a newer one. A restore never goes back past the fleet |
+| Check before a change | The check compares the inner fleet with its [rules](#fleet-rules) before the first seed. A refusal, `instance.container_fleet_drift`, changes nothing and restores nothing |
 | A failure names its step | The Operation names the first failed step and its code, such as `instance.container_fleet_refresh_failed` |
 | An update, not a rebuild | The image variant's tools change only with a new image |
 | The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Cancel an open refresh before the next release |
@@ -1301,12 +1303,13 @@ Gap: which refusal comes first on a full Node for nested-fleet clones, and its e
 
 ### The fleet step
 
-Four phase task files keep the fleet of a nested-fleet Instance. The deployment of a nested-fleet default calls the start and the refresh through the tags `fleet_start` and `fleet_refresh` of `instance-container.yml`; no flow calls the rules or the reset alone yet. Each one runs on the Node and reaches the inner Incus with `incus exec` into the Instance container. Their input is `intent.container` and `intent.fleet`; the header of `swamp/ansible/tasks/instance-fleet.yml` defines it. The Gateway fills `intent.fleet` (`NestedFleetIntent`) from the fleet constants of task VMs, with the commit of the old seed.
+Four phase task files keep the fleet of a nested-fleet Instance. The deployment of a nested-fleet default calls the check, the start and the refresh through the tags `fleet_check`, `fleet_start` and `fleet_refresh` of `instance-container.yml`; no flow calls the rules or the reset alone yet. Each one runs on the Node and reaches the inner Incus with `incus exec` into the Instance container. Their input is `intent.container` and `intent.fleet`; the header of `swamp/ansible/tasks/instance-fleet.yml` defines it. The Gateway fills `intent.fleet` (`NestedFleetIntent`) from the fleet constants of task VMs, with the commit of the old seed.
 
 | Phase | Task file | What it does |
 | --- | --- | --- |
+| Check | `instance-fleet-check.yml` | Waits for the inner Incus and compares the fleet with its rules. It changes nothing |
 | Rules | `instance-fleet-rules.yml` | Applies the fleet rules below to the stopped fleet, then checks them |
-| Start | `instance-fleet-start.yml` | Checks the rules, starts the three nested containers, brings up `wg-nested` with `ip` and `wg`, and waits for readiness |
+| Start | `instance-fleet-start.yml` | Compares the fleet with its rules, starts the nested containers that are stopped, brings up `wg-nested` with `ip` and `wg`, and waits for readiness. It changes no device or configuration key |
 | Refresh | `instance-fleet-refresh.yml` | For the default Instance: applies the checkout to the nested Gateway, converges the base of the three nested Nodes, waits for readiness, stops the fleet and takes `base` again |
 | Reset | `instance-fleet-reset.yml` | Restores `base` on the three nested containers, then runs the start |
 
@@ -1315,11 +1318,16 @@ The fleet rules:
 - The disk device `checkout` gives the workspace to the nested Gateway and `app-dev` with `shift=false`. An ID shift fails two levels below the host.
 - The disk device `club-key` gives the folder `/run/orbit-club` of the container to the nested Gateway at `/home/orbit/.config/swamp/club`, with `shift=false` and `required=false`.
 - In the nested Gateway, `/home/orbit/.config/swamp/api-key` links to `club/swamp-club-api-key`. `base` keeps the link.
-- `raw.idmap` `both 1000 1000` of the inner Incus is set on the nested Gateway and `app-dev`, so the nested `orbit` and the container's `orbit` own the workspace together.
+- `raw.idmap` of the inner Incus maps `orbit` (1000), `agent` (2750) and the group `work` (2760) into the nested Gateway and `app-dev`, so the nested `orbit` and the container's `orbit` own the workspace together.
 - The AppArmor-off device is on the nested `app-dev` and `app-prod`.
-- The egress proxy settings are `environment.*` keys on the three nested containers, and a unit environment for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service` in the nested Gateway.
+- `boot.autostart=true` is on the three nested containers.
+- The egress proxy settings are `environment.*` keys on the three nested containers, and the drop-in `50-inner-fleet-proxy.conf` for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service` in the nested Gateway.
 
-A restore of `base` reverts devices and configuration keys. So the rules must be in `base`, and the start and the reset refuse a nested container that lacks one, with its name.
+Orbit owns every rule except `raw.idmap`: the refresh writes an owned rule that differs while the fleet is stopped, and the check and the start let it pass. `raw.idmap` is a build rule, because a new map remaps a container's disk. It is written only where the key is absent. A fleet whose `raw.idmap` holds another value, or a nested container that cannot be read, is refused with `instance.container_fleet_drift` before any change; the check and the start also refuse a fleet that lacks `raw.idmap`. The result names each difference in `fleet_drift`, as `<container> <kind> <name>`.
+
+The deployment runs the check right after it starts the container, before it takes its first seed. A refusal there changed nothing, so no seed is restored. A failure from the checkout on, such as a start that fails after a change, restores the seed.
+
+A restore of `base` reverts devices and configuration keys. So the rules must be in `base`.
 
 Readiness is the proof's own check, from the container over `wg-nested`: every nested container runs, Doctor of the nested Gateway is healthy within a bounded wait, the three agents are online and the Gateway knows the operator with its key. A failure names the nested container or the check.
 
@@ -1393,6 +1401,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.clone_in_flight` | 409 | The refresh of a nested-fleet default while the create of a clone of it is open. The next release tries again |
 | `instance.fleet_key_on_disk` | 502 | The seed of a nested-fleet default found the Club key as a file on the container's disk. The run's first seed refuses before it changes anything |
 | `instance.fleet_seed_missing` | 502 | A failed refresh found no seed to restore. The default stays as the run left it |
+| `instance.container_fleet_drift` | 502 | The inner fleet of a nested-fleet default differs from its rules where Orbit does not write, such as `raw.idmap`. The result's `fleet_drift` names each difference. Nothing changed |
 | `instance.default_seed_moved` | 409 | A deployment of the default replaced the seed that a clone's create admitted, before the copy. The step's report names it; run the same command again |
 | `instance.container_process_inactive` | 502 | A required unit is inactive when a clone records its sessions. The Operation names the unit and records its states, exit status and restart count |
 | `instance.create_register_failed` | 502 | A clone's registration step failed: T3 refused a session, or the Gateway's lacks its scopes. The step's report names the `conn.*` code |
