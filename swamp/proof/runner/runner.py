@@ -21,6 +21,8 @@ import steps
 
 BATCHES = Path(__file__).resolve().parents[1] / 'batches.yaml'
 LINE_LIMIT = 1000
+MESSAGE_LIMIT = 400    # a failure message in a verdict line: the cause of a failed preparation comes first in it
+SETUP_LIMIT = 3000     # a failure message of `setup`, which is no verdict line; Swamp keeps the whole step output after the task VM ends
 
 
 class Run:
@@ -169,7 +171,7 @@ def execute(case, fleet, spec, evidence, negative=False):
 
 def verdict_line(result):
     """One JSON line of at most 1 KB: long failure messages are cut and the failures that do not fit are counted."""
-    failed = [message[:200] for message in result.get('failed', [])]
+    failed = [message[:MESSAGE_LIMIT] for message in result.get('failed', [])]
     for shown in range(len(failed), -1, -1):
         trimmed = failed[:shown] + ([f'+{len(failed) - shown} more'] if shown < len(failed) else [])
         line = json.dumps({**result, **({'failed': trimmed} if failed else {})}, separators=(', ', ': '))
@@ -181,6 +183,15 @@ def verdict_line(result):
 def plan_lines(spec):
     """One line a batch, for the workflow's forEach: `BATCH SETUP CASE...`, SETUP is 1 when the batch declares setup steps."""
     return [' '.join([batch['batch'], '1' if spec.batches[batch['batch']].get('setup') else '0', *batch['cases']]) for batch in spec_module.plan(spec)]
+
+
+def keep_failure(directory, messages):
+    """Write the whole cause of a failed preparation to the evidence directory, which a kept task VM still has. A failed write changes no verdict."""
+    try:
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        (Path(directory) / 'fleet-failure.log').write_text('\n\n'.join(messages) + '\n')
+    except OSError as error:
+        print(f'cannot keep the failure: {error}', file=sys.stderr)
 
 
 def command_plan(args):
@@ -233,6 +244,7 @@ def command_case(args):
         fleet = fleet_module.from_environment()
         fleet.prepare_cli_callers(spec_module.case_steps(case))
     except fleet_module.FleetError as error:
+        keep_failure(root, [str(error)])
         result = {'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [str(error)]}
         print(verdict_line(result))
         return 1
@@ -291,6 +303,7 @@ def command_batch(args):
         fleet = fleet_module.from_environment()
         fleet.prepare_cli_callers([step for case in cases for step in spec_module.case_steps(case)])
     except fleet_module.FleetError as error:
+        keep_failure(root, [str(error)])
         print('\n'.join(verdict_lines([{'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [str(error)]} for case in cases])))
         return 1
     discovery = round(time.time() - discovered, 2)
@@ -325,7 +338,9 @@ def command_setup(args):
         failures.append(str(error))
     except Exception as error:
         failures.append(f'{type(error).__name__}: {error}')
-    print(json.dumps({'batch': args.batch, 'setup': 'failed' if failures else 'ok', 'secs': round(time.time() - started, 1), 'failed': [message[:200] for message in failures][:3]}))
+    if failures:
+        keep_failure(root / ('batch-' + args.batch), failures)
+    print(json.dumps({'batch': args.batch, 'setup': 'failed' if failures else 'ok', 'secs': round(time.time() - started, 1), 'failed': [message[:SETUP_LIMIT] for message in failures][:3]}))
     return 1 if failures else 0
 
 

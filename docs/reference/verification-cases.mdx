@@ -286,9 +286,11 @@ Each case ends with one JSON line of at most 1 KB. Long failure messages are sho
 | `failed` | `assertion` | An `act` or `expect` step failed. |
 | `failed` | `infrastructure` | A step could not run, for example the fleet is unreachable. |
 | `unrun` | `precondition` | A `setup` step failed, such as a port that was not blocked before the command. |
-| `unrun` | `infrastructure` | A failed restore stopped the run before the case, or a proof in CI reached the run budget of its shard before the batch of the case ended. |
+| `unrun` | `infrastructure` | A failed restore or batch setup stopped the run before the case, the batch process ran and ended with no verdict line (the line gives its exit code and time), or a proof in CI reached the run budget of its shard before the batch of the case ended. |
 
 Neither `failed` nor `unrun` is a pass. The full receipt of a case, with every step, command output, the firewall before and after and the timings, stays in the evidence directory of the task VM. There is no receipt store. In CI the proof VM is destroyed, so only the verdict lines stay; the author reruns the proof in their own task VM for the full receipt.
+
+A failed fleet preparation keeps its cause in the line: the failed Ansible task and its message come first, then the end of the output, with secret-looking values replaced by `[redacted]`. A failure message in a verdict line is cut at 400 characters. The `setup` line keeps up to 3000 characters, and Swamp keeps that step output after the proof VM ends. The whole message is also in `fleet-failure.log` in the evidence directory (`batch-<batch>/` for a batch setup), which a kept VM still has.
 
 A failed CLI check includes the Operation's public `failed_step` and `error_code`, when present, in its failure message. This also applies to a failed setup command. Named-step checks read those fields from `operation:show`; human output uses its printed Operation ID. Private error details stay out of the verdict line.
 

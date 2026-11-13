@@ -57,6 +57,7 @@ sequenceDiagram
   Note over SW: Join the verdicts<br/>report step
   %%> What it does:
   %%> - one line a case, in plan order; a case of a batch that did not run is `unrun` with cause `infrastructure`
+  %%> - if a batch process ends without verdicts, name infrastructure failure with its exit code and duration; distinguish a failed restore or setup. A failed setup keeps its failed task and message in the step output.
   alt every case passes and the last restore succeeded
     SW-->>GW: Run succeeded<br/>verdict per case
     Note over GW: Record the result once<br/>PASS

@@ -2275,5 +2275,19 @@
       "DNS grace and withdrawal order remain independent of omitting the final publication",
       "either a records-only or catalog-only final difference retains the final DNS child"
     ]
+  },
+  "swamp/tests/proof_batch_report_test.ts": {
+    "source_sha256": "19ba819d9938d840d761783ecf36cc5216bff32ab0950c1eb733d65823aab014",
+    "cases": [
+      "setup passed and the batch process exited 255 with no verdict: unrun, infrastructure failure, with the exit code and the time",
+      "a failed batch step (killed, or the connection lost) is the same infrastructure failure, with what is known",
+      "a batch that exited 0 with no verdict is not a pass either",
+      "a genuine setup failure keeps its label and gets the setup exit code; the skipped batch is not an infrastructure failure",
+      "a setup that printed nothing and has no outputs still reads as a setup failure",
+      "a failed restore is named, and is no setup failure and no batch failure",
+      "a batch with some verdict lines keeps them and marks each case without one failed; the lines are no pass",
+      "every case has exactly one line, and no synthesized line is passed, in any state of the steps",
+      "every message that stops the run still holds `run stopped`, which the parent workflow's guards read to skip the batches after it"
+    ]
   }
 }

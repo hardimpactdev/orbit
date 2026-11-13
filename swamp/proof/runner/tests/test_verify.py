@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -26,7 +27,8 @@ BATCHES = PROOF / 'batches.yaml'
 def call(*argv):
     """(exit code, stdout lines) of one runner command."""
     out = io.StringIO()
-    with contextlib.redirect_stdout(out):
+    # A failed fleet preparation writes its cause to the evidence directory; a call without `--evidence` must not write into the checkout.
+    with tempfile.TemporaryDirectory() as evidence, patch.dict(os.environ, {'PROOF_EVIDENCE': evidence}), contextlib.redirect_stdout(out):
         code = runner.main(list(argv))
     return code, out.getvalue().splitlines()
 

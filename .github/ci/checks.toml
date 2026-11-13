@@ -2006,6 +2006,14 @@ inputs = [
 ]
 
 [[fixture]]
+file = "swamp/tests/proof_batch_report_test.ts"
+cost = 2
+inputs = [
+  "swamp/workflows/workflow-proof-fleet-verify-batch.yaml",
+  "swamp/workflows/workflow-proof-fleet-verify.yaml",
+]
+
+[[fixture]]
 file = "swamp/tests/proof_keep_failed_test.ts"
 cost = 1
 inputs = [

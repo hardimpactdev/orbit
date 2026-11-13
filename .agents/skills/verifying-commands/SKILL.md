@@ -51,7 +51,7 @@ State the commit, the cases selected and run, the verdicts, the functional asser
 
 The runner owns case expansion and comparison. CI publishes its exact base/head result for Gateway admission. Never add a YAML comparator in another language; missing or invalid selection results run whole files.
 
-Keep the tested Operation's public failed step and error code in failed CLI checks, including setup failures. CI deletes full receipts with the VM, so a step-count mismatch alone loses the cause. Rerun with failed-VM retention when the existing verdict lacks it; never infer the failed phase from a skipped end check.
+Keep the tested Operation's public failed step and error code in failed CLI checks, including setup failures. CI deletes full receipts with the VM, so a step-count mismatch alone loses the cause. A failed fleet preparation keeps its failed Ansible task and message in the verdict (and in the step output of `setup`), so read those before you rerun. Rerun with failed-VM retention when the existing verdict lacks it; never infer the failed phase from a skipped end check.
 
 A disposable Gateway needs a revision and an installable CLI release even though a PR has no published release. Prepare its tested revision and the existing test-only static catalog before cases. Keep the CLI under test on candidate source, and pin the separate installation fixture to a real published binary and checksum.
 

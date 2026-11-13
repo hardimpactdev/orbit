@@ -234,8 +234,9 @@ class CommandTest(unittest.TestCase):
     def test_a_fleet_that_cannot_be_found_is_infrastructure(self):
         def missing():
             raise fleet_module.FleetError('expected one complete nested fleet')
-        with patch.object(fleet_module, 'from_environment', missing):
-            code, out, _ = self.call(['case', CASE, '--file', str(CASES)])
+        with tempfile.TemporaryDirectory() as evidence, patch.object(fleet_module, 'from_environment', missing):
+            code, out, _ = self.call(['case', CASE, '--file', str(CASES), '--evidence', evidence])
+            self.assertEqual((Path(evidence) / 'fleet-failure.log').read_text(), 'expected one complete nested fleet\n')
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(out)['cause'], 'infrastructure')
 

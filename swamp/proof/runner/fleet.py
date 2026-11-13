@@ -1,6 +1,7 @@
 """The nested fleet as the runner sees it: shell on a Node and the real `orbit` CLI. Tests replace this class."""
 import json
 import os
+import re
 import runpy
 import select
 import subprocess
@@ -38,6 +39,59 @@ GUEST_PREFIX = 'nested-'
 
 class FleetError(Exception):
     pass
+
+
+# A failed preparation keeps its cause. `DETAIL_LIMIT` characters of one command's output stay in the error message, failed Ansible tasks
+# first. The preparation runs in a subprocess whose own message is the output of the outer one, so the outer limit is larger.
+DETAIL_LIMIT = 3000
+RELAY_LIMIT = 8000
+TAIL_LIMIT = 400   # the end of the output beside failed tasks: the Ansible recap
+TASK_LIMIT = 600
+SECRET = re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)|\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}|\bBearer\s+\S+', re.S)
+SECRET_PAIR = re.compile(r'(\b[\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key|private[_-]?key)[\w-]*["\']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|[^\s"\',}]+)', re.I)
+TASK = re.compile(r'^TASK \[(.*?)\]')
+FATAL = re.compile(r'^(?:fatal|failed): \[')
+
+
+def redact(text):
+    """Hide the values a log may hold: private keys, GitHub tokens, bearer tokens and `token=...`-style pairs."""
+    return SECRET_PAIR.sub(r'\1[redacted]', SECRET.sub('[redacted]', text))
+
+
+def ansible_failures(text):
+    """The failed tasks of an Ansible run: `(task, message)` for each `fatal:` or `failed:` line with the indented lines that follow it, and the task that
+    was last started when the run ended (a timeout kills the play while that task runs)."""
+    failures, task, lines = [], None, text.splitlines()
+    for index, line in enumerate(lines):
+        started = TASK.match(line)
+        if started:
+            task = started[1]
+        elif FATAL.match(line):
+            message = [line]
+            for follower in lines[index + 1:]:
+                if not follower.startswith((' ', '\t')):
+                    break
+                message.append(follower.strip())
+            failures.append((task, ' '.join(message)[:TASK_LIMIT]))
+        elif line.startswith('ERROR! '):
+            failures.append((None, line[:TASK_LIMIT]))
+    return failures, task
+
+
+def failure_detail(stdout, stderr, limit=DETAIL_LIMIT):
+    """The cause of a failed command, redacted and at most about `limit` characters: the failed Ansible tasks first, then the end of the output
+    (all the room that is left when no task failed, so a relayed message of the preparation subprocess stays whole). Ansible prints on stdout, other programs on stderr."""
+    text = redact('\n'.join(part.strip() for part in (stderr, stdout) if part and part.strip()))
+    failures, last = ansible_failures(text)
+    parts = [f'failed task [{task}]: {message}' if task else message for task, message in failures[:5]]
+    if not failures and last:
+        parts.append(f'last task started [{last}]')
+    if len(failures) > 5:
+        parts.append(f'+{len(failures) - 5} more failed tasks')
+    used = sum(len(part) + 3 for part in parts) + len('output end: ')
+    room = max(0, min(TAIL_LIMIT if failures else limit, limit - used))
+    parts.append('output end: ' + text[-room:] if text else 'no output')
+    return ' | '.join(parts)[:limit].rstrip()
 
 
 class Fleet:
@@ -120,16 +174,18 @@ class Fleet:
                   f'{node}: cannot give the nested CA')
         added = self.incus_exec(node, [*NODE_ORBIT, 'gateway:add', NESTED_GATEWAY, f'--name={PROFILE}', '--use', '--accept-ca-change', f'--ca={NESTED_CA}', '--json'], 120)
         if added.returncode != 0:
-            raise FleetError(f'{node}: the tested CLI cannot add the profile {PROFILE}: exit {added.returncode}, {(added.stderr or added.stdout).strip()[-200:]}')
+            raise FleetError(f'{node}: the tested CLI cannot add the profile {PROFILE}: exit {added.returncode}, {failure_detail(added.stdout, added.stderr)}')
 
     @staticmethod
-    def must(argv, what, timeout=120):
+    def must(argv, what, timeout=120, limit=DETAIL_LIMIT):
         try:
             done = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
         except subprocess.TimeoutExpired as error:
-            raise FleetError(f'{what}: timed out after {timeout} seconds') from error
+            seen = failure_detail(error.stdout if isinstance(error.stdout, str) else (error.stdout or b'').decode(errors='replace'),
+                                  error.stderr if isinstance(error.stderr, str) else (error.stderr or b'').decode(errors='replace'), limit)
+            raise FleetError(f'{what}: timed out after {timeout} seconds, {seen}' if seen != 'no output' else f'{what}: timed out after {timeout} seconds') from error
         if done.returncode != 0:
-            raise FleetError(f'{what}: exit {done.returncode}, {(done.stderr or done.stdout).strip()[-200:]}')
+            raise FleetError(f'{what}: exit {done.returncode}, {failure_detail(done.stdout, done.stderr, limit)}')
         return done
 
     def cli_background(self, args):
@@ -238,7 +294,7 @@ def prepare_observers():
 def prepare():
     # One subprocess gives controller bootstrap, downloads and report readiness a single hard deadline.
     done = Fleet.must(['timeout', '330', sys.executable, str(Path(__file__).resolve())],
-                      'cannot prepare the proof fleet', timeout=340)
+                      'cannot prepare the proof fleet', timeout=340, limit=RELAY_LIMIT)
     return Fleet(json.loads(done.stdout))
 
 

@@ -139,8 +139,9 @@ jobs:
   - job: cases
     condition: {type: completed}
   steps:
-  # The verdict lines of the batch. A case with no line gets one of its own, so every case has one: unrun when the batch step printed nothing (the batch was
-  # stopped before it), failed when it printed lines but none for the case (the runner stopped, or the output was cut).
+  # The verdict lines of the batch. A case with no line gets one of its own, so every case has one, and none is passed. When the batch step printed nothing the
+  # case is unrun, and the line says why: the restore failed, the batch setup failed (the step never started), or the batch process ran and ended with no
+  # verdict (infrastructure failure, with its exit code and time). A case that printed no line among others is failed (the runner stopped, or the output was cut).
   - name: report
     labels: {role: swamp}
     task:
@@ -152,4 +153,4 @@ jobs:
         run: |
           printf '%s\n' "$LINES"
         env:
-          LINES: '${{ [steps.?batch.?outputs.?stdout.orValue("").split("\n").map(l, l.trim()).filter(l, l.contains("\"verdict\""))].map(got, (got.join("\n") + inputs.cases.filter(c, !got.exists(l, l.contains("\"id\": \"" + c + "\""))).map(c, "\n{\"id\": \"" + c + "\", \"verdict\": \"" + (size(got) == 0 ? "unrun" : "failed") + "\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"" + (size(got) == 0 ? "run stopped: the batch setup did not succeed" : "the case printed no verdict") + "\"]}").join("")).trim())[0] }}'
+          LINES: '${{ [steps.?batch.?outputs.?stdout.orValue("").split("\n").map(l, l.trim()).filter(l, l.contains("\"verdict\""))].map(got, (got.join("\n") + inputs.cases.filter(c, !got.exists(l, l.contains("\"id\": \"" + c + "\""))).map(c, "\n{\"id\": \"" + c + "\", \"verdict\": \"" + (size(got) == 0 ? "unrun" : "failed") + "\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"" + (size(got) > 0 ? "the case printed no verdict" : steps.?restore.?status.orValue("") == "failed" ? "run stopped: the restore did not succeed" : steps.?batch.?status.orValue("") in ["succeeded", "failed"] ? "run stopped: could not run: infrastructure failure: the batch process exited " + string(steps.?batch.?outputs.?exitCode.orValue("unknown")) + " after " + (steps.?batch.?outputs.?durationMs.hasValue() ? string(int(steps.batch.outputs.durationMs) / 1000) + " s" : "an unknown time") + " and printed no verdict" : "run stopped: the batch setup did not succeed" + (steps.?setup.?outputs.?exitCode.hasValue() ? " (setup exit " + string(steps.setup.outputs.exitCode) + ")" : "")) + "\"]}").join("")).trim())[0] }}'

@@ -43,6 +43,7 @@ sequenceDiagram
       %%> Each replay must fail with cause assertion. A pass, another cause or missing evidence fails the proof with a CASE@merge-base verdict. Keep flags after merge; only a later case change opts them into another replay.
     end
     VM-->>SW: Batch verdicts
+    %%> A batch process that ends without verdicts reports infrastructure failure with its exit code and duration, not setup failure. A failed setup retains the failed task and message in its step output. Neither outcome passes.
     SW-->>GW: Batch run ended
     %%> The Gateway reads each ended batch run with the parent's reconcile and records its full report artifact on the shard, once.
   end
