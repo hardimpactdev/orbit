@@ -22,6 +22,9 @@ use App\Support\ValidatedData;
 /** The registered Node timers repointed by one move; their commands stay private until terminal projection. */
 final readonly class MigrateSchedules
 {
+    /** Bare names the container runtime puts on the Schedule's PATH. */
+    private const RuntimeNames = ['php', 'node', 'bun', 'vp', 'composer', 'git', 'true', 'false', 'echo', 'printf'];
+
     public function __construct(private ScheduleTargetResolver $targets, private RecipeImageBuilds $recipes) {}
 
     /** @return list<array<string,mixed>> */
@@ -45,9 +48,6 @@ final readonly class MigrateSchedules
                 $target = $this->targets->forInspection($schedule);
             } catch (ResourceOperationException|ScheduleOperationException) {
                 $this->refuse($schedule, 'account_unsupported', 'its recorded runtime account is unavailable');
-            }
-            if ($target->shell !== '/bin/bash') {
-                $this->refuse($schedule, 'shell_unsupported', 'its login shell is not /bin/bash');
             }
             $directory = $target->workingDirectory;
             if (! is_string($directory) || ! $this->inside($directory, $instance->checkout_path)) {
@@ -134,7 +134,7 @@ final readonly class MigrateSchedules
      */
     private function command(Schedule $schedule, Instance $instance, string $directory): array
     {
-        $command = $schedule->command;
+        $command = $this->runtimeName($schedule, $instance, $schedule->command);
         $checkout = $instance->checkout_path;
         $invocation = preg_replace('~\s+>>?\s*/dev/null(?:\s+2>&1)?\s*$~', '', $command) ?? $command;
         if (preg_match('~[$`\\\\]|(?:^|[\s"\x27=])\~|(?:^|[\s"\x27=/])\.\.?(?:/|[\s"\x27|;&()<>]|$)~', $invocation) === 1) {
@@ -158,6 +158,9 @@ final readonly class MigrateSchedules
             if (preg_match('~\G\s*(?:\x27([^\x27]*)\x27|"([^"]*)"|([^\s\x27"]+))(?=\s|$)~', $invocation, $token, PREG_UNMATCHED_AS_NULL, $offset) !== 1) {
                 $this->refuse($schedule, 'command_unsupported', 'its command arguments must be literal words or whole quoted strings');
             }
+            if (str_starts_with($token[3] ?? '', '=')) {
+                $this->refuse($schedule, 'command_unsupported', 'its command has an unquoted word that starts with "=", which zsh expands to a command path; quote that word');
+            }
             $offset += strlen($token[0]);
             $tokens[] = ValidatedData::string($token[1] ?? $token[2] ?? $token[3]);
         }
@@ -165,7 +168,7 @@ final readonly class MigrateSchedules
         if (preg_match('/\A[A-Za-z_][A-Za-z0-9_]*=/', $executable) === 1) {
             $this->refuse($schedule, 'command_unsupported', 'its command uses an assignment prefix rather than one executable');
         }
-        if (! str_contains($executable, '/') && ! in_array($executable, ['php', 'node', 'bun', 'vp', 'composer', 'git', 'true', 'false', 'echo', 'printf'], true)) {
+        if (! str_contains($executable, '/') && ! in_array($executable, self::RuntimeNames, true)) {
             $this->refuse($schedule, 'command_unsupported', 'its bare executable is not supplied by the container runtime');
         }
         if (in_array($executable, ['php', 'composer'], true)) {
@@ -208,6 +211,27 @@ final readonly class MigrateSchedules
 
         return ['command' => preg_replace('~(?<![a-zA-Z0-9_:/])'.$root.'(?=/|[\s"\x27|;&()<>]|$)~', InstanceHostIntent::Workspace, $command) ?? $command,
             'paths' => array_values(array_unique($paths))];
+    }
+
+    /** The host account's shell never runs in the container, so the command must not depend on it. A host install path of a
+     * runtime name becomes that bare name, which the container PATH supplies; `phpX.Y` must match the Project's PHP version.
+     */
+    private function runtimeName(Schedule $schedule, Instance $instance, string $command): string
+    {
+        if (preg_match('~^(\s*)/(?:usr/local/bin|usr/bin|bin)/([^\s/"\x27]+)(?=\s|$)~', $command, $match) !== 1) {
+            return $command;
+        }
+        $name = $match[2];
+        if (preg_match('/^php([0-9]+[.][0-9]+)$/', $name, $php) === 1) {
+            $selected = $instance->project->php_version;
+            if ($php[1] !== $selected) {
+                $this->refuse($schedule, 'command_unsupported', "its command runs host PHP [{$php[1]}], but the container runs the Project's PHP ["
+                    .($selected ?? 'none')."]; set the Project's PHP version to {$php[1]}, or start the command with `php` instead of `".trim($match[0]).'`');
+            }
+            $name = 'php';
+        }
+
+        return in_array($name, self::RuntimeNames, true) ? $match[1].$name.substr($command, strlen($match[0])) : $command;
     }
 
     private function refuse(Schedule $schedule, string $reason, string $message): never
