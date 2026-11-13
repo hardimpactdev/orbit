@@ -1045,7 +1045,7 @@ It is the normal image with these changes:
 
 The Node fetches each Incus package through the artifact cache, checks its SHA-256 and pushes it into the build container. The build container installs both packages with their dependencies through the egress proxy. A `policy-rc.d` file stops the packages from starting the inner Incus during the build; the build removes it before it publishes.
 
-A failed fetch, a wrong digest or a failed install publishes no image. There is no unpinned fallback. Before it publishes, the build checks the sudo paths: no `ubuntu` user, no grant in `sudoers.d` other than `orbit-agent` with its one line, `agent` alone in `incus-admin`, sudo works for `agent` and fails for `orbit`. An Instance start fetches and installs nothing. A failed build removes only a build container that it made; a build container from an earlier run stays for the operator.
+A failed fetch, a wrong digest or a failed install publishes no image. There is no unpinned fallback. Before it publishes, the build checks the sudo paths: no `ubuntu` user, no grant in `sudoers.d` other than `orbit-agent` with its one line, a grant that `visudo` accepts (judged by its exit code, not its output), `agent` alone in `incus-admin`, sudo works for `agent` and fails for `orbit`. An Instance start fetches and installs nothing. A failed build removes only a build container that it made; a build container from an earlier run stays for the operator.
 
 ### The fleet
 

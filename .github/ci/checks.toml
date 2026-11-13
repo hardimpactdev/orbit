@@ -311,8 +311,8 @@ file = "swamp/tests/ansible_instance_host_image_test.ts"
 # The renamed first case retains its existing after-merge classification (158s hosted, run 43000765953).
 # The new full replacement case measured 70s on Beast: 148s estimated body + 6s startup exceeds the 150s lane.
 after_merge_cases = ["a new image definition takes the stable alias while retaining the old image", "the full prepared-image replacement and failure cleanup use the verified local socket despite the default remote"]
-cost = 759
-slices = 11
+cost = 760
+slices = 12
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "bin/swamp-shape-gate",
@@ -354,6 +354,7 @@ inputs = [
   "a switched-on Node builds the nested-fleet image in its project from the verified pinned packages" = 132 # ESTIMATE: Beast 62s * 2.1, rounded up + 1s; with 6s startup within the 150s lane
   "a wrong pinned digest publishes no nested-fleet image and leaves no build container" = 77 # ESTIMATE: Beast 36s * 2.1, rounded up + 1s
   "a hosting intent without the nested-fleet image builds only the normal image" = 71 # ESTIMATE: Beast 33s * 2.1, rounded up + 1s
+  "the nested-fleet audit judges visudo by its exit code, not by what it prints" = 1 # ESTIMATE: Beast 0.02s, no Ansible; rounded up
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_runtime_test.ts"

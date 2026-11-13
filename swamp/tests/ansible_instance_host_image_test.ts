@@ -1,5 +1,6 @@
 /** Exercise the shipped Instance host tasks against disposable local boundaries. */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
+import { parse } from "jsr:@std/yaml@1";
 import { fixture, hasAnsible } from "./_support/instance_host.ts";
 
 Deno.test({
@@ -395,5 +396,50 @@ Deno.test({
         } finally {
             f.cleanup();
         }
+    },
+});
+
+// The shipped nested-fleet audit text, run by a real shell against stand-ins for the image's commands and its sudoers.d.
+const nestedAudit = (() => {
+    type Task = { name?: string; block?: Task[]; vars?: Record<string, string> };
+    const tasks = parse(Deno.readTextFileSync(new URL("../ansible/tasks/instance-image.yml", import.meta.url))) as Task[];
+    const all = (list: Task[]): Task[] => list.flatMap((task) => [task, ...all(task.block ?? [])]);
+    return all(tasks).find((task) => task.name === "Read the sudo paths of the image")!.vars!.image_nested_audit;
+})();
+
+const runNestedAudit = (visudo: string) => {
+    const folder = Deno.makeTempDirSync();
+    try {
+        Deno.mkdirSync(`${folder}/bin`);
+        Deno.mkdirSync(`${folder}/sudoers.d`);
+        Deno.writeTextFileSync(`${folder}/sudoers.d/README`, "");
+        Deno.writeTextFileSync(`${folder}/sudoers.d/orbit-agent`, "agent ALL=(ALL:ALL) NOPASSWD: ALL\n");
+        const stubs: Record<string, string> = {
+            getent: '[ "$1 $2" = "group incus-admin" ] && echo incus-admin:x:994:agent; [ "$1" = group ] || exit 2',
+            runuser: '[ "$2" = agent ]',
+            visudo,
+        };
+        for (const [name, body] of Object.entries(stubs)) {
+            Deno.writeTextFileSync(`${folder}/bin/${name}`, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+        }
+        const output = new Deno.Command("sh", {
+            args: ["-c", nestedAudit.replaceAll("/etc/sudoers.d", `${folder}/sudoers.d`)],
+            env: { PATH: `${folder}/bin:/usr/bin:/bin` },
+            stdout: "piped",
+            stderr: "null",
+        }).outputSync();
+        assert(output.success);
+        return new TextDecoder().decode(output.stdout);
+    } finally {
+        Deno.removeSync(folder, { recursive: true });
+    }
+};
+
+Deno.test({
+    name: "the nested-fleet audit judges visudo by its exit code, not by what it prints",
+    fn() {
+        // visudo-rs ignores -q and reports a clean file on stdout.
+        assertEquals(runNestedAudit('echo "$2: parsed OK"'), "");
+        assertEquals(runNestedAudit('echo "$2: parsed OK"; exit 1'), "agent:syntax\n");
     },
 });
