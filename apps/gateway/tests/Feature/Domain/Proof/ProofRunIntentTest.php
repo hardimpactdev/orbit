@@ -290,6 +290,7 @@ describe('proof:run admission', function (): void {
         $seconds = microtime(true) - $started;
 
         expect($proof->status)->toBe(OperationStatus::Running)
+            ->and($proof->started_at)->toBeNull()
             ->and($proof->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'caller_node_id' => null, 'ci_pool' => false, 'runs' => []])
             ->and($seconds)->toBeLessThan(1.0)
             ->and(Task::query()->count())->toBe(0)->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
@@ -793,3 +794,16 @@ it('plans past the longest shard budget when every usable CI place is free, beca
         ->and($proof->state['capacity_wait_reason'] ?? null)->toBeNull()
         ->and($proof->error_code)->toBe('ai_router.disabled');
 });
+
+it('expires the parent admission allowance for operators as well as CI before recording any children', function (bool $ci): void {
+    proofWorldWithoutCapacity();
+    Queue::fake();
+    $caller = Node::query()->where('name', 'swamp')->firstOrFail();
+    $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+    $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'test', null, authenticatedCaller: $ci ? $caller : null);
+    $proof->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
+    app(ProofRunIntent::class)->admit($proof->id);
+    expect($proof->refresh()->error_code)->toBe('proof.capacity_timeout')
+        ->and($proof->status)->toBe(OperationStatus::Failed)->and($proof->started_at)->toBeNull()
+        ->and(ProofRunSettlement::children($proof->id))->toBeEmpty();
+})->with([false, true]);

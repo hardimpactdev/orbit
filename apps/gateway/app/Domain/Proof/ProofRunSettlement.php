@@ -37,6 +37,22 @@ final readonly class ProofRunSettlement
         return Operation::query()->where('kind', ProofGroup::OwnerKind)->where('input->proof_operation_id', $proofId)->orderBy('id')->get();
     }
 
+    /**
+     * The single proof place: an open parent with runs, or a parent whose child is still working or awaits native settlement.
+     * The timeout hold is ExpireOperationAction::awaitsSettlement's rule; releaseStaleHolds bounds an unproven end to 60 minutes.
+     * Called inside the admission write transaction, before any groups or children are recorded.
+     */
+    public static function workingProof(): ?Operation
+    {
+        $children = Operation::query()->select('input->proof_operation_id')->where('kind', ProofGroup::OwnerKind)
+            ->where(fn ($query) => $query->whereNotIn('status', OperationStatus::terminalValues())
+                ->orWhere(fn ($query) => $query->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')->whereNotNull('lock_key')));
+
+        return Operation::query()->where('kind', OperationKinds::ProofRun)
+            ->where(fn ($query) => $query->where(fn ($query) => $query->whereNotIn('status', OperationStatus::terminalValues())->whereJsonLength('input->runs', '>', 0))
+                ->orWhereIn('id', $children))->orderBy('id')->first(['id']);
+    }
+
     public function settle(int $proofId): void
     {
         DB::transaction(function () use ($proofId): void {
