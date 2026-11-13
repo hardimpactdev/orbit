@@ -33,7 +33,7 @@ sequenceDiagram
   %%> When:
   %%> - An open parent with runs or an unresolved child holds the place. Stale children and their parent's run list cannot hold it alone. Parent cancellation alone cannot free it.
   %%> - A held start stays protected while its parent is open within its 7200-second allowance from creation. The watchdog cancels unreleased children without a native run when their parent ended or is missing, using normal group cleanup.
-  %%> - Other parents retry every 20 seconds. While a proof holds the place, show "Waiting for proof Operation <id> to finish." as the step and capacity reason. Clear the step at admission. A waiting parent holds no place.
+  %%> - Other parents retry every 20 seconds. While a proof holds the place, show "Waiting for proof Operation <id> to finish." as the step and capacity reason. A waiting parent reads `waiting` and has no start time; at admission it reads `running` with its start time, and the step clears. It holds no place.
   %%> On failure:
   %%> - A child that nothing ends stops holding the place after its own deadline plus the existing 60-minute stale-hold bound. Without a deadline, use its last activity plus the longest shard budget and that bound. A timed-out lock holder uses its finish time, or last activity when absent, plus the bound.
   %%> - If that cancellation is lost, a held child of an ended or missing parent stops holding the place 60 minutes after its last activity. Admission past a stale child warns after commit and gateway:status reports gateway.proof_place_stale_child. Admission never changes the stale child.

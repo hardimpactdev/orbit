@@ -90,7 +90,7 @@ final readonly class ProofRunIntent
     public function admit(int $proofId): void
     {
         $proof = Operation::query()->find($proofId);
-        if (! $proof instanceof Operation || $proof->kind !== OperationKinds::ProofRun || $proof->status !== OperationStatus::Running || $proof->input['runs'] !== []) {
+        if (! $proof instanceof Operation || $proof->kind !== OperationKinds::ProofRun || ! in_array($proof->status, [OperationStatus::Running, OperationStatus::Waiting], true) || $proof->input['runs'] !== []) {
             return;
         }
         $input = ValidatedData::object($proof->input);
@@ -166,7 +166,7 @@ final readonly class ProofRunIntent
                     // The run list commits with the groups. A job that stops after the commit leaves a proof that names its runs.
                     $state = $current->state ?? [];
                     unset($state['capacity_wait_reason']);
-                    $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs, 'batches' => $batches], 'started_at' => now(), 'current_step' => null, 'state' => $state]);
+                    $this->store->change($proof, ['status' => OperationStatus::Running, 'input' => [...$intent, 'runs' => $runs, 'batches' => $batches], 'started_at' => now(), 'current_step' => null, 'state' => $state]);
 
                     return $runs;
                 });
@@ -199,7 +199,7 @@ final readonly class ProofRunIntent
         }
     }
 
-    /** A full pool or a stale base waits within the total admission budget.
+    /** A held proof reads `waiting` until admission makes it `running`; a full pool or a stale base waits within the total admission budget.
      * @return bool whether another admission attempt was queued
      */
     private function waitForRoom(Operation $proof, string $reason, string $step): bool
@@ -212,7 +212,7 @@ final readonly class ProofRunIntent
             if (! $this->whileOpen($proof->id, static fn () => null)) {
                 return false;
             }
-            $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['current_step' => $step, 'state' => [...($current->state ?? []), 'capacity_wait_reason' => $reason]]));
+            $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['status' => OperationStatus::Waiting, 'current_step' => $step, 'state' => [...($current->state ?? []), 'capacity_wait_reason' => $reason]]));
             app(Dispatcher::class)->dispatch(new AdmitProofRun($proof->id)->delay(self::RetrySeconds));
         } catch (Throwable $exception) {
             report($exception);

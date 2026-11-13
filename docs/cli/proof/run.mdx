@@ -57,7 +57,7 @@ When only paths that need no proof changed, such as documentation and charts, th
 
 ## The run
 
-Only one `proof.run` works at a time, including `--report-only` proofs. Operator and CI parents wait in proof Operation id order. While another proof holds the place, the waiting step and recorded capacity reason read `Waiting for proof Operation <id> to finish.` Orbit retries every 20 seconds and clears the step at admission. The shown execution duration starts at admission; the wait allowance starts at creation.
+Only one `proof.run` works at a time, including `--report-only` proofs. Operator and CI parents wait in proof Operation id order. While another proof holds the place, the waiting step and recorded capacity reason read `Waiting for proof Operation <id> to finish.` Orbit retries every 20 seconds. A waiting proof has the status `waiting` and no start time, so `orbit operation:list --status waiting` finds it. At admission the status becomes `running`, the start time is set and the step clears. The shown execution duration starts at admission; the wait allowance starts at creation.
 
 A waiting parent holds no proof place. An open parent with recorded runs or an unresolved child holds it. Stale children and their parent's run list cannot hold it alone. Children take no separate proof places. Proofs with nothing to prove, `proof.verify` and base refresh work take none.
 

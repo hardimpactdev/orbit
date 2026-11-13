@@ -50,7 +50,7 @@ final readonly class ProofRunWatch
         // The kept VMs expire on every pass, whatever the watch of the proofs does.
         try {
             $open = Operation::query()->where(fn ($query) => $query->where(fn ($query) => $query->where('kind', OperationKinds::ProofRun)
-                ->whereIn('status', [OperationStatus::Queued, OperationStatus::Running])
+                ->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting])
                 ->where(fn ($query) => $query->where('created_at', '<', now()->subSeconds(self::AdmissionSeconds))
                     ->orWhereIn('id', ProofChildStarts::heldProofs())))
                 ->orWhereIn('id', ProofChildStarts::endedHeldChildren()->select('id')))

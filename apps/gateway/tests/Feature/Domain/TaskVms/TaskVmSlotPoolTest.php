@@ -1391,7 +1391,7 @@ it('holds operator and CI parents in id order even before the front has selected
     $first = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $firstCi ? $caller : null);
     $second = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $secondCi ? $caller : null);
     $intent->admit($second->id);
-    expect($second->refresh()->status)->toBe(OperationStatus::Running)->and($second->input['runs'])->toBe([])
+    expect($second->refresh()->status)->toBe(OperationStatus::Waiting)->and($second->input['runs'])->toBe([])->and($second->started_at)->toBeNull()
         ->and($second->state['capacity_wait_reason'])->toContain('earlier proof')->and(TaskVm::query()->live()->count())->toBe(0);
     // The younger waiting parent has no place: the front can admit despite it.
     $intent->admit($first->id);
@@ -2020,6 +2020,7 @@ describe('one working proof at a time', function (): void {
         expect($second->refresh()->input['runs'])->toBe([])
             ->and($first->refresh()->input['runs'])->toHaveCount(4)
             ->and(app(TaskVmSlotPool::class)->freeCiPlaces())->toBe(2)->and($second->current_step)->toBe($reason)
+            ->and($second->status)->toBe(OperationStatus::Waiting)->and($second->started_at)->toBeNull()
             ->and($second->state['capacity_wait_reason'] ?? null)->toBe($reason)
             ->and(ProofRunSettlement::children($second->id))->toBeEmpty()
             ->and(Operation::query()->where('kind', 'proof.run')->whereJsonLength('input->runs', '>', 0)->count())->toBe(1);
@@ -2033,7 +2034,7 @@ describe('one working proof at a time', function (): void {
         expect($first->refresh()->status->terminal())->toBeTrue();
         Carbon::setTestNow(now()->addSeconds(ProofRunIntent::RetrySeconds));
         $intent->admit($second->id);
-        expect($second->refresh()->input['runs'])->toHaveCount(2)
+        expect($second->refresh()->input['runs'])->toHaveCount(2)->and($second->status)->toBe(OperationStatus::Running)->and($second->started_at)->not->toBeNull()
             ->and($second->current_step)->toBeNull()->and($second->state['capacity_wait_reason'] ?? null)->toBeNull();
     })->with([false, true]);
 
