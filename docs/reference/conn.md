@@ -344,6 +344,12 @@ A device asks the Gateway for a pairing link to one registered T3 server. The na
 
 The device opens the returned `pairing_url` and pairs as it does today, but without a manual step. The link is one-time and short-lived, so the device pairs right away.
 
+### Renewal
+
+A T3 session lasts 30 days and does not renew. Before it ends, the client asks for a new pairing with `{"renew": true}` and pairs again without the user. A revoke wins over a renewal: when the calling Node's newest pairing on that server has a revoke time, the Gateway refuses with `conn.pairing_revoked` (409) and starts no Operation. A Node with no earlier pairing on that server is renewed, because there is no revoke to honour. Without `renew`, or with `renew: false`, the request is an explicit pairing: it succeeds after a revoke, so the user can bring a server back. `renew` must be a JSON boolean, else `validation.failed` (422).
+
+The Idempotency-Key covers the body. A client that repeats a renewal sends the same key with the same body; the same key with another body answers `operation.idempotency_conflict` (409).
+
 To revoke, Orbit reads the initial `payload.clientSessions` snapshot from upstream T3’s `subscribeAuthAccess` WebSocket RPC at `/ws?orchestrationProtocol=2`, authenticated with the same admin bearer session. This path serves both stock T3 container servers and Conn host servers. It revokes each session whose label belongs to the Node's open pairings on that server with `POST <url>/api/auth/clients/revoke`, and it revokes each pairing link that was not used with `POST <url>/api/auth/pairing-links/revoke`. It never revokes its own current session. The device loses that server at once; its WireGuard access does not change.
 
 ## API
@@ -366,7 +372,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `GET /environments` | — | list of environment |
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |
 | `GET /environments/{environment_id}/pairings` | — | list of pairing, newest first |
-| `POST /environments/{environment_id}/pairings` | — | Operation (202) |
+| `POST /environments/{environment_id}/pairings` | `{"renew": true}`, optional | Operation (202) |
 | `POST /environments/{environment_id}/pairings/revoke` | `{"node_id": 4, "pairing_id": 7}`, both optional | Operation (202) |
 
 The objects:
@@ -396,6 +402,7 @@ The objects:
 | `conn.environment_mismatch` | 422 | `url` serves another environment. |
 | `conn.admin_scope_missing` | 422 | The registered session is not an admin session. |
 | `conn.session_expired` | 409 | The Gateway's admin session on that server expired. |
+| `conn.pairing_revoked` | 409 | A renewal asked for a server where the Node's newest pairing was revoked. Pair without `renew` to bring it back. |
 | `conn.server_unreachable` | 502 | The T3 server did not answer. |
 | `conn.session_rejected` | 502 | T3 does not accept the admin session: it answered 401, or `/api/auth/session` reported it unauthenticated. |
 | `conn.request_refused` | 502 | The T3 server refused the call with another status; `details` has its status and reason. |
