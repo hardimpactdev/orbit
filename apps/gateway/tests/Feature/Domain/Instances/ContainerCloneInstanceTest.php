@@ -1285,7 +1285,7 @@ it('runs the vite preset only in a clone; a deployment of the default removes th
         ->and($site->devUpstream)->toBe($clone->runtime()->firstOrFail()->bridge_address);
 });
 
-it('preserves an active container Process after definition removal on create and deploy', function (): void {
+it('keeps an active container Process after definition removal on a create replay, and the next deployment marks it removing', function (): void {
     $node = containerDefaultNode();
     $project = containerDefaultProject();
     $definition = ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'worker', 'environments' => ['development'],
@@ -1311,8 +1311,11 @@ it('preserves an active container Process after definition removal on create and
         ],
     ]);
     $deployment = app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
+    $after = $instance->processes()->sole()->getAttributes();
     expect($deployment->kind)->toBe('instance.deploy')
-        ->and($instance->processes()->sole()->getAttributes())->toBe($before);
+        ->and($after['status'])->toBe('removing')
+        ->and(array_diff_key($after, array_flip(['status', 'updated_at'])))->toBe(array_diff_key($before, array_flip(['status', 'updated_at'])))
+        ->and(ValidatedData::object($deployment->input['deployment'])['container']['processes'])->toBe([]);
 });
 
 it('keeps create dotenv byte-identical while the public origin belongs only to the dev-server unit', function (): void {
@@ -1524,4 +1527,24 @@ describe('a Process that is stopped on the default', function (): void {
         'one stopped on the default' => ['stopped', ['worker']],
         'all running on the default' => ['running', []],
     ]);
+
+    it('leaves out a stopped Process of the default whose definition the Project removed', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefaultWith($node, [
+            'queue' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'node', 'queue.js']],
+            'worker' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'node', 'worker.js']],
+        ]);
+        // The default's next deployment marked the stopped worker removing; a failed run kept it.
+        $default->processes()->where('name', 'worker')->update(['desired_state' => 'stopped', 'status' => 'removing']);
+        ProcessDefinition::query()->where('project_id', $default->project_id)->where('name', 'worker')->delete();
+        $operation = containerCreate($default->project, $node, 'feature');
+        $operation->forceFill(['status' => 'running', 'finished_at' => null, 'error_code' => null, 'result' => null, 'state' => ['swamp_run_id' => 'run-1']])->save();
+        vaultReadingSocket(['nckrtl-instance-t3-model-register-session-gateway-1-token' => 'gateway-session-value']);
+
+        app(DevelopmentInstanceCreateProjection::class)->apply($operation->refresh(), cloneSucceeded($operation));
+
+        expect($operation->refresh()->result['processes_stopped'])->toBe([])
+            ->and(Process::query()->where('owner_id', $operation->target_id)->pluck('name')->all())->toBe(['queue'])
+            ->and(array_column(containerIntentOf($operation)['processes'], 'desired'))->toBe(['running']);
+    });
 });

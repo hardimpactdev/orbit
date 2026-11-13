@@ -129,9 +129,14 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
             $instance->processes()->where('runtime_config->preset', VitePreset::NAME)->delete();
         }
         if ($forCreateRetry) {
-            // Create owns the entire Process set; active deployments retain removed definitions.
+            // Create owns the entire Process set.
             $instance->processes()->where(fn ($query) => $query->whereNull('source_definition_id')
                 ->orWhereNotIn('source_definition_id', $definitions->modelKeys()))->delete();
+        } else {
+            // A copy of a definition the Project removed leaves the run's units: the processes phase removes its unit as one of
+            // another owner, and a passed deployment deletes the record (ContainerProcesses::removeRetired).
+            $instance->processes()->whereNotNull('source_definition_id')->whereNotIn('source_definition_id', $definitions->modelKeys())
+                ->where('status', '!=', LifecycleStatus::Removing)->update(['status' => LifecycleStatus::Removing, 'failed_step' => null, 'error_code' => null]);
         }
         if ($definitions->isEmpty()) {
             return;
@@ -239,10 +244,15 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
 
         $existing = Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)
             ->where('name', $definition->name)->lockForUpdate()->first();
+        $container = $target->container !== null && ! $instance->placedOnAppProd();
+        if ($existing !== null && $container && $existing->status === LifecycleStatus::Removing) {
+            // The copy of a removed definition of the same name: the new definition replaces it, and the run removes its unit.
+            $existing->delete();
+            $existing = null;
+        }
         if ($existing !== null) {
-            if ($target->container !== null && ! $instance->placedOnAppProd()
+            if ($container
                 && ($existing->source_definition_id === null || $existing->source_definition_id === $definition->id)
-                && $existing->status !== LifecycleStatus::Removing
                 && app(ContainerProcesses::class)->matchesDefinition($existing, $attributes, $instance)) {
                 $existing->update(['source_definition_id' => $definition->id]);
 

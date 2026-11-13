@@ -23,9 +23,11 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -35,6 +37,7 @@ use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\ProjectDevelopmentDeployStep;
@@ -228,6 +231,119 @@ it('records the seed commit and a running container after a deployment passes, a
         ->and($instance->refresh()->seed_commit)->toBeNull()
         ->and($instance->deployments()->latest('id')->firstOrFail()->commit)->toBe($commit);
 });
+
+/** A container default with the development Processes worker and mailer, both installed and running. */
+function deployDefaultWithProcesses(): Instance
+{
+    $instance = deployDefault(container: true);
+    foreach (['mailer', 'worker'] as $name) {
+        ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => $name, 'environments' => ['development'],
+            'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'node', "{$name}.js"], 'restart_policy' => 'always']]);
+    }
+    app(InstantiateProjectRuntimeDefinitionsAction::class)->refreshForContainer($instance);
+    $instance->processes()->update(['status' => LifecycleStatus::Active]);
+
+    return $instance;
+}
+
+/** Admits a real deployment of the default and projects its run's end. */
+function deployAndFinish(Instance $instance, string $status, string $commit): Operation
+{
+    test()->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead($commit));
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => "run-{$commit}"]]);
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => $status, 'run_id' => "run-{$commit}", 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => ['steps' => $status === 'succeeded'
+            ? ['Read the container result' => ['stdout' => json_encode(['commit' => $commit], JSON_THROW_ON_ERROR)]] : [],
+            'summary' => ['failed_steps' => $status === 'succeeded' ? [] : ['Install the Processes']]]]);
+
+    return $operation->refresh();
+}
+
+/** @return list<string> */
+function deployedUnitNames(Operation $operation): array
+{
+    return array_column(ValidatedData::object(ValidatedData::object($operation->input['deployment'])['container'])['processes'], 'name');
+}
+
+it('keeps every Process of a default whose definitions did not change, and names none removed', function (): void {
+    Queue::fake();
+    $instance = deployDefaultWithProcesses();
+    $before = $instance->processes()->orderBy('name')->get(['id', 'name', 'source_definition_id', 'status'])->toArray();
+
+    $operation = deployAndFinish($instance, 'succeeded', str_repeat('c', 40));
+
+    expect($operation->status)->toBe(OperationStatus::Succeeded)
+        ->and($operation->result['processes_removed'])->toBe([])
+        ->and(deployedUnitNames($operation))->toHaveCount(2)
+        ->and($instance->processes()->orderBy('name')->get(['id', 'name', 'source_definition_id', 'status'])->toArray())->toBe($before);
+});
+
+it('removes a Process whose definition the Project removed at the next passed deployment, and names it', function (): void {
+    Queue::fake();
+    $instance = deployDefaultWithProcesses();
+    $mailer = $instance->processes()->where('name', 'mailer')->sole();
+    $worker = $instance->processes()->where('name', 'worker')->sole();
+    ProcessDefinition::query()->where('name', 'mailer')->delete();
+
+    // A failed run keeps the record, marked removing and out of the run's units: the processes phase removes the unit as another owner's.
+    $failed = deployAndFinish($instance, 'failed', str_repeat('d', 40));
+    expect(deployedUnitNames($failed))->toBe(["orbit-process-{$worker->id}-worker.service"])
+        ->and($mailer->refresh()->status)->toBe(LifecycleStatus::Removing)
+        ->and($failed->result)->not->toHaveKey('processes_removed')
+        ->and(processAdmissionError(fn () => app(ProcessOperationAdmission::class)->execute($mailer, 'start')))->toBe('process.removing')
+        ->and(processAdmissionError(fn () => app(ProcessOperationAdmission::class)->execute($mailer, 'restart')))->toBe('process.removing');
+
+    $passed = deployAndFinish($instance, 'succeeded', str_repeat('e', 40));
+    expect($passed->result['processes_removed'])->toBe(['mailer'])
+        ->and(Process::query()->whereKey($mailer->id)->exists())->toBeFalse()
+        ->and($worker->refresh()->status)->toBe(LifecycleStatus::Active);
+});
+
+it('replaces a removed definition\'s Process when the Project adds a definition of the same name again', function (): void {
+    Queue::fake();
+    $instance = deployDefaultWithProcesses();
+    $old = $instance->processes()->where('name', 'mailer')->sole();
+    $old->update(['desired_state' => 'stopped']);
+    ProcessDefinition::query()->where('name', 'mailer')->delete();
+    deployAndFinish($instance, 'failed', str_repeat('d', 40));
+    $definition = ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => 'mailer', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'node', 'mailer.js', '--v2'], 'restart_policy' => 'always']]);
+
+    $operation = deployAndFinish($instance, 'succeeded', str_repeat('e', 40));
+
+    $new = $instance->processes()->where('name', 'mailer')->sole();
+    expect($operation->status)->toBe(OperationStatus::Succeeded)
+        ->and(Process::query()->whereKey($old->id)->exists())->toBeFalse()
+        ->and($new->source_definition_id)->toBe($definition->id)
+        ->and($new->desired_state->value)->toBe('running')
+        ->and($new->status)->toBe(LifecycleStatus::Active)
+        ->and(deployedUnitNames($operation))->toContain("orbit-process-{$new->id}-mailer.service")
+        ->and($operation->result['processes_removed'])->toBe([]);
+});
+
+it('leaves a Process recorded without a definition', function (): void {
+    Queue::fake();
+    $instance = deployDefaultWithProcesses();
+    $instance->processes()->where('name', 'mailer')->update(['source_definition_id' => null]);
+    ProcessDefinition::query()->where('name', 'mailer')->delete();
+
+    $operation = deployAndFinish($instance, 'succeeded', str_repeat('c', 40));
+
+    expect($operation->result['processes_removed'])->toBe([])
+        ->and($instance->processes()->where('name', 'mailer')->sole()->status)->toBe(LifecycleStatus::Active);
+});
+
+function processAdmissionError(Closure $call): string
+{
+    try {
+        $call();
+    } catch (ResourceOperationException $exception) {
+        return $exception->errorCode;
+    }
+
+    return 'admitted';
+}
 
 /** @return array{head:string,files:array<string,array{mode:string,object:string,content:string}|null>} */
 function deploySourceRead(string $commit, ?string $composer = null, bool $laravel = false): array

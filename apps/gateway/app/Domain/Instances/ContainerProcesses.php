@@ -120,6 +120,21 @@ final readonly class ContainerProcesses
         }
     }
 
+    /**
+     * Deletes the records a passed deployment retired: copies of definitions the Project removed, whose units its processes phase
+     * removed as units of another owner (docs/reference/development-containers.md#processes).
+     *
+     * @return list<string> their names, for the deployment's processes_removed
+     */
+    public function removeRetired(Instance $instance): array
+    {
+        $retired = Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)
+            ->where('status', LifecycleStatus::Removing)->orderBy('name')->lockForUpdate()->get();
+        $retired->each->delete();
+
+        return array_values($retired->map(static fn (Process $process): string => $process->name)->all());
+    }
+
     /** Render a copy at its container placement; migration saves these paths only after cutover succeeds. */
     private function placed(Process $process, Instance $instance, ?int $port, bool $migrate = false): Process
     {

@@ -95,6 +95,9 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 // What this nested-fleet start did with its Club key, from the run's own word.
                 $facts['nested_fleet_club_key'] = NestedFleetClubKey::outcome($payload['club_key'] ?? null, $data['error_code'] ?? null);
             }
+            if (! $terminal && $status === 'succeeded' && ValidatedData::object($locked->input['deployment'])['variant'] === 'container') {
+                $facts['processes_removed'] = app(ContainerProcesses::class)->removeRetired($instance);
+            }
             $projected = $this->direct->project($locked, $data, $status === 'running' ? [] : $facts);
             if ($terminal || $status === 'running') {
                 return $projected;
