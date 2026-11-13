@@ -39,7 +39,7 @@ def process_failure(unit, state):
     return {'error_code': 'instance.container_process_inactive', 'process_failure': value}
 
 
-ENV_LINE = re.compile(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\s*=(.*)")
+ENV_LINE = re.compile(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)")
 
 # A credential value shorter than this is matched only as a whole value, never as a part of one.
 CONTAINED_CREDENTIAL = 8
