@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main, 'task-*-handoff']
   workflow_dispatch:
@@ -395,6 +396,18 @@ jobs:
         run: |
           composer docs-build
           composer docs-lint
+      - name: Require documentation updates or visible PR acknowledgements
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+          Path(os.environ['RUNNER_TEMP'], 'docs-impact-pr-body.txt').write_text(event['pull_request']['body'] or '')
+          PYTHON
+          bin/docs-impact --gate --base "$BASE" --pr-body-file "$RUNNER_TEMP/docs-impact-pr-body.txt"
       - name: Run the complete Docs Pest suite
         working-directory: apps/docs
         env:
@@ -592,6 +605,7 @@ jobs:
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
           args=()
           if [ "$MAIN" = true ]; then args+=(--main); fi
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then args+=(--pull-request); fi
           python3 bin/ci-build-plan --base "$BASE" --head "${{ github.event.pull_request.head.sha || github.sha }}" "${args[@]}" --proof-cases --proof-selection-output proof-selection.json --swamp-base --github-output "$GITHUB_OUTPUT"
       - name: Select fixture units
         id: units

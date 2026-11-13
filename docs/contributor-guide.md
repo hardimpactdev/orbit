@@ -67,7 +67,21 @@ The impact checker maps each CLI family to `docs/cli/<family>/index.mdx`. Regist
 
 At every subtask handoff, Orbit's own task check runs the impact check against the candidate diff from the group's start commit. An impacted page missing from that diff fails with the list of pages.
 
-A reviewer-confirmed waiver is a `page: reason` line in `.git/orbit/docs-unaffected/<branch>.txt`, named after the checked-out branch. Linked worktrees use the primary checkout's `.git`. The gate reads only the current branch's file, and a detached HEAD has none. The file is never committed, so a waiver never reaches `main` or another branch. The gate's log lists the waivers it accepted under `exceptions`, and the reviewer confirms each one. Required generator checks still apply. This policy runs through Orbit's `composer check` and `bin/review-check`; the generic Gateway task engine does not know about docs-first or documentation conventions. Jev is out of scope for this version.
+Every pull request runs `bin/docs-impact --gate` in the Docs job, which blocks Required checks. A change with no documentation impact needs no acknowledgement. For each impacted page that needs no change, put a separate line in the **PR body**:
+
+```text
+Docs-unaffected: docs/reference/tasks.md: This fixes the implementation to match the existing documented behavior.
+```
+
+Use the exact page path and a specific, non-empty reason. There is no blanket waiver. The gate prints accepted reasons under `exceptions`; the reviewer checks each one. Editing the PR body reruns CI. The gate ignores private `.git/orbit/docs-unaffected` notes. Ownership errors and failed generators cannot be waived.
+
+Before pushing, save the proposed PR body outside the checkout and run the same gate locally after preparing the generated contracts:
+
+```bash
+bin/docs-impact --gate --base origin/main --pr-body-file /tmp/orbit-pr-body.md
+```
+
+The file is input data, never executed. Copy its acknowledgement lines into the PR body. To let the pre-push hook use the same file, export `ORBIT_DOCS_PR_BODY_FILE=/tmp/orbit-pr-body.md` before pushing. Without a body file, the gate accepts no waivers. This policy runs through Orbit's `composer check` and `bin/review-check`; the generic Gateway task engine does not know about docs-first or documentation conventions. Jev is out of scope for this version.
 
 Run from the repository root:
 

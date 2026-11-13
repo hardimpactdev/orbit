@@ -2603,7 +2603,7 @@ inputs = [
   ".github/workflows/docs-site.yml",
   "!bin/docs-openapi",
 ]
-cost = 70 # Hosted estimate: previous 40s plus about 28s of local test/setup work.
+cost = 85 # ESTIMATE: previous 70s plus 15s for the PR impact gate (local max 6.17s × 2.1 + 1).
 ceiling = 120
 
 [check.api-reference]

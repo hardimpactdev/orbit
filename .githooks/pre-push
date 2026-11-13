@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repository_root="$(git rev-parse --show-toplevel)"
-exec "$repository_root/bin/docs-impact" --gate --base origin/main
+args=()
+if [[ -n "${ORBIT_DOCS_PR_BODY_FILE:-}" ]]; then
+  args+=(--pr-body-file "$ORBIT_DOCS_PR_BODY_FILE")
+fi
+exec "$repository_root/bin/docs-impact" --gate --base origin/main "${args[@]}"

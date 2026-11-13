@@ -12,7 +12,7 @@ use RuntimeException;
 final class DocsImpactCommand extends Command
 {
     #[\Override]
-    protected $signature = 'orbit:docs-impact {--base=} {--paths=*} {--gate}';
+    protected $signature = 'orbit:docs-impact {--base=} {--paths=*} {--gate} {--pr-body-file=}';
 
     #[\Override]
     protected $description = 'Report documentation pages and generators affected by repository changes.';
@@ -48,6 +48,21 @@ final class DocsImpactCommand extends Command
             }
             $validatedPaths[] = $path;
         }
+        $prBody = '';
+        $bodyFile = $this->input->getOption('pr-body-file');
+        if ($bodyFile !== null) {
+            if (! $this->option('gate') || ! is_string($bodyFile) || ! is_file($bodyFile) || ! is_readable($bodyFile)) {
+                $this->error('The --pr-body-file option requires --gate and a readable PR body file.');
+
+                return self::FAILURE;
+            }
+            $prBody = file_get_contents($bodyFile);
+            if ($prBody === false) {
+                $this->error('Unable to read the PR body file.');
+
+                return self::FAILURE;
+            }
+        }
         try {
             $impact = new DocsImpact($root);
             if ($this->option('gate')) {
@@ -56,10 +71,16 @@ final class DocsImpactCommand extends Command
 
                     return self::FAILURE;
                 }
-                $gate = $impact->gate($base);
+                $gate = $impact->gate($base, $prBody);
                 $this->line(json_encode($gate, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
                 if ($gate['missing_pages'] !== []) {
                     $this->error('Impacted documentation pages were not changed: '.implode(', ', $gate['missing_pages']));
+                    $this->line('Update each page, or add a separate line to the PR body with its exact path and a specific reason:');
+                    foreach ($gate['missing_pages'] as $page) {
+                        $this->line('Docs-unaffected: '.$page.': <explain why no docs change is needed>');
+                    }
+                    $this->line('Check before pushing: bin/docs-impact --gate --base origin/main --pr-body-file /path/to/pr-body.md');
+                    $this->line('CI reads the PR body and reruns when it is edited. Private Git notes do not waive this gate.');
                 }
                 foreach ($gate['failures'] as $failure) {
                     $this->error($failure);
