@@ -9,6 +9,7 @@ use App\Data\DatabaseConnections\CreateDatabaseUserData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseDestroySafety;
 use App\Domain\DatabaseServers\DatabaseUserPrivileges;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -114,6 +115,9 @@ final readonly class CreateDatabaseUserAction
                     'database_connection_id' => $connection->id, 'username' => $data->username, 'password' => $data->password,
                     'privileges' => $this->privileges->text($server->driver, $connection->database, $readOnly), 'replication' => $data->replication,
                     'created_by' => $createdBy,
-                ]]);
+                ]],
+            // One user create per server at a time: a second create of the same new name on another connection would
+            // pass the Gateway check and the batch guard before the first run creates the account.
+            OperationStore::lockKey('database_user', $server->id));
     }
 }

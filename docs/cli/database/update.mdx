@@ -24,7 +24,7 @@ orbit database:update app --password=rotated-secret
 orbit database:update app --node=
 ```
 
-Supply at least one field option. A slug alone returns `database.update_required`. Most changes return a succeeded Operation without a Swamp run. Only a changed, non-null database index on a managed Valkey server starts a run to check the live index limit.
+Supply at least one field option. A slug alone returns `database.update_required`. Most changes return a succeeded Operation without a Swamp run. Only a changed, non-null database index on a managed Valkey server starts a run to check the live index limit. A connection that Orbit manages on a Database server keeps its identity and credentials: such a change returns `database.server_connection_managed`. On a Valkey server only the index may change.
 
 Updating a record does not rewrite the keys already stored on attached Instances. Run `instance:database:add` again with the same prefix to re-project them, then `env:sync` to install them.
 

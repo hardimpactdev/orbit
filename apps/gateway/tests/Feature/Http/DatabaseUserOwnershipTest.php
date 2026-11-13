@@ -116,6 +116,7 @@ it('creates a new user behind the server guard, without the password in the Oper
     $apply = app(DatabaseStatements::class)->user($input, $input['payload']['password'], $input['payload']['salt'])['apply'];
 
     expect($input['known_user'])->toBeFalse()
+        ->and($apply)->toContain('database.name_conflict')
         ->and(strpos($apply, 'database.name_conflict'))->toBeLessThan(strpos($apply, $driver === 'mysql' ? 'CREATE USER' : 'CREATE ROLE'))
         ->and($response->getContent())->not->toContain('caller-secret-sentinel')
         ->and(json_encode($operation->input))->not->toContain('caller-secret-sentinel')
@@ -154,3 +155,27 @@ it('refuses a database whose derived user is the admin login', function (): void
     expect(DatabaseConnection::query()->where('slug', 'root')->exists())->toBeFalse()
         ->and(Operation::query()->count())->toBe(0);
 });
+
+it('runs one user create per server at a time', function () use ($create): void {
+    $create('mysql', 'reporting')->assertAccepted();
+
+    $this->postJson('/api/v1/database-connections/blog-mysql/users', ['username' => 'reporting', 'password' => 'other-secret-sentinel'])
+        ->assertStatus(409)->assertJsonPath('error.code', 'operation.target_busy');
+    $create('pgsql', 'reporting')->assertAccepted();
+
+    expect(Operation::query()->where('kind', 'database_user.create')->count())->toBe(2);
+});
+
+it('keeps a managed SQL connection on its own database and user', function (string $driver, array $patch): void {
+    $this->patchJson("/api/v1/database-connections/shop-{$driver}", $patch)
+        ->assertStatus(409)->assertJsonPath('error.code', 'database.server_connection_managed');
+
+    $connection = DatabaseConnection::query()->where('slug', "shop-{$driver}")->sole();
+    expect($connection->database)->toBe('shop')->and($connection->username)->toBe('shop_owner')
+        ->and(Operation::query()->count())->toBe(0);
+})->with([
+    'mysql another database' => ['mysql', ['database' => 'blog']],
+    'mysql the admin user' => ['mysql', ['username' => 'root']],
+    'mysql another owner' => ['mysql', ['username' => 'blog_owner']],
+    'pgsql another database' => ['pgsql', ['database' => 'blog']],
+]);

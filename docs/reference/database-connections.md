@@ -127,7 +127,7 @@ Unknown tables fail the Operation with `database.table_missing`. Every other exe
 
 On a `redis` server, the same request with `patterns`, `allow`, and an optional numeric `database` creates a [Valkey ACL user](/reference/database-servers#create-an-acl-user-on-a-valkey-server) named after the slug and records a `redis` connection that logs in as that user. `patterns` and `allow` are lists of strings. A MySQL or PostgreSQL server refuses them with `validation.failed`, and a `redis` server refuses `instance_id` with `database.driver_unsupported`.
 
-A managed Valkey connection's driver, Node, address, port, username, and password cannot change through `database:update`. It returns `database.server_connection_managed` (409). The database index can change. Create another connection to move clients to a different user.
+A managed MySQL or PostgreSQL connection's driver, Node, address, port, database, username, and password cannot change through `database:update`; a new name there would reach another database or account. It returns `database.server_connection_managed` (409). A managed Valkey connection's driver, Node, address, port, username, and password cannot change through `database:update`. It returns `database.server_connection_managed` (409). The database index can change. Create another connection to move clients to a different user.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |

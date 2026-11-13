@@ -368,7 +368,7 @@ The server commands return these codes.
 | `database.server_container_foreign` | 409 | A container with the server's name belongs to another Process; nothing changed. |
 | `database.valkey_acl_failed` | 502 | Docker could not write the Valkey ACL file into the volume. |
 | `database.server_in_use` | 409 | A connection still points to the server, another database removal or ACL change is running, or closing would lock out a client. |
-| `database.server_connection_managed` | 409 | A change would replace a managed PostgreSQL or Valkey connection's identity or credentials. |
+| `database.server_connection_managed` | 409 | A change would replace a managed MySQL, PostgreSQL or Valkey connection's identity or credentials. |
 | `database.server_inactive` | 409 | The server is not active yet. Run `database:server:create` again to finish it. |
 | `database.server_required` | 422 | The connection has no server, so Orbit cannot create a user on it. |
 | `database.driver_unsupported` | 422 | The driver does not support this operation, including automatic PostgreSQL Instance database creation and cloning. |
