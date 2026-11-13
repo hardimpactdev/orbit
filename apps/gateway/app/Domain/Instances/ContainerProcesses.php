@@ -90,10 +90,14 @@ final readonly class ContainerProcesses
     }
 
     /**
-     * Records the run's outcome on the admitted Processes: a passed run installed and started every one; a failed run leaves the
-     * Processes it had not installed failed and the running ones as they were.
+     * Records the run's outcome on the admitted Processes: a passed run installed and started every one. A failed run leaves a
+     * Process failed when it was not active or its unit is in $inactiveUnits, the units the run saw not become active. An active
+     * one keeps running the spec of its systemd_activation_hash; when the run was to change it (systemd_activation_pending), the
+     * failed change is recorded beside it in failed_step and error_code.
+     *
+     * @param  list<string>  $inactiveUnits
      */
-    public function complete(Instance $instance, mixed $admitted, bool $succeeded, ?string $errorCode, bool $migrate = false): void
+    public function complete(Instance $instance, mixed $admitted, bool $succeeded, ?string $errorCode, bool $migrate = false, array $inactiveUnits = []): void
     {
         $port = $succeeded ? $this->vitePort($instance) : null;
         foreach (is_array($admitted) ? $admitted : [] as $raw) {
@@ -108,8 +112,10 @@ final readonly class ContainerProcesses
                 $process->forceFill(['working_directory' => $placed->working_directory, 'runtime_config' => $placed->runtime_config,
                     'status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null,
                     'systemd_activation_hash' => hash('sha256', ValidatedData::string($unit['content'])), 'systemd_activation_pending' => false])->save();
-            } elseif ($process->status !== LifecycleStatus::Active) {
+            } elseif ($process->status !== LifecycleStatus::Active || in_array(ValidatedData::string($unit['name']), $inactiveUnits, true)) {
                 $process->forceFill(['status' => LifecycleStatus::Failed, 'failed_step' => 'container', 'error_code' => $errorCode ?? 'operation.cancelled'])->save();
+            } elseif ($process->systemd_activation_pending) {
+                $process->forceFill(['failed_step' => 'container', 'error_code' => $errorCode ?? 'operation.cancelled'])->save();
             }
         }
     }

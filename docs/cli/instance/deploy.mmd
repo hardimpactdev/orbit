@@ -95,6 +95,7 @@ sequenceDiagram
     SW->>N: Start the container<br/>Ansible · tags start
     %%> What it does:
     %%> - starts a stopped default container; see docs/cli/instance/container/deploy-default.mmd
+    %%> - waits only for FrankenPHP and the enabled Process units, which the container's boot starts
     opt nested-fleet default
       SW->>N: Check the inner fleet<br/>Ansible · tags fleet_check
       %%> What it does:
@@ -116,6 +117,7 @@ sequenceDiagram
     SW->>N: Install the Processes<br/>Ansible · tags processes
     %%> What it does:
     %%> - writes changed `orbit-*` units and new environment files from the vault, removes former ones, and restarts the changed units
+    %%> - enables and starts each running unit and waits for it; on failure the detail names the unit that is not active
     %%> - the seed snapshot then restarts every running Process on the new commit
     opt nested-fleet default
       SW->>N: Start the inner fleet<br/>Ansible · tags fleet_start

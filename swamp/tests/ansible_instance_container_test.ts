@@ -712,6 +712,76 @@ Deno.test({
 });
 
 Deno.test({
+  name: "a deployment's start waits only for enabled Process units; the processes phase enables, starts and waits for a new or resumed one",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.processes = [worker, paused];
+      f.write();
+      for (const phase of ["container", "workspace", "processes"]) {
+        const result = f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments });
+        assert(result.ok, `${phase}: ${result.output}`);
+      }
+      // The Project gained a definition: its record is in the intent, but no unit file is in the container yet. The scheduler was
+      // stopped and is now set to run: its unit file is there, but disabled and inactive.
+      const fresh = { id: 43, name: "orbit-process-43-fresh.service", content: "[Service]\nUser=orbit\nExecStart=sleep infinity\n", environment: null, desired: "running" };
+      const resumed = { ...paused, desired: "running" };
+      assert(Deno.statSync(`${f.folder}/containers/instance-7/etc/systemd/system/${paused.name}`).isFile);
+      const stopped = f.state();
+      stopped.inactive = [...new Set([...(stopped.inactive ?? []), paused.name])];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(stopped));
+      f.container.processes = [worker, resumed, fresh];
+      f.write();
+      const shows = (unit: string) => f.state().systemctl.filter((call: string[]) => call[0] === "show" && call.at(-1) === unit).length;
+      const start = f.run("start", { ORBIT_PROCESS_ENVIRONMENTS: environments });
+      assert(start.ok, start.output);
+      assertEquals(shows(fresh.name), 0);
+      assertEquals(shows(paused.name), 0);
+      assert(shows(worker.name) > 0);
+      const installed = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: environments });
+      assert(installed.ok, installed.output);
+      assert(Deno.statSync(`${f.folder}/containers/instance-7/etc/systemd/system/${fresh.name}`).isFile);
+      for (const unit of [fresh.name, paused.name]) {
+        assert(f.state().systemctl.some((call: string[]) => call[0] === "enable" && call.includes("--now") && call.includes(unit)), unit);
+        assert(shows(unit) > 0, unit);
+      }
+
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a new Process that does not start fails the deployment's processes phase, which names its unit",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.processes = [worker];
+      f.write();
+      for (const phase of ["container", "workspace", "processes"]) {
+        const result = f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments });
+        assert(result.ok, `${phase}: ${result.output}`);
+      }
+      const broken = { id: 44, name: "orbit-process-44-broken.service", content: "[Service]\nUser=orbit\nExecStart=/bin/false\n", environment: null, desired: "running" };
+      f.container.processes = [worker, broken];
+      f.write();
+      const state = f.state();
+      state.failing = [broken.name];
+      state.inactive = [broken.name];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const processes = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: environments });
+      assert(!processes.ok, processes.output);
+      assertEquals(f.result(), { error_code: "instance.container_processes_failed", detail: `Not active: ${broken.name}`, units_inactive: [broken.name] });
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
   name: "a Process's start, stop and restart change its unit in the container",
   ignore: !hasAnsible,
   fn() {

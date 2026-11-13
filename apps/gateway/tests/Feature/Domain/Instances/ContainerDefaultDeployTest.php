@@ -191,6 +191,11 @@ it('reads a container deployment\'s commit or refusal from the result file', fun
         ->and($run('failed', '{"commit":null}', ['Run dev deploy steps-0'])[0]['error_code'])->toBe('deployment.step_failed')
         ->and($run('failed', 'not json', ['Start the container'])[0]['error_code'])->toBe('operation.native_failed')
         ->and($run('failed', '{"error_code":"Not A Code"}', ['Start the container'])[0]['error_code'])->toBe('operation.native_failed');
+    // A Process that did not become active is named in the failure and in the payload.
+    [$data, $payload] = $run('failed', '{"error_code":"instance.container_processes_failed","detail":"Not active: orbit-process-9-mailer.service","units_inactive":["orbit-process-9-mailer.service"]}',
+        ['Install the Processes']);
+    expect($data['failure']['detail'])->toBe('Not active: orbit-process-9-mailer.service')
+        ->and($payload['units_inactive'])->toBe(['orbit-process-9-mailer.service']);
 });
 
 it('records a running container but no seed when a deployment fails after the container started', function (): void {

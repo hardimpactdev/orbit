@@ -142,7 +142,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "f2eacbe55617fa34d554f8ba9d060074a45a9e6423915642bab5040323bf5e1b",
+    "source_sha256": "11c8607f3be0107acc5e911717fb7e2018e452befbc4625d90220e4b2a26a2bb",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -154,6 +154,8 @@
       "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer",
       "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing",
       "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file",
+      "a deployment's start waits only for enabled Process units; the processes phase enables, starts and waits for a new or resumed one",
+      "a new Process that does not start fails the deployment's processes phase, which names its unit",
       "a Process's start, stop and restart change its unit in the container",
       "a clone runs its own Process units: the default's units and folders from the seed go, and its own start",
       "a clone's first boot starts no unit of the default and the clone has its own machine-id",

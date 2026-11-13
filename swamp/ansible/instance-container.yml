@@ -94,7 +94,7 @@
                   else ({'error_code': failure_code}
                   | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({}))
                   | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
-                  | combine(failure_fleet_detail) | combine(club_key_carried))) | to_json }}
+                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(club_key_carried))) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           delegate_to: localhost
@@ -117,6 +117,14 @@
             failure_reason: >-
               {{ ansible_failed_task.name | default('A fleet task') }}: {{ failure_message
                  }}{{ (': ' ~ failure_stderr) if failure_message == 'non-zero return code' and failure_stderr != '' else '' }}
+            # A unit that did not become active is named, so the failure says which Process did not start; the Gateway records the
+            # named units' Processes as failed and keeps the others as they run.
+            failure_inactive_units: >-
+              {{ ansible_failed_result.results | default([]) | selectattr('failed', 'defined') | selectattr('failed')
+                 | map(attribute='item') | list if ansible_failed_task.name | default('') == 'Wait for each running unit' else [] }}
+            failure_unit_detail: >-
+              {{ {'detail': 'Not active: ' ~ failure_inactive_units | join(', '), 'units_inactive': failure_inactive_units}
+                 if failure_inactive_units | length > 0 else {} }}
             failure_fleet_detail: >-
               {{ {} if failure_phase not in ['fleet_check', 'fleet_start', 'fleet_refresh', 'fleet_resume'] or failure_code == failure_message
                  else {'detail': 'The new seed and base stay; the inner fleet on the new commit did not start: ' ~ failure_reason,

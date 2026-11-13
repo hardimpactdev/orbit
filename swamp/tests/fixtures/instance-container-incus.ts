@@ -269,7 +269,14 @@ if (family === "list") {
         if (state.queued?.[unit]) state.queued[unit] = queued - 1;
         save();
       }
-      console.log(`ActiveState=${(state.inactive ?? []).includes(unit) ? "inactive" : "active"}`);
+      // A Process unit whose file is not installed does not exist for systemd: it never becomes active.
+      let missing = false;
+      try {
+        Deno.statSync(`${rootfs(name)}/etc/systemd/system/${unit}`);
+      } catch {
+        missing = unit.startsWith("orbit-process-");
+      }
+      console.log(`ActiveState=${missing || (state.inactive ?? []).includes(unit) ? "inactive" : "active"}`);
       console.log(queued > 0 ? "Job=123" : "Job=");
       Deno.exit(0);
     }
