@@ -41,6 +41,7 @@ final class OperationListItemData extends Data
         public ?string $currentStepObservedAt = null,
         public ?TaskPlaceWaitData $capacityWait = null,
         public ?string $overdueSince = null,
+        public ?string $readyAt = null,
     ) {}
 
     public static function fromModel(Operation $operation, ?string $callerNodeName = null): self
@@ -72,6 +73,7 @@ final class OperationListItemData extends Data
             currentStepObservedAt: $record->currentStepObservedAt,
             capacityWait: $record->capacityWait,
             overdueSince: $record->overdueSince,
+            readyAt: $record->readyAt,
         );
     }
 }

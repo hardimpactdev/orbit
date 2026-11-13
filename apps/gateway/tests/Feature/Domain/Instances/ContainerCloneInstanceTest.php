@@ -30,8 +30,6 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Domain\WebSocket\WebSocketAppEnvProjection;
-use App\Infrastructure\AgentView\WebSocketClient;
-use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Jobs\RecordWorkspaceBaseline;
@@ -54,12 +52,14 @@ use Dotenv\Dotenv;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Orbit\Extensions\Conn\Actions\AdmitConnCleanupAction;
 use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 uses(LazilyRefreshDatabase::class);
 
 require_once __DIR__.'/ContainerInstanceHelpers.php';
+require_once __DIR__.'/ContainerCloneHelpers.php';
 
 beforeEach(function (): void {
     Queue::fake();
@@ -91,18 +91,6 @@ beforeEach(function (): void {
         }
     });
 });
-
-/** The Project's container default on the Node, active with its seed snapshot, as its finished create leaves it. */
-function seededDefault(Node $node, ?ProjectType $type = null): Instance
-{
-    $project = containerDefaultProject($type ?? ProjectType::NodePackage);
-    $default = Instance::query()->findOrFail(containerCreate($project, $node)->target_id);
-    $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
-    InstanceRuntime::query()->where('instance_id', $default->id)->firstOrFail()
-        ->update(['seed_commit' => str_repeat('c', 40), 'power_state' => InstanceRuntimePowerState::Running]);
-
-    return $default->refresh();
-}
 
 describe('a clone of the container default', function (): void {
     it('limits every default and clone to the same CPU memory process and root disk budget', function (): void {
@@ -576,23 +564,98 @@ describe('the clone\'s create result', function (): void {
             ->and($other->refresh()->admin_session)->toBe('other')
             ->and(Instance::query()->findOrFail($operation->target_id)->status)->not->toBe(InstanceState::Active);
     });
+
+    it('keeps the server recorded at the ready mark when the run succeeds: no new cleanup revision and no cleanup', function (): void {
+        $node = containerDefaultNode();
+        $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
+        $operation->forceFill(['status' => 'running', 'finished_at' => null, 'error_code' => null, 'result' => null, 'state' => ['swamp_run_id' => 'run-1']])->save();
+        vaultReadingSocket(['nckrtl-instance-t3-model-register-session-gateway-1-token' => 'gateway-session-value']);
+        workspaceReaderNode(readyBaseline());
+        $admitted = cleanupRecorder();
+        markCloneReady($operation);
+        $marked = ConnEnvironment::query()->where('environment_id', 'env-feature')->firstOrFail();
+
+        app(DevelopmentInstanceCreateProjection::class)->apply($operation->refresh(), cloneSucceeded($operation));
+
+        $environment = ConnEnvironment::query()->where('environment_id', 'env-feature')->sole();
+        expect($environment->id)->toBe($marked->id)
+            ->and($environment->cleanup_version)->toBe($marked->cleanup_version)
+            ->and($environment->cleanup_completed_version)->toBe($marked->cleanup_version)
+            ->and($environment->registered_at?->toIso8601String())->toBe($marked->registered_at?->toIso8601String())
+            ->and($admitted->environments)->toBe([])
+            ->and(Instance::query()->findOrFail($operation->target_id)->status)->toBe(InstanceState::Active)
+            ->and($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+    });
+
+    it('still replaces a server the run recorded with another session, and cleans the earlier one', function (): void {
+        $node = containerDefaultNode();
+        $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
+        $operation->forceFill(['status' => 'running', 'finished_at' => null, 'error_code' => null, 'result' => null, 'state' => ['swamp_run_id' => 'run-1']])->save();
+        vaultReadingSocket(['nckrtl-instance-t3-model-register-session-gateway-1-token' => 'gateway-session-value']);
+        $admitted = cleanupRecorder();
+        $earlier = ConnEnvironment::query()->forceCreate(['environment_id' => 'env-feature', 'label' => 'tool / feature', 'url' => 'http://10.44.0.7:3800',
+            'node_id' => $node->id, 'instance_id' => $operation->target_id, 'server_version' => '0.1.7',
+            'admin_session' => 'earlier-run-session', 'admin_session_expires_at' => now()->addDay(), 'registered_at' => now()]);
+
+        app(DevelopmentInstanceCreateProjection::class)->apply($operation->refresh(), cloneSucceeded($operation));
+
+        expect($earlier->refresh()->admin_session)->toBe('gateway-session-value')
+            ->and($earlier->cleanup_version)->toBe($earlier->cleanup_completed_version + 1)
+            ->and($admitted->environments)->toBe(['env-feature']);
+    });
+
+    it('keeps the server recorded at the ready mark when the run fails after it, and retains the Instance for retry', function (): void {
+        $node = containerDefaultNode();
+        $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
+        $operation->forceFill(['status' => 'running', 'finished_at' => null, 'error_code' => null, 'result' => null, 'state' => ['swamp_run_id' => 'run-1']])->save();
+        vaultReadingSocket(['nckrtl-instance-t3-model-register-session-gateway-1-token' => 'gateway-session-value']);
+        workspaceReaderNode(readyBaseline());
+        $admitted = cleanupRecorder();
+        markCloneReady($operation);
+
+        app(DevelopmentInstanceCreateProjection::class)->apply($operation->refresh(), [
+            'status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+            'error_code' => 'instance.container_process_inactive',
+            'result' => ['instance_id' => $operation->target_id, 'ready' => false, 'failed_step' => 'processes', 'commit' => str_repeat('c', 40)],
+        ]);
+
+        $instance = Instance::query()->findOrFail($operation->target_id);
+        expect(ConnEnvironment::query()->where('instance_id', $instance->id)->sole()->admin_session)->toBe('gateway-session-value')
+            ->and($admitted->environments)->toBe([])
+            ->and($instance->status)->toBe(InstanceState::SourceResolved)
+            ->and($instance->failed_step)->toBe('processes')
+            ->and($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Running)
+            ->and($operation->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($operation->result['recovery']['state'])->toBe('retained_for_retry')
+            ->and($operation->state['ready_at'])->toBeString();
+    });
 });
+
+/** Records each Conn cleanup that a server record admits, in place of the admission. */
+function cleanupRecorder(): object
+{
+    $recorder = new class
+    {
+        /** @var list<string> */
+        public array $environments = [];
+
+        public function execute(ConnEnvironment $environment, Node $caller): null
+        {
+            $this->environments[] = $environment->environment_id;
+
+            return null;
+        }
+    };
+    app()->instance(AdmitConnCleanupAction::class, $recorder);
+
+    return $recorder;
+}
 
 it('wires Conn into the create flow of a container Instance', function (): void {
     $contributions = new ReflectionProperty(InstanceLifecycleContributions::class, 'contributions')->getValue(app(InstanceLifecycleContributions::class));
 
     expect(collect($contributions)->map(fn (object $contribution): string => $contribution::class)->all())->toBe([ConnInstanceLifecycle::class]);
 });
-
-/** @return array<string, mixed> */
-function cloneSucceeded(Operation $operation): array
-{
-    return ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['ready' => true, 'instance_id' => $operation->target_id, 'commit' => str_repeat('c', 40), 't3' => [
-            'environment_id' => 'env-feature', 'server_version' => '0.1.7', 'expires_at' => '2026-12-10T10:00:00.000Z',
-            'gateway_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-gateway-1-token'],
-            'swamp_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-swamp-1-token']]]];
-}
 
 /** The default's shared Valkey connection, as an operator makes and attaches it: a user over other apps' keys, index 3. */
 function defaultValkeyTarget(Instance $default, DatabaseServer $server): DatabaseConnection
@@ -613,70 +676,6 @@ function databaseServerOn(Node $node, string $slug, DatabaseDriver $driver, int 
 
     return DatabaseServer::query()->forceCreate(['slug' => $slug, 'driver' => $driver, 'node_id' => $node->id, 'process_id' => $process->id, 'tag' => '18', 'port' => $port,
         'status' => 'active', 'root_password' => 'root-secret']);
-}
-
-/**
- * A Swamp vault behind the WebSocket: it keeps what the Gateway puts and answers reads of `$secrets`.
- *
- * @param  array<string, string>  $secrets
- */
-function vaultReadingSocket(array $secrets): object
-{
-    $socket = new class($secrets) implements WebSocketClient
-    {
-        /** @var list<string> */
-        public array $reads = [];
-
-        /** @var list<array{key: string, value: string}> */
-        public array $puts = [];
-
-        /** @var list<array<string, mixed>> */
-        private array $frames = [];
-
-        private bool $open = false;
-
-        /** @param array<string, string> $secrets */
-        public function __construct(private array $secrets) {}
-
-        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
-        {
-            $this->open = true;
-        }
-
-        public function send(array $message): void
-        {
-            $this->frames[] = $message;
-        }
-
-        public function receive(float $timeoutSeconds): array
-        {
-            $frame = end($this->frames);
-            if ($frame['type'] === 'vault.read-secret') {
-                $this->reads[] = $frame['payload']['secretKey'];
-
-                return [['id' => $frame['id'], 'type' => 'vault.read-secret', 'payload' => ['data' => ['vaultName' => $frame['payload']['vaultName'],
-                    'secretKey' => $frame['payload']['secretKey'], 'vaultType' => 'local_encryption', 'value' => $this->secrets[$frame['payload']['secretKey']] ?? '']]]];
-            }
-            $this->puts[] = ['key' => $frame['payload']['key'], 'value' => (string) ($frame['payload']['value'] ?? '')];
-
-            return [['id' => $frame['id'], 'type' => 'vault.put', 'payload' => ['data' => [
-                'vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
-        }
-
-        public function close(): void
-        {
-            $this->open = false;
-        }
-
-        public function isConnected(): bool
-        {
-            return $this->open;
-        }
-    };
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
-
-    return $socket;
 }
 
 it('captures every attached server target once, including remote Redis, in the container intent', function (): void {

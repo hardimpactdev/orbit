@@ -57,6 +57,11 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
         if ($environment instanceof ConnEnvironment && $environment->instance_id !== null && $environment->instance_id !== $instance->id) {
             throw new ResourceOperationException('instance.result_invalid', "Environment {$id} is the T3 server of another Instance.", 409);
         }
+        if ($environment instanceof ConnEnvironment && $environment->instance_id === $instance->id
+            && $environment->admin_session === ValidatedData::string($server['admin_session'])) {
+            // The server recorded at the create's ready mark, handed over again at its end: nothing to replace or clean.
+            return;
+        }
         $replaced = $environment instanceof ConnEnvironment;
         $environment ??= new ConnEnvironment(['environment_id' => $id]);
         // The bumped revision also stops a Node's registration of this id that read the row before this write

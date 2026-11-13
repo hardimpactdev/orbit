@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\DirectCertificatesController;
 use App\Http\Controllers\Api\DirectGitHubTokenController;
+use App\Http\Controllers\Api\DirectInstanceReadyController;
 use App\Http\Controllers\Api\DirectOperationsController;
 use App\Http\Controllers\Api\DirectRouteHoldController;
 use App\Http\Controllers\Api\OperationsController;
@@ -16,6 +17,7 @@ Route::middleware([RequireActiveWireGuardPeer::class])->group(function (): void 
     Route::post('direct-operations/{operation}/github-token', [DirectGitHubTokenController::class, 'mint'])->whereNumber('operation')->name('operation:direct:github-token');
     Route::post('direct-operations/{operation}/route-hold', [DirectRouteHoldController::class, 'hold'])->whereNumber('operation')->name('operation:direct:route-hold');
     Route::post('direct-operations/{operation}/route-release', [DirectRouteHoldController::class, 'release'])->whereNumber('operation')->name('operation:direct:route-release');
+    Route::post('direct-operations/{operation}/instance-ready', [DirectInstanceReadyController::class, 'ready'])->whereNumber('operation')->name('operation:direct:instance-ready');
     Route::post('direct-operations/{operation}/certificates/sign', [DirectCertificatesController::class, 'sign'])->whereNumber('operation')->name('operation:direct:certificate-sign');
     Route::get('direct-operations/{operation}', [DirectOperationsController::class, 'show'])->whereNumber('operation')->name('operation:direct:show');
     Route::post('direct-operations/{operation}/result', [DirectOperationsController::class, 'result'])->whereNumber('operation')->name('operation:direct:result');

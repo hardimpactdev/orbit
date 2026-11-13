@@ -18,7 +18,8 @@ interface InstanceLifecycleContribution
 
     /**
      * Records the clone's T3 server from the run's result: `environment_id`, `server_version`, `url`, `label`, `expires_at` and the
-     * Gateway's `admin_session`, which the projection read from the vault.
+     * Gateway's `admin_session`, which the projection read from the vault. A create's ready mark hands over the server too, and its
+     * terminal success then hands over the same server again: a server that is already recorded for this Instance changes nothing.
      *
      * @param  array<string, mixed>  $server
      */
