@@ -3,9 +3,9 @@ title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
   - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceContainerPlacement,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
-  - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
+  - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target,07_000001_add_nested_fleet_to_projects}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts}
   - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/{notes/**,frankenphp.Caddyfile}}
@@ -20,7 +20,8 @@ covers:
 | --- | --- |
 | Records, Node preparation, egress and DNS | Built |
 | Default create and deploy, clone, forced non-default destroy, checkout migration | Built on the build-list Nodes |
-| Task containers, nested-fleet parity, sleep/wake and production containers | Planned |
+| Nested-fleet records, refusals, host placement and readers | Built; nested Instance creation waits for the image variant |
+| Task containers, fleet build and refresh (F2–F3), nested-fleet parity, sleep/wake and production containers | Planned |
 | Dedicated workspace volumes and explicit package workspace links | [Draft specification](#workspace-volumes-draft); not implemented or proved |
 
 Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
@@ -61,6 +62,9 @@ This part is built. The `app-dev` role converge of a Node on the [build list](#t
 - **Project.** Containers of `orbit-instances` must set an isolated ID map. They may mount host folders and have proxy devices, and cannot be VMs. The profile mounts the two shared folders.
 - **Host paths.** The project sets no `restricted.devices.disk.paths`. Incus refuses `shift` on a disk under that list, and the shared folders need the idmapped mount.
 - **Host path guard.** The create flow's device list is the only guard on host paths. A later step can restore the project limit with custom volumes that set `security.shifted`.
+
+Root's subordinate range must hold the normal containers and task container places. Each recorded nested Instance needs another 101,000,000 IDs, with two spare maps for image build and new Instances. Convergence checks the range and never changes it.
+
 The converge sets up the network side next:
 
 - **Profile.** The default profile sets the [proxy settings](#egress-and-dns) as `environment.*` keys, so every `incus exec` that keeps its environment has them.
@@ -126,7 +130,7 @@ The Node must meet the host requirements of ADR 0250: current kernel, SCTP off a
 
 ## Inside a container
 
-Every Instance container, default or clone, has the same limits: 4 CPUs, 8 GiB of memory, 4,096 processes and a 40 GiB root disk on the `orbit-instances` ZFS pool.
+Every Instance container, default or clone, has 4 CPUs, 4,096 processes and a 40 GiB root disk. Memory is 8 GiB, or 12 GiB for a nested-fleet Project. The root disk lives on the `orbit-instances` ZFS pool.
 
 Clone phases stage their release's helpers and intent once in a private folder for the run. Later phases run them by path. This keeps scripts off the SSH command and avoids its size limit. The repository credential stays on stdin. Cleanup removes the folder on success or failure, including a failed first launch.
 
@@ -141,7 +145,7 @@ Every development container has the same layout. The image and the create set it
 | `orbit` | uid 1000, home `/home/orbit` mode 0750, password locked. Runs the app and every Orbit Process |
 | `agent` | uid 2750, home `/home/agent` mode 0700, password locked. Runs T3, Claude Code, Codex and their shell commands. Owns the T3 state, the agent settings and the placeholder key |
 | `work` | gid 2760, members `agent` and `orbit` |
-| Sudo | None for either user. The image's `sudoers.d` grant is removed |
+| Sudo | None for either user |
 | Workspace | `/srv/workspace`, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others. `core.sharedRepository=group` |
 | Git | `safe.directory=/srv/workspace` in each user's own Git config; the agent phase preserves its other Git settings |
 | Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped |
@@ -151,7 +155,7 @@ Every development container has the same layout. The image and the create set it
 | Instance file | `/etc/orbit/instance`, root-owned and readable by all: Instance, Project id, slug and quoted one-line name, Node and URL. Absent on the default, keeping T3 stopped |
 | Model route | `nftables` in the container lets only uid 2750 reach the forwarder, and only uid 0 and 2750 reach T3's port |
 | Processes | `/proc` with `hidepid=invisible`, so each user sees only its own processes |
-| Kernel surface | Unprivileged, no nesting, `user.max_user_namespaces=0`, an isolated ID map |
+| Kernel surface | Unprivileged, with an isolated ID map. Normal Projects have no nesting and `user.max_user_namespaces=0`. The [nested variant](#nested-fleet) has its own keys |
 
 A container mounts no host checkout and no Incus socket. Root work, such as units, goes through Orbit from the Node.
 
@@ -389,7 +393,9 @@ Each Project type has one note in the agent folder, at `notes/<note>.md`. The no
 | `monorepo` | `monorepo` |
 | `laravel-package`, `node-package` | `package` |
 
-When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are. It says how previews work, and how an agent's own development server becomes reachable: the port range, the address to bind and the host name to allow. It says that there is no sudo and no direct internet, how the egress proxy works, and how Git leaves the container.
+When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are. It says how previews work, and how an agent's own development server becomes reachable: the port range, the address to bind and the host name to allow.
+
+It says that there is no sudo and no direct internet, how the egress proxy works, and how Git leaves the container.
 
 A note gives no instructions about the work. Instructions, skills and MCP servers come from the project's own files.
 
@@ -986,23 +992,33 @@ Migration checks executable availability before downtime and requires moved runn
 
 ## Nested fleet
 
-Status: the Project flag and Node switch are recorded, but nested create, clone and migration refuse before reservation. Hosting and its image follow separately. The sections below describe that direction.
+Status: switched-on Nodes prepare the hosting projects and guards. Nested create and clone still refuse before reservation until the image variant is delivered. The fleet lifecycle below follows separately.
 
-A Project setting turns on a nested fleet. Its Instance containers then run a fleet of Incus containers nested inside them. Orbit uses it for its command proofs: a Gateway, an `app-dev` and an `app-prod` Node. Other Projects leave it off and keep the kernel surface of [Inside a container](#inside-a-container).
+The Project column `nested_fleet` is boolean and defaults to false. An operator sets it through the existing Project update API with `{"nested_fleet": true}`. F1 adds no CLI option. A change refuses with `project.nested_fleet_in_use` while the Project has any Instance, including a checkout. Each runtime records its Incus project. Create, clone and destroy use that record.
+
+F1A prepares placement and the host project for an inner fleet. Instance creation stays unavailable until F1B supplies its image variant. Fleet devices, automatic build, tunnel setup, refresh and the proof runner come in later cuts. The remaining sections describe that target. Orbit uses it for its command proofs: a Gateway, an `app-dev` and an `app-prod` Node. Other Projects leave it off and keep the kernel surface of [Inside a container](#inside-a-container).
 
 ### The container
 
-An Instance container with a nested fleet lives in its own Incus project on the Node, which allows what the fleet needs. `orbit-instances` keeps refusing it. It changes these settings:
+Hosting defaults off per Node. Enable the [Node setting](/reference/node-settings#nested-fleet-instance-hosting) only after provisioning its subordinate-ID ranges. The Project switch selects placement; it never enables hosting on a Node.
+
+Checkout migration into a nested-fleet container is not available. `instance:migrate` refuses a Project with `nested_fleet` enabled before reserving a runtime, with `operation.kind_unavailable` (503).
+
+An Instance container with a nested fleet lives in `orbit-instances-nested` on the Node. The host converge creates both projects with the same pool, bridge, ACLs and shared folders. The nested project allows nesting, syscall interception and low-level keys, requires isolated privilege, and refuses VMs. `orbit-instances` keeps refusing it. It changes these settings:
 
 | Key | Value | Why |
 | --- | --- | --- |
 | `security.nesting` | `true` | The inner Incus and Docker run in it |
 | `security.syscalls.intercept.mknod` | `true` | The inner Incus makes device nodes for its containers |
 | `security.syscalls.intercept.setxattr` | `true` | The inner Incus and Docker set trusted extended attributes |
+| `security.idmap.isolated` | `true` | The container has its own ID range |
+| `limits.memory` | `12GiB` | The inner fleet shares the outer limit |
 | `security.idmap.size` | `101000000` | The inner range below must fit inside |
 | `user.max_user_namespaces` | Not set to zero | The inner Incus needs user namespaces |
 
-Its project allows low-level keys (`restricted.containers.lowlevel=allow`), because `security.idmap.size` is one. So the create flow refuses a container with any `raw.*` key, and with any device beyond its root disk, NIC, the shared folders and the T3 proxy. No host path, and never the host's Incus socket, reaches it.
+Its project allows low-level keys (`restricted.containers.lowlevel=allow`), because `security.idmap.size` is one. So the create flow refuses a container with any `raw.*` key, and with any device beyond its root disk, NIC, the shared folders and the T3 proxy. No other host path, including the host's Incus socket, reaches it.
+
+The nested image variant is not available yet. Orbit refuses creating an Instance in a nested-fleet Project with `operation.kind_unavailable` (503), before reserving an Instance or runtime.
 
 ### The fleet
 
@@ -1220,3 +1236,11 @@ Attached-target admission and migration require an active, desired-running Proce
 Migrate accepts only the attachment's exact host-key/port-key pair and published port. A selected nonempty database URL override refuses before downtime; URL credentials are never reported. Target failures carry the public attachment ID, Process ID/name and port. Create preserves that object in its phase receipt; migrate uses its existing error-message field to describe the same public identity. Neither includes environment values.
 
 During clone registration, `instance.container_process_inactive` retains `process_failure`: the unit name, Process id when available, `ActiveState`, `SubState`, `Result`, `ExecMainStatus` and `NRestarts`. A unit that reads active on the detail read does not refuse. Arbitrary Process logs can hold secrets, so the receipt keeps exit facts and omits journal text. A failed native clone copies only its structured refusal through the existing private session file; it never registers that file as credentials.
+
+### Nested Instance capacity
+
+Nested and normal Instances share the Node's address pool, T3 ports and storage pool. A `/24` bridge has 252 Instance addresses (`.2` through `.253`); the gateway takes `.1` and the image builder takes `.254`. Every nested Instance consumes one of those 252 slots. Every non-default also consumes one of 200 T3 ports (`3800` through `3999`). For one Project, its default plus 200 clones exhaust the T3 ports before addresses; across Projects with many defaults, addresses can run out first. Both admission failures use `instance.host_unavailable`. All roots share `orbit-instances` storage, with a 40 GiB disk limit per Instance; available pool space can constrain either kind earlier.
+
+The ID budget is a converge check, not an admission quota. An insufficient operator-provisioned uid or gid range can refuse convergence before either address or port limit. [Node hosting settings](/reference/node-settings#nested-fleet-instance-hosting) gives the capacity formula. Creating a runtime does not enlarge the host's range.
+
+Shared-folder refresh captures each recorded Instance project on the Node. A changed folder restarts its running units in every captured project before clearing the restart marker, even after the Node hosting switch is cleared. With no nested runtime, the normal project command sequence stays the same.

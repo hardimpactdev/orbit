@@ -20,7 +20,6 @@ sequenceDiagram
   %%> - a name equal to the Project's default branch also creates the `default` Instance
   Note over GW: Validate, reserve default<br/>address · .env
   %%> Requirements:
-  %%> - a Project with `nested_fleet` enabled refuses before reservation with `operation.kind_unavailable` (503); hosting follows separately
   %%> - the calling Node has node access to the target Node, an active `app-dev` Node
   %%> - the Project has no default Instance anywhere in the fleet; its other Instances are made on this Node
   %%> - a web-serving Project names its PHP version, and the runtime folder holds that static PHP build
@@ -28,12 +27,15 @@ sequenceDiagram
   %%> - the default Instance is reserved with its runtime record and Route; it gets no T3 port
   %%> - `.env` is rendered from the Project's env template; a repository read token goes to the vault
   %%> - a retained create retry records the Project's current development Processes in this admission transaction; changed definitions update their records, removed definitions remove theirs
+  %%> - a Project with `nested_fleet` enabled refuses before reservation with `operation.kind_unavailable` (503), until the nested image variant is available
   Note over GW: Commit, push copies<br/>queue start · answer 202
   GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start run from queue<br/>operation-instance-create
   SW->>N: Launch the container<br/>Ansible · tags container
   %%> What it does:
-  %%> - `incus init` from the Node's image `orbit-instance` with the reserved bridge address, then `incus start`; the project's profile gives `security.port_isolation` and the idmapped, read-only shared folders
+  %%> - the Project setting selects `orbit-instances` with `orbit-instance`, or `orbit-instances-nested` with `orbit-instance-nested`; the runtime records that project
+  %%> - nested containers add nesting, mknod/setxattr interception, an isolated 101000000-ID map and 12GiB memory; raw keys and extra devices refuse
+  %%> - `incus init` from the Node's selected image with the reserved bridge address, then `incus start`; the project's profile gives `security.port_isolation` and the idmapped, read-only shared folders
   %%> - the NIC carries `orbitinst0-proxy` and the container's own ACL, which lets only the Node's Caddy reach port 8080; `orbitinst0-egress` stays on the bridge only
   %%> - the agent folder is mounted too, so its clones have it; nothing in the default runs from it
   %%> - fetches the default branch into the Node's mirror with the read token; the token stays on the Node

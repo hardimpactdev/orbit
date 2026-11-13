@@ -246,3 +246,5 @@ A copied Schedule on a new production Instance can run before the data of that I
 Retained Instance timer removal uses official file and systemd checks. Its native end assertion confirms four managed paths are absent and the timer is stopped, disabled and unloaded. A standalone removal refuses an active service before mutation; Instance cascade removal stops it. The Gateway deletes the copy only after native success.
 
 The Gateway task PR gate runs as the internal Artisan command `task:pr-gate`. This schedule keeps its existing timing and overlap guard; the public task commands are under [`task:*`](/cli/task).
+
+A container Schedule runs in its Instance runtime’s recorded Incus project. Both `orbit-instances` and `orbit-instances-nested` use the same command workflow and validation boundary.

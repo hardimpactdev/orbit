@@ -20,7 +20,6 @@ sequenceDiagram
   %%> - syntax: `<project> <node> <name> [--root=PATH] [--domain=HOST] [--branch=BRANCH] [--database-server=SLUG]`
   Note over GW: Validate, reserve Instance<br/>address · T3 port · .env
   %%> Requirements:
-  %%> - a Project with `nested_fleet` enabled refuses before reservation with `operation.kind_unavailable` (503); hosting follows separately
   %%> - the calling Node has node access to the target Node, an active `app-dev` Node
   %%> - the Project's `default` Instance runs in a container on this Node, is active and has a seed snapshot, else `instance.default_missing`
   %%> - Conn is enabled, and the model router has its guard, else `operation.kind_unavailable`
@@ -31,6 +30,7 @@ sequenceDiagram
   %%> - the clone workspace reads one private JSON vault value with `.env` and the Process environment files; SSH stdin takes the whole value
   %%> - a task is recorded with the full intent and `container.clone`
   %%> - a retained create retry records the Project's current development Processes in this admission transaction; changed definitions update their records, removed definitions remove theirs
+  %%> - a Project with `nested_fleet` enabled refuses before reservation with `operation.kind_unavailable` (503), until the nested image variant is available
   Note over GW: Commit, push copies<br/>queue start · answer 202
   GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start run from queue<br/>operation-instance-create
@@ -42,6 +42,8 @@ sequenceDiagram
     SW->>N: Clone default container<br/>native clone-container
     %%> What it does:
     %%> - the copy supplies the full root disk device (type, path, pool and size), whether the seed inherits it or stores it locally
+    %%> - copy in the default runtime's recorded Incus project; nested defaults keep their nesting keys and image users
+    %%> - raw keys and devices beyond root, NIC, shared folders and T3 refuse before start
     %%> - `incus copy` of the default container's snapshot `seed-<commit>`, a ZFS clone; a stopped default needs no start
     %%> - the copy gets its own bridge address and ACL, and the proxy device `t3`: NAT from the Node's WireGuard address and the T3 port to T3's port 3773
     %%> - the container's ACL lets the Node's Caddy reach port 8080, WireGuard peers reach port 3773, and the container reach its database server's port

@@ -114,4 +114,6 @@ A checkout can record an explicit [Node service target](/cli/instance/node-servi
 
 Migration reports named environment warnings in human output and retains their `code` and `message` in the Operation result. See [migration warnings](/cli/instance/migrate#warnings).
 
-A Project with `nested_fleet` enabled currently refuses create, clone and checkout migration before reservation with `operation.kind_unavailable` (503). The [Project setting](/reference/projects#nested-fleet-setting) defaults off; hosting follows separately.
+Nested-fleet creation requires both the Project setting and the Node hosting switch. Checkout migration into that project is unavailable. See [nested fleet](/reference/development-containers#nested-fleet).
+
+Nested create and clone currently refuse with `operation.kind_unavailable` (503). Hosting is prepared only on switched-on build-list Nodes. Each nested create or retry must resolve to a container in the nested project; a checkout default or source is refused. Its image follows separately.

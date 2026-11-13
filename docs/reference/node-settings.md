@@ -227,6 +227,14 @@ Moving source on a settings change would be a hidden, risky migration. So each c
 
 An existing apps folder gets the managed user, group and mode 0755, as a new one does, so a rerun repairs drift. A broad `chown` of the wrong path could damage unrelated data. So the Gateway refuses obviously wrong paths at admission, and `@swamp/cfgmgmt/directory` changes only the folder itself, never its contents.
 
-## Nested fleet Instance hosting
+## Nested-fleet Instance hosting
 
-The API-only boolean `nested_fleet` records the Node hosting switch and defaults to false. An omitted member preserves its value, including a captured update that predates the member. A combined apps-path and switch update stores the switch only after storage preparation succeeds. An unrelated update preserves it. Recording the switch does not prepare a host yet; nested hosting follows separately.
+The Node setting `nested_fleet` defaults to false. An operator enables it with `PATCH /api/v1/nodes/{node}` and `{"nested_fleet": true}`. The update only records intent; converge the Node afterwards. The Project switch is separate. Creation and cloning for a nested-fleet Project refuse a Node without hosting enabled, with `instance.nested_fleet_host_unavailable` (409).
+
+Before enabling it, provision root's subordinate uid and gid ranges on the Node for the intended capacity. Orbit checks both ranges and never enlarges them. The required count is `13,172,736 + task IDs + (N + 2) × 101,000,000`, where `N` is the Node's recorded nested Instance runtime count and task IDs are `(task_places + ci_places + 1) × 101,000,000` when task containers are configured. With no task containers and no nested Instances, enabling hosting requires at least `215,172,736` IDs in both files. Reserve room for the desired `N` before enabling; each additional nested Instance adds `101,000,000` IDs to the next converge check.
+
+Only an enabled Node prepares the second Incus project, its profile and stock image, and the WireGuard, overlay and bridge modules. Its prepared image follows in F1B; nested Instance creation stays refused until then. A normal Node keeps the same host intent, subordinate-ID requirement and commands. An older captured intent without the optional `nested` member means hosting is off. An older workflow ignores that new member during rollback.
+
+Combined apps-path and hosting-switch updates store the switch after successful storage preparation. An omitted ownership member in an older captured update preserves the current switch.
+
+Clearing hosting does not withdraw recorded runtimes: their project scopes remain in shared-folder refresh and their occupied subordinate-ID maps remain in the converge budget. Only the two spare nested maps stop being reserved.

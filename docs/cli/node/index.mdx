@@ -108,4 +108,6 @@ Role addition returns one queued Operation for every mutable role. `node:role:ad
 
 Task VM host settings include `pool_size` for a new loop-backed ZFS pool. Existing pools keep their size. See [task VM host settings](/reference/node-settings#configure-a-task-vm-host).
 
-The API-only `nested_fleet` boolean stores a per-Node hosting switch. It defaults off, and omitted updates preserve it through storage preparation. Host preparation follows separately. See [Node settings](/reference/node-settings#nested-fleet-instance-hosting).
+Nested-fleet hosting is an explicit [Node setting](/reference/node-settings#nested-fleet-instance-hosting), changed through the update API. An app-dev role does not enable it.
+
+The API-only Node switch `nested_fleet` defaults off. It gates nested host preparation and future admission; clearing it does not remove existing projects or containers. See [hosting settings](/reference/node-settings#nested-fleet-instance-hosting).
