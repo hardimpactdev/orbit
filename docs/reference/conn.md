@@ -300,7 +300,7 @@ A server of an Instance names its `instance_id` and the container's `power_state
 - A host checkout refuses with `instance.not_container` (409).
 - Without acknowledgement, Orbit always refuses with `instance.unsaved_work` (409) and `{"uncommitted": null, "unpushed": null, "state": "unknown"}` in error details. Container Git observations are not available yet.
 
-Orbit never probes the container in this request. When Git observations become available, uncommitted work, unpushed commits or no upstream each require acknowledgement. An observation over ten minutes old or from an offline agent remains unknown. A Conn admission refusal leaves Schedules, Routes, databases, pairings, environments and Operations unchanged. These checks do not change the CLI's destroy rules.
+Orbit never probes the container in this request. When Git observations become available, uncommitted work, unpushed commits or no upstream each require acknowledgement. An observation over ten minutes old or from an offline agent remains unknown. The Conn checks above leave Schedules, Routes, databases, pairings, environments and Operations unchanged when they refuse. These checks do not change the CLI's destroy rules.
 
 With acknowledgement, Orbit admits the existing `instance.destroy` engine with force enabled and answers its Operation with HTTP 202. Existing lifecycle, Route and database blockers keep their codes and messages. Conn checks the stored engine blockers before calling the engine. The engine keeps its existing order and failure boundary: if Schedule removal fails, no removal intent or Operation is recorded, and the Instance and Route stay active. Follow the Operation on `GET /operations/{id}`; `succeeded`, `failed`, `cancelled` and `interrupted` are terminal.
 
@@ -325,11 +325,14 @@ Inherited refusals keep their codes:
 | `database.server_required` | The remote database has no managed server. |
 | `database.server_in_use` | Database creation is unfinished on its server. |
 | `database.system_database` | A system database cannot be dropped. |
+| `caddy.render_failed` | The shared Caddyfile could not be rendered safely (409). |
 | `certificate.scope_invalid` | A Route leaf has no valid admitted account or scope. |
 | `swamp.ssh_identity_unavailable` | The control Node SSH identity is not configured. |
 | `swamp.ssh_target_unavailable` | The stored target address, account or host key is missing. |
 
 Infrastructure failures keep their existing codes, such as `swamp.schedule_publish_unavailable` (503). A failed Operation can have `error: null` even when `error_code` is set; Conn must use that code without assuming `error.detail` exists.
+
+Removal can fail because a Node is unavailable (for example 503 `swamp.ssh_target_unavailable`) after stopping the Instance's Schedules; Conn and the CLI behave the same, and the next release fixes this order.
 
 The same caller, key, Instance ID and body return the same Operation with HTTP 202, even after the Instance was deleted. Reusing the key with a changed body refuses with `operation.idempotency_conflict` (409). A missing Instance without that receipt keeps the normal 404.
 

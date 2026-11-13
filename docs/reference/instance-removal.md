@@ -18,6 +18,8 @@ The Gateway then records the selected Instance, owned resources and desired remo
 
 Conn runs the same stored blocker checks before it calls the engine. Core callers keep their existing order: native Schedule removal precedes the intent transaction. A Schedule publication failure leaves the Instance and Route active and records no removal Operation.
 
+Removal can fail because a Node is unavailable (for example 503 `swamp.ssh_target_unavailable`) after stopping the Instance's Schedules; Conn and the CLI behave the same, and the next release fixes this order.
+
 ```bash
 orbit instance:destroy <instance> [--yes] [--force] [--json]
 ```
