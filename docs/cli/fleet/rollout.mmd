@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: fleet maintenance redesign 2026-11-03 (each Node visit runs node:converge); R3c: no rollout records, Swamp run history is the record. docs/reference/gateway-recovery.md#fleet-rollout.
+  %% Each Node visit runs fleet-release-node: gate, CLI install when needed, record, pinned observer. It applies no role; a role changes only through node:converge. R3c: no rollout records, Swamp run history is the record. docs/reference/gateway-recovery.md#fleet-rollout.
   %% status: draft
   %% command: orbit fleet:rollout
   %% kind: fleet.rollout
