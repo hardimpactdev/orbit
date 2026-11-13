@@ -337,7 +337,26 @@ def supervise(ceiling, receipt, command, shard_deadline=None):
     try:
         process = subprocess.Popen(command, start_new_session=True)
         try:
-            code = process.wait(timeout=timeout)
+            deadline = started + timeout
+            while process.returncode is None:
+                # Reap adopted grandchildren throughout the unit, not only at
+                # cleanup. Only the session leader decides the unit's verdict.
+                while True:
+                    try:
+                        pid, status = os.waitpid(-1, os.WNOHANG)
+                    except ChildProcessError:
+                        break
+                    if pid == 0:
+                        break
+                    if pid == process.pid:
+                        process.returncode = os.waitstatus_to_exitcode(status)
+                if process.returncode is not None:
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, timeout)
+                time.sleep(min(.01, remaining))
+            code = process.returncode
             outcome = 'passed' if code == 0 else 'FAILED'
         except (subprocess.TimeoutExpired, InterruptedError):
             try:

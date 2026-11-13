@@ -3,7 +3,7 @@ title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
   - apps/gateway/app/Domain/Proof/direct-operations.php
-  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,SwampConnection,SwampDispatch,SwampTerminalReadUnavailable}.php
+  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,NativeStepFailure,SwampConnection,SwampDispatch,SwampTerminalReadUnavailable,SwampTerminalOutputUnavailable}.php
   - apps/gateway/app/Jobs/Operations/ReconcileSwampOperations.php
   - apps/gateway/app/Domain/Operations/DirectOperationChildProjection.php
 ---
@@ -25,6 +25,10 @@ Call `executionCopy(string $vault, string $key, string $value): array{vault:stri
 Serve rate-limits requests and WebSocket handshakes per client and answers `429` with `Retry-After`. Its source admits at most 50 new WebSocket connections from one IP address in a fixed minute, for every token together, and names the rest of that minute as `Retry-After`; no serve setting changes it. Every Gateway process shares that budget.
 
 The execution copies that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. After every copy is acknowledged, the Gateway queues the native starts on its existing `operations` queue and answers admission without waiting for them. Children of a proof use the [spaced start sequence](/reference/operations#direct-swamp-starts). Each start job opens its own connection. A request that fails closes its connection, and the next request opens a new one.
+
+A successful `Swamp direct start` log retains `operation_id`, `outcome` and `duration_ms`, and adds `kind`, `inputs_ms`, `connect_ms`, `send_ms`, `first_event_ms`, `bind_ms`, `broadcast_ms` and `queue_wait_ms`. All measures are non-negative integers. Phase times and the total use a monotonic clock. The six start phases sum to no more than `duration_ms`; the separate `queue_wait_ms` measures Operation creation to start-job handler entry, including admission work before queuing.
+
+`inputs_ms` covers preparation through the built inputs, including the initial state transition and configuration lookup. `first_event_ms` covers send completion to the matching root `started` event. Bind includes its state-change notices; broadcast measures the final native-start notice. Success diagnostic exceptions are swallowed after binding, so a failed log write cannot fail the start. No input, secret, token or payload content is logged. Failure logs keep their existing fields and phase diagnostics.
 
 Every Gateway WebSocket client also tries a refused `429` handshake again after the server's `Retry-After`, or after a doubling backoff from half a second when serve names none. It tries at most four times and only while the caller's connect timeout leaves room, so a copy or start waits up to 15 seconds instead of failing at once. A wait for the rest of serve's minute is longer, so the Gateway keeps its own connection rate low instead.
 
@@ -115,6 +119,8 @@ The shared Gateway cache stores the time of the last successful read, keyed by n
 A fire of a Schedule's own workflow is recorded as a task when its run ends, not when it starts. The job also tells each projection about its declared workflow every ten minutes, which the feed did when it connected. There is no timer on history reads of one run and no fallback to a family search.
 
 ### Reconciler
+
+A migrate with a verified terminal root but unreadable finish output supplies that history in a typed missing-output receipt. The job keeps a short grace, then records proven rollback or retains the reservation until the deadline. A network failure without verified history proves no rollback. Missing-output settlement keeps the verified root status and known failed-step diagnostics, including a cancelled root. Other diagnostic callers keep their existing root-status policy. See [migrate result recovery](/reference/operations#native-run-budgets).
 
 The reconciler reads late migrate finishes, including an uncertain start with no run binding or target hold. Shows and admissions do not settle them. See the [migrate late-settlement rules](/reference/operations#native-run-budgets).
 

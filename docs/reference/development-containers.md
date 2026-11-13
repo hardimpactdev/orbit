@@ -778,6 +778,8 @@ The runtime reservation belongs to its admitting Operation. A late receipt canno
 
 A migrate admission does not read a previous run to settle it. While settlement is pending, `instance.migrate_settlement_pending` names the previous Operation and the existing hold limit. The reconciler reads late results without a show. See [migrate](/cli/instance/migrate) for the refusal and result-unavailable outcome.
 
+If the finish output is missing, verified native rollback can release the owned reservation after a 60-second grace. The original run deadline caps the grace. Without rollback proof, the deadline records `instance.migrate_result_unavailable` and keeps the Instance runtime. Another migrate names the Operation and missing evidence with `instance.migrate_recovery_required`. No Orbit command repairs that evidence gap.
+
 | Part | What Orbit does |
 | --- | --- |
 | Seed | A default takes `seed-<commit>` with its units stopped. Its Project's other Instances can be clones from then on |

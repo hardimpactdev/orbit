@@ -182,3 +182,49 @@ it('retains recorded Gateway DNS ownership when the withdrawal phase fails', fun
 
     expect($state->owned($this->node->id))->toBeTrue();
 });
+
+it('accepts bounded task failures and retains them in the Operation result', function (array $failure): void {
+    $result = [...converge_receipt('roles'), 'failure' => $failure];
+
+    expect(NodeConvergeResult::parse($result))->toBe($result);
+    $operation = app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => 'failed', 'result' => $result]);
+    expect($operation->result)->toBe($result)->and($operation->status)->toBe(OperationStatus::Failed);
+})->with([
+    'command' => [['task' => 'Fail a command', 'host' => 'target', 'reason' => 'command_failed', 'rc' => 7]],
+    'hidden' => [['task' => null, 'host' => 'hub', 'reason' => 'hidden']],
+    'null task' => [['task' => null, 'host' => 'target', 'reason' => 'command_failed', 'rc' => 7]],
+    'assertion' => [['task' => 'Check configuration', 'host' => 'hub', 'reason' => 'assertion']],
+]);
+
+it('refuses unsafe or inconsistent task failure evidence', function (array $failure, ?string $phase): void {
+    $result = [...converge_receipt($phase), 'failure' => $failure];
+
+    expect(fn () => NodeConvergeResult::parse($result))->toThrow(ResourceOperationException::class, 'terminal result is invalid');
+})->with((function (): array {
+    $failure = ['task' => 'Fail a command', 'host' => 'target', 'reason' => 'command_failed', 'rc' => 7];
+    $cases = [];
+    foreach ([
+        'unknown reason' => ['reason' => 'LEAK_MSG'],
+        'long task' => ['task' => str_repeat('x', 121)],
+        'removed role' => ['role' => null],
+        'control character' => ['task' => "bad\nname"],
+        'non ASCII' => ['task' => 'é'],
+        'address' => ['host' => '192.0.2.1'],
+        'extra key' => ['msg' => 'LEAK_MSG'],
+        'string rc' => ['rc' => '7'],
+        'unbounded rc' => ['rc' => 2147483648],
+        'zero rc' => ['rc' => 0],
+        'hidden name' => ['reason' => 'hidden'],
+        'rc on module' => ['reason' => 'module_failed'],
+    ] as $label => $change) {
+        $cases[$label] = [[...$failure, ...$change], 'roles'];
+    }
+    $withoutRc = $failure;
+    unset($withoutRc['rc']);
+    $cases['missing command rc'] = [$withoutRc, 'roles'];
+    unset($withoutRc['task']);
+    $cases['missing task'] = [$withoutRc, 'roles'];
+    $cases['successful operation'] = [$failure, null];
+
+    return $cases;
+})());

@@ -136,6 +136,8 @@ sequenceDiagram
       SW--xGW: Run failed<br/>error_code · failed step
       %%> Result:
       %%> - stop at the failed phase and mark the Operation failed; later phases do not run
+      %%> - the result names the earliest fatal task among hosts whose statistics fail: each host contributes its last failed or unreachable record; ties select hub; names are bounded and may be withheld
+      %%> - censored-only evidence from a failed host reports a hidden task; missing, malformed or task-free reports leave `failure` absent; private callback output stays private
       %%> - unreachable targets fail here, not at a live admission check
       %%> On the Node:
       %%> - completed and partial changes remain; no rollback and no Instance or assignment change
