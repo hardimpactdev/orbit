@@ -71,6 +71,8 @@ final readonly class ContainerConnectionEnvironment implements DirectOperationPr
                     'acl' => $container['acl'], 'network' => $container['network'], 'bridge_cidr' => $container['bridge_cidr'],
                     'bridge_admitted_at' => $container['bridge_admitted_at'], 'environment_file' => $container['environment_file']],
                 'connection_environment' => ['keys' => $keys, ...$paths,
+                    // The one composed NO_PROXY value when it is not the base, for the one guest writer; null leaves the container's files alone.
+                    'proxy_environment' => $container['proxy_environment'] ?? null,
                     // What runs in the Instance: its own web unit and its running Process units. try-restart skips a stopped unit.
                     'refresh' => ['php' => $container['php'], 'application' => InstanceContainer::application($instance), 'units' => $running]],
             ], $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));

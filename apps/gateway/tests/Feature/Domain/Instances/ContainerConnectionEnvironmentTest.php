@@ -192,6 +192,7 @@ it('writes an attached private websocket app\'s keys and reconciles its exact pa
                 'proto' => 'tcp', 'comment' => "orbit:instance-{$instance->id}-websocket", 'route' => 'yes', 'interface_out' => 'orbit']])
         ->and($plan['websocket_comment'])->toBe("orbit:instance-{$instance->id}-websocket")
         ->and($plan['private_names'])->toBe([['name' => 'reverb.orbit', 'host' => '10.44.0.3', 'port' => 8443]])
+        ->and(explode(',', $plan['proxy_environment']['NO_PROXY']))->toContain('reverb.orbit')
         // Database paths stay add-only and separate.
         ->and($plan['egress'])->toBe([])->and($plan['firewall'])->toBe([])
         ->and(json_encode($operation->input))->not->toContain(CONNECTION_ENV_SECRET);
@@ -207,6 +208,7 @@ it('writes an attached private websocket app\'s keys and reconciles its exact pa
     expect($removed->input['connection_environment']['keys'])->toBe([])
         ->and($removed->input['connection_environment']['websocket'])->toBeNull()
         ->and($removed->input['connection_environment']['private_names'])->toBe([])
+        ->and($removed->input['connection_environment']['proxy_environment'])->toBeNull()
         ->and($removed->input['connection_environment']['websocket_comment'])->toBe("orbit:instance-{$instance->id}-websocket");
 });
 

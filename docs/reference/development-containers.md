@@ -615,9 +615,9 @@ Orbit sets the proxy for everything that runs in a container. Tools read the upp
 
 - each attached [Node service](/reference/processes-and-schedules#node-service-target-records) host that is not on the bridge;
 - for a [nested-fleet](#nested-fleet) container, its inner fleet (`10.45.0.1`, `10.45.0.0/24` and `10.232.2.0/24`): the container's own CLI then reaches its inner Gateway;
-- each name of the container intent's `private_names` list. No intent has that list yet, so it adds nothing today.
+- each name of the container intent's [`private_names`](#private-names-of-the-access-plan) list, such as `reverb.orbit` for an attached private websocket app.
 
-A normal container without these keeps the image's value only. Every writer of the value takes it from this builder.
+A normal container without these keeps the image's value only. Every writer of the value takes it from this builder. When the value is not the image's base, the intent carries it as `proxy_environment`. The create, clone and start phases then hand it to the one guest writer, and so does `env:sync`. Units read it at their next start. `env:sync` restarts the web unit and the running Process units only when `.env` changed, as for a database attach, and never T3.
 
 | Reader | Source | When it reads a new value |
 | --- | --- | --- |

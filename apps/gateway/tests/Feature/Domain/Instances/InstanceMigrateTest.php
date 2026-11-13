@@ -872,6 +872,8 @@ describe('the databases of a move', function (): void {
         if (! $attached || $public) {
             // An Instance without a private app gets no target, no name and no rule: its plan is as it was.
             expect($container)->not->toHaveKey('private_names')
+                ->and($container['config'])->not->toHaveKey('environment.NO_PROXY')
+                ->and($container)->not->toHaveKey('proxy_environment')
                 ->and($container['bridge_endpoints'])->toBe([])
                 ->and($container['acl_rules']['egress'])->toBe([])
                 ->and($container['firewall'])->toBe([])
@@ -880,6 +882,12 @@ describe('the databases of a move', function (): void {
             return;
         }
         expect($container['private_names'])->toBe([['name' => 'reverb.orbit', 'host' => '10.44.0.3', 'port' => 8443]])
+            // The one NO_PROXY composer takes the plan's names, so the publisher connects on the exact path, not through the proxy.
+            ->and(explode(',', $container['config']['environment.NO_PROXY']))->toContain('reverb.orbit')
+            ->and($container['config']['environment.no_proxy'])->toBe($container['config']['environment.NO_PROXY'])
+            // The one guest writer gets the same composed value for the units and login shells.
+            ->and($container['proxy_environment'])->toBe(['NO_PROXY' => $container['config']['environment.NO_PROXY'], 'no_proxy' => $container['config']['environment.NO_PROXY']])
+            ->and(collect($container['environment'])->first(fn (string $line): bool => str_starts_with($line, 'NO_PROXY=')))->toEndWith(',reverb.orbit')
             ->and($container['bridge_endpoints'])->toBe([['host' => '10.44.0.3', 'port' => 8443, 'docker' => false]])
             ->and($container['acl_rules']['egress'])->toBe([
                 ['action' => 'allow', 'destination' => '10.44.0.3/32', 'protocol' => 'tcp', 'destination_port' => '8443', 'state' => 'enabled',
