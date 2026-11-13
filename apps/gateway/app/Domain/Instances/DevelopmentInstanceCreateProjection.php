@@ -7,6 +7,7 @@ namespace App\Domain\Instances;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -106,6 +107,11 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 if (is_array($container) && in_array($data['status'], ['succeeded', 'failed', 'cancelled'], true)) {
                     app(ContainerProcesses::class)->complete($instance, $container['processes'] ?? [], $data['status'] === 'succeeded',
                         ValidatedData::nullableString($data['error_code'] ?? null));
+                    if ($data['status'] === 'succeeded') {
+                        // A clone installs, but does not start, a Process that is stopped on its default.
+                        $result['processes_stopped'] = $instance->processes()->where('desired_state', DesiredProcessState::Stopped)
+                            ->orderBy('name')->pluck('name')->all();
+                    }
                 }
             }
 

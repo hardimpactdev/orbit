@@ -631,6 +631,8 @@ The setting has four limits:
 
 The create run installs and starts the units after the deploy steps. A unit whose desired state is stopped is installed, not started.
 
+A clone takes each Process's desired state from the default's copy of the same definition. A Process that is stopped on the default is stopped in the clone: its unit is installed, not started, and the create's readiness check does not count it. `process:start` starts it. A Process that is failed on the default, or that the default has not, runs. A succeeded create names the stopped Processes in its result as `processes_stopped`.
+
 A clone records its own Processes from the same definitions, with its own ids, units and environment files. Its seed holds the default's units, still enabled. So before the copy first starts, Orbit removes every `orbit-*` link in `multi-user.target.wants`, the default's Process units and their `/etc/orbit/processes/<id>` folders. The `*.target.wants` links go first, in their own delete, so a link whose unit file is already gone, also one that an earlier failed clone left, does not fail the clone.
 
 Before the first start, Orbit also writes the copy's own `/etc/machine-id` from its Incus UUID. The clone boots with none of the default's units; each later phase enables the units it sets up. The clone's `processes` phase checks again: it stops and removes every `orbit-process-*` unit and `/etc/orbit/processes/<id>` folder it does not own before it starts its own.

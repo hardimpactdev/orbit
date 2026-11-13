@@ -33,6 +33,7 @@ sequenceDiagram
   %%> - the clone workspace reads one private JSON vault value with `.env`, the Process environment files and the names of the keys the clone owns, of the default's connection keys, of its credential keys and of the shared connections' keys, and the default's Route host with the clone's; SSH stdin takes the whole value
   %%> - a task is recorded with the full intent and `container.clone`
   %%> - a retained create retry records the Project's current development Processes in this admission transaction; changed definitions update their records, removed definitions remove theirs
+  %%> - each Process takes its desired state from the default's copy of the same definition: stopped on the default stays stopped (installed, not started, startable by `process:start`); failed, absent or running runs
   Note over GW: Commit, push copies<br/>queue start · answer 202
   GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start run from queue<br/>operation-instance-create
@@ -140,6 +141,7 @@ sequenceDiagram
     %%> Result:
     %%> - the Instance, its runtime and its Route become active; the runtime records the default Instance it came from
     %%> - the Conn layer records the T3 server from the result; its Node is the container's Node and it names the Instance
+    %%> - the result's `processes_stopped` names the Processes left stopped, as on the default
     %%> - the receipt includes when T3 answered, its sessions passed, and the Route TLS probes passed
   else Instance already created
     Note over GW: Skipped — already created<br/>instance.exists

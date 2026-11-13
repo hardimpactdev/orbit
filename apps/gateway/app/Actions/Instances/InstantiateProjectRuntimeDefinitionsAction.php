@@ -92,7 +92,7 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
 
     /**
      * Record a new development Instance's Processes from the Project's development definitions, inside the
-     * create admission transaction. Create installs and starts them after its setup steps.
+     * create admission transaction. Create installs them after its setup steps and starts each one that should run (desiredFor).
      */
     public function captureForDevelopment(Instance $instance): void
     {
@@ -110,7 +110,7 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
         if ($definitions->isNotEmpty()) {
             $target = $this->processTargets->forPreparation($instance);
             foreach ($definitions as $definition) {
-                $this->captureProcess($instance, $definition, $target, DesiredProcessState::Running);
+                $this->captureProcess($instance, $definition, $target, $this->desiredFor($instance, $definition));
             }
         }
         $this->initializeContainerPresetPort($instance);
@@ -141,13 +141,13 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
             $record = Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)
                 ->where('source_definition_id', $definition->id)->lockForUpdate()->first();
             if ($record === null) {
-                $this->captureProcess($instance, $definition, $target, DesiredProcessState::Running);
+                $this->captureProcess($instance, $definition, $target, $this->desiredFor($instance, $definition));
 
                 continue;
             }
             $attributes = $this->attributesForDefinition($instance, $definition, $target);
             if ($forCreateRetry) {
-                $record->forceFill(['name' => $definition->name, 'desired_state' => DesiredProcessState::Running,
+                $record->forceFill(['name' => $definition->name, 'desired_state' => $this->desiredFor($instance, $definition),
                     'status' => LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null]);
             }
             if ($record->isDirty() || ! $this->processSpecifications->matches($record, $attributes)) {
@@ -155,6 +155,24 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
             }
         }
         $this->initializeContainerPresetPort($instance);
+    }
+
+    /**
+     * A clone keeps a Process stopped that is stopped on purpose on its default: the default's copy of the same definition has
+     * desired state stopped. Every other definition runs, also one whose copy on the default is failed or absent
+     * (docs/reference/development-containers.md#processes).
+     */
+    private function desiredFor(Instance $instance, ProcessDefinition $definition): DesiredProcessState
+    {
+        $source = $instance->runtime()->value('clone_source_instance_id');
+        if ($source === null) {
+            return DesiredProcessState::Running;
+        }
+        $stopped = Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $source)
+            ->where('source_definition_id', $definition->id)->where('status', '!=', LifecycleStatus::Removing)
+            ->where('desired_state', DesiredProcessState::Stopped)->exists();
+
+        return $stopped ? DesiredProcessState::Stopped : DesiredProcessState::Running;
     }
 
     /**

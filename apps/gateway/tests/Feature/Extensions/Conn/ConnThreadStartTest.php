@@ -1370,7 +1370,7 @@ it('adds explicit branch fields to a successful clone receipt without replacing 
         'status' => 'succeeded', 'run_id' => 'success-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => $native]);
     $additions = $branch === null ? [] : ['branch' => $branch['mode'] === 'new' ? 'fix-login' : 'feature/login',
         'base_branch' => $branch['mode'] === 'new' ? 'release' : null];
-    expect($operation->refresh()->result)->toBe([...$native, ...$additions, 'mail_keys_set' => []]);
+    expect($operation->refresh()->result)->toBe([...$native, ...$additions, 'mail_keys_set' => [], 'processes_stopped' => []]);
     threadCall($this->phone, 'GET', "operations/{$operation->id}")->assertOk()->assertJsonPath('data.status', 'succeeded');
 })->with([
     'legacy' => [null], 'legacy mail warning' => [null, true], 'new' => [['mode' => 'new', 'from' => 'release']], 'existing' => [['mode' => 'existing', 'name' => 'feature/login']],
