@@ -1785,7 +1785,7 @@ Deno.test({
       for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
       const commit = git(f.source, "rev-parse", "HEAD");
       // The phase files of the fleet have their own fixture (ansible_instance_fleet_test.ts); here each tag reaches its own file.
-      for (const name of ["check", "start", "refresh"]) {
+      for (const name of ["check", "start", "refresh", "resume"]) {
         Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-${name}.yml`,
           `- name: Mark the phase\n  ansible.builtin.debug: { msg: "fleet phase ${name} ran" }\n`);
       }
@@ -1793,11 +1793,11 @@ Deno.test({
       f.intent.deployment = { variant: "container" };
       f.intent.fleet = fleetIntent();
       f.write();
-      for (const name of ["check", "start", "refresh"]) {
+      for (const name of ["check", "start", "refresh", "resume"]) {
         const ran = f.run(`fleet_${name}`);
         assert(ran.ok, ran.output);
         assert(ran.output.includes(`fleet phase ${name} ran`), ran.output);
-        for (const other of ["check", "start", "refresh"].filter((n) => n !== name)) assert(!ran.output.includes(`fleet phase ${other} ran`), ran.output);
+        for (const other of ["check", "start", "refresh", "resume"].filter((n) => n !== name)) assert(!ran.output.includes(`fleet phase ${other} ran`), ran.output);
       }
       // A drift refusal keeps its code and names each difference in the result.
       Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-check.yml`, [
@@ -1805,11 +1805,39 @@ Deno.test({
         "- ansible.builtin.assert: { that: false, fail_msg: instance.container_fleet_drift, quiet: true }", ""].join("\n"));
       assert(!f.run("fleet_check").ok);
       assertEquals(f.result(), { error_code: "instance.container_fleet_drift", fleet_drift: ["nested-gateway config raw.idmap"] });
-      // A failed fleet phase names its tag.
+      // A failed fleet phase names its tag, and says why: the failed task and its message (a swamp step that exits nonzero keeps no output).
       Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-refresh.yml`,
-        `- name: Fail the phase\n  ansible.builtin.fail: { msg: "The base converge of the nested Node app-dev ended failed" }\n`);
+        `- name: Check the base converge\n  ansible.builtin.assert: { that: false, fail_msg: "The base converge of the nested Node app-dev ended failed", quiet: true }\n`);
       assert(!f.run("fleet_refresh").ok);
-      assertEquals(f.result(), { error_code: "instance.container_fleet_refresh_failed" });
+      assertEquals(f.result(), { error_code: "instance.container_fleet_refresh_failed",
+        detail: "Check the base converge: The base converge of the nested Node app-dev ended failed" });
+      // The Doctor wait of a start names its check and the trimmed Doctor body.
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-start.yml`,
+        `- name: Check Doctor\n  ansible.builtin.assert: { that: false, fail_msg: "Readiness check 'doctor' failed after 300 s: {\\"data\\":{\\"healthy\\":false}}", quiet: true }\n`);
+      assert(!f.run("fleet_start").ok);
+      assertEquals(f.result(), { error_code: "instance.container_fleet_start_failed",
+        detail: `Check Doctor: Readiness check 'doctor' failed after 300 s: {"data":{"healthy":false}}` });
+      // A failed command adds its stderr tail.
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-refresh.yml`,
+        `- name: Migrate the nested Gateway\n  ansible.builtin.command: { argv: [sh, -c, "echo SQLSTATE no such table >&2; exit 1"] }\n`);
+      assert(!f.run("fleet_refresh").ok);
+      assertEquals(f.result(), { error_code: "instance.container_fleet_refresh_failed",
+        detail: "Migrate the nested Gateway: non-zero return code: SQLSTATE no such table" });
+      // The start after a passed refresh: its failure keeps the seed's commit, has its own code, and says the new seed stays.
+      Deno.writeTextFileSync(`${f.folder}/run/result.json`, JSON.stringify({ commit }));
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-resume.yml`,
+        `- name: Check the agents\n  ansible.builtin.assert: { that: false, fail_msg: "Readiness check 'agents' failed: the agent of app-prod is not online", quiet: true }\n`);
+      assert(!f.run("fleet_resume").ok);
+      assertEquals(f.result(), { error_code: "instance.container_fleet_resume_failed", commit,
+        detail: "The new seed and base stay; the inner fleet on the new commit did not start: Check the agents: Readiness check 'agents' failed: the agent of app-prod is not online" });
+      // After a restore it keeps the first failure and adds why the restored fleet did not start.
+      const first = { error_code: "instance.container_fleet_refresh_failed", detail: "Check the base converge: ended failed" };
+      Deno.writeTextFileSync(`${f.folder}/run/failed.json`, JSON.stringify(first));
+      Deno.writeTextFileSync(`${f.folder}/run/result.json`, JSON.stringify(first));
+      assert(!f.run("fleet_resume").ok);
+      assertEquals(f.result(), { ...first,
+        restore_failure: "The inner fleet of the restored seed did not start: Check the agents: Readiness check 'agents' failed: the agent of app-prod is not online" });
+      Deno.removeSync(`${f.folder}/run/failed.json`);
 
       // The refresh retook the fleet's base, so the seed is taken again at the same commit.
       const stops = () => ((f.state().systemctl ?? []) as string[][]).filter((call) => call[0] === "stop").length;

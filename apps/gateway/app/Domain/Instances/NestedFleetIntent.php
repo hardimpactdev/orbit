@@ -21,8 +21,11 @@ use App\Support\ValidatedData;
  */
 final readonly class NestedFleetIntent
 {
-    /** Seconds that the fleet steps add to a deployment's run budget: the check 300, the first seed 120, start 600, refresh 3,600, restore 150 and the start after it 120. */
-    public const int RunSeconds = 4890;
+    /**
+     * Seconds that the fleet steps add to a deployment's run budget: the check 300, the first seed 120, start 300, refresh 3,600, the
+     * start of the refreshed fleet 600, restore 150, the start after it 120 and the start of the restored fleet 600.
+     */
+    public const int RunSeconds = 5790;
 
     /** @return array<string, mixed>|null */
     public function forDeployment(Instance $instance, InstanceRuntime $runtime): ?array

@@ -8,6 +8,7 @@ use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\NestedFleetClubKey;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
+use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
@@ -68,7 +69,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             if ($status !== 'running') {
                 $variant = ValidatedData::string(ValidatedData::object($locked->input['deployment'])['variant']);
                 [$data, $payload] = match (true) {
-                    $variant === 'container' => ContainerDeployOutcome::from($data),
+                    $variant === 'container' => ContainerDeployOutcome::from($data, $this->secrets($instance)),
                     $this->development($locked) => DevelopmentDeployOutcome::from($data),
                     default => ProductionDeployOutcome::from($data, $locked),
                 };
@@ -112,9 +113,10 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 // A deployment starts a stopped container; clones start at the snapshot a passed deployment took.
                 $runtime = $instance->runtime()->firstOrFail();
                 $runtime->update([...($payload['started'] ?? false) === true ? ['power_state' => InstanceRuntimePowerState::Running] : [],
-                    ...$status === 'succeeded' ? ['seed_commit' => $facts['commit']] : []]);
+                    ...$status === 'succeeded' || ($payload['seed_kept'] ?? false) === true ? ['seed_commit' => $facts['commit']] : []]);
+                // A run that kept its new seed (only the fleet start after it failed) installed the Processes of that seed.
                 app(ContainerProcesses::class)->complete($instance, ValidatedData::object($admitted['container'])['processes'] ?? [],
-                    $status === 'succeeded', ValidatedData::nullableString($data['error_code'] ?? null));
+                    $status === 'succeeded' || ($payload['seed_kept'] ?? false) === true, ValidatedData::nullableString($data['error_code'] ?? null));
             } elseif ($variant === 'development' && $status === 'succeeded') {
                 $instance->update(['seed_path' => $admitted['home'], 'seed_repository' => $admitted['home'], 'seed_commit' => $facts['commit']]);
             } elseif (! InstanceDeploymentIntent::development($variant) && $facts['selected_release'] !== null && ($payload['selection_confirmed'] ?? false) === true) {
@@ -137,6 +139,19 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
 
             return $projected;
         });
+    }
+
+    /** @return list<string> The Instance's environment values and the Swamp tokens, which a recorded failure detail never shows. */
+    private function secrets(Instance $instance): array
+    {
+        $values = app(LogRedactor::class)->valuesFor($instance);
+        foreach ([config('swamp.run_token'), config('swamp.read_token')] as $token) {
+            if (is_string($token) && $token !== '') {
+                $values[] = $token;
+            }
+        }
+
+        return $values;
     }
 
     /** A definite refusal has no native effects and must not leave an admission history row running. */

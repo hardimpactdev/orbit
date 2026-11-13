@@ -811,6 +811,56 @@ it('names the failed fleet step and its code, and keeps the code of the failed p
         ->and($payload['fleet_drift'])->toBe(['nested-gateway config raw.idmap']);
 });
 
+it('records why a fleet phase failed, adds a restored fleet that did not start, and leaves other failures to the native step', function (): void {
+    $run = static fn (array $file, array $failed): array => ContainerDeployOutcome::from(['status' => 'failed',
+        'failure' => ['failed_step' => $failed[0], 'detail' => 'Command exited with code 2', 'stderr_recorded' => false],
+        'result' => ['steps' => ['Read the container result' => ['stdout' => json_encode($file, JSON_THROW_ON_ERROR)]], 'summary' => ['failed_steps' => $failed]]]);
+    $doctor = "Check Doctor: Readiness check 'doctor' failed after 300 s: {\"data\":{\"healthy\":false}}";
+
+    [$data] = $run(['error_code' => 'instance.container_fleet_start_failed', 'detail' => $doctor], ['Start the inner fleet', 'Restore the old seed']);
+    expect($data['failure'])->toBe(['failed_step' => 'Start the inner fleet', 'detail' => $doctor, 'stderr_recorded' => true]);
+    // The restored fleet did not start either: the first failure stays, and the detail says so.
+    [$data, $payload] = $run(['error_code' => 'instance.container_fleet_refresh_failed', 'detail' => 'Migrate the nested Gateway: non-zero return code',
+        'restore_failure' => 'The inner fleet of the restored seed did not start: Check the agents: x'], ['Refresh the inner fleet', 'Start the restored fleet']);
+    expect($data['error_code'])->toBe('instance.container_fleet_refresh_failed')->and($payload['failed_step'])->toBe('Refresh the inner fleet')
+        ->and($data['failure']['detail'])->toBe('Migrate the nested Gateway: non-zero return code The inner fleet of the restored seed did not start: Check the agents: x');
+    [$data] = $run(['error_code' => 'deployment.checkout_dirty', 'restore_failure' => 'The inner fleet of the restored seed did not start: y'], ['Check out in the container']);
+    expect($data['failure']['detail'])->toBe('Command exited with code 2 The inner fleet of the restored seed did not start: y');
+    // A credential-shaped value in a message is redacted.
+    [$data] = $run(['error_code' => 'instance.container_fleet_refresh_failed', 'detail' => 'Migrate: password=hunter2-secret-value'], ['Refresh the inner fleet']);
+    expect($data['failure']['detail'])->not->toContain('hunter2-secret-value');
+    // A normal container phase writes no detail: the native step's failure stays as it was.
+    [$data, $payload] = $run(['error_code' => 'deployment.checkout_dirty'], ['Check out in the container']);
+    expect($data['failure'])->toBe(['failed_step' => 'Check out in the container', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false])
+        ->and($payload)->not->toHaveKey('seed_kept');
+});
+
+it('keeps the new seed when only the start after a passed refresh failed, and shows why in the Operation error', function (): void {
+    $instance = deployDefault(container: true);
+    $commit = str_repeat('e', 40);
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)],
+        'state' => ['swamp_run_id' => 'run-1', 'native_failure' => ['failed_step' => 'Start the refreshed fleet', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false]]]);
+    $detail = "The new seed and base stay; the inner fleet on the new commit did not start: Check the agents: Readiness check 'agents' failed: the agent of app-prod is not online";
+    // A Swamp token in a message never reaches the Operation.
+    config(['swamp.run_token' => 'swamp-run-token-value-0123456789']);
+
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'failure' => ['failed_step' => 'Start the refreshed fleet', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false], 'result' => [
+            'steps' => ['Read the container result' => ['stdout' => json_encode(['error_code' => 'instance.container_fleet_resume_failed', 'commit' => $commit,
+                'detail' => $detail.' swamp-run-token-value-0123456789'], JSON_THROW_ON_ERROR)]],
+            'summary' => ['failed_steps' => ['Start the refreshed fleet']]]]);
+
+    $operation->refresh();
+    expect($operation->error_code)->toBe('instance.container_fleet_resume_failed')
+        ->and($operation->failed_step)->toBe('Start the refreshed fleet')
+        ->and($operation->state['native_failure']['failed_step'])->toBe('Start the refreshed fleet')
+        ->and($operation->state['native_failure']['stderr_recorded'])->toBeTrue()
+        ->and($operation->state['native_failure']['detail'])->toStartWith($detail)
+        ->and($operation->state['native_failure']['detail'])->not->toContain('swamp-run-token-value-0123456789')
+        ->and(InstanceRuntime::query()->where('instance_id', $instance->id)->firstOrFail()->seed_commit)->toBe($commit);
+});
+
 it('admits one refresh per nested-fleet default to the release commit, and nothing without one', function (): void {
     Queue::fake();
     config(['instances.nested_fleet_refresh' => true]);

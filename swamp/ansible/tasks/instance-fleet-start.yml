@@ -1,9 +1,12 @@
 ---
-# Start the nested fleet of an Instance container: check the fleet rules, start the three nested containers, bring up the operator tunnel
-# `wg-nested`, and wait for readiness. A clone's create, the refresh of a default and the reset use it. Input: instance-fleet.yml.
+# Start the nested fleet of an Instance container: check the fleet rules, start the three nested containers, link the Club key and bring
+# up the operator tunnel `wg-nested`. It ends with what a start can promise (instance-fleet-reach.yml): the containers run and the
+# tunnel reaches the hub. It never waits for Doctor: in a deployment the checkout has just moved under a running nested Gateway, whose
+# schema and processes the refresh brings to the checkout first (docs/cli/instance/container/fleet-refresh.mmd). The deployment and the
+# reset use it; instance-fleet-resume.yml adds the readiness. Input: instance-fleet.yml.
 # The tunnel is made with `ip` and `wg`, never `wg-quick`, which segfaults in the Instance container. Its key is the operator key that the
 # container holds, its peer the nested Gateway's hub key. The tunnel does not outlive a stop of the container; the next start makes it.
-# Without the Club key the nested Gateway's Swamp stays down and the fleet is still ready: the `club-key` device is not required.
+# Without the Club key the nested Gateway's Swamp stays down and the fleet still starts: the `club-key` device is not required.
 - { name: Check the fleet rules, ansible.builtin.import_tasks: instance-fleet-rules.yml, vars: { fleet_rules_apply: false } }
 
 - name: Read the state of the nested containers
@@ -101,4 +104,4 @@
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['ip', 'link', 'set', fleet_tunnel, 'up'] }}" }
   changed_when: true
 
-- { name: Wait for readiness, ansible.builtin.import_tasks: instance-fleet-ready.yml }
+- { name: Check what the start promises, ansible.builtin.import_tasks: instance-fleet-reach.yml }

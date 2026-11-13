@@ -1,7 +1,8 @@
 ---
-# Reset the nested fleet of an Instance container to `base`, then start it (instance-fleet-start.yml, which checks the fleet rules and
-# waits for readiness). Input: instance-fleet.yml. A restore takes 4 to 8 s on the directory pool; each has 45 s. The restores run one
-# after the other: three parallel restores save a few seconds against the minute of readiness after them.
+# Reset the nested fleet of an Instance container to `base`, then start it (instance-fleet-start.yml, which checks the fleet rules) and
+# wait for readiness (instance-fleet-ready.yml): `base` holds a migrated nested Gateway. Input: instance-fleet.yml. A restore takes
+# 4 to 8 s on the directory pool; each has 45 s. The restores run one after the other: three parallel restores save a few seconds
+# against the minute of readiness after them.
 # A restore of a running container starts it again; a stopped one stays stopped, and the start starts it.
 - { name: Name the fleet commands, ansible.builtin.import_tasks: instance-fleet.yml }
 - name: Restore base
@@ -20,3 +21,4 @@
       {{ fleet_restore_failed | map(attribute='stderr') | map('trim') | join('; ') | truncate(400) }}
     quiet: true
 - { name: Start the fleet, ansible.builtin.import_tasks: instance-fleet-start.yml }
+- { name: Wait for readiness, ansible.builtin.import_tasks: instance-fleet-ready.yml }

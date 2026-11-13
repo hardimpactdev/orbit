@@ -1,8 +1,10 @@
 ---
-# Refresh the nested fleet of a default Instance after its workspace took a new commit, on a started fleet (instance-fleet-start.yml):
-# apply the checkout to the nested Gateway, converge the base of the three nested Nodes, wait for readiness, stop the fleet, apply and
-# check the fleet rules, and take `base` again. Input: instance-fleet.yml. The same steps as the task VM refresh
-# (task-nested-apply, task-vm-fleet-base.yml), from the Node through the Instance container.
+# Refresh the nested fleet of a default Instance after its workspace took a new commit, on a started fleet (instance-fleet-start.yml,
+# which never waits for Doctor): bring the nested Gateway to the checkout (agent delivery, grants, migrate, restart), wait for the three
+# agents, converge the base of the three nested Nodes, wait for readiness once, stop the fleet, apply and check the fleet rules, and take
+# `base` again. Input: instance-fleet.yml. The order of the first build (inner-fleet step 8: `apply`, `ready`, `base`); the same steps
+# as the task VM refresh (task-nested-apply, task-vm-fleet-base.yml), from the Node through the Instance container. A refresh at the
+# same commit runs the same steps: the migrate has nothing to do and the restart takes seconds.
 # The nested Gateway's Swamp runs only with the Club key file. Without it, the grants are not reloaded and the Swamp units are not checked.
 - { name: Name the fleet commands, ansible.builtin.import_tasks: instance-fleet.yml }
 - name: Look for the Club key
@@ -71,10 +73,33 @@
     quiet: true
 
 # The base converge of each nested Node, in the order of the task VM refresh, so `base` holds the new agent and Orbit's files.
-- name: Read the nested Nodes
-  ansible.builtin.command: { argv: "{{ ['timeout', '90'] + fleet_curl + ['--fail', fleet_api ~ '/nodes'] }}" }
+# The converge needs each Node's agent; after the restart the agents come back within seconds. The wait reads the Nodes every
+# `fleet_ready_delay` seconds, `fleet_ready_seconds` (300 by default) worth of tries of at most 15 s each, and needs no Doctor.
+- name: Wait for the agents of the nested Nodes
+  ansible.builtin.command: { argv: "{{ ['timeout', '15'] + fleet_curl + ['--fail', fleet_api ~ '/nodes'] }}" }
   register: fleet_nodes_read
   changed_when: false
+  failed_when: false
+  vars:
+    fleet_nodes_online: >-
+      {{ ((fleet_nodes_read.stdout | from_json).data if fleet_nodes_read.rc | default(1) == 0 else [])
+         | selectattr('agent', 'truthy') | selectattr('agent.state', 'eq', 'online') | map(attribute='name') | list }}
+  until: fleet_nodes_read.rc == 0 and fleet_roles | difference(fleet_nodes_online) | length == 0
+  retries: "{{ ((fleet_ready_seconds | default(300) | int) / ([fleet_ready_delay | int, 1] | max)) | round(0, 'ceil') | int }}"
+  delay: "{{ fleet_ready_delay }}"
+- name: Check the agents before the converge
+  vars:
+    fleet_nodes_online: >-
+      {{ ((fleet_nodes_read.stdout | from_json).data if fleet_nodes_read.rc | default(1) == 0 else [])
+         | selectattr('agent', 'truthy') | selectattr('agent.state', 'eq', 'online') | map(attribute='name') | list }}
+  ansible.builtin.assert:
+    that: fleet_nodes_read.rc == 0 and fleet_roles | difference(fleet_nodes_online) | length == 0
+    fail_msg: >-
+      {{ ('The nested Gateway did not list its Nodes within ' ~ (fleet_ready_seconds | default(300)) ~ ' s: '
+          ~ (fleet_nodes_read.stderr | default('') | trim | truncate(400))) if fleet_nodes_read.rc != 0
+         else ('The agent of ' ~ (fleet_roles | difference(fleet_nodes_online) | join(', ')) ~ ' was not online within '
+          ~ (fleet_ready_seconds | default(300)) ~ ' s after the restart of the nested Gateway') }}
+    quiet: true
 - name: Select the nested Nodes in converge order
   vars:
     fleet_all: "{{ (fleet_nodes_read.stdout | from_json).data }}"

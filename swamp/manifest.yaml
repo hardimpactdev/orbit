@@ -83,10 +83,12 @@ additionalFiles:
   - ansible/tasks/instance-fleet-rules-read.yml
   - ansible/tasks/instance-fleet-check.yml
   - ansible/tasks/instance-fleet-start.yml
+  - ansible/tasks/instance-fleet-reach.yml
   - ansible/tasks/instance-fleet-ready.yml
   - ansible/tasks/instance-fleet-refresh.yml
   - ansible/tasks/instance-fleet-converge-node.yml
   - ansible/tasks/instance-fleet-reset.yml
+  - ansible/tasks/instance-fleet-resume.yml
   - ansible/route-create-site.yml
   - ansible/route-withdraw.yml
   - ansible/instance-migrate.yml

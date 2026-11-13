@@ -123,11 +123,11 @@
     ]
   },
   "swamp/tests/ansible_instance_fleet_test.ts": {
-    "source_sha256": "89b6a1f07f73c3c966d32003c5b71894f5e6e915ec4e3db693f8a0366a6479a8",
+    "source_sha256": "c10efd779a3171bd8f0eeab83e89b762dcba41bcc22cdbca015b6bca430713a2",
     "cases": [
       "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
-      "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and waits for readiness; a rerun only reads",
-      "a start that fails names the nested container, and a readiness timeout names the check",
+      "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
+      "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check",
       "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written",
       "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules",
       "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units",
@@ -135,11 +135,14 @@
       "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts",
       "a live fleet with a foreign difference is refused by the check and by the rules before any change",
       "a fleet built from the rules has the live shape, with boot.autostart true",
-      "on the live fleet a refresh writes only boot.autostart, then takes base"
+      "on the live fleet a refresh writes only boot.autostart, then takes base",
+      "a refresh after the checkout moved migrates and restarts the nested Gateway before its only Doctor wait, and passes",
+      "a refresh waits for the three agents after the restart before it converges, and names the agent that stays offline",
+      "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore"
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "675668e52e11da8da9fc2aa184dfcf56e349b497ba0aa3cc92072565cce4abd5",
+    "source_sha256": "f2eacbe55617fa34d554f8ba9d060074a45a9e6423915642bab5040323bf5e1b",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -668,10 +671,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 \u2192 v5.12.0",
-      "exact script output: v5.42.0 \u2192 v5.43.0",
-      "exact script output: v5.49.0 \u2192 v5.50.0",
-      "exact script output: v5.50.0 \u2192 v5.50.1",
+      "exact script output: v5.11.0 → v5.12.0",
+      "exact script output: v5.42.0 → v5.43.0",
+      "exact script output: v5.49.0 → v5.50.0",
+      "exact script output: v5.50.0 → v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -2369,12 +2372,14 @@
     ]
   },
   "swamp/tests/workflow_instance_deploy_fleet_test.ts": {
-    "source_sha256": "835f818ce700f46000425ac087aacff3a10f6b2c52942131e24ef58d2fa1e360",
+    "source_sha256": "78394e4f8eb14bcdddb320e8e6046225e60acd505da92d7f2025bd46f8474d47",
     "cases": [
       "a normal container deployment skips every fleet step, after success and after a failure",
       "a nested-fleet default first keeps its current seed, refreshes its fleet before the last seed, and restores nothing when every step passes",
       "a fleet that the check refuses changes nothing: every later step skips and no seed is restored",
-      "a nested-fleet deployment that failed after its checkout restores the old seed, starts through start and keeps the failed phase's result"
+      "a nested-fleet deployment that failed after its checkout restores the old seed, starts through start and keeps the failed phase's result",
+      "the start of a deployment waits for no Doctor; a passed refresh starts its fleet again after the seed, and a failure of that start keeps the new seed",
+      "after a restore the restored fleet is started and waited for, and the first failure stays the run's result"
     ]
   },
   "swamp/tests/workflow_expression_ends_test.ts": {
