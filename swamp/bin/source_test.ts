@@ -100,6 +100,11 @@ Deno.test("hot workflow trees avoid literal behavior lookups and preserve consta
         "route-mutation-withdraw/result": "route-mutation-phase",
         "route-mutation-restore/result": "route-mutation-phase",
         "route-withdraw/result": "route-mutation-phase",
+        "proof-fleet-verify/plan": "proof-verify-assigned-plan",
+        "proof-fleet-verify/Check the main verdicts": "proof-verify-main-verdicts",
+        "proof-fleet-verify/Name replay cases": "proof-verify-flagged-cases",
+        "proof-fleet-verify/report": "proof-verify-report",
+        "proof-fleet-verify-batch/report": "proof-verify-batch-report",
         "operation-vault-sync/Prepare public data": "vault-sync-inputs",
         "operation-vault-sync/Prepare session file": "vault-sync-session-file",
         "operation-vault-sync/Resolve the session": "vault-sync-session",
@@ -157,6 +162,9 @@ Deno.test("hot workflow trees avoid literal behavior lookups and preserve consta
         "operation-instance-migrate",
         // Runs every two minutes on the shared starter.
         "operation-vault-sync",
+        // A proof start loads these trees; each literal name held the shared starter for seconds.
+        "operation-proof-run",
+        "proof-fleet-verify",
     ]) walk(root);
     assertEquals(
         [...expected.keys()],
