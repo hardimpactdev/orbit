@@ -97,6 +97,7 @@ sequenceDiagram
   %%> What it does:
   %%> - starts `app-mysql` with the volume, the health probe and the port bound only on the private addresses, as one `docker run` argv
   %%> - for mysql and pgsql: `--env-file /dev/stdin` reads `MYSQL_ROOT_PASSWORD` or `POSTGRES_PASSWORD` from `vault.get`; no file holds it
+  %%> - for pgsql it also reads `POSTGRES_INITDB_ARGS=--auth-local=scram-sha-256 --auth-host=scram-sha-256`: the image's initdb would trust the socket and the loopback for every user
   %%> - for redis: no environment; Valkey runs with `--aclfile /data/users.acl`
   %%> - a rerun keeps an existing container and continues from it
   %%> Never:
