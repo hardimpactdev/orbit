@@ -1783,7 +1783,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 64
+cost = 68
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1823,6 +1823,8 @@ inputs = [
 
 "test_schedule_cleanup_listing_error_refuses_before_clone_boot" = 2 # local completed under 2 s; conservative CI estimate
 
+  "test_boot_files_reach_the_copy_before_its_first_start_and_before_the_node_services_apply" = 2
+  "test_a_running_copy_and_a_clone_without_boot_files_push_none" = 2
   "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement" = 2
   "test_clone_target_failure_receipt_keeps_public_identity_and_bounds_tool_output" = 2
   "test_clone_of_a_default_with_a_node_service_target_strips_it_on_the_first_try_and_on_a_retry" = 2
