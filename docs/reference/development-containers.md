@@ -587,7 +587,7 @@ Orbit sets the proxy for everything that runs in a container. Tools read the upp
 
 - each attached [Node service](/reference/processes-and-schedules#node-service-target-records) host that is not on the bridge;
 - for a [nested-fleet](#nested-fleet) container, its inner fleet (`10.45.0.1`, `10.45.0.0/24` and `10.232.2.0/24`): the container's own CLI then reaches its inner Gateway;
-- each name of the container intent's `private_names` list. No intent has that list yet; a container with a private websocket app gets it in a later change, and today it adds nothing.
+- each name of the container intent's `private_names` list. No intent has that list yet, so it adds nothing today.
 
 A normal container without these keeps the image's value only. Every writer of the value takes it from this builder.
 
