@@ -22,6 +22,7 @@ use Orbit\Extensions\Conn\Data\ConnPairingData;
 use Orbit\Extensions\Conn\Data\IssuedConnPairingData;
 use Orbit\Extensions\Conn\Domain\ConnServerAccess;
 use Orbit\Extensions\Conn\Domain\T3PairingUrl;
+use Orbit\Extensions\Conn\Http\Requests\IssueConnPairingRequest;
 use Orbit\Extensions\Conn\Http\Requests\RevokeConnPairingsRequest;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
@@ -51,10 +52,10 @@ final class ConnPairingsController extends Controller
     }
 
     #[StartsOperation('conn.pairing_create', bindCaller: true)]
-    public function store(Request $request, ConnEnvironment $environment, IssueConnPairingAction $action): JsonResponse
+    public function store(IssueConnPairingRequest $request, ConnEnvironment $environment, IssueConnPairingAction $action): JsonResponse
     {
         $node = $this->assertServer($request, $environment);
-        $operation = $action->admit($node, $environment);
+        $operation = $action->admit($node, $environment, renew: $request->renews());
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
