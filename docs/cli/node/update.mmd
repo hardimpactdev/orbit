@@ -23,6 +23,7 @@ sequenceDiagram
   %%> - an empty value unsets a setting: `--lan-ip=` clears the LAN address, `--apps-path=` unsets the folder, `--task-vms=null` removes the task VM host settings
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
+  %%> - the API-only boolean `nested_fleet` records the Node hosting switch; absence keeps its value, including a combined asynchronous apps update; it is stored only and has no effect yet; hosting that reads it follows later
   Note over GW: Validate, lock the Node
   %%> Requirements:
   %%> - the calling Node has an access grant to the target Node
