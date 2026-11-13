@@ -261,7 +261,7 @@ Key patterns limit keys, not the database index. Valkey 8 has no ACL rule for an
 
 SQL user creation runs `operation-database-user-create` with full public intent and a vault descriptor. All steps run on 209 and reach the admitted server through official SSH. PostgreSQL replication requests have a separate read-only WAL check before the login and grant actions. The Gateway captures the database, owner, username and grant policy as public intent. The shipped script builds user and grant SQL on the target Node; the Gateway builds no SQL.
 
-The admin password, requested login password and stable SCRAM salt use the shared vault execution copy; none enters workflow inputs, argv or public output. An unrecorded PostgreSQL role is reusable only when its verifier matches this exact intent. A recorded user may rotate its password. MySQL grants escape database-name underscores so each grant covers only the admitted database.
+The admin password, requested login password and stable SCRAM salt use the shared vault execution copy; none enters workflow inputs, argv or public output. An unrecorded PostgreSQL role is reusable only when its verifier matches this exact intent. An unrecorded MySQL account of that name, on any host, stops the batch before any change. A recorded user may rotate its password. MySQL grants escape database-name underscores so each grant covers only the admitted database.
 
 The shared terminal subscriber records the user after native success. Native terminal-delivery resume does not repeat SQL. Valkey users remain separate database connections.
 
@@ -273,7 +273,11 @@ orbit database:user:create dlf-leden --username=reporting --read-only
 
 The CLI reads the password from piped standard input, or asks for it with a hidden prompt on a terminal; see [`database:user:create`](/cli/database/user-create).
 
-A read-only user gets `SELECT` on the database. A regular MySQL user gets all database privileges; a regular PostgreSQL user gets the data-write grants described above. Running the command again sets the password and replaces the privileges. A connection without a server returns `database.server_required` (422). A connection on a `redis` server returns `database.driver_unsupported` (422): on Valkey, each user is a connection of its own. The user of a connection on the same server returns `database.name_conflict` (409), so the command never changes the password that a connection uses. The Gateway stores the user's password encrypted, so it can [publish it to Vaultwarden](/reference/vaultwarden#database-user-passwords). No response returns it.
+A read-only user gets `SELECT` on the database. A regular MySQL user gets all database privileges; a regular PostgreSQL user gets the data-write grants described above. Running the command again sets the password and replaces the privileges. A connection without a server returns `database.server_required` (422). A connection on a `redis` server returns `database.driver_unsupported` (422): on Valkey, each user is a connection of its own.
+
+A user belongs to one connection, so the command never changes the password or grants of an account that another connection, or the server itself, uses. The server's admin login or a system role (MySQL `root`, `mysql`, `sys`; PostgreSQL `postgres`, `public`, any `pg_` name) returns `database.user_reserved` (422). The owner of a connection on the same server, or a user that another connection recorded, returns `database.name_conflict` (409). Both refusals happen before any Operation. `database:create` refuses a database whose derived user name is reserved the same way.
+
+The Gateway stores the user's password encrypted, so it can [publish it to Vaultwarden](/reference/vaultwarden#database-user-passwords). No response returns it.
 
 ### Logical replication users
 
@@ -287,7 +291,7 @@ orbit database:user:create app --username=powersync --replication
 
 The user has `LOGIN REPLICATION`, database `CONNECT`, public-schema `USAGE`, and `SELECT` on all current tables and sequences. Default privileges give the same reads on future objects created by the connection's managed owner. Replication implies the read-only grants; adding `--read-only` is allowed and has the same result. The role has no superuser, CREATEDB, or CREATEROLE attribute. PostgreSQL's replication attribute is server-wide; publications and the database grants determine which application tables the consumer reads.
 
-Repeating the command sets the password and replaces privileges and owner defaults. Omit `--replication` on a later call to remove the replication attribute. The same name-conflict rules apply: Orbit refuses any connection owner on the server, or an existing PostgreSQL role outside this connection. Orbit does not adopt hand-created replication roles. Use an unused name when moving an existing client to managed credentials.
+Repeating the command sets the password and replaces privileges and owner defaults. Omit `--replication` on a later call to remove the replication attribute. The same name rules apply: Orbit refuses a reserved name, any connection owner on the server, a user another connection recorded, or an existing PostgreSQL role outside this connection. Orbit does not adopt hand-created replication roles. Use an unused name when moving an existing client to managed credentials.
 
 User create returns an Operation. With `--replication`, its run first reads the live WAL level with one `docker exec -i`; another level skips the rest. The run then sends one batch with one `docker exec -i`: the name check, the login, then the grants.
 

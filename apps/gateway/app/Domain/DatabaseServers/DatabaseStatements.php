@@ -187,7 +187,14 @@ final readonly class DatabaseStatements
             $grant = '`'.str_replace('_', '\\_', $database).'`.*';
             $privilege = $input['read_only'] ? 'SELECT' : 'ALL PRIVILEGES';
 
-            return ['wal' => "SELECT 1;\n", 'apply' => "CREATE USER IF NOT EXISTS {$account} IDENTIFIED BY {$secret};\nALTER USER {$account} IDENTIFIED BY {$secret};\n"
+            // An account of this name that the connection did not record (any host) belongs to someone else: the batch
+            // prints the refusal for the Gateway and stops before any change, as create() does.
+            $foreign = "SELECT 1 FROM mysql.user WHERE User='{$user}'";
+            $guard = $input['known_user'] ? '' : "SELECT 'database.name_conflict' FROM DUAL WHERE EXISTS ({$foreign});\n"
+                ."SET @orbit_guard = IF(EXISTS ({$foreign}), 'SELECT 1 FROM orbit_name_conflict.refused', 'DO 0');\n"
+                ."PREPARE orbit_guard FROM @orbit_guard;\nEXECUTE orbit_guard;\nDEALLOCATE PREPARE orbit_guard;\n";
+
+            return ['wal' => "SELECT 1;\n", 'apply' => $guard."CREATE USER IF NOT EXISTS {$account} IDENTIFIED BY {$secret};\nALTER USER {$account} IDENTIFIED BY {$secret};\n"
                 ."GRANT SELECT ON {$grant} TO {$account};\nREVOKE ALL PRIVILEGES ON {$grant} FROM {$account};\nGRANT {$privilege} ON {$grant} TO {$account};\n",
                 'check' => "SELECT CURRENT_USER();\nSHOW GRANTS;\n"];
         }

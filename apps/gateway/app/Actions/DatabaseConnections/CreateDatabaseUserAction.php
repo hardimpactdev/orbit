@@ -62,6 +62,13 @@ final readonly class CreateDatabaseUserAction
 
         app(DatabaseDestroySafety::class)->assertAcceptsCreates($server);
 
+        // A user belongs to one connection. The server's admin, a system role, the owner of any connection and a user
+        // that another connection recorded are someone else's, so their password and grants never change here.
+        if ($this->privileges->reserved($server->driver, $data->username)) {
+            throw $this->privileges->reservedError($data->username);
+        }
+
+        $serverConnections = DatabaseConnection::query()->where('database_server_id', $server->id)->select('id');
         $ownsConnection = DatabaseConnection::query()
             ->where('database_server_id', $server->id)
             ->where('username', $data->username)
@@ -71,6 +78,20 @@ final readonly class CreateDatabaseUserAction
             throw new ResourceOperationException(
                 errorCode: 'database.name_conflict',
                 message: "User [{$data->username}] belongs to a connection on Database server [{$server->slug}].",
+                status: 409,
+            );
+        }
+
+        $otherConnectionUser = DatabaseUser::query()
+            ->whereIn('database_connection_id', $serverConnections)
+            ->where('database_connection_id', '!=', $connection->id)
+            ->where('username', $data->username)
+            ->exists();
+
+        if ($otherConnectionUser) {
+            throw new ResourceOperationException(
+                errorCode: 'database.name_conflict',
+                message: "User [{$data->username}] belongs to another connection on Database server [{$server->slug}].",
                 status: 409,
             );
         }

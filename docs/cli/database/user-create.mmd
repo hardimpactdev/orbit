@@ -30,7 +30,8 @@ sequenceDiagram
   %%> - your Node has an access grant to Node 12
   %%> - connection `shop` has a Database server (`database.server_required`)
   %%> - the server is MySQL or PostgreSQL (`database.driver_unsupported`); on Valkey each user is its own connection
-  %%> - `reporting` is not the user of a connection on the server (`database.name_conflict`)
+  %%> - `reporting` is not the server's admin login or a system role, such as `root`, `postgres` or `pg_*` (`database.user_reserved`)
+  %%> - `reporting` is not the owner of a connection on the server, nor a user another connection recorded (`database.name_conflict`)
   %%> - no database removal runs on `beast-mysql`; the Gateway holds one lock per Database server
   %%> Result:
   %%> - task #5123 recorded with the database, owner, username and grant policy
@@ -83,7 +84,7 @@ sequenceDiagram
   %%> - PostgreSQL: adds or removes the replication attribute
   %%> - replaces the user's privileges with exactly the requested ones, in the same batch
   %%> Refuses:
-  %%> - an existing PostgreSQL role outside this connection (`database.name_conflict`); the batch stops before any change and prints the code for the Gateway
+  %%> - an existing role or account (MySQL: any host) that this connection did not record (`database.name_conflict`); the batch stops before any change and prints the code for the Gateway
   %%> - MySQL: escapes underscores, so the grant covers only `shop`
   %%> Not included:
   %%> - Orbit never changes the server configuration or creates publications

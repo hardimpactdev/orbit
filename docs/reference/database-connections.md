@@ -137,6 +137,7 @@ A managed Valkey connection's driver, Node, address, port, username, and passwor
 | `database.server_inactive` | 409 | The server is not active yet. |
 | `database.slug_conflict` | 409 | Another connection has the slug. |
 | `database.name_conflict` | 409 | The server already has a database or user with the derived name. |
+| `database.user_reserved` | 422 | The derived user name is the server's admin login or a system role, such as `root` or `postgres`. |
 | `database.driver_unsupported` | 422 | `instance_id` names an Instance, but the server is a `redis` server. |
 | `database.acl_rules_invalid` | 422 | Valkey refused a key pattern or a rule. |
 | `database.server_command_failed` | 502 | The server could not create the database or user. |
