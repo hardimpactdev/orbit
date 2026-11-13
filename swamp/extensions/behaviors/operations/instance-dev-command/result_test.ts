@@ -253,6 +253,12 @@ Deno.test("a clone finishes only with its registered T3 server, which the receip
         ...phases, database: "failed", container,
     }).stdout);
     assertEquals([databaseFailure.ready, databaseFailure.failed_step], [false, "database"]);
+    // A clone's own Valkey user alone also runs the database phase: a skipped phase is no Valkey user.
+    const valkey = (database: string) => JSON.parse(createResult({ ...intent, container: { clone: {} }, database: null, server_database: null, server_valkey: { id: 2 } }, {
+        ...phases, database, container,
+    }).stdout);
+    assertEquals([valkey("skipped").ready, valkey("skipped").failed_step], [false, "database"]);
+    assertEquals(valkey("succeeded").ready, true);
 });
 
 Deno.test("readiness records only timestamps from the T3 checks and the Route TLS probe", () => {

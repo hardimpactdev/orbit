@@ -335,6 +335,7 @@
   },
   "operation-instance-create": {
    "clone-server-database-check": "read-only",
+   "clone-server-valkey-check": "read-only",
    "server-database-check": "unreviewed"
   },
   "operation-instance-deploy-direct": {

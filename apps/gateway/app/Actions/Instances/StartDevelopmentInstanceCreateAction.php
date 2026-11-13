@@ -190,7 +190,7 @@ final readonly class StartDevelopmentInstanceCreateAction
             $provisioning = app(NativeInstanceProvisioningIntent::class)->create($instance, $input);
             // An already active Instance runs no phase, so admission records no environment or Process for it.
             $input['environment_keys'] = $input['mail_keys_set'] = $input['members'] = [];
-            $database = $copy = $server = null;
+            $database = $copy = $server = $valkey = null;
             if ($provisioning['already_active'] !== true) {
                 // The Instance's own database is attached under DB before .env renders, so .env already names it: a
                 // database on --database-server or on the default Instance's MySQL server, else a copy of its SQLite file.
@@ -198,8 +198,10 @@ final readonly class StartDevelopmentInstanceCreateAction
                 $server = $serverSlug === null ? null : $this->serverDatabase($instance, $serverSlug, $clone);
                 $copy = $server === null && $clone !== null ? $this->sqliteCopy($instance, $node, $clone) : null;
                 $database = $copy['intent'] ?? null;
+                // A clone of a default with a Valkey target gets its own Valkey user under the same prefix, before .env renders.
+                $valkey = $source instanceof Instance ? $this->valkey($instance, $source) : null;
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
-                $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? $server['connection'] ?? null, $source);
+                $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? $server['connection'] ?? null, $source, $valkey['target'] ?? null);
                 $input['mail_keys_set'] = app(DevelopmentCreateEnvironment::class)->mailKeys($instance);
                 // A rerun after a failed create checks the Processes its first run already started.
                 $input['members'] = $container ? [] : app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions', includeActive: true)['members'];
@@ -214,7 +216,7 @@ final readonly class StartDevelopmentInstanceCreateAction
             $steps = $container && $provisioning['already_active'] !== true
                 ? ($source instanceof Instance ? [] : app(DevelopmentDeploySteps::class)->capture($project)) : null;
             $input['direct_provisioning'] = [...$provisioning, 'route' => $input['route_create'] ?? null, 'database' => $database,
-                'server_database' => $server['input'] ?? null, 'container' => $steps === null ? null
+                'server_database' => $server['input'] ?? null, 'server_valkey' => $valkey['input'] ?? null, 'container' => $steps === null ? null
                     : $this->containerIntent($instance, $node, $steps, $source, $server['connection'] ?? null,
                         ValidatedData::string(ValidatedData::object($provisioning['resolve'])['branch']), $route?->domain)];
             $admitted = $input['direct_provisioning']['container'];
@@ -262,6 +264,33 @@ final readonly class StartDevelopmentInstanceCreateAction
         return ['connection' => $connection, 'input' => ['intent_id' => ValidatedData::integer($prepared->input['intent_id']),
             'connection_id' => $connection->id, 'server_id' => $prepared->targetId, 'node_id' => $prepared->nodeId,
             'source' => $same ? $clone->connection->database : null, 'source_owner' => $same ? $clone->connection->username : null]];
+    }
+
+    /**
+     * The default's Valkey target becomes the clone's own Valkey user on the same server, attached under the same prefix, so .env
+     * and the container's firewall rule name it (docs/reference/development-containers.md#clone-the-database). It never takes the
+     * default's user. A default with more than one Valkey target is not built.
+     *
+     * @return array{target:DatabaseConnectionTarget,input:array<string,mixed>}|null
+     */
+    private function valkey(Instance $instance, Instance $source): ?array
+    {
+        $targets = DatabaseConnectionTarget::query()->with('databaseConnection.server')->where('instance_id', $source->id)
+            ->whereHas('databaseConnection', static fn ($query) => $query->where('driver', DatabaseDriver::Redis->value))->orderBy('id')->get();
+        if ($targets->isEmpty()) {
+            return null;
+        }
+        if ($targets->count() > 1) {
+            throw new ResourceOperationException('instance.database_clone_unsupported', 'The default Instance has more than one Valkey connection; a clone takes one.', 422);
+        }
+        $default = $targets->sole();
+        $prepared = app(CreateServerDatabaseAction::class)->prepareValkeyForInstance($instance, $default->databaseConnection);
+        $connection = DatabaseConnection::query()->findOrFail(ValidatedData::integer($prepared->input['connection_id']));
+        $target = DatabaseConnectionTarget::query()->updateOrCreate(['instance_id' => $instance->id, 'prefix' => $default->prefix],
+            ['database_connection_id' => $connection->id, 'network' => 'wireguard']);
+
+        return ['target' => $target, 'input' => ['intent_id' => ValidatedData::integer($prepared->input['intent_id']),
+            'connection_id' => $connection->id, 'server_id' => $prepared->targetId, 'node_id' => $prepared->nodeId]];
     }
 
     /**

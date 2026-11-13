@@ -700,9 +700,24 @@ Other servers and drivers:
 - **Not built yet.** A clone that names another server refuses with `instance.database_clone_unsupported`.
 - **MySQL.** A dump and restore, as the database family copies MySQL today.
 - **SQLite.** A file in the workspace comes with the ZFS clone.
-- **Valkey.** No data is copied; the Instance gets its own connection, as `database:create` makes it.
+- **Valkey.** No data is copied. The clone gets its own ACL user on the default's server, attached under the same prefix. See [A clone's Valkey user](#a-clones-valkey-user).
 
 Orbit creates the owner and grants; no path copies roles.
+
+#### A clone's Valkey user
+
+A clone of a default with a Valkey target never uses the default's user, password or keys. Its own user has one key pattern, `orbit_instance_<id>_*`. A database index is no boundary, because Valkey has no ACL rule for it.
+
+The user has the default user's commands and database index, and no channels. It never gets FLUSHDB, even when the default's user has it. FLUSHDB empties a whole index, and the clone shares the default's index. Laravel's `cache:clear` on a Redis store then answers `NOPERM`.
+
+For a Laravel Project, `.env` also gets two keys in the framework's own forms:
+
+- `<PREFIX>_PREFIX=orbit_instance_<id>_database_`
+- `HORIZON_PREFIX=orbit_instance_<id>_horizon:`
+
+Another Project gets only the connection keys, and its app must keep its keys under `orbit_instance_<id>_`. Orbit sets no other key, such as `QUEUE_CONNECTION`. Those come from the Project's template.
+
+A clone refuses with `instance.database_clone_unsupported` when the default has more than one Valkey target. The same code refuses a default whose Valkey connection has no Orbit-made user, or whose user grants pub/sub. Destroy deletes the clone's user; the default's user stays.
 
 ### Destroy
 

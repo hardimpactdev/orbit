@@ -72,6 +72,15 @@ sequenceDiagram
       %%> - MySQL: a dump of the default database restored into the new one
       %%> Runs beside the clone step: Swamp starts both at once.
     end
+    opt Valkey target on the default
+      SW->>N: Create the clone's Valkey user<br/>child operation-database-create
+      %%> What it does, through the database family:
+      %%> - one ACL user on the default's Valkey server with the default user's commands except FLUSHDB and its index, but only the keys `orbit_instance_<id>_*` and no channels
+      %%> - attached under the default's prefix, so `.env` gets the connection keys, and for Laravel `<PREFIX>_PREFIX` and `HORIZON_PREFIX` under that key prefix
+      %%> - the container's ACL and UFW admit the server's port; no data is copied
+      SW->>N: Check the Valkey login<br/>docker exec · owner login
+      %%> Runs beside the clone step. A default with more than one Valkey target, or one without an Orbit-made user, or one whose user grants pub/sub, refuses `instance.database_clone_unsupported`.
+    end
     SW->>C: Prepare the workspace<br/>native clone-workspace
     %%> What it does:
     %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone

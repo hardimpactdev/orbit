@@ -60,6 +60,7 @@ final readonly class NativeDevelopmentInstanceInput
 
         $testing = $environment->testing($instance);
         $server = ($plan['server_database'] ?? null) === null ? null : $this->serverDatabase($operation, ValidatedData::object($plan['server_database']));
+        $valkey = ($plan['server_valkey'] ?? null) === null ? null : $this->serverDatabase($operation, ValidatedData::object($plan['server_valkey']));
 
         // Minting writes the read token's credential line into the vault; the fetch reads it as a 0600 file.
         app(InstanceGitHubReadTokens::class)->start($operation);
@@ -70,9 +71,8 @@ final readonly class NativeDevelopmentInstanceInput
             'instance_name' => $instance->name, 'name_converted_from' => $input['name_converted_from'] ?? null,
             'processes' => $processes, 'setup_steps' => $steps, 'environment_directory' => $environment->directory($instance),
             'server_database' => $server === null ? null : array_diff_key($server, ['secrets' => true]),
-            // A clone's own Valkey user. Sent before any workflow reads it, so a run started by this release meets a
-            // workflow that reads it (new-intent-key rule); the clone path fills it in the next release.
-            'server_valkey' => null,
+            // A clone's own Valkey user: the clone run's second `operation-database-create` child.
+            'server_valkey' => $valkey === null ? null : array_diff_key($valkey, ['secrets' => true]),
             'environment_testing' => $testing !== null,
             // The Route child's own vault references; null when the Project serves no web pages.
             // The reverse of the Route publication the run captured at admission; the failed create takes the Route back with it.
@@ -93,6 +93,7 @@ final readonly class NativeDevelopmentInstanceInput
                 'environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, $environment->content($instance)),
                 ...($testing === null ? [] : ['environment_testing' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-testing-'.$operation->id, $testing)]),
                 ...($server === null ? [] : ['server_database_create' => ValidatedData::object(ValidatedData::object($server['secrets'])['create']), 'server_database_check' => ValidatedData::object(ValidatedData::object($server['secrets'])['check'])]),
+                ...($valkey === null ? [] : ['server_valkey_create' => ValidatedData::object(ValidatedData::object($valkey['secrets'])['create']), 'server_valkey_check' => ValidatedData::object(ValidatedData::object($valkey['secrets'])['check'])]),
             ]];
     }
 
@@ -116,7 +117,7 @@ final readonly class NativeDevelopmentInstanceInput
     /**
      * The `operation-database-create` child inputs of the owned server database, rendered the way `database:create`
      * renders them, from an in-memory `database.create` view of its recorded intent; plus the copy of the default
-     * Instance's MySQL database, whose root login is the first line of the create batch.
+     * Instance's MySQL database, whose root login is the first line of the create batch. A clone's own Valkey user has no copy.
      *
      * @param  array<string,mixed>  $admitted
      * @return array<string,mixed>
@@ -133,12 +134,11 @@ final readonly class NativeDevelopmentInstanceInput
         // The admin login runs `docker exec -i <container> sh -c <script> sh <user> <database>`.
         $admin = ValidatedData::stringList(ValidatedData::object($run['intent'])['admin_client']);
         $container = $admin[3];
-        $target = ValidatedData::string($connection->database);
         $fill = match (true) {
             $source === null => null,
             $connection->driver === DatabaseDriver::Pgsql => DatabaseStatements::template($container, $admin[8], $source,
-                ValidatedData::string($admitted['source_owner'] ?? null), $target, ValidatedData::string($connection->username)),
-            default => DatabaseStatements::copy($container, $source, $target),
+                ValidatedData::string($admitted['source_owner'] ?? null), ValidatedData::string($connection->database), ValidatedData::string($connection->username)),
+            default => DatabaseStatements::copy($container, $source, ValidatedData::string($connection->database)),
         };
 
         return ['node_id' => $view->node_id, 'intent' => $run['intent'], 'secrets' => $run['execution_secrets'], 'fill' => $fill];

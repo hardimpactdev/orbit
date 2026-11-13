@@ -54,7 +54,7 @@ The Gateway connects to the server's WireGuard address and published port, the a
 
 Orbit adds `reset`, the password, `resetchannels`, `-@all`, and the final `-@admin -@dangerous -function -script`. So no user gets pub/sub channels, an `@admin` command, a `@dangerous` command, or `FUNCTION FLUSH` and `SCRIPT FLUSH`, which act on the whole server and are also in `@write` and `@slow`. No user can change the ACL. A key pattern must start with a literal key prefix, so `*` is refused, and the rules `@all` and `@scripting` are refused. `database:destroy` of the connection runs `ACL DELUSER` and `ACL SAVE`. The user's keys stay.
 
-`--instance`, `instance:create --database-server`, the Instance database clone, and `database:user:create` refuse a `redis` server with `database.driver_unsupported`.
+`--instance`, `instance:create --database-server`, the Instance database clone, and `database:user:create` refuse a `redis` server with `database.driver_unsupported`. A container clone of a default with a Valkey target is the one Instance-owned Valkey user: Orbit names its key patterns itself, `orbit_instance_<id>_*`, so no caller names them ([Clone the database](/reference/development-containers#a-clones-valkey-user)).
 
 ### The Process belongs to the server
 

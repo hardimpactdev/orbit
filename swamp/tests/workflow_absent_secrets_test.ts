@@ -44,7 +44,7 @@ const copy = (key: string) => ({ vault: "orbit-control-inputs", key });
 Deno.test("a checkout create reads no key that only a container create has", () => {
   assertEquals(failures("workflow-operation-instance-create.yaml", {
     execution_secrets: { git_credential: copy("instance-git-credential-1"), environment: copy("instance-create-environment-input-1") },
-    intent: { container: null, environment_testing: false, server_database: null },
+    intent: { container: null, environment_testing: false, server_database: null, server_valkey: null },
   }), []);
 });
 
@@ -54,7 +54,7 @@ Deno.test("a container default's create and a clone's create read their own keys
     process_environments: copy("instance-create-processes-1"),
   };
   // Every container intent names its Incus project (InstanceContainer::intent).
-  const intent = { container: { clone: null, project: "orbit-instances" }, environment_testing: false, server_database: null };
+  const intent = { container: { clone: null, project: "orbit-instances" }, environment_testing: false, server_database: null, server_valkey: null };
   assertEquals(failures("workflow-operation-instance-create.yaml", { execution_secrets, intent }), []);
   assertEquals(failures("workflow-operation-instance-create.yaml", {
     execution_secrets: { ...execution_secrets, model_environment: copy("instance-create-model-1") },
@@ -72,7 +72,7 @@ Deno.test("a nested-fleet create and clone read the Club key copy only when the 
       const club = available ? { club_key: copy("nested-fleet-club-api-key") } : {};
       assertEquals(failures("workflow-operation-instance-create.yaml", {
         execution_secrets: { ...execution_secrets, ...club },
-        intent: { container: { clone, project: "orbit-instances-nested", club_key: { available } }, environment_testing: false, server_database: null },
+        intent: { container: { clone, project: "orbit-instances-nested", club_key: { available } }, environment_testing: false, server_database: null, server_valkey: null },
       }), [], `clone ${clone !== null}, available ${available}`);
     }
   }
@@ -158,7 +158,7 @@ Deno.test("create finalization evaluates checkout, default and clone receipts wi
   for (const container of [null, { clone: null }, { clone: { source: "instance-7" } }]) {
     // StartDevelopmentInstanceCreateAction always admits database, including null when no SQLite copy is needed.
     // Keep that key: Swamp's CEL treats an omitted map key as an error, not null.
-    const intent = { instance_id: 8, already_active: false, container, database: null, server_database: null, processes: [], setup_steps: [], route: null };
+    const intent = { instance_id: 8, already_active: false, container, database: null, server_database: null, server_valkey: null, processes: [], setup_steps: [], route: null };
     const phaseSteps = { ...steps, "clone-register": container?.clone ? registration : { status: "skipped" } };
     // Swamp supplies run.id independently of the admitting Gateway release.
     const run = { id: "previous-gateway-run" };

@@ -13,7 +13,7 @@ covers:
 
 # Instance setup and teardown
 
-[Instance containers](/reference/development-containers#processes) use the Project's development deploy steps to build the default, then install its development Process definitions. A clone inherits that workspace and installs its own Process records. Its workspace phase reads `.env` and the Process environment files from one private vault copy.
+[Instance containers](/reference/development-containers#processes) use the Project's development deploy steps to build the default, then install its development Process definitions. A clone inherits that workspace and installs its own Process records. A clone of a default with a Valkey target gets its [own Valkey user](/reference/development-containers#a-clones-valkey-user) before its Processes start. Its workspace phase reads `.env` and the Process environment files from one private vault copy.
 
 Orbit activates the clone after reading T3's registration receipt. Its helpers and public intent travel separately from credentials. A nested-fleet clone gets its nested Gateway's [Club key](/reference/development-containers#the-club-key-of-the-nested-gateway) in its own step, `clone-club-key`, on SSH stdin right after its start. A failed first launch still removes the private clone folder.
 

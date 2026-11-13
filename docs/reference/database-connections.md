@@ -35,7 +35,7 @@ Both database actions refuse a server Node without a stored SSH host key (`swamp
 
 Instance runs compose Database actions as steps of their own workflow. Grouped removal records one aggregate database intent for the admitted Instance set, with one entry per SQL server. Each server Node receives only its own passwords. Successful projections attach a created connection or remove the admitted connection records; they do not re-run SQL or inspect a Node.
 
-A development create copies a SQLite or MySQL [database clone](/domains/applications#database-clone) natively, and creates its own database on `--database-server` with the `database:create` child. A clone of a container default also clones a PostgreSQL database, with a [template copy](/reference/database-servers#clone-a-default-database-for-a-container-clone) on the default's server. A production clone or transfer with a SQLite source returns `operation.kind_unavailable` (503) before any change.
+A development create copies a SQLite or MySQL [database clone](/domains/applications#database-clone) natively, and creates its own database on `--database-server` with the `database:create` child. A clone of a container default also clones a PostgreSQL database, with a [template copy](/reference/database-servers#clone-a-default-database-for-a-container-clone) on the default's server. When the default has a Valkey target, the clone also gets its [own Valkey user](/reference/development-containers#a-clones-valkey-user) on the same server, attached under the same prefix and owned by the clone. A production clone or transfer with a SQLite source returns `operation.kind_unavailable` (503) before any change.
 
 ## Drivers and fields
 
