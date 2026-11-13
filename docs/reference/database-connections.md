@@ -217,7 +217,11 @@ SQL writes are limited to 16,384 bytes and one statement, which admission checks
 
 ### Dump imports
 
-`database:import` starts `operation-database-import`, one SSH step on the Database server's Node, as the Node's SSH user without sudo. The shell opens the dump file once and requires the open file to have exactly the admitted path, to be regular and to be owned by that user. The client runs in a throwaway container of the server's image on the server's network and logs in as the database's owner over TCP, with the password from the first stdin line of one vault value. The step prints one result line; the Gateway records `bytes_read`, `exit_code`, `tables` and, on failure, `database_state` and the client's error code and line. See [`database:import`](/cli/database/import).
+`database:import` starts `operation-database-import`, one SSH step on the Database server's Node. It runs as the Node's SSH user without sudo. The shell opens the dump file once. The open file must have exactly the admitted path, be regular and be owned by that user.
+
+The client runs in a throwaway container of the server's image on the server's Docker network. It logs in as the database's owner over TCP at the server container's own address. It never uses the server's loopback, which the PostgreSQL image trusts. The password is the first stdin line of one vault value.
+
+The step prints one result line. The Gateway records `bytes_read`, `exit_code` and `tables`; on failure also `database_state` and the client's error code and line. See [`database:import`](/cli/database/import).
 
 ### Instance-owned removal
 

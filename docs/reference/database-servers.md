@@ -299,7 +299,7 @@ Swamp runs each batch as one `docker exec -i` into the server container over off
 
 ## Load a dump
 
-[`database:import`](/cli/database/import) loads a plain or gzipped SQL dump into an empty database on a MySQL or PostgreSQL server. It logs in as the database's owner, never as the admin, so the server's own grants keep the dump inside that database. The admin password is not used.
+[`database:import`](/cli/database/import) loads a plain or gzipped SQL dump into an empty database on a MySQL or PostgreSQL server. It logs in as the database's owner, never as the admin, so the server's own grants hold the dump to that owner's databases. The admin password is not used.
 
 ## Remove a database
 

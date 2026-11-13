@@ -45,8 +45,9 @@ sequenceDiagram
   %%> - opened once; its real path must equal the given path (no symlink), a regular file
   %%> - otherwise `database.import_file_refused`, and nothing is loaded
   %%> The client:
-  %%> - a throwaway container of the server's image on the server's network, read-only, no capabilities
-  %%> - it logs in as the owner over TCP; the password is the first stdin line
+  %%> - a throwaway container of the server's image on the server's Docker network, read-only, no capabilities
+  %%> - it logs in as the owner over TCP at the server container's address, never its trusted loopback
+  %%> - the password is the first stdin line
   %%> What it does, in order:
   %%> - counts the tables; more than 0 refuses with `database.not_empty`
   %%> - streams the file (gunzip for `.sql.gz`) into the client; the first error stops it

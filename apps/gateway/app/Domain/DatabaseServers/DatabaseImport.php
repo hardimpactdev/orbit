@@ -12,7 +12,8 @@ use App\Domain\Shared\ResourceOperationException;
  * its one result line. The shell runs as the Node's SSH user without sudo, so it opens only a file that user can open;
  * it then requires the open file to have exactly the given path (no symbolic link), to be regular and to be owned by
  * that user. The client runs in a throwaway container of the server's image on the server's network and logs in as the
- * owner over TCP with the password from the first stdin line. Client commands in a dump stay inside that container.
+ * owner over TCP at the server container's own address, never its loopback, which the PostgreSQL image trusts. The password
+ * comes from the first stdin line.
  */
 final class DatabaseImport
 {
@@ -33,21 +34,26 @@ set -u -o pipefail
 f=$1 c=$2 img=$3 drv=$4 u=$5 d=$6
 say() { printf 'orbit-import %s\n' "$1"; exit 0; }
 IFS= read -r pw || say 'outcome=login_failed state=unchanged'
-exec 3<"$f" 2>/dev/null || say 'outcome=file_refused state=unchanged'
+# A FIFO would hold the open until the time limit; the checks on the open file below still decide.
+[ -f "$f" ] && [ ! -p "$f" ] && exec 3<"$f" 2>/dev/null || say 'outcome=file_refused state=unchanged'
 [ "$(readlink "/proc/$$/fd/3")" = "$f" ] && [ -f "/proc/$$/fd/3" ] && [ "$(stat -L -c %u "/proc/$$/fd/3")" = "$(id -u)" ] \
   || say 'outcome=file_refused state=unchanged'
+# The client never shares the server's 127.0.0.1: the server image trusts loopback logins. It joins the server's network
+# and reaches the container's own address, where the server asks for the owner's password.
+read -r net ip < <(sudo -n docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{$v.IPAddress}}{{"\n"}}{{end}}' "$c" 2>/dev/null | head -n 1) \
+  && [[ $net =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ && $net != host && $ip =~ ^[0-9]+(\.[0-9]+){3}$ ]] || say 'outcome=login_failed state=unchanged'
 if [ "$drv" = pgsql ]; then
-  cl='IFS= read -r PGPASSWORD && export PGPASSWORD && u=$1 d=$2 && shift 2 && exec psql --no-psqlrc --host=127.0.0.1 --username="$u" --dbname="$d" --no-align --tuples-only --quiet --set=ON_ERROR_STOP=1 --set=VERBOSITY=sqlstate "$@"'
+  cl='IFS= read -r PGPASSWORD && export PGPASSWORD && u=$1 d=$2 h=$3 && shift 3 && exec psql --no-psqlrc --host="$h" --username="$u" --dbname="$d" --no-align --tuples-only --quiet --set=ON_ERROR_STOP=1 --set=VERBOSITY=sqlstate "$@"'
   count="SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f') AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%';"
-  load=(--single-transaction)
+  load=(--single-transaction --file=-)
 else
-  cl='IFS= read -r MYSQL_PWD && export MYSQL_PWD && u=$1 d=$2 && shift 2 && exec mysql --protocol=TCP --host=127.0.0.1 --user="$u" --database="$d" --batch --skip-column-names "$@"'
+  cl='IFS= read -r MYSQL_PWD && export MYSQL_PWD && u=$1 d=$2 h=$3 && shift 3 && exec mysql --protocol=TCP --host="$h" --user="$u" --database="$d" --batch --skip-column-names "$@"'
   count='SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE();'
-  load=()
+  load=(--max-allowed-packet=1G)
 fi
 run() {
-  { printf '%s\n' "$pw"; cat; } | sudo -n docker run --rm -i --pull=never --network "container:$c" --read-only --tmpfs /tmp \
-    --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 --entrypoint sh "$img" -c "$cl" sh "$u" "$d" "$@" 3<&-
+  { printf '%s\n' "$pw"; cat; } | sudo -n docker run --rm -i --pull=never --network "$net" --read-only --tmpfs /tmp \
+    --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 --entrypoint sh "$img" -c "$cl" sh "$u" "$d" "$ip" "$@" 3<&-
 }
 tables() { local n; n=$(printf '%s\n' "$count" | run 2>/dev/null) && [[ $n =~ ^[0-9]+$ ]] && printf '%s' "$n"; }
 before=$(tables) || say 'outcome=login_failed state=unchanged'

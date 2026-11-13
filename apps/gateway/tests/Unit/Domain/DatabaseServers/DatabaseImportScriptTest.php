@@ -22,6 +22,7 @@ beforeEach(function (): void {
     file_put_contents($this->dir.'/bin/docker', <<<'SH'
 #!/usr/bin/env bash
 s=$FAKE_STATE
+if [ "$1" = inspect ]; then printf 'bridge 172.17.0.9\n'; exit 0; fi
 printf '%s\n' "$*" >> "$s/argv"
 IFS= read -r pw; printf '%s\n' "$pw" >> "$s/passwords"
 cat > "$s/body"
@@ -70,9 +71,12 @@ it('loads a plain and a gzipped dump as the owner on MySQL and PostgreSQL', func
         ->and(file($this->dir.'/state/passwords', FILE_IGNORE_NEW_LINES))->toBe([IMPORT_SECRET, IMPORT_SECRET, IMPORT_SECRET])
         ->and(file_get_contents($this->dir.'/state/argv'))->not->toContain(IMPORT_SECRET);
     $load = file_get_contents($this->dir.'/state/load-argv');
-    expect($load)->toContain('run --rm -i --pull=never --network container:orbit-process-7-beast-mysql --read-only --tmpfs /tmp --cap-drop ALL')
+    // The client joins the server's network and reaches the container's address, never the server's loopback, which the
+    // PostgreSQL image trusts.
+    expect($load)->toContain('run --rm -i --pull=never --network bridge --read-only --tmpfs /tmp --cap-drop ALL')
+        ->and($load)->not->toContain('container:')->and($load)->not->toContain('127.0.0.1')
         ->and($load)->toContain('--user 65534:65534 --entrypoint sh')
-        ->and(str_ends_with(trim($load), 'sh shop_owner shop'.($driver === DatabaseDriver::Pgsql ? ' --single-transaction' : '')))->toBeTrue();
+        ->and(str_ends_with(trim($load), 'sh shop_owner shop 172.17.0.9 '.($driver === DatabaseDriver::Pgsql ? '--single-transaction --file=-' : '--max-allowed-packet=1G')))->toBeTrue();
 })->with([
     'mysql plain' => [DatabaseDriver::Mysql, false], 'mysql gzip' => [DatabaseDriver::Mysql, true],
     'pgsql plain' => [DatabaseDriver::Pgsql, false], 'pgsql gzip' => [DatabaseDriver::Pgsql, true],
@@ -108,6 +112,11 @@ it('refuses a symbolic link, a directory, a missing file and a file of another u
             return $dir.'/dumps/folder.sql';
         })($this->dir),
         'missing' => $this->dir.'/dumps/missing.sql',
+        'fifo' => (static function (string $dir): string {
+            exec('mkfifo '.escapeshellarg($dir.'/dumps/pipe.sql'));
+
+            return $dir.'/dumps/pipe.sql';
+        })($this->dir),
         // The Node's SSH user is someone else than the file's owner.
         'other owner' => (static function (string $dir) use (&$extra, $real): string {
             mkdir($dir.'/other');
@@ -123,7 +132,7 @@ it('refuses a symbolic link, a directory, a missing file and a file of another u
     expect($run['line'])->toBe('orbit-import outcome=file_refused state=unchanged')
         ->and(DatabaseImport::outcome($run['line'])['error_code'])->toBe('database.import_file_refused')
         ->and(file_exists($this->dir.'/state/passwords'))->toBeFalse();
-})->with(['symlink', 'symlinked folder', 'directory', 'missing', 'other owner']);
+})->with(['symlink', 'symlinked folder', 'directory', 'missing', 'fifo', 'other owner']);
 
 it('names a partly filled MySQL database and keeps the error message out', function (): void {
     file_put_contents($this->dir.'/state/fail', "ERROR 1146 (42S02) at line 7: Table 'shop.secret_customer_row' doesn't exist\n");
