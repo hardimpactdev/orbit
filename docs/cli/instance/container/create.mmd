@@ -65,6 +65,18 @@ sequenceDiagram
       %%> On failure:
       %%> - `instance.nested_club_key_not_tmpfs` or `instance.nested_club_key_delivery_failed`; the workspace phase does not run
     end
+    opt clone of a nested-fleet default
+      SW->>C: Start the inner fleet<br/>clone-fleet · fleet_check · fleet_resume
+      %%> What it does:
+      %%> - waits for the inner Incus and checks the fleet rules, then starts the three nested containers and the operator tunnel `wg-nested`
+      %%> - waits for the same Doctor check a proof uses: the nested Gateway is healthy and its three agents are online
+      %%> - only an intent with `fleet` runs it; every other clone skips it, and the workspace phase waits for it or its skip
+      %%> Why:
+      %%> - the seed holds a stopped, ready fleet, so a clone builds and converges nothing
+      %%> - the clone's first start drops the copied boot links, so the tunnel comes from this step, not from a unit
+      %%> On failure:
+      %%> - `instance.container_fleet_drift`, `instance.container_fleet_check_failed` or `instance.container_fleet_resume_failed`; `error.detail` says why (the Doctor body for a readiness wait); the container is kept for a retry
+    end
     opt database on a Database server
       SW->>N: Create the database<br/>child operation-database-create
       %%> What it does, through the database family:
@@ -102,18 +114,6 @@ sequenceDiagram
     %%> What it does:
     %%> - writes the shared FrankenPHP Caddyfile and unit, then restarts it as `orbit`; only the Node's bridge peer with `X-Forwarded-Proto: https` sets PHP's HTTPS scheme, port and resolved client IP
   %%> - starts use nonblocking systemd jobs, then a bounded readiness check for each running unit; container Process units order after `network.target`
-    opt nested-fleet Project
-      SW->>C: Start the inner fleet<br/>planned · Club key · Doctor
-      %%> What it does:
-      %%> - the Club key is already in /run from the Deliver the Club key step
-      %%> - starts the three nested containers from the seed, then the operator tunnel `wg-nested`
-      %%> - waits for the same Doctor check a proof uses: the nested Gateway is healthy and its three agents are online
-      %%> Why:
-      %%> - the seed holds a ready fleet, so a clone builds and converges nothing
-      %%> - the seed holds no Club key
-      %%> On failure:
-      %%> - the step fails the create with its exit code, as the other phases do
-    end
     SW->>C: Start T3<br/>native clone-t3
     %%> What it does:
     %%> - T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`

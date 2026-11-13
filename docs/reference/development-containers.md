@@ -1107,7 +1107,7 @@ Migration checks executable availability before downtime and requires moved runn
 
 A Project setting turns on a nested fleet. Each Instance container of that Project then holds a fleet of Incus containers nested inside it: a Gateway with its own Swamp, an `app-dev` Node and an `app-prod` Node. Orbit uses it to prove its commands before a pull request. Other Projects leave it off and keep the kernel surface of [Inside a container](#inside-a-container).
 
-Built: placement, host preparation, the start guards, the readers below and the [nested-fleet image](#the-nested-fleet-image). The [fleet step](#the-fleet-step) is built, and the deployment of the default calls it in the [refresh after a release](#refresh-after-a-release). Every Instance of a Project with `nested_fleet` on is a container in the nested Incus project, on a [build-list](#the-build-list) Node with nested-fleet hosting on. One placement rule in the Gateway refuses every other result before any record, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
+Built: placement, host preparation, the start guards, the readers below and the [nested-fleet image](#the-nested-fleet-image). The [fleet step](#the-fleet-step) is built. The deployment of the default calls it in the [refresh after a release](#refresh-after-a-release), and the create of a clone calls it to [start its fleet](#a-clone-starts-its-fleet). Every Instance of a Project with `nested_fleet` on is a container in the nested Incus project, on a [build-list](#the-build-list) Node with nested-fleet hosting on. One placement rule in the Gateway refuses every other result before any record, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
 
 ### The container
 
@@ -1344,15 +1344,24 @@ Each step has a bound. The check has 300 s, the first seed 120 s, the start 300 
 
 ### A clone starts its fleet
 
-A new Instance or a task of the nested-fleet Project is a ZFS clone of the default's seed, as every [clone](#create) is. The clone then starts the outer container, places the Club key, starts the fleet and the operator tunnel. It is ready when the same Doctor check that a proof uses passes: the nested Gateway is healthy and its three agents are online. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) shows the step. It is planned.
+A new Instance or a task of the nested-fleet Project is a ZFS clone of the default's seed, as every [clone](#create) is. The clone then starts the outer container and places the Club key. Its step `clone-fleet` runs the [fleet step](#the-fleet-step)'s check and resume: it waits for the inner Incus, checks the fleet rules, starts the nested containers and the operator tunnel `wg-nested`, and waits for the same Doctor check that a proof uses: the nested Gateway is healthy and its three agents are online. Only then does the workspace phase run. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) shows the step.
+
+The Gateway gives the create intent its `fleet` only for a clone whose runtime keeps a fleet (`InstancePlacement::keepsFleet`). Every other create has no `fleet` key and skips the step.
+
+The clone's first start drops the copied `orbit-*` boot links, so a tunnel unit in the seed does not start in the clone. The step makes the tunnel.
+
+A failed step fails the create with `instance.container_fleet_drift`, `instance.container_fleet_check_failed` or `instance.container_fleet_resume_failed`. `error.detail` names the failed check, with the Doctor body for a readiness wait. The container is kept, as for every failed clone.
 
 A clone keeps the fleet of the seed it copied. A later refresh does not change it.
 
 | Step | Time | Source |
 | --- | --- | --- |
 | ZFS clone of the seed | Under 1 s, measured | The ADR 0250 spike |
+| Create to the copy's start | 14 s, measured | Operation 20109 |
+| Nested containers running after the start, by autostart alone | 34 to 64 s, measured (stopped at 34 s, running at 64 s) | Operation 20109 |
+| Inner Doctor healthy, read inside the nested Gateway | 88 s after admission, measured | Operation 20109, without the fleet step |
 | Fleet start to a healthy Doctor | 31 to 55 s, measured; 54 to 90 s cold, before the fleet rules were in `base` | The first and second inner fleet experiments |
-| Whole create of a nested-fleet clone | Not measured | |
+| Whole create of a nested-fleet clone with the fleet step | Not measured | |
 
 ### Reset
 
@@ -1381,7 +1390,7 @@ Gap: which refusal comes first on a full Node for nested-fleet clones, and its e
 
 ### The fleet step
 
-Six phase task files keep the fleet of a nested-fleet Instance. The deployment of a nested-fleet default calls the check, the start, the refresh and the resume through the tags `fleet_check`, `fleet_start`, `fleet_refresh` and `fleet_resume` of `instance-container.yml`; no flow calls the rules or the reset alone yet. Each one runs on the Node and reaches the inner Incus with `incus exec` into the Instance container. Their input is `intent.container` and `intent.fleet`; the header of `swamp/ansible/tasks/instance-fleet.yml` defines it. The Gateway fills `intent.fleet` (`NestedFleetIntent`) from the fleet constants of task VMs, with the commit of the old seed.
+Six phase task files keep the fleet of a nested-fleet Instance. The deployment of a nested-fleet default calls the check, the start, the refresh and the resume through the tags `fleet_check`, `fleet_start`, `fleet_refresh` and `fleet_resume` of `instance-container.yml`. The create of its clone calls the check and the resume ([A clone starts its fleet](#a-clone-starts-its-fleet)). No flow calls the rules or the reset alone yet. Each one runs on the Node and reaches the inner Incus with `incus exec` into the Instance container. Their input is `intent.container` and `intent.fleet`; the header of `swamp/ansible/tasks/instance-fleet.yml` defines it. The Gateway fills `intent.fleet` (`NestedFleetIntent`) from the fleet constants of task VMs, with the commit of the old seed, for the deployment of the default and the create of its clone.
 
 | Phase | Task file | What it does |
 | --- | --- | --- |
