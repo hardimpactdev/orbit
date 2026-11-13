@@ -641,15 +641,17 @@ jobs:
             hosts:
               - name: target
                 address: ${{ inputs.intent.ssh_execution.target.host }}
+      # Agent and T3 never read the workspace, so they run beside it under their own lock name; a shared name would make Swamp
+      # run them one after another (docs/cli/instance/container/create.mmd). clone-sessions is the join.
       - name: clone-agent
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: clone-workspace, condition: {type: succeeded}}]
+        dependsOn: [{step: clone-container, condition: {type: succeeded}}, {step: clone-club-key, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
         guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
+          behaviorName: '${{ ("ic-clone-t3-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
           methodName: exec
           inputs:
             hosts: name:target
@@ -658,7 +660,7 @@ jobs:
             stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, (inputs.intent.container != null && inputs.intent.container.clone != null ? inputs.execution_secrets.model_environment.key : inputs.execution_secrets.environment.key)) }}'
             timeoutSec: 130
           globalArgs:
-            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+            name: ${{ ("ic-clone-t3-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
             transport:
               kind: ssh
               user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -676,7 +678,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
+          behaviorName: '${{ ("ic-clone-t3-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
           methodName: exec
           inputs:
             hosts: name:target
@@ -685,7 +687,7 @@ jobs:
             stdin: ''
             timeoutSec: 130
           globalArgs:
-            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+            name: ${{ ("ic-clone-t3-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
             transport:
               kind: ssh
               user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -698,7 +700,7 @@ jobs:
       - name: clone-sessions
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: clone-t3, condition: {type: succeeded}}]
+        dependsOn: [{step: clone-t3, condition: {type: succeeded}}, {step: clone-workspace, condition: {type: succeeded}}]
         guard: ${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}
         task:
           type: behavior
