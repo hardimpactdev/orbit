@@ -1,0 +1,109 @@
+id: 709bf433-fbb8-48ea-99f2-2e24759c4697
+name: task-instance-workspace
+description: One internal Node-side task workspace phase; no public task admission.
+queueTimeout: 30
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    node_id: {type: integer, minimum: 1}
+    phase: {type: string, enum: [preflight, before, after, receipt, export, discard]}
+    intent:
+      type: object
+      properties:
+        runtime:
+          type: object
+          properties:
+            project: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$'}
+            name: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$'}
+          required: [project, name]
+          additionalProperties: false
+        branch: {type: string, minLength: 1}
+        head: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
+        snapshot_id: {type: string, format: uuid}
+        checkout_fingerprint:
+          type: object
+          properties:
+            root_device: {type: integer}
+            root_inode: {type: integer}
+            git_device: {type: integer}
+            git_inode: {type: integer}
+            branch: {type: string}
+          required: [root_device, root_inode, git_device, git_inode, branch]
+          additionalProperties: false
+        before_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+        candidate:
+          type: object
+          properties:
+            head: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
+            tree: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
+          required: [head, tree]
+          additionalProperties: false
+        # The shared address-node tasks own the pinned SSH descriptor contract.
+        ssh_execution: {type: object}
+      required: [runtime, branch, head, snapshot_id, ssh_execution]
+      additionalProperties: false
+  required: [node_id, phase, intent]
+  additionalProperties: false
+jobs:
+  - name: workspace
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: '${{ "ansible-input" }}'
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      - name: Run workspace phase
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "task-workspace-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            # No native successful run exists yet: the owning budget rule uses 30 minutes.
+            run: timeout 1800 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASE" "$ORBIT_ANSIBLE/task-instance-workspace.yml"
+            env:
+              ORBIT_PHASE: '${{ inputs.phase }}'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+      - name: evidence
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: Run workspace phase, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-instance-workspace'
+          behaviorName: '${{ "task-workspace-evidence" }}'
+          methodName: result
+          inputs:
+            folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+            phase: '${{ inputs.phase }}'
+      - name: cleanup
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: input, condition: {type: always}}
+          - {step: Run workspace phase, condition: {type: always}}
+          - {step: evidence, condition: {type: always}}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "task-workspace-cleanup" }}'
+          methodName: execute
+          inputs:
+            run: timeout 10 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'

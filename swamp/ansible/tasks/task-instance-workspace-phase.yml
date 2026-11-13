@@ -1,0 +1,280 @@
+---
+# Internal workspace phases. Only this trusted program runs in the guest, as agent.
+# Git snapshots and bounded receipts have no built-in Ansible module.
+- name: Validate the recorded workspace target
+  ansible.builtin.assert:
+    that:
+      - intent.runtime is defined
+      - intent.runtime.project | default('') is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$')
+      - intent.runtime.name | default('') is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$')
+      - intent.snapshot_id | default('') is match('^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$')
+      - intent.branch | default('') | length > 0
+      - intent.head | default('') is match('^[0-9a-f]{40}([0-9a-f]{24})?$')
+      - workspace_phase in ['preflight', 'before', 'after', 'receipt', 'export', 'discard']
+    fail_msg: tasks.workspace_target_invalid
+
+- name: Name the guest boundary
+  ansible.builtin.set_fact:
+    workspace_exec: >-
+      {{ ['incus', '--project', intent.runtime.project, 'exec', '--disable-stdin', '--cwd', '/srv/workspace',
+          intent.runtime.name, '--', '/usr/sbin/runuser', '-u', 'agent', '--', '/usr/bin/env', '-i', 'HOME=/home/agent',
+          'PATH=/usr/local/bin:/usr/bin:/bin', '/usr/bin/python3', '-I', '-c'] }}
+    workspace_guest_program: |
+      # The gap: Git has no module for temporary-index evidence or bound receipts.
+      # This program is visible in the Ansible phase and runs only as agent, never on the Node.
+      import hashlib
+      import json
+      import os
+      import stat
+      import subprocess
+      import sys
+      import tempfile
+      from pathlib import Path
+
+      os.umask(0o077)
+      request = json.loads(sys.argv[2])
+      phase = sys.argv[1]
+      root = Path.cwd()
+      scratch = Path('/tmp/orbit-task-workspace-' + request['snapshot_id'])
+      env = {'HOME': '/home/agent', 'PATH': '/usr/local/bin:/usr/bin:/bin',
+             'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_TERMINAL_PROMPT': '0'}
+      git_argv = ['/usr/bin/git', '--literal-pathspecs', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
+                  '-c', 'core.untrackedCache=false', '-c', 'core.quotePath=false', '-c', 'safe.directory=' + str(root)]
+
+
+      def refuse(code):
+          raise ValueError('tasks.workspace_' + code)
+
+
+      def git(*args, index=None, data=None):
+          local_env = {**env, **({'GIT_INDEX_FILE': str(index)} if index else {})}
+          return subprocess.run(git_argv + list(args), input=data, capture_output=True,
+                                env=local_env, check=True, timeout=60).stdout
+
+
+      def text(*args):
+          return git(*args).decode().strip()
+
+
+      def digest(value):
+          return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+      def read(name):
+          with (scratch / name).open() as stream:
+              return json.load(stream)
+
+
+      def write(name, value):
+          # Immutable evidence: never recapture a snapshot after a replay or replace the original.
+          with (scratch / name).open('x') as stream:
+              json.dump(value, stream, sort_keys=True)
+
+
+      def capture():
+          descriptor, path = tempfile.mkstemp(prefix='index-', dir=scratch)
+          os.close(descriptor)
+          index = Path(path)
+          try:
+              index.unlink()
+              real_index = Path(text('rev-parse', '--git-path', 'index'))
+              raw = real_index.read_bytes() if real_index.exists() else b''
+              if raw:
+                  index.write_bytes(raw)
+              else:
+                  git('read-tree', '--empty', index=index)
+              index_tree = git('write-tree', index=index).decode().strip()
+              # Seed from the real index so force-added ignored paths remain tracked.
+              git('add', '--all', '--', '.', index=index)
+              tree = git('write-tree', index=index).decode().strip()
+              return {'head': text('rev-parse', 'HEAD'), 'tree': tree, 'index_tree': index_tree,
+                      'index_sha256': hashlib.sha256(raw).hexdigest()}
+          finally:
+              index.unlink(missing_ok=True)
+              Path(str(index) + '.lock').unlink(missing_ok=True)
+
+
+      def candidate_matches(before):
+          if request.get('candidate') != {'head': before['head'], 'tree': before['tree']}:
+              refuse('snapshot_mismatch')
+
+
+      def main():
+          git_dir = Path(text('rev-parse', '--absolute-git-dir'))
+          if Path(text('rev-parse', '--show-toplevel')).resolve() != root.resolve():
+              refuse('identity_changed')
+          root_stat, git_stat = root.stat(), git_dir.stat()
+          identity = {'root_device': root_stat.st_dev, 'root_inode': root_stat.st_ino,
+                      'git_device': git_stat.st_dev, 'git_inode': git_stat.st_ino,
+                      'branch': text('symbolic-ref', '--quiet', '--short', 'HEAD')}
+          if identity['branch'] != request['branch']:
+              refuse('identity_changed')
+          head = text('rev-parse', 'HEAD')
+          if phase == 'preflight':
+              if head != request['head']:
+                  refuse('identity_changed')
+              return {'checkout_fingerprint': identity, 'head': head, 'branch': identity['branch'], 'changed': False}
+          if request.get('checkout_fingerprint') != identity:
+              refuse('identity_changed')
+          binding = {'runtime': request['runtime'], 'snapshot_id': request['snapshot_id'], 'checkout_fingerprint': identity}
+          if scratch.exists():
+              if read('binding.json') != binding:
+                  refuse('snapshot_mismatch')
+          elif phase not in ['discard', 'export-cleanup']:
+              scratch.mkdir(mode=0o700)
+              write('binding.json', binding)
+          if phase == 'discard':
+              if scratch.exists():
+                  # This directory contains only our own scratch, never the checkout or a user-selected path.
+                  import shutil
+                  shutil.rmtree(scratch)
+              return {'discarded': True, 'changed': False}
+          if phase in ['export', 'export-cleanup']:
+              bundle = scratch / 'export.bundle'
+              if phase == 'export-cleanup':
+                  bundle.unlink(missing_ok=True)
+                  return {'changed': False}
+              bundle.unlink(missing_ok=True)
+              candidate = request.get('candidate', {})
+              if candidate != {'head': head, 'tree': text('rev-parse', 'HEAD^{tree}')}:
+                  refuse('snapshot_mismatch')
+              try:
+                  git('bundle', 'create', str(bundle), 'refs/heads/' + request['branch'])
+                  git('bundle', 'verify', str(bundle))
+                  with bundle.open('rb') as stream:
+                      checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
+              except (OSError, subprocess.SubprocessError):
+                  bundle.unlink(missing_ok=True)
+                  raise
+              return {'head': head, 'tree': candidate['tree'], 'guest_bundle': str(bundle), 'sha256': checksum, 'changed': False}
+          if phase == 'before':
+              if head != request['head']:
+                  refuse('identity_changed')
+              if not (scratch / 'before.json').exists():
+                  write('before.json', {**binding, **capture()})
+              original = read('before.json')
+              if any(original.get(key) != value for key, value in binding.items()):
+                  refuse('snapshot_mismatch')
+              return {**original, 'digest': digest(original), 'changed': False}
+          before = read('before.json')
+          if any(before.get(key) != value for key, value in binding.items()) or request.get('before_digest') != digest(before):
+              refuse('snapshot_mismatch')
+          if phase == 'after':
+              if not (scratch / 'after.json').exists():
+                  write('after.json', {**binding, 'before_digest': digest(before), **capture()})
+              after = read('after.json')
+              if any(after.get(key) != value for key, value in binding.items()) or after['before_digest'] != digest(before):
+                  refuse('snapshot_mismatch')
+              return {**after, 'digest': digest(after), 'changed': False}
+          candidate_matches(before)
+          if phase == 'receipt':
+              try:
+                  descriptor = os.open(scratch / 'receipt.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                  with os.fdopen(descriptor, 'rb') as stream:
+                      if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                          refuse('receipt_invalid')
+                      raw = stream.read(65537)
+                  if len(raw) > 65536:
+                      refuse('receipt_invalid')
+                  envelope = json.loads(raw.decode('utf-8'))
+                  if (envelope['snapshot_id'] != request['snapshot_id'] or envelope['candidate'] != request['candidate']
+                          or not isinstance(envelope['receipt'], dict)):
+                      refuse('receipt_invalid')
+                  return {'receipt': envelope['receipt'], 'bytes': len(raw), 'changed': False}
+              except (OSError, ValueError, KeyError, TypeError):
+                  refuse('receipt_invalid')
+
+
+      try:
+          print(json.dumps(main()))
+      except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+          code = str(error)
+          print(json.dumps({'error_code': code if code.startswith('tasks.workspace_') and '\n' not in code
+                            else 'tasks.workspace_phase_failed'}))
+          sys.exit(1)
+
+- name: Run the workspace phase as agent
+  ansible.builtin.command:
+    argv: "{{ workspace_exec + [workspace_guest_program, workspace_phase, intent | to_json] }}"
+    expand_argument_vars: false
+    stdin: ''
+    stdin_add_newline: false
+  register: workspace_guest
+  changed_when: (workspace_guest.stdout | from_json).changed | default(false)
+  failed_when: false
+  no_log: true
+
+- name: Check the workspace phase
+  ansible.builtin.assert:
+    that: workspace_guest.rc == 0
+    fail_msg: "{{ (workspace_guest.stdout | from_json).error_code | default('tasks.workspace_phase_failed') }}"
+
+- name: Keep the workspace evidence
+  ansible.builtin.set_fact:
+    workspace_result: "{{ workspace_guest.stdout | from_json }}"
+  no_log: true
+
+- name: Export only the verified branch bundle
+  when: workspace_phase == 'export'
+  block:
+    - name: Create Node-controlled export scratch
+      ansible.builtin.tempfile:
+        state: directory
+        path: /var/tmp
+        prefix: orbit-task-export-
+      register: workspace_export
+      changed_when: false
+    - name: Copy the agent's bundle to the Node
+      ansible.builtin.command:
+        argv: [incus, --project, "{{ intent.runtime.project }}", file, pull,
+               "{{ intent.runtime.name }}{{ workspace_result.guest_bundle }}", "{{ workspace_export.path }}/branch.bundle"]
+        expand_argument_vars: false
+        stdin: ''
+        stdin_add_newline: false
+      changed_when: false
+    - name: Check the transferred bytes on the Node
+      ansible.builtin.stat:
+        path: "{{ workspace_export.path }}/branch.bundle"
+        checksum_algorithm: sha256
+      register: workspace_bundle_stat
+    - name: Verify the transferred bundle checksum
+      ansible.builtin.assert:
+        that: workspace_bundle_stat.stat.checksum == workspace_result.sha256
+        fail_msg: tasks.workspace_phase_failed
+    - name: Return the Node export path
+      ansible.builtin.set_fact:
+        workspace_result: >-
+          {{ workspace_result | combine({'node_scratch': workspace_export.path, 'bundle': workspace_export.path ~ '/branch.bundle'}) }}
+  rescue:
+    - name: Remove the incomplete Node export
+      when: workspace_export.path is defined
+      ansible.builtin.file:
+        path: "{{ workspace_export.path }}"
+        state: absent
+      changed_when: false
+    - name: Refuse the incomplete export
+      ansible.builtin.fail:
+        msg: tasks.workspace_phase_failed
+  always:
+    - name: Remove only the guest export bundle as agent
+      ansible.builtin.command:
+        argv: "{{ workspace_exec + [workspace_guest_program, 'export-cleanup', intent | to_json] }}"
+        expand_argument_vars: false
+        stdin: ''
+        stdin_add_newline: false
+      register: workspace_export_cleanup
+      changed_when: false
+      no_log: true
+
+- name: Record the private workspace result
+  ansible.builtin.copy:
+    content: "{{ workspace_result | to_json }}"
+    dest: "{{ workspace_result_path }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  no_log: true
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"

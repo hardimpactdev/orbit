@@ -171,6 +171,8 @@ additionalFiles:
   - ansible/tasks/task-vm-fleet-tokens.yml
   - ansible/tasks/task-vm-stamp.yml
   - ansible/task-vm-fleet-wait.yml
+  - ansible/task-instance-workspace.yml
+  - ansible/tasks/task-instance-workspace-phase.yml
   - ansible/task-vm-idle-save.yml
   - ansible/shape-gate-requirements.txt
   - ansible/tasks/task-vm-ready.yml
