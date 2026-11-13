@@ -320,6 +320,25 @@ class CloneTest(unittest.TestCase):
         apply = next(i for i, c in enumerate(calls) if c[:2] == ["python3", "-c"] and c[2] == 'print(\'{"status":"unchanged"}\')')
         self.assertTrue(all(copy < calls.index(call) < start < apply for call in pushes))
 
+    def test_the_browser_files_and_an_empty_linker_cache_reach_a_copy_of_an_old_seed_before_its_first_start(self):
+        # A seed taken before the runtime folder had its browser libraries lacks these files. The copy gets them, and an empty
+        # /etc/ld.so.cache, before it starts: the stock ldconfig.service rebuilds an empty cache at that first boot.
+        browser = [
+            {"path": "/etc/ld.so.conf.d/zz-orbit-browser.conf", "uid": 0, "gid": 0, "mode": "0644",
+             "content": "# Managed by Orbit.\n/opt/orbit-runtime/current/lib\n"},
+            {"path": "/etc/fonts/fonts.conf", "uid": 0, "gid": 0, "mode": "0644", "content": "<fontconfig/>\n"},
+            {"path": "/etc/gitconfig", "uid": 0, "gid": 0, "mode": "0644", "content": "[safe]\n\tdirectory = /srv/workspace\n"},
+            {"path": "/etc/ld.so.cache", "uid": 0, "gid": 0, "mode": "0644", "content": ""},
+        ]
+        calls, _, error = self.clone_with({"boot_files": browser})
+        self.assertEqual(error, "")
+        targets = ["instance-7" + item["path"] for item in browser]
+        pushes = [call for call in calls if call[3:5] == ["file", "push"] and call[-1] in targets]
+        self.assertEqual([call[-1] for call in pushes], targets)
+        self.assertEqual([self.inputs[id(call)] for call in pushes], [item["content"] for item in browser])
+        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+        self.assertTrue(all(calls.index(call) < start for call in pushes))
+
     def test_a_running_copy_and_a_clone_without_boot_files_push_none(self):
         running = {"status": "Running", "devices": {"t3": {}}, "config": {"volatile.uuid": "abc-123"},
                    "expanded_devices": {"eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",

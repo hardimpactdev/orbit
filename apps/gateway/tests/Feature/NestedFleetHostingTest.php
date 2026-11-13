@@ -212,8 +212,17 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
             $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'feature', 'checkout_path' => '/test/feature']);
             $runtime = $containers->reserve($instance, $node, $source);
         }
-        expect(json_encode($containers->intent($instance, $runtime), JSON_THROW_ON_ERROR))
-            ->toBe(json_encode(app(BaselineNormalInstanceContainer::class)->intent($instance, $runtime), JSON_THROW_ON_ERROR));
+        $expected = app(BaselineNormalInstanceContainer::class)->intent($instance, $runtime);
+        if ($clone) {
+            // The one change since main: every clone carries the files a seed may lack, before `files` (InstanceContainer::bootFiles).
+            $actual = $containers->intent($instance, $runtime);
+            $files = array_search('files', array_keys($expected['clone']), true);
+            $expected['clone'] = [...array_slice($expected['clone'], 0, $files, true), 'boot_files' => $actual['clone']['boot_files'],
+                ...array_slice($expected['clone'], $files, null, true)];
+            expect(array_column($actual['clone']['boot_files'], 'path'))
+                ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/ld.so.cache']);
+        }
+        expect(json_encode($containers->intent($instance, $runtime), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR));
     })->with([false, true]);
 
     it('admits a normal default create with the same runtime, workspace path and captured container intent', function (): void {
