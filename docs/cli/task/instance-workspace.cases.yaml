@@ -26,5 +26,22 @@ cases:
     path: main
     fails_today: true
     local: Export a real branch bundle, import it locally and compare head/tree. Refuse a wrong candidate; remove partial scratch on a corrupt transfer.
+  - id: check-in-guest-environment
+    path: main
+    fails_today: true
+    local: Run a captured Project check that needs the agent HOME and an installed, ignored dependency marker. Run it in the guest checkout while a Node directory with the same admitted path holds a failing decoy. A fails-on-base command fails on the extracted base with the copied dependencies and passes on the candidate. The production check rules return passed.
+  - id: candidate-includes-staged-ignored-work
+    path: main
+    fails_today: true
+    local: Stage a force-added ignored file before the check. The checked snapshot, the commit tree and the pinned check-operations ref all hold it; the candidate is not changed.
+  - id: check-failure-and-cleanup
+    path: target-or-evidence-differs
+    fails_today: true
+    local: A failed Project check keeps its redacted output, skips deliverables and creates no commit. A changed branch refuses as tasks.workspace_identity_changed. Guest and Node scratch are removed on success and failure.
+  - id: check-admission-container-target
+    path: main
+    fails_today: true
+    local: Admit tasks.check for a group that owns a running container Instance with no task VM. The intent names the recorded project, container, branch and Node; no VM wake or VM row is created. Refuse hosted handoff CI, an @orbit/ci-caches setup step and a stopped runtime before a check row exists. A task VM group keeps its exact intent keys.
 uncovered:
+  - Run the container check through Swamp against the supplied disposable normal Instance, with one file deliverable and one fails-on-base command. No public admission selects it yet.
   - Run these phases through the real transport on the supplied disposable normal Instance, including alternate project and exported bundle head/tree verification. No live operation is authorized by this specification.

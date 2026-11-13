@@ -13,6 +13,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TASKS = ROOT / 'ansible/tasks/task-instance-workspace-phase.yml'
 FIXTURE = json.loads((ROOT / 'tests/fixtures/task-instance-workspace.json').read_text())
+CHECK = FIXTURE['check']
+BEHAVIORS = ROOT / 'extensions/behaviors/operations'
 COMMAND = shutil.which('ansible-playbook') or '/opt/orbit/ansible/venv/bin/ansible-playbook'
 
 # Validate the production Incus boundary, then map the fixed guest cwd to a disposable checkout.
@@ -41,6 +43,10 @@ if args[2] == 'exec':
             ' ' * 12 + "git('bundle', 'create',", 1)
     result = subprocess.run([sys.executable, *args[17:]], cwd=os.environ['T1_GUEST'], env={**os.environ}, check=False)
     sys.exit(result.returncode)
+elif args[4] == '--recursive':
+    assert len(args) == 7 and args[5].startswith('proof-instance/tmp/orbit-task-workspace-'), args
+    source = '/' + args[5].split('/', 1)[1]
+    shutil.copytree(source, os.path.join(args[6], os.path.basename(source)))
 else:
     assert len(args) == 6 and args[4].startswith('proof-instance/tmp/orbit-task-workspace-'), args
     shutil.copyfile('/' + args[4].split('/', 1)[1], args[5])
@@ -87,14 +93,15 @@ class TaskInstanceWorkspaceTest(unittest.TestCase):
         return subprocess.run(['git', *args], cwd=cwd or self.checkout, check=True, capture_output=True,
                               env={**os.environ, **FIXTURE['git_env']}).stdout.decode().strip()
 
-    def phase(self, phase, intent=None, ok=True, corrupt=False, different_owner=False, move_to=None, cleanup_fail=False):
+    def phase(self, phase, intent=None, ok=True, corrupt=False, different_owner=False, move_to=None, cleanup_fail=False,
+              result_path=None):
         variables = self.root / 'vars.json'
-        result_path = self.root / 'result.json'
+        result_path = result_path or self.root / 'result.json'
         result_path.unlink(missing_ok=True)
         variables.write_text(json.dumps({'intent': intent or self.intent, 'workspace_phase': phase,
                                          'workspace_result_path': str(result_path)}))
         result = subprocess.run([COMMAND, '-i', 'localhost,', '-e', '@' + str(variables), str(self.play)],
-            capture_output=True, text=True, check=False, timeout=60,
+            capture_output=True, text=True, check=False, timeout=120,
             env={**os.environ, 'PATH': str(self.bin) + ':' + os.environ['PATH'], 'T1_GUEST': str(self.checkout),
                  'T1_CALLS': str(self.calls), 'T1_CORRUPT': '1' if corrupt else '0',
                  'T1_ASSUME_DIFFERENT_OWNER': '1' if different_owner else '0',
@@ -331,6 +338,257 @@ class TaskInstanceWorkspaceTest(unittest.TestCase):
         bad = copy.deepcopy(self.intent)
         bad['candidate']['tree'] = '0' * 40
         self.assertIn('tasks.workspace_snapshot_mismatch', self.phase('export', bad, ok=False))
+
+
+# Run the production check rules on the evidence: the same TypeScript that judges a task VM check.
+RUNNER = """
+const [module, method, file] = Deno.args;
+const { behavior } = await import(module);
+const args = JSON.parse(await Deno.readTextFile(file));
+const value = await behavior.methods[method].execute(args, {writeResource: async (_spec, _name, value) => value});
+console.log(JSON.stringify(value.dataHandles ? value.dataHandles[0] : value));
+"""
+# Evaluate one workflow expression with the pinned CEL engine, as Swamp evaluates it, against the real step outputs.
+CEL = """
+import { parse } from "jsr:@std/yaml@1.0.12";
+import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
+const [workflow, name, field, file] = Deno.args;
+const flow = parse(await Deno.readTextFile(workflow));
+const step = flow.jobs.flatMap((job) => job.steps).find((item) => item.name === name);
+const raw = field === "guard" ? step.guard : field === "expr" ? step.task.expr : field === "workflow" ? step.task.workflowIdOrName : step.task.inputs[field];
+const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false });
+const expression = typeof raw === "string" && raw.startsWith("${{") ? raw.slice(3, -2).trim() : field === "expr" ? raw : null;
+const value = expression === null ? raw : cel.evaluate(expression, JSON.parse(await Deno.readTextFile(file)));
+console.log(JSON.stringify({ value }, (_key, item) => typeof item === "bigint" ? Number(item) : item));
+"""
+CHILD = ROOT / 'workflows/workflow-task-instance-check.yaml'
+PARENT = ROOT / 'workflows/workflow-operation-task-check.yaml'
+
+
+class TaskInstanceCheckTest(unittest.TestCase):
+    """The container check child: production Ansible phases, real Git and the production TypeScript check rules."""
+
+    git = TaskInstanceWorkspaceTest.git
+    phase = TaskInstanceWorkspaceTest.phase
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='t2-local-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.bin = self.root / 'bin'
+        self.bin.mkdir()
+        (self.bin / 'incus').write_text(SHIM)
+        (self.bin / 'incus').chmod(0o755)
+        self.calls = self.root / 'calls.jsonl'
+        self.snapshot_id = str(uuid.uuid4())
+        self.scratch = Path('/tmp/orbit-task-workspace-' + self.snapshot_id)
+        self.addCleanup(shutil.rmtree, self.scratch, True)
+        self.play = self.root / 'play.yml'
+        self.play.write_text(json.dumps([{'name': 'Exercise the production phase', 'hosts': 'localhost', 'connection': 'local',
+            'gather_facts': False, 'tasks': [{'name': 'Run workspace phase', 'ansible.builtin.import_tasks': str(TASKS)}]}]))
+        self.node_scratch = set(Path('/var/tmp').glob('orbit-task-check-*'))
+        self.checkout = self.root / 'instance'
+        self.checkout.mkdir()
+        self.git('init', '--quiet', '--initial-branch=' + FIXTURE['branch'])
+        for name, content in CHECK['base_files'].items():
+            (self.checkout / name).write_text(content)
+        self.git('add', '--all')
+        self.git('commit', '--quiet', '-m', 'Captured check base')
+        self.base = self.git('rev-parse', 'HEAD')
+        self.assertEqual(self.base, CHECK['expected']['base_head'])
+        for files in [CHECK['candidate_files'], CHECK['installed'], CHECK['force_added']]:
+            for name, content in files.items():
+                (self.checkout / name).parent.mkdir(parents=True, exist_ok=True)
+                (self.checkout / name).write_text(content)
+        self.git('add', '-f', *CHECK['force_added'])
+        # A Node directory at the admitted checkout path: it has no dependencies and a passing decoy test.
+        self.decoy = self.root / 'node-checkout'
+        for name, content in CHECK['decoy'].items():
+            (self.decoy / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.decoy / name).write_text(content)
+        self.check = copy.deepcopy(CHECK['intent'])
+        self.check['base'] = self.base
+        self.check['workspace']['snapshot_id'] = self.snapshot_id
+        self.run_id = str(uuid.uuid4())
+        self.folder = Path('/tmp/orbit-ansible-' + self.run_id)
+        self.folder.mkdir(mode=0o700)
+        self.addCleanup(shutil.rmtree, self.folder, True)
+        (self.root / 'runner.ts').write_text(RUNNER)
+        (self.root / 'cel.ts').write_text(CEL)
+        self.steps = {}
+
+    def cel(self, step, field, workflow=CHILD, check=None, steps=None):
+        file = self.root / 'cel-context.json'
+        file.write_text(json.dumps({'inputs': {'operation_id': CHECK['operation_id'], 'node_id': (check or self.check)['node_id'],
+                                               'kind': 'tasks.check', 'intent': check or self.check, 'execution_secrets': {},
+                                               'run_id': self.run_id},
+                                    'steps': self.steps if steps is None else steps, 'run': {'id': self.run_id}}))
+        done = subprocess.run(['deno', 'run', '-A', str(self.root / 'cel.ts'), str(workflow), step, field, str(file)],
+                              capture_output=True, text=True, check=False, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        return json.loads(done.stdout)['value']
+
+    def ran(self, step, outputs):
+        self.steps[step] = {'outputs': outputs}
+        return outputs
+
+    def write_input(self, step):
+        """The production ansible-input step: its CEL intent, written where the playbook reads it."""
+        self.assertEqual(self.cel(step, 'path'), str(self.folder / 'intent.json'))
+        return self.cel(step, 'intent')
+
+    def ansible_intent(self, check=None, **extra):
+        check = check or self.check
+        workspace = check['workspace']
+        return {'runtime': workspace['runtime'], 'branch': workspace['branch'], 'snapshot_id': workspace['snapshot_id'],
+                'operation_id': CHECK['operation_id'], 'ssh_execution': check['ssh_execution'], 'check': check, **extra}
+
+    def behavior(self, module, method, args):
+        file = self.root / ('args-' + method + '.json')
+        file.write_text(json.dumps(args))
+        done = subprocess.run(['deno', 'run', '-A', str(self.root / 'runner.ts'), (BEHAVIORS / module).as_uri(), method, str(file)],
+                              capture_output=True, text=True, check=False, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        return json.loads(done.stdout)
+
+    def run_phase(self, phase, intent, ok=True):
+        return self.phase(phase, intent, ok=ok, result_path=self.folder / 'result.json')
+
+    def evidence(self, phase):
+        return self.behavior('task-instance-workspace/assets.ts', 'result', {'folder': str(self.folder), 'phase': phase})['evidence']
+
+    def checked(self):
+        """The child workflow's chain, wired by its own CEL: prepare, check phase, typed evidence and the production local rules."""
+        self.assertFalse(self.cel('Check in the Instance', 'guard', PARENT))
+        self.assertTrue(self.cel('Build every argv', 'guard', PARENT))
+        self.assertTrue(self.cel('Push the candidate', 'guard', PARENT))
+        self.assertEqual(self.cel('Check in the Instance', 'workflow', PARENT), 'task-instance-check')
+        prepared = self.ran('prepare', self.behavior('task-repository/check.ts', 'prepare', {
+            'intent': self.check, 'node_id': self.check['node_id'], 'root': self.cel('prepare', 'root')}))
+        self.assertTrue(prepared['valid'], prepared)
+        self.assertFalse(self.cel('input', 'guard'))
+        intent = self.write_input('input')
+        self.assertEqual(intent, self.ansible_intent())
+        _, output = self.run_phase('check', intent)
+        self.assertIn('changed=0', output)
+        evidence = self.ran('checked', self.behavior('task-instance-workspace/assets.ts', 'result',
+                                                     {'folder': self.cel('checked', 'folder'), 'phase': self.cel('checked', 'phase')}))['evidence']
+        self.assertEqual(self.cel('local', 'outputs'), str(self.folder / 'output'))
+        local = self.ran('local', self.behavior('task-repository/check.ts', 'local', {
+            'intent': self.check, 'prepared': self.cel('local', 'prepared'), 'steps': self.cel('local', 'steps'),
+            'outputs': self.cel('local', 'outputs')}))
+        return evidence, local['result']
+
+    def finished(self):
+        """The candidate, pin and finish steps by their CEL, then the parent's result read and end check."""
+        if not self.cel('Commit the candidate', 'guard'):
+            _, output = self.run_phase('commit', self.write_input('input'))
+            self.assertIn('changed=1', output)
+            self.ran('committed', self.behavior('task-instance-workspace/assets.ts', 'result', {'folder': str(self.folder), 'phase': 'commit'}))
+        candidate = self.ran('candidate', self.behavior('task-repository/check.ts', 'candidate', {
+            'intent': self.check, 'local': self.cel('candidate', 'local'), 'steps': self.cel('candidate', 'steps')}))['result']
+        if not self.cel('pin input', 'guard'):
+            self.run_phase('commit-ref', self.write_input('pin input'))
+            self.ran('pinned', self.behavior('task-instance-workspace/assets.ts', 'result', {'folder': str(self.folder), 'phase': 'commit-ref'}))
+        finish = self.behavior('task-repository/check.ts', 'finish', {'intent': self.check, 'local': self.cel('finish', 'local'),
+                                                                       'steps': self.cel('finish', 'steps')})
+        parent = {'Check in the Instance': {'outputs': {'finish': finish}}}
+        self.assertEqual(self.cel('Read the result', 'result_json', PARENT, steps=parent), finish['result_json'])
+        self.assertEqual(self.cel('Check the result', 'expr', PARENT, steps=parent), 'error_code' not in finish['result'])
+        return candidate, finish
+
+    def test_check_runs_in_the_guest_and_commits_the_exact_candidate(self):
+        index = (self.checkout / '.git/index').read_bytes()
+        self.check['checkout_path'] = str(self.decoy)
+        evidence, local = self.checked()
+        self.assertEqual(local['outcome'], 'passed', local)
+        self.assertEqual(local['exit_code'], 0)
+        self.assertIn(CHECK['expected']['project_output'], local['output'])
+        self.assertEqual(local['head_before'], self.base)
+        self.assertEqual(local['head'], self.base)
+        self.assertEqual(local['subtask_start_commit'], self.base)
+        self.assertEqual(local['tree'], CHECK['expected']['candidate_tree'])
+        self.assertEqual(self.git('ls-tree', '-r', local['tree']), CHECK['expected']['ls_tree'].strip())
+        self.assertEqual(self.git('show', local['tree'] + ':ignored/staged.txt'), 'staged ignored work')
+        self.assertEqual([item['outcome'] for item in local['deliverables']], ['passed', 'passed'], local['deliverables'])
+        feature = local['evidence']['commands']['feature']
+        self.assertEqual((feature['exit_code'], feature['base_started'], feature['base_exit_code']), (0, True, 1), feature)
+        self.assertEqual(local['evidence']['diff'], [{'path': 'app.txt', 'status': 'M'}, {'path': 'ignored/staged.txt', 'status': 'A'},
+                                                     {'path': 'tests/feature.sh', 'status': 'A'}])
+        # Output files were read, redacted and deleted; evidence carries no command output.
+        self.assertEqual(list((self.folder / 'output').iterdir()), [])
+        self.assertNotIn('checked new', json.dumps(evidence))
+        self.assertFalse(self.scratch.exists(), 'guest check scratch leaked')
+        self.assertEqual(set(Path('/var/tmp').glob('orbit-task-check-*')), self.node_scratch, 'Node output scratch leaked')
+        self.assertEqual((self.checkout / '.git/index').read_bytes(), index)
+        self.assertEqual((self.decoy / 'app.txt').read_text(), 'decoy\n')
+        calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
+        self.assertTrue(all(str(self.decoy) not in json.dumps(call[:19]) for call in calls))
+        self.assertTrue(all(call[2:4] in (['exec', '--disable-stdin'], ['file', 'pull']) for call in calls), calls)
+
+        candidate, finish = self.finished()
+        self.assertEqual(candidate['outcome'], 'passed', candidate)
+        self.assertEqual(self.git('rev-parse', candidate['commit'] + '^{tree}'), local['tree'])
+        self.assertEqual(self.git('rev-parse', candidate['commit'] + '^'), self.base)
+        self.assertEqual(self.git('log', '-1', '--format=%an <%ae>%n%B', candidate['commit']),
+                         'Orbit <orbit@users.noreply.github.com>\n' + self.check['message'].strip())
+        ref = 'refs/orbit/check-operations/' + str(CHECK['operation_id'])
+        self.assertEqual(self.steps['pinned']['outputs']['evidence'], {'ref': ref, 'commit': candidate['commit'], 'changed': True})
+        self.assertEqual(self.git('rev-parse', ref), candidate['commit'])
+        self.assertEqual(finish['pending'], False)
+        self.assertEqual(json.loads(finish['result_json']), candidate)
+        self.assertEqual(self.git('status', '--porcelain=v1'), '')
+
+    def test_failed_setup_keeps_output_skips_the_check_and_commits_nothing(self):
+        self.check.update({'phase': 'baseline', 'base': '', 'deliverables': [], 'command_deliverables': [],
+                           'setup': [{'name': 'install', 'command': "echo 'dependency missing'; exit 4", 'timeout_seconds': 60}]})
+        head = self.git('rev-parse', 'HEAD')
+        _, local = self.checked()
+        self.assertEqual((local['outcome'], local['exit_code'], local['failed_step']), ('failed', 4, 'install'), local)
+        _, finish = self.finished()
+        self.assertNotIn('committed', self.steps)
+        self.assertNotIn('pinned', self.steps)
+        self.assertEqual(json.loads(finish['result_json']), local)
+        self.assertIn('dependency missing', local['output'])
+        self.assertEqual(local['subtask_start_commit'], head)
+        self.assertIsNone(local['evidence'])
+        steps = self.evidence('check')['check']['steps']
+        self.assertNotIn('project', steps)
+        self.assertFalse(self.scratch.exists())
+        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+
+    def test_a_moved_branch_refuses_before_any_command_and_leaves_no_scratch(self):
+        self.git('checkout', '--quiet', '-b', 'user-branch')
+        self.ran('prepare', self.behavior('task-repository/check.ts', 'prepare', {
+            'intent': self.check, 'node_id': self.check['node_id'], 'root': self.cel('prepare', 'root')}))
+        output = self.run_phase('check', self.write_input('input'), ok=False)
+        self.assertIn('tasks.workspace_identity_changed', output)
+        # The entry playbook records the refusal; the child turns it into the check's error receipt.
+        (self.folder / 'result.json').write_text(json.dumps({'error_code': 'tasks.workspace_identity_changed'}))
+        self.ran('checked', self.behavior('task-instance-workspace/assets.ts', 'result', {'folder': str(self.folder), 'phase': 'check'}))
+        local = self.ran('local', self.behavior('task-repository/check.ts', 'local', {
+            'intent': self.check, 'prepared': self.cel('local', 'prepared'), 'steps': self.cel('local', 'steps'),
+            'outputs': self.cel('local', 'outputs')}))['result']
+        self.assertEqual(local, {'error_code': 'tasks.workspace_identity_changed', 'check_id': self.check['check_id']})
+        _, finish = self.finished()
+        self.assertEqual(json.loads(finish['result_json']), local)
+        self.assertNotIn('checked', output)
+        self.assertFalse(self.scratch.exists())
+        self.assertFalse((self.folder / 'output').exists())
+
+    def test_task_vm_intents_keep_the_task_vm_steps(self):
+        vm = {key: value for key, value in self.check.items() if key != 'workspace'}
+        self.assertTrue(self.cel('Check in the Instance', 'guard', PARENT, check=vm))
+        self.assertFalse(self.cel('Build every argv', 'guard', PARENT, check=vm))
+        self.assertFalse(self.cel('Push the candidate', 'guard', PARENT, check=vm))
+        self.assertEqual(self.cel('Push the candidate', 'workflow', PARENT, check=vm), 'task-check-push')
+
+    def test_check_phases_need_their_check_and_candidate(self):
+        intent = self.ansible_intent()
+        del intent['check']
+        self.assertIn('tasks.workspace_target_invalid', self.run_phase('check', intent, ok=False))
+        self.assertIn('tasks.workspace_target_invalid', self.run_phase('commit-ref', self.ansible_intent(), ok=False))
+        self.assertFalse(self.calls.exists(), 'an invalid check contacted the transport')
 
 
 if __name__ == '__main__':

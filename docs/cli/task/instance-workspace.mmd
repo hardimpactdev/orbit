@@ -14,6 +14,7 @@ sequenceDiagram
   %%> - preflight returns the checkout identity; later calls must match it
   %%> Phases:
   %%> - preflight, before, after, receipt, export or discard
+  %%> - check, commit or commit-ref, only from the task check child; they need no expected head
   %%> - Ansible runs workspace commands as agent in /srv/workspace; Incus stdin is closed
   alt target or evidence differs
     N-->>SW: Refuse the phase
@@ -21,6 +22,7 @@ sequenceDiagram
   else phase succeeds
     N-->>SW: Return bound evidence
     %%> Snapshot trees use a temporary index. Export leaves a verified bundle in Node-owned scratch for its caller.
+    %%> A check returns exit codes and Git evidence; its command output reaches only the private worker folder.
   end
   Note over SW: Remove worker scratch
   %%> Native cleanup follows success or failure. The parent discards guest snapshots only after all work that uses them has stopped, and removes the exported Node scratch after use.

@@ -1,0 +1,244 @@
+id: 7f6de06c-8f84-400c-9c26-8273b8b24773
+name: task-instance-check
+description: Run one task check in its container Instance through Ansible phases on the Instance Node; the task check rules judge the evidence.
+queueTimeout: 30
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    intent:
+      type: object
+      properties:
+        # The recorded guest target; the Gateway admits it only for a container Instance workspace.
+        workspace:
+          type: object
+          properties:
+            runtime:
+              type: object
+              properties:
+                project: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$'}
+                name: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$'}
+              required: [project, name]
+              additionalProperties: false
+            branch: {type: string, minLength: 1}
+            snapshot_id: {type: string, format: uuid}
+          required: [runtime, branch, snapshot_id]
+          additionalProperties: false
+      required: [workspace]
+    # A container check mints no token: hosted CI is refused at admission.
+    execution_secrets: {type: object, additionalProperties: false}
+    run_id: {type: string}
+  required: [operation_id, node_id, kind, intent, execution_secrets, run_id]
+  additionalProperties: false
+jobs:
+  - name: check
+    labels: {role: swamp}
+    steps:
+      - name: prepare
+        labels: {role: swamp}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-check-data'
+          behaviorName: '${{ "task-instance-check-prepare-" + string(inputs.node_id) }}'
+          methodName: prepare
+          inputs:
+            # Only its validation is used: the guest phase builds the agent's own commands.
+            intent: '${{ inputs.intent }}'
+            node_id: '${{ inputs.node_id }}'
+            root: '${{ "/tmp/orbit-task-workspace-" + inputs.intent.workspace.snapshot_id }}'
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: prepare, condition: {type: succeeded}}]
+        guard: '${{ !steps.prepare.outputs.valid }}'
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: '${{ "ansible-input" }}'
+          methodName: write
+          inputs:
+            intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "snapshot_id": inputs.intent.workspace.snapshot_id, "operation_id": inputs.operation_id, "ssh_execution": inputs.intent.ssh_execution, "check": inputs.intent} }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      - name: Run the check
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        guard: '${{ !steps.prepare.outputs.valid }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "task-instance-check-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            # No native successful run exists yet. The guest bounds each command as the task VM steps do
+            # (setup by its own limit, Project and deliverables 3600 s, start-commit runs 600 s); this covers them.
+            run: timeout 10800 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags check "$ORBIT_ANSIBLE/task-instance-workspace.yml"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+      - name: checked
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: Run the check, condition: {type: always}}]
+        guard: '${{ !steps.prepare.outputs.valid }}'
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-instance-workspace'
+          behaviorName: '${{ "task-instance-check-evidence" }}'
+          methodName: result
+          inputs:
+            folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+            phase: check
+      - name: local
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: prepare, condition: {type: succeeded}}
+          - {step: checked, condition: {type: always}}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-check-data'
+          behaviorName: '${{ "task-instance-check-local-" + string(inputs.node_id) }}'
+          methodName: local
+          inputs:
+            intent: '${{ inputs.intent }}'
+            # An invalid intent keeps its own refusal; a failed phase returns its workspace code.
+            prepared: '${{ !steps.prepare.outputs.valid || ("checked" in steps && "outputs" in steps.checked && "check" in steps.checked.outputs.evidence) ? steps.prepare.outputs : {"error_code": "checked" in steps && "outputs" in steps.checked && "error_code" in steps.checked.outputs.evidence ? steps.checked.outputs.evidence.error_code : "tasks.repository_execution_unknown"} }}'
+            steps: '${{ "checked" in steps && "outputs" in steps.checked && "check" in steps.checked.outputs.evidence ? steps.checked.outputs.evidence.check.steps : {} }}'
+            outputs: '${{ "/tmp/orbit-ansible-" + run.id + "/output" }}'
+      - name: Commit the candidate
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: local, condition: {type: succeeded}}]
+        guard: '${{ !("local" in steps && "outputs" in steps.local) || "error_code" in steps.local.outputs.result || steps.local.outputs.result.outcome != "passed" || inputs.intent.phase != "handoff" }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "task-instance-check-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags commit "$ORBIT_ANSIBLE/task-instance-workspace.yml"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+      - name: committed
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: Commit the candidate, condition: {type: always}}]
+        guard: '${{ !("local" in steps && "outputs" in steps.local) || "error_code" in steps.local.outputs.result || steps.local.outputs.result.outcome != "passed" || inputs.intent.phase != "handoff" }}'
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-instance-workspace'
+          behaviorName: '${{ "task-instance-check-evidence" }}'
+          methodName: result
+          inputs:
+            folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+            phase: commit
+      - name: candidate
+        labels: {role: swamp}
+        dependsOn:
+          - {step: local, condition: {type: succeeded}}
+          - {step: committed, condition: {type: always}}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-check-data'
+          behaviorName: '${{ "task-instance-check-candidate-" + string(inputs.node_id) }}'
+          methodName: candidate
+          inputs:
+            intent: '${{ inputs.intent }}'
+            local: '${{ steps.local.outputs.result }}'
+            steps: '${{ "committed" in steps && "outputs" in steps.committed && "commit_read" in steps.committed.outputs.evidence ? {"commit_read": {"outputs": steps.committed.outputs.evidence.commit_read}} : {} }}'
+      - name: pin input
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: candidate, condition: {type: succeeded}}]
+        guard: '${{ !("candidate" in steps && "outputs" in steps.candidate) || !("commit" in steps.candidate.outputs.result) || steps.candidate.outputs.result.commit == null || "error_code" in steps.candidate.outputs.result }}'
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: '${{ "ansible-input" }}'
+          methodName: write
+          inputs:
+            intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "snapshot_id": inputs.intent.workspace.snapshot_id, "operation_id": inputs.operation_id, "ssh_execution": inputs.intent.ssh_execution, "candidate_commit": steps.candidate.outputs.result.commit} }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      - name: Pin the candidate
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: pin input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "task-instance-check-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags commit-ref "$ORBIT_ANSIBLE/task-instance-workspace.yml"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps["pin input"].outputs.assets }}'
+              ANSIBLE_CONFIG: '${{ steps["pin input"].outputs.assets + "/ansible.cfg" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+      - name: pinned
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: pin input, condition: {type: succeeded}}
+          - {step: Pin the candidate, condition: {type: always}}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-instance-workspace'
+          behaviorName: '${{ "task-instance-check-evidence" }}'
+          methodName: result
+          inputs:
+            folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+            phase: commit-ref
+      - name: finish
+        labels: {role: swamp}
+        dependsOn:
+          - {step: local, condition: {type: always}}
+          - {step: candidate, condition: {type: always}}
+          - {step: pinned, condition: {type: always}}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-check-data'
+          behaviorName: '${{ "task-instance-check-finish-" + string(inputs.node_id) }}'
+          methodName: finish
+          inputs:
+            intent: '${{ inputs.intent }}'
+            # The receipt: the candidate result, unless a missing step or an unpinned commit leaves the run unknown.
+            local: '${{ "candidate" in steps && "outputs" in steps.candidate && (!("commit" in steps.candidate.outputs.result) || steps.candidate.outputs.result.commit == null || "error_code" in steps.candidate.outputs.result || ("pinned" in steps && "outputs" in steps.pinned && "ref" in steps.pinned.outputs.evidence)) ? steps.candidate.outputs.result : ("local" in steps && "outputs" in steps.local && !("candidate" in steps && "outputs" in steps.candidate) && "error_code" in steps.local.outputs.result ? steps.local.outputs.result : {"error_code": "tasks.repository_execution_unknown", "check_id": inputs.intent.check_id}) }}'
+            steps: {}
+      - name: cleanup
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: input, condition: {type: always}}
+          - {step: Run the check, condition: {type: always}}
+          - {step: checked, condition: {type: always}}
+          - {step: local, condition: {type: always}}
+          - {step: Commit the candidate, condition: {type: always}}
+          - {step: committed, condition: {type: always}}
+          - {step: Pin the candidate, condition: {type: always}}
+          - {step: pinned, condition: {type: always}}
+          - {step: finish, condition: {type: always}}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "task-instance-check-cleanup" }}'
+          methodName: execute
+          inputs:
+            run: timeout 10 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'

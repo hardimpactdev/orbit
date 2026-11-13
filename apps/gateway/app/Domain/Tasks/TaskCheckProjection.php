@@ -117,14 +117,15 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
     }
 
     /**
-     * Root runs capture the push producer receipt. Scheduled observations supply their typed row result.
+     * Root runs capture the push producer receipt, or the Instance check receipt for a container workspace. Scheduled
+     * observations supply their typed row result.
      *
      * @param  array<string,mixed>  $result
      * @return array<string,mixed>
      */
     private static function receipt(array $result): array
     {
-        $captured = $result['receipt'] ?? null;
+        $captured = $result['receipt'] ?? $result['instance_receipt'] ?? null;
         if (is_array($captured) && is_string($captured['result_json'] ?? null)) {
             return ValidatedData::object(json_decode($captured['result_json'], true, flags: JSON_THROW_ON_ERROR));
         }
