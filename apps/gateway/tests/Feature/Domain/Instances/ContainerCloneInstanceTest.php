@@ -444,6 +444,21 @@ it('never copies the default\'s Reverb app keys or a copy of its secret into a c
         ->and(json_encode($operation->input))->not->toContain('reverb-secret-value');
 });
 
+it('starts a clone that a Gateway admitted before the merge names existed, with no names: the clone writes the render', function (): void {
+    $node = containerDefaultNode();
+    $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
+    $input = $operation->input;
+    unset($input['environment_clone']);
+    $operation->update(['input' => $input]);
+    $vault = vaultReadingSocket([]);
+
+    app(DevelopmentInstanceCreateProjection::class)->input($operation->fresh());
+    $workspace = json_decode(collect($vault->puts)->firstWhere('key', 'instance-create-processes-'.$operation->id)['value'], true, 512, JSON_THROW_ON_ERROR);
+
+    expect($workspace)->toHaveKey('merge')->and($workspace['merge'])->toBeNull()
+        ->and($workspace['environment'])->toBe(collect($vault->puts)->firstWhere('key', 'instance-create-environment-input-'.$operation->id)['value']);
+});
+
 it('sends no merge names for a container default, which has no seed copy to keep', function (): void {
     $node = containerDefaultNode();
     $operation = containerCreate(containerDefaultProject(), $node, 'default');

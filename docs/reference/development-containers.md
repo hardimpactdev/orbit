@@ -675,7 +675,7 @@ The default's connection keys are `<PREFIX>_CONNECTION`, `_HOST`, `_PORT`, `_DAT
 
 A copy of a credential is a key whose value equals the default's database name, user name or password under an attached prefix, or its Reverb secret. A Redis database number is no credential. A key whose value contains such a password, for example `DATABASE_URL`, is a copy too, and so is a comment line that holds one. The check runs inside the clone, against the copied file.
 
-Keys of the render that the default's file lacks are added. `APP_KEY` comes from the default's file, because the cloned database holds data encrypted with it. When the default has no `.env` in its seed, the render is the file, as for any new Instance.
+Keys of the render that the default's file lacks are added. `APP_KEY` comes from the default's file, because the cloned database holds data encrypted with it. When the default has no `.env` in its seed, the render is the file, as for any new Instance. A create that an earlier Gateway release admitted carries no key names; its clone also gets the render as the file.
 
 Only key names leave the container. The Gateway sends the names of the three groups with the render. The Operation result names the keys the clone copied, `environment.copied`, and the keys it dropped, `environment.dropped`. No value enters an argument, a result or a log.
 

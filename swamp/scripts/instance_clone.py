@@ -518,7 +518,8 @@ def main():
         workspace = json.loads(secret)
         environment = workspace["environment"]
         processes = workspace["processes"]
-        merge = workspace["merge"]
+        # A value framed before the merge names existed has none; the guest then writes the render.
+        merge = workspace.get("merge")
         git = [
             "git",
             "-c",

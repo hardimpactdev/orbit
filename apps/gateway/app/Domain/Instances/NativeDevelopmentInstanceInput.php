@@ -57,7 +57,8 @@ final readonly class NativeDevelopmentInstanceInput
         if ($container !== null && (ValidatedData::object($container)['clone'] ?? null) !== null) {
             $processEnvironments = json_encode(['environment' => $environment->content($instance),
                 'processes' => json_decode(ValidatedData::string($processEnvironments), false, 512, JSON_THROW_ON_ERROR),
-                'merge' => ValidatedData::object($input['environment_clone'])], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+                // A create admitted before `environment_clone` existed has none: the clone writes the render as before.
+                'merge' => isset($input['environment_clone']) ? ValidatedData::object($input['environment_clone']) : null], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         }
 
         $testing = $environment->testing($instance);

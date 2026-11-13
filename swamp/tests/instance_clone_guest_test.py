@@ -111,6 +111,10 @@ class CloneEnvironmentMergeTest(unittest.TestCase):
         for base in ("", "\n"):
             self.assertEqual(GUEST.merge_environment(base, CLONE_RENDER, CLONE_MERGE), (CLONE_RENDER, [], []))
 
+    def test_without_merge_names_the_render_is_the_file_byte_for_byte(self):
+        # A create that a Gateway admitted before the merge names existed, run by this script.
+        self.assertEqual(GUEST.merge_environment(DEFAULT_ENV, CLONE_RENDER, None), (CLONE_RENDER, [], []))
+
     def test_a_default_without_hand_set_keys_gives_the_render_values(self):
         render = 'APP_NAME="Tool"\nAPP_KEY="base64:k"\nDB_DATABASE="orbit_instance_9"\n'
         base = 'APP_NAME="Tool"\nAPP_KEY="base64:k"\nDB_DATABASE="tool_default"\n'
@@ -219,11 +223,19 @@ class CloneGuestTest(unittest.TestCase):
                     self.assertEqual(connection.close.call_count, 1 if error else 2)
 
     def test_workspace_forwards_one_json_vault_value_without_printing_secrets(self):
+        for merged in (True, False):
+            with self.subTest(merge=merged):
+                self.forward_workspace(merged)
+
+    def forward_workspace(self, merged):
         payload = {
             "environment": "KEY=private\n--orbit-run-1--\n",
             "processes": {"/etc/orbit/processes/1/env": "QUEUE=private\n"},
             "merge": {"own": ["DB_DATABASE"], "drop": ["DB_PASSWORD"], "guard": ["DB_PASSWORD"]},
         }
+        if not merged:
+            # A value framed by a Gateway before the merge names existed.
+            del payload["merge"]
         calls = []
         elapsed = [0.0]
         timeouts = []
@@ -273,7 +285,7 @@ class CloneGuestTest(unittest.TestCase):
             delivered = [
                 json.loads(content) for argv, content in calls if "exec" in argv
             ]
-            self.assertEqual(delivered, [payload])
+            self.assertEqual(delivered, [payload if merged else {**payload, "merge": None}])
             self.assertEqual(timeouts[-1], 105)
             self.assertEqual(elapsed[0], 111)
 
@@ -506,6 +518,42 @@ class CloneGuestTest(unittest.TestCase):
             self.assertNotIn("env\\n", output.getvalue())
             self.assertFalse((base / "etc/orbit/php").exists())
             self.assertEqual(helper_timeouts, [75])
+
+    def test_workspace_without_merge_names_writes_the_render_as_before(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            (base / "srv/workspace/.git").mkdir(parents=True)
+            env = base / "srv/workspace/.env"
+            env.write_text(DEFAULT_ENV)
+            container = {
+                "workspace": "/srv/workspace",
+                "branch": "proof",
+                "expected_commit": "abc123",
+                "bundle": "/tmp/proof.bundle",
+                "php": None,
+                "environment_file": "/srv/workspace/.env",
+                "units": [],
+                "processes": [],
+            }
+
+            def command(argv, **_kwargs):
+                if "/usr/local/libexec/orbit-instance-node-runtime.py" in argv:
+                    return subprocess.CompletedProcess(argv, 0, '{"status":"unchanged"}', "")
+                value = "proof\n" if "symbolic-ref" in argv else "abc123\n"
+                return subprocess.CompletedProcess(argv, 0, value, "")
+
+            output = io.StringIO()
+            with (
+                patch.object(GUEST.pathlib, "Path", lambda p: base / str(p).lstrip("/")),
+                patch.object(GUEST.subprocess, "run", command),
+                patch.object(GUEST.os, "walk", return_value=[]),
+                patch.object(GUEST.os, "chown"),
+                patch.object(GUEST.sys, "stdin", io.StringIO(json.dumps({"environment": CLONE_RENDER}))),
+                contextlib.redirect_stdout(output),
+            ):
+                GUEST.phase_main("workspace", json.dumps(container))
+            self.assertEqual(env.read_text(), CLONE_RENDER)
+            self.assertEqual(json.loads(output.getvalue())["environment"], {"copied": [], "dropped": []})
 
     def test_php_workspace_writes_the_shared_php_settings_and_restarts_running_units(
         self,

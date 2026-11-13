@@ -244,6 +244,8 @@ Deno.test("a clone finishes only with its registered T3 server, which the receip
     const printed = JSON.stringify({ phase: "workspace", changes: [], environment: { copied: ["S3_BUCKET", "APP_KEY", "bad name=x"], dropped: ["DATABASE_URL"] } });
     assertEquals(create({ workspace: { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}\n${printed}\n` } } }).environment,
         { copied: ["S3_BUCKET", "APP_KEY"], dropped: ["DATABASE_URL"] });
+    // A workspace phase that printed no names (a create admitted before them) gives no `environment`.
+    assertEquals("environment" in create({ workspace: { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}\n{"phase":"workspace","changes":[]}\n` } } }), false);
     const failure = (changes: Partial<typeof container>) => [create(changes).failed_step, create(changes).error_code];
     assertEquals(failure({ launch: "failed", workspace: null }), ["clone", "instance.create_clone_failed"]);
     assertEquals(failure({ agent: "failed" }), ["agent", "instance.create_agent_failed"]);

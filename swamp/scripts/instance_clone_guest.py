@@ -97,10 +97,11 @@ def merge_environment(base, rendered, merge):
     """
     A clone's `.env`: its default's file from the seed copy (`base`), with the keys the clone owns taken from the Gateway's render,
     the default's connection keys and the Project's dropped keys removed, and every other key whose value is one of the default's
-    connection credentials removed. Keys of the render that the base lacks are added. Without a base the render is the file.
+    connection credentials removed. Keys of the render that the base lacks are added. Without a base or without merge names the render is the file.
     Returns the file and the sorted names of the copied and dropped keys; never a value.
     """
-    if base.strip() == "":
+    # No seed file, or no merge names (a create admitted by a Gateway before them): the render is the file, as before.
+    if base.strip() == "" or merge is None:
         return rendered, [], []
     own = set(merge["own"])
     drop = set(merge["drop"]) - own
@@ -250,7 +251,7 @@ def phase_main(phase, raw):
             else ""
         )
         # The seed copy holds the default's own file; the clone keeps it except what must be its own. Names only leave.
-        updated, copied, dropped = merge_environment(env, inputs["environment"], inputs["merge"])
+        updated, copied, dropped = merge_environment(env, inputs["environment"], inputs.get("merge"))
         environment_keys = {"copied": copied, "dropped": dropped}
         if env != updated:
             write(c["environment_file"], updated, 1000, 2760, "0640")
