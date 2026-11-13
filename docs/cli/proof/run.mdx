@@ -59,7 +59,9 @@ Orbit reads the cases at the trusted commit and expands their variant ids. It su
 
 Each VM's share gets a run budget from its batches, at most two hours. When a share of more than one batch needs more, the proof waits for another CI place, as long as some usable place is taken. With every usable place free, it runs anyway. Orbit records the verdicts of each batch as the batch ends, so a share that reaches its budget keeps them; only the cases of its unfinished batches are `unrun`.
 
-Orbit starts the children of one proof in order. It queues the first start after all execution copies succeed, then queues each next start 20 seconds after the previous start answers. A refusal or definite start failure still lets the siblings start. A start with no confirmed answer is never submitted again. Its next child waits until recovery finds its run or it ends. The released child's 600-second admission deadline bounds that wait. Orbit then queues the next child 20 seconds after resolution.
+Orbit starts the children of one proof in order. It queues the first start after all execution copies succeed, then queues each next start 20 seconds after the previous start answers. A refusal or definite start failure still lets the siblings start.
+
+A start with no confirmed answer is never submitted again. Its next child waits until recovery finds its run or it ends. The released child's 600-second admission deadline bounds that wait. Orbit then queues the next child 20 seconds after resolution. If that advance is missed, the next reconciliation pass repairs it and counts the delay from that pass.
 
 This leaves room for unrelated Operations to start between children. The [admission clock](/reference/operations#direct-swamp-starts) begins when a child is released.
 

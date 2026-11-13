@@ -544,7 +544,7 @@ A child records `state.proof_child_start` with `not_before`, `released_at` and `
 
 A lost successor leaves held children for the proof watchdog. Once the parent exceeds its admission allowance and every child has been quiet for 300 seconds, it fails unstarted children with `proof.admission_interrupted` and cancels their groups.
 
-An uncertain start is never resubmitted. Its successor waits until recovery binds the native run or the child becomes terminal, including expiry or cancellation. The released child's 600-second admission deadline bounds that wait. Resolution queues the successor with the same 20-second delay.
+An uncertain start is never resubmitted. Its successor waits until recovery binds the native run or the child becomes terminal, including expiry or cancellation. The released child's 600-second admission deadline bounds that wait. Resolution queues the successor with the same 20-second delay. A missed advance is repaired by the next reconciliation pass: a terminal child or a bound run counts as answered even without `advanced_at`. The pass records that marker once and counts the delay from that write.
 
 The existing reconciler ends an unstarted admission at its 600-second budget with `operation.timed_out`, including a lost job or an unavailable worker. Deliberately held proof children use the proof watchdog until release.
 

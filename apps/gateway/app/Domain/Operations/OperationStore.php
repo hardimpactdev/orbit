@@ -12,7 +12,9 @@ use App\Models\Operation;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use LogicException;
+use Throwable;
 
 /** Persists intent, optional admission holds and native results. */
 final readonly class OperationStore
@@ -114,7 +116,13 @@ final readonly class OperationStore
             if (isset($operation->state['proof_child_start'])
                 && ((! $current->status->terminal() && $operation->status->terminal())
                     || (! isset($current->state['swamp_run_id']) && isset($operation->state['swamp_run_id'])))) {
-                DB::afterCommit(static fn () => app(ProofChildStarts::class)->advance($operation));
+                DB::afterCommit(static function () use ($operation): void {
+                    try {
+                        app(ProofChildStarts::class)->advance($operation);
+                    } catch (Throwable $exception) {
+                        Log::warning('Proof child starts could not be advanced', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+                    }
+                });
             }
             if ($operation->kind === InstanceMigration::Kind && ! $current->status->terminal() && $operation->status->terminal()) {
                 app(InstanceMigrateProjection::class)->terminal($operation, $current);

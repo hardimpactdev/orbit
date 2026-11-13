@@ -15,6 +15,8 @@ use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -79,14 +81,18 @@ final readonly class ProofChildStarts
         return is_string($time) ? CarbonImmutable::parse($time) : null;
     }
 
-    /** Check the parent at the last local boundary before submission, and open the admission clock. */
-    public function release(Operation $operation): bool
+    /**
+     * Check the parent before submission and open the admission clock.
+     *
+     * @return bool|CarbonImmutable True when eligible, false when ineligible, or the stored due time when early.
+     */
+    public function release(Operation $operation): bool|CarbonImmutable
     {
         if (! isset($operation->state['proof_child_start'])) {
             return true;
         }
 
-        return DB::transaction(function () use ($operation): bool {
+        return DB::transaction(function () use ($operation): bool|CarbonImmutable {
             $proof = Operation::query()->lockForUpdate()->findOrFail(ValidatedData::integer($operation->input['proof_operation_id']));
             if ($this->ended($proof)) {
                 $this->cancelHeld($proof);
@@ -95,8 +101,12 @@ final readonly class ProofChildStarts
             }
             $operation->setRawAttributes(Operation::query()->lockForUpdate()->findOrFail($operation->id)->getAttributes(), true);
             $notBefore = self::record($operation)['not_before'] ?? null;
-            if ($operation->status !== OperationStatus::Queued || ! is_string($notBefore) || CarbonImmutable::parse($notBefore)->isFuture()) {
+            if ($operation->status !== OperationStatus::Queued || ! is_string($notBefore)) {
                 return false;
+            }
+            $due = CarbonImmutable::parse($notBefore);
+            if ($due->isFuture()) {
+                return $due;
             }
             if (self::held($operation)) {
                 $this->mark($operation, ['released_at' => now()->toISOString()]);
@@ -106,20 +116,38 @@ final readonly class ProofChildStarts
         });
     }
 
-    /** A native answer or definite failure advances once; an uncertain submission never does. */
+    /** A missed callback can be recovered entirely from the child's stored result. */
+    private static function answered(Operation $child): bool
+    {
+        return isset(self::record($child)['advanced_at']) || $child->status->terminal() || isset($child->state['swamp_run_id']);
+    }
+
+    /** @return Builder<Operation> The parent IDs, used as a subquery without reading every open proof. */
+    public static function heldProofs(): Builder
+    {
+        return Operation::query()->select('input->proof_operation_id')->where('kind', ProofGroup::OwnerKind)
+            ->whereNotIn('status', OperationStatus::terminalValues())->whereNotNull('state->proof_child_start')->whereNull('state->proof_child_start->released_at');
+    }
+
+    /** @param Collection<int, Operation> $children */
+    public static function needsResume(Collection $children): bool
+    {
+        return $children->contains(static fn (Operation $child): bool => ! $child->status->terminal() && self::held($child))
+            && ! $children->contains(static fn (Operation $child): bool => isset(self::record($child)['not_before']) && ! self::answered($child));
+    }
+
     public function advance(Operation $operation): void
     {
-        if (! isset($operation->state['proof_child_start'])) {
-            return;
+        if (isset($operation->state['proof_child_start'])) {
+            $this->resume(ValidatedData::integer($operation->input['proof_operation_id']));
         }
-        DB::transaction(function () use ($operation): void {
-            $proof = Operation::query()->lockForUpdate()->findOrFail(ValidatedData::integer($operation->input['proof_operation_id']));
-            $child = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-            if (isset(self::record($child)['advanced_at'])
-                || (! $child->status->terminal() && ! isset($child->state['swamp_run_id']))) {
-                return;
-            }
-            $this->mark($child, ['advanced_at' => now()->toISOString()]);
+    }
+
+    /** The one retry entry point, shared by start answers and the watchdog. */
+    public function resume(int $proofId): void
+    {
+        DB::transaction(function () use ($proofId): void {
+            $proof = Operation::query()->lockForUpdate()->findOrFail($proofId);
             if ($this->ended($proof)) {
                 $this->cancelHeld($proof);
 
@@ -138,16 +166,17 @@ final readonly class ProofChildStarts
             if (! is_array($start)) {
                 continue;
             }
-            if (is_string($start['advanced_at'] ?? null)) {
-                $notBefore = max($notBefore, CarbonImmutable::parse($start['advanced_at'])->addSeconds(self::SpacingSeconds));
+            if (self::answered($child)) {
+                if (! isset($start['advanced_at'])) {
+                    $start['advanced_at'] = now()->toISOString();
+                    $this->mark($child, ['advanced_at' => $start['advanced_at']]);
+                }
+                $notBefore = max($notBefore, CarbonImmutable::parse(ValidatedData::string($start['advanced_at']))->addSeconds(self::SpacingSeconds));
 
                 continue;
             }
             if (isset($start['not_before'])) {
                 return;
-            }
-            if ($child->status->terminal()) {
-                continue;
             }
             // Queue availability is an integer timestamp; round up so delivery cannot precede the stored due time.
             $notBefore = $notBefore->ceilSecond();

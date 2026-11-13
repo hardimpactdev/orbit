@@ -11,8 +11,10 @@ use App\Domain\Proof\ProofChildStarts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Operation;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Bus;
 use Throwable;
 
 /** Starts committed intent once. Admission copies are acknowledged before queuing; run-time copies are prepared from the committed intent. */
@@ -39,7 +41,16 @@ final class StartAdmittedSwampRun implements ShouldQueue
         }
         $children = app(ProofChildStarts::class);
         try {
-            if ($operation->status !== OperationStatus::Queued || ! $children->release($operation)) {
+            if ($operation->status !== OperationStatus::Queued) {
+                return;
+            }
+            $release = $children->release($operation);
+            if ($release instanceof CarbonImmutable) {
+                Bus::dispatch((new self($operation->id))->delay($release));
+
+                return;
+            }
+            if (! $release) {
                 return;
             }
             $operation = $expire->execute($operation);

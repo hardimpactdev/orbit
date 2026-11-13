@@ -25,6 +25,7 @@ use App\Models\Operation;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 
 require_once __DIR__.'/ProofCommandProjectionTest.php';
@@ -400,4 +401,128 @@ it('resumes the siblings when cancellation ends an unstarted child without its s
     expect($first->refresh()->status)->toBe(OperationStatus::Cancelled);
     Queue::assertPushed(StartAdmittedSwampRun::class, 2);
     Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $second->id && $job->delay->equalTo(now()->addSeconds(20)));
+});
+
+it('keeps committed resolution and cleanup when advancement fails and repairs it on the next pass', function (string $resolution): void {
+    $this->freezeSecond();
+    Queue::fake();
+    [$proof, $records] = proofUncertainStarts();
+    [[$first], [$second]] = $records;
+    Log::spy();
+    $armed = false;
+    $failed = false;
+    $otherCallback = false;
+    $armResolution = true;
+    Operation::updated(function (Operation $changed) use ($first, &$armResolution, &$armed): void {
+        if ($armResolution && $changed->id === $first->id && ($changed->status->terminal() || isset($changed->state['swamp_run_id']))) {
+            $armResolution = false;
+            DB::afterCommit(function () use (&$armed): void {
+                $armed = true;
+            });
+        }
+    });
+    DB::connection()->beforeExecuting(function (string $sql, array $bindings) use ($proof, &$armed, &$failed): void {
+        if ($armed && str_contains($sql, 'from "operations"') && in_array($proof->id, $bindings, true)) {
+            $armed = false;
+            $failed = true;
+            throw new RuntimeException('private database busy detail');
+        }
+    });
+    if ($resolution === 'expiry') {
+        $this->travel(600)->seconds();
+    } else {
+        $this->travel(180)->seconds();
+        proofRecoveryAnswer($first);
+    }
+    try {
+        expect(function () use ($resolution, $first, &$armed, &$otherCallback): void {
+            DB::transaction(function () use ($resolution, $first, &$armed, &$otherCallback): void {
+                if ($resolution === 'expiry') {
+                    app(ExpireOperationAction::class)->execute($first->refresh());
+                } else {
+                    app(SwampCommandStep::class)->recoverUnbound($first->refresh());
+                }
+                DB::afterCommit(function () use (&$otherCallback): void {
+                    $otherCallback = true;
+                });
+            });
+        })->not->toThrow(RuntimeException::class);
+    } finally {
+        $armed = false;
+    }
+
+    expect($failed)->toBeTrue()->and($otherCallback)->toBeTrue();
+    expect($first->refresh()->state['proof_child_start']['advanced_at'])->toBeNull();
+    if ($resolution === 'expiry') {
+        expect($first->status)->toBe(OperationStatus::Failed)->and($first->error_code)->toBe('operation.timed_out');
+        Queue::assertPushed(CancelProofGroup::class, fn ($job): bool => $job->operationId === $first->id);
+    } else {
+        expect($first->state['swamp_run_id'])->toBe(PROOF_RUN_ID);
+    }
+    Log::shouldHaveReceived('warning')->once()->with('Proof child starts could not be advanced', [
+        'operation_id' => $first->id, 'exception_type' => RuntimeException::class,
+    ]);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+    $this->travel(60)->seconds();
+    app(ProofRunWatch::class)->sweep();
+
+    expect($first->refresh()->state['proof_child_start']['advanced_at'])->toBe(now()->toISOString());
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $second->id && $job->delay->equalTo(now()->addSeconds(20)));
+})->with(['expiry', 'recovery']);
+
+it('repairs a stored answer once while scheduled and uncertain children prevent another start', function (): void {
+    $this->freezeSecond();
+    Queue::fake();
+    [, $records] = proofPendingStarts();
+    [[$first], [$second], [$third]] = $records;
+    $first->refresh()->update(['status' => OperationStatus::Running, 'state' => [...$first->state, 'swamp_run_id' => PROOF_RUN_ID]]);
+    app(ProofRunWatch::class)->sweep();
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+    $noticed = now()->toISOString();
+    $this->travel(5)->seconds();
+    app(ProofRunWatch::class)->sweep();
+    expect($first->refresh()->state['proof_child_start']['advanced_at'])->toBe($noticed);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+    $this->travel(15)->seconds();
+    app(ProofChildStarts::class)->release($second->refresh());
+    $second->update(['status' => OperationStatus::Running, 'started_at' => now()]);
+    (new StartAdmittedSwampRun($second->id))->failed(new RuntimeException('second confirmation lost'));
+    app(ProofRunWatch::class)->sweep();
+    app(ProofRunWatch::class)->sweep();
+
+    expect($second->refresh()->error_code)->toBe('swamp.start_uncertain');
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+    Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $third->id);
+    expect($third->refresh()->state['proof_child_start']['not_before'])->toBeNull();
+});
+
+it('requeues an early delivery at the stored due time and starts that child once when due', function (): void {
+    $this->freezeSecond();
+    Queue::fake();
+    [, $records] = proofPendingStarts(2);
+    [[$first], [$second]] = $records;
+    (new StartAdmittedSwampRun($first->id))->failed(new RuntimeException('first answered'));
+    $due = now()->toImmutable()->addSeconds(20);
+    $this->travel(19)->seconds();
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldNotReceive('connect');
+    app()->instance(WebSocketClient::class, $socket);
+    app()->call([new StartAdmittedSwampRun($second->id), 'handle']);
+
+    expect($second->refresh()->status)->toBe(OperationStatus::Queued)
+        ->and($second->state['proof_child_start']['released_at'])->toBeNull();
+    Queue::assertPushed(StartAdmittedSwampRun::class, 3);
+    $retry = Queue::pushed(StartAdmittedSwampRun::class)->last();
+    expect($retry->operationId)->toBe($second->id)->and($retry->delay->equalTo($due))->toBeTrue();
+    $this->travel(1)->seconds();
+    proofStartAnswer();
+    $native = app(WebSocketClient::class);
+    app()->call([$retry, 'handle']);
+    app()->call([$retry, 'handle']);
+
+    expect($second->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($second->state['swamp_run_id'])->toBe(PROOF_RUN_ID);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 3);
+    $native->shouldHaveReceived('send')->once();
 });
