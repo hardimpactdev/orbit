@@ -299,7 +299,7 @@ Application migrations create and alter logical publications and select their ta
 
 ## How Orbit runs admin commands
 
-Swamp runs each batch as one `docker exec -i` into the server container over official SSH from Node 209. The client in the image reads the login's password from the first stdin line, and the statements follow. PostgreSQL admin batches use local trust in the container instead of a password line. No password appears in command arguments, host environment variables, Docker exec metadata or files. A [read](/reference/database-connections#inspect-a-registered-connection) of a connection on the server runs the same way, as the connection's own user inside a `READ ONLY` transaction. A [write](/reference/database-connections#direct-sql-writes) runs the same way without the read-only transaction. The observer agent runs no database actions.
+Swamp runs each batch as one `docker exec -i` into the server container over official SSH from Node 209. The client in the image reads the login's password from the first stdin line, and the statements follow. PostgreSQL admin batches do the same, as `postgres` with the server's admin password. No password appears in command arguments, host environment variables, Docker exec metadata or files. A [read](/reference/database-connections#inspect-a-registered-connection) of a connection on the server runs the same way, as the connection's own user inside a `READ ONLY` transaction. A [write](/reference/database-connections#direct-sql-writes) runs the same way without the read-only transaction. The observer agent runs no database actions.
 
 ## Load a dump
 
