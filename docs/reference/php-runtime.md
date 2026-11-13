@@ -24,7 +24,7 @@ With root `apps/site/public`, the working directory for PHP-FPM is `<checkout>/a
 
 Before the first production deployment, `current` is absent, so the dedicated pool starts in the application's directory under `releases/initial`. Once a deployment or rollback selects a release, Orbit reconciles the pool to the application's directory under `current` before refreshing its PHP cache. It validates the selected directory before starting or restarting FPM.
 
-The Gateway renders each production runtime's files. The [Node agent](/reference/node-agent#commands) checks and publishes them, as root, with `php.converge-production-runtime`; `php.remove-production-runtime` removes them, and `php.refresh-production-cache` refreshes the cache. Each command first checks the root-owned marker `/etc/orbit/php-fpm/<user>/orbit.identity`, and each takes the agent's lock `production-php:<user>`, so two changes to one runtime never overlap.
+The Gateway renders each production runtime's files. The [Node agent](/reference/node-agent#commands) checks and publishes them, as root, with `php.converge-production-runtime`, and `php.remove-production-runtime` removes them. Each command first checks the root-owned marker `/etc/orbit/php-fpm/<user>/orbit.identity`, and each takes the agent's lock `production-php:<user>`, so two changes to one runtime never overlap.
 
 The generated pool records the resolved release as a comment. A release switch changes those bytes and restarts that Instance's dedicated service, so existing workers cannot keep the previous release as their working directory. A confirmed no-op reconciliation does not restart the service.
 
