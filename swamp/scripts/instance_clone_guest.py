@@ -14,6 +14,9 @@ from contextlib import closing
 # Mirrored by the Node boundary; the clone tests keep the two sets in sync.
 GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 
+# Written by root after this Instance's first checkout; outside the workspace, so the agent cannot write it.
+CHECKOUT_MARK = "/var/lib/orbit/workspace-checkout"
+
 
 class PhaseRefusal(AssertionError):
     def __init__(self, evidence):
@@ -263,27 +266,40 @@ def phase_main(phase, raw):
 
     if phase == "workspace":
         assert root(ws + "/.git").is_dir()
-        before = git("symbolic-ref", "--quiet", "--short", "HEAD").stdout.strip()
-        head = git("rev-parse", "HEAD").stdout.strip()
+        mark = root(CHECKOUT_MARK)
+        checked_out = json.loads(mark.read_text()) if mark.is_file() else {}
         try:
-            if before != c["branch"] or head != c["expected_commit"]:
-                git(
-                    "fetch",
-                    "--quiet",
-                    c["bundle"],
-                    "+refs/heads/"
-                    + c["branch"]
-                    + ":refs/remotes/origin/"
-                    + c["branch"],
-                )
-                git(
-                    "checkout",
-                    "--quiet",
-                    "-B",
-                    c["branch"],
-                    "refs/remotes/origin/" + c["branch"],
-                )
-                changes.append("checkout")
+            # This Instance checked out before only when its mark names it; then a retry never moves the branch.
+            if checked_out.get("instance_id") != c["instance_id"]:
+                before = git("symbolic-ref", "--quiet", "--short", "HEAD").stdout.strip()
+                head = git("rev-parse", "HEAD").stdout.strip()
+                if before != c["branch"] or head != c["expected_commit"]:
+                    git(
+                        "fetch",
+                        "--quiet",
+                        c["bundle"],
+                        "+refs/heads/"
+                        + c["branch"]
+                        + ":refs/remotes/origin/"
+                        + c["branch"],
+                    )
+                    git(
+                        "checkout",
+                        "--quiet",
+                        "-B",
+                        c["branch"],
+                        "refs/remotes/origin/" + c["branch"],
+                    )
+                    changes.append("checkout")
+                assert git("symbolic-ref", "--short", "HEAD").stdout.strip() == c["branch"]
+                assert git("rev-parse", "HEAD").stdout.strip() == c["expected_commit"]
+                checked_out = {"instance_id": c["instance_id"], "commit": c["expected_commit"]}
+                mark.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+                # A whole file or none: a crash never leaves a mark that blocks each retry.
+                written = mark.with_name(mark.name + ".new")
+                written.write_text(json.dumps(checked_out) + "\n")
+                written.chmod(0o600)
+                os.replace(written, mark)
         finally:
             root(c["bundle"]).unlink(missing_ok=True)
         inputs = json.loads(private)
@@ -537,7 +553,8 @@ def phase_main(phase, raw):
                 )
         assert replies[0]["token"] != replies[1]["token"]
         assert git("symbolic-ref", "--short", "HEAD").stdout.strip() == c["branch"]
-        assert git("rev-parse", "HEAD").stdout.strip() == c["expected_commit"]
+        # The workspace phase checked the commit before it wrote the mark; after that, commits on the branch are the user's.
+        assert json.loads(root(CHECKOUT_MARK).read_text())["instance_id"] == c["instance_id"]
         if c["php"] is not None:
             run(["php", "-v"], agent=True)
         require_units()
@@ -570,7 +587,8 @@ def phase_main(phase, raw):
         require_units()
     else:
         raise ValueError(phase)
-    print(json.dumps({"phase": phase, "changes": changes, **({"environment": environment_keys} if phase == "workspace" else {})}))
+    print(json.dumps({"phase": phase, "changes": changes,
+                      **({"environment": environment_keys, "commit": checked_out["commit"]} if phase == "workspace" else {})}))
 
 
 if __name__ == "__main__":

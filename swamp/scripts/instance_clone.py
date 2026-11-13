@@ -573,7 +573,8 @@ def main():
                 "workspace",
                 json.dumps({"environment": environment, "processes": processes, "merge": merge}),
             )
-            print("orbit-commit=" + target)
+            # The guest's commit is its first checkout's, so a retry never reports a later commit of the user.
+            print("orbit-commit=" + output.pop("commit"))
             print(json.dumps(output))
         finally:
             bundle.unlink(missing_ok=True)
