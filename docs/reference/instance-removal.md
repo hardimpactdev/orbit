@@ -128,7 +128,12 @@ Live members have neither `row_deleted_at` nor `abandoned_at`. Destroy admission
 
 [`instance:restore`](/cli/instance/restore) undoes a failed removal of a host development Instance when nothing of it was deleted. A removal that withdrew the Route and then failed at its databases leaves this state: the Instance `removing`, the Route `retiring`, the checkout and databases intact.
 
-The Gateway refuses before any change when a removal run has not ended, when a step that deletes data ran (the source, container, Processes, teardown or SQLite steps), when the removal saved a Schedule or a SQLite file, or when the Route, its target or the reported checkout changed. A timed-out removal run with no proven end refuses; restore never settles it.
+The Gateway refuses before any change in these cases:
+
+- a removal run has not ended. A timed-out run with no proven end refuses too; restore never settles it.
+- a step that deletes data ran: the source, container, Processes, teardown or SQLite step.
+- the removal saved a Schedule or a SQLite file.
+- the Route, its target or the reported checkout changed.
 
 The run checks that each planned database exists and accepts connections. Restore settles no fence: a database that the removal closed and nobody opened again refuses with `instance.restore_database_closed`. The run then republishes the same Route through the Route create workflow, with the same Route ID and domain. Last, it deletes the fence journal rows whose OID and name match a planned database, in one server transaction that checks again that each is open. The Gateway then records, in one transaction, the members and removal `abandoned`, the Instance `active` and the Route `active`.
 

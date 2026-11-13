@@ -3130,3 +3130,9 @@ inputs = [
   "swamp/scripts/instance_clone_guest.py",
   "swamp/scripts/instance_clone_launch.py",
 ]
+
+[[fixture]]
+file = "swamp/tests/instance_restore_test.ts"
+cost = 1
+slices = false
+inputs = ["swamp/workflows/workflow-operation-instance-restore.yaml", "swamp/workflows/workflow-operation-route-create.yaml", "docs/cli/instance/restore.mmd"]

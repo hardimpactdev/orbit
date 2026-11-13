@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
+use App\Actions\Instances\StartInstanceRestoreAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Routes\NativeRouteCreatePlan;
 use App\Domain\Shared\ResourceOperationException;
@@ -30,7 +31,7 @@ final class RoutePublicationHolds
 {
     /** @var list<string> */
     private const array Kinds = ['instance.create', 'instance.destroy', 'instance.clone', 'instance.transfer', 'instance.migrate',
-        'route.create', 'route.update', 'route.destroy', 'route.target_set'];
+        'instance.restore', 'route.create', 'route.update', 'route.destroy', 'route.target_set'];
 
     /** A timed-out write that Swamp never confirmed stopped gives its Nodes back after this long. */
     private const int UnconfirmedMinutes = 15;
@@ -357,7 +358,7 @@ final class RoutePublicationHolds
     /** Only unstarted creates can replace their whole publication from the current catalog; their resource intent stays fixed. */
     private function refreshPublication(Operation $operation): void
     {
-        if (! in_array($operation->kind, ['instance.create', 'instance.clone', 'route.create'], true) || ! isset($operation->input['route_create'])) {
+        if (! in_array($operation->kind, ['instance.create', 'instance.clone', 'instance.restore', 'route.create'], true) || ! isset($operation->input['route_create'])) {
             return;
         }
         DB::transaction(function () use ($operation): void {
@@ -368,6 +369,8 @@ final class RoutePublicationHolds
             $input = $current->input;
             $plan = ValidatedData::object($input['route_create']);
             $route = Route::query()->findOrFail(ValidatedData::integer($plan['route_id']));
+            // A restore publishes its retiring Route with its removing target active, as at its admission.
+            $route = $current->kind === 'instance.restore' ? StartInstanceRestoreAction::candidate($route) : $route;
             $lifecycle = ValidatedData::object($input['route_lifecycle']);
             $input['route_create'] = app(NativeRouteCreatePlan::class)->refreshCaddy($route, $plan,
                 $current->kind === 'instance.create', ($lifecycle['public_activated'] ?? false) === true);
