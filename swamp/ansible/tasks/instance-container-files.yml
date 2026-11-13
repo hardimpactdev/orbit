@@ -10,7 +10,7 @@
       - -I
       - "-"
       - >-
-        {{ {'projects': [instances.project] + ([instances.nested.project] if instances.nested is defined else []),
+        {{ {'projects': instances.runtime_projects | default([instances.project] + ([instances.nested.project] if instances.nested is defined else [])),
             'files': instances.image.files | selectattr('existing', 'defined') | selectattr('existing') | map('dict2items')
               | map('selectattr', 'key', 'in', ['path', 'content', 'mode']) | map('items2dict') | list,
             'libraries': instances.folders.runtime.path ~ '/current/lib',

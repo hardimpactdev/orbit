@@ -293,9 +293,9 @@ Deno.test({
                 .map((byte) => byte.toString(16).padStart(2, "0")).join("");
             // Captured from the tasks at 2a-local 7b9e25ba02, before the nested-fleet image existed, with this same host shape; and
             // again when the image removed its linker cache last and the converge read the existing containers (two calls more).
-            assertEquals([f.calls().length, digest], [55, "097f67c0fc536732652cbc2cd552fceae7f32adc592d31ef66cda7e8b6f603f4"]);
+            assertEquals([f.calls().length, digest], [55, "38e311a084b87f551f11b9bca602bca318516d6d5eca1e15dedf26af7c51a083"]);
             assert(f.calls().some((call) => call.includes("exec") && call.slice(-3).join(" ") === "rm -f /etc/ld.so.cache"));
-            assert(f.calls().some((call) => call[0] === "query" && call.at(-1) === "/1.0/instances?project=orbit-instances&recursion=1"));
+            assert(f.calls().some((call) => call[0] === "query" && call.at(-1) === "/1.0/instances?all-projects=true&recursion=1"));
             assertEquals(f.state().images.flatMap((image: {project: string; aliases: {name: string}[]}) =>
                 image.aliases.map((alias) => `${image.project}/${alias.name}`)).filter((name: string) => name.includes("orbit-instance-nested")), []);
         } finally {

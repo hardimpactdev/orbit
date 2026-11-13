@@ -73,14 +73,10 @@ def converge(projects, files, libraries, state):
     state_file = Path(state)
     libraries_changed = (state_file.read_text().strip() if state_file.is_file() else "") != digest
     summary = {"written": [], "ldconfig": [], "cache_dropped": [], "skipped": [], "failed": []}
-    for project in projects:
-        try:
-            rows = json.loads(incus("query", f"/1.0/instances?project={project}&recursion=1").stdout)
-        except IncusFailure as failure:
-            summary["failed"].append(f"{project}: {failure}")
-            continue
-        for row in sorted(rows, key=lambda row: row["name"]):
-            container(project, row, files, libraries, names, libraries_changed, summary)
+    # One list of every project, as the folder's restart reads it: a project that does not exist yet has no containers.
+    rows = json.loads(incus("query", "/1.0/instances?all-projects=true&recursion=1").stdout)
+    for row in sorted((row for row in rows if row.get("project") in projects), key=lambda row: (row["project"], row["name"])):
+        container(row["project"], row, files, libraries, names, libraries_changed, summary)
     if summary["failed"]:
         print(json.dumps({"error_code": "instance.host_unavailable", **summary}))
         return 1

@@ -257,7 +257,9 @@ The idmapped mount keeps gid 2750 the same in every container, whatever its ID m
 
 An update installs the new version beside the old one and flips `current`. It runs with the converge of each Node, so a recipe change reaches the Node with its release refresh. Both `agent` and `orbit` have `/opt/orbit-runtime/current/bin` on `PATH`, so a running clone gets added programs, such as Deno, without recreation.
 
-For the agent folder, Orbit then restarts T3 in each running container, one after another; T3 continues a running turn after its restart. For the runtime folder, Orbit restarts the FrankenPHP Process and the other Processes of each running container: every unit named `orbit-*.service`, so the Process units of a container carry that prefix. A stopped container uses the new versions when it wakes. An old version stays until no process maps a file of it. A running process runs only what existed when it started, so a new version that only adds files, such as the [browser libraries and fonts](#browser-libraries-and-fonts) or a new program, restarts nothing. The converge compares the version in use with the new one, without following links, and restarts only when a file, link or mode that the version in use holds changed or went.
+For the agent folder, Orbit then restarts T3 in each running container, one after another; T3 continues a running turn after its restart. For the runtime folder, Orbit restarts the FrankenPHP Process and the other Processes of each running container: every unit named `orbit-*.service`, so the Process units of a container carry that prefix. A stopped container uses the new versions when it wakes. An old version stays until no process maps a file of it.
+
+A running process runs only what existed when it started. So a new version that only adds files restarts nothing, such as the [browser libraries and fonts](#browser-libraries-and-fonts) or a new program. The converge compares the version in use with the new one and does not follow links. It restarts only when a file, link or mode of the version in use changed or went.
 
 The CLI self-updaters are off: `DISABLE_AUTOUPDATER=1` in the T3 unit, which Claude Code inherits, and `check_for_update_on_startup = false` in the image's Codex configuration. The T3 server has no self-updater; it runs from the read-only folder.
 
@@ -389,20 +391,31 @@ Failure to preserve ownership blocks this design. It does not authorize weaker i
 
 ### Browser libraries and fonts
 
-A headless browser, such as the Chromium that a Project's own Playwright downloads, starts in every container. The image has none of the libraries it links, and no fonts. So the runtime folder holds them, once per Node:
+A headless browser, such as the Chromium that a Project's own Playwright downloads, starts in every container. The image has none of the libraries it links, and no fonts. So the runtime folder holds them, once per Node.
 
-- **Packages.** The recipe pins each library and font as a Debian package of its Ubuntu snapshot, a runtime part named `browser-<package>`: what Chromium links and the image lacks, with their own dependencies. The GPU drivers stay out: `libgbm` loads them only on demand, and a container has no GPU. The fonts are DejaVu (sans, serif, mono), Liberation (in place of Arial, Times New Roman and Courier New) and Noto Color Emoji.
+The recipe pins each library and font as a Debian package of its Ubuntu snapshot. Each is a runtime part named `browser-<package>`. The packages hold what Chromium links and the image lacks, with their own dependencies. GPU drivers stay out: `libgbm` loads them only on demand, and a container has no GPU. DejaVu gives sans, serif and mono. Liberation stands in for Arial, Times New Roman and Courier New. Noto Color Emoji gives the emoji.
+
 - **Folders.** The converge unpacks each package in its part and links its libraries into the version's `lib` and its fonts into `fonts`. Two packages that give the same name fail the build.
 - **Linker.** `/etc/ld.so.conf.d/zz-orbit-browser.conf` names `/opt/orbit-runtime/current/lib`. The name sorts after the stock `x86_64-linux-gnu.conf`, so a system library of the same name always wins: the folder only adds what the image lacks.
 - **Fonts.** `/etc/fonts/fonts.conf` names `/opt/orbit-runtime/current/fonts` and maps the generic families to them. Fontconfig reads it by default, also the copy inside Chromium. Each user keeps its font cache in its own `~/.cache/fontconfig`.
 - **Sandbox.** A container has no user namespaces, so Chromium runs without its own sandbox. Playwright starts it so by default. No setting of the Node changes.
-- **The browser.** It is no part of the folder. A Project pins its Playwright, and each Playwright pins its own browser build, so the Project's Playwright downloads it through the [egress proxy](#egress-and-dns) into the user's `~/.cache/ms-playwright`, such as with `bunx playwright install chromium`. No Instance can change a binary that another Instance runs.
+- **The browser.** It is no part of the folder. Each Playwright version pins its own browser build.
+- **The download.** The Project's own Playwright downloads that build through the [egress proxy](#egress-and-dns) into the user's `~/.cache/ms-playwright`, such as with `bunx playwright install chromium`. No Instance can change a binary that another Instance runs.
 
 ### Existing containers
 
-A container keeps the image it was made from. The files that every container needs are marked `existing` in the image definition, and the converge of the Node writes them into each existing container too, running or stopped, in the Instance project and in the nested-fleet one: the linker and font configuration and `/etc/gitconfig`. Nothing restarts. Each later process reads the files by itself.
+A container keeps the image it was made from. The image definition marks the files that every container needs as `existing`: the linker and font configuration and `/etc/gitconfig`. The converge of the Node writes them into each existing container too. It writes them into running and stopped containers, in the Instance project and in the nested-fleet one. Nothing restarts. Each later process reads the files by itself.
 
-The dynamic linker reads its cache, `/etc/ld.so.cache`. A running container whose cache lacks a library of the runtime folder's `lib` runs `ldconfig -X`: no links, because the folder is read-only. A stopped container loses its cache instead, and the stock `ldconfig.service` builds it again at its next start, because it runs when the cache is missing. The Node keeps a digest of the library names it last applied, in `/var/lib/orbit/instance-container-libraries`, so a changed folder reaches stopped containers too. An image removes its cache last, so each new container builds its own at its first start. A frozen container is skipped, and the Node keeps its old digest, so the next converge drops a stopped cache again. A failed Incus call fails the converge after every other container had its turn.
+A clone copies its default's seed snapshot, not the default itself. A seed taken before these files existed lacks them, so a clone of it gets them only at the next converge.
+
+The dynamic linker reads its cache, `/etc/ld.so.cache`:
+
+- **Running.** A container whose cache lacks a library of the runtime folder's `lib` runs `ldconfig -X`. It makes no links, because the folder is read-only.
+- **Stopped.** A stopped container loses its cache instead. At its next start, the stock `ldconfig.service` builds a new cache.
+- **New.** An image removes its cache last, so each new container builds its own at its first start.
+- **Digest.** The Node keeps a digest of the library names it last applied, in `/var/lib/orbit/instance-container-libraries`. So a changed folder reaches stopped containers too.
+- **Frozen.** A frozen container is skipped. The Node then keeps its old digest, so the next converge drops a stopped cache again.
+- **Failure.** A failed Incus call fails the converge after every other container had its turn.
 
 ## Environment notes
 
