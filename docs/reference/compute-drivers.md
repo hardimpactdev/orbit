@@ -1340,7 +1340,7 @@ The child checks each of the three units on the Gateway and on app-dev and start
 
 The child then renders and reloads the checkout’s scoped Swamp grants after optional token renewal, with the renewed or still-valid serve-driver credential, before migrations. Reconciliation requires successful agent delivery and successful or skipped renewal; either prerequisite failing stops apply. It uses the candidate manifests, not the grants saved in the bootstrap control plan.
 
-Before the single authenticated reload, it waits up to 60 seconds for the local Swamp listener. The wait and the reload’s 90-second bound fit inside the existing 180-second reconciliation limit with 30 seconds for setup. A listener timeout or failed reload stops apply and prevents snapshots.
+Before the single authenticated reload, it waits up to 60 seconds for the local Swamp listener. The wait and the reload’s 90-second bound fit inside the 180-second reconciliation limit with 30 seconds for setup. The proof runner also allows 180 seconds for its Gateway preparation command and 190 seconds for the calling process. Its overall fleet preparation limit remains 330 seconds. A listener timeout or failed reload stops apply and prevents snapshots.
 
 It restarts the queue worker, the agent-view subscriber and the Swamp worker, and checks, one unit at a time, that they and the nested Swamp serve are active.
 
