@@ -587,7 +587,7 @@ Orbit sets the proxy for everything that runs in a container. Tools read the upp
 
 - each attached [Node service](/reference/processes-and-schedules#node-service-target-records) host that is not on the bridge;
 - for a [nested-fleet](#nested-fleet) container, its inner fleet (`10.45.0.1`, `10.45.0.0/24` and `10.232.2.0/24`): the container's own CLI then reaches its inner Gateway;
-- each name of the container intent's `private_names`, which only a container with a private websocket app has.
+- each name of the container intent's `private_names` list. No intent has that list yet; a container with a private websocket app gets it in a later change, and today it adds nothing.
 
 A normal container without these keeps the image's value only. Every writer of the value takes it from this builder.
 
@@ -603,7 +603,7 @@ A nested-fleet container made before these keys, such as the Orbit default, keep
 
 A container takes no DNS server from DHCP (`/etc/netplan/90-orbit-no-dns.yaml`), and its resolver has no fallback (`/etc/systemd/resolved.conf.d/90-orbit-no-dns.conf`). So a name lookup in a container fails at once.
 
-So Composer, npm, Bun, Vite+, Git over HTTPS, curl, apt, Guzzle and Node's `fetch` use the proxy without further settings. A tool that ignores the variables fails at its name lookup, such as PHP's `file_get_contents` on a URL or a headless browser. An Instance's own HTTP services, such as a private Reverb host, are not in `NO_PROXY` yet. UDP, so also QUIC, and other protocols get no route out. Git over SSH does not work. The container holds no GitHub credentials, so [Git in and out](#git-in-and-out) still goes through the Node.
+So Composer, npm, Bun, Vite+, Git over HTTPS, curl, apt, Guzzle and Node's `fetch` use the proxy without further settings. A tool that ignores the variables fails at its name lookup, such as PHP's `file_get_contents` on a URL or a headless browser. An Instance's own HTTP services, such as a private Reverb host, are not in `NO_PROXY` yet: the `private_names` source above will carry them. UDP, so also QUIC, and other protocols get no route out. Git over SSH does not work. The container holds no GitHub credentials, so [Git in and out](#git-in-and-out) still goes through the Node.
 
 ## Lifecycle
 
