@@ -32,7 +32,7 @@ Deno.test("the pass visits one Node at a time and the Gateway reads its report s
     const report = pass.jobs.find((job: Record<string, unknown>) => job.name === "pass").steps.find((step: Record<string, unknown>) => step.name === "Report the pass");
     const declared = Deno.readTextFileSync(new URL("../../apps/gateway/app/Domain/Fleet/direct-operations.php", import.meta.url));
     assertMatch(declared, /'fleet\.reboot' => \[\s*'workflow' => 'operation-fleet-reboot',[\s\S]*?'terminal_result' => \['job' => 'pass', 'step' => 'Report the pass', 'data' => 'fleet-reboot-report'\]/);
-    assertEquals(report.task.behaviorName, "fleet-reboot-report");
+    assertEquals(report.task.behaviorName, '${{ "fleet-reboot-report" }}');
 });
 
 Deno.test("each Node runs drain, reboot and check in order, each phase bounded and the drain longer than its budget", () => {

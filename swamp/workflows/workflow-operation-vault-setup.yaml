@@ -88,7 +88,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
-      behaviorName: vault-setup-prepare-public-data
+      behaviorName: ${{ "vault-setup-prepare-public-data" }}
       methodName: prepare
       inputs:
         intent: ${{ inputs.intent }}
@@ -101,7 +101,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-workspace
+      behaviorName: ${{ "vault-setup-workspace" }}
       methodName: execute
       inputs:
         run: timeout 30 mktemp -d -t orbit-vault-setup.XXXXXX
@@ -122,7 +122,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-session-file
+      behaviorName: ${{ "vault-setup-session-file" }}
       methodName: execute
       inputs:
         run: timeout 30 install -m 0600 /dev/null "$BITWARDENCLI_APPDATA_DIR/session"
@@ -135,7 +135,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-configure-the-server
+      behaviorName: ${{ "vault-setup-configure-the-server" }}
       methodName: execute
       inputs:
         run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw config server "$ORBIT_URL" >/dev/null 2>/dev/null
@@ -156,7 +156,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-log-in
+      behaviorName: ${{ "vault-setup-log-in" }}
       methodName: execute
       inputs:
         run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw login --apikey >/dev/null 2>/dev/null
@@ -178,7 +178,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-unlock-the-vault
+      behaviorName: ${{ "vault-setup-unlock-the-vault" }}
       methodName: execute
       inputs:
         run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw unlock --passwordenv BW_PASSWORD --raw >"$BITWARDENCLI_APPDATA_DIR/session"
@@ -199,7 +199,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
-      behaviorName: vault-setup-resolve-the-session
+      behaviorName: ${{ "vault-setup-resolve-the-session" }}
       methodName: session
       inputs:
         directory: ${{ steps.workspace.outputs.stdout.trim() }}
@@ -214,7 +214,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-read-account-status
+      behaviorName: ${{ "vault-setup-read-account-status" }}
       methodName: execute
       inputs:
         run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw status >"$ORBIT_OUTPUT" 2>/dev/null
@@ -236,7 +236,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-read-organizations
+      behaviorName: ${{ "vault-setup-read-organizations" }}
       methodName: execute
       inputs:
         run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw list organizations >"$ORBIT_OUTPUT" 2>/dev/null
@@ -258,7 +258,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-read-collections
+      behaviorName: ${{ "vault-setup-read-collections" }}
       methodName: execute
       inputs:
         run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw list collections >"$ORBIT_OUTPUT" 2>/dev/null
@@ -279,7 +279,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
-      behaviorName: vault-setup-check-account-kdf
+      behaviorName: ${{ "vault-setup-check-account-kdf" }}
       methodName: account
       inputs:
         directory: ${{ steps.workspace.outputs.stdout.trim() }}
@@ -296,7 +296,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
-      behaviorName: vault-setup-select-the-organization
+      behaviorName: ${{ "vault-setup-select-the-organization" }}
       methodName: organization
       inputs:
         directory: ${{ steps.workspace.outputs.stdout.trim() }}
@@ -315,7 +315,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
-      behaviorName: vault-setup-select-the-collection
+      behaviorName: ${{ "vault-setup-select-the-collection" }}
       methodName: collection
       inputs:
         directory: ${{ steps.workspace.outputs.stdout.trim() }}
@@ -338,7 +338,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-probe-write-access
+      behaviorName: ${{ "vault-setup-probe-write-access" }}
       methodName: execute
       inputs:
         run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw create item <"$ORBIT_PROBE_FILE" >"$ORBIT_OUTPUT" 2>/dev/null
@@ -363,7 +363,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
-      behaviorName: vault-setup-read-probe-identity
+      behaviorName: ${{ "vault-setup-read-probe-identity" }}
       methodName: probe
       inputs:
         directory: ${{ steps.workspace.outputs.stdout.trim() }}
@@ -377,7 +377,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
-      behaviorName: vault-setup-verify-the-account
+      behaviorName: ${{ "vault-setup-verify-the-account" }}
       methodName: setup
       inputs:
         intent: ${{ inputs.intent }}
@@ -397,7 +397,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-clear-the-session
+      behaviorName: ${{ "vault-setup-clear-the-session" }}
       methodName: execute
       inputs:
         run: timeout 30 npx --yes --package=@bitwarden/cli@2026.6.0 bw delete item "$ORBIT_PROBE_ID" --permanent >/dev/null 2>/dev/null
@@ -423,7 +423,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-log-out
+      behaviorName: ${{ "vault-setup-log-out" }}
       methodName: execute
       inputs:
         run: timeout 30 npx --yes --package=@bitwarden/cli@2026.6.0 bw logout >/dev/null 2>/dev/null
@@ -448,7 +448,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-remove-cli-session
+      behaviorName: ${{ "vault-setup-remove-cli-session" }}
       methodName: execute
       inputs:
         run: timeout 30 rm -rf -- "$ORBIT_VAULT_DIRECTORY"

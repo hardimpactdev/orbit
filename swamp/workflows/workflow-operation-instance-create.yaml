@@ -37,7 +37,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/ansible-input'
-          behaviorName: ansible-input
+          behaviorName: ${{ "ansible-input" }}
           methodName: write
           inputs:
             intent: '${{ inputs.intent }}'

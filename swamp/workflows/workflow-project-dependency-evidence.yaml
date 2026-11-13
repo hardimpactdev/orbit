@@ -114,7 +114,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-input'
-      behaviorName: project-evidence
+      behaviorName: ${{ "project-evidence" }}
       methodName: evidence
       inputs:
         project: ${{ inputs.project }}

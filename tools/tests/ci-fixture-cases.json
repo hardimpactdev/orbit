@@ -325,13 +325,13 @@
     ]
   },
   "swamp/bin/source_test.ts": {
-    "source_sha256": "7c3ac7537e0cc8c9c50b12ecf68f015b57e11e8378a42039ac3cb7a97c9355cd",
+    "source_sha256": "a1e76db87b933961f3fcde33050cb8403a136ce2d31dd4c2234f7b9dd43fe747",
     "cases": [
       "model IDs are unique",
       "workflow queue bounds have measured per-kind budgets",
       "every Ansible file ships with the ansible-input extension",
       "runtime credentials and generated records are ignored",
-      "hot workflow trees avoid literal behavior lookups and preserve constant names"
+      "no workflow names a behavior by a literal and constant names are preserved"
     ]
   },
   "swamp/bin/swamp-liveness_test.ts": {
@@ -1304,7 +1304,7 @@
     ]
   },
   "swamp/tests/fleet_reboot_test.ts": {
-    "source_sha256": "a22b1f774be98ccafc1fc1ab8b0c6c39ed4ee3e0f94e7d3f93cd001c4c3a72bb",
+    "source_sha256": "b7ee7d733175315420e273544c38762abd93237fd0083bbaa88bb0cad38be6e3",
     "cases": [
       "the pass visits one Node at a time and the Gateway reads its report step",
       "each Node runs drain, reboot and check in order, each phase bounded and the drain longer than its budget",
