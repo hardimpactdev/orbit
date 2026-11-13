@@ -1,0 +1,82 @@
+sequenceDiagram
+  %% Target design: main orchestrator 2026-11-13 (load a dump as the owner, no password shown). Secret shape of database.create (Q-DBAUTH, R3); client in a throwaway container on the server's network.
+  %% status: draft
+  %% command: database:import
+  %% kind: database.import
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as Server Node<br/>reached over ssh
+  CLI->>GW: database:import shop<br/>--file=/home/USER/shop.sql.gz
+  %%> Command:
+  %%> - `orbit database:import shop --file=/home/USER/shop.sql.gz`
+  %%> - syntax: `<slug> --file=PATH [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the slug of a MySQL or PostgreSQL connection on a Database server
+  %%> - the absolute path of a `.sql` or `.sql.gz` file on the server's Node
+  Note over GW: Validate, record import<br/>task #5181 · lock on shop
+  %%> Requirements:
+  %%> - the connection is on an active MySQL or PostgreSQL Database server (`database.import_unsupported`)
+  %%> - your Node has an access grant to NODE, the server's Node (`node_access.required`)
+  %%> - the path is absolute, ends in `.sql` or `.sql.gz`, has no `.` or `..` part (`database.import_path_invalid`)
+  %%> Result:
+  %%> - task #5181 with the path; the owner password stays encrypted in the connection
+  GW->>SW: Store the owner password<br/>database-import-intent-5181
+  %%> What it does:
+  %%> - puts the owner password line into the Swamp vault after the task is committed (R3)
+  %%> Why:
+  %%> - the password never sits in argv, a file on the Node, the task input or result, or a log
+  GW->>SW: Start run, full intent<br/>operation-database-import
+  %%> Inputs:
+  %%> - the client argv the Gateway built, the server's address and SSH host keys
+  %%> - the vault key name, never the value
+  GW-->>CLI: 202 Accepted<br/>task #5181
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Load the dump<br/>as the Node's SSH user
+  %%> Runs as:
+  %%> - the Node's SSH user, without sudo; the dump is read only when that user owns it
+  %%> The file:
+  %%> - opened once; its real path must equal the given path (no symlink), a regular file
+  %%> - otherwise `database.import_file_refused`, and nothing is loaded
+  %%> The client:
+  %%> - a throwaway container of the server's image on the server's network, read-only, no capabilities
+  %%> - it logs in as the owner over TCP; the password is the first stdin line
+  %%> What it does, in order:
+  %%> - counts the tables; more than 0 refuses with `database.not_empty`
+  %%> - streams the file (gunzip for `.sql.gz`) into the client; the first error stops it
+  %%> - counts the tables again
+  %%> Limits:
+  %%> - 3600 s for the step
+  alt the dump loads
+    N-->>SW: bytes read, tables
+    %%> Returns:
+    %%> - bytes read from the file, the client's exit code, the table count; no names, no data
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> Result:
+    %%> - task #5181 succeeds with `bytes_read`, `exit_code` and `tables`
+  else a step fails
+    N--xSW: refused or SQL error
+    %%> When:
+    %%> - the file or the database is refused, the owner cannot log in, or a statement fails
+    SW--xGW: Run failed<br/>error_code, database_state
+    %%> Result:
+    %%> - `database_state` is `unchanged`, `empty` or `partial`
+    %%> - PostgreSQL loads in one transaction, so a failed load leaves it empty
+    %%> - MySQL commits each table, so a failed load can leave it partly filled
+    %%> Retry:
+    %%> - from `partial`: empty the database first, then import again
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5181
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

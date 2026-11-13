@@ -1,0 +1,84 @@
+---
+title: "orbit database:import"
+sidebarTitle: "database:import"
+description: "Load a plain or gzipped SQL dump into an empty database on a Database server, as the database's owner, without a password."
+---
+
+Load a SQL dump into a MySQL or PostgreSQL database on a [Database server](/reference/database-servers). The dump runs as the database's own owner, never as the server's admin. You never see or type a password.
+
+```bash
+orbit database:import <slug> --file=PATH [--idempotency-key=KEY] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Connection slug. The connection must be on a MySQL or PostgreSQL Database server. |
+
+| Option | Meaning |
+| --- | --- |
+| `--file=PATH` | Required. The absolute path of the dump on the server's Node. It ends in `.sql` or `.sql.gz`; a `.sql.gz` file is decompressed while it streams. |
+| `--idempotency-key=KEY` | Repeat the same start after a lost response. See [the CLI standard](/reference/cli-ux). |
+| `--json` | Return machine-readable JSON. |
+
+```bash
+orbit database:import shop --file=/home/deploy/imports/shop.sql.gz
+```
+
+The API is `POST /api/v1/database-connections/{slug}/import` with JSON `{"file": "/home/deploy/imports/shop.sql.gz"}`. The MCP tool is `database-import`.
+
+## Which file Orbit reads
+
+The file is on the server's Node. Orbit reads it as the Node's SSH user, the `user` that `node:show` shows, without sudo. A file passes when all of these hold:
+
+- the path is absolute, ends in `.sql` or `.sql.gz`, has only letters, digits, `.`, `_`, `-` and `/`, and has no `.` or `..` part;
+- the path has no symbolic link: the file Orbit opens has exactly this path;
+- it is a regular file;
+- the Node's SSH user owns it.
+
+The Gateway checks the first rule and answers `database.import_path_invalid`. The Node checks the rest on the open file and answers `database.import_file_refused`. Your Node needs an access grant to the server's Node. So Orbit reads only a file that its owner on that Node put there; it never reads a file of root or of another user.
+
+To import a dump, copy it as the Node's SSH user to any folder of that user, for example `scp shop.sql.gz deploy@NODE:imports/`, then pass the absolute path.
+
+## What the import does
+
+1. It logs in as the owner and counts the tables. A database with tables is refused with `database.not_empty`, and nothing is loaded.
+2. It streams the file into the client. The first failed statement stops the import.
+3. It counts the tables again.
+
+The client runs in a throwaway container of the server's image, on the server's network, read-only, with no capabilities. It logs in over TCP with the owner's password, which comes from the Gateway through the Swamp vault as the first line of standard input. The password is never in an argument, a file on the Node, the Operation's input or result, or a log.
+
+Because the owner runs the dump, the server's own permissions keep it inside the named database. A dump with `USE other`, `CREATE DATABASE other` or `\connect other` fails with the server's permission error, and the import stops there. Client commands in a dump, such as `\!` or `system`, run only inside the throwaway container. Dump a single database without `CREATE DATABASE` or `USE` lines. For PostgreSQL, use `pg_dump --no-owner --no-acl` in plain format.
+
+The step has 3600 seconds. That covers a dump of about 2 GB at 1 MB/s.
+
+## Result
+
+A successful import returns `bytes_read` (the bytes read from the file), `exit_code` 0 and `tables` (the table count after). It returns no table names and no data.
+
+| `error_code` | `database_state` | Next |
+| --- | --- | --- |
+| `database.import_file_refused` | `unchanged` | Fix the file: owner, symbolic link or type. |
+| `database.not_empty` | `unchanged` | Import only into an empty database. |
+| `database.import_login_failed` | `unchanged` | The owner could not log in. Check the server with `database:server:show`. |
+| `database.import_failed` | `empty` | Fix the dump, then import again. PostgreSQL loads in one transaction, so it always ends here. |
+| `database.import_failed` | `partial` | MySQL commits each table, so the database holds the tables loaded before the error. Empty it, then import again. |
+
+A failed import also returns `bytes_read`, `exit_code`, `tables` and `error`, the client's error code and line, such as `ERROR 1044 (42000) at line 23`. The message text is left out, because it can hold data.
+
+To empty a `partial` database, drop its tables. For a Laravel application, run `php artisan db:wipe --force` in its Instance. Otherwise remove the database and create it again: `instance:database:remove`, `database:destroy`, then `database:create --server=SERVER --instance=ID`.
+
+## How it works
+
+<div className="flow-at" data-chart="database/import"></div>
+
+## Errors
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| `database.import_unsupported` | 422 | The connection is not a MySQL or PostgreSQL database on an active Database server. |
+| `database.import_path_invalid` | 422 | The path is not absolute, has a `.` or `..` part or another character, or does not end in `.sql` or `.sql.gz`. |
+| `node_access.required` | 403 | Your Node has no access grant to the server's Node. |
+| `database.import_file_refused` | Operation | The file is a symbolic link, not a regular file, missing, or not owned by the Node's SSH user. |
+| `database.not_empty` | Operation | The database already has tables. |
+| `database.import_login_failed` | Operation | The owner could not log in. |
+| `database.import_failed` | Operation | A statement failed or the client stopped. See `database_state`. |
