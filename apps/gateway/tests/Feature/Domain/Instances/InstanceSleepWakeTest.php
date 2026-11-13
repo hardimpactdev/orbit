@@ -287,6 +287,9 @@ function wakeNode(Instance $clone, array $node = []): object
     if ($state->marker) {
         $state->files[$marker] = time();
     }
+    if ($state->script) {
+        $state->files[ContainerResume::ScriptPath] = time();
+    }
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldReceive('run')->andReturnUsing(function (Node $node, string $command, array $input = []) use ($state, $clone, $marker): array {
         app(AgentContract::class)->command($command);
@@ -390,7 +393,7 @@ it('runs the wake workflow in the same Operation for every other state, removes 
     'running and marker after a reboot' => [['status' => 'Running'], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.marker:remove']],
     'frozen without its marker' => [['marker' => false], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.marker:remove']],
     'FrankenPHP silent after the resume' => [['web' => false], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.marker:remove']],
-    'a Node without the script: the request is not taken' => [['script' => false], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.times', 'hibernation.times', 'hibernation.times', 'hibernation.marker:remove']],
+    'a Node without the script' => [['script' => false], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.marker:remove']],
     'the request call fails' => [['fails' => 'hibernation.marker'], 'frozen', ['hibernation.marker:mark', 'hibernation.marker:remove']],
     'the read call fails' => [['fails' => 'hibernation.times'], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.marker:remove']],
 ]);
@@ -479,7 +482,7 @@ it('still sends the visitor to the app when an extension fails after the Node re
     Queue::assertNotPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->delay === null);
 });
 
-it('leaves a Node whose script took no request out of the fast path for ten minutes, then tries it again', function (): void {
+it('leaves a Node without the script out of the fast path for ten minutes, then tries it again', function (): void {
     $clone = frozenClone();
     $state = wakeNode($clone, ['script' => false]);
 

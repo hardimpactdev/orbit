@@ -19,13 +19,14 @@ project=orbit-instances
 web_port=8080
 # The Gateway waits 3 s from its request, then starts the wake's workflow, whose first container step comes several seconds later
 # (measured: 8-13 s for its playbook step). A request older than 1 s is not acted on, and each Incus call has its own bound, so
-# the script ends within about 6.5 s of the request.
+# a resume ends within about 6.5 s of the request. The library checks come after every pending request, each bounded to 5 s; they
+# only rebuild the cache, which ldconfig replaces atomically.
 max_age_ns=1000000000
 probe_limit_ns=1500000000
 # The same check as the wake's workflow (tasks/instance-container-power.yml, "Refresh a stale library cache after the wake"): a converge
 # cannot exec in a frozen container, so its library cache may lack the shared runtime libraries.
 # shellcheck disable=SC2016 # it runs in the container's shell, which expands it
-library_check='c=$(ldconfig -p) || exit 0; for f in /opt/orbit-runtime/current/lib/*.so*; do [ -e "$f" ] || continue; case "$c" in *"${f##*/} ("*) ;; *) ldconfig -X && echo rebuilt; exit 0;; esac; done'
+library_check='d=/opt/orbit-runtime/current/lib; c=$(ldconfig -p) || exit 0; for f in "$d"/lib*.so*; do n=${f##*/}; case "$n" in *.so|*.so.[0-9]|*.so.[0-9][0-9]|*.so.[0-9][0-9][0-9]) ;; *) continue;; esac; [ -e "$f" ] || continue; printf "%s\n" "$c" | sed -n "s/.* => //p" | grep -qxF "$d/$n" || { ldconfig -X && echo rebuilt; exit 0; }; done'
 
 now_ns() { date +%s%N; }
 log() { echo "orbit-instance-wake: $*"; }
@@ -69,31 +70,52 @@ resume() {
     rm -f -- "$marker" || { log "instance $id: marker not removed"; return 0; }
     : > "$requests/app-instance-$id.resumed"
     log "instance $id: resumed resume_ms=$(( (resumed - started) / 1000000 )) web_probe_ms=$(( (probed - resumed) / 1000000 ))"
-    # After the marker went and the Gateway can answer: the visitor does not wait for this.
-    if [ "$(timeout 5 incus exec --project "$project" "$container" -- sh -c "$library_check" 2>/dev/null)" = rebuilt ]; then
-        log "instance $id: library cache rebuilt"
-    fi
+    pending+=("$id")
 }
 
 shopt -s nullglob
-for request in "$requests"/app-instance-*.wake; do
-    name=${request##*/}
-    id=${name#app-instance-}
-    id=${id%.wake}
-    if [[ ! $id =~ ^[1-9][0-9]{0,18}$ ]] || [ -L "$request" ] || [ ! -f "$request" ]; then
-        rm -f -- "$request"
-        log "ignored request $name"
-        continue
+pending=()
+
+# Until no request is left: one that arrives during a resume is taken before any library check. Each pass removes or renames every
+# request it saw, so the loop ends.
+take_requests() {
+    local request name id taken written seen=yes
+    while [ "$seen" = yes ]; do
+        seen=no
+        for request in "$requests"/app-instance-*.wake; do
+            seen=yes
+            name=${request##*/}
+            id=${name#app-instance-}
+            id=${id%.wake}
+            if [[ ! $id =~ ^[1-9][0-9]{0,18}$ ]] || [ -L "$request" ] || [ ! -f "$request" ]; then
+                rm -f -- "$request"
+                log "ignored request $name"
+                continue
+            fi
+            taken="$requests/app-instance-$id.taken"
+            written=$(stat -c %.9Y -- "$request" 2>/dev/null | tr -d .)
+            # The old answer goes before the request does, so the Gateway never reads it as this one's.
+            rm -f -- "$requests/app-instance-$id.resumed"
+            mv -f -- "$request" "$taken" || { rm -f -- "$request"; continue; }
+            if [[ ! $written =~ ^[0-9]+$ ]] || (( $(now_ns) - written > max_age_ns )); then
+                log "instance $id: request older than 1 s; nothing to do"
+            else
+                resume "$id"
+            fi
+            rm -f -- "$taken"
+        done
+    done
+}
+
+# Every request first, so a second wake never waits for a library check. Then one check per resumed container, after its page
+# answers: the visitor does not wait for it. Requests that arrived meanwhile go first again.
+take_requests
+while (( ${#pending[@]} > 0 )); do
+    id=${pending[0]}
+    pending=("${pending[@]:1}")
+    if [ "$(timeout 5 incus exec --project "$project" "instance-$id" -- sh -c "$library_check" 2>/dev/null)" = rebuilt ]; then
+        log "instance $id: library cache rebuilt"
     fi
-    taken="$requests/app-instance-$id.taken"
-    written=$(stat -c %.9Y -- "$request" 2>/dev/null | tr -d .)
-    mv -f -- "$request" "$taken" || { rm -f -- "$request"; continue; }
-    rm -f -- "$requests/app-instance-$id.resumed"
-    if [[ ! $written =~ ^[0-9]+$ ]] || (( $(now_ns) - written > max_age_ns )); then
-        log "instance $id: request older than 1 s; nothing to do"
-    else
-        resume "$id"
-    fi
-    rm -f -- "$taken"
+    take_requests
 done
 exit 0

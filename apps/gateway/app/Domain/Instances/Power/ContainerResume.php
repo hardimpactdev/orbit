@@ -32,13 +32,13 @@ final readonly class ContainerResume
     /** The longest the Gateway waits, both agent calls included; a visitor gets the app or the waiting page within it. */
     public const float BoundSeconds = 3.0;
 
-    /** A request the Node has not taken by then finds no script on the Node (its role predates it): the workflow runs. */
-    public const float TakeSeconds = 0.6;
+    /** The app-dev role's wake script; `hibernation.times` tells whether the Node has it. */
+    public const string ScriptPath = '/usr/local/libexec/orbit-instance-wake';
 
     /** The removal of an untaken request: the whole fast path stays within about 4.5 s of Gateway time. */
     private const float RemoveSeconds = 1.0;
 
-    /** How long a Node whose script took no request is left out of the fast path: its wakes then cost nothing extra until it converges. */
+    /** How long a Node without the script is left out of the fast path: its other wakes then cost nothing extra until it converges. */
     public const int MissingScriptSeconds = 600;
 
     /** The script needs about half a second after the request; the first read waits that long, later reads come 0.1 s apart. */
@@ -73,7 +73,7 @@ final readonly class ContainerResume
 
     /**
      * Writes the wake request and reads its outcome. Returns the wake's result fields once the Node resumed the container and
-     * removed its marker, or null when the normal workflow must finish the wake: no script took the request, the script found the
+     * removed its marker, or null when the normal workflow must finish the wake: the Node has no script, the script found the
      * container in another state or FrankenPHP silent, an agent call failed, or the bound passed. An untaken request is removed,
      * so it cannot wake the Instance later. `trigger_seconds` is the request's call; `confirm_seconds` the time until the Gateway
      * read the resume.
@@ -85,7 +85,7 @@ final readonly class ContainerResume
         $id = $operation->target_id;
         $request = self::requestPath($id);
         $paths = ['request' => $request, 'taken' => self::requestPath($id, 'taken'), 'resumed' => self::requestPath($id, 'resumed'),
-            'marker' => ValidatedData::string($operation->input['marker'] ?? null)];
+            'marker' => ValidatedData::string($operation->input['marker'] ?? null), 'script' => self::ScriptPath];
         $started = self::now();
         $until = $started + self::BoundSeconds;
         try {
@@ -97,19 +97,22 @@ final readonly class ContainerResume
             while (true) {
                 $times = $this->agents->run($node, 'hibernation.times', ['paths' => array_values($paths)], max(0.2, $until - self::now()))['times'] ?? [];
                 $at = fn (string $key): mixed => is_array($times) ? ($times[$paths[$key]] ?? null) : null;
-                // The script removes an old `.resumed` when it takes the request, and the marker of a sleeping Instance is there
-                // until a resume: both together are this resume. The Node's clock is never compared with the Gateway's.
-                if ($at('resumed') !== null && $at('marker') === null) {
+                // A Node whose app-dev role predates the script cannot take the request: its wakes skip the fast path for a while.
+                if ($at('script') === null) {
+                    Cache::put(self::missingScriptKey($node->id), true, self::MissingScriptSeconds);
+                    $this->fallBack($operation, $node, $request, 'no_script');
+
+                    return null;
+                }
+                // The script removes an old `.resumed` before it takes the request, and the marker of a sleeping Instance stays until
+                // a resume: a taken request, `.resumed` and no marker are this resume. The Node's clock is never compared.
+                if ($at('request') === null && $at('resumed') !== null && $at('marker') === null) {
                     return ['wake' => 'resumed', 'marker_found' => true, 'trigger_seconds' => round($trigger, 3),
                         'confirm_seconds' => round(self::now() - $marked, 3)];
                 }
-                $untaken = $at('request') !== null && self::now() - $marked >= self::TakeSeconds;
                 $declined = $at('request') === null && $at('taken') === null;
-                if ($untaken) {
-                    Cache::put(self::missingScriptKey($node->id), true, self::MissingScriptSeconds);
-                }
-                if ($untaken || $declined || self::now() + self::ReadPauseSeconds >= $until) {
-                    $this->fallBack($operation, $node, $request, $untaken ? 'untaken' : ($declined ? 'declined' : 'bound'));
+                if ($declined || self::now() + self::ReadPauseSeconds >= $until) {
+                    $this->fallBack($operation, $node, $request, $declined ? 'declined' : 'bound');
 
                     return null;
                 }

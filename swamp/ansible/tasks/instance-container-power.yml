@@ -176,12 +176,13 @@
     state: absent
 
 # A converge cannot exec in a frozen container, so one that slept through it may wake with a library cache that lacks the shared
-# runtime libraries. After the marker went, so the visitor does not wait: one exec, `ldconfig -X` only when a library is missing.
+# runtime libraries. After the marker went, so the visitor does not wait: one exec, `ldconfig -X` only when the cache lacks a soname of
+# the runtime folder's `lib` at that path (the converge's own rule, instance_container_files.py).
 # The Node's wake script (files/instance-container-wake.sh) runs the same check after its resume.
 - name: Refresh a stale library cache after the wake
   when: power == 'awake'
   ansible.builtin.command:
-    argv: ['incus', 'exec', '--project', '{{ container.project }}', '{{ container.name }}', '--', 'sh', '-c', 'c=$(ldconfig -p) || exit 0; for f in /opt/orbit-runtime/current/lib/*.so*; do [ -e "$f" ] || continue; case "$c" in *"${f##*/} ("*) ;; *) ldconfig -X && echo rebuilt; exit 0;; esac; done']
+    argv: ['incus', 'exec', '--project', '{{ container.project }}', '{{ container.name }}', '--', 'sh', '-c', 'd=/opt/orbit-runtime/current/lib; c=$(ldconfig -p) || exit 0; for f in "$d"/lib*.so*; do n=${f##*/}; case "$n" in *.so|*.so.[0-9]|*.so.[0-9][0-9]|*.so.[0-9][0-9][0-9]) ;; *) continue;; esac; [ -e "$f" ] || continue; printf "%s\n" "$c" | sed -n "s/.* => //p" | grep -qxF "$d/$n" || { ldconfig -X && echo rebuilt; exit 0; }; done']
   register: wake_library_cache
   changed_when: "'rebuilt' in wake_library_cache.stdout"
   failed_when: false

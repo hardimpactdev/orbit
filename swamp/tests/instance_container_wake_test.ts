@@ -128,6 +128,9 @@ Deno.test("the script's folders and port are the Gateway's", () => {
     assertStringIncludes(text, `requests=\${ORBIT_WAKE_REQUESTS:-${marker}}`);
     assertStringIncludes(text, `markers=\${ORBIT_WAKE_MARKERS:-${logs}}`);
     assertStringIncludes(text, `web_port=${port}\n`);
+    // The Gateway tells a Node with the script by this path, which the role writes.
+    const scriptPath = gateway("Domain/Instances/Power/ContainerResume.php").match(/ScriptPath = '([^']+)'/)![1];
+    assertStringIncludes(Deno.readTextFileSync(new URL("../ansible/tasks/instance-host.yml", import.meta.url)), `dest: ${scriptPath},`);
 });
 
 Deno.test("the app-dev role installs the script as root and a watch on the request folder, with no capabilities", () => {
@@ -145,7 +148,7 @@ Deno.test("the app-dev role installs the script as root and a watch on the reque
     assertStringIncludes(manifest, "  - ansible/files/instance-container-wake.sh\n");
 });
 
-const libraryCheck = (text: string) => text.match(/c=\$\(ldconfig -p\)[^\n']*done/)![0];
+const libraryCheck = (text: string) => text.match(/d=\/opt\/orbit-runtime\/current\/lib;[^\n']*done/)![0];
 
 Deno.test("the Node script and the wake's workflow run the same library check, after the marker went", () => {
     const power = Deno.readTextFileSync(new URL("../ansible/tasks/instance-container-power.yml", import.meta.url));
@@ -160,22 +163,53 @@ Deno.test("the Node script and the wake's workflow run the same library check, a
     assert(text.indexOf('sh -c "$library_check"') > text.indexOf(': > "$requests/app-instance-$id.resumed"'));
 });
 
-Deno.test("the library check rebuilds the cache only when a shared runtime library is missing from it", async () => {
+Deno.test("the library check rebuilds the cache only when a soname of the runtime folder is missing at that path, as the converge reads it", async () => {
     const folder = await Deno.makeTempDir();
     try {
         await Deno.mkdir(`${folder}/lib`);
         await Deno.mkdir(`${folder}/bin`);
-        await Deno.writeTextFile(`${folder}/lib/libnss3.so`, "");
-        const check = libraryCheck(Deno.readTextFileSync(script)).replace("/opt/orbit-runtime/current/lib", `${folder}/lib`);
-        const run = async (cache: string) => {
-            await Deno.writeTextFile(`${folder}/bin/ldconfig`, `#!/bin/sh\nif [ "$1" = -p ]; then printf '%s\\n' '${cache}'; else echo "$*" >> '${folder}/rebuilt'; fi\n`);
+        // A real folder holds the file with its full version, its soname link and a dev link; the cache lists only the last two.
+        for (const name of ["libnss3.so", "libXRes.so.1.0.0", "libasound.so.2.0.0", "libgraphite2.so.3.2.1"]) await Deno.writeTextFile(`${folder}/lib/${name}`, "");
+        await Deno.symlink("libXRes.so.1.0.0", `${folder}/lib/libXRes.so.1`);
+        await Deno.symlink("libasound.so.2.0.0", `${folder}/lib/libasound.so.2`);
+        await Deno.symlink("libgraphite2.so.3.2.1", `${folder}/lib/libgraphite2.so.3`);
+        const lib = `${folder}/lib`;
+        const check = libraryCheck(Deno.readTextFileSync(script)).replace("/opt/orbit-runtime/current/lib", lib);
+        const run = async (cache: string[]) => {
+            try { Deno.removeSync(`${folder}/rebuilt`); } catch { /* none yet */ }
+            await Deno.writeTextFile(`${folder}/cache`, cache.join("\n") + "\n");
+            await Deno.writeTextFile(`${folder}/bin/ldconfig`, `#!/bin/sh\nif [ "$1" = -p ]; then cat '${folder}/cache'; else echo "$*" >> '${folder}/rebuilt'; fi\n`);
             await Deno.chmod(`${folder}/bin/ldconfig`, 0o755);
             const out = await new Deno.Command("sh", { args: ["-c", check], stdout: "piped", env: { PATH: `${folder}/bin:/usr/bin:/bin` } }).output();
             return new TextDecoder().decode(out.stdout).trim();
         };
-        assertEquals(await run(`\tlibnss3.so (libc6,x86-64) => ${folder}/lib/libnss3.so`), "");
+        const entry = (name: string, at = lib) => `\t${name} (libc6,x86-64) => ${at}/${name}`;
+        const complete = ["2 libs found in cache `/etc/ld.so.cache'", entry("libnss3.so"), entry("libXRes.so.1"), entry("libasound.so.2"), entry("libgraphite2.so.3"),
+            entry("libc.so.6", "/lib/x86_64-linux-gnu")];
+        assertEquals(await run(complete), "", "a complete cache is left alone");
         assert(!exists(`${folder}/rebuilt`));
-        assertEquals(await run("\tlibc.so.6 (libc6,x86-64) => /lib/x86_64-linux-gnu/libc.so.6"), "rebuilt");
+        assertEquals(await run(complete.filter((line) => !line.includes("libXRes.so.1 "))), "rebuilt", "a missing soname rebuilds it");
         assertEquals(Deno.readTextFileSync(`${folder}/rebuilt`).trim(), "-X");
+        assertEquals(await run([...complete.filter((line) => !line.includes("libasound")), entry("libasound.so.2", "/usr/lib")]), "rebuilt",
+            "a soname that resolves elsewhere rebuilds it");
+        assertEquals(await run([...complete.filter((line) => !line.includes("libasound.so.2 ")), entry("libasound.so.20")]), "rebuilt",
+            "a longer name that starts with the soname is not the soname");
+        Deno.removeSync(lib, { recursive: true });
+        assertEquals(await run(complete), "", "no runtime folder: nothing to check");
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("a second request is taken before the first container's library check", async () => {
+    const folder = await node("3", {});
+    try {
+        // The stub writes the second request while it answers the first container's probe.
+        const stub = Deno.readTextFileSync(`${folder}/bin/incus`).replace("exec) head", `exec) [ -e '${folder}/second' ] || { touch '${folder}/second'; : > '${folder}/requests/app-instance-4.wake'; }; head`);
+        Deno.writeTextFileSync(`${folder}/bin/incus`, stub);
+        await Deno.writeTextFile(`${folder}/markers/app-instance-4.asleep`, "");
+        await Deno.writeTextFile(`${folder}/requests/app-instance-3.wake`, "");
+        await run(folder);
+        const order = calls(folder).filter((call) => call.startsWith("query") || call.includes("sh -c"));
+        assertEquals(order.map((call) => call.startsWith("query") ? call.split("instance-")[1].split("?")[0] : "check"), ["3", "4", "check"]);
+        assert(!exists(`${folder}/requests/app-instance-4.wake`));
     } finally { await Deno.remove(folder, { recursive: true }); }
 });

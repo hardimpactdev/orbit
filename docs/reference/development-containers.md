@@ -980,11 +980,11 @@ In any other case it changes nothing, and a failure after the resume keeps the m
 
 The Gateway reads the request, `.taken`, `.resumed` and the marker with the agent's `hibernation.times`, first after 0.35 seconds and then every 0.1 seconds, within 3 seconds of the request. When the resume shows, the Operation succeeds at once: `wake: resumed`, `trigger_seconds` (the request's call) and `confirm_seconds` (from the request until the Gateway read the resume). Caddy's activation call gets `307` to the visitor's own path, so the browser sends the same request again, with its method and body, and gets the app. The waiting page is not shown. A request that arrives while the resume runs joins the wake and waits for it, up to the bound.
 
-Anything else starts the run below, in the same Operation, and the visitor gets the waiting page as before. That covers a request that no script took within 0.6 seconds, such as on a Node whose role predates the script. The Gateway then leaves that Node out of the fast path for 10 minutes, so its other wakes cost nothing extra.
+Anything else starts the run below, in the same Operation, and the visitor gets the waiting page as before. That covers a Node without the script, such as one whose role predates it. The first read also asks for `/usr/local/libexec/orbit-instance-wake`. When it is missing, the Gateway leaves that Node out of the fast path for 10 minutes, so its other wakes cost nothing extra.
 
 It also covers a script that declined (another state, FrankenPHP silent), a failed agent call, and the bound. The Gateway then removes a request still there. The script ignores a request older than one second, so a request left behind never wakes the Instance later.
 
-Each Incus call in the script has its own bound, so it ends within about 6.5 seconds of the request, before the workflow reaches the container. A Gateway worker that dies during the resume leaves a queued wake: a delayed start runs its workflow 15 seconds later. A cancel during the resume keeps the Operation cancelled.
+Each Incus call in the script has its own bound, so a resume ends within about 6.5 seconds of the request, before the workflow reaches the container. The script takes every pending request, also one that arrived during a resume, before it checks any library cache. A Gateway worker that dies during the resume leaves a queued wake: a delayed start runs its workflow 15 seconds later. A cancel during the resume keeps the Operation cancelled.
 
 A Stopped container whose last sleep froze it, such as after a host reboot, now waits about a second longer for the waiting page, while the Node declines the request.
 
@@ -1003,7 +1003,9 @@ Measured on a frozen fixture clone before this path: the resume took 0.02 second
 
 The result also gives `resume_seconds` and `web_probe_seconds` for a resume. A boot starts the container and waits until each running unit is active. Then the run waits until FrankenPHP answers. A web unit that listens before the app is ready answers 5xx for a moment, so the run waits up to 5 more seconds for an answer below 500; an app that answers 5xx by itself is then served as it is. Then the run removes the marker, and the next request gets the app. A Project without a web unit has no web wait.
 
-A converge cannot run a command in a frozen container, so a container that slept through a converge may wake with a library cache that lacks the shared runtime libraries. After the marker went, so the visitor does not wait, each wake runs one check in the container: when `ldconfig -p` lacks a library of `/opt/orbit-runtime/current/lib`, it runs `ldconfig -X`. The run does it after its marker removal; the Node's wake script does it after it wrote `.resumed`. A failed check fails nothing.
+A converge cannot run a command in a frozen container, so a container that slept through a converge may wake with a library cache that lacks the shared runtime libraries. After the marker went, so the visitor does not wait, each wake runs one check in the container: when `ldconfig -p` does not list a soname of `/opt/orbit-runtime/current/lib` at that path, it runs `ldconfig -X`.
+
+That is the converge's own rule: only names such as `libasound.so.2` count, not the file `libasound.so.2.0.0`, which the cache never lists. The run does it after its marker removal; the Node's wake script does it after every pending request. A failed check fails nothing, and each rebuild is logged ("rebuilt" in the run's output, "library cache rebuilt" in the journal).
 
 Only then does the run wait up to 30 seconds for T3 in a clone: T3 gates the end of the Operation, not the visitor's page. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the Route shows the failure page.
 
