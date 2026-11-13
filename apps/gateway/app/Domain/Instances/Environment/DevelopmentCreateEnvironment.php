@@ -41,7 +41,7 @@ final readonly class DevelopmentCreateEnvironment
             }
         }
         $stored = $this->store->values($instance);
-        $owned = $this->owned($instance, $project, $database, $valkey);
+        $owned = $this->owned($instance, $project, $database, $valkey, $source);
         $values = [...array_diff_key([...$template, ...$stored], array_flip($owned['forget'])), ...$owned['values']];
         $values['APP_NAME'] ??= $project->name;
         $values['APP_ENV'] ??= 'development';
@@ -68,14 +68,18 @@ final readonly class DevelopmentCreateEnvironment
      * the default's site points at the clone's; a Route with a web root serves other content and stays. Route domains are no secrets. A per-Project list of keys the clone never copies joins `drop`. An Instance with
      * T3 that moved in has no `$source`: it keeps its own file.
      *
-     * @return array{own: list<string>, drop: list<string>, guard: list<string>, hosts: array{from: list<string>, to: string|null}}
+     * `shared` names the keys of the attachments the clone shares with its default (docs/reference/database-connections.md#share-a-connection-with-clones);
+     * they are also in `own`.
+     *
+     * @return array{own: list<string>, drop: list<string>, guard: list<string>, shared: list<string>, hosts: array{from: list<string>, to: string|null}}
      */
     public function cloneKeys(Instance $instance, ?Instance $source, ?DatabaseConnection $database = null, ?DatabaseConnectionTarget $valkey = null): array
     {
-        $owned = $this->owned($instance, $instance->project, $database, $valkey);
+        $owned = $this->owned($instance, $instance->project, $database, $valkey, $source);
         $projection = app(DatabaseConnectionEnvProjection::class);
         $drop = $guard = [];
-        foreach ($source === null ? [] : DatabaseConnectionTarget::query()->with('databaseConnection')->where('instance_id', $source->id)->get() as $target) {
+        // A shared attachment is the clone's too: its keys are rendered as the clone's own and named under `shared`.
+        foreach ($source === null ? [] : DatabaseConnectionTarget::query()->with('databaseConnection')->where('instance_id', $source->id)->where('shared', false)->get() as $target) {
             // Laravel's `<PREFIX>_URL` overrides every other key of the connection.
             $drop = [...$drop, ...$projection->managedKeys($target->prefix), $projection->key($target->prefix, 'URL')];
             // A Redis database is a small index, never a credential: matching it would drop any key set to "0".
@@ -99,23 +103,34 @@ final readonly class DevelopmentCreateEnvironment
         $from = $source === null ? null : $this->domain($source);
 
         return ['own' => $names([...array_keys($owned['values']), ...$owned['forget'], ...$this->mailKeys($instance)]),
-            'drop' => $names($drop), 'guard' => $names($guard), 'hosts' => ['from' => $from === null ? [] : [$from], 'to' => $this->domain($instance)]];
+            'drop' => $names($drop), 'guard' => $names($guard), 'shared' => $names($owned['shared']),
+            'hosts' => ['from' => $from === null ? [] : [$from], 'to' => $this->domain($instance)]];
     }
 
     /**
      * The values Orbit sets for the Instance itself and the keys it removes: its own database under DB, its own Valkey user under
-     * the default's prefix with the Laravel key prefixes of CloneValkeyKeyspace, and APP_URL on its own Route domain.
+     * the default's prefix with the Laravel key prefixes of CloneValkeyKeyspace, the keys of a clone's shared attachments rendered
+     * from their connection records as `env:sync` renders them, and APP_URL on its own Route domain.
      *
-     * @return array{values: array<string, string>, forget: list<string>}
+     * @return array{values: array<string, string>, forget: list<string>, shared: list<string>}
      */
-    private function owned(Instance $instance, Project $project, ?DatabaseConnection $database, ?DatabaseConnectionTarget $valkey): array
+    private function owned(Instance $instance, Project $project, ?DatabaseConnection $database, ?DatabaseConnectionTarget $valkey, ?Instance $source = null): array
     {
-        $values = $forget = [];
+        $values = $forget = $shared = [];
         $projection = app(DatabaseConnectionEnvProjection::class);
-        foreach (array_filter([$database === null ? null : [$database, 'DB'], $valkey === null ? null : [$valkey->databaseConnection, $valkey->prefix]]) as [$connection, $prefix]) {
-            $projected = $projection->project($connection, $prefix, 'wireguard', $instance->node);
+        $attachments = array_values(array_filter([$database === null ? null : [$database, 'DB', 'wireguard'], $valkey === null ? null : [$valkey->databaseConnection, $valkey->prefix, 'wireguard']]));
+        $sharedTargets = $source === null ? [] : DatabaseConnectionTarget::query()->with('databaseConnection')
+            ->where('instance_id', $instance->id)->where('shared', true)->orderBy('id')->get()->all();
+        foreach ($sharedTargets as $target) {
+            $attachments[] = [$target->databaseConnection, $target->prefix, $target->network];
+        }
+        foreach ($attachments as $index => [$connection, $prefix, $network]) {
+            $projected = $projection->project($connection, $prefix, $network, $instance->node);
             $values = array_replace(array_diff_key($values, array_flip($projected['forget'])), $projected['values']);
             $forget = [...$forget, ...array_diff($projected['forget'], array_keys($projected['values']))];
+            if ($index >= count($attachments) - count($sharedTargets)) {
+                $shared = [...$shared, ...array_keys($projected['values'])];
+            }
         }
         if ($valkey !== null && $project->is_laravel === true) {
             $values = array_replace($values, CloneValkeyKeyspace::laravelKeys($instance, $valkey->prefix));
@@ -125,7 +140,7 @@ final readonly class DevelopmentCreateEnvironment
             $values['APP_URL'] = 'https://{{instance.domain}}';
         }
 
-        return ['values' => $values, 'forget' => array_values(array_unique($forget))];
+        return ['values' => $values, 'forget' => array_values(array_unique($forget)), 'shared' => $shared];
     }
 
     /** The file the run writes, rendered from the stored values. */

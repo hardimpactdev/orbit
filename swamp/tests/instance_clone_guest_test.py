@@ -658,6 +658,27 @@ class CloneGuestTest(unittest.TestCase):
         self.assertEqual(after[0], GUEST.merge_environment(DEFAULT_ENV, CLONE_RENDER, CLONE_MERGE)[0])
         self.assertEqual(after[1], {**before[1], "rewritten": []})
 
+    def test_workspace_keeps_a_shared_connection_with_the_rendered_values_and_names_it_shared(self):
+        # The default's seed .env holds the shared reader connection; the Gateway renders it as the clone's own and names it shared.
+        shared = ["FOOD_CATALOG_DATABASE", "FOOD_CATALOG_HOST", "FOOD_CATALOG_PASSWORD", "FOOD_CATALOG_USERNAME"]
+        seed = DEFAULT_ENV + "FOOD_CATALOG_HOST=10.44.0.3\nFOOD_CATALOG_DATABASE=catalog\nFOOD_CATALOG_USERNAME=catalog_reader\nFOOD_CATALOG_PASSWORD=reader-secret-1\n"
+        render = CLONE_RENDER + 'FOOD_CATALOG_HOST="10.44.0.3"\nFOOD_CATALOG_DATABASE="catalog"\nFOOD_CATALOG_USERNAME="catalog_reader"\nFOOD_CATALOG_PASSWORD="reader-secret-1"\n'
+        merge = {**CLONE_MERGE, "own": CLONE_MERGE["own"] + shared, "shared": shared, "hosts": {"from": [], "to": None}}
+        written, names = self.run_workspace(seed, {"environment": render, "merge": merge})
+        values = {k: v for k, _, v in GUEST.env_blocks(written) if k is not None}
+        self.assertEqual({k: values[k] for k in shared}, {"FOOD_CATALOG_DATABASE": "catalog", "FOOD_CATALOG_HOST": "10.44.0.3",
+                                                          "FOOD_CATALOG_PASSWORD": "reader-secret-1", "FOOD_CATALOG_USERNAME": "catalog_reader"})
+        self.assertEqual(names["shared"], shared)
+        self.assertFalse(set(shared) & set(names["copied"] + names["dropped"]))
+        self.assertNotIn("reader-secret-1", json.dumps(names))
+
+    def test_workspace_without_a_shared_connection_drops_as_before_and_names_none_shared(self):
+        before = self.run_workspace(DEFAULT_ENV, {"environment": CLONE_RENDER, "merge": CLONE_MERGE})
+        after = self.run_workspace(DEFAULT_ENV, {"environment": CLONE_RENDER, "merge": {**CLONE_MERGE, "shared": []}})
+        self.assertEqual(after[0], before[0])
+        self.assertEqual(after[1], {**before[1], "shared": []})
+        self.assertEqual(after[1]["dropped"], ["DATABASE_URL", "REPORTS_DB"])
+
     def test_workspace_of_a_create_admitted_before_hosts_keeps_the_defaults_url(self):
         # Merge names from release 2000's Gateway: no `hosts`, so the file and the names are that release's.
         seed = DEFAULT_ENV + "VITE_HMR_HOST=default.site.test\n"

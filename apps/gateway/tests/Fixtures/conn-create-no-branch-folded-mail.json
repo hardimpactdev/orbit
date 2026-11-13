@@ -59,6 +59,7 @@
             "own": [],
             "drop": [],
             "guard": [],
+            "shared": [],
             "hosts": {
                 "from": [],
                 "to": null
@@ -390,6 +391,7 @@
             "own": [],
             "drop": [],
             "guard": [],
+            "shared": [],
             "hosts": {
                 "from": [],
                 "to": null

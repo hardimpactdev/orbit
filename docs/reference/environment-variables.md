@@ -130,7 +130,9 @@ For Laravel, the [application directory](/reference/projects#application-directo
 
 On `app-prod`, every release links `.env` in its application directory to the production home's file. With root `apps/site/public`, `<home>/releases/<name>/apps/site/.env` links to `<home>/.env`; no release-root `.env` link is needed. Application data uses separate [shared directories](/reference/deployments#shared-paths); changing those paths does not change the environment file. See [Production release layout](/reference/deployments).
 
-A container Instance keeps its `.env` in its workspace, for `orbit` with group `work`; its create flow writes it. A clone keeps its default's `.env` from the seed snapshot, except the keys it must own, and points copied values on the default's Route host at its own; see [the environment of a clone](/reference/development-containers#the-environment-of-a-clone). `env:import` refuses a container Instance with `operation.kind_unavailable`. `env:sync` on a container Instance never renders the file again: it writes only the keys of the attached connections in place, and leaves every other line as it is; see [env:sync on a container Instance](/cli/env/sync#on-a-container-instance). See [the default Instance](/reference/development-containers#the-default-instance).
+A container Instance keeps its `.env` in its workspace, for `orbit` with group `work`; its create flow writes it. A clone keeps its default's `.env` from the seed snapshot, except the keys it must own, and points copied values on the default's Route host at its own. It keeps the keys of a connection its default [shares](/reference/database-connections#share-a-connection-with-clones); see [the environment of a clone](/reference/development-containers#the-environment-of-a-clone).
+
+`env:import` refuses a container Instance with `operation.kind_unavailable`. `env:sync` on a container Instance never renders the file again: it writes only the keys of the attached connections in place, and leaves every other line as it is; see [env:sync on a container Instance](/cli/env/sync#on-a-container-instance). See [the default Instance](/reference/development-containers#the-default-instance).
 
 ## Import
 
@@ -176,7 +178,7 @@ A key that stored configuration lacks refuses the sync with `env.sync_would_drop
 
 When the written file's sha256 differs from the rendered one, the end check fails the Operation with `operation.native_failed` and names the step. Repeat synchronization: it writes the file again.
 
-A stored Database attachment keeps its explicit network choice when synchronization projects environment values. [LAN selection](/reference/database-connections#choose-lan-for-an-instance) requires an active peer and a current managed publication; WireGuard is the default. Transfer and clone reattachment reset the choice to WireGuard.
+A stored Database attachment keeps its explicit network choice when synchronization projects environment values. [LAN selection](/reference/database-connections#choose-lan-for-an-instance) requires an active peer and a current managed publication; WireGuard is the default. Transfer and clone reattachment reset the choice to WireGuard. A container clone's copy of a [shared attachment](/reference/database-connections#share-a-connection-with-clones) keeps its default's choice.
 
 For an Instance that owns its MySQL or PostgreSQL `DB` database, synchronization also writes `.env.testing` in the same step and mode. The Gateway renders the whole file: the values of `.env`, with `APP_ENV=testing` and the `DB_*` keys of the [test database](/reference/database-connections#test-databases). The write replaces the file; Orbit merges nothing. A file that Git tracks in the checkout stays unchanged. The Operation result records the test database name and testing status: `written`, `unchanged`, `skipped_tracked` or `skipped_unobserved`.
 

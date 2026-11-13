@@ -34,6 +34,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\NativeStepFailure;
+use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
@@ -1339,4 +1340,95 @@ it('keeps create dotenv byte-identical while the public origin belongs only to t
     expect($unit)->toContain('Environment=DEV_SERVER_ORIGIN=https://'.$domain.'/__orbit/vite',
         'Environment=ORBIT_DEV_SERVER_ORIGIN=https://'.$domain.'/__orbit/vite');
     expect($clone->environmentValues()->whereIn('env_key', ['DEV_SERVER_ORIGIN', 'ORBIT_DEV_SERVER_ORIGIN'])->count())->toBe(0);
+});
+
+/**
+ * A read-only connection on another Node with no Orbit Database server behind it, attached to the default under FOOD_CATALOG, as
+ * hauzer's default has its food catalogue (docs/reference/database-connections.md#share-a-connection-with-clones).
+ */
+function foodCatalogue(Instance $default, bool $shared): DatabaseConnection
+{
+    $remote = containerDefaultNode('services', '10.44.0.3', listed: false);
+    $connection = DatabaseConnection::query()->forceCreate(['slug' => 'food-reader', 'driver' => DatabaseDriver::Pgsql, 'node_id' => $remote->id,
+        'host' => '10.44.0.3', 'port' => 5434, 'database' => 'food_catalog', 'username' => 'food_catalog_reader', 'password' => 'reader-secret-sentinel']);
+    DatabaseConnectionTarget::query()->create(['instance_id' => $default->id, 'prefix' => 'FOOD_CATALOG',
+        'database_connection_id' => $connection->id, 'network' => 'wireguard', 'shared' => $shared]);
+
+    return $connection;
+}
+
+describe('a connection the default shares with its clones', function (): void {
+    it('is attached to the clone with its keys and its network path, named shared, and its password reaches only the .env', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $catalogue = foodCatalogue($default, shared: true);
+
+        $operation = containerCreate($default->project, $node, 'feature');
+
+        $clone = Instance::query()->findOrFail($operation->target_id);
+        $target = DatabaseConnectionTarget::query()->where('instance_id', $clone->id)->sole();
+        $keys = ['FOOD_CATALOG_CONNECTION', 'FOOD_CATALOG_DATABASE', 'FOOD_CATALOG_HOST', 'FOOD_CATALOG_PASSWORD', 'FOOD_CATALOG_PORT', 'FOOD_CATALOG_USERNAME'];
+        $values = app(InstanceEnvironmentStore::class)->values($clone);
+        $merge = $operation->input['environment_clone'];
+        $container = containerIntentOf($operation);
+        // The copy carries the mark, so the clone holds the attachment exactly as its default does.
+        expect($target->only(['database_connection_id', 'prefix', 'network', 'shared']))
+            ->toBe(['database_connection_id' => $catalogue->id, 'prefix' => 'FOOD_CATALOG', 'network' => 'wireguard', 'shared' => true])
+            ->and(array_intersect_key($values, array_flip(['FOOD_CATALOG_HOST', 'FOOD_CATALOG_PORT', 'FOOD_CATALOG_DATABASE', 'FOOD_CATALOG_USERNAME', 'FOOD_CATALOG_PASSWORD'])))
+            ->toEqual(['FOOD_CATALOG_HOST' => '10.44.0.3', 'FOOD_CATALOG_PORT' => '5434', 'FOOD_CATALOG_DATABASE' => 'food_catalog',
+                'FOOD_CATALOG_USERNAME' => 'food_catalog_reader', 'FOOD_CATALOG_PASSWORD' => 'reader-secret-sentinel'])
+            ->and($merge['shared'])->toBe($keys)
+            ->and($merge['own'])->toContain(...$keys)
+            ->and(array_intersect($merge['drop'], $keys))->toBe([])
+            ->and(array_intersect($merge['guard'], $keys))->toBe([])
+            // The path a migrate opens: the ACL egress, the bridge endpoint and the forward rule over WireGuard.
+            ->and($container['acl_rules']['egress'])->toContain(['action' => 'allow', 'destination' => '10.44.0.3/32', 'protocol' => 'tcp', 'destination_port' => '5434', 'state' => 'enabled'])
+            ->and($container['bridge_endpoints'])->toContain(['host' => '10.44.0.3', 'port' => 5434, 'docker' => false])
+            ->and(collect($container['firewall'])->firstWhere('to_port', '5434'))->toMatchArray(['route' => 'yes', 'interface_in' => 'orbitinst0',
+                'interface_out' => 'orbit', 'from_ip' => '10.253.0.3', 'to_ip' => '10.44.0.3', 'proto' => 'tcp']);
+
+        // The password leaves the Gateway only in the .env the run writes: never in the Operation input or Activity.
+        $vault = vaultReadingSocket([]);
+        $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+        expect(collect($vault->puts)->firstWhere('key', 'instance-create-environment-input-'.$operation->id)['value'])->toContain('reader-secret-sentinel')
+            ->and(json_encode($operation->refresh()->input))->not->toContain('reader-secret-sentinel')
+            ->and(json_encode($run['intent']))->not->toContain('reader-secret-sentinel')
+            ->and(Activity::query()->get()->toJson())->not->toContain('reader-secret-sentinel');
+    });
+
+    it('is left alone by a clone without the mark: the clone drops the keys exactly as before and gets no path', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        foodCatalogue($default, shared: false);
+
+        $operation = containerCreate($default->project, $node, 'feature');
+
+        $merge = $operation->input['environment_clone'];
+        expect(DatabaseConnectionTarget::query()->where('instance_id', $operation->target_id)->exists())->toBeFalse()
+            ->and($merge['drop'])->toBe(['FOOD_CATALOG_CONNECTION', 'FOOD_CATALOG_DATABASE', 'FOOD_CATALOG_HOST', 'FOOD_CATALOG_PASSWORD',
+                'FOOD_CATALOG_PORT', 'FOOD_CATALOG_URL', 'FOOD_CATALOG_USERNAME'])
+            ->and($merge['guard'])->toBe(['FOOD_CATALOG_DATABASE', 'FOOD_CATALOG_PASSWORD', 'FOOD_CATALOG_USERNAME'])
+            ->and($merge['shared'])->toBe([])
+            ->and(app(InstanceEnvironmentStore::class)->values(Instance::query()->findOrFail($operation->target_id)))->not->toHaveKey('FOOD_CATALOG_PASSWORD')
+            ->and(json_encode(containerIntentOf($operation)['acl_rules']['egress']))->not->toContain('10.44.0.3');
+    });
+
+    it('stays when the clone is destroyed: the destroy only detaches it and never drops the database or its login', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $catalogue = foodCatalogue($default, shared: true);
+        // The clone as its create left it, with the shared attachment; a destroy treats every attachment the same.
+        $clone = Instance::query()->findOrFail(containerCreate($default->project, $node, 'feature')->target_id);
+        expect(DatabaseConnectionTarget::query()->where('instance_id', $clone->id)->value('shared'))->toBeTrue();
+
+        $destroy = app(StartInstanceDestroyAction::class)->execute($clone, true);
+        $database = ValidatedData::object(ValidatedData::object($destroy->input['direct_destroy'])['database']);
+        app(ProjectDirectInstanceDestroyAction::class)->execute($destroy->input, []);
+
+        expect($database['connection_ids'])->not->toContain($catalogue->id)
+            ->and(json_encode($database))->not->toContain('food_catalog')
+            ->and(Instance::query()->find($clone->id))->toBeNull()
+            ->and(DatabaseConnection::query()->find($catalogue->id)?->username)->toBe('food_catalog_reader')
+            ->and(DatabaseConnectionTarget::query()->where('database_connection_id', $catalogue->id)->pluck('instance_id')->all())->toBe([$default->id]);
+    });
 });

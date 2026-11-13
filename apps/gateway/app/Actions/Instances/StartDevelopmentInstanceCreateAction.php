@@ -199,6 +199,9 @@ final readonly class StartDevelopmentInstanceCreateAction
                 $database = $copy['intent'] ?? null;
                 // A clone of a default with a Valkey target gets its own Valkey user under the same prefix, before .env renders.
                 $valkey = $source instanceof Instance ? $this->valkey($instance, $source) : null;
+                if ($source instanceof Instance) {
+                    $this->sharedTargets($instance, $source);
+                }
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
                 $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? $server['connection'] ?? null, $source, $valkey['target'] ?? null);
                 $input['mail_keys_set'] = app(DevelopmentCreateEnvironment::class)->mailKeys($instance);
@@ -290,6 +293,19 @@ final readonly class StartDevelopmentInstanceCreateAction
 
         return ['target' => $target, 'input' => ['intent_id' => ValidatedData::integer($prepared->input['intent_id']),
             'connection_id' => $connection->id, 'server_id' => $prepared->targetId, 'node_id' => $prepared->nodeId]];
+    }
+
+    /**
+     * Each attachment of the default marked shared is attached to the clone as it is: the same connection under the same prefix and
+     * network, still shared (docs/reference/database-connections.md#share-a-connection-with-clones). It is attached before .env
+     * renders and before the container intent, so .env holds its keys and the container gets its network path.
+     */
+    private function sharedTargets(Instance $instance, Instance $source): void
+    {
+        foreach (DatabaseConnectionTarget::query()->where('instance_id', $source->id)->where('shared', true)->orderBy('id')->get() as $target) {
+            DatabaseConnectionTarget::query()->updateOrCreate(['instance_id' => $instance->id, 'prefix' => $target->prefix],
+                ['database_connection_id' => $target->database_connection_id, 'network' => $target->network, 'shared' => true]);
+        }
     }
 
     /**

@@ -248,6 +248,10 @@ Deno.test("a clone finishes only with its registered T3 server, which the receip
     const rewrote = JSON.stringify({ phase: "workspace", changes: [], environment: { copied: ["VITE_APP_URL"], dropped: [], rewritten: ["VITE_APP_URL", "bad name=x"] } });
     assertEquals(create({ workspace: { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}\n${rewrote}\n` } } }).environment,
         { copied: ["VITE_APP_URL"], dropped: [], rewritten: ["VITE_APP_URL"] });
+    // The names of the shared connection's keys pass under `shared`; a name that is no key does not pass.
+    const sharing = JSON.stringify({ phase: "workspace", changes: [], environment: { copied: [], dropped: ["DATABASE_URL"], shared: ["FOOD_CATALOG_HOST", "bad name=x"] } });
+    assertEquals(create({ workspace: { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}\n${sharing}\n` } } }).environment,
+        { copied: [], dropped: ["DATABASE_URL"], shared: ["FOOD_CATALOG_HOST"] });
     // A workspace phase that printed no names (a create admitted before them) gives no `environment`.
     assertEquals("environment" in create({ workspace: { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}\n{"phase":"workspace","changes":[]}\n` } } }), false);
     const failure = (changes: Partial<typeof container>) => [create(changes).failed_step, create(changes).error_code];

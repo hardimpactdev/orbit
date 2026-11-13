@@ -915,6 +915,23 @@ describe('the databases of a move', function (): void {
             // No record is left that would refuse a clone of this default.
             ->and(app(InstanceDatabaseClonePlanner::class)->plan($default->project, 'feature', container: true))->toBeNull();
     });
+
+    it('keeps a shared attachment with its mark and opens its path, so the moved default\'s clones keep it', function (): void {
+        $node = containerDefaultNode();
+        $default = migrateCheckout(containerDefaultProject(), $node);
+        $remote = containerDefaultNode('services', '10.44.0.3', listed: false);
+        $catalogue = DatabaseConnection::query()->forceCreate(['slug' => 'food-reader', 'driver' => 'pgsql', 'node_id' => $remote->id,
+            'host' => '10.44.0.3', 'port' => 5434, 'database' => 'food_catalog', 'username' => 'food_catalog_reader', 'password' => 'reader-secret']);
+        DatabaseConnectionTarget::query()->create(['instance_id' => $default->id, 'prefix' => 'FOOD_CATALOG', 'database_connection_id' => $catalogue->id,
+            'network' => 'wireguard', 'shared' => true]);
+
+        $operation = migrateStart($default);
+        migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+
+        expect(DatabaseConnectionTarget::query()->where('instance_id', $default->id)->sole()->only(['database_connection_id', 'prefix', 'shared']))
+            ->toBe(['database_connection_id' => $catalogue->id, 'prefix' => 'FOOD_CATALOG', 'shared' => true])
+            ->and(collect($operation->input['container']['firewall'])->firstWhere('to_port', '5434'))->toMatchArray(['to_ip' => '10.44.0.3', 'route' => 'yes']);
+    });
 });
 
 describe('the end of a move', function (): void {

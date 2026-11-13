@@ -19,6 +19,8 @@ final class AddInstanceDatabaseCommand extends DatabaseAttachmentCommand
         {--prefix= : Environment key prefix; defaults to DB}
         {--replace : Allow changing or removing existing stored connection keys}
         {--network= : Connection network: wireguard (default) or lan}
+        {--shared : Mark the attachment shared: a container clone keeps it; never the own database of the Instance}
+        {--no-shared : Remove the shared mark; without either flag an existing attachment keeps its mark}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -44,6 +46,12 @@ final class AddInstanceDatabaseCommand extends DatabaseAttachmentCommand
             return self::FAILURE;
         }
 
+        if ($this->option('shared') === true && $this->option('no-shared') === true) {
+            $this->renderGatewayFailure('database.shared_flags_conflict', 'Use --shared or --no-shared, not both.');
+
+            return self::FAILURE;
+        }
+
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
@@ -58,6 +66,7 @@ final class AddInstanceDatabaseCommand extends DatabaseAttachmentCommand
                 prefix: $prefix,
                 network: is_string($this->option('network')) ? $this->option('network') : null,
                 replace: $this->option('replace') === true ? true : null,
+                shared: $this->option('shared') === true ? true : ($this->option('no-shared') === true ? false : null),
             ),
             DatabaseConnectionAttachmentResponse::class,
             ['Add Database connection', 'Adding Database connection', 'Added Database connection'],
