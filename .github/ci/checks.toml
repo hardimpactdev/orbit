@@ -187,7 +187,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 416
+cost = 535
 slices = 10
 inputs = [
   "bin/swamp-shape-gate",
@@ -209,7 +209,9 @@ inputs = [
   "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts" = 31 # ESTIMATE: local 10s x 3, plus 1s
   "a live fleet with a foreign difference is refused by the check and by the rules before any change" = 13 # ESTIMATE: local 4s x 3, plus 1s
   "a fleet built from the rules has the live shape, with boot.autostart true" = 19 # ESTIMATE: local 6s x 3, plus 1s
-  "on the live fleet a refresh writes only boot.autostart, then takes base" = 28 # ESTIMATE: local 9s x 3, plus 1s
+  "on the live fleet a refresh writes the egress files before the converge, then boot.autostart, then takes base" = 49 # ESTIMATE: local 16s x 3, plus 1s
+  "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base" = 22 # ESTIMATE: local 7s x 3, plus 1s
+  "readiness reads a healthy Doctor on the first poll; an empty, an error or no response fails with what the last poll got" = 76 # ESTIMATE: local 25s x 3, plus 1s
   "a refresh after the checkout moved migrates and restarts the nested Gateway before its only Doctor wait, and passes" = 55 # ESTIMATE: local 18s x 3, plus 1s
   "a refresh waits for the three agents after the restart before it converges, and names the agent that stays offline" = 64 # ESTIMATE: local 21s x 3, plus 1s
   "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore" = 13 # ESTIMATE: local 4s x 3, plus 1s

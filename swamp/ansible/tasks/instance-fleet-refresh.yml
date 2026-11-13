@@ -32,7 +32,7 @@
 - name: Place the agent delivery
   ansible.builtin.command:
     argv: >-
-      {{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--user', '1000', '--', 'install', '-D', '-m', '0444',
+      {{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--'] + fleet_as_app_user + ['install', '-D', '-m', '0444',
           intent.fleet.checkout.path ~ '/apps/gateway/resources/agent/frozen-manifest.json',
           intent.fleet.checkout.path ~ '/apps/agent/delivery/manifest.json'] }}
   changed_when: true
@@ -49,8 +49,8 @@
 - name: Migrate the nested Gateway
   ansible.builtin.command:
     argv: >-
-      {{ ['timeout', '120'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--user', '1000', '--cwd',
-          intent.fleet.checkout.path ~ '/apps/gateway', '--', 'php', 'artisan', 'migrate', '--force'] }}
+      {{ ['timeout', '120'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--cwd', intent.fleet.checkout.path ~ '/apps/gateway', '--']
+         + fleet_as_app_user + ['php', 'artisan', 'migrate', '--force'] }}
   changed_when: true
 - name: Restart the services
   ansible.builtin.command:
@@ -110,6 +110,10 @@
     that: fleet_nodes | map(attribute='name') | list == fleet_roles
     fail_msg: "The nested Gateway must lead exactly the Nodes {{ fleet_roles | join(', ') }}; it has {{ fleet_nodes | map(attribute='name') | join(', ') }}"
     quiet: true
+# The base converge runs apt and downloads the agent through the egress proxy, so the fleet's files are written before it, on the
+# running fleet; the rules then find them in place with the fleet stopped.
+- { name: Read the fleet files before the converge, ansible.builtin.include_tasks: instance-fleet-rules-read.yml }
+- { name: Write the fleet files before the converge, ansible.builtin.import_tasks: instance-fleet-files.yml }
 # Stop only the timers: an update transaction that already runs ends normally.
 - name: Stop the update timers in the nested containers
   ansible.builtin.command:
@@ -141,7 +145,7 @@
 
 # A snapshot of a running container on a directory pool is a file copy, not a consistent state: all three stop first.
 - name: Stop the nested containers
-  ansible.builtin.command: { argv: "{{ ['timeout', '120'] + fleet_incus + ['stop', item] }}" }
+  ansible.builtin.command: { argv: "{{ ['timeout', '120'] + fleet_incus + ['stop', item, '--timeout', '90'] }}" }
   loop: "{{ fleet_names }}"
   register: fleet_stop
   changed_when: true

@@ -1843,7 +1843,8 @@ const fleetIntent = () => ({
   layout: { gateway: { address: "10.232.2.11" }, "app-dev": { address: "10.232.2.12" }, "app-prod": { address: "10.232.2.13" } },
   operator: { address: "10.45.0.10", hub: "10.45.0.1", network: "10.45.0.0/24" },
   checkout: { path: "/home/orbit/orbit" },
-  proxy: { HTTP_PROXY: "http://10.253.0.1:3128", NO_PROXY: "localhost" },
+  proxy: { HTTP_PROXY: "http://10.253.0.1:3128", HTTPS_PROXY: "http://10.253.0.1:3128", http_proxy: "http://10.253.0.1:3128",
+    https_proxy: "http://10.253.0.1:3128", NO_PROXY: "localhost", no_proxy: "localhost" },
 });
 
 Deno.test({

@@ -9,11 +9,12 @@
   register: fleet_rules_read
   changed_when: false
   failed_when: false
-- name: Read the unit environments of the nested Gateway
+- name: Read the fleet files
   ansible.builtin.command:
-    argv: "{{ ['timeout', '30'] + fleet_incus + ['file', 'pull', intent.fleet.guests.gateway ~ item, '-'] }}"
-  loop: "{{ fleet_unit_environments }}"
-  register: fleet_units_read
+    argv: "{{ ['timeout', '30'] + fleet_incus + ['file', 'pull', item.container ~ item.path, '-'] }}"
+  loop: "{{ fleet_files }}"
+  loop_control: { label: "{{ item.container }}{{ item.path }}" }
+  register: fleet_files_read
   changed_when: false
   failed_when: false
 - name: Work out the rules a nested container lacks
@@ -42,9 +43,10 @@
       {%-     endfor -%}
       {%-   endif -%}
       {%- endfor -%}
-      {%- for read in fleet_units_read.results -%}
-      {%-   if read.rc != 0 or read.stdout | trim != fleet_unit_environment | trim -%}
-      {%-     set _ = out.append({'container': intent.fleet.guests.gateway, 'kind': 'unit', 'name': read.item, 'class': 'owned'}) -%}
+      {%- for read in fleet_files_read.results -%}
+      {%-   if read.rc != 0 or read.stdout | trim != read.item.content | trim -%}
+      {%-     set _ = out.append({'container': read.item.container, 'kind': 'file', 'name': read.item.path, 'want': read.item.content,
+                                'class': 'owned'}) -%}
       {%-   endif -%}
       {%- endfor -%}
       {{ out }}

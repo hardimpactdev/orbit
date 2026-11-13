@@ -27,9 +27,14 @@
     fleet_incus: "{{ fleet_outer_exec + ['incus'] }}"
     fleet_roles: [gateway, app-dev, app-prod]
     fleet_names: "{{ [intent.fleet.guests.gateway, intent.fleet.guests['app-dev'], intent.fleet.guests['app-prod']] }}"
-    # The proof's own API calls, from the container over `wg-nested`, as the operator.
+    # The proof's own API calls, from the container over `wg-nested`, as the operator. The container's environment sends every
+    # address but the egress proxy's through that proxy, which cannot reach the tunnel: the calls never use a proxy. `-S` keeps
+    # curl's error, so a failed call says why.
     fleet_api: "https://{{ intent.fleet.operator.hub }}/api/v1"
-    fleet_curl: "{{ fleet_outer_exec + ['curl', '-sk', '-m', '80', '-H', 'Host: gateway.orbit', '-H', 'Accept: application/json'] }}"
+    fleet_curl: "{{ fleet_outer_exec + ['curl', '-sSk', '--noproxy', '*', '-m', '80', '-H', 'Host: gateway.orbit', '-H', 'Accept: application/json'] }}"
+    # A command as the app user of a nested container: `runuser` gives `orbit` its groups, among them `work`, which the checkout
+    # needs; `incus exec --user` gives only the user ID, with group 0.
+    fleet_as_app_user: [runuser, -u, orbit, --]
     # Orbit delivers the Club key at each start into this tmpfs folder (docs/reference/development-containers.md#the-club-key-of-the-nested-gateway);
     # the `club-key` device shows the folder to the nested Gateway, and its api-key file is a link into it.
     fleet_club_folder: /run/orbit-club
@@ -50,8 +55,8 @@
     fleet_state_mounts: [home-orbit-orbit-apps-gateway-.env.mount, home-orbit-orbit-apps-gateway-storage.mount,
                          home-orbit-orbit-apps-gateway-bootstrap-cache.mount]
 
-# The fleet rules by role: devices with the keys they must have, configuration keys, and the proxy drop-ins of the nested Gateway's
-# Swamp units. They are the shape of the fleet that runs (docs/reference/development-containers.md#fleet-rules). A restore of `base`
+# The fleet rules by role: devices with the keys they must have, configuration keys, and files with their whole content (the proxy
+# drop-ins of the nested Gateway's Swamp units, and the egress proxy of apt and of sudo and SSH sessions). They are the shape of the fleet that runs (docs/reference/development-containers.md#fleet-rules). A restore of `base`
 # reverts devices and keys, so the refresh applies the rules with the fleet stopped before it takes `base`.
 #
 # Each rule is one of two kinds. Orbit owns a rule when it may write it on an existing fleet: the refresh writes an owned rule that
@@ -71,6 +76,31 @@
     # The inner Incus starts the fleet when the Instance container boots; the start also starts any nested container that is stopped.
     fleet_autostart: {boot.autostart: "true"}
     fleet_environment: "{{ dict(intent.fleet.proxy.keys() | map('regex_replace', '^', 'environment.') | zip(intent.fleet.proxy.values())) }}"
+    # The Swamp units of the nested Gateway reach Swamp Club through the proxy: one Environment line, every proxy setting quoted.
+    fleet_unit_environment: |
+      [Service]
+      Environment={{ intent.fleet.proxy | dict2items | map(attribute='key') | zip(intent.fleet.proxy.values()) | map('join', '=') | map('regex_replace', '^(.*)$', '"\1"') | join(' ') }}
+    fleet_unit_files: >-
+      {%- set out = [] -%}
+      {%- for unit in ['orbit-swamp-serve.service', 'orbit-swamp-worker@.service'] -%}
+      {%-   set _ = out.append({'path': '/etc/systemd/system/' ~ unit ~ '.d/50-inner-fleet-proxy.conf', 'content': fleet_unit_environment}) -%}
+      {%- endfor -%}
+      {{ out }}
+    # A nested Node's base converge runs apt and downloads the agent over SSH, where the `environment.*` keys do not reach: apt reads
+    # its proxy from its own file, and sudo and SSH sessions read /etc/environment. Both name the egress proxy; /etc/environment has
+    # the same NO_PROXY, so the fleet's names and networks stay off the proxy. The apt file replaces the task VM package cache that
+    # the image names, which no Instance runs (a role add through the nested Gateway writes it back; the next refresh replaces it).
+    fleet_egress_files:
+      - path: /etc/apt/apt.conf.d/90orbit-package-cache
+        content: |
+          Acquire::http::Proxy "{{ intent.fleet.proxy.HTTP_PROXY }}";
+          Acquire::https::Proxy "{{ intent.fleet.proxy.HTTPS_PROXY }}";
+      - path: /etc/environment
+        content: |
+          PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+          {% for key, value in intent.fleet.proxy.items() %}
+          {{ key }}="{{ value }}"
+          {% endfor %}
   ansible.builtin.set_fact:
     fleet_rules:
       gateway:
@@ -78,18 +108,24 @@
           {{ fleet_checkout_device | combine({'club-key': {'type': 'disk', 'source': fleet_club_folder,
              'path': fleet_club_mount, 'required': 'false', 'shift': 'false'}}) }}
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment) }}"
+        files: "{{ fleet_unit_files + fleet_egress_files }}"
       app-dev:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment) }}"
+        files: "{{ fleet_egress_files }}"
       app-prod:
         devices: "{{ fleet_apparmor_device }}"
         config: "{{ fleet_autostart | combine(fleet_environment) }}"
+        files: "{{ fleet_egress_files }}"
     fleet_build_rules: [raw.idmap]
-    # Swamp in the nested Gateway reaches Swamp Club through the proxy: a unit environment for serve and its workers.
-    fleet_unit_environments: >-
-      {{ ['orbit-swamp-serve.service', 'orbit-swamp-worker@.service']
-         | map('regex_replace', '^(.*)$', '/etc/systemd/system/\1.d/50-inner-fleet-proxy.conf') | list }}
-    # One line, the shape of the drop-ins that run; the start and the refresh compare the file byte for byte, apart from the ends.
-    fleet_unit_environment: |
-      [Service]
-      Environment={{ intent.fleet.proxy | dict2items | map(attribute='key') | zip(intent.fleet.proxy.values()) | map('join', '=') | map('regex_replace', '^(.*)$', '"\1"') | join(' ') }}
+- name: List the fleet files
+  ansible.builtin.set_fact:
+    # Each file rule with its nested container: the rules read, write and check files by this list.
+    fleet_files: >-
+      {%- set out = [] -%}
+      {%- for role in fleet_roles -%}
+      {%-   for file in fleet_rules[role].files -%}
+      {%-     set _ = out.append({'container': intent.fleet.guests[role], 'path': file.path, 'content': file.content}) -%}
+      {%-   endfor -%}
+      {%- endfor -%}
+      {{ out }}

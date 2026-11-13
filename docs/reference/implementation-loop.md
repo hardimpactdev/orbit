@@ -165,7 +165,7 @@ The fixture table in `.github/ci/checks.toml` maps changed inputs to files and d
 
 `bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most eight shards per pull request. Runs with six shards peaked at 16 to 17 concurrent hosted jobs, so eight shards reach about 19 of the organisation's 20 concurrent hosted jobs; a second run at the same time queues. Each shard runs up to four units at once. A file can declare a larger slice count when its cases need finer slices.
 
-For example, `swamp/tests/ansible_instance_fleet_test.ts` declares ten slices. Its two longest refresh cases take about 20 seconds each locally, and each runs in a slice of its own.
+For example, `swamp/tests/ansible_instance_fleet_test.ts` declares ten slices. Its three longest cases, two refreshes and the readiness responses, take about 20 to 25 seconds each locally, and each runs in a slice of its own.
 
 A slice takes every n-th case, so a new case can move two long cases into one slice; then raise the slice count until no slice is above the lane budget. A slice count equal to the number of retained cases always meets this: each case gets its own slice.
 
