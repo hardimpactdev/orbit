@@ -32,6 +32,7 @@ sequenceDiagram
   Note over GW: Validate, reserve Instance<br/>render .env
   %%> Requirements:
   %%> - the calling Node has an access grant to the target Node
+  %%> - a Project with `nested_fleet` on refuses with `operation.kind_unavailable` (503) before any record: nested-fleet hosting is not built yet, also on a retry of a failed create
   %%> - the name is one DNS label of at most 63 characters; a web Route has labels of at most 63 characters and at most 64 characters in total while the Node CSR uses the domain as its common name (`route.domain_invalid`), checked before the Operation starts
   %%> - the target is an active `app-dev` Node and not a task VM; a production Node is refused (`instance.candidate_required`)
   %%> - the checkout path is free, and no other change runs on the Instance; the Gateway holds one lock per Instance

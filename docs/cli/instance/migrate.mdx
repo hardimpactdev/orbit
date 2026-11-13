@@ -324,6 +324,7 @@ Warnings are a generic `warnings` list of `{code, message}` records in the Opera
 | `instance.migrate_unsupported` | The Instance has a Route beside its own. |
 | `project.source_defaults_incomplete` | A web-serving Project has no recorded PHP version. Run `orbit project:update PROJECT --source-access=github_app` after setting `require.php` in its source. |
 | `operation.kind_unavailable` | A non-default Instance has no Conn layer or no model router. |
+| `operation.kind_unavailable` | The Project has `nested_fleet` on. Nested-fleet hosting is not built yet, so Orbit records nothing. See [Nested fleet setting](/reference/projects#nested-fleet-setting). |
 | `process_definition.name_taken` | A same-name definition has incompatible intent or includes production; it is not changed. |
 | `instance.migrate_process_definition_unproven` | The one-time repair cannot prove a named Instance or Process. It changes no selected rows. |
 | `process.target_unsupported` | The Instance has a Docker Process. |

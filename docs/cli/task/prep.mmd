@@ -21,6 +21,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway
   %%> - group 42 is an open external `todo` group with no VM, of a Project that the GitHub App reads
+  %%> - a Project with `nested_fleet` on refuses with `operation.kind_unavailable` (503) before any record: nested-fleet hosting is not built yet; no place, identity, workspace, thread, wait or Operation is recorded
   %%> - the command is `family:command` in lower case
   %%> What it does:
   %%> - captures, in one transaction, the provision intent, the author and reviewer threads, the prompts, the pull request title and body, and the repository, base and branch `task-42`, and the review mode of the group (`manual` or `automatic`)

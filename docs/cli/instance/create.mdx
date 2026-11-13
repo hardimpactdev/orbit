@@ -105,6 +105,7 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | `instance.host_unavailable` | The container Node is not prepared, its bridge or its T3 ports are full, or its runtime folder lacks the Project's PHP build. |
 | `project.source_defaults_incomplete` | The Project's source defaults are incomplete, or a web-serving Project in a container has no PHP version. |
 | `operation.kind_unavailable` | The request needs a part of the container runtime that is not built yet, or a clone needs Conn or the model router guard. |
+| `operation.kind_unavailable` | The Project has `nested_fleet` on. Nested-fleet hosting is not built yet, so Orbit records nothing. See [Nested fleet setting](/reference/projects#nested-fleet-setting). |
 
 ## How it works
 

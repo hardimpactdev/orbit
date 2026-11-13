@@ -99,6 +99,8 @@ Task work and operator proofs claim task places. Authenticated CI proofs claim C
 
 A task VM serves only the proof Project: the base VM carries only its checkout. Work that needs a new VM for a group of another Project, such as provision, prep or a build, returns HTTP 409 `task_vm.project_unsupported` at once and records no Operation. A waiting Operation that reaches that check fails with the same code. Freed places cannot change that, so such a group never joins the wait queue, where it would hold up every later admission.
 
+A group of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on is refused the same way, with HTTP 503 `operation.kind_unavailable`, because nested-fleet hosting is not built yet. This covers every admission that needs a new workspace: provision, prep, build, turn, prep fix, review round and operator or CI proofs. Orbit records no place, identity, workspace, wait or Operation. A waiting Operation that reaches its claim later fails with the same code.
+
 Task provision, prep, build and review leave each host’s [CI/refresh reserve](/reference/compute-drivers#place-task-vms) free. Operator proofs do too. Only a command proof from an authenticated active Node with an active `ci-runner` role, or a refresh candidate proof, can use it. Orbit records CI eligibility before queueing admission; report-only mode does not grant access. Another proof cannot preempt CI.
 
 Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a claimed group returns HTTP 409 `tasks.already_claimed`.

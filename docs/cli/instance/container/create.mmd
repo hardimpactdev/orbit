@@ -21,6 +21,7 @@ sequenceDiagram
   Note over GW: Validate, reserve Instance<br/>address · T3 port · .env
   %%> Requirements:
   %%> - the calling Node has node access to the target Node, an active `app-dev` Node
+  %%> - a Project with `nested_fleet` on refuses with `operation.kind_unavailable` (503) before any record: nested-fleet hosting is not built yet
   %%> - the Project's `default` Instance runs in a container on this Node, is active and has a seed snapshot, else `instance.default_missing`
   %%> - Conn is enabled, and the model router has its guard, else `operation.kind_unavailable`
   %%> - a database on a Database server clones on the default's server; another server refuses `instance.database_clone_unsupported`
