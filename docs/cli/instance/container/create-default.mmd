@@ -20,6 +20,7 @@ sequenceDiagram
   %%> - a name equal to the Project's default branch also creates the `default` Instance
   Note over GW: Validate, reserve default<br/>address · .env
   %%> Requirements:
+  %%> - a Project with `nested_fleet` enabled refuses before reservation with `operation.kind_unavailable` (503); hosting follows separately
   %%> - the calling Node has node access to the target Node, an active `app-dev` Node
   %%> - the Project has no default Instance anywhere in the fleet; its other Instances are made on this Node
   %%> - a web-serving Project names its PHP version, and the runtime folder holds that static PHP build

@@ -25,6 +25,7 @@ sequenceDiagram
   %%> If it never starts:
   %%> - cancellation or admission expiry frees the new reservation and releases deferred Schedule fires under the Instance lock; an uncertain start keeps its reservation
   %%> Requirements:
+  %%> - a Project with `nested_fleet` enabled refuses with `operation.kind_unavailable` (503) before reserving a runtime; checkout migration into the nested project is not available
   %%> - a previous migrate must be settled by the reconciler; otherwise instance.migrate_settlement_pending (409) names its Operation and hold limit; retry after settlement
   %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
   %%> - a non-default Instance needs its Project's default on the same Node and its own source identity; no default seed or snapshot is consumed

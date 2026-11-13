@@ -11,6 +11,8 @@ covers:
 orbit instance:register --project=ID [--path=PATH] [--name=NAME] [--root=PATH] [--domain=HOST] [--setup] [--yes] [--include-worktrees] [--json]
 ```
 
+Orbit refuses checkout registration for a Project with `nested_fleet` enabled with `operation.kind_unavailable` (503), before it records an Instance. See [the Project setting](/reference/projects#nested-fleet-setting).
+
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--project=ID` | prompt | Numeric ID of an existing Project. |

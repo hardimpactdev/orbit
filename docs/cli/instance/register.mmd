@@ -18,6 +18,8 @@ sequenceDiagram
     A->>GW: Report checkout facts
   end
   CLI->>GW: instance:register<br/>--project=7
+  %%> Requirements:
+  %%> - a nested-fleet Project refuses checkout registration with `operation.kind_unavailable` (503), before observing or reserving it; admission checks the current flag again before recording
   Note over GW: Check against the facts<br/>path · origin · layout
   alt facts match
     Note over GW: Record the Instance<br/>branch · commit · application

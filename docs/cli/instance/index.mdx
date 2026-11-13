@@ -113,3 +113,5 @@ Repair development mail with [`instance:mail:update`](/cli/instance/mail-update)
 A checkout can record an explicit [Node service target](/cli/instance/node-service-attach) before migration. For a running container, [detach](/cli/instance/node-service-detach) withdraws its scoped loopback access before removing the record. The environment file and Node Process stay unchanged.
 
 Migration reports named environment warnings in human output and retains their `code` and `message` in the Operation result. See [migration warnings](/cli/instance/migrate#warnings).
+
+A Project with `nested_fleet` enabled currently refuses create, clone and checkout migration before reservation with `operation.kind_unavailable` (503). The [Project setting](/reference/projects#nested-fleet-setting) defaults off; hosting follows separately.

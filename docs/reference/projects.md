@@ -16,6 +16,10 @@ covers:
 
 A Project records one Git repository and the defaults for running it. New Instances inherit its default branch and root. Its type decides what those Instances can do. The API path is `/api/v1/projects`, and the CLI family is [`project`](/cli/project).
 
+## Nested fleet setting
+
+`nested_fleet` is a stored and public boolean that defaults to false. Set it through the Project update API. A changed value refuses with `project.nested_fleet_in_use` (409) while the Project has any Instance, including a checkout. Sending the current value is allowed. Nested create, clone and checkout migration currently refuse with `operation.kind_unavailable` (503) before reservation. Hosting and its image follow in separate changes.
+
 ## Project Documents
 
 [Project Documents](/reference/project-documents), the `documents` extension, are a native folder tree of notes and versioned attachments owned by the Project, independent of its Instances and Git branches. Orbit keeps their metadata in the Gateway database and their bodies in a dedicated private UpCloud bucket. The shared contract covers editing, upload/download, archive, permanent removal, and recovery across API, CLI, SDK, MCP, and web.
@@ -34,6 +38,7 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `source_access` | `github_app` or `gh_cli`. How Orbit reads a private `github.com` repository. See [Source access](#source-access). |
 | `default_branch` | Branch of the `default` Instance and the base for new branches. |
 | `root` | Repository-relative web root that Instances inherit, such as `public` or `apps/site/public`. It is not the checkout path or the Laravel application directory. |
+| `nested_fleet` | Boolean, default false. Selects the nested-fleet mode; immutable while any Instance exists. See [Nested fleet setting](#nested-fleet-setting). |
 | `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
 | `task_workspace_routed` | Boolean, default true. Whether newly created task workspaces get a Route. See [Task workspace routing](#task-workspace-routing). |
 | `review_and_merge` | Boolean, default false. Whether Orbit reviews every push of the Project's tasks, reviews incoming pull requests, and merges reviewed green heads. See [Review and merge](/reference/tasks#review-and-merge). |

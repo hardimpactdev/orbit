@@ -986,6 +986,8 @@ Migration checks executable availability before downtime and requires moved runn
 
 ## Nested fleet
 
+Status: the Project flag and Node switch are recorded, but nested create, clone and migration refuse before reservation. Hosting and its image follow separately. The sections below describe that direction.
+
 A Project setting turns on a nested fleet. Its Instance containers then run a fleet of Incus containers nested inside them. Orbit uses it for its command proofs: a Gateway, an `app-dev` and an `app-prod` Node. Other Projects leave it off and keep the kernel surface of [Inside a container](#inside-a-container).
 
 ### The container

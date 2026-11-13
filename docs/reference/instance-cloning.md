@@ -39,6 +39,7 @@ The Gateway refuses before it reserves anything:
 
 | Error code | When |
 | --- | --- |
+| `operation.kind_unavailable` | The candidate's Project has `nested_fleet` enabled, including a checkout candidate. |
 | `instance.node_inactive` | The Node is inactive or not Linux. |
 | `instance.node_not_app_prod` | The Node has no active `app-prod` role. |
 | `instance.production_placement_conflict` | The Project already has a production Instance on the Node. |

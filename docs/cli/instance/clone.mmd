@@ -36,6 +36,7 @@ sequenceDiagram
   end
   Note over GW: Validate, reserve 43<br/>render .env · task #5152
   %%> Requirements:
+  %%> - a nested-fleet Project refuses production cloning before reservation with `operation.kind_unavailable` (503)
   %%> - your Node has access grants to Node 12 and Node 14
   %%> - Node 14 is active, has the `app-prod` role and a TLD
   %%> - Instance 42 is active with a recorded source and no attached server database; a web Project's Node is not in an active Cluster

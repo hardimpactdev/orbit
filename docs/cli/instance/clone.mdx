@@ -8,6 +8,8 @@ description: "Clone a candidate Instance into a prepared production Instance."
 orbit instance:clone <candidate> <node> <name> --preview-name=NAME [--branch=BRANCH] [--sqlite-source-path=PATH] [--json]
 ```
 
+Orbit refuses production cloning of a nested-fleet Project before reservation with `operation.kind_unavailable` (503).
+
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `candidate` | yes | Numeric ID of the candidate Instance. |

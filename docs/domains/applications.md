@@ -29,6 +29,8 @@ This page follows an Instance from creation to removal. Each step links to the p
 | Move to another Node | `instance:transfer` | [Instance transfer](/reference/instance-transfer) |
 | Remove | `instance:destroy` | [Instance removal](/reference/instance-removal) |
 
+Orbit refuses checkout registration for a Project with `nested_fleet` enabled before recording an Instance. See [the Project setting](/reference/projects#nested-fleet-setting).
+
 ## Create a development Instance
 
 Select an active Linux Node with an active `app-dev` role. The name `default` is reserved for the Project's default development source. A name that equals the Project `default_branch`, such as `main`, also means `default`: Orbit creates the `default` Instance, exactly as if you passed `default`. See [A default-branch name means default](#a-default-branch-name-means-default).

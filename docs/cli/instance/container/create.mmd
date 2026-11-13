@@ -20,6 +20,7 @@ sequenceDiagram
   %%> - syntax: `<project> <node> <name> [--root=PATH] [--domain=HOST] [--branch=BRANCH] [--database-server=SLUG]`
   Note over GW: Validate, reserve Instance<br/>address · T3 port · .env
   %%> Requirements:
+  %%> - a Project with `nested_fleet` enabled refuses before reservation with `operation.kind_unavailable` (503); hosting follows separately
   %%> - the calling Node has node access to the target Node, an active `app-dev` Node
   %%> - the Project's `default` Instance runs in a container on this Node, is active and has a seed snapshot, else `instance.default_missing`
   %%> - Conn is enabled, and the model router has its guard, else `operation.kind_unavailable`
