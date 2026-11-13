@@ -16,9 +16,9 @@ covers:
 
 The Gateway then records the selected Instance, owned resources and desired removal state. All effects run from control Node209 through official SSH with its approved identity and the targets' full stored host pins. The Gateway projects the admitted records after the bound native terminal result; workflow steps do not read intent or send phase callbacks to the Gateway. The PHP provisioner, source-removal executor, phase checkpoint methods and callback runner are deleted. Shared source classification and native source inspection remain pure inputs to the native workflows.
 
-Conn runs the same stored blocker checks before it calls the engine. Core callers keep their existing order: native Schedule removal precedes the intent transaction. A Schedule publication failure leaves the Instance and Route active and records no removal Operation.
+Every caller uses one preparation in the shared engine. It validates stored blockers, owned databases, Process and Schedule placement, every publication participant's SSH connection, and Caddy, PHP and DNS rendering before stopping Schedules. The preparation records no intent or desired state and stages no execution copy. After Schedule removal succeeds, the existing transaction records that same prepared input, marks the Instance removing and Route retiring, and admits the Operation. Publication is not rendered a second time. A Schedule removal failure still leaves the Instance and Route active and records no removal Operation.
 
-Removal can fail because a Node is unavailable (for example 503 `swamp.ssh_target_unavailable`) after stopping the Instance's Schedules; Conn and the CLI behave the same, and the next release fixes this order.
+A missing SSH pin on any publication Node, including a private DNS Node, or a Caddy render refusal therefore leaves all Schedule triggers, workflows and vault entries intact.
 
 ```bash
 orbit instance:destroy <instance> [--yes] [--force] [--json]

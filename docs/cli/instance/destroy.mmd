@@ -61,13 +61,15 @@ sequenceDiagram
   %%> - no other lifecycle change and no unfinished transfer holds Instance 42
   %%> - no Route is required; a sole pending or failed Route always runs withdrawal, including when sites_published=false; an absent publication is accepted
   %%> - multiple owning Routes, a foreign Project, wrong targets or unsafe placement still refuse
+  %%> Publication validation:
+  %%> - prepare every participant connection and its SSH pin, Caddyfile, shared PHP configuration and private DNS state before any Schedule effect
+  %%> - all stored blockers and the run budget pass here; the preparation records no intent, changes no status and stages no execution copy
   %%> Captures:
   %%> - the source: path, owner, origin, branch, linked worktrees
   %%> - what Instance 42 owns: Processes, Schedules, Route, SQLite files, server databases
   %%> - the Project teardown steps
   %%> Result:
-  %%> - Instance 42 is marked removing, with the captured set
-  %%> - task #5132 recorded with the full intent
+  %%> - the validated complete set remains in memory until Schedule removal succeeds
   GW->>SW: Remove Schedule triggers<br/>workflow trigger removal
   %%> What it does:
   %%> - removes the native Swamp schedule trigger of each Schedule of Instance 42
@@ -76,6 +78,12 @@ sequenceDiagram
   %%> - no new fire starts against a checkout that is being removed
   %%> Running fire:
   %%> - a fire that already started runs to its end, within its own timeout, and is still recorded
+  Note over GW: Record removal intent<br/>mark removing
+  %%> Result:
+  %%> - persist the already prepared publication without a second render in the existing intent transaction
+  %%> - record the Operation and mark the Instance removing and Route retiring only after Schedule removal succeeds
+  %%> On Schedule failure:
+  %%> - keep the Instance and Route active; record no destroy Operation, as before
   opt private repository
     GW->>SW: Push the token<br/>vault: github-token
     %%> Why:

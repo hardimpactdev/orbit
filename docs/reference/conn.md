@@ -302,7 +302,7 @@ A server of an Instance names its `instance_id` and the container's `power_state
 
 Orbit never probes the container in this request. When Git observations become available, uncommitted work, unpushed commits or no upstream each require acknowledgement. An observation over ten minutes old or from an offline agent remains unknown. The Conn checks above leave Schedules, Routes, databases, pairings, environments and Operations unchanged when they refuse. These checks do not change the CLI's destroy rules.
 
-With acknowledgement, Orbit admits the existing `instance.destroy` engine with force enabled and answers its Operation with HTTP 202. Existing lifecycle, Route and database blockers keep their codes and messages. Conn checks the stored engine blockers before calling the engine. The engine keeps its existing order and failure boundary: if Schedule removal fails, no removal intent or Operation is recorded, and the Instance and Route stay active. Follow the Operation on `GET /operations/{id}`; `succeeded`, `failed`, `cancelled` and `interrupted` are terminal.
+With acknowledgement, Orbit admits the existing `instance.destroy` engine with force enabled and answers its Operation with HTTP 202. Existing lifecycle, Route and database blockers keep their codes and messages. The shared engine prepares and validates every publication participant before it stops Schedules. Conn does not run a separate publication pre-check. If Schedule removal fails, no removal intent or Operation is recorded, and the Instance and Route stay active. Follow the Operation on `GET /operations/{id}`; `succeeded`, `failed`, `cancelled` and `interrupted` are terminal.
 
 Inherited refusals keep their codes:
 
@@ -332,7 +332,7 @@ Inherited refusals keep their codes:
 
 Infrastructure failures keep their existing codes, such as `swamp.schedule_publish_unavailable` (503). A failed Operation can have `error: null` even when `error_code` is set; Conn must use that code without assuming `error.detail` exists.
 
-Removal can fail because a Node is unavailable (for example 503 `swamp.ssh_target_unavailable`) after stopping the Instance's Schedules; Conn and the CLI behave the same, and the next release fixes this order.
+An unavailable publication Node or failed Caddy render refuses removal before any Schedule effect, for Conn, the core API and the CLI.
 
 The same caller, key, Instance ID and body return the same Operation with HTTP 202, even after the Instance was deleted. Reusing the key with a changed body refuses with `operation.idempotency_conflict` (409). A missing Instance without that receipt keeps the normal 404.
 
