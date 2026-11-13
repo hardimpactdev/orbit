@@ -472,7 +472,7 @@ jobs:
           behaviorName: '${{ "ic-clone-fleet-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
-            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_check "$ORBIT_ANSIBLE/instance-container.yml" && timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_resume "$ORBIT_ANSIBLE/instance-container.yml"
+            run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_check "$ORBIT_ANSIBLE/instance-container.yml" && timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_resume "$ORBIT_ANSIBLE/instance-container.yml"
             env: *container_phase
       - name: clone-database-snapshot
         labels: {role: swamp}
