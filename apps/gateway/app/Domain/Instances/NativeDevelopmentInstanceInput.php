@@ -68,6 +68,9 @@ final readonly class NativeDevelopmentInstanceInput
             'instance_name' => $instance->name, 'name_converted_from' => $input['name_converted_from'] ?? null,
             'processes' => $processes, 'setup_steps' => $steps, 'environment_directory' => $environment->directory($instance),
             'server_database' => $server === null ? null : array_diff_key($server, ['secrets' => true]),
+            // A clone's own Valkey user. Sent before any workflow reads it, so a run started by this release meets a
+            // workflow that reads it (new-intent-key rule); the clone path fills it in the next release.
+            'server_valkey' => null,
             'environment_testing' => $testing !== null,
             // The Route child's own vault references; null when the Project serves no web pages.
             // The reverse of the Route publication the run captured at admission; the failed create takes the Route back with it.

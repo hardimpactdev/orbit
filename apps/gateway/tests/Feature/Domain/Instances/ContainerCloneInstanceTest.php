@@ -273,6 +273,17 @@ it('starts a clone without copying the Project development deploy commands that 
         ->and($run['execution_secrets']['model_environment']['key'])->toBe('instance-create-model-'.$operation->id);
 });
 
+it('always sends the server_valkey key in the create run intent, before any workflow reads it', function (): void {
+    $node = containerDefaultNode();
+    $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
+    vaultReadingSocket([]);
+
+    $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+
+    expect($run['intent'])->toHaveKey('server_valkey')
+        ->and($run['intent']['server_valkey'])->toBeNull();
+});
+
 it('starts the run with the placeholder model key in the vault and the template copy of the default database', function (): void {
     $node = containerDefaultNode();
     databaseServerOn($node, 'pg', DatabaseDriver::Pgsql, 5432);
