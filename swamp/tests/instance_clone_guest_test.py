@@ -363,6 +363,11 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.seed("proof", self.expected)
         with self.assertRaises(FileNotFoundError):
             self.phase("sessions")
+        mark = self.base / GUEST.CHECKOUT_MARK.lstrip("/")
+        mark.parent.mkdir(parents=True)
+        mark.write_text(json.dumps({"instance_id": 1, "commit": self.expected}) + "\n")
+        with self.assertRaises(AssertionError):
+            self.phase("sessions")
 
 
 class CloneGuestTest(unittest.TestCase):

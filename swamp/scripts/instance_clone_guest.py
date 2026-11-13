@@ -295,8 +295,11 @@ def phase_main(phase, raw):
                 assert git("rev-parse", "HEAD").stdout.strip() == c["expected_commit"]
                 checked_out = {"instance_id": c["instance_id"], "commit": c["expected_commit"]}
                 mark.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
-                mark.write_text(json.dumps(checked_out) + "\n")
-                mark.chmod(0o600)
+                # A whole file or none: a crash never leaves a mark that blocks each retry.
+                written = mark.with_name(mark.name + ".new")
+                written.write_text(json.dumps(checked_out) + "\n")
+                written.chmod(0o600)
+                os.replace(written, mark)
         finally:
             root(c["bundle"]).unlink(missing_ok=True)
         inputs = json.loads(private)
