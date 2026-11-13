@@ -345,10 +345,16 @@
         converge: "{{ ((fleet_converge_at | float) - (fleet_gateway_at | float)) | round | int }}"
         ready: "{{ ((fleet_ready_at | float) - (fleet_converge_at | float)) | round | int }}"
         base: "{{ ((fleet_done_at | float) - (fleet_ready_at | float)) | round | int }}"
+# The container's id map is isolated: the Node's stdin pipe shows there as owned by nobody, mode 0600, so a command that opens
+# /dev/stdin by path is refused. `cat` reads the open stream. It writes a file beside the record, and the rename makes the record
+# whole or absent, never partial.
 - name: Write the refresh record
   when: fleet_now | length > 0
+  vars:
+    fleet_record_write: >-
+      mkdir -p "${1%/*}" && cat > "$1.tmp" && chown root:root "$1.tmp" && chmod 0644 "$1.tmp" && mv -f "$1.tmp" "$1"
   ansible.builtin.command:
-    argv: "{{ ['timeout', '30'] + fleet_outer + ['install', '-D', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', fleet_record] }}"
+    argv: "{{ ['timeout', '30'] + fleet_outer + ['sh', '-c', fleet_record_write, 'sh', fleet_record] }}"
     stdin: "{{ fleet_now | to_json(sort_keys=true) }}"
     stdin_add_newline: false
   changed_when: true
