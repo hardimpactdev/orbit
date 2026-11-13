@@ -44,6 +44,8 @@ sequenceDiagram
   SW->>N: Start the inner fleet<br/>Ansible · fleet check, resume
   %%> What it does:
   %%> - the create's `clone-fleet`: the fleet rules, the three nested containers, the tunnel `wg-nested`
+  %%> - writes the copy's proxy bypass for units and login shells: the drop-ins and the manager environment
+  %%> - restarts T3 once, only when that changed the drop-ins: a copy made before its boot files had them
   %%> - waits for Doctor over the tunnel and the three agents
   %%> - records its own seconds as `fleet_seconds`
   alt the run passes
