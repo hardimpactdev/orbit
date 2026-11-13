@@ -121,7 +121,7 @@
     ]
   },
   "swamp/tests/ansible_instance_fleet_test.ts": {
-    "source_sha256": "d5bb31bfd879baae3d12aafb0980be5146628355ccc7be46fa41bd123e0732b6",
+    "source_sha256": "8ee52adcd69dd880181dd895f3bd0b829eda00c20c1b81b8783c78d802b1edc6",
     "cases": [
       "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
       "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and waits for readiness; a rerun only reads",

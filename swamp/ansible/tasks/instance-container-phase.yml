@@ -1031,8 +1031,8 @@
       ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'restore', container.name, restore_seed] }}" }
       changed_when: true
 
-# The Swamp Club key of a nested fleet is delivered at each start to a place outside the container's disk, so no seed holds it. A key
-# file on the disk refuses the seed before the seed changes anything. Only the path is tested; the key is never read.
+# Orbit delivers the Swamp Club key of a nested fleet at each start into the tmpfs `/run`, so no seed holds it. The key file that was
+# placed by hand on the disk before that delivery refuses the seed before the seed changes anything. Only the path is tested.
 - name: Refuse a nested-fleet seed while the Club key is on the disk
   tags: [seed]
   when: phase == 'seed' and intent.fleet is defined
@@ -1041,21 +1041,14 @@
       ansible.builtin.include_tasks:
         file: tasks/instance-fleet.yml
         apply: {tags: [seed]}
-    - name: Look for the Club key file of the nested fleet
-      ansible.builtin.command: { argv: "{{ as_root + ['test', '-e', fleet_club_key] }}" }
+    - name: Look for the hand-placed Club key file
+      ansible.builtin.command: { argv: "{{ as_root + ['test', '-e', fleet_old_club_key] }}" }
       register: seed_key_file
       changed_when: false
       failed_when: false
-    - name: Read whether the Club key is a mount
-      when: seed_key_file.rc == 0
-      ansible.builtin.command: { argv: "{{ as_root + ['mountpoint', '-q', fleet_club_key] }}" }
-      register: seed_key_mount
-      changed_when: false
-      failed_when: false
     - name: Refuse a seed that would hold the Club key
-      when: seed_key_file.rc == 0
       ansible.builtin.assert:
-        that: seed_key_mount.rc == 0
+        that: seed_key_file.rc != 0
         fail_msg: instance.fleet_key_on_disk
         quiet: true
 

@@ -3,7 +3,7 @@
 # `wg-nested`, and wait for readiness. A clone's create, the refresh of a default and the reset use it. Input: instance-fleet.yml.
 # The tunnel is made with `ip` and `wg`, never `wg-quick`, which segfaults in the Instance container. Its key is the operator key that the
 # container holds, its peer the nested Gateway's hub key. The tunnel does not outlive a stop of the container; the next start makes it.
-# Without the Club key file the nested Gateway's Swamp stays down and the fleet is still ready: the `club-key` device is not required.
+# Without the Club key the nested Gateway's Swamp stays down and the fleet is still ready: the `club-key` device is not required.
 - { name: Check the fleet rules, ansible.builtin.import_tasks: instance-fleet-rules.yml, vars: { fleet_rules_apply: false } }
 
 - name: Read the state of the nested containers
@@ -25,6 +25,20 @@
       {{ fleet_start_failed | map(attribute='item') | join(', ') }} did not start:
       {{ fleet_start_failed | map(attribute='stderr') | map('trim') | join('; ') | truncate(400) }}
     quiet: true
+
+# The nested Swamp reads its key file `api-key` as a link into the folder that the `club-key` device shows. The link is in the nested
+# Gateway's own disk, so `base` keeps it; a start sets it only when it differs.
+- name: Read the Club key link of the nested Gateway
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'readlink', fleet_club_link] }}"
+  register: fleet_club_link_read
+  changed_when: false
+  failed_when: false
+- name: Link the Club key of the nested Gateway
+  when: fleet_club_link_read.stdout | trim != fleet_club_target
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'ln', '-sfnT', fleet_club_target, fleet_club_link] }}"
+  changed_when: true
 
 - name: Look for the operator key
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['test', '-s', fleet_operator_key] }}" }

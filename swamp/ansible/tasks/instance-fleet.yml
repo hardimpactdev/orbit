@@ -16,7 +16,7 @@
 # A caller may set `fleet_ready_seconds` (default 300): the bound of the readiness wait.
 #
 # The paths below are facts of the image variant `orbit-instance-nested`, not of the intent. The Swamp Club key is a file that
-# something else places in the container; these tasks name it only as the source of the `club-key` device and test that it is there.
+# Orbit delivers into the container's /run; these tasks name its folder as the source of the `club-key` device and test that it is there.
 # They never read, print or copy it.
 - name: Name the fleet commands
   vars:
@@ -30,7 +30,15 @@
     # The proof's own API calls, from the container over `wg-nested`, as the operator.
     fleet_api: "https://{{ intent.fleet.operator.hub }}/api/v1"
     fleet_curl: "{{ fleet_outer_exec + ['curl', '-sk', '-m', '80', '-H', 'Host: gateway.orbit', '-H', 'Accept: application/json'] }}"
-    fleet_club_key: /etc/orbit/swamp-club-api-key
+    # Orbit delivers the Club key at each start into this tmpfs folder (docs/reference/development-containers.md#the-club-key-of-the-nested-gateway);
+    # the `club-key` device shows the folder to the nested Gateway, and its api-key file is a link into it.
+    fleet_club_folder: /run/orbit-club
+    fleet_club_key: /run/orbit-club/swamp-club-api-key
+    fleet_club_mount: /home/orbit/.config/swamp/club
+    fleet_club_link: /home/orbit/.config/swamp/api-key
+    fleet_club_target: club/swamp-club-api-key
+    # The key file that was placed by hand before the delivery; it lay on the container's disk, so a seed refuses while it is there.
+    fleet_old_club_key: /etc/orbit/swamp-club-api-key
     fleet_operator_key: /etc/wireguard/wg-nested.key
     fleet_tunnel: wg-nested
     fleet_tunnel_port: "51821"
@@ -58,8 +66,8 @@
     fleet_rules:
       gateway:
         devices: >-
-          {{ fleet_checkout_device | combine({'club-key': {'type': 'disk', 'source': fleet_club_key,
-             'path': '/home/orbit/.config/swamp/api-key', 'required': 'false', 'shift': 'false'}}) }}
+          {{ fleet_checkout_device | combine({'club-key': {'type': 'disk', 'source': fleet_club_folder,
+             'path': fleet_club_mount, 'required': 'false', 'shift': 'false'}}) }}
         config: "{{ fleet_idmap | combine(fleet_environment) }}"
       app-dev:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"

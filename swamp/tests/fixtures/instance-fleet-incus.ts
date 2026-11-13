@@ -34,7 +34,8 @@ const containers: Record<string, {
   config: Record<string, string>;
   devices: Record<string, Record<string, string>>;
   files?: Record<string, string>;
-  snapshots?: Record<string, { config: Record<string, string>; devices: Record<string, Record<string, string>>; files: Record<string, string>; taken: string }>;
+  links?: Record<string, string>;
+  snapshots?: Record<string, { config: Record<string, string>; devices: Record<string, Record<string, string>>; files: Record<string, string>; links?: Record<string, string>; taken: string }>;
 }> = state.containers;
 const container = (name: string) => containers[name] ?? fail(`Instance not found: ${name}`);
 const tunnel = state.tunnel as null | { addresses: string[]; up: boolean; key?: string; port?: string; peer?: string; endpoint?: string; allowed?: string };
@@ -94,7 +95,7 @@ if (command[0] === "incus") {
     found.files ??= {};
     if (verb === "create") {
       if (found.snapshots[snapshot]) fail("Snapshot already exists");
-      found.snapshots[snapshot] = { config: copy(found.config), devices: copy(found.devices), files: copy(found.files), taken: found.status };
+      found.snapshots[snapshot] = { config: copy(found.config), devices: copy(found.devices), files: copy(found.files), links: copy(found.links ?? {}), taken: found.status };
     } else if (verb === "delete") {
       if (!found.snapshots[snapshot]) fail("Snapshot not found");
       delete found.snapshots[snapshot];
@@ -103,6 +104,7 @@ if (command[0] === "incus") {
       found.config = copy(taken.config);
       found.devices = copy(taken.devices);
       found.files = copy(taken.files);
+      found.links = copy(taken.links ?? {});
     } else fail(`Unexpected snapshot verb ${verb}`);
     done();
   }
@@ -131,6 +133,17 @@ if (command[0] === "incus") {
     state.execs ??= [];
     state.execs.push([name, ...rest]);
     if (rest[0] === "wg" && rest[1] === "show") done(state.hubKey);
+    // Links in a nested container's own disk, by path.
+    if (rest[0] === "readlink") {
+      const target = container(name).links?.[rest[1]];
+      if (target === undefined) fail("not a link");
+      done(target);
+    }
+    if (rest[0] === "ln") {
+      const linked = container(name);
+      linked.links = { ...(linked.links ?? {}), [rest[3]]: rest[2] };
+      done();
+    }
     if (rest[0] === "systemctl" && rest[1] === "is-active") {
       const units = rest.slice(rest[2] === "--quiet" ? 3 : 2);
       const inactive = units.filter((unit) => (state.inactive ?? []).includes(unit));

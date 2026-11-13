@@ -12,7 +12,7 @@ const phases = ["rules", "rules-read", "start", "ready", "refresh", "converge-no
 const guests = { gateway: "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod" };
 const names = Object.values(guests);
 const outer = ["--project", "orbit-instances-nested", "exec", "instance-9", "--"];
-const clubKey = "/etc/orbit/swamp-club-api-key";
+const clubKey = "/run/orbit-club/swamp-club-api-key";
 const clubValue = "club-key-value-that-never-leaves-the-file";
 const proxy = {
   HTTP_PROXY: "http://10.253.0.1:3128",
@@ -32,7 +32,7 @@ function ruled() {
   const checkout = { path: "/home/orbit/orbit", shift: "false", source: "/srv/workspace", type: "disk" };
   const apparmor = { type: "disk", source: "/etc/orbit/apparmor-off", path: "/sys/module/apparmor/parameters/enabled", readonly: "true" };
   containers["nested-gateway"].devices.checkout = checkout;
-  containers["nested-gateway"].devices["club-key"].shift = "false";
+  containers["nested-gateway"].devices["club-key"] = { path: "/home/orbit/.config/swamp/club", required: "false", shift: "false", source: "/run/orbit-club", type: "disk" };
   containers["nested-app-dev"].devices.checkout = checkout;
   containers["nested-app-dev"].devices["apparmor-off"] = apparmor;
   containers["nested-app-prod"].devices["apparmor-off"] = apparmor;
@@ -152,6 +152,9 @@ const reads = [
 const startCalls = [
   "incus list --format csv --columns ns",
   ...names.map((name) => `incus start ${name}`),
+  // The nested Swamp's key file is a link into the folder of the club-key device.
+  "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key",
+  "incus exec nested-gateway -- ln -sfnT club/swamp-club-api-key /home/orbit/.config/swamp/api-key",
   "test -s /etc/wireguard/wg-nested.key",
   "incus exec nested-gateway -- wg show orbit public-key",
   "wg show wg-nested",
@@ -183,7 +186,7 @@ Deno.test({
         "incus config device add nested-app-dev apparmor-off disk source=/etc/orbit/apparmor-off path=/sys/module/apparmor/parameters/enabled readonly=true",
         "incus config device add nested-app-prod apparmor-off disk source=/etc/orbit/apparmor-off path=/sys/module/apparmor/parameters/enabled readonly=true",
         "incus config device set nested-gateway checkout source=/srv/workspace path=/home/orbit/orbit shift=false",
-        `incus config device set nested-gateway club-key source=${clubKey} path=/home/orbit/.config/swamp/api-key required=false shift=false`,
+        "incus config device set nested-gateway club-key source=/run/orbit-club path=/home/orbit/.config/swamp/club required=false shift=false",
         "incus config device set nested-app-dev checkout source=/srv/workspace path=/home/orbit/orbit shift=false",
         ...["nested-gateway", "nested-app-dev", "nested-app-prod"].flatMap((name) =>
           [...(name === "nested-app-prod" ? [] : ["raw.idmap=both 1000 1000"]), ...proxyKeys].map((key) => `incus config set ${name} ${key}`)),
@@ -215,11 +218,12 @@ Deno.test({
       assertEquals(calls, [...reads, ...startCalls, ...readyCalls.slice(0, 3), readyCalls[2], readyCalls[2], readyCalls[3]]);
       assertKeyUntouched(calls, first.output);
       assert(!calls.some((call) => call.includes("wg-quick")));
+      assertEquals(f.state().containers["nested-gateway"].links, { "/home/orbit/.config/swamp/api-key": "club/swamp-club-api-key" });
       assertEquals(f.state().tunnel, { addresses: ["10.45.0.10/24"], up: true, key: "/etc/wireguard/wg-nested.key", port: "51821", peer: "HUBPUB=", endpoint: "10.232.2.11:51820", allowed: "10.45.0.0/24" });
       const again = f.run("start");
       assert(again.ok, again.output);
       assertEquals(again.changed, 0);
-      assertEquals(f.calls(), [...reads, "incus list --format csv --columns ns", "test -s /etc/wireguard/wg-nested.key",
+      assertEquals(f.calls(), [...reads, "incus list --format csv --columns ns", "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key", "test -s /etc/wireguard/wg-nested.key",
         "incus exec nested-gateway -- wg show orbit public-key", "wg show wg-nested", "ip -j addr show dev wg-nested", ...readyCalls]);
     } finally {
       f.cleanup();
@@ -384,6 +388,8 @@ Deno.test({
         ...names.map((name) => `incus snapshot restore ${name} base`),
         ...reads,
         "incus list --format csv --columns ns",
+        "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key",
+        "incus exec nested-gateway -- ln -sfnT club/swamp-club-api-key /home/orbit/.config/swamp/api-key",
         "test -s /etc/wireguard/wg-nested.key",
         "incus exec nested-gateway -- wg show orbit public-key",
         "wg show wg-nested",

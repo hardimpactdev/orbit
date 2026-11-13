@@ -1128,7 +1128,7 @@ In Ansible the value is the module stdin of a pipelined task with `no_log`. With
 
 Root owns the folder, so the key's owner cannot plant a link there that would send the key to the disk. The write refuses with `instance.nested_club_key_not_tmpfs` when `/run` is not a tmpfs.
 
-The Gateway's code does not add the `club-key` device to nested-gateway: the fleet step that builds the inner fleet does, and an existing fleet gets it by hand. Until then the key reaches the outer container's `/run` only.
+The Gateway's code does not add the `club-key` device to nested-gateway: the [fleet step](#the-fleet-step) does, in its rules and its start, and an existing fleet gets it by hand. Until then the key reaches the outer container's `/run` only.
 
 A container that Incus starts by itself after a host reboot has no key until Orbit starts or deploys it again. `/etc/orbit/swamp-club-api-key` is the hand-placed file that this replaces; nothing writes it.
 
@@ -1152,8 +1152,9 @@ Two users share the outer container, and only one of them reaches the fleet.
 - Swamp verifies a new key once at Swamp Club before serve runs. It goes through the egress proxy, by the proxy rule above.
 - Until the key is verified, serve exits with code 75. A verified key needs no network to run.
 - An agent with root in a clone can read the key. A task in any other Project never gets it.
-- The seed step of a nested-fleet default refuses with `instance.fleet_key_on_disk` while the old hand-placed file `/etc/orbit/swamp-club-api-key` is on the container's disk. It tests the path only; it never reads the key.
 - The fleet step and the refresh never read, write or copy the key.
+
+Before the delivery, an operator placed the key by hand in `/etc/orbit/swamp-club-api-key`, on the container's disk. While that file is there, the seed step of a nested-fleet default refuses with `instance.fleet_key_on_disk`. It tests the path only.
 
 ### Refresh after a release
 
@@ -1247,7 +1248,8 @@ Four phase task files keep the fleet of a nested-fleet Instance. The deployment 
 The fleet rules:
 
 - The disk device `checkout` gives the workspace to the nested Gateway and `app-dev` with `shift=false`. An ID shift fails two levels below the host.
-- The disk device `club-key` gives the Swamp Club key file of the container to the nested Gateway with `shift=false` and `required=false`.
+- The disk device `club-key` gives the folder `/run/orbit-club` of the container to the nested Gateway at `/home/orbit/.config/swamp/club`, with `shift=false` and `required=false`.
+- In the nested Gateway, `/home/orbit/.config/swamp/api-key` links to `club/swamp-club-api-key`. `base` keeps the link.
 - `raw.idmap` `both 1000 1000` of the inner Incus is set on the nested Gateway and `app-dev`, so the nested `orbit` and the container's `orbit` own the workspace together.
 - The AppArmor-off device is on the nested `app-dev` and `app-prod`.
 - The egress proxy settings are `environment.*` keys on the three nested containers, and a unit environment for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service` in the nested Gateway.
