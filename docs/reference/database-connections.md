@@ -168,7 +168,7 @@ A pool of N workers needs roughly N × (connections per worker) free server conn
 
 ## Add a connection on an Instance
 
-`PUT /api/v1/instances/{instance}/database-connections/{slug}` writes the connection into the Instance's stored environment configuration. `{instance}` is an Instance ID or an exact Route domain. The body can hold `prefix`, an uppercase name of at most 32 characters that starts with a letter. The default is `DB`. The optional `replace` field is a strict boolean and defaults to false. The route needs an access grant to the Instance's Node.
+`PUT /api/v1/instances/{instance}/database-connections/{slug}` writes the connection into the Instance's stored environment configuration. `{instance}` is an Instance ID or an exact Route domain. The body can hold `prefix`, an uppercase name of at most 32 characters that starts with a letter. The default is `DB`. The optional `replace` field is a strict boolean and defaults to false. The optional `shared` field is a strict boolean; see [Share a connection with clones](#share-a-connection-with-clones). The route needs an access grant to the Instance's Node.
 
 | Driver | Keys with prefix `DB` |
 | --- | --- |
@@ -187,6 +187,22 @@ The result names the Instance, slug, prefix, written keys, host, port, whether s
 `DELETE /api/v1/instances/{instance}/database-connections/{slug}` removes the mapping and the six keys of its prefix. Other keys stay. An unknown mapping returns `database.attachment_missing` (404).
 
 Add and remove change stored configuration only. Run [`env:sync`](/reference/environment-variables#synchronize) to write the Instance's `.env`.
+
+## Share a connection with clones
+
+A container clone gets its own database and its own Valkey user, and it never copies the default's other connections. A connection that every copy may read, such as a read-only catalogue on another Node, can be marked shared on the default's attachment. A container clone of that default then keeps it.
+
+Mark it with `shared: true` in the body of the add, or `--shared` in the CLI. `shared: false` or `--no-shared` removes the mark. Without the field, a new attachment is not shared and an existing attachment keeps its mark, so an add for another reason never ends the sharing. A change of the mark alone counts as a change.
+
+Orbit never infers the mark from the connection, its prefix or its login. It refuses the mark with `database.shared_own_database` (422) for the Instance's own database: an attachment under the `DB` prefix, the connection that the Instance has under `DB`, and a database that Orbit made for the Instance (its owner). Each clone gets its own copy of those instead.
+
+A container clone of a default with a shared attachment:
+
+- Gets the same connection attached under the same prefix and network, also marked shared.
+- Gets the connection's keys in its `.env`, rendered from the connection record as [`env:sync`](/cli/env/sync#on-a-container-instance) renders them. The Operation result names them under `environment.shared`, not under `environment.dropped` ([details](/reference/development-containers#the-environment-of-a-clone)).
+- Gets the container's network path to the connection's host and port, as a migrate or `env:sync` adds it.
+
+A destroy of the clone removes only its attachment. It drops only databases that Orbit made for the destroyed Instances, so the shared database and its login stay. A migrate keeps the Instance's attachments with their marks. The mark acts on container clones only; a host `instance:clone` does not read it.
 
 ## Choose LAN for an Instance
 
