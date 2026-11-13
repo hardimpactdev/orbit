@@ -1553,7 +1553,7 @@ cases:
   field: changed_when
   context: ufw-deleted
   expected: true
-- file: tasks/instance-fleet-ready.yml
+- file: tasks/instance-fleet-reach.yml
   task: Check that every nested container runs
   field: vars.fleet_running
   context: fleet-list
@@ -1713,7 +1713,7 @@ non_command_output:
   reason: Validates an admitted anchor key, not command output.
 - file: instance-container.yml
   task: Write the failure
-  field: ansible.builtin.copy.content
+  field: vars.failure_code
   reason: Maps Ansible failure metadata to a public error code; does not parse command output.
 - file: operation-node-converge.yml
   task: Require the pinned Linux platform

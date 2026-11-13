@@ -153,6 +153,9 @@ if (command[0] === "incus") {
       Deno.exit(inactive.length > 0 ? 3 : 0);
     }
     if (rest[0] === "systemctl" && rest[1] === "show") done("inactive\ninactive");
+    // A checkout that moved under the running nested Gateway (`schemaBehind`): Doctor is unhealthy until the migrate and a restart after it.
+    if (rest[0] === "php" && rest.includes("migrate")) state.migrated = true;
+    if (rest[0] === "systemctl" && rest[1] === "restart" && state.migrated) state.restartedAfterMigrate = true;
     done();
   }
   fail(`Unexpected inner Incus call: ${inner.join(" ")}`);
@@ -211,11 +214,19 @@ if (command[0] === "curl") {
   const path = url.slice(url.indexOf("/api/v1/") + "/api/v1".length);
   if (method === "POST" && path === "/doctor") {
     state.doctorCalls = (state.doctorCalls ?? 0) + 1;
+    if (state.schemaBehind && !state.restartedAfterMigrate) {
+      done({ data: { healthy: false, checks: [{ code: "gateway.schema_behind", node: "gateway" }] } });
+    }
     done(state.doctorCalls > (state.doctorUnhealthy ?? 0)
       ? { data: { healthy: true, checks: [] } }
       : { data: { healthy: false, checks: [{ code: "node.agent_view_stale", node: "app-dev" }] } });
   }
-  if (method === "GET" && path === "/nodes") done({ data: state.nodes });
+  // `agentsOffline`: the reads left in which the agent of app-prod is still offline (after a restart); -1 keeps it offline.
+  if (method === "GET" && path === "/nodes") {
+    const offline = (state.agentsOffline ?? 0) !== 0;
+    if (state.agentsOffline > 0) state.agentsOffline -= 1;
+    done({ data: offline ? state.nodes.map((node: { name: string }) => node.name === "app-prod" ? { ...node, agent: { state: "offline" } } : node) : state.nodes });
+  }
   const converge = /^\/nodes\/(\d+)\/converge$/.exec(path);
   if (method === "POST" && converge) {
     if (command.at(-1) !== '{"base":true}') fail("A refresh converges the base");

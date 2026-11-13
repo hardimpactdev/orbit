@@ -79,18 +79,22 @@
                    if club_key_result_file is file and (lookup('ansible.builtin.file', club_key_result_file) | from_json).club_key | default('') in ['changed', 'changed_serve_pending', 'unchanged']
                  else {} }}
       rescue:
-        # The code of a refusal is the fail_msg of its assert; anything else is the phase's own failure.
+        # The code of a refusal is the fail_msg of its assert; anything else is the phase's own failure. A swamp step that exits
+        # nonzero keeps no output, so a failed fleet phase also writes why into the result: `detail`, the failed task and its
+        # message (a command's stderr tail with it). The fleet's messages are written to be safe to show; the Gateway redacts them
+        # again. A fleet start after the refresh (`fleet_resume` without failed.json) keeps the commit the seed took and says that
+        # the new seed stays; after a restore it keeps the first failure's result and adds `restore_failure`.
         - name: Write the failure
           tags: [always]
           ansible.builtin.copy:
             content: >-
-              {{ {'error_code': ansible_failed_result.msg
-                  if (ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z0-9_]+$'))
-                  else 'process.' ~ process_action ~ '_failed'
-                  if (ansible_run_tags | first) == 'process' and process_action in ['start', 'restart']
-                  else 'instance.container_' ~ (ansible_run_tags | first) ~ '_failed'}
+              {{ (((lookup('ansible.builtin.file', failure_restored) | from_json)
+                   | combine({'restore_failure': 'The inner fleet of the restored seed did not start: ' ~ failure_reason}))
+                  if failure_phase == 'fleet_resume' and failure_restored is file
+                  else ({'error_code': failure_code}
                   | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({}))
-                  | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {}) | combine(club_key_carried) | to_json }}
+                  | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
+                  | combine(failure_fleet_detail) | combine(club_key_carried))) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           delegate_to: localhost
@@ -100,6 +104,25 @@
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
             club_key_result_file: *club_key_result_file
             club_key_carried: *club_key_carried
+            failure_phase: "{{ ansible_run_tags | first }}"
+            failure_code: >-
+              {{ ansible_failed_result.msg
+                 if (ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z0-9_]+$'))
+                 else 'process.' ~ process_action ~ '_failed'
+                 if failure_phase == 'process' and process_action in ['start', 'restart']
+                 else 'instance.container_' ~ failure_phase ~ '_failed' }}
+            failure_restored: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/failed.json' }}"
+            failure_message: "{{ ansible_failed_result.msg | default('The task failed.') | string | trim }}"
+            failure_stderr: "{{ (ansible_failed_result.stderr | default('') | string | trim)[-400:] }}"
+            failure_reason: >-
+              {{ ansible_failed_task.name | default('A fleet task') }}: {{ failure_message
+                 }}{{ (': ' ~ failure_stderr) if failure_message == 'non-zero return code' and failure_stderr != '' else '' }}
+            failure_fleet_detail: >-
+              {{ {} if failure_phase not in ['fleet_check', 'fleet_start', 'fleet_refresh', 'fleet_resume'] or failure_code == failure_message
+                 else {'detail': 'The new seed and base stay; the inner fleet on the new commit did not start: ' ~ failure_reason,
+                       'commit': (lookup('ansible.builtin.file', club_key_result_file) | from_json).commit | default(none)}
+                 if failure_phase == 'fleet_resume' and club_key_result_file is file
+                 else {'detail': failure_reason} }}
         - name: Fail the phase
           tags: [always]
           ansible.builtin.fail:

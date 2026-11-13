@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
+use App\Domain\Logs\LogRedactor;
+use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Support\ValidatedData;
 
 /**
@@ -43,6 +45,24 @@ final readonly class ContainerDeployOutcome
                 default => 'operation.native_failed',
             };
             $data = [...$data, 'error_code' => $code];
+            // A failed nested-fleet phase writes why into the result file: a swamp step that exits nonzero keeps no output, so this is
+            // its only record. After a restore, `restore_failure` says the restored fleet did not start too. Other phases write neither.
+            $detail = is_string($file['detail'] ?? null) && $file['detail'] !== '' ? $file['detail'] : null;
+            if (is_string($file['restore_failure'] ?? null) && $file['restore_failure'] !== '') {
+                $native = ValidatedData::object($data['failure'] ?? [])['detail'] ?? null;
+                $detail = trim(($detail ?? (is_string($native) ? $native : '')).' '.$file['restore_failure']);
+            }
+            if ($detail !== null) {
+                $native = ValidatedData::object($data['failure'] ?? []);
+                $data['failure'] = ['failed_step' => is_string($native['failed_step'] ?? null) ? $native['failed_step'] : $step,
+                    'detail' => mb_strcut(app(LogRedactor::class)->redact($detail, []), 0, NativeStepFailure::MaximumBytes, 'UTF-8'),
+                    'stderr_recorded' => true];
+            }
+            // The start after a passed refresh failed: the new seed and `base` stay, so the seed's commit is recorded.
+            if ($code === 'instance.container_fleet_resume_failed' && is_string($file['commit'] ?? null)) {
+                $payload['commit'] = $file['commit'];
+                $payload['seed_kept'] = true;
+            }
             // A refused nested-fleet check names each difference, as `<container> <kind> <name>`.
             if ($code === 'instance.container_fleet_drift' && is_array($file['fleet_drift'] ?? null)) {
                 $payload['fleet_drift'] = array_slice(array_map(static fn (mixed $line): string => mb_strcut(ValidatedData::string($line), 0, 255, 'UTF-8'),

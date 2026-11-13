@@ -8,7 +8,7 @@ import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 const hasAnsible = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 const root = new URL("../ansible/", import.meta.url);
 const shapes = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-containers.json", import.meta.url)));
-const phases = ["check", "rules", "rules-read", "start", "ready", "refresh", "converge-node", "reset", ""];
+const phases = ["check", "rules", "rules-read", "start", "reach", "ready", "refresh", "converge-node", "reset", "resume", ""];
 const guests = { gateway: "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod" };
 const names = Object.values(guests);
 const outer = ["--project", "orbit-instances-nested", "exec", "instance-9", "--"];
@@ -165,6 +165,8 @@ const startCalls = [
   "ip addr add 10.45.0.10/24 dev wg-nested",
   "ip link set wg-nested up",
 ];
+/** What a start promises: the containers run and the tunnel reaches the hub; no API call. */
+const reachCalls = ["incus list --format csv --columns ns", "ping -c 1 -W 2 10.45.0.1"];
 const readyCalls = [
   "incus list --format csv --columns ns",
   "ping -c 1 -W 2 10.45.0.1",
@@ -207,16 +209,17 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and waits for readiness; a rerun only reads",
+  name: "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
   ignore: !hasAnsible,
   fn() {
     const f = fixture(ruled());
-    f.change((state) => state.doctorUnhealthy = 2);
+    // An unhealthy Doctor does not stop a start: it never asks.
+    f.change((state) => state.doctorUnhealthy = 1000);
     try {
       const first = f.run("start");
       assert(first.ok, first.output);
       const calls = f.calls();
-      assertEquals(calls, [...reads, ...startCalls, ...readyCalls.slice(0, 3), readyCalls[2], readyCalls[2], readyCalls[3]]);
+      assertEquals(calls, [...reads, ...startCalls, ...reachCalls]);
       assertKeyUntouched(calls, first.output);
       assert(!calls.some((call) => call.includes("wg-quick")));
       assertEquals(f.state().containers["nested-gateway"].links, { "/home/orbit/.config/swamp/api-key": "club/swamp-club-api-key" });
@@ -225,7 +228,7 @@ Deno.test({
       assert(again.ok, again.output);
       assertEquals(again.changed, 0);
       assertEquals(f.calls(), [...reads, "incus list --format csv --columns ns", "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key", "test -s /etc/wireguard/wg-nested.key",
-        "incus exec nested-gateway -- wg show orbit public-key", "wg show wg-nested", "ip -j addr show dev wg-nested", ...readyCalls]);
+        "incus exec nested-gateway -- wg show orbit public-key", "wg show wg-nested", "ip -j addr show dev wg-nested", ...reachCalls]);
     } finally {
       f.cleanup();
     }
@@ -233,7 +236,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a start that fails names the nested container, and a readiness timeout names the check",
+  name: "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check",
   ignore: !hasAnsible,
   fn() {
     const f = fixture(ruled());
@@ -246,7 +249,7 @@ Deno.test({
         delete state.failStart;
         state.doctorUnhealthy = 1000;
       });
-      const late = f.run("start", ["-e", "fleet_ready_seconds=3", "-e", "fleet_ready_delay=1"]);
+      const late = f.run("resume", ["-e", "fleet_ready_seconds=3", "-e", "fleet_ready_delay=1"]);
       assert(!late.ok);
       assertStringIncludes(late.output, "Readiness check 'doctor' failed after 3 s:");
       assertStringIncludes(late.output, "node.agent_view_stale");
@@ -254,7 +257,7 @@ Deno.test({
         state.doctorUnhealthy = 0;
         state.nodes[2].agent.state = "offline";
       });
-      const offline = f.run("start");
+      const offline = f.run("resume");
       assert(!offline.ok);
       assertStringIncludes(offline.output, "Readiness check 'agents' failed: the agent of app-prod is not online");
     } finally {
@@ -395,6 +398,7 @@ Deno.test({
         "incus exec nested-gateway -- wg show orbit public-key",
         "wg show wg-nested",
         "ip -j addr show dev wg-nested",
+        ...reachCalls,
         ...readyCalls,
       ]);
       assertKeyUntouched(calls, reset.output);
@@ -514,6 +518,92 @@ Deno.test({
       assert(refreshed.ok, refreshed.output);
       assertEquals(writes(f.calls()).filter((call) => !/ (stop|snapshot) /.test(call)), names.map((name) => `incus config set ${name} boot.autostart=true`));
       for (const name of names) assertEquals(f.state().containers[name].snapshots.base.config["boot.autostart"], "true");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a refresh after the checkout moved migrates and restarts the nested Gateway before its only Doctor wait, and passes",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled(), { club: true, base: true });
+    try {
+      // Operation 19765: the checkout moved 47 commits under the running nested Gateway; its Doctor stays unhealthy until the
+      // migrate and a restart after it. A readiness wait before them never ends.
+      f.change((state) => state.schemaBehind = true);
+      const started = f.run("start");
+      assert(started.ok, started.output);
+      const startCalls = f.calls();
+      assert(!startCalls.some((call) => call.includes("/doctor") || call.includes("/nodes")), startCalls.join("\n"));
+      const early = f.run("resume", ["-e", "fleet_ready_seconds=2", "-e", "fleet_ready_delay=1"]);
+      assert(!early.ok, "a Doctor wait before the migrate must fail");
+      assertStringIncludes(early.output, "Readiness check 'doctor' failed after 2 s:");
+      assertStringIncludes(early.output, "gateway.schema_behind");
+      f.calls();
+      f.change((state) => state.doctorCalls = 0);
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      const calls = f.calls();
+      const migrate = calls.findIndex((call) => call.endsWith("php artisan migrate --force"));
+      const restart = calls.findIndex((call) => call.includes("systemctl restart orbit-gateway-horizon.service"));
+      const doctor = calls.findIndex((call) => call.includes("/doctor"));
+      assert(migrate >= 0 && migrate < restart && restart < doctor, calls.join("\n"));
+      assertEquals(calls.filter((call) => call.includes("/doctor")).length, 1);
+      assert(calls.findIndex((call) => call.includes("/converge")) < doctor);
+      for (const name of names) assertEquals(f.state().containers[name].snapshots.base.taken, "Stopped");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a refresh waits for the three agents after the restart before it converges, and names the agent that stays offline",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled(), { base: true });
+    try {
+      assert(f.run("start").ok);
+      f.calls();
+      f.change((state) => state.agentsOffline = 2);
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      const calls = f.calls();
+      const firstConverge = calls.findIndex((call) => call.includes("/converge"));
+      assertEquals(calls.slice(0, firstConverge).filter((call) => call.endsWith("--fail https://10.45.0.1/api/v1/nodes")).length, 3);
+      const g = fixture(ruled(), { base: true });
+      try {
+        assert(g.run("start").ok);
+        g.calls();
+        g.change((state) => state.agentsOffline = -1);
+        const failed = g.run("refresh", ["-e", "fleet_ready_seconds=2", "-e", "fleet_ready_delay=1"]);
+        assert(!failed.ok);
+        assertStringIncludes(failed.output, "The agent of app-prod was not online within 2 s after the restart of the nested Gateway");
+        assert(!g.calls().some((call) => call.includes("/converge") || call.includes("snapshot")));
+      } finally {
+        g.cleanup();
+      }
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled(), { club: true, base: true });
+    try {
+      const resumed = f.run("resume");
+      assert(resumed.ok, resumed.output);
+      const calls = f.calls();
+      assertEquals(calls, [...reads, ...startCalls, ...reachCalls, ...readyCalls]);
+      assertKeyUntouched(calls, resumed.output);
+      for (const name of names) assertEquals(f.state().containers[name].status, "Running");
+      assertEquals(writes(calls), []);
     } finally {
       f.cleanup();
     }

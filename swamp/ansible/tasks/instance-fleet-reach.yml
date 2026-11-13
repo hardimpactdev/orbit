@@ -1,0 +1,30 @@
+---
+# What a start of the nested fleet can promise, from the Instance container over `wg-nested`: every nested container runs and the tunnel
+# reaches the hub. No API call: right after a checkout moved, the nested Gateway runs new code on an old schema until the refresh
+# migrates and restarts it (docs/cli/instance/container/fleet-refresh.mmd). The start and the readiness import it. Input: instance-fleet.yml.
+# The tunnel wait is the tool's own `until` and `retries`, every `fleet_ready_delay` seconds. A failure names the check.
+- name: Read the state of the nested containers
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['list', '--format', 'csv', '--columns', 'ns'] }}" }
+  register: fleet_ready_list
+  changed_when: false
+- name: Check that every nested container runs
+  vars:
+    fleet_running: "{{ fleet_ready_list.stdout_lines | select('match', '^[^,]+,RUNNING$') | map('regex_replace', ',.*$', '') | list }}"
+  ansible.builtin.assert:
+    that: fleet_names | difference(fleet_running) | length == 0
+    fail_msg: "Readiness check 'running' failed: {{ fleet_names | difference(fleet_running) | join(', ') }} not running"
+    quiet: true
+
+- name: Wait for the operator tunnel
+  ansible.builtin.command: { argv: "{{ ['timeout', '10'] + fleet_outer + ['ping', '-c', '1', '-W', '2', intent.fleet.operator.hub] }}" }
+  register: fleet_ready_tunnel
+  changed_when: false
+  failed_when: false
+  until: fleet_ready_tunnel.rc == 0
+  retries: 12
+  delay: "{{ fleet_ready_delay }}"
+- name: Check the operator tunnel
+  ansible.builtin.assert:
+    that: fleet_ready_tunnel.rc == 0
+    fail_msg: "Readiness check 'tunnel' failed: {{ fleet_tunnel }} does not reach the hub {{ intent.fleet.operator.hub }}"
+    quiet: true

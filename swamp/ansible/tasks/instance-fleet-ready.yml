@@ -1,34 +1,11 @@
 ---
-# Readiness of the nested fleet, the proof's own check (task-nested-ready), from the Instance container over `wg-nested`: every nested
-# container runs, the tunnel reaches the hub, Doctor of the nested Gateway is healthy, the three agents are online and the Gateway knows
-# the operator with its key. The start, the refresh and the reset import it. Input: instance-fleet.yml.
-# The tunnel and Doctor waits are the tool's own `until` and `retries`, every 5 s; the Doctor wait is bounded by `fleet_ready_seconds`
-# (300 by default), each check by its own `timeout`. A failure names the check, and the nested containers or Nodes it found.
-- name: Read the state of the nested containers
-  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['list', '--format', 'csv', '--columns', 'ns'] }}" }
-  register: fleet_ready_list
-  changed_when: false
-- name: Check that every nested container runs
-  vars:
-    fleet_running: "{{ fleet_ready_list.stdout_lines | select('match', '^[^,]+,RUNNING$') | map('regex_replace', ',.*$', '') | list }}"
-  ansible.builtin.assert:
-    that: fleet_names | difference(fleet_running) | length == 0
-    fail_msg: "Readiness check 'running' failed: {{ fleet_names | difference(fleet_running) | join(', ') }} not running"
-    quiet: true
-
-- name: Wait for the operator tunnel
-  ansible.builtin.command: { argv: "{{ ['timeout', '10'] + fleet_outer + ['ping', '-c', '1', '-W', '2', intent.fleet.operator.hub] }}" }
-  register: fleet_ready_tunnel
-  changed_when: false
-  failed_when: false
-  until: fleet_ready_tunnel.rc == 0
-  retries: 12
-  delay: "{{ fleet_ready_delay }}"
-- name: Check the operator tunnel
-  ansible.builtin.assert:
-    that: fleet_ready_tunnel.rc == 0
-    fail_msg: "Readiness check 'tunnel' failed: {{ fleet_tunnel }} does not reach the hub {{ intent.fleet.operator.hub }}"
-    quiet: true
+# Readiness of the nested fleet, the proof's own check (task-nested-ready), from the Instance container over `wg-nested`: what a start
+# promises (instance-fleet-reach.yml), then Doctor of the nested Gateway is healthy, the three agents are online and the Gateway knows
+# the operator with its key. It runs only on a fleet whose nested Gateway runs the schema of its checkout: at the end of the refresh,
+# after its migrate and restart, and in the start of a refreshed or restored fleet (instance-fleet-resume.yml). Input: instance-fleet.yml.
+# The Doctor wait is the tool's own `until` and `retries`, every 5 s, bounded by `fleet_ready_seconds` (300 by default), each check by
+# its own `timeout`. A failure names the check, and the nested containers or Nodes it found.
+- { name: Check what the start promises, ansible.builtin.import_tasks: instance-fleet-reach.yml }
 
 - name: Wait for Doctor of the nested Gateway
   ansible.builtin.command:
@@ -45,7 +22,7 @@
     that: fleet_ready_doctor.stdout is match('\{"data":\{"healthy":true')
     fail_msg: >-
       Readiness check 'doctor' failed after {{ fleet_ready_seconds | default(300) }} s:
-      {{ (fleet_ready_doctor.stdout | default('', true) or fleet_ready_doctor.stderr | default('')) | truncate(400) }}
+      {{ (fleet_ready_doctor.stdout | default('', true) or fleet_ready_doctor.stderr | default('')) | trim | truncate(400) }}
     quiet: true
 
 - name: Read the Nodes of the nested Gateway
