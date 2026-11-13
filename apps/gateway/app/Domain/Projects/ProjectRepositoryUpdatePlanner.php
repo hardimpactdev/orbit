@@ -7,23 +7,32 @@ namespace App\Domain\Projects;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
-use Illuminate\Support\Collection;
+use Illuminate\Database\Eloquent\Collection;
 
 final readonly class ProjectRepositoryUpdatePlanner
 {
     /**
      * @param  Collection<int, Instance>  $instances
-     * @return array{checkouts: list<Instance>, worktrees: list<Instance>, production: list<Instance>}
+     *                                                A container Instance keeps no `origin`: its workspace is filled from the Node's mirror, which every run fetches with the
+     *                                                Project's URL. So it is no checkout here; the update checks the proposed repository for it on the Gateway.
+     * @return array{checkouts: list<Instance>, worktrees: list<Instance>, production: list<Instance>, containers: list<Instance>}
      */
     public function inventory(Collection $instances): array
     {
         $checkouts = [];
         $worktrees = [];
         $production = [];
+        $containers = [];
 
-        foreach ($instances as $instance) {
+        foreach ($instances->loadMissing('runtime') as $instance) {
             if ($instance->placedOnAppProd()) {
                 $production[] = $instance;
+
+                continue;
+            }
+
+            if ($instance->runtime !== null) {
+                $containers[] = $instance;
 
                 continue;
             }
@@ -43,6 +52,7 @@ final readonly class ProjectRepositoryUpdatePlanner
             'checkouts' => $checkouts,
             'worktrees' => $worktrees,
             'production' => $production,
+            'containers' => $containers,
         ];
     }
 

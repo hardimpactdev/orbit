@@ -18,6 +18,7 @@ use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectDefaultBranchInheritance;
 use App\Domain\Projects\ProjectRepositoryUpdatePlanner;
 use App\Domain\Projects\ProjectSourceAccess;
+use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
@@ -48,6 +49,7 @@ final readonly class UpdateProjectAction
         private ProjectUpdateProjectionMutator $projections,
         private RepositoryDefaultBranchResolver $branches,
         private ProductionRepositoryBinding $productionRepositories,
+        private ProjectSourceReader $sourceReader,
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
@@ -435,6 +437,7 @@ final readonly class UpdateProjectAction
                 'checkout_ids' => array_map(static fn (Instance $instance): int => $instance->id, $plan['checkouts']),
                 'worktree_ids' => array_map(static fn (Instance $instance): int => $instance->id, $plan['worktrees']),
                 'production_ids' => array_map(static fn (Instance $instance): int => $instance->id, $plan['production']),
+                'container_ids' => array_map(static fn (Instance $instance): int => $instance->id, $plan['containers']),
             ],
             'slug' => null,
             'root' => null,
@@ -479,6 +482,7 @@ final readonly class UpdateProjectAction
                     $project->repository_url,
                     $update->requested_repository_url,
                 );
+                $this->preflightContainers($project, $plan['containers'], $update->requested_repository_url);
             }
 
             $inventory['production_repositories'] = $this->preflightProductionRepositories(
@@ -547,6 +551,37 @@ final readonly class UpdateProjectAction
         // A requested default branch is already verified there.
         if ($requestedDefaultBranch === null) {
             $this->branches->verify($repositoryUrl, (string) $project->default_branch, $project->source_access);
+        }
+    }
+
+    /**
+     * A container Instance keeps no `origin` to compare, so the Gateway checks that the proposed repository holds each container's
+     * seed commit, read with the Project's source access: the same history, readable by Orbit. A container without a seed has no
+     * commit yet, and its next run fetches from the Project's URL.
+     *
+     * @param  list<Instance>  $containers
+     */
+    private function preflightContainers(Project $project, array $containers, string $repositoryUrl): void
+    {
+        $commits = [];
+        foreach ($containers as $container) {
+            $commit = $container->runtime?->seed_commit;
+            if (is_string($commit)) {
+                $commits[$commit] ??= $container;
+            }
+        }
+
+        foreach ($commits as $commit => $container) {
+            try {
+                $this->sourceReader->read($repositoryUrl, $project->source_access, (string) $project->default_branch, [], $commit);
+            } catch (ResourceOperationException $exception) {
+                throw new ResourceOperationException(
+                    errorCode: 'project.repository_preflight_failed',
+                    message: "The proposed repository does not hold commit [{$commit}] of container Instance [{$container->name}]: Orbit cannot read it with the Project's source access, or it has another history.",
+                    status: 409,
+                    previous: $exception,
+                );
+            }
         }
     }
 
