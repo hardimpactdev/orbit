@@ -59,8 +59,6 @@ A Jinja decision template is read with `lookup('ansible.builtin.template', 'name
 
 ## Pitfalls from the trial
 
-- Stopping an apt timer leaves its running update service active. Before nested fleet base convergence, stop both timers and wait for both services on every Node; never kill dpkg. An `until` task with `failed_when` must also fail on an exhausted state check, not only a nonzero command exit. Prove that exhaustion prevents snapshots with real Ansible.
-
 - A new task file must be listed in `swamp/manifest.yaml` `additionalFiles`. Otherwise the playbook fails on the worker in about a second, before any task runs, and the step records no stderr. `swamp/bin/source_test.ts` checks every file under `swamp/ansible/`.
 - Disambiguate a task import when a top-level playbook shares its basename. Nested runtime includes can resolve the playbook first; use the `tasks/` path and keep the colliding playbook in the include regression fixture.
 - `incus query` takes the Project in the URL (`?project=...`), not `--project`.
@@ -177,5 +175,3 @@ Stage endpoint ownership outside the active inventory. Commit a record only afte
 Confirm revocation incrementally too: a later failed ACL removal must not leave a successfully removed endpoint eligible for refresh. Remove its obsolete records under the held lock, preserve shared/newer admissions, and keep incomplete-reconciliation health until a full reconciliation succeeds. Prove partial removal followed by ordinary refresh and a crash after the first confirmed removal.
 
 Use the landed bridge policy’s exact `state_file` helper for every destructive record operation. Supply a semantic state kind and endpoint identity instead of a caller-built destination path. Confirm ownership changes by direct calls under the writer lock; do not pass mutation helpers as callbacks.
-
-A refreshed fleet snapshot must follow terminal success of each nested Node base converge. A current checkout or grant digest does not prove current OS policy. Reuse the real base-scoped command, stop at the first failed Node, and keep direct task starts outside this refresh work.

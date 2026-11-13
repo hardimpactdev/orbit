@@ -124,32 +124,6 @@ class PlanningTest(unittest.TestCase):
         self.assertIn('selected default', text)
 
 
-class FleetTimingTest(unittest.TestCase):
-    def test_hosted_fleet_work_fits_declared_units_and_keeps_every_case(self):
-        evidence = json.loads((ROOT / 'tools/tests/ci-fleet-timing-evidence.json').read_text())
-        budget, fixtures, defaults = units.configuration()
-        host = 'swamp/tests/ansible_task_vm_host_clean_test.ts'
-        files = [host, *(row['unit'] for row in evidence['whole_units'])]
-        result = units.plan(['bin/swamp-shape-gate', *files], budget, fixtures, defaults)
-        selected = names(result)
-        for row in evidence['whole_units']:
-            self.assertIn(row['unit'], selected)
-            # A cut-off receipt is a lower bound, not a completed runtime.
-            self.assertGreater(fixtures[row['unit']]['cost'], row['seconds'])
-        host_units = [unit for unit in selected if unit.split('#')[0] == host]
-        observed = evidence['host_clean']['cases']
-        retained = [name for unit in host_units for name in units.case_names(unit, fixtures)]
-        self.assertCountEqual(retained, fixtures[host]['cases'])
-        self.assertCountEqual(retained, observed)
-        declared = dict(units.units_for(fixtures[host], budget))
-        for unit in host_units:
-            seconds = sum(observed[name]['seconds'] for name in units.case_names(unit, fixtures))
-            self.assertGreaterEqual(declared[unit], seconds + budget['slice_startup_seconds'])
-        grants = 'swamp/tests/ansible_gateway_swamp_grants_test.py'
-        shard = next(shard for shard in result['shards'] if grants in shard['units'])
-        self.assertIn(grants, shard['units'][:budget['shard_workers']])
-
-
 class InventorySelectionTest(unittest.TestCase):
     def setUp(self):
         self.scratch = tempfile.TemporaryDirectory()

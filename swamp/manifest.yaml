@@ -164,8 +164,6 @@ additionalFiles:
   - ansible/tasks/task-vm-boot.yml
   - ansible/tasks/task-vm-checkout.yml
   - ansible/tasks/task-vm-branch.yml
-  - ansible/tasks/task-vm-fleet-base.yml
-  - ansible/tasks/task-vm-fleet-base-node.yml
   - ansible/tasks/task-vm-fleet.yml
   - ansible/tasks/task-vm-fleet-build.yml
   - ansible/tasks/task-vm-nested-wait.yml
