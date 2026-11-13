@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationStatus;
 use App\Jobs\Tasks\DestroyTaskCopy;
 use App\Models\Instance;
@@ -17,7 +18,7 @@ use App\Models\Task;
 final readonly class TaskCopyLifecycle
 {
     /**
-     * The create of a copy ended, however it ended. A success runs a group that waits for it. An expired budget changes nothing: the
+     * The create of a copy ended, however it ended. A success runs a group that waits for it once the copy is ready. An expired budget changes nothing: the
      * run may still be stopping or be reopened, and the group stays reserved with its copy until the create ends again or `task:cancel`
      * destroys the copy. Any other end fails a group that still runs and queues the copy's destroy.
      */
@@ -31,8 +32,9 @@ final readonly class TaskCopyLifecycle
         if ($operation->error_code === 'operation.timed_out') {
             return;
         }
-        if (self::ready($operation)) {
-            if ($group->status === TaskGroupStatus::Reserved) {
+        if ($operation->status === OperationStatus::Succeeded) {
+            // A create that succeeded before the copy is fully set up leaves the group waiting for that.
+            if (self::ready($operation, $instance) && $group->status === TaskGroupStatus::Reserved) {
                 $group->update(['status' => TaskGroupStatus::Running, 'started_at' => $group->started_at ?? now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
             }
 
@@ -45,13 +47,14 @@ final readonly class TaskCopyLifecycle
     }
 
     /**
-     * Whether the copy is ready for its task: the one place that decides it. Today the create Operation succeeded; for a nested-fleet
-     * copy that includes its fleet step, which a create runs before it can succeed. When the create splits into a first workflow (usable)
-     * and a second one (Processes, Route, database copy), this reads the field that names "fully set up" instead. Read no step names here.
+     * Whether the copy is ready for its task: the one place that decides it. "Fully set up" is the Instance's `active` state
+     * (InstanceState::Active); a succeeded create leaves a clone active today, a nested copy with its healthy fleet. When the create
+     * splits in two (an earlier create success with the clone `source_resolved`, then `instance.complete`), this stays true to its word:
+     * that change adds the call from the end of `instance.complete`, and a failed completion fails the task as a failed create does.
      */
-    public static function ready(Operation $operation): bool
+    public static function ready(Operation $operation, Instance $copy): bool
     {
-        return $operation->status === OperationStatus::Succeeded;
+        return $operation->status === OperationStatus::Succeeded && $copy->status === InstanceState::Active;
     }
 
     /**

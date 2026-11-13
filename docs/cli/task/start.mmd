@@ -34,6 +34,8 @@ sequenceDiagram
     alt the create succeeds
       SW-->>GW: Run succeeded<br/>copy ready
       Note over GW: Run the task<br/>running
+      %%> When:
+      %%> - the create succeeded and the copy is `active`: fully set up, a nested copy with its healthy fleet; until then the task stays `reserved`
     else the create fails
       SW--xGW: Run failed<br/>failed step
       Note over GW: Fail the task<br/>queue the copy's destroy

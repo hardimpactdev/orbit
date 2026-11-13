@@ -13,7 +13,7 @@ Orbit first checks the Project's [`nested_fleet`](/reference/projects#nested-fle
 
 ## A task copy
 
-A task of a Project with the flag on starts as a copy of the Project's default Instance. Orbit clones the default into the Instance `task-<id>`, on the new branch `task-<id>`, as [`instance:create`](/cli/instance/create) clones it. The task owns the copy. Orbit returns the `instance.create` Operation. When it succeeds, the task is `running`. The copy's T3 server registers with Conn as every clone's does, labelled with the Project name and `task-<id>`.
+A task of a Project with the flag on starts as a copy of the Project's default Instance. Orbit clones the default into the Instance `task-<id>`, on the new branch `task-<id>`, as [`instance:create`](/cli/instance/create) clones it. The task owns the copy. Orbit returns the `instance.create` Operation. The task is `running` once that Operation succeeded and the copy is `active`, which is fully set up. The copy's T3 server registers with Conn as every clone's does, labelled with the Project name and `task-<id>`.
 
 Orbit refuses the start at once and records nothing in these cases:
 

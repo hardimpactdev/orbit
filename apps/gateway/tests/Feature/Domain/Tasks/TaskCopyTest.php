@@ -16,6 +16,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
+use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskRuntime;
@@ -275,10 +276,18 @@ describe('the end of the copy\'s create', function (): void {
         Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $operation->target_id);
     });
 
-    it('runs the group when the create succeeds', function (): void {
+    it('runs the group when the create succeeds with the copy active, and waits while the copy is not fully set up', function (): void {
         $group = copyGroup(copySource()->project);
         $operation = startCopy($group);
+        $copy = Instance::query()->findOrFail($operation->target_id);
+        $copy->update(['status' => InstanceState::SourceResolved]);
 
+        app(OperationStore::class)->change($operation, ['status' => OperationStatus::Succeeded, 'finished_at' => now()]);
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Reserved);
+
+        $copy->update(['status' => InstanceState::Active]);
+        expect(TaskCopyLifecycle::ready($operation->refresh(), $copy->refresh()))->toBeTrue();
+        $operation->forceFill(['status' => 'running', 'finished_at' => null])->save();
         app(OperationStore::class)->change($operation, ['status' => OperationStatus::Succeeded, 'finished_at' => now()]);
 
         expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->started_at)->not->toBeNull();
