@@ -1,0 +1,45 @@
+---
+# Read the fleet rules of instance-fleet.yml from the inner Incus and set `fleet_drift`: one entry for each rule that a nested container
+# lacks, with the container and the rule's name. instance-fleet-rules.yml reads before it applies and again to check.
+- name: Read the nested containers
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['query', '/1.0/instances/' ~ intent.fleet.guests[item]] }}" }
+  loop: "{{ fleet_roles }}"
+  register: fleet_rules_read
+  changed_when: false
+  failed_when: false
+- name: Read the unit environments of the nested Gateway
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + fleet_incus + ['file', 'pull', intent.fleet.guests.gateway ~ item, '-'] }}"
+  loop: "{{ fleet_unit_environments }}"
+  register: fleet_units_read
+  changed_when: false
+  failed_when: false
+- name: Work out the rules a nested container lacks
+  ansible.builtin.set_fact:
+    fleet_drift: >-
+      {%- set out = [] -%}
+      {%- for read in fleet_rules_read.results -%}
+      {%-   set name = intent.fleet.guests[read.item] -%}
+      {%-   if read.rc != 0 -%}
+      {%-     set _ = out.append({'container': name, 'kind': 'container', 'name': name}) -%}
+      {%-   else -%}
+      {%-     set have = read.stdout | from_json -%}
+      {%-     for device, want in fleet_rules[read.item].devices.items() -%}
+      {%-       set got = have.devices[device] | default(none) -%}
+      {%-       if got is none or got | combine(want) != got -%}
+      {%-         set _ = out.append({'container': name, 'kind': 'device', 'name': device, 'want': want, 'present': got is not none}) -%}
+      {%-       endif -%}
+      {%-     endfor -%}
+      {%-     for key, value in fleet_rules[read.item].config.items() -%}
+      {%-       if have.config[key] | default(none) != value -%}
+      {%-         set _ = out.append({'container': name, 'kind': 'config', 'name': key, 'want': value}) -%}
+      {%-       endif -%}
+      {%-     endfor -%}
+      {%-   endif -%}
+      {%- endfor -%}
+      {%- for read in fleet_units_read.results -%}
+      {%-   if read.rc != 0 or read.stdout | trim != fleet_unit_environment | trim -%}
+      {%-     set _ = out.append({'container': intent.fleet.guests.gateway, 'kind': 'unit', 'name': read.item}) -%}
+      {%-   endif -%}
+      {%- endfor -%}
+      {{ out }}

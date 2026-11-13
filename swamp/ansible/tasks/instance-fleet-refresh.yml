@@ -1,0 +1,156 @@
+---
+# Refresh the nested fleet of a default Instance after its workspace took a new commit, on a started fleet (instance-fleet-start.yml):
+# apply the checkout to the nested Gateway, converge the base of the three nested Nodes, wait for readiness, stop the fleet, apply and
+# check the fleet rules, and take `base` again. Input: instance-fleet.yml. The same steps as the task VM refresh
+# (task-nested-apply, task-vm-fleet-base.yml), from the Node through the Instance container.
+# The nested Gateway's Swamp runs only with the Club key file. Without it, the grants are not reloaded and the Swamp units are not checked.
+- { name: Name the fleet commands, ansible.builtin.import_tasks: instance-fleet.yml }
+- name: Look for the Club key
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['test', '-s', fleet_club_key] }}" }
+  register: fleet_club
+  changed_when: false
+  failed_when: false
+
+# `.env`, `storage` and `bootstrap/cache` stay on each guest's own disk, bound over the checkout at boot.
+- name: Read the state mounts
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests[item], '--', 'systemctl', 'is-active'] + fleet_state_mounts }}"
+  loop: [gateway, app-dev]
+  register: fleet_mounts
+  changed_when: false
+  failed_when: false
+- name: Check the state mounts
+  vars:
+    fleet_mounts_down: "{{ fleet_mounts.results | rejectattr('stdout_lines', 'eq', ['active', 'active', 'active']) | map(attribute='item') | list }}"
+  ansible.builtin.assert:
+    that: fleet_mounts_down | length == 0
+    fail_msg: "The state mounts are not active in {{ fleet_mounts_down | map('extract', intent.fleet.guests) | join(', ') }}"
+    quiet: true
+# The nested Gateway gives its Nodes the agent of the checkout's pin, a byte copy of the published release manifest.
+- name: Place the agent delivery
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--user', '1000', '--', 'install', '-D', '-m', '0444',
+          intent.fleet.checkout.path ~ '/apps/gateway/resources/agent/frozen-manifest.json',
+          intent.fleet.checkout.path ~ '/apps/agent/delivery/manifest.json'] }}
+  changed_when: true
+# Local grants mask the checkout's; the reload needs Swamp serve.
+- name: Reconcile the Swamp grants
+  when: fleet_club.rc == 0
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '180'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'env',
+          'ANSIBLE_CONFIG=' ~ intent.fleet.checkout.path ~ '/swamp/ansible/ansible.cfg', 'ANSIBLE_DISPLAY_FAILED_STDERR=true',
+          '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml', '--tags', 'grants',
+          intent.fleet.checkout.path ~ '/swamp/ansible/gateway-bootstrap.yml'] }}
+  changed_when: true
+- name: Migrate the nested Gateway
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '120'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--user', '1000', '--cwd',
+          intent.fleet.checkout.path ~ '/apps/gateway', '--', 'php', 'artisan', 'migrate', '--force'] }}
+  changed_when: true
+- name: Restart the services
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '120'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'systemctl', 'restart'] + fleet_gateway_services }}"
+  changed_when: true
+# One read per unit: `systemctl is-active` with several units succeeds when one of them is active.
+- name: Read the services
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '60'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'systemctl', 'is-active', '--quiet', item] }}"
+  loop: "{{ fleet_gateway_services + (fleet_swamp_services if fleet_club.rc == 0 else []) }}"
+  register: fleet_services
+  changed_when: false
+  failed_when: false
+- name: Check the services
+  vars:
+    fleet_services_down: "{{ fleet_services.results | rejectattr('rc', 'eq', 0) | map(attribute='item') | list }}"
+  ansible.builtin.assert:
+    that: fleet_services_down | length == 0
+    fail_msg: "{{ fleet_services_down | join(', ') }} not active in {{ intent.fleet.guests.gateway }}"
+    quiet: true
+
+# The base converge of each nested Node, in the order of the task VM refresh, so `base` holds the new agent and Orbit's files.
+- name: Read the nested Nodes
+  ansible.builtin.command: { argv: "{{ ['timeout', '90'] + fleet_curl + ['--fail', fleet_api ~ '/nodes'] }}" }
+  register: fleet_nodes_read
+  changed_when: false
+- name: Select the nested Nodes in converge order
+  vars:
+    fleet_all: "{{ (fleet_nodes_read.stdout | from_json).data }}"
+  ansible.builtin.set_fact:
+    fleet_nodes: "{{ fleet_roles | map('extract', dict(fleet_all | map(attribute='name') | zip(fleet_all))) | select('defined') | list }}"
+- name: Require the three nested Nodes
+  ansible.builtin.assert:
+    that: fleet_nodes | map(attribute='name') | list == fleet_roles
+    fail_msg: "The nested Gateway must lead exactly the Nodes {{ fleet_roles | join(', ') }}; it has {{ fleet_nodes | map(attribute='name') | join(', ') }}"
+    quiet: true
+# Stop only the timers: an update transaction that already runs ends normally.
+- name: Stop the update timers in the nested containers
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests[item], '--', 'systemctl', 'stop', 'apt-daily.timer', 'apt-daily-upgrade.timer'] }}"
+  loop: "{{ fleet_roles }}"
+  changed_when: true
+- name: Wait for running updates to end
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '10'] + fleet_incus + ['exec', intent.fleet.guests[item], '--', 'systemctl', 'show', '--property=ActiveState', '--value',
+          'apt-daily.service', 'apt-daily-upgrade.service'] }}
+  register: fleet_updates
+  vars:
+    fleet_update_states: "{{ fleet_updates.stdout_lines | default([]) | reject('equalto', '') | list }}"
+    fleet_updates_idle: "{{ fleet_update_states | length == 2 and fleet_update_states | difference(['inactive', 'failed']) | length == 0 }}"
+  until: fleet_updates.rc != 0 or fleet_updates_idle
+  retries: 29
+  delay: "{{ fleet_ready_delay }}"
+  failed_when: fleet_updates.rc != 0 or not fleet_updates_idle
+  changed_when: false
+  loop: "{{ fleet_roles }}"
+# An include per Node stops at the first Node whose converge fails.
+- name: Converge the base of each nested Node
+  ansible.builtin.include_tasks: instance-fleet-converge-node.yml
+  loop: "{{ fleet_nodes }}"
+  loop_control: { loop_var: fleet_node, label: "{{ fleet_node.name }}" }
+
+- { name: Wait for readiness, ansible.builtin.import_tasks: instance-fleet-ready.yml }
+
+# A snapshot of a running container on a directory pool is a file copy, not a consistent state: all three stop first.
+- name: Stop the nested containers
+  ansible.builtin.command: { argv: "{{ ['timeout', '120'] + fleet_incus + ['stop', item] }}" }
+  loop: "{{ fleet_names }}"
+  register: fleet_stop
+  changed_when: true
+  failed_when: false
+- name: Read the state of the stopped fleet
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['list', '--format', 'csv', '--columns', 'ns'] }}" }
+  register: fleet_stopped
+  changed_when: false
+- name: Check that the nested containers stopped
+  vars:
+    fleet_still_running: >-
+      {{ fleet_stopped.stdout_lines | reject('match', '^[^,]+,STOPPED$') | map('regex_replace', ',.*$', '') | select('in', fleet_names) | list }}
+  ansible.builtin.assert:
+    that: fleet_still_running | length == 0
+    fail_msg: >-
+      {{ fleet_still_running | join(', ') }} did not stop:
+      {{ fleet_stop.results | rejectattr('rc', 'eq', 0) | map(attribute='stderr') | join('; ') | truncate(400) }}
+    quiet: true
+
+- { name: Apply the fleet rules, ansible.builtin.import_tasks: instance-fleet-rules.yml, vars: { fleet_rules_apply: true } }
+
+- name: Read the snapshots
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + fleet_incus + ['query', '/1.0/instances/' ~ item ~ '/snapshots?recursion=1'] }}"
+  loop: "{{ fleet_names }}"
+  register: fleet_snapshots
+  changed_when: false
+- name: Delete the old base
+  ansible.builtin.command: { argv: "{{ ['timeout', '120'] + fleet_incus + ['snapshot', 'delete', item.item, 'base'] }}" }
+  when: "'base' in (item.stdout | from_json | map(attribute='name') | list)"
+  loop: "{{ fleet_snapshots.results }}"
+  loop_control: { label: "{{ item.item }}" }
+  changed_when: true
+- name: Take base
+  ansible.builtin.command: { argv: "{{ ['timeout', '180'] + fleet_incus + ['snapshot', 'create', item, 'base'] }}" }
+  loop: "{{ fleet_names }}"
+  changed_when: true

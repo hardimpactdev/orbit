@@ -78,6 +78,14 @@ additionalFiles:
   - ansible/tasks/instance-nested-club-key.yml
   - ansible/tasks/instance-container-handlers.yml
   - ansible/tasks/instance-container-process.yml
+  - ansible/tasks/instance-fleet.yml
+  - ansible/tasks/instance-fleet-rules.yml
+  - ansible/tasks/instance-fleet-rules-read.yml
+  - ansible/tasks/instance-fleet-start.yml
+  - ansible/tasks/instance-fleet-ready.yml
+  - ansible/tasks/instance-fleet-refresh.yml
+  - ansible/tasks/instance-fleet-converge-node.yml
+  - ansible/tasks/instance-fleet-reset.yml
   - ansible/route-create-site.yml
   - ansible/route-withdraw.yml
   - ansible/instance-migrate.yml

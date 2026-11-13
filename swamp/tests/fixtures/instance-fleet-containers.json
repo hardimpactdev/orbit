@@ -1,0 +1,108 @@
+{
+  "nested-gateway": {
+    "config": {
+      "boot.autostart": "true",
+      "image.architecture": "amd64",
+      "image.description": "Ubuntu resolute amd64 (cloud) (20261107_07:42)",
+      "image.os": "Ubuntu",
+      "image.release": "resolute",
+      "image.serial": "20261107_07:42",
+      "image.type": "squashfs",
+      "image.variant": "cloud",
+      "limits.cpu": "2",
+      "limits.memory": "4GiB",
+      "security.nesting": "true"
+    },
+    "devices": {
+      "checkout": {
+        "path": "/home/orbit/orbit",
+        "shift": "true",
+        "source": "/home/orbit/apps/orbit/workspace",
+        "type": "disk"
+      },
+      "club-key": {
+        "path": "/home/orbit/.config/swamp/api-key",
+        "required": "false",
+        "shift": "true",
+        "source": "/etc/orbit/swamp-club-api-key",
+        "type": "disk"
+      },
+      "eth0": {
+        "hwaddr": "10:66:6a:5d:00:11",
+        "ipv4.address": "10.232.2.11",
+        "name": "eth0",
+        "network": "oe-nested",
+        "type": "nic"
+      },
+      "root": {
+        "path": "/",
+        "pool": "topology-seed",
+        "type": "disk"
+      }
+    }
+  },
+  "nested-app-dev": {
+    "config": {
+      "boot.autostart": "true",
+      "image.architecture": "amd64",
+      "image.description": "Ubuntu resolute amd64 (cloud) (20261107_07:42)",
+      "image.os": "Ubuntu",
+      "image.release": "resolute",
+      "image.serial": "20261107_07:42",
+      "image.type": "squashfs",
+      "image.variant": "cloud",
+      "limits.cpu": "2",
+      "limits.memory": "3GiB",
+      "security.nesting": "true"
+    },
+    "devices": {
+      "checkout": {
+        "path": "/home/orbit/orbit",
+        "shift": "true",
+        "source": "/home/orbit/apps/orbit/workspace",
+        "type": "disk"
+      },
+      "eth0": {
+        "hwaddr": "10:66:6a:5d:00:12",
+        "ipv4.address": "10.232.2.12",
+        "name": "eth0",
+        "network": "oe-nested",
+        "type": "nic"
+      },
+      "root": {
+        "path": "/",
+        "pool": "topology-seed",
+        "type": "disk"
+      }
+    }
+  },
+  "nested-app-prod": {
+    "config": {
+      "boot.autostart": "true",
+      "image.architecture": "amd64",
+      "image.description": "Ubuntu resolute amd64 (cloud) (20261107_07:42)",
+      "image.os": "Ubuntu",
+      "image.release": "resolute",
+      "image.serial": "20261107_07:42",
+      "image.type": "squashfs",
+      "image.variant": "cloud",
+      "limits.cpu": "2",
+      "limits.memory": "3GiB",
+      "security.nesting": "true"
+    },
+    "devices": {
+      "eth0": {
+        "hwaddr": "10:66:6a:5d:00:13",
+        "ipv4.address": "10.232.2.13",
+        "name": "eth0",
+        "network": "oe-nested",
+        "type": "nic"
+      },
+      "root": {
+        "path": "/",
+        "pool": "topology-seed",
+        "type": "disk"
+      }
+    }
+  }
+}
