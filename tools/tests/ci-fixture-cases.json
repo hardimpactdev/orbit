@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "1b7b26d3f42d83ef15e8264840ea3ad42ccbb3f6d2588189bc78ce7b8eb06ccd",
+    "source_sha256": "336499ff9e05dd10c45a14376bd55505a3dea276ee063fa3ee5d2157b6fac2c4",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -34,6 +34,8 @@
       "a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact",
       "a moved Laravel checkout clears its config, route, event, compiled and view caches and its file cache store as orbit",
       "a failed clear of the old path's caches warns and the move goes on; a store of another driver than file stays",
+      "a move removes only ignored files in cache folders that name the old path",
+      "a Git failure while listing ignored files removes no tool cache and warns, and the move goes on",
       "a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was",
       "a move starts with a new container: one that an earlier failed move left goes first",
       "a checkout on another branch than the recorded one is refused before anything changes",
@@ -2184,7 +2186,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "85c32f35c9a3d01309f9189f298a5c366a42b9ecddb44d3aad6ed41b91877f58",
+    "source_sha256": "e80a89b3af356be731ae0fc7929ac135706b7198dddd3f122eac8c52ffaf27db",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -2214,7 +2216,8 @@
       "invalid or incomplete copied-file receipts do not claim a count",
       "carried Schedule activation failures and missing receipts warn without failing completed migration",
       "environment warning receipts survive later phase results and remain generic",
-      "a failed clear of the old path's caches warns beside the environment warnings and does not fail the move"
+      "a failed clear of the old path's caches warns beside the environment warnings and does not fail the move",
+      "a failed removal of the old path's tool caches warns before the Laravel clear and does not fail the move"
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {

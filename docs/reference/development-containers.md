@@ -905,6 +905,7 @@ Before downtime, migration resolves the [deploy credential](/reference/github-ap
 - **Repository.** Orbit builds a standalone repository in the container; the checkout's `.git` is never copied.
 - **Branch.** The Node's mirror fetches the Instance's branch from the checkout, and Orbit pushes it in.
 - **Files.** Orbit copies the changed, untracked and ignored files into the workspace, never the checkout's `.git`.
+- **Caches.** Orbit removes the tool and Laravel caches that the copy carried from the old path. [instance:migrate](/cli/instance/migrate) names the rule.
 - **Database.** A database on a Database server stays where it is, and the container gets its own way to it. A SQLite file in the checkout moves with the files.
 - **Start.** FrankenPHP starts as `orbit`. A non-default Instance gets its T3 server, registered as in [Create](#create). A default gets its first seed snapshot.
 - **Route.** Orbit points the Route at FrankenPHP in the container.
