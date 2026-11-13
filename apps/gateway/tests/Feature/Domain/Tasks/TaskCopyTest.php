@@ -251,7 +251,16 @@ describe('a task start on the copy path', function (): void {
         'stopped' => [['state' => 'unknown', 'reason' => 'stopped']],
         'asleep' => [['state' => 'unknown', 'reason' => 'asleep']],
         'unreachable' => [['state' => 'unknown', 'reason' => 'unreachable']],
-        'silent' => [['state' => 'unknown', 'reason' => 'timeout']],
+    ]);
+
+    it('admits a running default whose Git read ran out of time or found no repository', function (array $answer): void {
+        $group = copyGroup(copySource()->project);
+        $this->ssh->answer = $answer;
+
+        expect(startCopy($group)->kind)->toBe('instance.create')->and($this->ssh->calls)->toBe(1);
+    })->with([
+        'timeout' => [['state' => 'unknown', 'reason' => 'timeout']],
+        'not a repository' => [['state' => 'unknown', 'reason' => 'not_a_repository']],
     ]);
 
     it('holds at most the Gateway\'s number of copies on the Node, failing copies included', function (): void {

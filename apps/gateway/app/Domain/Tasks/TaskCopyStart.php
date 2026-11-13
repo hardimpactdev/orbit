@@ -84,8 +84,9 @@ final readonly class TaskCopyStart
 
     /**
      * The default's container must run now. Its power record can be stale, for example after a stop by hand, so one bounded read of the
-     * container (ContainerWorkspaceRead, about 2 s) decides before the transaction. A stopped, asleep, unreachable or silent container
-     * refuses; a missing default or runtime is refused inside the transaction.
+     * container (ContainerWorkspaceRead, at most about 6 s) decides before the transaction. A stopped, asleep or unreachable container
+     * refuses. A timeout does not: the reader first sees the container run, then may run out of time on its Git work. A missing default
+     * or runtime is refused inside the transaction.
      */
     private function assertDefaultRuns(Project $project): void
     {
@@ -94,7 +95,7 @@ final readonly class TaskCopyStart
             return;
         }
         $read = $this->read->read($default);
-        if ($read['state'] === 'unknown' && in_array($read['reason'], ['stopped', 'asleep', 'unreachable', 'timeout'], true)) {
+        if ($read['state'] === 'unknown' && in_array($read['reason'], ['stopped', 'asleep', 'unreachable'], true)) {
             throw new ResourceOperationException('tasks.copy_source_unavailable',
                 "Project [{$project->slug}] has no running default Instance with a seed snapshot to copy.", 409, details: ['default' => $read['reason']]);
         }

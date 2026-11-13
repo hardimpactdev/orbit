@@ -22,7 +22,7 @@ sequenceDiagram
     %%> Requirements:
     %%> - the task is in todo and holds no workspace; otherwise `tasks.not_todo` or `tasks.group_closed`
     %%> - the Project's default Instance is active and running, with a seed snapshot; otherwise HTTP 409 `tasks.copy_source_unavailable`, also for a stopped default, and nothing is recorded
-    %%> - before the transaction, one bounded read of the default's container (about 2 s) confirms it runs: its power record can be stale after a stop by hand; a stopped, asleep, unreachable or silent container refuses the same way
+    %%> - before the transaction, one bounded read of the default's container (at most about 6 s) confirms it runs: its power record can be stale after a stop by hand; a stopped, asleep or unreachable container refuses the same way
     %%> - no Instance is named `task-TASK` yet; otherwise `tasks.copy_name_taken`
     %%> - the default's Node holds fewer task copies than the Gateway's `ORBIT_TASKS_COPIES_MAX` (default 1); every copy that a task owns counts, also one that fails or is being destroyed; otherwise `tasks.copy_capacity_full`, with no wait
     %%> What it does:
