@@ -5,6 +5,17 @@ const ObjectValue = z.record(z.string(), z.unknown());
 type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
+/** The part a failed clone T3 step was running, from the run folder's `t3.json`, or null when the step left none. */
+async function t3Part(folder: string): Promise<"agent" | "t3" | null> {
+    try {
+        const parsed = z.object({t3_part: z.enum(["agent", "t3"])}).safeParse(JSON.parse(await Deno.readTextFile(folder + "/t3.json")));
+        return parsed.success ? parsed.data.t3_part : null;
+    } catch (error) {
+        if (error instanceof Deno.errors.NotFound || error instanceof SyntaxError) return null;
+        throw error;
+    }
+}
+
 /** The run folder's result file, or null when no phase wrote one. */
 async function resultFile(folder: string): Promise<unknown> {
     try {
@@ -83,7 +94,9 @@ export const behavior = {
                 const container = args.intent.container as {clone?: unknown; club_key?: unknown} | null | undefined;
                 // A nested-fleet default's container phases leave in the result file what its start did with the Club key.
                 const file = container?.club_key != null && container.clone == null ? await resultFile(args.folder) : null;
-                const value = createResult(args.intent, {...args, club_key_file: file});
+                // A failed clone T3 step leaves the part it was running in t3.json, which clone-session-copy brings to the run folder.
+                const t3_part = args.container?.t3 === "failed" ? await t3Part(args.folder) : null;
+                const value = createResult(args.intent, {...args, club_key_file: file, t3_part});
                 const result = JSON.parse(value.stdout);
                 if (!value.ready && ["container", "clone"].includes(result.failed_step)) {
                     // The phase owns redaction; preserve its public evidence in the Operation.

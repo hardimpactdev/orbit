@@ -481,15 +481,17 @@ Deno.test("a clone whose workspace fails while T3 runs registers nothing and sto
 });
 
 Deno.test("a clone whose T3 step fails, early or late, registers nothing, stops the container and names T3", () => {
-  // The agent part (early) and the T3 part (late) fail the same step; instance_clone_test.py proves which part its stderr names.
+  // The agent part (early) and the T3 part (late) fail the same step; instance_clone_test.py proves the code of each part.
   for (const duration of [1.1, 7.2]) {
     const outcomes = cloneOutcomes();
     outcomes["clone-t3"] = { status: "failed", duration };
     const ran = runCreate(cloneIntent, outcomes);
     assertEquals(ran["clone-workspace"].status, "succeeded");
-    for (const name of ["clone-sessions", "clone-session-copy", "clone-register"]) assertEquals(ran[name].status, "skipped", name);
+    for (const name of ["clone-sessions", "clone-register"]) assertEquals(ran[name].status, "skipped", name);
+    // The copy brings the step's t3.json, which names the part, to the run folder; create_result reads it (instance_clone_test.py).
+    assertEquals(ran["clone-session-copy"].status, "succeeded");
     const result = JSON.parse(String(ran.finish.outputs!.stdout));
-    assertEquals([ran.finish.outputs!.ready, result.failed_step, result.error_code], [false, "t3", "instance.t3_unready"]);
+    assertEquals([ran.finish.outputs!.ready, result.failed_step], [false, "t3"]);
     assertEquals(ran["stop-container"].status, "succeeded");
     assertEquals(ran["clone-private-cleanup"].status, "succeeded");
   }

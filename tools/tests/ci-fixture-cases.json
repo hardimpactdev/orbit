@@ -1533,7 +1533,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "ff9a277b6757aff5e51256c84f3ca9469fe3c94edeb342139280d37fdb9ac3bb",
+    "source_sha256": "0b4f5d47567c439170d9bb81aca5b31fe5ed78713b937962332dc51ca9d167c1",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1563,6 +1563,11 @@
       "test_preserves_only_the_guest_command_and_exit_code",
       "test_rejects_private_or_mismatched_guest_diagnostics",
       "test_node_command_failure_names_executable_and_exit_without_output",
+      "test_runs_agent_then_t3_and_passes_the_key_only_to_the_agent",
+      "test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code",
+      "test_a_failed_t3_part_names_t3_and_keeps_the_t3_code",
+      "test_a_timeout_names_the_part_that_was_running",
+      "test_the_agent_phase_alone_is_no_longer_a_step",
       "test_delivers_the_key_only_as_the_scripts_stdin_after_the_tmpfs_check",
       "test_the_same_key_changes_nothing",
       "test_a_key_written_while_the_inner_incus_was_not_ready_says_so",
@@ -1965,7 +1970,7 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "b63ba595e496ea05789ba5890788efb36d18af4a724012d77316a9206c375360",
+    "source_sha256": "8cecefac1f718325de52440a3eed83f065ed13998120539f1d13e3f116ef283c",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
@@ -1979,10 +1984,14 @@
       "only a clone whose intent has `fleet` starts its fleet; a normal clone skips the step and finishes as before",
       "deploy VP workspace reads retain step names for the capture schema",
       "guarded withdrawal resolves the same child when cleanup is needed and stays deferred during parent preflight",
-      "a normal clone create runs agent and T3 beside the workspace, and sessions waits for both",
+      "the scheduler imports the level sort of the Swamp release that the repository pins",
+      "the workspace and T3 share one step level of the clone job in every clone shape",
+      "a normal clone starts the workspace and T3 together when the copy ends, and sessions waits for both",
+      "a clone with a database starts the workspace and T3 together when the database steps end",
+      "a nested-fleet clone starts T3 after the fleet step, beside the workspace",
       "a clone whose workspace fails while T3 runs registers nothing and stops the container",
-      "a clone whose T3 or database phase fails registers nothing, stops the container and names that phase",
-      "a nested-fleet clone runs agent and T3 beside its fleet start; only the workspace waits for the fleet",
+      "a clone whose T3 step fails, early or late, registers nothing, stops the container and names T3",
+      "a clone whose database step fails skips the workspace, registers nothing and names the database",
       "a nested-fleet clone's start reads only the Club key, and every wake reads no key"
     ]
   },
@@ -2218,7 +2227,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {
-    "source_sha256": "4c53bef543b4529c82439d4344077fc2678421302dc6725094156fa18c6ac500",
+    "source_sha256": "9ae43c90130ee2d54c50ea01a514bfb8cf54b2ee513020229d00483de49010b3",
     "cases": [
       "create returns only the commit when every step finished",
       "create names the first unfinished phase",
@@ -2388,7 +2397,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/ansible-input/write_test.ts": {
-    "source_sha256": "8a8ee8b606406b1c6bf3be43d617f74239f5da02db77206e7e79ebd7a9b18ce1",
+    "source_sha256": "554c473877cbb09ba2599b6be051c158a831c27b8d6b9744f77d40a7d3ea5ff7",
     "cases": [
       "the full intent reaches a private file beyond the environment size limit",
       "an intent write refuses paths outside its run folder",

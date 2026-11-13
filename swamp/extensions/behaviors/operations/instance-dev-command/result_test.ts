@@ -258,6 +258,17 @@ Deno.test("a clone finishes only with its registered T3 server, which the receip
     // The T3 step, whose first part writes the agent's files, has its own code, and the registration after it did not run; the
     // Operation's failure detail names the part (instance.container_agent_failed or instance.container_t3_failed).
     assertEquals(failure({ t3: "failed", register: "skipped", server: null }), ["t3", "instance.t3_unready"]);
+    // The part the T3 step left in its t3.json decides the code: the agent part keeps the agent phase's code.
+    const part = (t3_part: "agent" | "t3" | null) => {
+        const failed = JSON.parse(createResult({ ...intent, setup_steps: [], route: { route_id: 1 }, container: { clone: { source: "instance-1" } } }, {
+            ...phases, checkout: { status: "skipped" }, setup: "skipped", processes: [], route: "succeeded", t3_part,
+            container: { ...container, t3: "failed", register: "skipped", server: null },
+        }).stdout);
+        return [failed.failed_step, failed.error_code];
+    };
+    assertEquals(part("agent"), ["t3", "instance.create_agent_failed"]);
+    assertEquals(part("t3"), ["t3", "instance.t3_unready"]);
+    assertEquals(part(null), ["t3", "instance.t3_unready"]);
     assertEquals(failure({ register: "failed", server: null }), ["register", "instance.create_register_failed"]);
     // A registration without its receipt is no registration, and a failed create carries no server.
     assertEquals(failure({ server: null }), ["register", "instance.create_register_failed"]);

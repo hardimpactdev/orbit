@@ -73,6 +73,8 @@ type Phases = {
     container?: Container | null;
     /** A nested-fleet default's result file from the run folder, which names what its start did with the Club key. */
     club_key_file?: unknown;
+    /** The part of a clone's T3 step that ran when it failed or timed out, from the step's `t3.json` in the run folder. */
+    t3_part?: "agent" | "t3" | null;
 };
 type Container = {
     mail?: Phase;
@@ -210,10 +212,11 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
             ? {
                 failed_step: failed[0],
                 // A setup command keeps the public step-list code; T3 that never answers has its own; other phases name themselves.
+                // The T3 step's agent part keeps the agent phase's code, so a failure or a timeout there never reads as T3.
                 error_code: failed[0] === "setup"
                     ? "instance.setup_step_failed"
                     : failed[0] === "t3"
-                    ? "instance.t3_unready"
+                    ? (phases.t3_part === "agent" ? "instance.create_agent_failed" : "instance.t3_unready")
                     : "instance.create_" + failed[0] + "_failed",
             }
             : {}),

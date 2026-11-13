@@ -127,7 +127,8 @@ sequenceDiagram
     %%> Check:
     %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`
     %%> On failure:
-    %%> - the result names `t3`; unless the step timed out, the Operation's failure detail says which part failed: `instance.container_agent_failed` or `instance.container_t3_failed`
+    %%> - before each part the step writes the part's name to its private `t3.json`, and success removes it; on a failure or timeout `clone-session-copy` brings that file to the run, so the result keeps `failed_step: t3` with the part's code: `instance.create_agent_failed` or `instance.t3_unready`
+    %%> - the Operation's failure detail is the part's own line, `instance.container_agent_failed` or `instance.container_t3_failed`, or the timeout
     %%> Why its own lock: the clone steps share one Swamp lock; T3 takes `ic-clone-t3-…`, so it runs beside the workspace
     end
     SW->>C: Register the T3 server<br/>native clone-register

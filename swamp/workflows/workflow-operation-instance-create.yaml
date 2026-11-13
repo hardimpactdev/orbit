@@ -702,11 +702,12 @@ jobs:
             argv: '${{ ["timeout", "60"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["sessions"] }}'
             stdin: ''
             timeoutSec: 70
+      # It also brings a failed clone-t3 step's t3.json, which names the part that ran, so the create result keeps that part's code.
       - name: clone-session-copy
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: clone-sessions, condition: {type: always}}]
-        guard: ${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) || !("clone-sessions" in steps && steps["clone-sessions"].status in ["succeeded", "failed"]) }}
+        guard: ${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) || !(("clone-sessions" in steps && steps["clone-sessions"].status in ["succeeded", "failed"]) || ("clone-t3" in steps && steps["clone-t3"].status == "failed")) }}
         task:
           type: behavior
           behaviorType: '@swamp/ssh'

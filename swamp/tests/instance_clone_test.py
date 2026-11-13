@@ -576,7 +576,8 @@ class CloneTest(unittest.TestCase):
 
             def command(argv, **_kwargs):
                 if argv[0] != fail:
-                    return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
+                    # A guest phase answers JSON (the T3 step's agent part runs before its Node git read); other commands a commit.
+                    return subprocess.CompletedProcess(argv, 0, "{}" if "-c" in argv else "abc123\n", "")
                 return subprocess.CompletedProcess(argv, 7, json.dumps(evidence) if evidence else "PRIVATE-STDOUT", stderr)
 
             output, error = io.StringIO(), io.StringIO()
@@ -682,13 +683,16 @@ class T3PhaseTest(unittest.TestCase):
 
     KEY = "fake-model-key-5c1e"
 
-    def phase(self, phase="t3", fail=None):
+    def phase(self, phase="t3", fail=None, timeout=None):
         account = pwd.getpwuid(os.getuid())
         calls = []
 
         def command(argv, **kwargs):
             calls.append((argv, kwargs.get("input")))
             member = argv[argv.index("-c") + 2] if "-c" in argv else None
+            if member is not None and member == timeout:
+                # The outer `timeout 240` ends the step here: nothing after this line of the script runs.
+                raise KeyboardInterrupt
             if member is not None and member == fail:
                 return subprocess.CompletedProcess(argv, 1, "PRIVATE-STDOUT", "instance.container_" + member + "_failed: command php exited 17")
             if member is not None:
@@ -706,32 +710,68 @@ class T3PhaseTest(unittest.TestCase):
                 runpy.run_path(str(SCRIPT), run_name="__main__")
             except SystemExit as result:
                 code = result.code
+            except KeyboardInterrupt:
+                code = 124
+            left = Path(folder) / "t3.json"
+            self.left = left.read_text() if left.exists() else None
         for argv, _ in calls:
             self.assertNotIn(self.KEY, json.dumps(argv))
-        self.assertNotIn(self.KEY, output.getvalue() + error.getvalue())
+        self.assertNotIn(self.KEY, output.getvalue() + error.getvalue() + (self.left or ""))
         guest = [(argv[argv.index("-c") + 2], content) for argv, content in calls if "-c" in argv]
         return code, guest, output.getvalue(), error.getvalue()
+
+    def receipt(self):
+        """The real create_result over the run folder that clone-session-copy fills with the step's t3.json."""
+        with tempfile.TemporaryDirectory(prefix="orbit-ansible-", dir="/tmp") as folder:
+            if self.left is not None:
+                (Path(folder) / "t3.json").write_text(self.left)
+            script = """
+import { behavior } from './swamp/extensions/behaviors/operations/instance-dev-command/assets.ts';
+const created = await behavior.methods.create_result.execute({
+    folder: Deno.args[0], intent: {instance_id: 7, setup_steps: [], container: {clone: {}}},
+    checkout: null, database: 'succeeded', setup: 'skipped', processes: [], route: 'skipped',
+    container: {launch: 'succeeded', workspace: {status: 'succeeded', outputs: {stdout: 'orbit-commit=' + 'a'.repeat(40)}},
+        deploy: [], processes: 'succeeded', seed: 'skipped', t3: 'failed', register: 'skipped'},
+}, {writeResource: async () => {}});
+console.log(created.stdout);
+"""
+            result = subprocess.run(["deno", "eval", "--no-check", script, folder],
+                                    cwd=SCRIPT.parents[2], text=True, capture_output=True, check=False, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            receipt = json.loads(result.stdout)
+            return receipt["failed_step"], receipt["error_code"]
 
     def test_runs_agent_then_t3_and_passes_the_key_only_to_the_agent(self):
         code, guest, output, error = self.phase()
         self.assertEqual(code, 0)
         self.assertEqual(guest, [("agent", self.KEY), ("t3", "")])
-        # The step prints T3's receipt alone, which the create result reads as the time T3 answered.
+        # The step prints T3's receipt alone, which the create result reads as the time T3 answered; sessions finds no t3.json.
         self.assertEqual(json.loads(output)["phase"], "t3")
         self.assertEqual(error, "")
+        self.assertIsNone(self.left)
 
-    def test_a_failed_agent_part_names_the_agent_and_starts_no_t3(self):
+    def test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code(self):
         code, guest, output, error = self.phase(fail="agent")
         self.assertEqual(code, 1)
         self.assertEqual([member for member, _ in guest], ["agent"])
         self.assertEqual(output, "")
+        # The Operation's failure detail is this stderr line; the code comes from the part the step left behind.
         self.assertEqual(error, "instance.container_agent_failed: command php exited 17\n")
+        self.assertEqual(self.receipt(), ("t3", "instance.create_agent_failed"))
 
-    def test_a_failed_t3_part_names_t3(self):
+    def test_a_failed_t3_part_names_t3_and_keeps_the_t3_code(self):
         code, guest, output, error = self.phase(fail="t3")
         self.assertEqual(code, 1)
         self.assertEqual([member for member, _ in guest], ["agent", "t3"])
         self.assertEqual(error, "instance.container_t3_failed: command php exited 17\n")
+        self.assertEqual(self.receipt(), ("t3", "instance.t3_unready"))
+
+    def test_a_timeout_names_the_part_that_was_running(self):
+        for part, code in [("agent", "instance.create_agent_failed"), ("t3", "instance.t3_unready")]:
+            with self.subTest(part=part):
+                self.assertEqual(self.phase(timeout=part)[0], 124)
+                self.assertEqual(json.loads(self.left), {"t3_part": part})
+                self.assertEqual(self.receipt(), ("t3", code))
 
     def test_the_agent_phase_alone_is_no_longer_a_step(self):
         code, guest, _, error = self.phase(phase="agent")
