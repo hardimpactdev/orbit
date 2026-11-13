@@ -1920,7 +1920,7 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "54066f9ceb422a43942a25af7744c463badcd61793f3148f19ad16b2557cc1cd",
+    "source_sha256": "083f536068b66ca96a0dc2624c532d696a3f7a64784f19cc6f340e3273376c00",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
@@ -1935,7 +1935,8 @@
       "deploy VP workspace reads retain step names for the capture schema",
       "guarded withdrawal resolves the same child when cleanup is needed and stays deferred during parent preflight",
       "a normal clone create runs agent and T3 beside the workspace, and sessions waits for both",
-      "a clone whose workspace fails while T3 runs registers nothing and stops the container"
+      "a clone whose workspace fails while T3 runs registers nothing and stops the container",
+      "a clone whose T3 or database phase fails registers nothing, stops the container and names that phase"
     ]
   },
   "swamp/tests/workflow_placement_test.ts": {

@@ -247,7 +247,8 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
 /**
  * A container default's phases in order: the container, the workspace with its commit, each development deploy step, the
  * Processes, the Route and the seed snapshot. A clone has no deploy step and no seed: after the copy (and a nested-fleet clone's
- * fleet) and the workspace come the agent's files, the Processes, T3, the Route and the registration, whose receipt must name the server.
+ * fleet) come the workspace, the agent's files, the Processes, T3, the Route and the registration, whose receipt must name the
+ * server. Agent and T3 run beside the workspace, so this order, not the run's, names the failed phase when several fail.
  */
 function containerOutcomes(
     intent: Record<string, unknown>,

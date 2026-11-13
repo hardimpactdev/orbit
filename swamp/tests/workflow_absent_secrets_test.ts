@@ -414,3 +414,21 @@ Deno.test("a clone whose workspace fails while T3 runs registers nothing and sto
   assertEquals(ran["clone-private-cleanup"].status, "succeeded");
   assertEquals(ran.accepted.status, "failed");
 });
+
+Deno.test("a clone whose T3 or database phase fails registers nothing, stops the container and names that phase", () => {
+  const t3 = cloneOutcomes();
+  t3["clone-t3"] = { status: "failed", duration: 4 };
+  const failedT3 = runCreate(cloneIntent, t3);
+  assertEquals(failedT3["clone-workspace"].status, "succeeded");
+  for (const name of ["clone-sessions", "clone-register"]) assertEquals(failedT3[name].status, "skipped", name);
+  assertEquals(JSON.parse(String(failedT3.finish.outputs!.stdout)).failed_step, "t3");
+  assertEquals(failedT3["stop-container"].status, "succeeded");
+  // A database install that fails skips the workspace; agent and T3 still run beside it, and the result names the database.
+  const database = cloneOutcomes();
+  database["clone-database-install"] = { status: "failed" };
+  const failedDatabase = runCreate({ ...cloneIntent, database: {} }, database);
+  assertEquals([failedDatabase["clone-workspace"].status, failedDatabase["clone-t3"].status], ["skipped", "succeeded"]);
+  assertEquals(failedDatabase["clone-register"].status, "skipped");
+  assertEquals(JSON.parse(String(failedDatabase.finish.outputs!.stdout)).failed_step, "database");
+  assertEquals(failedDatabase["stop-container"].status, "succeeded");
+});

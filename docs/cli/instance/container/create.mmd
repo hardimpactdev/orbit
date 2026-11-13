@@ -99,7 +99,7 @@ sequenceDiagram
     end
     par workspace beside agent and T3
     SW->>C: Prepare the workspace<br/>native clone-workspace
-    %%> Why beside: agent and T3 never read the workspace; the join below checks both
+    %%> Why beside: agent and T3 never write the workspace; T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no Git lock; the join below checks both
     %%> When: after the copy, the Club key, the fleet start and the database steps
     %%> What it does:
     %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone

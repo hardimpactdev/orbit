@@ -641,7 +641,7 @@ jobs:
             hosts:
               - name: target
                 address: ${{ inputs.intent.ssh_execution.target.host }}
-      # Agent and T3 never read the workspace, so they run beside it under their own lock name; a shared name would make Swamp
+      # Agent and T3 never write the workspace (T3 runs Git without optional locks), so they run beside it under their own lock name; a shared name would make Swamp
       # run them one after another (docs/cli/instance/container/create.mmd). clone-sessions is the join.
       - name: clone-agent
         labels: {role: swamp}
