@@ -526,6 +526,8 @@ Author native workflows under `swamp/` in this repository. Converted kinds use t
 
 A kind declared with `executor: swamp` is admitted through the same Operation store and idempotency boundary. Admission returns `202`. The Gateway queues one PHP starter job after commit to submit the native run. Swamp owns its steps and retries; the Gateway keeps intent, target exclusion, steps, output and the final receipt.
 
+One kind starts differently: the `instance.wake` of a frozen container is recorded without the job, and the Gateway first asks the Instance's Node to resume it ([the Node resumes a frozen container](/reference/development-containers#the-node-resumes-a-frozen-container)). It then ends the Operation itself or queues the starter job; a delayed job 15 seconds later covers a worker lost in between.
+
 ### Protected inputs
 
 A run may declare named secret sources for parameter paths. Operation input and Swamp carry only an owning-record reference; the Gateway verifies ownership before hydrating it for the existing transport. Secrets never enter Operation records or responses. Run fingerprints and stored input bind only the unhydrated reference, so a fresh credential mint cannot change replay identity. A null or different owner, or a target type outside the source’s `targetTypes()`, refuses execution. Executor requests preserve empty strings and whitespace for exact input binding.
