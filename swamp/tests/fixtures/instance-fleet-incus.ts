@@ -45,6 +45,32 @@ if (command[0] === "test" && command[1] === "-s") {
   Deno.exit(state.outer.files[command[2]] ? 0 : 1);
 }
 
+// The refresh record on the Instance container's own disk: read with `cat`, written root-owned 0644 from stdin.
+if (command[0] === "cat") {
+  const content = state.outer.files[command[1]];
+  if (content === undefined) fail(`cat: ${command[1]}: No such file or directory`);
+  if (state.outer.unreadable?.includes(command[1])) fail(`cat: ${command[1]}: Permission denied`);
+  Deno.stdout.writeSync(new TextEncoder().encode(content));
+  done();
+}
+if (command[0] === "rm" && command[1] === "-f") {
+  delete state.outer.files[command[2]];
+  done();
+}
+if (command[0] === "install" && command.includes("/dev/stdin")) {
+  const path = command.at(-1)!;
+  state.outer.files[path] = await new Response(Deno.stdin.readable).text();
+  state.outer.modes ??= {};
+  state.outer.modes[path] = command.slice(1, -2).join(" ");
+  done();
+}
+// The Git object IDs of the workspace's checkout: `digests` maps each path to its ID; `digestsFail` makes the read fail.
+if (command[0] === "git" && command.includes("rev-parse")) {
+  if (state.digestsFail) fail("fatal: not a git repository");
+  const digests = { "apps/agent/contract": "d4", ...(state.digests ?? { "apps/gateway": "a1", swamp: "c3" }) };
+  done(command.slice(command.indexOf("rev-parse") + 1).map((object) => digests[object.slice("HEAD:".length)]).join("\n"));
+}
+
 if (command[0] === "incus") {
   const inner = command.slice(1);
   if (inner[0] === "admin" && inner[1] === "waitready") done();
@@ -69,6 +95,11 @@ if (command[0] === "incus") {
       // A start two levels below the host fails on an ID-shifted disk device, as the experiment showed.
       const shifted = Object.entries(found.devices).find(([, device]) => device.type === "disk" && device.shift === "true");
       if (shifted) fail(`Failed to setup device mount "${shifted[0]}": idmapping abilities are required but aren't supported on system`);
+    }
+    // `driftOnStop`: another writer removes a device of a running container while one stops (a rule that differs after the read).
+    if (inner[0] === "stop" && state.driftOnStop) {
+      delete containers[state.driftOnStop.container].devices[state.driftOnStop.device];
+      delete state.driftOnStop;
     }
     found.status = inner[0] === "start" ? "Running" : "Stopped";
     done();
@@ -171,8 +202,26 @@ if (command[0] === "incus") {
       Deno.exit(inactive.length > 0 ? 3 : 0);
     }
     if (rest[0] === "systemctl" && rest[1] === "show") done("inactive\ninactive");
+    // The grants play in the nested Gateway: its recap names how many files it changed (`grantsChanged`, 0 by default).
+    if (rest[0] === "env" && rest.some((value) => value.endsWith("ansible-playbook"))) {
+      const changed = state.grantsChanged ?? 0;
+      delete state.grantsChanged;
+      done(`PLAY RECAP *********\nlocalhost                  : ok=4    changed=${changed}    unreachable=0    failed=0    skipped=0`);
+    }
     // A checkout that moved under the running nested Gateway (`schemaBehind`): Doctor is unhealthy until the migrate and a restart after it.
-    if (rest[0] === "php" && rest.includes("migrate")) state.migrated = true;
+    // `pendingMigration`: the migrate applies one (Laravel prints each migration); otherwise it prints that nothing was due.
+    if (rest[0] === "php" && rest.includes("migrate")) {
+      state.migrated = true;
+      const applied = state.pendingMigration || state.schemaBehind;
+      delete state.pendingMigration;
+      // The nested Gateway's database lives on its own disk: an applied migration moves its schema mark there.
+      if (applied && name === "nested-gateway") {
+        const gateway = container(name);
+        gateway.files ??= {};
+        gateway.files["/home/orbit/.orbit/schema"] = String(Number(gateway.files["/home/orbit/.orbit/schema"] ?? "0") + 1);
+      }
+      done(applied ? "INFO  Running migrations.\n  2026_11_13_000000_add_a_column ........ 12.40ms DONE" : "INFO  Nothing to migrate.");
+    }
     if (rest[0] === "systemctl" && rest[1] === "restart" && state.migrated) state.restartedAfterMigrate = true;
     done();
   }
@@ -283,7 +332,10 @@ if (command[0] === "curl") {
   const operation = /^\/operations\/(\d+)$/.exec(path);
   if (method === "GET" && operation) {
     const found = state.operations[Number(operation[1]) - 901];
-    done({ data: { id: Number(operation[1]), status: found.status, error_code: found.status === "failed" ? "node.converge_failed" : null } });
+    // `convergeChanged`: the tasks each Node's base converge changed, as the Operation's `result.changed`; 0 by default.
+    // `convergeNoCount`: a result without a count.
+    done({ data: { id: Number(operation[1]), status: found.status, error_code: found.status === "failed" ? "node.converge_failed" : null,
+      result: found.status !== "succeeded" ? null : state.convergeNoCount ? {} : { changed: state.convergeChanged?.[found.node] ?? 0 } } });
   }
   fail(`Unexpected API call: ${method} ${path}`);
 }

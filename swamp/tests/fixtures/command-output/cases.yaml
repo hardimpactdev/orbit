@@ -640,7 +640,7 @@ contexts:
       - nested-app-dev,STOPPED
       - nested-app-prod,RUNNING
   fleet-stopped:
-    fleet_names: [nested-gateway, nested-app-dev, nested-app-prod]
+    fleet_base_targets: [nested-gateway, nested-app-dev, nested-app-prod]
     fleet_stopped:
       stdout_lines:
       - nested-gateway,STOPPED
@@ -795,6 +795,18 @@ contexts:
     intent: {freeze: {resident_anon_mib: 32}}
     freeze_stat:
       content: YW5vbiAwCmZpbGUgMApzaG1lbSAwCg==
+  fleet-record-present:
+    fleet_record_read:
+      rc: 0
+      stdout: '{"code": "4f1c2a6b", "converge": "9e0d7b3c"}'
+  fleet-record-malformed:
+    fleet_record_read:
+      rc: 0
+      stdout: '{"code": "4f1c2a6b", "converge": '
+  fleet-record-absent:
+    fleet_record_read:
+      rc: 1
+      stdout: ''
 cases:
 - file: tasks/task-vm-fleet.yml
   task: Reconcile the nested Swamp grants
@@ -1631,6 +1643,36 @@ cases:
   context: fleet-start-list
   expected:
   - nested-app-dev
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out which parts are due
+  field: vars.fleet_record_valid
+  context: fleet-record-present
+  expected: true
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out which parts are due
+  field: vars.fleet_record_valid
+  context: fleet-record-malformed
+  expected: false
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out which parts are due
+  field: vars.fleet_record_valid
+  context: fleet-record-absent
+  expected: false
+- file: tasks/instance-fleet-refresh.yml
+  task: Reconcile the Swamp grants
+  field: changed_when
+  context: grants-current
+  expected: false
+- file: tasks/instance-fleet-refresh.yml
+  task: Reconcile the Swamp grants
+  field: changed_when
+  context: grants-changed
+  expected: true
+- file: tasks/instance-fleet-refresh.yml
+  task: Reconcile the Swamp grants
+  field: changed_when
+  context: grants-many-changes
+  expected: true
 - file: tasks/instance-fleet-refresh.yml
   task: Check that the nested containers stopped
   field: vars.fleet_still_running
