@@ -108,7 +108,9 @@ The pool migration converts the existing Beast and Shark hosts to two task and t
 
 A task waits for a task place, starts from the base, and deletes its VM after it publishes its PR. A build, fix turn or review round that needs a VM claims a task place again and restores the task branch on a fresh VM from the base. A published PR holds no VM, identity, workspace or place through review. Between two steps the VM stays for the next one, until the [idle release](/reference/tasks#release-an-idle-task-vm) saves the workspace to origin and takes it.
 
-CI proofs wait in one first-come-first-served queue. The first PR takes every free CI place, with at least one VM and no more VMs than its batches. Each VM starts fresh from the base. Whole batches are balanced across VMs by measured case times. Each VM restores its fleet and runs its share. Orbit merges every case verdict into one report, then deletes the VMs.
+Only one proof run works at a time. Operator and CI parents wait in Operation id order under the [proof admission policy](/cli/proof/run#the-run), with a 120-minute allowance from creation. The place stays held until the children have ended; the 60-minute stale-hold release bounds an unproven end. The front CI proof takes every free CI VM place, with at least one VM and no more VMs than its batches.
+
+Each VM starts fresh from the base. Whole batches are balanced across VMs by measured case times. Each VM restores its fleet and runs its share. Orbit merges every case verdict into one report, then deletes the VMs.
 
 Each VM's share has a run budget from its batches, at most two hours. A plan that gives one VM more batches than that budget fits waits for another CI place, while one is taken. The Gateway records the verdicts of each batch as it ends, so a share that reaches its budget keeps them; only the cases of the batches that did not end are `unrun`.
 

@@ -49,10 +49,16 @@ final readonly class ProofRunWatch
         $ended = 0;
         // The kept VMs expire on every pass, whatever the watch of the proofs does.
         try {
-            $open = Operation::query()->where('kind', OperationKinds::ProofRun)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running])
+            $open = Operation::query()->where(fn ($query) => $query->where(fn ($query) => $query->where('kind', OperationKinds::ProofRun)
+                ->whereIn('status', [OperationStatus::Queued, OperationStatus::Running])
                 ->where(fn ($query) => $query->where('created_at', '<', now()->subSeconds(self::AdmissionSeconds))
-                    ->orWhereIn('id', ProofChildStarts::heldProofs()))->get(['id', 'created_at']);
-            foreach ($open as $proof) {
+                    ->orWhereIn('id', ProofChildStarts::heldProofs())))
+                ->orWhereIn('id', ProofChildStarts::endedHeldChildren()->select('id')))
+                ->get(['id', 'kind', 'created_at', 'input->proof_operation_id as proof_id']);
+            foreach ($open->where('kind', ProofGroup::OwnerKind)->pluck('proof_id')->unique() as $proofId) {
+                app(ProofChildStarts::class)->resume(ValidatedData::integer($proofId));
+            }
+            foreach ($open->where('kind', OperationKinds::ProofRun) as $proof) {
                 $children = ProofRunSettlement::children($proof->id);
                 if (ProofChildStarts::needsResume($children)) {
                     app(ProofChildStarts::class)->resume($proof->id);

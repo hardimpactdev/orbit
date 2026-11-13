@@ -74,7 +74,7 @@ final readonly class ProofRunIntent
                 'ci_pool' => $authenticatedCaller?->status === LifecycleStatus::Active && $authenticatedCaller->roles()
                     ->where('role', RoleName::CiRunner)->where('status', LifecycleStatus::Active)->exists(),
                 'runs' => [], ...($keepFailed ? ['keep_failed' => true] : [])], $caller, $requestId);
-        $this->store->change($proof, ['status' => OperationStatus::Running, 'started_at' => now()]);
+        $this->store->change($proof, ['status' => OperationStatus::Running]);
         try {
             app(Dispatcher::class)->dispatch(new AdmitProofRun($proof->id));
         } catch (Throwable $exception) {
@@ -96,6 +96,7 @@ final readonly class ProofRunIntent
         $input = ValidatedData::object($proof->input);
         $commit = ValidatedData::string($input['commit']);
         $uncovered = [];
+        $waitStep = self::WaitStep;
         try {
             $this->trust->assert($commit);
             $selection = $this->select($commit, ($input['all'] ?? false) === true);
@@ -113,55 +114,65 @@ final readonly class ProofRunIntent
 
                 return;
             }
-            if (($intent['ci_pool'] ?? false) === true && $proof->created_at?->lt(now()->subSeconds(self::WaitSeconds))) {
-                throw new ResourceOperationException('proof.capacity_timeout', 'The two-hour CI admission budget expired before a place was claimed.', 409);
-            }
             if (! $this->settings->executionEnabled()) {
                 throw new ResourceOperationException('proof.execution_disabled', 'Proof execution is switched off: the commit is trusted and the cases are selected, but nothing runs.', 409);
             }
             // Record all children together. Operator children can wait in task admission without a VM; CI claims roll back together on capacity.
             $batches = app(ProofBatchPlan::class)->read($commit, $selection->cases);
             $fresh = $this->freshHosts($selection->mergeBase);
-            app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, fn () => DB::transaction(function () use ($proof, $commit, $selection, $intent, $batches): array {
-                // The watchdog may have ended this proof as lost while the job was slow. Then nothing is admitted, so no run is orphaned.
-                // SQLite takes the write lock at BEGIN (transaction_mode IMMEDIATE), so the watchdog sees none of this admission until it commits.
-                $current = Operation::query()->lockForUpdate()->find($proof->id);
-                if (! $current instanceof Operation || $current->status->terminal()) {
-                    throw new ResourceOperationException(ProofRunSettlement::AdmissionInterrupted, 'The proof was ended while it was admitted. Run it again.', 409);
-                }
+            app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, function () use ($proof, $commit, $selection, $intent, $batches, &$waitStep): array {
+                return DB::transaction(function () use ($proof, $commit, $selection, $intent, $batches, &$waitStep): array {
+                    // The watchdog may have ended this proof as lost while the job was slow. Then nothing is admitted, so no run is orphaned.
+                    // SQLite takes the write lock at BEGIN (transaction_mode IMMEDIATE), so the watchdog sees none of this admission until it commits.
+                    $current = Operation::query()->lockForUpdate()->find($proof->id);
+                    if (! $current instanceof Operation || $current->status->terminal()) {
+                        throw new ResourceOperationException(ProofRunSettlement::AdmissionInterrupted, 'The proof was ended while it was admitted. Run it again.', 409);
+                    }
 
-                if ($current->input['runs'] !== []) {
-                    return [];
-                }
-                $ci = ($intent['ci_pool'] ?? false) === true;
-                if ($ci && Operation::query()->where('kind', OperationKinds::ProofRun)->where('status', OperationStatus::Running)
-                    ->where('input->ci_pool', true)->whereJsonLength('input->runs', 0)->where('id', '<', $proof->id)->exists()) {
-                    throw new TaskCapacityException(TaskWait::Capacity, 'Waiting behind an earlier CI proof.');
-                }
-                $free = $ci ? app(TaskVmSlotPool::class)->freeCiPlaces() : 0;
-                $shards = $ci ? ProofBatchPlan::split($batches, $free) : array_map(static fn (array $case): array => array_values(array_filter($batches, static fn (array $batch): bool => $batch['command'] === $case['command'])), $selection->cases);
-                // A shard that cannot finish within the longest shard budget waits for more places while more can come; it would end
-                // with its last batches unrun. With every usable place free, it runs: the batches that end within the budget keep their verdicts.
-                if ($ci && $free < app(TaskVmSlotPool::class)->usableCiPlaces() && array_any($shards, ProofBatchPlan::overBudget(...))) {
-                    throw new TaskCapacityException(TaskWait::Capacity, 'Waiting for more CI places: on '.count($shards).' place(s) a shard would run longer than '.ProofBatchPlan::MaxShardSeconds.' seconds.');
-                }
-                $runs = [];
-                foreach ($shards as $assignments) {
-                    $case = $assignments[0];
-                    $group = $this->group($commit, $case['command']);
-                    $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(TaskProvisionIntent::class)->admit($group, $commit, 'proof.command',
-                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance, ProofBatchPlan::stored($assignments)), 'proof-run', null,
-                        ciPool: ($intent['ci_pool'] ?? false) === true, capacityRequest: ['proof_operation_id' => $proof->id, 'base' => $selection->mergeBase, 'command' => $case['command'], 'file' => $case['file']]));
-                    $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id, 'assignments' => $assignments];
-                }
+                    if ($current->input['runs'] !== []) {
+                        return [];
+                    }
+                    if ($current->created_at?->lt(now()->subSeconds(self::WaitSeconds))) {
+                        throw new ResourceOperationException('proof.capacity_timeout', 'The two-hour admission budget expired before a proof place was claimed.', 409);
+                    }
+                    if (($working = ProofRunSettlement::workingProof()) !== null) {
+                        $waitStep = "Waiting for proof Operation {$working->id} to finish.";
+                        throw new TaskCapacityException(TaskWait::Capacity, $waitStep);
+                    }
+                    // Expired parents cannot keep the queue closed if their next retry was lost.
+                    if (Operation::query()->where('kind', OperationKinds::ProofRun)->whereNotIn('status', OperationStatus::terminalValues())
+                        ->whereNull('cancel_requested_at')->whereJsonLength('input->runs', 0)->where('id', '<', $proof->id)
+                        ->where('created_at', '>=', now()->subSeconds(self::WaitSeconds))->exists()) {
+                        throw new TaskCapacityException(TaskWait::Capacity, 'Waiting behind an earlier proof.');
+                    }
+                    $ci = ($intent['ci_pool'] ?? false) === true;
+                    $free = $ci ? app(TaskVmSlotPool::class)->freeCiPlaces() : 0;
+                    $shards = $ci ? ProofBatchPlan::split($batches, $free) : array_map(static fn (array $case): array => array_values(array_filter($batches, static fn (array $batch): bool => $batch['command'] === $case['command'])), $selection->cases);
+                    // A shard that cannot finish within the longest shard budget waits for more places while more can come; it would end
+                    // with its last batches unrun. With every usable place free, it runs: the batches that end within the budget keep their verdicts.
+                    if ($ci && $free < app(TaskVmSlotPool::class)->usableCiPlaces() && array_any($shards, ProofBatchPlan::overBudget(...))) {
+                        throw new TaskCapacityException(TaskWait::Capacity, 'Waiting for more CI places: on '.count($shards).' place(s) a shard would run longer than '.ProofBatchPlan::MaxShardSeconds.' seconds.');
+                    }
+                    $runs = [];
+                    foreach ($shards as $assignments) {
+                        $case = $assignments[0];
+                        $group = $this->group($commit, $case['command']);
+                        $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(TaskProvisionIntent::class)->admit($group, $commit, 'proof.command',
+                            fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance, ProofBatchPlan::stored($assignments)), 'proof-run', null,
+                            ciPool: ($intent['ci_pool'] ?? false) === true, capacityRequest: ['proof_operation_id' => $proof->id, 'base' => $selection->mergeBase, 'command' => $case['command'], 'file' => $case['file']]));
+                        $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id, 'assignments' => $assignments];
+                    }
 
-                // The run list commits with the groups. A job that stops after the commit leaves a proof that names its runs.
-                $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs, 'batches' => $batches], 'current_step' => null]);
+                    // The run list commits with the groups. A job that stops after the commit leaves a proof that names its runs.
+                    $state = $current->state ?? [];
+                    unset($state['capacity_wait_reason']);
+                    $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs, 'batches' => $batches], 'started_at' => now(), 'current_step' => null, 'state' => $state]);
 
-                return $runs;
-            }));
+                    return $runs;
+                });
+            });
         } catch (Throwable $exception) {
-            if ($exception instanceof TaskCapacityException && $this->waitForRoom($proof, $exception->getMessage())) {
+            if ($exception instanceof TaskCapacityException && $this->waitForRoom($proof, $exception->getMessage(), $waitStep)) {
                 return;
             }
             if ($exception instanceof TaskCapacityException) {
@@ -191,7 +202,7 @@ final readonly class ProofRunIntent
     /** A full pool or a stale base waits within the total admission budget.
      * @return bool whether another admission attempt was queued
      */
-    private function waitForRoom(Operation $proof, string $reason): bool
+    private function waitForRoom(Operation $proof, string $reason, string $step): bool
     {
         if ($proof->created_at === null || $proof->created_at->lt(now()->subSeconds(self::WaitSeconds))) {
             return false;
@@ -201,7 +212,7 @@ final readonly class ProofRunIntent
             if (! $this->whileOpen($proof->id, static fn () => null)) {
                 return false;
             }
-            $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['current_step' => self::WaitStep, 'state' => [...($current->state ?? []), 'capacity_wait_reason' => $reason]]));
+            $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['current_step' => $step, 'state' => [...($current->state ?? []), 'capacity_wait_reason' => $reason]]));
             app(Dispatcher::class)->dispatch(new AdmitProofRun($proof->id)->delay(self::RetrySeconds));
         } catch (Throwable $exception) {
             report($exception);

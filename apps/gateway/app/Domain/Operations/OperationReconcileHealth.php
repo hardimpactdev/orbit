@@ -6,6 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
+use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Tasks\TaskCheckProjection;
 use App\Models\Operation;
 use App\Models\ProblemCollectorState;
@@ -79,6 +80,23 @@ final class OperationReconcileHealth
     }
 
     /**
+     * Status's existing state read also checks for candidate children. A scalar select returns a row even before the first pass.
+     * The hint is request-local, never stored: an empty proof inventory costs no extra query and cannot hide new crash residue.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function observation(): ?array
+    {
+        $row = DB::query()->selectSub(ProblemCollectorState::query()->select('observation')->orderBy('id')->limit(1), 'observation')
+            ->selectSub(ProofRunSettlement::unresolvedPlaceChildren()->selectRaw('1')->limit(1), 'proof_place_child_present')->sole();
+        $state = new ProblemCollectorState;
+        $state->setRawAttributes((array) $row, true);
+        $observation = $state->observation;
+
+        return $state->getAttribute('proof_place_child_present') === null ? $observation : [...($observation ?? []), 'proof_place_child_present' => true];
+    }
+
+    /**
      * @param  array<string,mixed>|null  $observation
      * @return array{finished_at:?string,last_pass_ms:int|float|null,unsettled_count:int}
      */
@@ -128,6 +146,15 @@ final class OperationReconcileHealth
         }
         if ($oldest !== null && $count > 0 && CarbonImmutable::parse($oldest)->lessThan(now()->subMinutes(self::SettlementMinutes))) {
             $issues[] = ['code' => 'gateway.operation_settlement_stuck', 'count' => $count, 'since' => $oldest, 'newest_since' => $oldest, 'resource' => null];
+        }
+
+        if (($observation['proof_place_child_present'] ?? false) === true) {
+            $stale = ProofRunSettlement::stalePlaceChildren();
+            if ($stale->isNotEmpty()) {
+                $since = $stale->min(static fn (Operation $child): ?string => $child->updated_at?->toISOString());
+                $issues[] = ['code' => 'gateway.proof_place_stale_child', 'count' => $stale->count(),
+                    'since' => $since, 'newest_since' => $since, 'resource' => null];
+            }
         }
 
         return $issues;
