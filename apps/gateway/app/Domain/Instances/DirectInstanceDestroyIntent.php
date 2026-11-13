@@ -41,9 +41,9 @@ final readonly class DirectInstanceDestroyIntent
         private PrepareOwnedDatabaseDestructionAction $databases,
     ) {}
 
-    /** Pure preparation for every destroy caller; no model, execution copy or Schedule is changed.
+    /** Pure preparation, shared by the discarded dry run and fresh transactional admission.
      * @param  array<string,mixed>  $input
-     * @return array<string,mixed>
+     * @return array{array<string,mixed>,\Illuminate\Database\Eloquent\Collection<int,Route>}
      */
     public function prepare(array $input): array
     {
@@ -51,7 +51,7 @@ final readonly class DirectInstanceDestroyIntent
         $members = InstanceLifecycleInput::members($input);
         $stored = InstanceRemoval::query()->whereKey(ValidatedData::string($input['removal_id']))->first();
         if ($stored?->native_intent !== null) {
-            return [...$this->assertReplayAvailable($stored, $input), 'force' => $input['force']];
+            return [[...$this->assertReplayAvailable($stored, $input), 'force' => $input['force']], new \Illuminate\Database\Eloquent\Collection];
         }
         $ids = $this->memberIds($input, $members);
         $databases = $this->databases->snapshot(Instance::query()->with('node')->findOrFail(ValidatedData::integer($input['instance_id'])), $ids);
@@ -69,7 +69,7 @@ final readonly class DirectInstanceDestroyIntent
             static fn (\Closure $render): array => $render());
         $ssh = app(SwampSshExecutionInput::class)->forNode($node);
 
-        return [...$input,
+        return [[...$input,
             'participant_node_ids' => array_values(array_unique([$node->id, ...$captured['participant_node_ids']])),
             'environment' => 'development',
             'native_destroy' => ['ssh_execution' => $ssh, 'native_runtime' => [...$runtime, 'processes' => $nativeProcesses],
@@ -77,11 +77,11 @@ final readonly class DirectInstanceDestroyIntent
             'direct_destroy' => ['node_id' => $node->id, 'node_user' => $node->user, 'runtime' => $runtime,
                 'teardown' => $teardown, 'routes' => [], 'publication_node_ids' => $captured['participant_node_ids'],
                 'database' => ['owner_instance_id' => $input['instance_id'], ...$databases]],
-        ];
+        ], $attached];
     }
 
-    /** Records prepared intent in the existing transaction after Schedule removal succeeds.
-     * @param  array<string,mixed>  $input  Prepared by prepare(); publication is not read or rendered again.
+    /** Builds and records fresh intent in the existing transaction after Schedule removal.
+     * @param  array<string,mixed>  $input  The original request/source envelope; no dry-run result is accepted.
      * @return array<string,mixed>
      */
     public function record(array $input): array
@@ -94,31 +94,16 @@ final readonly class DirectInstanceDestroyIntent
      */
     private function recordIntent(array $input): array
     {
-        // Recheck target ownership under the original admission lock, without repeating publication preparation.
-        $this->assertRootAvailable($input);
+        [$input, $attached] = $this->prepare($input);
         $members = InstanceLifecycleInput::members($input);
         $stored = InstanceRemoval::query()->whereKey(ValidatedData::string($input['removal_id']))->first();
         if ($stored?->native_intent !== null) {
             return $this->replay($stored, $input);
         }
-        $ids = $this->memberIds($input, $members);
-        [$routeIds, $attached] = $this->routes($input, $members, $ids);
+        $ids = ValidatedData::integerList(array_column($members, 'instance_id'));
+        $routeIds = $attached->modelKeys();
         $direct = ValidatedData::object($input['direct_destroy']);
         $database = Arr::except(ValidatedData::object($direct['database']), ['owner_instance_id']);
-        // SQLite IMMEDIATE serializes this re-read with DatabaseConnectionTarget::save and DatabaseOwnerAdmission.
-        // No transaction is kept across the earlier Schedule RPCs.
-        $currentDatabase = $this->databases->snapshot(Instance::query()->with('node')->findOrFail(ValidatedData::integer($input['instance_id'])), $ids);
-        if ($currentDatabase != $database) {
-            throw new ResourceOperationException('database.removal_conflict', 'The prepared database removal set changed.', 409);
-        }
-        $node = $this->node($input);
-        [$runtime, $nativeProcesses, $teardown] = $this->runtimeInputs($input, $members, $node);
-        $native = ValidatedData::object($input['native_destroy']);
-        if ($node->user !== $direct['node_user'] || $runtime !== $direct['runtime'] || $teardown !== $direct['teardown']
-            || [...$runtime, 'processes' => $nativeProcesses] !== $native['native_runtime']
-            || app(ContainerInstanceDestroy::class)->capture(Instance::query()->findOrFail(ValidatedData::integer($input['instance_id']))) !== $input['container_destroy']) {
-            throw new ResourceOperationException('instance.removal_conflict', 'The prepared removal runtime changed.', 409);
-        }
         $receipt = app(RecordDatabaseOperationAction::class)->prepare('instance.destroy', 'instance',
             ValidatedData::integer($input['instance_id']), ValidatedData::integer($input['node_id']), $database, []);
         $input['direct_destroy'] = [...$direct, 'database' => [
@@ -132,6 +117,7 @@ final readonly class DirectInstanceDestroyIntent
         if ($removal->requested_instance_id !== $input['instance_id'] || $removal->inventory_digest !== $input['inventory_digest']) {
             throw new ResourceOperationException('instance.removal_conflict', 'The admitted removal set changed.', 409);
         }
+        $node = $this->node($input);
         foreach ($members as $member) {
             $instance = $this->member($member, $input, $node);
             $ownedRoutes = $attached->filter(static fn (Route $route): bool => $route->targets->contains('instance_id', $instance->id))->modelKeys();
@@ -151,7 +137,7 @@ final readonly class DirectInstanceDestroyIntent
         return $input;
     }
 
-    /** Recheck destructive runtime identities without reading or rendering publication again.
+    /** Stored runtime and teardown description; no execution or model write.
      * @param  array<string,mixed>  $input
      * @param  list<array<string,mixed>>  $members
      * @return array{array{processes:list<array<string,mixed>>,schedules:list<array<string,mixed>>},list<array<string,mixed>>,list<array<string,mixed>>}
@@ -304,10 +290,7 @@ final readonly class DirectInstanceDestroyIntent
     private function member(array $member, array $input, Node $node): Instance
     {
         $instance = Instance::query()->with('project')->findOrFail(ValidatedData::integer($member['instance_id']));
-        if ($instance->project_id !== $input['project_id'] || $instance->node_id !== $node->id || ! $instance->placedOnAppDev()
-            || $instance->name !== $member['name'] || $instance->checkout_path !== $member['checkout_path']
-            || $instance->source_layout !== $member['source_layout'] || $instance->effectiveRoot() !== $member['root']
-            || $instance->status->value !== $member['stored_status'] || $instance->project->repository_identity !== $member['repository_identity']) {
+        if ($instance->project_id !== $input['project_id'] || $instance->node_id !== $node->id || ! $instance->placedOnAppDev()) {
             throw new ResourceOperationException('instance.removal_conflict', 'The removal member changed placement.', 409);
         }
 

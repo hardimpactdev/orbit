@@ -10,8 +10,14 @@ use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\NativeRouteMutationInput;
+use App\Domain\Routes\PrivateDnsPublicationNodes;
+use App\Domain\Routes\RoutePublicationSites;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Routes\SharedPhpPoolInput;
+use App\Domain\Schedules\ScheduleRuntimeAccount;
+use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
@@ -140,7 +146,7 @@ function connRemovalStored(): array
 {
     $state = [];
     foreach (['instances', 'instance_runtimes', 'operations', 'schedules', 'routes', 'route_targets', 'database_connections',
-        'database_connection_targets', 'conn_environments', 'conn_pairings', 'instance_removals', 'instance_removal_members', (new DatabaseExecutionIntent)->getTable()] as $table) {
+        'database_connection_targets', 'route_publication_holds', 'conn_environments', 'conn_pairings', 'instance_removals', 'instance_removal_members', (new DatabaseExecutionIntent)->getTable()] as $table) {
         $state[$table] = DB::table($table)->get()->map(static fn (object $row): array => (array) $row)->all();
     }
 
@@ -374,27 +380,46 @@ it('refuses a Caddy render failure before any Schedule effect for both callers',
     expect(connRemovalStored())->toBe($before)->and($this->socket->messages)->toBe($messages);
 })->with(['CLI' => [false], 'Conn' => [true]]);
 
-it('prepares the full withdrawal without a record execution copy or Schedule mutation', function (): void {
-    $instance = connRemovalClone();
+it('prepares PHP and private DNS without changing any stored state or dispatch', function (): void {
+    $this->mock(ScheduleRuntimeAccountResolver::class)->shouldReceive('resolve')
+        ->andReturn(new ScheduleRuntimeAccount('orbit', 'orbit', '/home/orbit', '/bin/bash'));
+    $project = $this->default->project;
+    $project->update(['type' => ProjectType::LaravelApp, 'php_version' => '8.5', 'root' => 'public']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'benchmark',
+        'status' => InstanceState::Active, 'branch' => 'benchmark', 'starting_commit' => str_repeat('c', 40),
+        'checkout_path' => '/home/orbit/apps/tool/benchmark', 'source_layout' => 'checkout', 'selected_php_version' => '8.5', 'first_setup_pending' => false]);
     connRemovalResources($instance);
+    $dns = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'fixture-benchmark-dns', 'status' => 'active',
+        'platform' => 'linux', 'wireguard_ip' => '10.44.0.95', 'public_ssh_host' => '10.44.0.95', 'user' => 'orbit',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+    $dns->roles()->create(['role' => 'vpn', 'status' => 'active']);
+    expect((array) app(SharedPhpPoolInput::class)->forNode($this->node)['configurations'])->toHaveKey('8.5');
     $snapshot = app(StartInstanceDestroyAction::class)->snapshot($instance, true);
-    $before = connRemovalStored();
+
+    $tables = DB::getSchemaBuilder()->getTableListing();
+    $stored = static fn (): array => array_combine($tables, array_map(static fn (string $table): array => DB::table($table)->get()->toArray(), $tables));
+    $before = $stored();
     $messages = $this->socket->messages;
-    $prepared = app(DirectInstanceDestroyIntent::class)->prepare($snapshot);
+    $requests = Http::recorded()->count();
+    [$prepared] = app(DirectInstanceDestroyIntent::class)->prepare($snapshot);
     expect($prepared['native_destroy']['route_mutations']['schema_version'])->toBe(2)
+        ->and($prepared['native_destroy']['route_mutations']['artifacts']['php'])->not->toBeEmpty()
+        ->and($prepared['native_destroy']['route_mutations']['artifacts']['dns'])->not->toBeEmpty()
         ->and($prepared['native_destroy']['execution_secrets'])->toBe([])
         ->and($prepared['direct_destroy']['database'])->not->toHaveKey('intent_id')
-        ->and(connRemovalStored())->toBe($before)->and($this->socket->messages)->toBe($messages);
+        ->and($stored())->toEqual($before)->and($this->socket->messages)->toBe($messages)
+        ->and(Http::recorded()->count())->toBe($requests)
+        ->and(app(RoutePublicationSites::class)->current())->toBeNull();
     app(SwampDispatch::class)->copy(static function (): void {});
-    expect(connRemovalStored())->toBe($before)->and($this->socket->messages)->toBe($messages);
+    expect($stored())->toEqual($before)->and($this->socket->messages)->toBe($messages);
 });
 
-it('keeps the normal destroy effects and final state while capturing publication only once for both callers', function (bool $conn): void {
+it('keeps the normal destroy effects and final state with a discarded dry run and fresh publication for both callers', function (bool $conn): void {
     $instance = connRemovalClone();
     connRemovalResources($instance);
     $publication = app(NativeRouteMutationInput::class);
     $spy = Mockery::mock($publication);
-    $spy->shouldReceive('capture')->once()->andReturnUsing(fn (...$args): array => $publication->capture(...$args));
+    $spy->shouldReceive('capture')->twice()->andReturnUsing(fn (...$args): array => $publication->capture(...$args));
     app()->instance(NativeRouteMutationInput::class, $spy);
     $start = count($this->socket->messages);
     $response = $conn ? connRemovalCall($instance->id, ['acknowledge_unsaved' => true])
@@ -442,45 +467,22 @@ it('refuses an outside attachment made during Schedule removal for both callers'
         ->and(array_column(array_slice($this->socket->messages, -3), 'type'))->toBe(['workflow.trigger.remove', 'workflow.delete', 'vault.delete']);
 })->with(['CLI' => [false], 'Conn' => [true]]);
 
-it('refuses database identity changes made during Schedule removal without recording a delete intent', function (string $change): void {
+it('includes a VPN Node activated during Schedule removal in fresh admission for both callers', function (bool $conn): void {
     $instance = connRemovalClone();
     connRemovalResources($instance);
-    $database = DatabaseConnection::query()->where('owner_instance_id', $instance->id)->sole();
-    $before = connRemovalStored();
-    $this->socket->onTriggerRemoval = function () use ($database, $instance, $change): void {
-        if ($change === 'owner') {
-            $database->update(['owner_instance_id' => $this->default->id]);
-        } elseif ($change === 'path') {
-            $database->update(['path' => $instance->checkout_path.'/changed.sqlite']);
-        } else {
-            DatabaseConnection::query()->create(['slug' => 'late-owned-db', 'driver' => 'sqlite', 'node_id' => $instance->node_id,
-                'owner_instance_id' => $instance->id, 'path' => $instance->checkout_path.'/late.sqlite']);
-        }
+    $dns = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'fixture-late-dns', 'status' => 'active',
+        'platform' => 'linux', 'wireguard_ip' => '10.44.0.95', 'public_ssh_host' => '10.44.0.95', 'user' => 'orbit',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+    $role = $dns->roles()->create(['role' => 'vpn', 'status' => 'provisioning']);
+    $this->socket->onTriggerRemoval = static function () use ($role): void {
+        $role->update(['status' => 'active']);
     };
-    connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertConflict()->assertJsonPath('error.code', 'database.removal_conflict');
-    $after = connRemovalStored();
-    $before['schedules'] = $after['schedules'];
-    $before['database_connections'] = $after['database_connections'];
-    expect($after)->toBe($before)->and($instance->refresh()->status)->toBe(InstanceState::Active);
-})->with(['owner', 'path', 'new database']);
-
-it('refuses a changed destructive member or runtime identity during Schedule removal', function (string $change, string $code): void {
-    $instance = connRemovalClone();
-    connRemovalResources($instance);
-    $before = connRemovalStored();
-    $this->socket->onTriggerRemoval = function () use ($instance, $change): void {
-        if ($change === 'checkout') {
-            $instance->update(['checkout_path' => '/fixture/changed-workspace']);
-        } else {
-            Schedule::query()->create(['target_type' => 'instance', 'target_id' => $instance->id, 'host_node_id' => $instance->node_id,
-                'name' => 'late', 'calendar' => '*-*-* 03:00:00', 'command' => 'true', 'timeout_seconds' => 60,
-                'desired_timer_state' => 'enabled', 'status' => 'active', 'trigger' => 'swamp']);
-        }
-    };
-    connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertConflict()->assertJsonPath('error.code', $code);
-    $after = connRemovalStored();
-    foreach (['schedules', 'instances', 'instance_runtimes'] as $table) {
-        $before[$table] = $after[$table];
-    }
-    expect($after)->toBe($before)->and($instance->refresh()->status)->toBe(InstanceState::Active);
-})->with(['checkout' => ['checkout', 'database.removal_conflict'], 'Schedule set' => ['Schedule set', 'instance.removal_conflict']]);
+    $response = $conn ? connRemovalCall($instance->id, ['acknowledge_unsaved' => true])
+        : $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+            ->deleteJson('/api/v1/instances/'.$instance->id, ['force' => true]);
+    $response->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    expect(PrivateDnsPublicationNodes::query()->whereKey($dns->id)->exists())->toBeTrue()
+        ->and($operation->input['participant_node_ids'])->toContain($dns->id)
+        ->and(array_column($operation->input['native_destroy']['route_mutations']['forward']['publications'], 'node_id'))->toContain($dns->id);
+})->with(['CLI' => [false], 'Conn' => [true]]);
