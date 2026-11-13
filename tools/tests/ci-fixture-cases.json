@@ -121,7 +121,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "fd742b7e3912d52516dce65cce61785c943cf531ee11cc7fbe466c12f23dd735",
+    "source_sha256": "c7c3547347af84b9cc83bd81ba8e8557939e33f499581f3ab7f58ac1bb7e65ce",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",

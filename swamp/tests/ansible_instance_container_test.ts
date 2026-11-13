@@ -1553,10 +1553,8 @@ const CLUB = "fake-club-key-7f3a9c";
 
 /** A nested-fleet default with the Club key delivery of its intent; `available` says whether the run has the vault copy. */
 function nestedClub(f: ReturnType<typeof fixture>, available = true) {
-  Object.assign(f.container, {project: "orbit-instances-nested", image: "orbit-instance-nested", allowed_devices: {
-    root: {type: "disk", path: "/", pool: "orbit-instances", size: "40GiB"},
-    eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject"},
-  }, club_key: {directory: "/run/orbit-club", file: "swamp-club-api-key", owner: 1000, group: 1000,
+  nestedCreate(f);
+  Object.assign(f.container, {club_key: {directory: "/run/orbit-club", file: "swamp-club-api-key", owner: 1000, group: 1000,
     tmpfiles: "/etc/tmpfiles.d/orbit-club.conf", gateway: "nested-gateway", serve_unit: "orbit-swamp-serve", available}});
   f.write();
 }
