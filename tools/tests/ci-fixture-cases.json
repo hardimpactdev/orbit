@@ -325,7 +325,7 @@
     ]
   },
   "swamp/bin/source_test.ts": {
-    "source_sha256": "3facff1822cfeb13e1ecb9e50094ae96a43a11c335d73d877cca92618f02a752",
+    "source_sha256": "104fb8f9a9618b20bed3b282c62a6760c0c057093615d57fc74c6994cf68fd24",
     "cases": [
       "model IDs are unique",
       "workflow queue bounds have measured per-kind budgets",

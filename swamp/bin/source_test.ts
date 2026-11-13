@@ -100,6 +100,13 @@ Deno.test("hot workflow trees avoid literal behavior lookups and preserve consta
         "route-mutation-withdraw/result": "route-mutation-phase",
         "route-mutation-restore/result": "route-mutation-phase",
         "route-withdraw/result": "route-mutation-phase",
+        "operation-vault-sync/Prepare public data": "vault-sync-inputs",
+        "operation-vault-sync/Prepare session file": "vault-sync-session-file",
+        "operation-vault-sync/Resolve the session": "vault-sync-session",
+        "operation-vault-sync/Read private inventory": "vault-sync-read-inventory",
+        "operation-vault-sync/inventory": "vault-sync-public-inventory",
+        "operation-vault-sync/Read private trash": "vault-sync-read-trash",
+        "operation-vault-sync/trash": "vault-sync-public-trash",
     }));
     const seen = new Set<Flow>();
     function walk(target: string) {
@@ -148,6 +155,8 @@ Deno.test("hot workflow trees avoid literal behavior lookups and preserve consta
         "route-mutation-withdraw",
         "route-withdraw",
         "operation-instance-migrate",
+        // Runs every two minutes on the shared starter.
+        "operation-vault-sync",
     ]) walk(root);
     assertEquals(
         [...expected.keys()],
