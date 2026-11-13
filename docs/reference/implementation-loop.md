@@ -93,13 +93,13 @@ Gateway automatic releases retain the `Required checks` name: on main, `main-req
 
 When main moves after a PR's green run, update the branch, wait for green, and merge promptly. Main CI compares the merged Git tree with the merge-ref tree that the PR run actually checked out, not the PR head tree. A match reuses the green checks. A different tree, missing evidence, or an API failure runs normal main CI.
 
-Every PR builds a web artifact and records its digest, tested commit and tree, and the body hash read by the Docs gate. Main's own CI verifies the repository, workflow identity, PR event, final PR head, latest Required job, which must have succeeded, checkout log, Git tree and live body hash. It downloads and verifies the source artifact before publishing `web-dist-<main SHA>`. A changed body needs a new successful Docs run; rerunning only Required cannot bless an old acknowledgement.
+Every PR builds a web artifact and records its digest, tested commit and tree, and the body hash read by the Docs gate. Main's own CI verifies the repository, workflow identity, PR event, final PR head, latest Required job, which must have succeeded, checkout log, Git tree and live body hash. It downloads and verifies the source artifact before publishing `web-dist-<main SHA>`. A changed body needs a new successful Docs run; rerunning only Required cannot bless an old acknowledgement. If a failed-only rerun copies a successful Required job into a new attempt without producing its receipt, main runs normal CI.
 
-The receipt keeps `Main delivery checks`, `Required checks` and `Gateway release inputs` on the main SHA. Release readers and CLI dispatch keep their existing names and lookup rules. Duplicate main fixtures skip for a reused tree; the independent Main full set still runs. The first two receipt-green merges must be compared with their PR runs before release.
+The receipt keeps `Main delivery checks`, `Required checks` and `Gateway release inputs` on the main SHA. Release readers and CLI dispatch keep their existing names and lookup rules. Duplicate main fixtures skip for a reused tree; the independent Main full set still runs.
 
 `Resolve release` gates `Build CLI`, `Build Linux agent` and `Build macOS agent`; `Publish release` requires the resolver and those builds. Version, main ancestry, tags, provenance and publication guards still apply. Neither fixture shards nor the independent Main full set receiver belongs to these dependencies.
 
-`Main fixture report` runs only for main pushes and manual main runs, after `changes` and `fixtures`. The job has two minutes for API reads and comment writes. It reports the exact tested SHA, source run, fixture job URLs, matrix outcome and capacity errors. Only merged PRs into this repository's main whose merge SHA equals the tested SHA receive a comment. A main push containing several merges reports only the PR for its tested head; a direct push has no causal PR comment. The comment is updated on reruns.
+`Main fixture report` runs for main pushes and manual main runs that do not reuse PR evidence, after `changes` and `fixtures`. The job has two minutes for API reads and comment writes. It reports the exact tested SHA, source run, fixture job URLs, matrix outcome and capacity errors. Only merged PRs into this repository's main whose merge SHA equals the tested SHA receive a comment. A main push containing several merges reports only the PR for its tested head; a direct push has no causal PR comment. The comment is updated on reruns.
 
 Missing attribution is explicit in the CI summary; API errors fail the report job. A failed fixture or capacity result also leaves the report job red after writing its evidence. The release summary links the source CI and this report, including pending fixtures, without waiting for either. Main full set is unchanged.
 
@@ -337,7 +337,7 @@ The proof CI reports within the same CI run; [the proof CI](/reference/feature-f
 
 Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
-On `main`, Web uploads `web-dist-<full commit SHA>` for 14 days. The commit has its build as soon as `Required checks` passes. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build. Pull requests publish no web build.
+Every PR publishes `web-pr-<run>-<attempt>` for 14 days. Main publishes `web-dist-<full commit SHA>` from the Web job or from Select build inputs when it reuses the verified PR artifact. The commit has its build as soon as `Required checks` passes. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build.
 
 ### Action pins and token permissions
 

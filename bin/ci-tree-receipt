@@ -98,8 +98,8 @@ def latest_jobs(rows):
 
 def trusted_pr_run(run, repository, workflow_id, head):
     return (run.get('event') == 'pull_request' and run.get('head_sha') == head
-            and run.get('repository', {}).get('full_name') == repository
-            and run.get('head_repository', {}).get('full_name') == repository
+            and (run.get('repository') or {}).get('full_name') == repository
+            and (run.get('head_repository') or {}).get('full_name') == repository
             and run.get('workflow_id') == workflow_id and run.get('path') == WORKFLOW)
 
 
@@ -109,8 +109,8 @@ def verify(api, merged_sha, merged_tree):
     prs = [p for p in api.rows(f'commits/{merged_sha}/pulls')
            if p.get('merged_at') and p.get('merge_commit_sha') == merged_sha
            and p.get('base', {}).get('ref') == 'main'
-           and p.get('base', {}).get('repo', {}).get('full_name') == api.repository
-           and p.get('head', {}).get('repo', {}).get('full_name') == api.repository]
+           and (p.get('base', {}).get('repo') or {}).get('full_name') == api.repository
+           and (p.get('head', {}).get('repo') or {}).get('full_name') == api.repository]
     require(len(prs) == 1, 'No unique same-repository merged PR')
     pr = api.one(f"pulls/{prs[0]['number']}")
     head = pr['head']['sha']
@@ -177,6 +177,7 @@ def record(path):
 
 
 def attempt(destination):
+    started = time.monotonic()
     require(os.environ['GITHUB_EVENT_NAME'] in ('push', 'workflow_dispatch')
             and os.environ['GITHUB_REF'] == 'refs/heads/main', 'Reuse runs only from main CI')
     try:
@@ -187,14 +188,18 @@ def attempt(destination):
             target = destination / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
-    except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError, zipfile.BadZipFile) as error:
+    except Exception as error:
+        # Reuse is optional. Unexpected API shapes also take the normal checks.
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+            summary.write(f'Normal main CI after {time.monotonic() - started:.2f}s: {error}\n')
         print(f'Normal main CI: {error}')
         with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
             output.write('reuse=false\n')
         return
     Path(os.environ['RUNNER_TEMP'], 'main-tree-receipt.json').write_text(json.dumps(receipt, sort_keys=True) + '\n')
     with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
-        summary.write(f"Reused PR #{receipt['pr']} [CI]({receipt['source_url']}), tested commit `{receipt['tested_commit']}`, "
+        summary.write(f"Receipt verification and extraction: {time.monotonic() - started:.2f}s. "
+                      f"Reused PR #{receipt['pr']} [CI]({receipt['source_url']}), tested commit `{receipt['tested_commit']}`, "
                       f"tree `{receipt['tree']}`, artifact `{receipt['web_id']}` digest `{receipt['source_artifact_digest']}`.\n")
     with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
         output.write('reuse=true\n')

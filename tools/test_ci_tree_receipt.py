@@ -202,7 +202,7 @@ class ReceiptTest(unittest.TestCase):
     def test_api_error_uses_normal_ci_without_setting_reuse(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, GITHUB_EVENT_NAME='push',
                 GITHUB_REF='refs/heads/main', GITHUB_REPOSITORY=REPO, GITHUB_SHA=MAIN,
-                GITHUB_OUTPUT=tmp + '/output'), patch.dict(receipt.attempt.__globals__,
+                GITHUB_OUTPUT=tmp + '/output', GITHUB_STEP_SUMMARY=tmp + '/summary'), patch.dict(receipt.attempt.__globals__,
                     verify=lambda *a: (_ for _ in ()).throw(ValueError('API unavailable')), git=lambda a: MAIN if a == 'HEAD' else TREE):
             receipt.attempt(Path(tmp) / 'web')
             self.assertEqual(Path(tmp, 'output').read_text(), 'reuse=false\n')
@@ -221,6 +221,46 @@ class ReceiptTest(unittest.TestCase):
             self.assertEqual(Path(tmp, 'web/index.html').read_bytes(), web['index.html'])
             self.assertEqual(json.loads(Path(tmp, 'main-tree-receipt.json').read_text())['source_artifact_digest'], api.web['digest'])
             self.assertIn(TESTED, Path(tmp, 'summary').read_text())
+
+    def test_null_repository_metadata_uses_normal_ci(self):
+        for field in ('head_repository', 'repository'):
+            api = API()
+            api.run[field] = None
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'No trusted'):
+                self.verify(api)
+        api = API()
+        api.pr['head']['repo'] = None
+        with self.assertRaisesRegex(ValueError, 'No unique'):
+            self.verify(api)
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, GITHUB_EVENT_NAME='push',
+                GITHUB_REF='refs/heads/main', GITHUB_REPOSITORY=REPO, GITHUB_SHA=MAIN,
+                GITHUB_OUTPUT=tmp + '/output', GITHUB_STEP_SUMMARY=tmp + '/summary'), \
+             patch.dict(receipt.attempt.__globals__, verify=lambda *a: (_ for _ in ()).throw(AttributeError('unexpected API shape')),
+                        git=lambda a: MAIN if a == 'HEAD' else TREE):
+            receipt.attempt(Path(tmp) / 'web')
+            self.assertEqual(Path(tmp, 'output').read_text(), 'reuse=false\n')
+            self.assertIn('Normal main CI after', Path(tmp, 'summary').read_text())
+
+    def test_pr_record_binds_real_environment_and_rejects_missing_job_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            event = Path(tmp, 'event.json')
+            event.write_text(json.dumps({'number': 7, 'pull_request': {'head': {'sha': HEAD}}}))
+            env = dict(GITHUB_EVENT_NAME='pull_request', GITHUB_EVENT_PATH=str(event),
+                       GITHUB_REPOSITORY=REPO, GITHUB_RUN_ID='50', GITHUB_RUN_ATTEMPT='2',
+                       DOCS_BODY_SHA256=receipt.sha256(BODY.encode()), WEB_ID='100',
+                       WEB_DIGEST='e' * 64, WEB_ATTEMPT='1')
+            path = Path(tmp, 'receipt.json')
+            with patch.dict(os.environ, env), patch.dict(receipt.record.__globals__,
+                    git=lambda a: TESTED if a == 'HEAD' else TREE):
+                receipt.record(path)
+                data = json.loads(path.read_text())
+                self.assertEqual(data, dict(repository=REPO, pr=7, head=HEAD, run=50, attempt=2,
+                    tested_commit=TESTED, tree=TREE, body_sha256=env['DOCS_BODY_SHA256'],
+                    web_id=100, web_digest='e' * 64, web_attempt=1))
+                for key, value in (('WEB_ID', ''), ('WEB_DIGEST', ''), ('WEB_DIGEST', 'sha256:' + 'e' * 64),
+                                   ('DOCS_BODY_SHA256', ''), ('WEB_ATTEMPT', '')):
+                    with self.subTest(key=key, value=value), patch.dict(os.environ, {key: value}), self.assertRaises(ValueError):
+                        receipt.record(path)
 
     def test_real_workflow_reuse_selects_no_tests_and_still_checks_delivery(self):
         from test_ci_delivery import delivery, needs_for

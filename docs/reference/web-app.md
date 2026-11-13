@@ -227,7 +227,7 @@ The Menu drawer shows one support line with the display mode, the window and scr
 
 ## Updates to open pages
 
-Each build carries its id, the commit it was built from. CI and `bin/web-deploy` build one exact commit. A build outside a Git checkout uses a hash of its sources instead. The build writes the id to `version.json` at its top, as `{"build": "<id>"}`. The Gateway serves that file with `Cache-Control: no-cache`, like every web file outside `/assets/`.
+Each build carries its id, the commit it was built from. CI and `bin/web-deploy` build one exact commit. When [main CI reuses a tested PR tree](/reference/implementation-loop#reuse-a-green-pr-tree-on-main), the web build keeps the tested merge-ref commit as its id; it is not restamped with the main commit. A build outside a Git checkout uses a hash of its sources instead. The build writes the id to `version.json` at its top, as `{"build": "<id>"}`. The Gateway serves that file with `Cache-Control: no-cache`, like every web file outside `/assets/`.
 
 A built page reads `/version.json` past the browser cache and compares it with its own id. It reads at most once a minute and never in the first minute after the page loaded. It reads at these times:
 
