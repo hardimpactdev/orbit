@@ -41,7 +41,8 @@ final readonly class InstanceDestroyReplicationSlots
             if (($intent['driver'] ?? null) !== DatabaseDriver::Pgsql->value || $names === []) {
                 continue;
             }
-            $server = DatabaseServer::query()->with('node')->findOrFail(ValidatedData::integer($row['server_id']));
+            $id = ValidatedData::integer($row['server_id']);
+            $server = DatabaseServer::query()->with('node')->find($id) ?? $this->unreadable($id);
             $slots = [...$slots, ...$this->read($server, ValidatedData::nullableString($intent['container'] ?? null), $names)];
         }
         if ($slots === []) {
@@ -60,9 +61,9 @@ final readonly class InstanceDestroyReplicationSlots
     private function read(DatabaseServer $server, ?string $container, array $names): array
     {
         $statements = app(DatabaseStatements::class)->replicationSlots($names);
-        $node = $server->node;
-        if ($container === null || $container === '' || ! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
-            $this->unreadable($server);
+        $node = $server->node()->first();
+        if ($node === null || $container === null || $container === '' || ! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
+            $this->unreadable($server->id, $server->slug);
         }
         try {
             // The drop's admin client, as the drop runs it (`sudo: true`); the password is the first protected stdin line.
@@ -76,16 +77,16 @@ final readonly class InstanceDestroyReplicationSlots
                 maxOutputBytes: 65536, timeout: self::ReadSeconds,
             ));
         } catch (Throwable) {
-            $this->unreadable($server);
+            $this->unreadable($server->id, $server->slug);
         }
         $lines = preg_split('/\R/', trim($result->stdout)) ?: [];
         if (! $result->succeeded() || $result->truncated || array_shift($lines) !== 'orbit.slots') {
-            $this->unreadable($server);
+            $this->unreadable($server->id, $server->slug);
         }
         $slots = [];
         foreach ($lines as $line) {
             if (preg_match('/\A([^|]+)\|([^|]+)\|(logical|physical)\|(true|false)\z/D', $line, $match) !== 1 || ! in_array($match[2], $names, true)) {
-                $this->unreadable($server);
+                $this->unreadable($server->id, $server->slug);
             }
             $slots[] = ['server_id' => $server->id, 'server' => $server->slug, 'database' => $match[2], 'slot' => $match[1],
                 'type' => $match[3], 'active' => $match[4] === 'true'];
@@ -94,10 +95,11 @@ final readonly class InstanceDestroyReplicationSlots
         return $slots;
     }
 
-    private function unreadable(DatabaseServer $server): never
+    private function unreadable(int $id, ?string $slug = null): never
     {
+        $name = $slug ?? "#{$id}";
         throw new ResourceOperationException('instance.database_slots_unreadable',
-            "Orbit could not read the replication slots on Database server [{$server->slug}], so it does not close or drop its databases. Try again when the server answers.",
-            503, details: ['server_id' => $server->id]);
+            "Orbit could not read the replication slots on Database server [{$name}], so it does not close or drop its databases. Try again when the server answers.",
+            503, details: ['server_id' => $id]);
     }
 }

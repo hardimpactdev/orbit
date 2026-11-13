@@ -483,6 +483,20 @@ it('refuses a removal when the replication slot read fails, without the admin pa
     'truncated' => fn () => fn (): CommandResult => new CommandResult(0, "orbit.slots\n", '', 1, true),
 ]);
 
+it('reads the replication slots again when a failed removal is retried', function (): void {
+    [$clone] = ownedPostgresClone();
+    $operation = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, destroyTerminal($operation, 'failed',
+        ['summary' => ['failed_steps' => ['Drop owned databases']], 'steps' => ['Drop owned databases' => ['exit_code' => 3]]]));
+    $database = DatabaseConnection::query()->where('owner_instance_id', $clone->id)->sole()->database;
+    $this->slots->answer = fn (): CommandResult => new CommandResult(0, "orbit.slots\nlate_slot|{$database}|logical|false\n", '', 1, false);
+    $before = slotGuardState($clone);
+
+    expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($clone->fresh(), true)))->toBe('instance.database_replication_slot')
+        ->and(slotGuardState($clone))->toBe($before)->and($before['instance'])->toBe(InstanceState::Removing)
+        ->and($this->slots->calls)->toHaveCount(2);
+});
+
 it('names the planned databases in the slot read only through the drop\'s identifier check and quoting', function (): void {
     expect(app(DatabaseStatements::class)->replicationSlots(['app', 'app_test_1']))
         ->toContain("WHERE database IN ('app','app_test_1')");
