@@ -36,6 +36,22 @@ Missing or unreadable candidate paths, Git errors/timeouts and unreadable or mal
 
 Only a confirmed dependency or a target read failure refuses. The target’s directory, pointer or Git failure names its path and the unreadable or timed_out cause. Candidate Git reads share one three-second allowance; later candidates use pointer reads once it is spent. No read is retried. Admission warnings survive in the Operation result. As in transfer, human output names the warning code, path, Instance IDs and read cause; JSON keeps the typed warning. The Gateway inventory excludes containers and empty or relative paths; malformed candidate rows are bounded warnings, never a whole-call failure.
 
+## Replication slots
+
+A replication slot keeps PostgreSQL from dropping its database. Without a check, the drop would fail after the fence closed the database to new clients, and the removal would stop half way. So admission reads the slots first.
+
+For each Database server with an owned PostgreSQL database, the Gateway runs one read on the server's Node. The read uses the drop's own admin client: `sudo -n docker exec -i` into the server container, as `postgres`. The server's admin password is the first line of protected stdin. The read names every database that the drop plans, test databases included, through the drop's identifier check. Connect and read stay within 5 seconds per server. There is no retry.
+
+- A slot on a planned database refuses with HTTP 409 `instance.database_replication_slot`. Any slot type counts, active or not.
+- The message names the database, the server and the slot. `details.slots` lists each slot.
+- A read that cannot be made refuses with HTTP 503 `instance.database_slots_unreadable`.
+- The read fails on an unreachable Node, a timeout, a client failure or output that Orbit cannot read.
+- Orbit does not close or drop a database that it could not check.
+
+Both refusals come before any effect. No Schedule trigger is removed, and no Operation or removal is recorded. The Instance keeps its status, the Route stays published and no Node hold is taken. `--force` does not skip the check. A retry of a failed removal runs it again.
+
+Orbit never drops a slot. Stop the tool that owns the slot, drop the slot by hand on the server, then run the removal again. A physical slot has no database, so it never blocks. Orbit reads nothing for MySQL, Valkey and SQLite databases. It also reads nothing for an attached database that the Instance does not own.
+
 A running migration or an unsettled migration runtime refuses removal with `instance.lifecycle_busy`, including forced removal. Orbit checks migration ownership before cleanup and again under the Instance admission lock.
 
 A failed migration that keeps its runtime reservation blocks destroy, even with `--force`, with `instance.lifecycle_busy`; let any open migration expire, then rerun `instance:migrate`.

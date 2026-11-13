@@ -15,7 +15,7 @@ orbit instance:destroy <instance> [--yes] [--force] [--json]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--yes` | prompt | Confirm the removal without prompting. Required without a terminal and with `--json`. `--force` does not supply consent. |
-| `--force` | off | Delete dirty or unpublished development source after the identity checks pass; other worktrees that depend on its Git data always block removal. |
+| `--force` | off | Delete dirty or unpublished development source after the identity checks pass; other worktrees that depend on its Git data, and a replication slot on an owned PostgreSQL database, always block removal. |
 | `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the final task as JSON. |
 
@@ -31,6 +31,8 @@ The command removes the Instance with its Route, Processes, Schedules and runtim
 Normal removal refuses dirty source and a `HEAD` that no origin branch or tag contains. `--force` waives dirty or unpublished source, the check that needs GitHub CLI source access, and a failed fetch of the origin.
 
 Before removing Schedules or recording an Operation, Orbit reads Git on the Node through the existing SSH reader. A checkout that owns Git data used by another live worktree refuses with HTTP 409 `instance.worktree_dependents`, including with `--force`. Details contain visible dependent Instances (`id`, `name`, `project_id`), `other_dependents` and `unowned_paths`. Node access controls visibility across Projects. Orbit checks recorded checkout paths too, including renamed worktrees; it does not traverse the checkout tree. Recorded `source_layout` does not decide the check. The target’s unreadable Git refuses; unreadable checkouts elsewhere use bounded pointer checks and proceed when unrelated. Unknown checkouts produce `instance.checkout_unknown` warnings with their paths and Instance IDs. Unreadable candidate pointers remain warnings; containers, reserved sources, missing checkout paths and inactive Nodes skip it. The [removal limits](/reference/instance-removal) describe nested and bare repositories.
+
+An owned PostgreSQL database with a replication slot also refuses before any change, with HTTP 409 `instance.database_replication_slot`, including with `--force`. Orbit reads the slots on the Database server's Node with the drop's own admin client, at most 5 seconds per server; when it cannot read them it refuses with HTTP 503 `instance.database_slots_unreadable`. Orbit never drops a slot: drop it by hand, then remove the Instance. See [Replication slots](/reference/instance-removal#replication-slots).
 
 The dependency check runs only before admission changes records or withdraws Schedule triggers. The workflow and source-removal command are unchanged; neither a retry nor dispatch checks dependencies again. A worktree created during the queue wait or run is outside this protection. See the [known limits](/reference/instance-removal).
 
@@ -65,6 +67,8 @@ The [container destroy chart](https://github.com/hardimpactdev/orbit/blob/main/d
 | `instance.container_destroy_force_required` | A non-default container Instance, cloned or migrated, requires `--force` until guarded removal is built. |
 | `instance.host_unavailable` | The Node could not be read for safe checkout removal; details distinguish unreachable, timeout or missing result. Nothing is removed. |
 | `instance.worktree_dependents` | This checkout owns Git data used by another live worktree. HTTP 409 before admission; `--force` does not override it. |
+| `instance.database_replication_slot` | An owned PostgreSQL database that the removal would drop has a [replication slot](/reference/instance-removal#replication-slots). HTTP 409 before admission; `--force` does not override it. Drop the slot by hand first; Orbit never drops one. |
+| `instance.database_slots_unreadable` | Orbit could not read the replication slots on an owned database's server. HTTP 503 before admission; nothing is changed. Try again when the server answers. |
 | `instance.checkout_path_unsafe` | The checkout path is not safe to delete. |
 | `instance.clone_in_progress` | The Instance is the candidate of an incomplete clone. |
 | `instance.removal_conflict` | The Instance belongs to a different removal request, or `--force` was added or dropped on a rerun against the rules above. |

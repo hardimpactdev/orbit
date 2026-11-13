@@ -92,6 +92,26 @@ final readonly class DatabaseStatements
     }
 
     /**
+     * The replication slot read of `instance:destroy` admission (docs/reference/instance-removal.md#replication-slots):
+     * a marker line, then one `slot|database|type|active` line for each slot of a planned database. The names pass the
+     * drop's identifier check and quoting, so the read and the drop name the same databases.
+     *
+     * @param  list<string>  $databases
+     */
+    public function replicationSlots(array $databases): string
+    {
+        foreach ($databases as $name) {
+            if (preg_match(self::NAME, $name) !== 1) {
+                $this->invalid();
+            }
+        }
+
+        return "SELECT 'orbit.slots';\n"
+            ."SELECT slot_name::text || '|' || database::text || '|' || slot_type::text || '|' || active::text FROM pg_replication_slots"
+            .' WHERE database IN ('.$this->list($databases).") ORDER BY database, slot_name;\n";
+    }
+
+    /**
      * database:create. `create` carries the owner's password (or its SCRAM verifier, or its ACL hash) and refuses a
      * foreign name by itself; `login` is the owner check. Both go Gateway → vault → stdin behind a password line.
      *

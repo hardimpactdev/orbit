@@ -19,7 +19,9 @@ An unreachable Node or outer SSH timeout refuses with `instance.host_unavailable
 
 Transfer uses this same Instance-only reader before admitting a new host-checkout transfer, for the same intact-refusal boundary. It adds no generic execution entry, identity or capability. An admitted transfer retry skips the read.
 
-The follow-up moves this check and Schedule withdrawal together into Swamp. This fix keeps the synchronous refusal small instead of moving that lifecycle boundary. No other new caller is allowed by this exception.
+Destroy admission also reads the [replication slots](/reference/instance-removal#replication-slots) of owned PostgreSQL databases, for the same intact-refusal boundary. It is not a program: `InstanceDestroyReplicationSlots` sends the drop's own admin client argv (`sudo -n docker exec -i` with `psql`) over the existing SSH executor to the Database server's Node, with the existing SSH account, identity and pins, and the server's admin password as protected stdin. It reads one view. Each server gets at most 5 seconds and no retry. The read adds no identity or capability.
+
+The follow-up moves these checks and Schedule withdrawal together into Swamp. This fix keeps the synchronous refusal small instead of moving that lifecycle boundary. No other new caller is allowed by this exception.
 
 ## Program files
 
