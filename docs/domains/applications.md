@@ -13,7 +13,7 @@ covers:
 
 # Applications
 
-A Project records one Git repository and the defaults for running it. An Instance is one copy of that Project on one Node. An Instance on an `app-dev` Node owns a checkout or a linked worktree. An Instance on an `app-prod` Node owns a production home with releases. The Project [type](/reference/projects#project-types) decides whether an Instance gets a Route and serves PHP.
+A Project records one Git repository and the defaults for running it. An Instance is one copy of that Project on one Node. An Instance on an `app-dev` Node owns a checkout or a linked worktree, or runs in an [Instance container](/reference/development-containers) on a Node of the build list. An Instance on an `app-prod` Node owns a production home with releases. The Project [type](/reference/projects#project-types) decides whether an Instance gets a Route and serves PHP.
 
 This page follows an Instance from creation to removal. Each step links to the page that owns its details.
 
@@ -26,12 +26,15 @@ This page follows an Instance from creation to removal. Each step links to the p
 | Clone development source | `instance:clone` | [Instance cloning](/reference/instance-cloning) |
 | Deploy production code | `instance:deploy` | [Production release layout](/reference/deployments) |
 | Record a renamed branch | `instance:rename` | [Record a renamed branch](#record-a-renamed-branch) |
+| Move a checkout into a container | `instance:migrate` | [`instance:migrate`](/cli/instance/migrate) |
+| Sleep or wake a container | `instance:sleep`, `instance:wake` | [Sleep and wake](/reference/development-containers#sleep-and-wake) |
+| Bring back a failed host removal | `instance:restore` | [`instance:restore`](/cli/instance/restore) |
 | Move to another Node | `instance:transfer` | [Instance transfer](/reference/instance-transfer) |
 | Remove | `instance:destroy` | [Instance removal](/reference/instance-removal) |
 
 ## Create a development Instance
 
-Select an active Linux Node with an active `app-dev` role. The name `default` is reserved for the Project's default development source. A name that equals the Project `default_branch`, such as `main`, also means `default`: Orbit creates the `default` Instance, exactly as if you passed `default`. See [A default-branch name means default](#a-default-branch-name-means-default).
+Select an active Linux Node with an active `app-dev` role. On a Node of the build list, create makes an Instance container; see [On a container Node](/cli/instance/create#on-a-container-node). The name `default` is reserved for the Project's default development source. A name that equals the Project `default_branch`, such as `main`, also means `default`: Orbit creates the `default` Instance, exactly as if you passed `default`. See [A default-branch name means default](#a-default-branch-name-means-default).
 
 ```bash
 orbit instance:create <project> <node> default
@@ -48,7 +51,7 @@ Swamp clones the repository to `<apps-root>/<project-slug>/<name>` using the Pro
 | Another name, no `--branch` | The matching origin branch, otherwise the existing local branch, otherwise a new branch with that name from the fetched `default_branch` commit. |
 | Any name, `--branch=<branch>` | The requested origin branch, otherwise the existing local branch, otherwise a new branch from the fetched `default_branch` commit. The branch need not equal the Instance name. |
 
-For example, `instance:create <project> <node> t3-1a2b3c4d --branch=t3code/1a2b3c4d` creates that branch when it is missing. An origin branch keeps its existing selection behavior. An existing local branch is not reset to the default commit. A missing fetched `default_branch` when it is needed returns `instance.branch_resolution_failed`; Orbit selects no fallback branch. The implicit `default` selection must resolve the Project default branch. Invalid branch names return `validation.failed` before source changes.
+For example, `instance:create <project> <node> t3-1a2b3c4d --branch=t3code/1a2b3c4d` creates that branch when it is missing. An origin branch keeps its existing selection behavior. An existing local branch is not reset to the default commit. A missing fetched `default_branch` when it is needed fails the create; Orbit selects no fallback branch. The implicit `default` selection must resolve the Project default branch. Invalid branch names return `validation.failed` before source changes.
 
 Follow the returned Operation with `operation:show`, using `poll_after_seconds` and `after_sequence`, until it succeeds, fails, or is cancelled. After success, fetch its captured `target_id` with `instance:show`. That Instance returns `selected_branch`, `branch_override`, and the starting commit. `branch_override` holds the `--branch` value, also when it equals the default branch. It is null when the Instance inherits its branch.
 

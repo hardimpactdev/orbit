@@ -47,7 +47,7 @@ To import a dump, copy it as the Node's SSH user to any folder of that user, for
 2. It streams the file into the client. The first failed statement stops the import.
 3. It counts the tables again.
 
-The client runs in a throwaway container of the server's image, on the server's Docker network, read-only, with no capabilities. It logs in as the owner over TCP at the server container's own address, never through the server's loopback, which the PostgreSQL image trusts without a password. The owner's password comes from the Gateway through the Swamp vault as the first line of standard input. It is never in an argument, a file on the Node, the Operation's input or result, or a log.
+The client runs in a throwaway container of the server's image, on the server's Docker network, read-only, with no capabilities. It logs in as the owner over TCP at the server container's own address, never through the server's loopback. A PostgreSQL server made before the [SCRAM rule](/reference/database-servers) trusts that loopback without a password. The owner's password comes from the Gateway through the Swamp vault as the first line of standard input. It is never in an argument, a file on the Node, the Operation's input or result, or a log.
 
 Because the owner runs the dump, the server's own permissions hold it to the owner's grants: the named database and, for an Instance's owner, its test databases. A dump with `USE other`, `CREATE DATABASE other` or `\connect other` for any other database fails with the server's permission error, and the import stops there. A client command in a dump, such as `\!` or `system`, fails the import: psql reads Orbit's own `\restrict` first, and mysql runs with its commands off. A plain `pg_dump` dump still loads, because its own `\restrict` and `\unrestrict` lines are dropped. Dump a single database without `CREATE DATABASE` or `USE` lines. For PostgreSQL, use `pg_dump --no-owner --no-acl` in plain format.
 
@@ -78,6 +78,7 @@ To empty a `partial` database, drop its tables. For a Laravel application, run `
 
 | Code | Status | Meaning |
 | --- | --- | --- |
+| `database.import_file_required` | CLI | `--file` is missing. The CLI sends nothing. |
 | `database.import_unsupported` | 422 | The connection is not a MySQL or PostgreSQL database on an active Database server. |
 | `database.import_path_invalid` | 422 | The path is not absolute, has a `.` or `..` part or another character, or does not end in `.sql` or `.sql.gz`. |
 | `node_access.required` | 403 | Your Node has no access grant to the Gateway Node. |

@@ -22,7 +22,7 @@ One Ansible run applies Gateway prerequisites. Another uses Node convergence's a
 
 ## Where the runner runs
 
-The runner runs on the outer machine: the machine that holds the three nested containers `nested-gateway`, `nested-app-dev` and `nested-app-prod`. Orbit runs it on a task VM. It drives the containers with local `incus exec`, so its user must be allowed to use that Incus. It runs the candidate CLI from the checkout that holds `runner.py`.
+The runner runs on the outer machine: the machine that holds the three nested containers `nested-gateway`, `nested-app-dev` and `nested-app-prod`. Orbit ran it on a task VM; task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet). It drives the containers with local `incus exec`, so its user must be allowed to use that Incus. It runs the candidate CLI from the checkout that holds `runner.py`.
 
 The runner reads the facts about its own machine from its own process. It holds no constant for them and never asks which kind of machine it is on.
 

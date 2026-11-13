@@ -437,7 +437,7 @@ Tracking a live PPA would make it a second owner of Git, and an exact APT versio
 
 ## Task VMs
 
-A host may have a [`containers` setting](/reference/node-settings#task-container-fields) with separate container places and a placement switch. They were built for a separate task container runtime, which ADR 0250 dropped: tasks move into [Instance containers](/reference/development-containers#tasks-in-an-instance-container), and [the plan](/solutions/development-container-runtime#pr-17-remove-task-vms-the-pi-server-and-the-task-container-setting) removes the setting. Every task group still runs on a task VM.
+A host may have a [`containers` setting](/reference/node-settings#task-container-fields) with separate container places and a placement switch. They were built for a separate task container runtime, which ADR 0250 dropped: tasks move into [Instance containers](/reference/development-containers#tasks-in-an-instance-container), and [the plan](/solutions/development-container-runtime#pr-17-remove-task-vms-the-pi-server-and-the-task-container-setting) removes the setting. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet). Before that, every task group ran on a task VM.
 
 Publication releases the task VM. Later work claims a fresh task place and restores its published branch. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
@@ -1240,7 +1240,7 @@ The `Log egress` step runs before the base VM is touched. A failed safety check 
 
 Each task VM host refreshes its own base. Nothing is copied between hosts. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway, or every host with `task-vms:refresh-images`, which takes `--commit <sha>` for a release other than the one the Gateway runs.
 
-Two triggers admit every Linux host: every verified release, from its step "Admit VM refreshes" after successful verification and successful or skipped Horizon start, which runs `task-vms:refresh-images --commit <sha>` from the verified release, and a daily schedule at 03:20. Release admission is best effort and does not wait for refresh completion.
+Two triggers admit every Linux host: every verified release, from its step "Admit VM refreshes" after successful verification and successful or skipped Horizon start, which runs `task-vms:refresh-images --commit <sha>` from the verified release, and a daily schedule at 03:20. Release admission is best effort and does not wait for refresh completion. Today every host has a refresh hold, so both triggers skip it ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)).
 
 Set a per-host hold with `orbit node:update NODE --image-refresh-hold`; clear it with `--no-image-refresh-hold`. The Node column `image_refresh_hold` defaults to false and appears in Node list and show. Release and daily admission skip each held host with `skipped:operator_hold`, without creating or queueing an Operation. The release keeps this host-name result in its "Admit VM refreshes" step output; the daily job records the same result in the admission log. Other hosts refresh as usual. The host stays configured and keeps serving task VMs from its last promoted image.
 

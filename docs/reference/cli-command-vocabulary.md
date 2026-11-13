@@ -108,7 +108,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `realtime` | `logs` | The CLI streams Gateway events with `--follow`. Realtime has no retained history. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
 | `self-update` | `self-update` | [`self-update`](/cli/self-update) updates this machine to the Gateway's CLI release. |
-| `task` | `cancel`, `check`, `close`, `complete`, `start`, `publish`, `turn`, `status` | The CLI starts task VMs, checks or publishes work, sends turns, completes or cancels tasks, closes questions, and reports state. |
+| `task` | `cancel`, `check`, `close`, `complete`, `start`, `publish`, `turn`, `status` | The CLI starts task work, checks or publishes work, sends turns, completes or cancels tasks, closes questions, and reports state. |
 | `tool` | `adopt`, `scan` | The CLI reads installed Homebrew and Vite+ packages without taking ownership, or adopts one installed package without changing it. |
 | `vault` | `setup`, `status`, `sync` | The CLI stores the Gateway's Vaultwarden account, reports the published Database items, publishes changes now, or deletes the items and the account. The commands belong to the `vault` extension. |
 | `websocket` | `rotate`, `sync` | Rotate one app secret or wait for the live app registry to apply. |

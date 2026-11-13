@@ -16,7 +16,7 @@ covers:
 
 Swamp is the only executor of task groups; it runs provision, agent turns, checks, publication, review parking and cleanup as keyed operations. The Gateway stores the board and evidence and exposes keyed operations; it never claims a group, advances a subtask, retries a turn, appends a fixup or merges a PR on a timer. All groups use `external` orchestration, including groups created without an explicit mode. Existing records move to that mode without changing their status, workspace, assistance or receipts.
 
-Tasks is an optional Gateway extension. It runs planned work with coding agents. A task is one feature or bug fix, delivered as one pull request. Its subtasks run in order in one shared task workspace. A fresh implementer builds each subtask, the Project's task check and CI verify the handoff, and a fresh reviewer approves it. Orbit commits and pushes the work. After the last approval, Orbit opens the pull request and watches it until it merges.
+Tasks is an optional Gateway extension. It runs planned work with coding agents. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet): no task VM starts today. Tasks move to copies of a container Instance. A task is one feature or bug fix, delivered as one pull request. Its subtasks run in order in one shared task workspace. A fresh implementer builds each subtask, the Project's task check and CI verify the handoff, and a fresh reviewer approves it. Orbit commits and pushes the work. After the last approval, Orbit opens the pull request and watches it until it merges.
 
 While a subtask is open, Orbit also watches a pull request on `task-{id}`. It stops starting subtasks when that pull request merges or closes.
 

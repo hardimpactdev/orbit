@@ -13,7 +13,7 @@ covers:
 
 Put one development container Instance to sleep now. Orbit stops the whole container, so it uses no memory. Its disk, databases, Route, T3 history and sessions stay. [Sleep and wake](/reference/development-containers#sleep-and-wake) explains the lifecycle.
 
-**This command does not check T3.** If an agent turn runs in the Instance, the stop cuts it. T3 continues the turn when the Instance wakes. The result says `t3_turn: not_checked`. The automatic sleep after an idle hour does check, and never cuts a turn.
+**This command does not check T3.** If an agent turn runs in the Instance, the stop cuts it. T3 continues the turn when the Instance wakes. The result says `t3_turn: not_checked`. No idle rule puts an Instance to sleep yet: only `instance:sleep` does. A planned automatic sleep after an idle hour will check T3, and never cut a turn.
 
 ## Usage
 
@@ -33,6 +33,8 @@ Orbit first writes the asleep marker on the Node. From then on, each request to 
 The Instance must be a development container that is not its Project's default and not a nested-fleet Instance. No other lifecycle work and no task may run in it.
 
 Sleeping an Instance that already sleeps runs again and changes nothing. A failed run leaves the container as it was; the marker may stay, and then the next visit wakes the Instance. Run the command again to retry.
+
+The API is `POST /api/v1/instances/{instance}/sleep`; it starts an `instance.sleep` Operation. The MCP tool is `instance-sleep`.
 
 ## How it works
 

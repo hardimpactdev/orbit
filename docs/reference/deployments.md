@@ -76,7 +76,7 @@ Prune removes the links with their releases and never follows them into the shar
 
 ## Development defaults
 
-A `default` Instance on an `app-dev` Node is a plain Git checkout that Orbit keeps at the newest commit of the Project's default branch. Other development Instances on the Node start from it. `orbit instance:deploy ID`, the deployment API (`POST /api/v1/instances/{instance}/deploy` with `{}`), and the MCP tool `instance-deploy` can deploy a default by hand. Each starts an [operation](#deploy-through-the-api). The Project's default branch supplies the target commit; production branch overrides do not apply.
+A `default` Instance on an `app-dev` Node is a Git checkout, or an [Instance container](/reference/development-containers) on a Node of the build list, that Orbit keeps at the newest commit of the Project's default branch. Other development Instances on the Node start from it. `orbit instance:deploy ID`, the deployment API (`POST /api/v1/instances/{instance}/deploy` with `{}`), and the MCP tool `instance-deploy` can deploy a default by hand. Each starts an [operation](#deploy-through-the-api). The Project's default branch supplies the target commit; production branch overrides do not apply.
 
 The [automatic deployment tick](#automatic-deployments) deploys a default each time its default branch has a new commit. Only one deployment runs per Instance, including manual requests.
 
@@ -331,7 +331,9 @@ A head the Gateway cannot read fails the tick for that Instance with `source.hea
 
 ### Automatic development defaults
 
-**Delivered state, 2026-11-11.** The independent development tick (#3331) was reverted. Development auto-deploy stays inside the shared `automatic-production-deploy` producer; whether it runs depends on the policy setting. It accepts checkout defaults and has no container-only gate. A Gateway release does not deploy development defaults. Use [`instance:deploy`](/cli/instance/deploy) on the container default to deploy explicitly and take a new seed after success. A clone starts from that default's last successfully deployed seed. An independent producer limited to container defaults remains planned. The default of a [nested-fleet](/reference/development-containers#refresh-after-a-release) Project is the exception: each Gateway release deploys it to the release commit and refreshes its fleet.
+**Delivered state, 2026-11-11.** The independent development tick (#3331) was reverted. Development auto-deploy stays inside the shared `automatic-production-deploy` producer; whether it runs depends on the policy setting. The live fleet pauses it ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)).
+
+The producer accepts checkout defaults and has no container-only gate. A Gateway release does not deploy development defaults. Use [`instance:deploy`](/cli/instance/deploy) on the container default to deploy explicitly and take a new seed after success. A clone starts from that default's last successfully deployed seed. An independent producer limited to container defaults remains planned. The default of a [nested-fleet](/reference/development-containers#refresh-after-a-release) Project is the exception: while the refresh after a release is on, each Gateway release deploys it to the release commit and refreshes its fleet.
 
 While the shared producer is active, a default deploys its default branch's head. Its deployed commit is its `seed_commit`. A failed commit retries as the [failure rules](#failures-of-automatic-deployments) describe; for a default every failure is retryable. A new commit is eligible on the next active policy tick.
 

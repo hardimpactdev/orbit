@@ -65,7 +65,7 @@ Pi Durable 1.5.0 covers the chat loop, but has no MCP client and no subagent too
 
 The spikes found three things that Orbit must change or accept.
 
-- The model router guard admits only the task VM WireGuard range. It also refuses the `?beta=true` query that Claude Code always sends. A separate PR builds the per-Node forwarder and the guard change.
+- The model router guard admits only the task VM WireGuard range. It also refuses the `?beta=true` query that Claude Code always sends. The guard change is built, and so is the [container model forwarder](/reference/ai-router#container-model-forwarder).
 - T3 prints a pairing token to its journal on every start. With two users, only root and `agent` can read it.
 - Each container holds one T3 port on its Node's WireGuard address.
 
@@ -79,18 +79,18 @@ Track A replaces task VMs and the Project VM with containers, in the order ADR 0
 
 | Step | Work | Status |
 | --- | --- | --- |
-| 1 | Put ADR 0250 and this plan up for review. | In review |
+| 1 | Put ADR 0250 and this plan up for review. | Done: ADR 0250 merged |
 | 2a | Reboot all managed Nodes into current kernels. | Done: 7.0.0-43 on 9 November |
 | 2b | Block SCTP on every Node through node converge. | In progress in the reboot-fixes PR; set by hand on Beast, Shark and Sabre |
 | 2c | Define the container egress and DNS model on Beast. | In review: a Squid proxy on each Instance container host, no DNS in containers ([Egress and DNS](/reference/development-containers#egress-and-dns)) |
 | 2d | Keep secrets off agent hosts. | Open |
 | 2e | Patch kernels automatically, with planned reboots. | In progress |
-| 3 | Run Instances in containers on the Nodes of a build list, with T3 inside. | Specified in [Instance containers](/reference/development-containers); plan in [Container runtime](/solutions/development-container-runtime) |
+| 3 | Run Instances in containers on the Nodes of a build list, with T3 inside. | Built on the Nodes of the build list; see [Instance containers](/reference/development-containers) and [Container runtime](/solutions/development-container-runtime) |
 | 4 | Run tasks in Instance containers, driven by Swamp through T3. | Planned in [Container runtime](/solutions/development-container-runtime#pr-7-run-a-task-in-a-clone) |
-| 5 | Add the nested fleet as an optional feature, and run command proofs in an Orbit Instance container. | Planned in [Container runtime](/solutions/development-container-runtime#pr-10-the-nested-fleet) |
+| 5 | Add the nested fleet as an optional feature, and run command proofs in an Orbit Instance container. | Nested fleet partly built; command proofs planned. See [Container runtime](/solutions/development-container-runtime#pr-10-the-nested-fleet) |
 | 6 | Parity gate: Orbit's command proof cases in an Orbit Instance container with the nested fleet match their task VM results. | Specified in [Parity gate](/solutions/development-container-runtime#parity-gate) |
 | 7 | Switch task work on Beast, then Shark, in a window with no proofs or merges in flight. | Open |
-| 8 | Switch development: sleep and wake, threads from Conn, migration, every `app-dev` Node. | Planned in [Container runtime](/solutions/development-container-runtime#pr-13-sleep-and-wake) |
+| 8 | Switch development: sleep and wake, threads from Conn, migration, every `app-dev` Node. | Sleep and wake commands, threads from Conn and migration built; the idle sleep and every `app-dev` Node planned. See [Container runtime](/solutions/development-container-runtime#pr-13-sleep-and-wake) |
 | 9 | Remove the task VM runtime, the Pi server and the task container setting. | Open |
 | 10 | Run production Instances in containers on every `app-prod` Node. | Planned in [Production Instances](/solutions/development-container-runtime#production-instances) |
 

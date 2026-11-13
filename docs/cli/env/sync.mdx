@@ -35,7 +35,7 @@ On an Instance in a container, `env:sync` does not render the whole file, unlike
 
 The same Operation, `instance.connection_environment`, first adds the container's network paths to each attached server: the ACL egress rule, the bridge endpoint and the UFW rule. It removes no rule. When the file changed, it clears Laravel's configuration cache and restarts the Instance's own running units: its FrankenPHP unit and its running Process units. The values reach the container only through a Swamp vault copy; the Operation input and result hold key names only. The result lists the key names under `written`, `added`, `kept` and `unchanged`, and the restarted units under `restarted`.
 
-The sync is refused, and no run starts, when the Instance has no attached connection (`env.connection_missing`), when the container is stopped (`process.target_inactive`), or when lifecycle work is unfinished (`instance.lifecycle_busy`). A `.env` that is missing, a link, or holds a quoted value that never closes fails the run with `env.configuration_invalid`; the file stays as it was.
+The sync is refused, and no run starts, when the Instance has no attached connection (`env.connection_missing`), when the container is stopped (`process.target_inactive`), or when lifecycle work is unfinished (`instance.lifecycle_busy`). A `.env` that is missing, a link, or holds a quoted value that never closes fails the run with `env.configuration_invalid`; the file stays as it was. The run fails with `env.connection_changed` when the attached connections changed after admission; run `env:sync` again. Another failed step ends as `instance.connection_environment_failed`.
 
 ## How it works
 

@@ -13,7 +13,7 @@ These terms distinguish the task images, topology seeds, their hosts and the sta
 
 | Term | Meaning |
 | --- | --- |
-| Task VM hosts | Machines that run task VMs and their nested topologies: beast, shark and host 14. |
+| Task VM hosts | Machines that run task VMs and their nested topologies: beast, shark and host 14. Task VMs are off today. |
 | Task image | The VM image that a host starts its task VMs from. Each host builds its own. |
 | Topology seed | Stopped copies of a ready Gateway with Swamp, `app-dev` Node and `app-prod` Node, kept by each host. A task VM resets its test fleet from them. |
 | Orbit footprint | What Orbit owns on a Node: the agent, CLI, Gateway code, and the files and units Orbit renders for itself. |
@@ -21,7 +21,7 @@ These terms distinguish the task images, topology seeds, their hosts and the sta
 
 ## The proof CI
 
-The job `proof-run` is built but report-only. It is outside `Required checks`. One firewall proof has passed end to end; complete coverage and reliable admission still need review. Nick decides when proof becomes required. The outside-PR label workflow is built. Execution is on by default (`proof.execution`); see [the execution switch](/cli/proof/run#the-execution-switch).
+The job `proof-run` is built but report-only. It is outside `Required checks`. One firewall proof has passed end to end; complete coverage and reliable admission still need review. Nick decides when proof becomes required. The outside-PR label workflow is built. Execution is on by default (`proof.execution`); see [the execution switch](/cli/proof/run#the-execution-switch). CI admits no proof today: the repository variable `ORBIT_PROOF_ENABLED` is unset ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)).
 
 The job is `proof-run` (`Proof request and report (optional)`), followed by `Proof assertions (optional)`. The merge does not wait for either job. See [the proof run job](/reference/implementation-loop#the-proof-run-job).
 

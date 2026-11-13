@@ -951,6 +951,8 @@ The agents use their own subagents only. MCP servers come from the project's own
 
 ## Tasks in an Instance container
 
+This section is the target, except checks. Today only the task check runs in a container that a group owns ([Task Instance workspace](/reference/task-instance-workspace)), and no public command creates that ownership yet.
+
 A task group runs in one Instance container. Everything else about a group, its subtasks, checks, reviews and reads, stays as [Tasks](/reference/tasks) describes.
 
 | Part | In an Instance container |
@@ -1265,9 +1267,9 @@ After each Gateway release, Orbit deploys each nested-fleet default to the relea
 
 A default gets `fleet` when its runtime is in `orbit-instances-nested`, its Project has `nested_fleet` on and its Node's switch is on (`InstancePlacement::keepsFleet`). Every other deployment runs the same steps and calls as before.
 
-The release step "Admit nested-fleet refresh" runs `instances:refresh-nested-fleets --commit <release>` from the new release. It admits one deployment per nested-fleet default. With none, it prints one line and admits nothing.
+The release step "Admit nested-fleet refresh" runs `instances:refresh-nested-fleets --commit <release>` from the new release. It admits one deployment per nested-fleet default. With none, it prints one line and admits nothing. A default whose admission fails with an error that is no refusal gets the line `operation.admission_failed`; the other defaults are still admitted.
 
-The Gateway setting [`ORBIT_INSTANCES_NESTED_FLEET_REFRESH`](/reference/gateway-environment) turns the step on. It is off by default; while it is off, the step prints one line and admits nothing. An operator turns it on only when the Club key lives off the default's disk and a safety snapshot of the default exists.
+The Gateway setting [`ORBIT_INSTANCES_NESTED_FLEET_REFRESH`](/reference/gateway-environment) turns the step on. It is off by default; while it is off, the step prints one line and admits nothing. The live fleet has it on since 13 November 2026. An operator turns it on only when the Club key lives off the default's disk and a safety snapshot of the default exists.
 
 The run deploys the release commit itself. A commit missing from the Project's repository refuses the admission with `project.source_unavailable`. A commit off the Project's branch fails the fetch with `deployment.commit_not_on_branch`, and the old seed stays. The trial Project's repository is a hand-kept copy of `main`, so its release runbook pushes the release commit there before the release. The Orbit Project itself needs no such step.
 

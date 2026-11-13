@@ -40,6 +40,7 @@ The command starts a task and follows it until it ends, as [`instance:deploy`](/
 | `instance.id_invalid` | The Instance is missing or is not a positive integer, and the CLI cannot prompt. |
 | `input.cancelled` | You cancelled the Instance list. |
 | `instance.setup_unavailable` | The Instance is not an active development Instance. |
+| `operation.kind_unavailable` | The Instance runs in a container. This command works on a checkout from its Node. |
 | `instance.step_not_admitted` | The Project's list changed after admission, or the Instance is not placed on an `app-dev` Node, has a root or invalid account, or has an invalid checkout path. |
 | `instance.lifecycle_busy` | A development `default` deploy holds the checkout. |
 | `operation.target_busy` | Another operation holds the Instance. Fails today: setup takes no hold. |

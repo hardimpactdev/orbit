@@ -26,11 +26,13 @@ orbit instance:wake 42 --json
 | `--idempotency-key=KEY` | Reuse a key to retry this operation start. |
 | `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
 
-Orbit starts the container. T3, FrankenPHP and each Process that ran before the sleep start with it; a stopped Process stays stopped. Orbit waits until each of them runs and the app answers. An answer of 500 or above gets up to 5 more seconds to clear; after that the app is served as it is. Then it removes the asleep marker, and the Route serves the app again. In a clone, the wake then waits until T3 answers; a visitor does not wait for it.
+Orbit starts the container. T3, FrankenPHP and each Process that ran before the sleep start with it; a stopped Process stays stopped. Orbit waits until each of them runs and the app answers. An answer of 500 or above gets up to 5 more seconds to clear; after that the app is served as it is. Then it removes the asleep marker, and the Route serves the app again. In a clone, the wake then waits until T3 answers; a visitor does not wait for it. In measured runs, a visitor got the app about 9 to 12 seconds after the first visit.
 
 There is one wake per Instance at a time. A second caller joins the open wake and gets the same Operation.
 
 Waking an Instance that is awake changes nothing and also succeeds. A failed wake keeps the asleep marker: the Route shows a failure page with Try again. Try again, or this command, starts a new wake.
+
+The API is `POST /api/v1/instances/{instance}/wake`; it starts an `instance.wake` Operation. The MCP tool is `instance-wake`.
 
 ## How it works
 

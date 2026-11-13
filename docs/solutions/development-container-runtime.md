@@ -116,19 +116,19 @@ Beast and Shark take the dev path beside their task VMs. A task VM host on the b
 | 3 | Node preparation and the shared folders | Merged, [#3292](https://github.com/hardimpactdev/orbit/pull/3292) |
 | 3b | The static PHP build | Merged, [#3294](https://github.com/hardimpactdev/orbit/pull/3294) |
 | 4 | The first default Instance and its deployments | Merged, [#3299](https://github.com/hardimpactdev/orbit/pull/3299) |
-| 4b | The Project's development Processes in a container | Open, [#3309](https://github.com/hardimpactdev/orbit/pull/3309) |
-| 5 | Create an Instance as a clone, with T3 and its sessions | Open, [#3301](https://github.com/hardimpactdev/orbit/pull/3301) |
+| 4b | The Project's development Processes in a container | Merged, [#3309](https://github.com/hardimpactdev/orbit/pull/3309) |
+| 5 | Create an Instance as a clone, with T3 and its sessions | Merged, [#3301](https://github.com/hardimpactdev/orbit/pull/3301) |
 | 6 | Destroy a container Instance | Clone cleanup first; defaults and guarded removal follow separately |
 | 7 | Run a task in a clone: start, check, publish, end | |
 | 8 | The `t3` task driver: Swamp drives T3 | |
 | 9 | Attach a task to an Instance | |
-| 10 | The nested fleet, parts F1 to F5 | F1 in progress |
+| 10 | The nested fleet, parts F1 to F5 | F1 merged; F3 partly built |
 | 11 | Command proofs in an Instance container | |
 | — | [Parity gate](#parity-gate) | |
 | 12 | Switch task work | |
-| 13 | Sleep and wake | |
-| 14 | Start a thread in an Orbit Project (Conn) | Open, [#3308](https://github.com/hardimpactdev/orbit/pull/3308) |
-| 15 | Migrate checkout Instances | Open, [#3315](https://github.com/hardimpactdev/orbit/pull/3315): code and fixtures built; live check waits for the container host. Processes refuse until PR 4b is wired |
+| 13 | Sleep and wake | Commands and the wake on a Route visit merged, [#3601](https://github.com/hardimpactdev/orbit/pull/3601); the idle sleep and the wake from Conn or a task planned |
+| 14 | Start a thread in an Orbit Project (Conn) | Merged, [#3308](https://github.com/hardimpactdev/orbit/pull/3308) |
+| 15 | Migrate checkout Instances | Merged, [#3315](https://github.com/hardimpactdev/orbit/pull/3315) |
 | 16 | Switch every `app-dev` Node | |
 | 17 | Remove task VMs, the Pi server and the task container setting | |
 | 18–22 | [Production Instances](#production-instances) | |
@@ -469,9 +469,9 @@ The nested fleet comes in five parts. Each part has its own spec commit, code, t
 
 | Part | Adds | State |
 | --- | --- | --- |
-| F1 | The Project flag and the Node switch; the placement rule; the hosting (`orbit-instances-nested`, the outer keys, the start guard); the image variant (inner Incus, WireGuard tools, pinned Ansible tools, `agent` with root) | Flags merged; placement, hosting and image in progress |
+| F1 | The Project flag and the Node switch; the placement rule; the hosting (`orbit-instances-nested`, the outer keys, the start guard); the image variant (inner Incus, WireGuard tools, pinned Ansible tools, `agent` with root) | Merged |
 | F2 | A workspace device that works where a shifted mount fails, two levels below the host | Planned |
-| F3 | The fleet in the default Instance with its fleet rules, the Club key, the refresh after a release, a clone that starts its fleet, and reset | The fleet step and the refresh after a release built; the Club key delivery, the clone's fleet start and reset planned |
+| F3 | The fleet in the default Instance with its fleet rules, the Club key, the refresh after a release, a clone that starts its fleet, and reset | The fleet step, the refresh after a release and the Club key delivery built; the clone's fleet start and reset planned |
 | F4 | The proof runner from an Instance: it reads its outer user, home and CLI home from the environment; a command for reset and one case | Planned |
 | F5 | The proof flows on a container | [PR 11](#pr-11-command-proofs-in-an-instance-container) |
 
@@ -555,7 +555,7 @@ Tests: Pest for placement by runtime and the CI proof admission. Live: a normal 
 
 The spec commit adds [instance/sleep.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/sleep.mmd) and [instance/wake.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/wake.mmd) to the hibernation page.
 
-The session renewal that PR 5 left out is built: an hourly `conn.environment_renew` tick, as [conn/environment-renew.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) shows. PR 13 still adds the wake. Its wake should admit the same renewal when the session ends within seven days, so a woken container does not wait for the tick.
+The session renewal that PR 5 left out is built: an hourly `conn.environment_renew` tick, as [conn/environment-renew.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) shows. The wake is built ([#3601](https://github.com/hardimpactdev/orbit/pull/3601)) but does not admit the renewal yet. It should admit the same renewal when the session ends within seven days, so a woken container does not wait for the tick.
 
 Tests: Pest for the sweep's choices, the wake admission by caller, and the joined wake. Live on Beast:
 
@@ -583,7 +583,7 @@ The code changed these points of this plan:
 - **Server record.** A server of an Instance names its `instance_id` and `power_state` in the server list, so Conn finds the clone's server and shows it asleep.
 - **Pairing.** Conn follows the pairing's Operation and reads the link once with `conn:pairing:show`.
 - **One pairing.** The device's server sync leaves a clone's server alone during its thread start.
-- **Wake.** Conn shows a stopped server as asleep but does not wake it. PR 13 adds the wake, and Conn calls it then.
+- **Wake.** Conn shows a stopped server as asleep but does not wake it. The wake is built, but Conn does not call it yet.
 - **Phone.** Only the desktop app starts these threads.
 
 ### PR 15: migrate checkout Instances

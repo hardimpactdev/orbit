@@ -8,6 +8,8 @@ description: "Restart an installed Process and store the running desired state."
 orbit process:restart <process> [--idempotency-key=KEY] [--json]
 ```
 
+On a container Instance, a Process whose definition the Project removed answers `process.removing` (409). The next deployment of the default removes it.
+
 ## How it works
 
 <div className="flow-at" data-chart="process/restart"></div>

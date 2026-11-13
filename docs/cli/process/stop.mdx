@@ -8,6 +8,8 @@ description: "Stop an installed Process and store the stopped desired state. A h
 orbit process:stop <process> [--idempotency-key=KEY] [--json]
 ```
 
+On a container Instance, a Process whose definition the Project removed answers `process.removing` (409). The next deployment of the default removes it.
+
 ## How it works
 
 <div className="flow-at" data-chart="process/stop"></div>

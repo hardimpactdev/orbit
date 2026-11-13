@@ -11,7 +11,7 @@ Early users can use this guide to run a bounded Orbit trial and report useful fe
 
 ## What is proven
 
-Orbit runs a live fleet. Adding a fresh machine as a Node is proven in regular use. The maintainer adds new Nodes to the fleet, and each task group runs on a fresh Ubuntu 26.04 [task VM](/reference/compute-drivers#task-vms) that Orbit enrolls through the normal [Node provisioning](/reference/node-provisioning#add-a-node). A task VM boots from the recipe base image, so its enrollment skips the `app-dev` software programs.
+Orbit runs a live fleet. Adding a fresh machine as a Node is proven in regular use. The maintainer adds new Nodes to the fleet, and each task group ran on a fresh Ubuntu 26.04 [task VM](/reference/compute-drivers#task-vms) that Orbit enrolls through the normal [Node provisioning](/reference/node-provisioning#add-a-node). A task VM boots from the recipe base image, so its enrollment skips the `app-dev` software programs. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet).
 
 The [release criteria](#release-criteria) for a fresh installation, the first application, and recovery are still open. A source alpha tag has not been published, and production readiness is not claimed.
 
