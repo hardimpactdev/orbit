@@ -39,7 +39,9 @@ Worker input and result files are private and removed after the phase settles, i
 
 ## Check phases
 
-`tasks.check` takes this path when the group owns a container Instance: the group's Instance has a recorded runtime and names the group as its workspace owner. Today only a test fixture creates that state; attach and task start add it later. The admission skips the task VM wake and VM ownership checks and calls no task VM admission, slot or image code. It requires a running runtime (`tasks.instance_not_running`) and a recorded Instance branch (`tasks.no_workspace`). Before it records a check row, it refuses a handoff whose Project requires hosted CI (`tasks.instance_hosted_check_unavailable`) and a setup step named `@orbit/ci-caches` (`tasks.instance_setup_unavailable`). The hosted push from the Node arrives with publication. There is no task VM fallback.
+`tasks.check` takes this path when the group owns a container Instance: the group's Instance has a recorded runtime and names the group as its workspace owner. Today only a test fixture creates that state; attach and task start add it later. The admission skips the task VM wake and VM ownership checks and calls no task VM admission, slot or image code. It requires a running runtime (`tasks.instance_not_running`) and a recorded Instance branch (`tasks.no_workspace`).
+
+Before it records a check row, it refuses a handoff whose Project requires hosted CI (`tasks.instance_hosted_check_unavailable`) and a setup step named `@orbit/ci-caches` (`tasks.instance_setup_unavailable`). The hosted push from the Node arrives with publication. There is no task VM fallback.
 
 The intent is the task VM check intent with two differences: `checkout_path` is `/srv/workspace`, and `workspace` holds the recorded Incus project and container, the Instance branch and a new scratch ID. The SSH target is the Instance Node. The parent workflow runs `Check in the Instance` and skips the task VM steps.
 
@@ -55,7 +57,9 @@ Commands run as `env -C <directory> … /bin/bash -lc <command>` with the task c
 
 Snapshots use the temporary index described above, so a staged, force-added ignored file is in the checked tree. The commit stages the same work, so its tree matches the snapshot.
 
-Each command writes its output to a guest file. Ansible copies the output folder to the Node and fetches it into the private worker run folder; the guest and Node copies are removed on success and failure. The typed result holds only exit codes and Git evidence. The existing task check rules then read, redact and delete the output files, judge deliverables, check the candidate commit and shape the receipt. A phase failure returns its workspace error code as the check's error code. The parent captures the receipt from `Check in the Instance`; the Gateway records it as it records a task VM check.
+Each command writes its output to a guest file. Ansible copies the output folder to the Node and fetches it into the private worker run folder; the guest and Node copies are removed on success and failure. The typed result holds only exit codes and Git evidence, within the 512 KiB result bound; a larger diff fails the phase.
+
+The existing task check rules then read, redact and delete the output files, judge deliverables, check the candidate commit and shape the receipt. A phase failure returns its workspace error code as the check's error code. The parent captures the receipt from `Check in the Instance`; the Gateway records it as it records a task VM check.
 
 ## Verification
 

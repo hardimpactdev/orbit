@@ -45,5 +45,117 @@
     "tree": "dc1b4884596284c041d844dd5db739dd415679f8",
     "ls_tree": "100644 blob 8007d41d5794e6ce4d4d2c97e370d5a9aa6d5213\t.gitignore\n100644 blob df967b96a579e45a18b8251732d16804b2e56a55\tbase.txt\n120000 blob 8286e959cff43df99673fa7f155037bcd4a91551\tlink\n100644 blob 971280a657c03209a9b3ab72b736dce27013ae71\tspace name.txt\n100644 blob 350888f88b7647220e610e725a503c1983ba6a3f\tstaged.txt\n100644 blob 3f4c56d3d8d73bb43575b07d84c82e30210900d1\tuntracked.txt\n",
     "status": "M  staged.txt\n?? link\n?? \"space name.txt\"\n?? untracked.txt\n"
+  },
+  "check": {
+    "provenance": {
+      "source": "Disposable local Git checkout on Beast; Gateway intent keys from TaskCheckProjection::workflowInput of a container check admission. No Incus, Node, SSH or Orbit Operation.",
+      "intent_keys_pinned_by": "apps/gateway/tests/Feature/Tasks/TaskInstanceCheckTest.php",
+      "ansible_intent": "workflow-task-instance-check.yaml step input: runtime, branch and snapshot_id from intent.workspace, operation_id, ssh_execution, check = the whole intent",
+      "capture_script": "/fast/scratch/task-lane/capture-t2.py",
+      "git_version": "git version 2.55.0",
+      "tree_commands": [
+        "GIT_INDEX_FILE=<copy of the real index> git add --all",
+        "GIT_INDEX_FILE=<copy> git write-tree"
+      ]
+    },
+    "base_files": {
+      ".gitignore": "vendor/\nignored/\n",
+      "app.txt": "old\n"
+    },
+    "candidate_files": {
+      "app.txt": "new\n",
+      "tests/feature.sh": "test -f vendor/autoload.php || exit 127\ntest \"$(cat app.txt)\" = new\n"
+    },
+    "installed": {
+      "vendor/autoload.php": "<?php // installed dependency marker\n"
+    },
+    "force_added": {
+      "ignored/staged.txt": "staged ignored work\n"
+    },
+    "decoy": {
+      "app.txt": "decoy\n",
+      "tests/feature.sh": "exit 0\n"
+    },
+    "operation_id": 5170,
+    "intent": {
+      "subtask": 7,
+      "phase": "handoff",
+      "group_id": 42,
+      "instance_id": 315,
+      "node_id": 71,
+      "checkout_path": "/srv/workspace",
+      "ssr_port": null,
+      "check_id": 17,
+      "command": "test \"$HOME\" = /home/agent && test -f vendor/autoload.php && printf 'checked %s\\n' \"$(cat app.txt)\"",
+      "setup": [],
+      "deliverables": [
+        {
+          "id": "feature",
+          "type": "command",
+          "description": "The feature test passes.",
+          "command": "sh tests/feature.sh",
+          "directory": ".",
+          "fails_on_base": true,
+          "paths": [
+            "tests/feature.sh"
+          ]
+        },
+        {
+          "id": "app",
+          "type": "file",
+          "description": "The app changes.",
+          "path": "app.txt",
+          "change": "modified"
+        }
+      ],
+      "base": "",
+      "message": "Subtask 7: change the app\n",
+      "repository": "example/proof",
+      "check_name": null,
+      "branch": "task-42-handoff",
+      "ssh_execution": {
+        "identity_file": "/var/lib/orbit-swamp/ssh/id_ed25519",
+        "target": {
+          "name": "target",
+          "node_id": 71,
+          "host": "10.44.0.71",
+          "user": "orbit",
+          "port": 22,
+          "host_keys": [
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixtureFixtureFixtureFixtureFixtureFixture"
+          ]
+        }
+      },
+      "admitted_at": "2026-11-13T00:00:00.000000Z",
+      "run_budget_seconds": 1800,
+      "workspace": {
+        "runtime": {
+          "project": "alternate-proof",
+          "name": "proof-instance"
+        },
+        "branch": "proof-branch",
+        "snapshot_id": "00000000-0000-4000-8000-000000000000"
+      },
+      "command_deliverables": [
+        {
+          "id": "feature",
+          "type": "command",
+          "description": "The feature test passes.",
+          "command": "sh tests/feature.sh",
+          "directory": ".",
+          "fails_on_base": true,
+          "paths": [
+            "tests/feature.sh"
+          ]
+        }
+      ],
+      "execution_references_json": "{}"
+    },
+    "expected": {
+      "base_head": "d00ee6aabe1978ab1e19062332a7f3f97a8714ec",
+      "candidate_tree": "f92993dcdc60850ef116a0cfc503c023ebb25354",
+      "ls_tree": "100644 blob c702f31321353b7c4f87f15be5ba2af63f357af6\t.gitignore\n100644 blob 3e757656cf36eca53338e520d134963a44f793f8\tapp.txt\n100644 blob f3e9569e028d897c6e29cb9218d67f1d46205476\tignored/staged.txt\n100644 blob f924fef9fb5b41e30ae43e2be3a49ce076be48f0\ttests/feature.sh\n",
+      "project_output": "checked new"
+    }
   }
 }

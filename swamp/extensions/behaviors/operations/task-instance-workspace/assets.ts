@@ -16,7 +16,15 @@ const Phase = z.enum([
     "receipt",
     "export",
     "discard",
+    "check",
+    "commit",
+    "commit-ref",
 ]);
+// One guest command or Git read as the task check rules read a step: exit code and, for Git reads, stdout.
+const Run = z.object({
+    exitCode: z.number().int(),
+    stdout: z.string().optional(),
+}).strict();
 const Snapshot = z.object({
     runtime: z.object({ project: z.string(), name: z.string() }),
     snapshot_id: z.string().uuid(),
@@ -53,6 +61,21 @@ const Evidence = z.union([
         bundle: z.string().startsWith("/var/tmp/orbit-task-export-"),
         changed: z.literal(false),
     }),
+    z.object({
+        check: z.object({
+            steps: z.record(
+                z.string().regex(/^[a-z_-]+(-[0-9]+)?$/),
+                z.object({ outputs: Run }).strict(),
+            ),
+        }).strict(),
+        changed: z.literal(false),
+    }).strict(),
+    z.object({ commit_read: Run, changed: z.literal(true) }).strict(),
+    z.object({
+        ref: z.string().regex(/^refs\/orbit\/check-operations\/[1-9][0-9]*$/),
+        commit: Hash,
+        changed: z.literal(true),
+    }).strict(),
 ]);
 const Result = z.object({ phase: Phase, evidence: Evidence });
 const Args = z.object({

@@ -38,7 +38,7 @@ Convergence and the container phase use the [verified atomic helper install](/re
 
 The Instance bridge refresh applies resolvable publications without changing saved rules for unresolved or duplicate ones. Empty or failed NAT reads change no ACL or endpoint record. Health keeps a warning count and at most 20 samples within the observer's 4,096-byte limit. Warning propagation to doctor needs the separate agent change; stale rules remain until the removal design lands.
 
-Internal [task Instance workspace phases](/reference/task-instance-workspace) use the recorded Node’s pinned SSH identity and shipped Ansible assets. They run guest Git as `agent` through Incus and add no Node account, role or task VM setup.
+Internal [task Instance workspace phases](/reference/task-instance-workspace) use the recorded Node’s pinned SSH identity and shipped Ansible assets. They run guest Git and the task check's Project commands as `agent` through Incus and add no Node account, role or task VM setup. Check output passes through Node scratch under `/var/tmp`, which the phase removes.
 
 Each argument of an Ansible command must parse as a string. One shared test reads every literal `argv` list. It fails on a YAML mapping, a number or a boolean.
 

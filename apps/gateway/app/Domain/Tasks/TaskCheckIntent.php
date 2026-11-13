@@ -20,7 +20,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-/** Records board metadata and the owned workspace. Swamp executes the check. */
+/** Records board metadata and the owned workspace: a task VM checkout or a container Instance. Swamp executes the check. */
 final readonly class TaskCheckIntent
 {
     public function __construct(private StartOperationAction $start, private OperationIdempotency $idempotency, private TaskCheckEvidence $evidence) {}
@@ -31,7 +31,10 @@ final readonly class TaskCheckIntent
             return $existing;
         }
         TaskProvisionPending::refuse($group);
-        TaskVmAwake::require($group);
+        // A container Instance workspace has no task VM to wake.
+        if (TaskInstanceWorkspace::forGroup($group) === null) {
+            TaskVmAwake::require($group);
+        }
 
         return DB::transaction(function () use ($group, $input, $caller, $request): Operation {
             $group->setRawAttributes(Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
@@ -56,9 +59,10 @@ final readonly class TaskCheckIntent
         if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
             throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);
         }
-        $instance = $group->taskable;
-        if (! $instance instanceof Instance || $instance->task_workspace_owner_id !== $group->id || $instance->project_id !== $group->project_id
-            || TaskVm::forGroup($group)?->node_id !== $instance->node_id || $instance->checkout_path === '') {
+        $container = TaskInstanceWorkspace::forGroup($group);
+        $instance = $container->instance ?? $group->taskable;
+        if (! $instance instanceof Instance || ($container === null && ($instance->task_workspace_owner_id !== $group->id || $instance->project_id !== $group->project_id
+            || TaskVm::forGroup($group)?->node_id !== $instance->node_id || $instance->checkout_path === ''))) {
             throw new ResourceOperationException('tasks.no_workspace', 'The group requires its owned task VM workspace.', 409);
         }
         $task = $group->tasks()->findOrFail($input->subtask);
@@ -71,6 +75,12 @@ final readonly class TaskCheckIntent
         }
         $repository = GitHubRepository::fromOrigin($group->project->repository_url);
         $ci = $hostedCi && $input->phase === TaskCheckKind::Handoff ? $group->project->handoffCheckName() : null;
+        $setup = $input->phase === TaskCheckKind::Baseline ? $this->evidence->baselineSetup($group) : [];
+        $workspace = null;
+        if ($container !== null) {
+            TaskInstanceWorkspace::refuseUnavailable($ci, $setup);
+            $workspace = $container->intent();
+        }
         if ($ci !== null && $repository === null) {
             throw new ResourceOperationException('tasks.repository_unavailable', 'Hosted CI requires a GitHub repository.', 422);
         }
@@ -89,9 +99,9 @@ final readonly class TaskCheckIntent
 
         return [
             'subtask' => $task->id, 'phase' => $input->phase->value, 'group_id' => $group->id, 'instance_id' => $instance->id,
-            'node_id' => $instance->node_id, 'checkout_path' => $instance->checkout_path, 'ssr_port' => $instance->ssr_port,
+            'node_id' => $instance->node_id, 'checkout_path' => $workspace === null ? $instance->checkout_path : TaskInstanceWorkspace::Root, 'ssr_port' => $instance->ssr_port,
             'check_id' => $check->id, 'command' => $group->project->taskCheckCommand(),
-            'setup' => $input->phase === TaskCheckKind::Baseline ? $this->evidence->baselineSetup($group) : [],
+            'setup' => $setup,
             'deliverables' => $input->phase === TaskCheckKind::Handoff ? self::withFailsOnBase($task->deliverables ?? []) : [],
             'base' => TaskReviewBase::commit($task), 'message' => TaskHandoffCiChecks::message($task),
             'repository' => $repository === null ? null : $repository->owner.'/'.$repository->name,
@@ -99,6 +109,7 @@ final readonly class TaskCheckIntent
             'ssh_execution' => $ssh, 'execution_secrets' => $copies, 'admitted_at' => now()->toISOString(),
             // The time limit of each SSH step of the check workflows, so a step against a VM that is gone ends with the Operation.
             'run_budget_seconds' => OperationRunBudgets::historySeconds(OperationKinds::TasksCheck),
+            ...($workspace === null ? [] : ['workspace' => $workspace]),
         ];
     }
 
