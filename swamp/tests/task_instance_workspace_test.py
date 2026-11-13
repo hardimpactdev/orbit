@@ -32,6 +32,13 @@ if args[2] == 'exec':
     if os.environ.get('T1_ASSUME_DIFFERENT_OWNER') == '1':
         # Exercise Git's ownership check without chown or privileged commands.
         args[19] = args[19].replace('git_argv =', "env['GIT_TEST_ASSUME_DIFFERENT_OWNER'] = '1'\\n" + 'git_argv =', 1)
+    if args[20] == 'export-cleanup' and os.environ.get('T1_CLEANUP_FAIL') == '1':
+        sys.exit(1)
+    if args[20] == 'export' and os.environ.get('T1_MOVE_TO'):
+        # Move the real branch at the bundle-creation barrier, after candidate validation.
+        args[19] = args[19].replace("git('bundle', 'create',",
+            "git('update-ref', 'refs/heads/' + request['branch'], " + repr(os.environ['T1_MOVE_TO']) + ")\\n" +
+            ' ' * 12 + "git('bundle', 'create',", 1)
     result = subprocess.run([sys.executable, *args[17:]], cwd=os.environ['T1_GUEST'], env={**os.environ}, check=False)
     sys.exit(result.returncode)
 else:
@@ -80,7 +87,7 @@ class TaskInstanceWorkspaceTest(unittest.TestCase):
         return subprocess.run(['git', *args], cwd=cwd or self.checkout, check=True, capture_output=True,
                               env={**os.environ, **FIXTURE['git_env']}).stdout.decode().strip()
 
-    def phase(self, phase, intent=None, ok=True, corrupt=False, different_owner=False):
+    def phase(self, phase, intent=None, ok=True, corrupt=False, different_owner=False, move_to=None, cleanup_fail=False):
         variables = self.root / 'vars.json'
         result_path = self.root / 'result.json'
         result_path.unlink(missing_ok=True)
@@ -91,6 +98,7 @@ class TaskInstanceWorkspaceTest(unittest.TestCase):
             env={**os.environ, 'PATH': str(self.bin) + ':' + os.environ['PATH'], 'T1_GUEST': str(self.checkout),
                  'T1_CALLS': str(self.calls), 'T1_CORRUPT': '1' if corrupt else '0',
                  'T1_ASSUME_DIFFERENT_OWNER': '1' if different_owner else '0',
+                 'T1_MOVE_TO': move_to or '', 'T1_CLEANUP_FAIL': '1' if cleanup_fail else '0',
                  'ANSIBLE_CONFIG': str(ROOT / 'ansible/ansible.cfg'), 'ANSIBLE_FORCE_COLOR': '0'})
         output = result.stdout + result.stderr
         if ok:
@@ -266,6 +274,36 @@ class TaskInstanceWorkspaceTest(unittest.TestCase):
         (self.checkout / '.git-original').rename(self.checkout / '.git')
         self.git('checkout', '--quiet', '-b', 'wrong-branch')
         self.assertIn('tasks.workspace_identity_changed', self.phase('after', ok=False))
+
+    def export_candidate(self):
+        self.git('add', '--all')
+        self.git('commit', '--quiet', '-m', 'Candidate')
+        self.intent['head'] = self.git('rev-parse', 'HEAD')
+        value, _ = self.phase('preflight')
+        self.intent['checkout_fingerprint'] = value['checkout_fingerprint']
+        self.intent['candidate'] = {'head': self.intent['head'], 'tree': self.git('rev-parse', 'HEAD^{tree}')}
+
+    def test_export_refuses_a_branch_move_during_bundle_creation(self):
+        self.export_candidate()
+        candidate = self.intent['head']
+        (self.checkout / 'base.txt').write_text('new unreviewed commit\n')
+        self.git('add', 'base.txt')
+        self.git('commit', '--quiet', '-m', 'Later commit')
+        later = self.git('rev-parse', 'HEAD')
+        self.git('update-ref', 'refs/heads/' + self.intent['branch'], candidate)
+        output = self.phase('export', ok=False, move_to=later)
+        self.assertIn('tasks.workspace_snapshot_mismatch', output)
+        self.assertFalse((self.scratch / 'export.bundle').exists())
+        calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
+        self.assertFalse(any(call[2:4] == ['file', 'pull'] for call in calls))
+
+    def test_export_removes_node_scratch_when_guest_cleanup_fails(self):
+        self.export_candidate()
+        self.assertIn('tasks.workspace_phase_failed', self.phase('export', ok=False, cleanup_fail=True))
+        transfers = [json.loads(line) for line in self.calls.read_text().splitlines()
+                     if json.loads(line)[2:4] == ['file', 'pull']]
+        self.assertEqual(len(transfers), 1)
+        self.assertFalse(Path(transfers[0][-1]).parent.exists(), 'Node export scratch leaked on cleanup failure')
 
     def test_exact_branch_export_and_corrupt_transfer_cleanup(self):
         self.git('add', '--all')

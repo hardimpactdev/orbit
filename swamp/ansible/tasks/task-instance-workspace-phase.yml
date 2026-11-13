@@ -141,9 +141,12 @@
               try:
                   git('bundle', 'create', str(bundle), 'refs/heads/' + request['branch'])
                   git('bundle', 'verify', str(bundle))
+                  expected = (candidate['head'] + ' refs/heads/' + request['branch'] + '\n').encode()
+                  if git('bundle', 'list-heads', str(bundle)) != expected:
+                      refuse('snapshot_mismatch')
                   with bundle.open('rb') as stream:
                       checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
-              except (OSError, subprocess.SubprocessError):
+              except (OSError, ValueError, subprocess.SubprocessError):
                   bundle.unlink(missing_ok=True)
                   raise
               return {'head': head, 'tree': candidate['tree'], 'guest_bundle': str(bundle), 'sha256': checksum, 'changed': False}
@@ -264,7 +267,20 @@
         stdin_add_newline: false
       register: workspace_export_cleanup
       changed_when: false
+      failed_when: false
       no_log: true
+    - name: Remove the Node export when guest cleanup fails
+      when:
+        - workspace_export.path is defined
+        - workspace_export_cleanup.rc | default(1) != 0
+      ansible.builtin.file:
+        path: "{{ workspace_export.path }}"
+        state: absent
+      changed_when: false
+    - name: Require guest export cleanup before handing off Node scratch
+      ansible.builtin.assert:
+        that: workspace_export_cleanup.rc | default(1) == 0
+        fail_msg: tasks.workspace_phase_failed
 
 - name: Record the private workspace result
   ansible.builtin.copy:
