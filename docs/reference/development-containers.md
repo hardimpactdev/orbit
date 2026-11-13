@@ -1356,6 +1356,8 @@ A failed step fails the create with `instance.container_fleet_drift`, `instance.
 
 A clone keeps the fleet of the seed it copied. A later refresh does not change it.
 
+The workspace phase runs after the fleet is ready. When it checks out a branch ahead of the seed's commit, the nested Gateway still runs the seed's schema; the clone migrates nothing.
+
 | Step | Time | Source |
 | --- | --- | --- |
 | ZFS clone of the seed | Under 1 s, measured | The ADR 0250 spike |
