@@ -95,7 +95,9 @@ Gateway automatic releases retain the `Required checks` name: on main, `main-req
 
 When main moves after a PR's green run, update the branch, wait for green, and merge promptly. Main CI compares the merged Git tree with the merge-ref tree that the PR run actually checked out, not the PR head tree. A match reuses the green checks. A different tree, missing evidence, or an API failure runs normal main CI.
 
-Every PR builds a web artifact and records its digest, tested commit and tree, and the body hash read by the Docs gate. Main's own CI verifies the repository, workflow identity, PR event, final PR head, latest Required job, which must have succeeded, checkout log, Git tree and live body hash. It downloads and verifies the source artifact before publishing `web-dist-<main SHA>`. A changed body needs a new successful Docs run; rerunning only Required cannot bless an old acknowledgement. If a failed-only rerun copies a successful Required job into a new attempt without producing its receipt, main runs normal CI.
+Every PR builds a web artifact and records its digest, tested commit and tree, and the body hash read by the Docs gate. Main's own CI verifies the repository, workflow identity, PR event, final PR head, latest Required job, which must have succeeded, checkout log, Git tree and live body hash.
+
+It reads job logs and artifact archives as bytes with `gh api --allow-escape-sequences`; those bytes are parsed or hashed, never printed to a terminal. It downloads and verifies the source artifact before publishing `web-dist-<main SHA>`. A changed body needs a new successful Docs run; rerunning only Required cannot bless an old acknowledgement. If a failed-only rerun copies a successful Required job into a new attempt without producing its receipt, main runs normal CI.
 
 The receipt keeps `Main delivery checks`, `Required checks` and `Gateway release inputs` on the main SHA. Release readers and CLI dispatch keep their existing names and lookup rules. Duplicate main fixtures skip for a reused tree; the independent Main full set still runs.
 

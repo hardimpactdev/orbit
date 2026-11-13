@@ -91,6 +91,17 @@ class ReceiptTest(unittest.TestCase):
     def verify(self, api=None):
         return receipt.verify(api or API(), MAIN, TREE)
 
+    def test_api_captures_log_and_archive_bytes_without_terminal_filtering(self):
+        # gh 2.104 rejects ANSI in non-JSON output even when stdout is a pipe.
+        for path, payload in (('actions/jobs/60/logs', b'checkout\x1b[0m\n'),
+                              ('actions/artifacts/100/zip', b'PK\x03\x04\x1b[31m\x00')):
+            with self.subTest(path=path), patch.object(subprocess, 'check_output', return_value=payload) as call:
+                api = receipt.GitHub(REPO)
+                self.assertEqual(api.raw(path), payload)
+                self.assertEqual(call.call_args.args[0],
+                    ['gh', 'api', '--allow-escape-sequences', f'repos/{REPO}/{path}'])
+                self.assertLessEqual(call.call_args.kwargs['timeout'], 10)
+
     def test_same_tested_tree_reuses_bytes_even_when_pr_head_tree_differs(self):
         api = API()
         api.run['head_commit'] = {'tree_id': 'f' * 40}
