@@ -48,6 +48,7 @@ sequenceDiagram
   %%> What it does:
   %%> - installs the Project's new and changed development Process definitions as `orbit-*` units, with their environment files from the vault
   %%> - restarts a changed unit and removes a former environment file
+  %%> - removes the unit and environment folder of a Process whose definition the Project removed; admission marked its record `removing`
   %%> - enables and starts each running unit and waits for it; a unit that does not become active fails with its name in the detail, and only its Process is recorded failed
   SW->>N: Take the seed snapshot<br/>Ansible · tags seed
   %%> - prepares a Node/Vite default’s private Node store as orbit before the existing snapshot stop/start boundary; this conversion itself never restarts a Process
@@ -64,6 +65,7 @@ sequenceDiagram
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record the seed commit
     %%> Result:
+    %%> - deletes the Processes marked `removing` and names them in `processes_removed`
     %%> - new clones start at this snapshot; existing clones do not change
   else a required step fails
     SW--xGW: Run failed<br/>failed step
