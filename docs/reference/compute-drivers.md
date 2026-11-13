@@ -1096,7 +1096,7 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 | --- | --- | --- |
 | Pool | The VM side's ZFS pool | The Node's pool `orbit-instances`: ZFS, or a directory pool |
 | Project, bridge | `containers.project`, `containers.network` | `orbit-instances`, `orbitinst0` at the first address of the Node's bridge |
-| Kernel modules, sysctl files | `orbit-task-containers` | None; `60-orbit-instances.conf` |
+| Kernel modules, sysctl files | `orbit-task-containers` | None, or `wireguard` and `overlay` in `orbit-instances` with the [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting); `60-orbit-instances.conf` |
 | Subordinate IDs | 101,000,000 per place and the base | 65,536 for each of 201 containers, plus the task container need on a host that has both |
 | ACL egress | The VM bridge's rules | Bridge and NIC reject by default; the bridge admits the Node’s endpoint union and proxies, each NIC its own targets and proxies |
 | ACL ingress | The VM bridge's rules | TCP ports 1024 to 65535 from the bridge address, and T3's port 3773 from any source |

@@ -1326,7 +1326,10 @@ Deno.test({
       assertEquals(state.profiles["orbit-instances-nested"].devices, state.profiles["orbit-instances"].devices);
       assertEquals(Object.keys(state.profiles["orbit-instances-nested"].devices).sort(), ["eth0", "orbit-agent", "orbit-runtime", "root"]);
       assertEquals(state.profiles["orbit-instances-nested"].devices["orbit-runtime"].readonly, "true");
-      assertEquals(Deno.readTextFileSync(`${f.folder}/modules-load/orbit-instances.conf`), "wireguard\noverlay\nbr_netfilter\n");
+      assertEquals(Deno.readTextFileSync(`${f.folder}/modules-load/orbit-instances.conf`), "wireguard\noverlay\n");
+      // The modprobe loop got the same two modules: br_netfilter is never loaded on the host.
+      assert(result.output.includes("wireguard") && result.output.includes("overlay"), result.output);
+      assert(!result.output.includes("br_netfilter"), result.output);
       // The probe ran in both projects and left nothing behind.
       for (const project of ["orbit-instances", "orbit-instances-nested"]) {
         assert(f.calls().some((args) => args.join(" ") === `--project ${project} start orbit-clone-probe-copy`), project);

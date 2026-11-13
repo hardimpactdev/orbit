@@ -236,8 +236,10 @@ On a Node of the [build list](/reference/development-containers#the-build-list) 
 - The Incus project `orbit-instances-nested`. It uses the same pool, bridge, ACLs and stock image source as `orbit-instances`.
 - Its restrictions: those of `orbit-instances`, with isolated privilege and no virtual machines. It also allows nesting, syscall interception and low-level container keys.
 - Its default profile, with the same root disk, NIC and the two read-only shared folders.
-- The kernel modules `wireguard`, `overlay` and `br_netfilter`, loaded now and at boot.
+- The kernel modules `wireguard` and `overlay`, loaded now and at boot.
 - A larger subordinate-ID demand, below.
+
+The converge does not load `br_netfilter`. The module is host-wide: it sends the traffic of every host bridge through the host's `FORWARD` chain, and the nested fleet does not need it. If a later case needs it, root first writes `net.bridge.bridge-nf-call-iptables`, `net.bridge.bridge-nf-call-ip6tables` and `net.bridge.bridge-nf-call-arptables` set to 0 in `/etc/sysctl.d`, and then loads it.
 
 After the normal image, the converge also builds the [nested-fleet image](/reference/development-containers#the-nested-fleet-image) in that project. Only on such a Node does `instance:create` make Instances of a Project with the flag on ([Nested fleet setting](/reference/projects#nested-fleet-setting)); do not set the flag on a real Project. A Node with the switch off gets the same host intent and the same commands as before, and builds only the normal image.
 
