@@ -248,6 +248,10 @@
 - name: Keep endpoint mappings current after Docker restarts
   ansible.builtin.include_tasks: instance-bridge-refresh.yml
 
+# After the shared folders and the projects: a new Node has no project before its prepare above.
+- name: Bring the existing containers to the image's shared files
+  ansible.builtin.include_tasks: instance-container-files.yml
+
 - name: Run the egress proxy
   ansible.builtin.include_tasks: instance-egress.yml
 

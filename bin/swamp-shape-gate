@@ -72,12 +72,13 @@ DENO_TEST_FILE = re.compile(r'(.*[._])?test\.(ts|tsx|mts|js|mjs|jsx)')
 DENO_TESTS_ELSEWHERE = ('tests/metrics_exporter_firewall_test.ts', 'tests/native_host_method_test.ts', 'tests/node_add_bootstrap_test.ts')
 
 
-# CI exhausted the updates+ACL command's shared 720s budget; ACL fixtures own a third command.
+# CI exhausted the updates+ACL command's shared 720s budget; ACL fixtures own a third command, the browser fixtures a fourth.
 # Each command shares a 720s fixture budget across all Deno file isolates.
 INSTANCE_HOST_TEST_GROUPS = (
     ('tests/ansible_instance_host_updates_test.ts',),
     ('tests/ansible_instance_host_test.ts', 'tests/ansible_instance_host_image_test.ts', 'tests/ansible_instance_host_runtime_test.ts'),
     ('tests/ansible_instance_host_acl_test.ts',),
+    ('tests/ansible_instance_host_browser_test.ts',),
 )
 
 

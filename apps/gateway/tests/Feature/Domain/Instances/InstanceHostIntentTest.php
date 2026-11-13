@@ -252,7 +252,26 @@ describe('the Instance image', function (): void {
             ->and($image['packages'])->toBe(['acl', 'git', 'nftables'])
             ->and($files['/etc/systemd/system/t3.service']['mode'])->toBe('0640')
             ->and($files['/home/agent/.codex/config.toml'])->toMatchArray(['content' => "check_for_update_on_startup = false\n", 'uid' => 2750, 'mode' => '0600'])
-            ->and($files['/home/orbit/.gitconfig']['content'])->toBe("[safe]\n\tdirectory = /srv/workspace\n");
+            ->and($files)->not->toHaveKey('/home/orbit/.gitconfig')
+            ->and($files['/etc/gitconfig']['content'])->toBe("# Managed by Orbit.\n[safe]\n\tdirectory = /srv/workspace\n");
+    });
+
+    it('gives every container, also one from an older image, the linker, font and Git files, and rebuilds the linker cache at first start', function (): void {
+        $image = InstanceImage::for('10.253.0.1');
+        $shared = array_column(array_filter($image['files'], static fn (array $file): bool => ($file['existing'] ?? false) === true), null, 'path');
+
+        expect(array_keys($shared))->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig'])
+            ->and($shared)->toBe(array_column(InstanceImage::shared(), null, 'path'))
+            ->and($shared['/etc/ld.so.conf.d/zz-orbit-browser.conf']['content'])->toBe("# Managed by Orbit.\n/opt/orbit-runtime/current/lib\n")
+            // ldconfig reads the configuration files in name order, and a system library of the same name wins only when its folder
+            // comes first: the stock `x86_64-linux-gnu.conf` must sort before Orbit's file.
+            ->and(strcmp('zz-orbit-browser.conf', 'x86_64-linux-gnu.conf'))->toBeGreaterThan(0)
+            ->and($shared['/etc/fonts/fonts.conf']['content'])->toContain('<dir>/opt/orbit-runtime/current/fonts</dir>', '<cachedir prefix="xdg">fontconfig</cachedir>',
+                '<family>sans-serif</family>', '<family>serif</family>', '<family>monospace</family>', 'Noto Color Emoji')
+            ->and(array_unique(array_column($shared, 'mode')))->toBe(['0644'])
+            ->and($image['finish'])->toContain(['rm', '-f', '/etc/ld.so.cache'])
+            ->and(array_key_last($image['finish']))->toBe(array_search(['rm', '-f', '/etc/ld.so.cache'], $image['finish'], true))
+            ->and(InstanceImage::for('10.253.0.1', app(RecipeImageBuilds::class)->currentRecipe()->incus('amd64'))['files'])->toContain(...InstanceImage::shared());
     });
 
     it('gives Vite+ a shared writable home for package managers while linking the pinned runtime', function (): void {
@@ -331,10 +350,16 @@ describe('the shared folders', function (): void {
         $plan = InstanceFolderPlan::for(app(RecipeImageBuilds::class)->currentRecipe()->instances);
         $programs = static fn (array $folder): array => array_merge(...array_map(static fn (array $part): array => $part['bin'], $folder['parts']));
 
+        $archives = array_column($plan['runtime']['parts'], 'archive', 'name');
+        $browser = array_filter($archives, static fn (string $name): bool => str_starts_with($name, 'browser-'), ARRAY_FILTER_USE_KEY);
+
         // `vp` is no program of its part: the folder links it from the Vite+ home. PHP Data Bridge has no program: PHP reads its files.
-        expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'deno', 'composer', 'rg'])
+        // `bunx` is Bun itself, which acts as `bunx` by the name it runs under. The browser's Debian packages give no program either.
+        expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'bunx', 'deno', 'composer', 'rg'])
+            ->and($programs($plan['runtime'])['bunx'])->toBe($programs($plan['runtime'])['bun'])
             ->and(array_keys($programs($plan['agent'])))->toBe(['t3', 'claude', 'codex'])
-            ->and(array_column($plan['runtime']['parts'], 'archive', 'name'))->toBe(['node' => 'tar', 'bun' => 'zip', 'deno' => 'zip', 'composer' => 'file', 'ripgrep' => 'tar', 'php-data-bridge' => 'tar', 'vite-plus' => 'tar', 'php/8.5' => 'tar'])
+            ->and(array_diff_key($archives, $browser))->toBe(['node' => 'tar', 'bun' => 'zip', 'deno' => 'zip', 'composer' => 'file', 'ripgrep' => 'tar', 'php-data-bridge' => 'tar', 'vite-plus' => 'tar', 'php/8.5' => 'tar'])
+            ->and(array_unique(array_values($browser)))->toBe(['deb'])
             ->and(array_column($plan['agent']['parts'], 'archive', 'name'))->toBe(['t3' => 'tar', 'claude-code' => 'tar', 'codex' => 'tar'])
             ->and(array_column($plan['runtime']['parts'], 'bin', 'name')['php-data-bridge'])->toBe([]);
     });

@@ -40,10 +40,12 @@ final readonly class InstanceFolderPlan
         $parts = [];
         foreach ($pins as $name => $pin) {
             $path = (string) parse_url($pin->artifact->location, PHP_URL_PATH);
-            // A tarball or zip is unpacked into the part's folder; any other artifact is the part's one file.
+            // A tarball, zip or Debian package is unpacked into the part's folder; any other artifact is the part's one file. A
+            // package's libraries and fonts also go into the folder's `lib` and `fonts` (docs/reference/development-containers.md#browser-libraries-and-fonts).
             $archive = match (true) {
                 preg_match('/\.(?:tar\.gz|tgz|tar\.xz)$/', $path) === 1 => 'tar',
                 str_ends_with($path, '.zip') => 'zip',
+                str_ends_with($path, '.deb') => 'deb',
                 default => 'file',
             };
             $base = ['name' => (string) $name, 'version' => $pin->version, 'url' => $pin->artifact->location, 'archive' => $archive];

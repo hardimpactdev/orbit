@@ -18,7 +18,10 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
     $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
     $node = $recipe->tools['node'];
 
-    expect(array_keys($recipe->instances->runtime))->toBe(['node', 'bun', 'deno', 'composer', 'ripgrep', 'php-data-bridge', 'vite-plus'])
+    $parts = array_keys($recipe->instances->runtime);
+
+    expect(array_values(array_filter($parts, static fn (string $name): bool => ! str_starts_with($name, 'browser-'))))
+        ->toBe(['node', 'bun', 'deno', 'composer', 'ripgrep', 'php-data-bridge', 'vite-plus'])
         ->and($recipe->instances->runtime['vite-plus']->artifact)->toBe($recipe->tools['vp-cli']->artifacts['amd64'])
         ->and($recipe->instances->runtime['vite-plus']->version)->toBe($recipe->tools['vp']->version)
         ->and($recipe->instances->runtime['vite-plus']->bin)->toBe(['vp' => 'vp'])
@@ -30,6 +33,25 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
         ->and($recipe->instances->runtime['node']->version)->toBe($node->version)
         ->and($recipe->instances->agent['claude-code']->artifact->algorithm)->toBe('sha512')
         ->and($recipe->instances->agent['codex']->bin)->toBe(['codex' => 'package/vendor/x86_64-unknown-linux-musl/bin/codex']);
+});
+
+it('pins the browser libraries and fonts as Debian packages of the recipe\'s Ubuntu snapshot, which give no program', function (): void {
+    $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
+    $browser = array_filter($recipe->instances->runtime, static fn (string $name): bool => str_starts_with($name, 'browser-'), ARRAY_FILTER_USE_KEY);
+    $snapshot = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/resources/machine-software/recipe.json'), true, flags: JSON_THROW_ON_ERROR)['ubuntu']['snapshot'];
+
+    // What a headless Chromium links and the Ubuntu image lacks, with their own dependencies; and one sans, serif, mono and emoji set.
+    expect(array_keys($browser))->toContain('browser-libnss3', 'browser-libnspr4', 'browser-libgbm1', 'browser-libxkbcommon0',
+        'browser-libasound2t64', 'browser-fonts-dejavu-core', 'browser-fonts-liberation', 'browser-fonts-noto-color-emoji')
+        // The GPU drivers stay out: libgbm loads them only on demand, and a headless browser in a container has no GPU.
+        ->not->toContain('browser-mesa-libgallium', 'browser-libllvm21');
+    foreach ($browser as $name => $part) {
+        expect($part->bin)->toBe([])
+            ->and($part->artifact->algorithm)->toBe('sha256')
+            ->and($part->artifact->location)->toStartWith("https://snapshot.ubuntu.com/ubuntu/{$snapshot}/pool/")
+            ->and($part->artifact->location)->toEndWith('.deb');
+    }
+    expect(array_column(InstanceFolderPlan::for($recipe->instances)['runtime']['parts'], 'archive', 'name')['browser-libnss3'])->toBe('deb');
 });
 
 it('reads a part without `bin` as files that give the folder no program', function (): void {

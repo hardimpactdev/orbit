@@ -114,15 +114,16 @@ class ShapeGateToolsTest(unittest.TestCase):
             ['tests/ansible_instance_host_updates_test.ts'],
             ['tests/ansible_instance_host_test.ts', 'tests/ansible_instance_host_image_test.ts', 'tests/ansible_instance_host_runtime_test.ts'],
             ['tests/ansible_instance_host_acl_test.ts'],
-        ], 'ACL fixtures own a command budget without changing the other host groups')
+            ['tests/ansible_instance_host_browser_test.ts'],
+        ], 'ACL and browser fixtures own a command budget without changing the other host groups')
         self.assertEqual([step.argv[3:] for step in instance], [list(group) for group in self.gate.INSTANCE_HOST_TEST_GROUPS])
-        self.assertEqual(steps[2:5], instance, 'long fixtures start before the other independent tests')
+        self.assertEqual(steps[2:6], instance, 'long fixtures start before the other independent tests')
         self.assertTrue(all('--parallel' not in step.argv for step in instance), 'files inside a group run serially')
 
     def test_each_instance_command_receives_one_deadline_at_launch(self):
         steps = self.gate.plan('HEAD', self.system, self.system, self.system / 'collections')
         commands = [step for step in steps if tuple(step.argv[3:]) in self.gate.INSTANCE_HOST_TEST_GROUPS]
-        self.assertEqual(len(commands), 3)
+        self.assertEqual(len(commands), 4)
         for step in commands:
             with mock.patch.object(self.gate.time, 'time', return_value=1_000_000.125), \
                     mock.patch.object(self.gate.subprocess, 'run') as run:

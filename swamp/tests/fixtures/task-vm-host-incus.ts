@@ -287,6 +287,17 @@ if (family === "query") {
     state.folder_restarts ??= [];
     state.folder_restarts.push({project, name: action, unit: command[2], marked: Deno.statSync(`${folder}/opt/orbit-${kind}/.restart`).isFile});
   }
+  // The dynamic linker's cache: `ldconfig -X` reads the runtime folder's `lib` only once Orbit's configuration names it.
+  if (command[0] === "ldconfig") {
+    state.ldcache ??= {};
+    const lib = `${folder}/opt/orbit-runtime/current/lib`;
+    if (command[1] === "-X") {
+      state.ldcache[action] = state.files?.[`${action}/etc/ld.so.conf.d/zz-orbit-browser.conf`]
+        ? [...Deno.readDirSync(lib)].map((entry) => entry.name).filter((name) => /^lib.+\.so(\.[0-9]+)?$/.test(name)).sort() : [];
+    } else {
+      for (const name of state.ldcache[action] ?? []) console.log(`\t${name} (libc6,x86-64) => ${lib}/${name}`);
+    }
+  }
   if (command[0] === "sh" && command[1] === "-c" && instance(action).groups) {
     accounts(instance(action), command[2]);
   }
@@ -299,6 +310,14 @@ if (family === "query") {
     const paths = state.sudo_paths_by_project?.[project] ?? state.sudo_paths;
     if (paths) console.log(paths);
   }
+} else if (family === "file" && action === "pull") {
+  // The files the converge wrote, by `<instance>/<path>`; any other path is missing, as `incus file pull` reports it.
+  const pulled = state.files?.[args[2]];
+  if (pulled === undefined) fail("Error: not found");
+  Deno.stdout.writeSync(new TextEncoder().encode(pulled.content));
+} else if (family === "file" && action === "delete") {
+  state.deleted_files ??= [];
+  state.deleted_files.push(args[2]);
 } else if (family === "file" && action === "push") {
   state.files ??= {};
   state.files[args.at(-1)!] = {

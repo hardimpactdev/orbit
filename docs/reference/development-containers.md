@@ -146,7 +146,7 @@ Every development container has the same layout. The image and the create set it
 | `work` | gid 2760, members `agent` and `orbit` |
 | Sudo | None for either user. The image's `sudoers.d` grant is removed. The [nested-fleet image](#the-nested-fleet-image) gives `agent` alone passwordless sudo, so it is root in its own [nested-fleet](#users) container |
 | Workspace | `/srv/workspace`, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others. `core.sharedRepository=group` |
-| Git | `safe.directory=/srv/workspace` in each user's own Git config; the agent phase preserves its other Git settings |
+| Git | `safe.directory=/srv/workspace` in `/etc/gitconfig`, for every user and only that path; the agent phase also writes it to `agent`'s own Git config and preserves its other Git settings |
 | Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped |
 | T3 unit | `User=agent`, `UMask=0007`, `PATH` from the shared folders, `Requires=nftables.service`, `ConditionPathExists=/etc/orbit/instance`. The unit file is mode 0640 |
 | `PATH` | The runtime folder's `bin` first, for units, login shells and `incus exec` sessions, so `composer` is on it |
@@ -241,7 +241,8 @@ The software that the app and the agents run lives once per Node, in two version
 | Path | Content | Access |
 | --- | --- | --- |
 | `/opt/orbit-runtime/<version>/php/<php-version>/bin` | `frankenphp` and `php` of one PHP version, from its [static PHP build](/reference/compute-drivers#static-php-build) once that is published and pinned | Everyone |
-| `/opt/orbit-runtime/<version>/bin` | `composer`, Node, npm, npx, Bun, Deno, `vp`, rg | Everyone |
+| `/opt/orbit-runtime/<version>/bin` | `composer`, Node, npm, npx, Bun and `bunx`, Deno, `vp`, rg | Everyone |
+| `/opt/orbit-runtime/<version>/{lib,fonts}` | The [browser libraries and fonts](#browser-libraries-and-fonts) | Everyone |
 | `/opt/orbit-runtime/<version>/php-data-bridge/bridge` | The files of [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge), which [container PHP loads](/reference/php-runtime#container-php). The part has no program | Everyone |
 | `/opt/orbit-runtime/vite-plus/<digest>` | The [Vite+ home](/reference/compute-drivers#the-vite-home) that `vp` runs from, linked as `<version>/vite-plus-home` | Everyone |
 | `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex` | `root:2750`, mode 0750 |
@@ -256,7 +257,7 @@ The idmapped mount keeps gid 2750 the same in every container, whatever its ID m
 
 An update installs the new version beside the old one and flips `current`. It runs with the converge of each Node, so a recipe change reaches the Node with its release refresh. Both `agent` and `orbit` have `/opt/orbit-runtime/current/bin` on `PATH`, so a running clone gets added programs, such as Deno, without recreation.
 
-For the agent folder, Orbit then restarts T3 in each running container, one after another; T3 continues a running turn after its restart. For the runtime folder, Orbit restarts the FrankenPHP Process and the other Processes of each running container: every unit named `orbit-*.service`, so the Process units of a container carry that prefix. A stopped container uses the new versions when it wakes. An old version stays until no process maps a file of it.
+For the agent folder, Orbit then restarts T3 in each running container, one after another; T3 continues a running turn after its restart. For the runtime folder, Orbit restarts the FrankenPHP Process and the other Processes of each running container: every unit named `orbit-*.service`, so the Process units of a container carry that prefix. A stopped container uses the new versions when it wakes. An old version stays until no process maps a file of it. A running process runs only what existed when it started, so a new version that only adds files, such as the [browser libraries and fonts](#browser-libraries-and-fonts) or a new program, restarts nothing. The converge compares the version in use with the new one, without following links, and restarts only when a file, link or mode that the version in use holds changed or went.
 
 The CLI self-updaters are off: `DISABLE_AUTOUPDATER=1` in the T3 unit, which Claude Code inherits, and `check_for_update_on_startup = false` in the image's Codex configuration. The T3 server has no self-updater; it runs from the read-only folder.
 
@@ -385,6 +386,23 @@ Verify default and unrelated workspace isolation, independent volume clones and 
 Inject clone failures and lost results; prove scoped cleanup without source loss. Prove linked-move and referenced-owner removal refusals, and no implicit unlink or removal. Back up and restore a complete component offline, including partial-failure recovery, then repeat ownership and mutation checks.
 
 Failure to preserve ownership blocks this design. It does not authorize weaker isolation. No live proof has run for this proposal.
+
+### Browser libraries and fonts
+
+A headless browser, such as the Chromium that a Project's own Playwright downloads, starts in every container. The image has none of the libraries it links, and no fonts. So the runtime folder holds them, once per Node:
+
+- **Packages.** The recipe pins each library and font as a Debian package of its Ubuntu snapshot, a runtime part named `browser-<package>`: what Chromium links and the image lacks, with their own dependencies. The GPU drivers stay out: `libgbm` loads them only on demand, and a container has no GPU. The fonts are DejaVu (sans, serif, mono), Liberation (in place of Arial, Times New Roman and Courier New) and Noto Color Emoji.
+- **Folders.** The converge unpacks each package in its part and links its libraries into the version's `lib` and its fonts into `fonts`. Two packages that give the same name fail the build.
+- **Linker.** `/etc/ld.so.conf.d/zz-orbit-browser.conf` names `/opt/orbit-runtime/current/lib`. The name sorts after the stock `x86_64-linux-gnu.conf`, so a system library of the same name always wins: the folder only adds what the image lacks.
+- **Fonts.** `/etc/fonts/fonts.conf` names `/opt/orbit-runtime/current/fonts` and maps the generic families to them. Fontconfig reads it by default, also the copy inside Chromium. Each user keeps its font cache in its own `~/.cache/fontconfig`.
+- **Sandbox.** A container has no user namespaces, so Chromium runs without its own sandbox. Playwright starts it so by default. No setting of the Node changes.
+- **The browser.** It is no part of the folder. A Project pins its Playwright, and each Playwright pins its own browser build, so the Project's Playwright downloads it through the [egress proxy](#egress-and-dns) into the user's `~/.cache/ms-playwright`, such as with `bunx playwright install chromium`. No Instance can change a binary that another Instance runs.
+
+### Existing containers
+
+A container keeps the image it was made from. The files that every container needs are marked `existing` in the image definition, and the converge of the Node writes them into each existing container too, running or stopped, in the Instance project and in the nested-fleet one: the linker and font configuration and `/etc/gitconfig`. Nothing restarts. Each later process reads the files by itself.
+
+The dynamic linker reads its cache, `/etc/ld.so.cache`. A running container whose cache lacks a library of the runtime folder's `lib` runs `ldconfig -X`: no links, because the folder is read-only. A stopped container loses its cache instead, and the stock `ldconfig.service` builds it again at its next start, because it runs when the cache is missing. The Node keeps a digest of the library names it last applied, in `/var/lib/orbit/instance-container-libraries`, so a changed folder reaches stopped containers too. An image removes its cache last, so each new container builds its own at its first start. A frozen container is skipped, and the Node keeps its old digest, so the next converge drops a stopped cache again. A failed Incus call fails the converge after every other container had its turn.
 
 ## Environment notes
 

@@ -86,6 +86,7 @@ function transform(task: Task, folder: string): Task {
 const replacements = (folder: string): [string, string][] => [
     ["/usr/local/libexec", `${folder}/libexec`],
     ["/var/lib/orbit/instance-bridge", `${folder}/bridge-policy`],
+    ["/var/lib/orbit/instance-container-libraries", `${folder}/container-libraries`],
     ["/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`],
     ["/etc/modprobe.d/orbit-instances-zfs.conf", `${folder}/arc.conf`],
     ["/etc/systemd/system/", `${folder}/systemd/`],
@@ -107,6 +108,9 @@ function writeTasks(folder: string) {
     Deno.copyFileSync(new URL("instance_bridge.py", root), `${folder}/instance_bridge.py`);
     Deno.copyFileSync(new URL("instance_network.py", root), `${folder}/instance_network.py`);
     Deno.copyFileSync(new URL("instance_nested.py", root), `${folder}/instance_nested.py`);
+    Deno.copyFileSync(new URL("instance_folder_debs.py", root), `${folder}/instance_folder_debs.py`);
+    Deno.copyFileSync(new URL("instance_folder_same.py", root), `${folder}/instance_folder_same.py`);
+    Deno.copyFileSync(new URL("instance_container_files.py", root), `${folder}/instance_container_files.py`);
     for (
         const name of [
             "instance-host.yml",
@@ -118,6 +122,7 @@ function writeTasks(folder: string) {
             "instance-bridge-refresh.yml",
             "instance-egress.yml",
             "instance-folder.yml",
+            "instance-container-files.yml",
             "instance-vite-plus-home.yml",
             "instance-image.yml",
             "artifact-fetch.yml",

@@ -39,6 +39,7 @@
         argv: >-
           {{ (['tar', '-xf', cached, '-C', target, '--no-same-owner'] if item.archive == 'tar'
               else ['unzip', '-q', cached, '-d', target] if item.archive == 'zip'
+              else ['dpkg-deb', '-x', cached, target] if item.archive == 'deb'
               else ['install', '-m', '0755', cached, target ~ '/' ~ (item.url | urlsplit('path') | basename)]) }}
       vars:
         cached: "/var/cache/orbit/instance-folders/{{ item.sha256 | default(item.sha512) }}"
@@ -46,6 +47,16 @@
       loop: "{{ folder.parts }}"
       loop_control: { label: "{{ item.name }}" }
       changed_when: true
+    # A Debian package part gives no program: its libraries go into `lib`, which each container's `ld.so` reads through
+    # `/etc/ld.so.conf.d/zz-orbit-browser.conf`, and its fonts into `fonts`, which `/etc/fonts/fonts.conf` names.
+    - name: Gather the libraries and fonts of the Debian packages
+      when: folder.parts | selectattr('archive', 'equalto', 'deb') | list | length > 0
+      ansible.builtin.command:
+        argv: "{{ ['python3', '-I', '-', folder_stage] + (folder.parts | selectattr('archive', 'equalto', 'deb') | map(attribute='name') | list) }}"
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_folder_debs.py') }}"
+      register: folder_debs
+      changed_when: true
+      failed_when: folder_debs.rc != 0
     - name: Link each program to its path in its part
       ansible.builtin.file:
         path: "{{ folder_parts }}/bin/{{ item.program }}"
@@ -137,9 +148,19 @@
   ansible.builtin.stat: { path: "{{ folder.path }}/current", get_checksum: false, get_mime: false }
   register: folder_current
 
+# A running process runs only what existed when it started, so a new version that only adds files, such as the browser libraries
+# or a new program, restarts nothing. Anything the version in use holds that the new one changes or lacks needs the restart.
+- name: Compare the folder in use with its new version
+  when: folder_current.stat.exists and folder_current.stat.lnk_target != folder.version
+  ansible.builtin.command:
+    argv: [python3, "-I", "-", "{{ folder.path }}/{{ folder_current.stat.lnk_target }}", "{{ folder_root }}"]
+    stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_folder_same.py') }}"
+  register: folder_same
+  changed_when: false
+
 # A run that fails between the flip and the last restart leaves this marker, so the next run restarts the containers again.
 - name: Mark the restart of what runs from the folder
-  when: folder_current.stat.exists and folder_current.stat.lnk_target != folder.version
+  when: folder_current.stat.exists and folder_current.stat.lnk_target != folder.version and not (folder_same.stdout | from_json).same
   ansible.builtin.file: { path: "{{ folder.path }}/.restart", state: touch, mode: "0644" }
 
 - name: Read the restart mark

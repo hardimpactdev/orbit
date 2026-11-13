@@ -263,6 +263,16 @@
       "the nested-fleet audit judges visudo by its exit code, not by what it prints"
     ]
   },
+  "swamp/tests/ansible_instance_host_browser_test.ts": {
+    "source_sha256": "57cc7ef8ec2408c4898ea942b4109bc3059e009a70bc1dede411408671ad1397",
+    "cases": [
+      "a Debian package part gives the runtime folder its libraries and fonts; existing containers get the shared files with no restart",
+      "two Debian packages that give the same library name fail the folder build: one would hide the other",
+      "a second pass writes nothing and runs no ldconfig; a new library reaches running and stopped containers alike",
+      "a new folder version that only adds files keeps every running process valid; a changed, missing or relinked file does not",
+      "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container"
+    ]
+  },
   "swamp/tests/ansible_instance_host_runtime_test.ts": {
     "source_sha256": "21ebb39ff6c2e7b17f9dc96e0a272198a2c163f6e5cdb979a1f4f7d5320b13a3",
     "cases": [
