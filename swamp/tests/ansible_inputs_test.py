@@ -131,7 +131,9 @@ class RoleAddPhasesTest(unittest.TestCase):
         self.assertEqual(set(dependencies), set(self.jobs) - {'cleanup'})
         self.assertEqual(dependencies['analytics_cleanup'], {'type': 'or', 'conditions': [{'type': 'completed'}, {'type': 'skipped'}]})
         self.assertEqual([step['name'] for step in self.jobs['cleanup']['steps']], ['Remove the playbook input'])
-        self.assertEqual({dep['job'] for dep in self.jobs['analytics_cleanup']['dependsOn']}, {'analytics', 'readiness'})
+        self.assertEqual({dep['job'] for dep in self.jobs['analytics_cleanup']['dependsOn']}, {'analytics', 'readiness', 'phase_1'})
+        # A run that fails at the OS check changed nothing on the Node, so it starts no cleanup there.
+        self.assertIn({'job': 'phase_1', 'condition': {'type': 'succeeded'}}, self.jobs['analytics_cleanup']['dependsOn'])
         self.assertIn('analytics == null', self.jobs['analytics_cleanup']['steps'][0]['guard'])
         self.assertIn('node.role_converge', self.jobs['analytics_cleanup']['steps'][0]['guard'])
 

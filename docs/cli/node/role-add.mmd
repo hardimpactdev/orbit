@@ -205,7 +205,8 @@ sequenceDiagram
       %% path: analytics-cleanup
       SW->>M: Remove init containers<br/>Ansible phase: cleanup
       %%> When:
-      %%> - condition: completed; best-effort cleanup on the admitted runtime Node
+      %%> - condition: the OS check passed and the Analytics phases completed or were skipped; best-effort cleanup on the admitted runtime Node
+      %%> - a run that fails at the OS check changed nothing on the Node, so this cleanup does not run
     end
     SW->>SW: Remove the run folder<br/>condition: completed
     %%> When:
