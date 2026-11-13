@@ -735,7 +735,7 @@ Before downtime, migration resolves the [deploy credential](/reference/github-ap
 - **Route.** Orbit points the Route at FrankenPHP in the container.
 - **Retirement.** Orbit retains all files and Git recovery data. It removes only the linked checkout's registration. An owner's dependents and any registered descendant block retirement.
 
-Registered Schedule timers keep their UUID, calendar, timeout and enabled or paused state. Their timers and commands run inside the container as `orbit`, only while it runs, without catch-up. [Schedule migration](/reference/schedules#checkout-migration) defines refusals, rollback and retained logs.
+Registered Schedule timers keep their UUID, calendar, timeout and enabled or paused state. Their timers and commands run inside the container as `orbit`, only while it runs, without catch-up. The container's `/bin/bash` and PATH run each command, whatever the host account's login shell; a host path such as `/usr/bin/php8.5` becomes the container's `php`. [Schedule migration](/reference/schedules#checkout-migration) defines refusals, rollback and retained logs.
 
 A failed move before cutover leaves the checkout Instance serving as before. The [migration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) has the steps.
 

@@ -363,9 +363,8 @@ Warnings are a generic `warnings` list of `{code, message}` records in the Opera
 | `schedule.container_account_unsupported` | A named Schedule’s recorded host account is unavailable. Container execution maps explicitly to `orbit`. |
 | `schedule.container_timezone_unsupported` | The source timer timezone cannot be read safely; nothing has stopped yet. |
 | `schedule.container_command_unavailable` | The captured private Schedule command is missing or changed. Repeat migration after the Gateway and workflow upgrade together; nothing has stopped yet. |
-| `schedule.container_shell_unsupported` | A named Schedule’s shell is not `/bin/bash`. |
 | `schedule.container_path_unsupported` | A named Schedule’s working directory is missing, outside the checkout, has dot segments or uses a symlink. |
-| `schedule.container_command_unsupported` | A named Schedule’s command is outside the supported literal invocation form, references an external path or missing PHP build, or uses a symlink. See [Schedule migration](/reference/schedules#checkout-migration). |
+| `schedule.container_command_unsupported` | A named Schedule’s command is outside the supported literal invocation form, references an external path, a missing PHP build or host PHP of another version, or uses a symlink. See [Schedule migration](/reference/schedules#checkout-migration). |
 | `schedule.container_artifact_unsupported` | A named Schedule’s host files differ from its registered contract, its timer has an unsupported activation state, or its service is starting or stopping. Nothing has stopped yet. |
 | `instance.node_service_unreachable` | An attached Node service failed its probe within three seconds. The Operation names the target, last reason, unit states and elapsed time. See [Node service targets](/reference/processes-and-schedules#node-service-target-records). |
 | `instance.database_unreachable` | The new container could not reach the database server's port. |

@@ -34,6 +34,7 @@ use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
 use App\Domain\InstanceMigration\MigratedProcessDefinitions;
+use App\Domain\InstanceMigration\MigrateSchedules;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
@@ -2774,7 +2775,6 @@ describe('migrate registered Schedule timers', function (): void {
     it('refuses unsupported Schedule intent before reserving a runtime', function (string $change, string $code, string $reason): void {
         $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
         $account = match ($change) {
-            'shell' => new ScheduleRuntimeAccount('orbit', 'orbit', '/home/orbit', '/bin/zsh'),
             'group' => new ScheduleRuntimeAccount('orbit', 'work', '/home/orbit', '/bin/bash'),
             'home' => new ScheduleRuntimeAccount('orbit', 'orbit', '/opt/orbit', '/bin/bash'),
             default => null,
@@ -2808,7 +2808,10 @@ describe('migrate registered Schedule timers', function (): void {
             'unavailable PHP' => $instance->project->update(['php_version' => '99.0']),
             'literal path list' => $schedule->update(['command' => 'php artisan --config='.$instance->checkout_path.'/config:/etc/private']),
             'inline PHP long' => $schedule->update(['command' => 'php --run=die']),
-            'shell', 'group', 'home' => null,
+            'other host PHP' => $schedule->update(['command' => '/usr/bin/php8.4 artisan schedule:run']),
+            'host-only executable' => $schedule->update(['command' => '/usr/bin/host-only-tool artisan']),
+            'zsh equals expansion' => $schedule->update(['command' => 'php artisan =php']),
+            'group', 'home' => null,
         };
 
         try {
@@ -2826,7 +2829,6 @@ describe('migrate registered Schedule timers', function (): void {
         'failed Schedule' => ['failed', 'schedule.container_state_unsupported', 'not active'],
         'removing Schedule' => ['removing', 'schedule.container_state_unsupported', 'not active'],
         'different host Node' => ['other Node', 'schedule.container_state_unsupported', 'this Node'],
-        'different shell' => ['shell', 'schedule.container_shell_unsupported', 'shell'],
         'external working directory' => ['working directory', 'schedule.container_path_unsupported', 'working directory'],
         'external executable' => ['external command', 'schedule.container_command_unsupported', 'absolute path'],
         'checkout prefix sibling' => ['sibling command', 'schedule.container_command_unsupported', 'absolute path'],
@@ -2849,6 +2851,30 @@ describe('migrate registered Schedule timers', function (): void {
         'unavailable selected PHP' => ['unavailable PHP', 'schedule.container_command_unsupported', 'selected PHP'],
         'literal path list' => ['literal path list', 'schedule.container_command_unsupported', 'one literal workspace path'],
         'inline PHP long option' => ['inline PHP long', 'schedule.container_command_unsupported', 'inline evaluation'],
+        'host PHP of another version' => ['other host PHP', 'schedule.container_command_unsupported', "host PHP [8.4], but the container runs the Project's PHP [8.5]; set the Project's PHP version to 8.4, or start the command with `php` instead of `/usr/bin/php8.4`"],
+        'host executable outside the runtime' => ['host-only executable', 'schedule.container_command_unsupported', 'absolute path'],
+        'zsh equals expansion' => ['zsh equals expansion', 'schedule.container_command_unsupported', 'zsh expands'],
+    ]);
+
+    it('moves a Schedule whose host account has another login shell, and maps host runtime paths to container names', function (string $shell, string $command, string $mapped): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $instance->node->update(['user' => 'nckrtl']);
+        $schedule = migrationSchedule($instance, ['command' => $command], new ScheduleRuntimeAccount('nckrtl', 'nckrtl', '/home/nckrtl', $shell));
+
+        $operation = migrateStart($instance);
+        $plan = $operation->input['migrate']['schedules'][0];
+
+        expect($plan)->toMatchArray(['id' => $schedule->id, 'shell' => $shell, 'container_user' => 'orbit', 'container_shell' => '/bin/bash',
+            'command_hash' => hash('sha256', $command), 'mapped_command_hash' => hash('sha256', $mapped)])
+            ->and($plan['source_command_paths'])->toBe([$instance->checkout_path.'/artisan'])
+            ->and(json_decode(app(MigrateSchedules::class)->commands($instance, [$plan]), true, flags: JSON_THROW_ON_ERROR))->toBe([$schedule->id => $mapped]);
+
+        app(MigrateSchedules::class)->complete($instance, [$plan]);
+        expect($schedule->refresh()->command)->toBe($mapped);
+    })->with([
+        'zsh account, host PHP of the Project version' => ['/usr/bin/zsh', '/usr/bin/php8.5 artisan schedule:run', 'php artisan schedule:run'],
+        'fish account, unversioned host PHP' => ['/usr/bin/fish', '/usr/bin/php artisan schedule:run >> /dev/null 2>&1', 'php artisan schedule:run >> /dev/null 2>&1'],
+        'zsh account, runtime name already bare' => ['/bin/zsh', 'php artisan schedule:run', 'php artisan schedule:run'],
     ]);
 
     it('carries literal workspace commands, quoted arguments, flags and null redirects', function (string $form): void {
