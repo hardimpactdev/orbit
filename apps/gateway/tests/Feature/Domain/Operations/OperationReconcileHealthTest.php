@@ -15,6 +15,7 @@ use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\ProblemCollectorState;
+use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
@@ -578,4 +579,28 @@ it('holds a child at its exact stale bound and reports it only after that bound'
     expect(reconcileHealthIssues($gateway))->toBe([]);
     Carbon::setTestNow(now()->addSecond());
     expect(array_column(reconcileHealthIssues($gateway), 'code'))->toContain('gateway.proof_place_stale_child');
+})->with([false, true]);
+
+it('reports a held child of an ended or missing parent after sixty minutes without running the watchdog', function (bool $missing): void {
+    $gateway = reconcileHealthNode();
+    ProblemCollectorState::query()->create(['observation' => ['operation_reconcile_finished_at' => now()->toISOString()]]);
+    $child = reconcileHealthProofChild($gateway);
+    $child->forceFill(['status' => OperationStatus::Queued, 'attempts' => 0, 'finished_at' => null,
+        'updated_at' => now()->subMinutes(ExpireOperationAction::HoldMinutes),
+        'state' => ['proof_child_start' => ['released_at' => null]]])->save();
+    $parent = Operation::query()->findOrFail(ValidatedData::integer($child->input['proof_operation_id']));
+    if ($missing) {
+        $parent->delete();
+    } else {
+        $parent->update(['status' => OperationStatus::Cancelled]);
+    }
+    expect(reconcileHealthIssues($gateway))->toBe([]);
+    Carbon::setTestNow(now()->addSecond());
+    $before = $child->refresh()->getAttributes();
+    $groups = reconcileHealthIssues($gateway);
+    expect($groups)->toHaveCount(1)->and($groups[0])->toBe(['node_id' => $gateway->id, 'node_name' => 'gateway',
+        'code' => 'gateway.proof_place_stale_child', 'count' => 1, 'since' => $child->updated_at?->toISOString(),
+        'newest_since' => $child->updated_at?->toISOString(), 'resource' => null])
+        ->and($child->refresh()->getAttributes())->toBe($before);
+    fwrite(STDOUT, "\nHeld child stale group: ".json_encode($groups[0], JSON_THROW_ON_ERROR)."\n");
 })->with([false, true]);

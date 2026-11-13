@@ -102,9 +102,14 @@ final readonly class ProofRunSettlement
         }
         $parentStatus = $child->getAttribute('proof_parent_status');
         $parentCreated = $child->getAttribute('proof_parent_created_at');
-        if (ProofChildStarts::held($child) && is_string($parentStatus) && ! OperationStatus::from($parentStatus)->terminal()
-            && is_string($parentCreated) && CarbonImmutable::parse($parentCreated)->addSeconds(ProofRunIntent::WaitSeconds)->isFuture()) {
-            return false;
+        if (ProofChildStarts::held($child)) {
+            if ((! is_string($parentStatus) || OperationStatus::from($parentStatus)->terminal()) && ! isset($child->state['swamp_run_id'])) {
+                return $child->updated_at === null || $child->updated_at->lt(now()->subMinutes(ExpireOperationAction::HoldMinutes));
+            }
+            if (is_string($parentStatus) && ! OperationStatus::from($parentStatus)->terminal()
+                && is_string($parentCreated) && CarbonImmutable::parse($parentCreated)->addSeconds(ProofRunIntent::WaitSeconds)->isFuture()) {
+                return false;
+            }
         }
         $deadline = OperationRunBudgets::deadline($child)
             ?? $child->updated_at?->toImmutable()->addSeconds(ProofBatchPlan::MaxShardSeconds);

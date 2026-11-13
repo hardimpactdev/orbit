@@ -27,11 +27,13 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofBatchPlan;
 use App\Domain\Proof\ProofChangedFile;
 use App\Domain\Proof\ProofChangedFiles;
+use App\Domain\Proof\ProofChildStarts;
 use App\Domain\Proof\ProofCommandProjection;
 use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofRunIntent;
 use App\Domain\Proof\ProofRunSettlement;
+use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Proof\ProofSelectionList;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -86,6 +88,7 @@ use App\Infrastructure\Swamp\SwampDispatch;
 use App\Infrastructure\Swamp\SwampWorkerKnownHostsInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Jobs\Proof\AdmitProofRun;
+use App\Jobs\Proof\CancelProofGroup;
 use App\Jobs\Tasks\AdmitTaskVm;
 use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Jobs\TaskVms\ReleaseIdleTaskVms;
@@ -2033,20 +2036,29 @@ describe('one working proof at a time', function (): void {
             ->and($second->current_step)->toBeNull()->and($second->state['capacity_wait_reason'] ?? null)->toBeNull();
     })->with([false, true]);
 
-    it('holds the proof place after parent cancellation until every child ends', function (): void {
+    it('recovers a lost held start and lost parent cleanup through the watchdog before admitting the next proof', function (): void {
         $caller = slotPoolCiProofWorld(6);
         $intent = app(ProofRunIntent::class);
-        $first = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller);
+        $first = $intent->start(str_repeat('a', 40), false, 'test', null);
         $intent->admit($first->id);
+        $child = ProofRunSettlement::children($first->id)->sole();
+        app(ProofChildStarts::class)->queue([$child]);
         app(CancelOperationAction::class)->execute($first);
-        expect($first->refresh()->status)->toBe(OperationStatus::Cancelled);
+        expect($first->refresh()->status)->toBe(OperationStatus::Cancelled)
+            ->and($child->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and(ProofChildStarts::held($child))->toBeTrue();
+        Queue::fake(); // Lose the queued start and the parent's committed cleanup dispatch.
         $second = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
         $intent->admit($second->id);
         expect($second->refresh()->input['runs'])->toBe([])
             ->and($second->current_step)->toBe("Waiting for proof Operation {$first->id} to finish.");
-        foreach (ProofRunSettlement::children($first->id) as $child) {
-            $child->update(['status' => OperationStatus::Cancelled, 'lock_key' => null]);
-        }
+
+        app(ProofRunWatch::class)->sweep();
+        expect($child->refresh()->status)->toBe(OperationStatus::Cancelled);
+        Queue::assertPushed(CancelProofGroup::class, 1);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $child->id && $job->trigger === 'proof-run');
+        app(ProofRunWatch::class)->sweep();
+        Queue::assertPushed(CancelProofGroup::class, 1);
         $intent->admit($second->id);
         expect($second->refresh()->input['runs'])->not->toBeEmpty();
     });
@@ -2147,24 +2159,31 @@ describe('stale proof children release the proof place', function (): void {
             $child->forceFill(['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out',
                 'lock_key' => 'task_group:'.$child->target_id, 'updated_at' => now()->subSeconds($age),
                 'finished_at' => $case === 'timeout' ? now()->subSeconds($age) : null])->save();
-        } elseif ($case === 'held') {
-            $age = ProofBatchPlan::MaxShardSeconds + ExpireOperationAction::HoldMinutes * 60 + 1;
-            $child->forceFill(['updated_at' => now()->subSeconds($age), 'state' => ['proof_child_start' => ['released_at' => null]]])->save();
-            $first->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
+        } elseif (in_array($case, ['held', 'held-ended', 'held-missing'], true)) {
+            $age = ($case === 'held' ? ProofBatchPlan::MaxShardSeconds : 0) + ExpireOperationAction::HoldMinutes * 60 + 1;
+            $child->forceFill(['status' => OperationStatus::Queued, 'attempts' => 0, 'updated_at' => now()->subSeconds($age),
+                'state' => ['proof_child_start' => ['released_at' => null]]])->save();
+            if ($case === 'held') {
+                $first->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
+            } elseif ($case === 'held-ended') {
+                $first->update(['status' => OperationStatus::Cancelled]);
+            } else {
+                $first->delete();
+            }
         }
         $before = $child->getAttributes();
-        $parentBefore = $first->refresh()->getAttributes();
+        $parentBefore = Operation::query()->find($first->id)?->getAttributes();
         $logger = Log::spy();
         $second = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
         $intent->admit($second->id);
         $intent->admit($second->id);
         expect($second->refresh()->input['runs'])->not->toBeEmpty()
             ->and($child->refresh()->getAttributes())->toBe($before)
-            ->and($first->refresh()->getAttributes())->toBe($parentBefore);
+            ->and(Operation::query()->find($first->id)?->getAttributes())->toBe($parentBefore);
         $context = ['operation_id' => $child->id, 'proof_operation_id' => $first->id, 'age_seconds' => $age];
         $logger->shouldHaveReceived('warning')->once()->with('A stale proof child no longer holds the proof place.', $context);
         fwrite(STDOUT, "\n".json_encode(['message' => 'A stale proof child no longer holds the proof place.', 'context' => $context], JSON_THROW_ON_ERROR)."\n");
-    })->with(['execution', 'admission', 'timeout', 'timeout-without-finish', 'held']);
+    })->with(['execution', 'admission', 'timeout', 'timeout-without-finish', 'held', 'held-ended', 'held-missing']);
 
     it('keeps a legitimate child in place until its budget or young parent allowance and stale bound have passed', function (bool $held): void {
         $caller = slotPoolCiProofWorld(6);

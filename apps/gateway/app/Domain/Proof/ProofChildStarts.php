@@ -57,7 +57,7 @@ final readonly class ProofChildStarts
                     }
                 }
                 if ($this->ended($proof)) {
-                    $this->cancelHeld($proof);
+                    $this->cancelHeld($proof->id);
 
                     return;
                 }
@@ -95,7 +95,7 @@ final readonly class ProofChildStarts
         return DB::transaction(function () use ($operation): bool|CarbonImmutable {
             $proof = Operation::query()->lockForUpdate()->findOrFail(ValidatedData::integer($operation->input['proof_operation_id']));
             if ($this->ended($proof)) {
-                $this->cancelHeld($proof);
+                $this->cancelHeld($proof->id);
 
                 return false;
             }
@@ -129,6 +129,15 @@ final readonly class ProofChildStarts
             ->whereNotIn('status', OperationStatus::terminalValues())->whereNotNull('state->proof_child_start')->whereNull('state->proof_child_start->released_at');
     }
 
+    /** @return Builder<Operation> Unreleased children of terminal or missing parents; folded into the watchdog's existing read. */
+    public static function endedHeldChildren(): Builder
+    {
+        return Operation::query()->where('kind', ProofGroup::OwnerKind)->whereNotIn('status', OperationStatus::terminalValues())
+            ->whereNotNull('input->proof_operation_id')->whereNotNull('state->proof_child_start')
+            ->whereNull('state->proof_child_start->released_at')->whereNull('state->swamp_run_id')
+            ->whereNotIn('input->proof_operation_id', Operation::query()->select('id')->whereNotIn('status', OperationStatus::terminalValues()));
+    }
+
     /** @param Collection<int, Operation> $children */
     public static function needsResume(Collection $children): bool
     {
@@ -147,9 +156,9 @@ final readonly class ProofChildStarts
     public function resume(int $proofId): void
     {
         DB::transaction(function () use ($proofId): void {
-            $proof = Operation::query()->lockForUpdate()->findOrFail($proofId);
-            if ($this->ended($proof)) {
-                $this->cancelHeld($proof);
+            $proof = Operation::query()->lockForUpdate()->find($proofId);
+            if (! $proof instanceof Operation || $this->ended($proof)) {
+                $this->cancelHeld($proofId);
 
                 return;
             }
@@ -208,10 +217,10 @@ final readonly class ProofChildStarts
     }
 
     /** Use the same cancellation and keyed group cleanup as an unstarted cancelled child. */
-    private function cancelHeld(Operation $proof): void
+    private function cancelHeld(int $proofId): void
     {
-        foreach (ProofRunSettlement::children($proof->id) as $child) {
-            if (! $child->status->terminal() && self::held($child)) {
+        foreach (ProofRunSettlement::children($proofId) as $child) {
+            if (! $child->status->terminal() && self::held($child) && ! isset($child->state['swamp_run_id'])) {
                 app(CancelOperationAction::class)->execute($child);
                 DB::afterCommit(static fn () => CancelProofGroup::dispatch($child->id));
             }

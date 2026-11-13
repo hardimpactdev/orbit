@@ -9,6 +9,7 @@ covers:
   - apps/gateway/app/Domain/Proof/ProofShardVerdicts.php
   - apps/gateway/app/Domain/Proof/ProofCommandProjection.php
   - apps/gateway/app/Domain/Proof/ProofRunSettlement.php
+  - apps/gateway/app/Domain/Proof/ProofRunWatch.php
   - bin/ci-proof-run
 ---
 
@@ -62,10 +63,11 @@ What frees the place:
 
 - All children ended and the parent closed.
 - The parent was cancelled and its children ended.
+- The proof ended while a child still waited its turn: the watchdog pass cancels that child.
 - A child timed out with a lock held, and the stale-hold release freed it after 60 minutes.
 - A child row that nothing ends passed its own deadline plus 60 minutes. Without a deadline, the bound is its last activity plus the longest shard budget of 120 minutes, plus 60 minutes. A timed-out lock holder uses its finish time, or last activity if absent, plus 60 minutes. Orbit leaves the child unchanged, logs `A stale proof child no longer holds the proof place.` when admitting another proof, and reports `gateway.proof_place_stale_child` in [Gateway status](/cli/gateway/status).
 
-A child waiting its turn to start stays protected while its parent is open and within 120 minutes of creation. After that, the bound for a child without a deadline applies. The status group counts stale children and uses the oldest last activity as `since`.
+A child waiting its turn to start stays protected while its parent is open and within 120 minutes of creation. After that, the bound for a child without a deadline applies. If its parent ended or is missing, the watchdog cancels the waiting child through normal group cleanup. If that recovery fails, the child stops holding the place 60 minutes after its last activity. Released children and children with a native run keep their own budgets and reconciliation. The status group counts stale children and uses the oldest last activity as `since`.
 
 A proof that waits more than 120 minutes fails `proof.capacity_timeout`. This applies to operator and CI parents, including an older parent blocking the queue. Ended or cancelled parents and proofs with nothing to prove leave the queue. Two predecessors of up to two hours each exceed the allowance: a third proof behind them fails by the wait and must be run again.
 

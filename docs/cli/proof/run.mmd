@@ -32,11 +32,11 @@ sequenceDiagram
   %%> - The Swamp Node shares one CPU core, so only one proof works at a time. Under the admission transaction, check the place before creating groups or children; record runs and the execution start time together.
   %%> When:
   %%> - An open parent with runs or an unresolved child holds the place. Stale children and their parent's run list cannot hold it alone. Parent cancellation alone cannot free it.
-  %%> - A held start stays protected while its parent is open within its 7200-second allowance from creation.
+  %%> - A held start stays protected while its parent is open within its 7200-second allowance from creation. The watchdog cancels unreleased children without a native run when their parent ended or is missing, using normal group cleanup.
   %%> - Other parents retry every 20 seconds. While a proof holds the place, show "Waiting for proof Operation <id> to finish." as the step and capacity reason. Clear the step at admission. A waiting parent holds no place.
   %%> On failure:
   %%> - A child that nothing ends stops holding the place after its own deadline plus the existing 60-minute stale-hold bound. Without a deadline, use its last activity plus the longest shard budget and that bound. A timed-out lock holder uses its finish time, or last activity when absent, plus the bound.
-  %%> - Admission past a stale child warns after commit and gateway:status reports gateway.proof_place_stale_child. Admission never changes the stale child.
+  %%> - If that cancellation is lost, a held child of an ended or missing parent stops holding the place 60 minutes after its last activity. Admission past a stale child warns after commit and gateway:status reports gateway.proof_place_stale_child. Admission never changes the stale child.
   %%> - Waiting more than 7200 seconds from creation fails proof.capacity_timeout, for both operator and CI proofs. A full VM pool or stale base uses the same allowance and its existing VM wait step.
   GW->>GW: Balance whole batches<br/>by measured time
   %%> Longest measured batch first; assign each to the least loaded VM. Selected cases of a batch stay together. Record expected cases and all shard operations atomically. Each shard records its run budget: 600 s for the shard, 180 s for each batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
