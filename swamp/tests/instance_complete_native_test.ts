@@ -11,6 +11,9 @@ import { Swamp } from "../extensions/behaviors/node-worker/config.ts";
 const binary = Deno.env.get("ORBIT_SWAMP_PROOF_BINARY");
 type RecordValue = Record<string, unknown>;
 type Mode = "success" | "dead-unit" | "route-failure" | "cancel";
+/** The long completion steps a cancel must stop: the services, the database fill and the fleet start. */
+const LONG = ["clone-services", "server-database-fill", "clone-fleet"] as const;
+type Long = typeof LONG[number];
 const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 const exists = (path: string) => {
     try {
@@ -22,7 +25,7 @@ const exists = (path: string) => {
 };
 const receipt = '{"error_code":"instance.container_process_inactive","process_failure":{"process_id":41,"unit":"orbit-process-41-worker.service","state":"failed"}}';
 
-async function fixture(mode: Mode) {
+async function fixture(mode: Mode, slow: Long = "clone-services") {
     const folder = Deno.makeTempDirSync({ prefix: "orbit-ansible-" });
     const call = async (...args: string[]) => {
         const done = await new Deno.Command(binary!, { args: [...args, "--json"], cwd: folder, env: { SWAMP_NO_INBOX_NOTICE: "1" } }).output();
@@ -66,7 +69,7 @@ async function fixture(mode: Mode) {
                 continue;
             }
             let run = `printf '%s\\n' '${name}' >> '${folder}/calls'; touch '${folder}/${name}'`;
-            if (name === "clone-services" && mode === "cancel") run += "; sleep 30";
+            if (name === slow && mode === "cancel") run += "; sleep 30";
             // The real step accepts every exit code (`okExitCodes: any`), so a refusal ends `succeeded` with its output; a shell stub
             // has no such option, so it prints the receipt and ends 0, as that step records it.
             if (name === "clone-check") run += mode === "dead-unit" ? `; printf '%s\\n' '${receipt}'` : `; printf '%s\\n' '{"phase":"check","changes":[]}'`;
@@ -80,18 +83,24 @@ async function fixture(mode: Mode) {
     const input = JSON.stringify({
         operation_id: 1, node_id: 3, kind: "instance.complete",
         execution_secrets: { process_environments: { vault: "orbit-control-inputs", key: "instance-complete-processes-1" } },
-        intent: { instance_id: 8, container: { clone: { source: "instance-7" }, project: "orbit-instances" }, database: null, server_database: null,
+        intent: { instance_id: 8, container: { clone: { source: "instance-7" }, project: "orbit-instances" }, database: null,
+            server_database: slow === "server-database-fill" ? { node_id: 5, fill: ["true"],
+                intent: { ssh_execution: { target: { host: "127.0.0.1", user: "orbit", port: 22, host_keys: [] }, identity_file: "/none" }, owner_client: ["true"] } } : null,
+            ...(slow === "clone-fleet" ? { fleet: { seed: "e".repeat(40) } } : {}),
             server_valkey: null, route: { leaf_indexes: [0] }, route_mutations: { artifacts: {}, restore: {} },
             ssh_execution: { target: { host: "127.0.0.1", user: "orbit", port: 22, host_keys: [] }, identity_file: "/none" } },
     });
     const history = async () => JSON.parse((await call("workflow", "history", "get", created.name)).stdout);
     const steps = async (): Promise<Record<string, RecordValue>> =>
         Object.fromEntries((await history()).jobs.flatMap((job: { steps: RecordValue[] }) => job.steps).map((step: RecordValue) => [step.name, step]));
-    return { folder, created, input, steps, cleanup: () => Deno.removeSync(folder, { recursive: true }) };
+    return { folder, created, input, steps, slow, cleanup: () => Deno.removeSync(folder, { recursive: true }) };
 }
 
-/** Starts the run in its own process group; a cancel sends SIGTERM once the services stub runs, as the migrate fixture does. */
-async function execute(f: Awaited<ReturnType<typeof fixture>>, cancel: boolean) {
+/**
+ * Starts the run in its own process group; a cancel sends SIGTERM once the slow stub runs, as the migrate fixture does, and the result
+ * gives the seconds from that signal to the run's end.
+ */
+async function execute(f: Awaited<ReturnType<typeof fixture>>, cancel: boolean): Promise<Deno.CommandOutput & { stopSeconds: number }> {
     const child = new Deno.Command("setsid", { args: [binary!, "workflow", "run", f.created.name, "--stdin", "--json"], cwd: f.folder,
         env: { SWAMP_NO_INBOX_NOTICE: "1" }, stdin: "piped", stdout: "piped", stderr: "piped" }).spawn();
     const writer = child.stdin.getWriter();
@@ -105,11 +114,13 @@ async function execute(f: Awaited<ReturnType<typeof fixture>>, cancel: boolean) 
     try {
         if (cancel) {
             const until = Date.now() + 30000;
-            while (!exists(`${f.folder}/clone-services`) && !finished && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 20));
-            assert(exists(`${f.folder}/clone-services`), "The cancel must come while the services step runs.");
+            while (!exists(`${f.folder}/${f.slow}`) && !finished && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 20));
+            assert(exists(`${f.folder}/${f.slow}`), `The cancel must come while ${f.slow} runs.`);
+            const signalled = Date.now();
             child.kill("SIGTERM");
+            return { ...(await completion), stopSeconds: (Date.now() - signalled) / 1000 };
         }
-        return await completion;
+        return { ...(await completion), stopSeconds: 0 };
     } finally {
         if (!finished) {
             try {
@@ -170,17 +181,21 @@ Deno.test({ name: "pinned complete: a failed Route names the Route and is withdr
     }
 } });
 
-Deno.test({ name: "pinned complete: a cancel during the services withdraws the Route and removes the private folder", ignore: !binary, async fn() {
-    const f = await fixture("cancel");
-    try {
-        const done = await execute(f, true);
-        assert(!done.success, text(done.stdout) + text(done.stderr));
-        const steps = await f.steps();
-        assertEquals(stub(steps, "clone-check"), "skipped");
-        assertEquals([stub(steps, "withdraw-route"), stub(steps, "clone-private-cleanup")], ["succeeded", "succeeded"], JSON.stringify(Object.keys(steps)));
-        assertEquals([result(steps).ready, result(steps).failed_step], [false, "workspace"]);
-        assert(exists(`${f.folder}/withdraw-route`));
-    } finally {
-        f.cleanup();
-    }
-} });
+for (const [slow, step] of [["clone-services", "workspace"], ["server-database-fill", "database"], ["clone-fleet", "fleet"]] as const) {
+    Deno.test({ name: `pinned complete: a cancel during ${slow} stops it within 10 s, withdraws the Route and removes the private folder`, ignore: !binary, async fn() {
+        const f = await fixture("cancel", slow);
+        try {
+            const done = await execute(f, true);
+            assert(!done.success, text(done.stdout) + text(done.stderr));
+            // The step sleeps 30 s; the cancel ends it and the whole result job well inside the bound the removal waits on.
+            assert(done.stopSeconds < 10, `${slow} took ${done.stopSeconds} s to stop`);
+            const steps = await f.steps();
+            assertEquals(stub(steps, "clone-check"), "skipped");
+            assertEquals([stub(steps, "withdraw-route"), stub(steps, "clone-private-cleanup")], ["succeeded", "succeeded"], JSON.stringify(Object.keys(steps)));
+            assertEquals([result(steps).ready, result(steps).failed_step], [false, step]);
+            assert(exists(`${f.folder}/withdraw-route`));
+        } finally {
+            f.cleanup();
+        }
+    } });
+}

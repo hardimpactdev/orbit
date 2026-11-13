@@ -352,3 +352,27 @@ it('counts a clone as registered from its Conn row, also while Conn is off', fun
     ConnEnvironment::query()->where('instance_id', $instance->id)->delete();
     expect(app(InstanceLifecycleContributions::class)->registered($instance))->toBeFalse();
 });
+
+describe('Conn\'s Retry', function (): void {
+    it('admits the same completion over the Conn endpoint, replays its key, and refuses what the core admission refuses', function (): void {
+        [$instance] = clonePendingCompletion();
+        $phone = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'phone', 'status' => 'active',
+            'platform' => 'linux', 'wireguard_ip' => '10.44.0.77', 'public_ssh_host' => '10.44.0.77', 'user' => 'orbit']));
+        $phone->accessibleNodes()->attach($instance->node_id);
+        $call = fn (string $key, array $body = []) => $this->withServerVariables(['REMOTE_ADDR' => $phone->wireguard_ip])
+            ->postJson('/api/v1/conn/instances/'.$instance->id.'/complete', $body, ['Idempotency-Key' => $key]);
+
+        $first = $call('retry-1')->assertAccepted()->assertJsonPath('data.kind', 'instance.complete')->assertJsonPath('data.target_id', $instance->id);
+        $call('retry-1')->assertAccepted()->assertJsonPath('data.id', $first->json('data.id'));
+        $call('retry-2')->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+        $call('retry-3', ['force' => true])->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
+        $this->withServerVariables(['REMOTE_ADDR' => $phone->wireguard_ip])->postJson('/api/v1/conn/instances/'.$instance->id.'/complete')
+            ->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
+        expect(Operation::query()->where('kind', 'instance.complete')->count())->toBe(1)
+            ->and(Operation::query()->findOrFail($first->json('data.id'))->triggered_by)->toBe('node:'.$phone->id);
+
+        Operation::query()->whereKey($first->json('data.id'))->update(['status' => 'failed', 'lock_key' => null, 'finished_at' => now()]);
+        completedClone($instance);
+        $call('retry-4')->assertConflict()->assertJsonPath('error.code', 'instance.complete_unavailable');
+    });
+});

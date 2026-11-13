@@ -181,8 +181,11 @@ final readonly class DirectInstanceDestroyIntent
         }
         $removal->update(['status' => InstanceRemovalStatus::Removing, 'failed_step' => null, 'error_code' => null]);
 
-        // An earlier run withdrew the Route: the retry has no Route work, so it skips the withdraw and holds no Route Node.
-        return [...$saved, 'force' => $input['force'], ...($removal->route_withdrawn_at !== null ? ['route_withdrawn' => true] : [])];
+        // An earlier run withdrew the Route: the retry has no Route work, so it skips the withdraw and holds no Route Node. A retry starts
+        // after the completion this call cancelled, if any; never after one an earlier call named.
+        unset($saved['after_operation_id']);
+
+        return [...$saved, 'force' => $input['force'], ...(isset($input['after_operation_id']) ? ['after_operation_id' => $input['after_operation_id']] : []), ...($removal->route_withdrawn_at !== null ? ['route_withdrawn' => true] : [])];
     }
 
     /** @param array<string,mixed> $input */
@@ -198,6 +201,13 @@ final readonly class DirectInstanceDestroyIntent
         // A restore holds the Instance from its start until its run has ended, timed-out runs included.
         if (Operation::query()->where('kind', 'instance.restore')->where('lock_key', OperationStore::lockKey('instance', ValidatedData::integer($input['instance_id'])))->exists()) {
             throw new ResourceOperationException('operation.target_busy', 'A restore owns this Instance.', 409);
+        }
+        // A clone's completion holds the Instance until its run has ended. Only a removal admitted to start after it, and that cancels
+        // it, may be recorded now (docs/reference/conn.md#remove-an-instance); any other removal waits for the caller to retry.
+        $completion = Operation::query()->where('kind', 'instance.complete')
+            ->where('lock_key', OperationStore::lockKey('instance', ValidatedData::integer($input['instance_id'])))->value('id');
+        if ($completion !== null && ($input['after_operation_id'] ?? null) !== $completion) {
+            throw new ResourceOperationException('operation.target_busy', 'The completion of this clone owns it.', 409, details: ['operation_id' => $completion]);
         }
     }
 

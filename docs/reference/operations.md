@@ -456,6 +456,8 @@ The hold is the `route_publication_holds` table, with one row per Node. A finish
 
 A timed-out write keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes. A timed-out `instance.restore` holds its Instance lock as well, so it keeps its Nodes until its run is proven ended or the 60-minute settlement pass frees the lock.
 
+A Route write whose input names `after_operation_id` waits with status `waiting` until that Operation has ended, then takes its Nodes like any waiting write. A Conn removal of a clone whose completion runs uses it ([Remove a clone whose completion runs](/reference/conn#remove-a-clone-whose-completion-runs)). The end of that Operation starts the promotion, also when it held no Node.
+
 At promotion, a waiting `instance.create`, `instance.complete`, `instance.clone`, `instance.restore` or `route.create` re-captures its Caddy publication from the current site catalog before its run starts; other kinds keep their existing publication behavior.
 
 ## Errors

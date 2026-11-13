@@ -49,6 +49,7 @@ Route::middleware([
         Route::get('instances/{instance_id}/work', [ConnInstancesController::class, 'work'])
             ->withoutMiddleware(RecordCommandActivity::class)->whereNumber('instance_id')->name('conn:instance:work');
         Route::post('instances/{instance_id}/destroy', [ConnInstancesController::class, 'destroy'])->whereNumber('instance_id')->name('conn:instance:destroy');
+        Route::post('instances/{instance_id}/complete', [ConnInstancesController::class, 'complete'])->whereNumber('instance_id')->name('conn:instance:complete');
         Route::get('environments', [ConnEnvironmentsController::class, 'index'])->name('conn:environment:list');
         Route::post('environments/{environment}/renew', [ConnEnvironmentsController::class, 'renew'])->name('conn:environment:renew');
         Route::post('environments/{environment}/sessions/cleanup', [ConnEnvironmentsController::class, 'cleanup'])->name('conn:environment:cleanup');
