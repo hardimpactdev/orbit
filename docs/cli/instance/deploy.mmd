@@ -96,6 +96,9 @@ sequenceDiagram
     %%> What it does:
     %%> - starts a stopped default container; see docs/cli/instance/container/deploy-default.mmd
     opt nested-fleet default
+      SW->>N: Check the inner fleet<br/>Ansible · tags fleet_check
+      %%> What it does:
+      %%> - compares the inner fleet with its rules and changes nothing; refuses `instance.container_fleet_drift` before the seed, so nothing is restored
       SW->>N: Keep the current seed<br/>Ansible · tags seed
       %%> What it does:
       %%> - retakes the seed of the default as it is, fleet included, so a failed refresh never restores a seed from before the fleet

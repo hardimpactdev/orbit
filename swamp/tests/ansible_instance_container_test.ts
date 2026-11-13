@@ -1785,7 +1785,7 @@ Deno.test({
       for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
       const commit = git(f.source, "rev-parse", "HEAD");
       // The phase files of the fleet have their own fixture (ansible_instance_fleet_test.ts); here each tag reaches its own file.
-      for (const name of ["start", "refresh"]) {
+      for (const name of ["check", "start", "refresh"]) {
         Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-${name}.yml`,
           `- name: Mark the phase\n  ansible.builtin.debug: { msg: "fleet phase ${name} ran" }\n`);
       }
@@ -1793,12 +1793,18 @@ Deno.test({
       f.intent.deployment = { variant: "container" };
       f.intent.fleet = fleetIntent();
       f.write();
-      for (const name of ["start", "refresh"]) {
+      for (const name of ["check", "start", "refresh"]) {
         const ran = f.run(`fleet_${name}`);
         assert(ran.ok, ran.output);
         assert(ran.output.includes(`fleet phase ${name} ran`), ran.output);
-        assert(!ran.output.includes(`fleet phase ${name === "start" ? "refresh" : "start"} ran`), ran.output);
+        for (const other of ["check", "start", "refresh"].filter((n) => n !== name)) assert(!ran.output.includes(`fleet phase ${other} ran`), ran.output);
       }
+      // A drift refusal keeps its code and names each difference in the result.
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-check.yml`, [
+        "- ansible.builtin.set_fact: { fleet_drift_failure: { fleet_drift: [nested-gateway config raw.idmap] } }",
+        "- ansible.builtin.assert: { that: false, fail_msg: instance.container_fleet_drift, quiet: true }", ""].join("\n"));
+      assert(!f.run("fleet_check").ok);
+      assertEquals(f.result(), { error_code: "instance.container_fleet_drift", fleet_drift: ["nested-gateway config raw.idmap"] });
       // A failed fleet phase names its tag.
       Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-refresh.yml`,
         `- name: Fail the phase\n  ansible.builtin.fail: { msg: "The base converge of the nested Node app-dev ended failed" }\n`);

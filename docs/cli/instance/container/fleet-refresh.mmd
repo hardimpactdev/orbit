@@ -33,6 +33,13 @@ sequenceDiagram
   SW->>N: Start the container<br/>Ansible · tags start
   %%> What it does:
   %%> - the one start of a container; the Club key is delivered there, outside the container's disk
+  SW->>F: Check the inner fleet<br/>Ansible · tags fleet_check
+  %%> What it does:
+  %%> - waits for the inner Incus, then compares the three nested containers with the fleet rules; it changes nothing
+  %%> - refuses `instance.container_fleet_drift` when a rule Orbit does not write differs (`raw.idmap`) or a nested container cannot be read; the Operation's result `fleet_drift` names each difference
+  %%> - an owned rule that differs passes: the refresh writes it
+  %%> Why:
+  %%> - nothing changed yet, so a refusal restores no seed
   SW->>N: Keep the current seed<br/>Ansible · tags seed
   %%> What it does:
   %%> - retakes `seed-COMMIT` of the default as it is, fleet included, before the run changes anything
@@ -47,11 +54,12 @@ sequenceDiagram
   SW->>C: Install the Processes<br/>Ansible · tags processes
   SW->>F: Start the inner fleet<br/>Ansible · tags fleet_start
   %%> What it does:
-  %%> - checks the fleet rules, starts the three nested containers, brings up `wg-nested` with `ip` and `wg`, and waits for Doctor and the three agents
+  %%> - compares the fleet with its rules as the check does, starts the nested containers that are stopped, brings up `wg-nested` with `ip` and `wg`, and waits for Doctor and the three agents
+  %%> - changes no device or configuration key: on a running healthy fleet it only reads
   SW->>F: Refresh the inner fleet<br/>Ansible · tags fleet_refresh
   %%> What it does:
   %%> - migrates the nested Gateway and restarts its services, converges the base of the three nested Nodes one by one, waits for Doctor
-  %%> - stops the fleet, applies the rules and retakes `base` of the three
+  %%> - stops the fleet, writes the owned rules that differ (and a build rule only where it is absent), checks every rule, and retakes `base` of the three
   %%> Why:
   %%> - a snapshot of a running container on a directory pool is a file copy, not a consistent state
   SW->>N: Take the seed snapshot<br/>Ansible · tags seed

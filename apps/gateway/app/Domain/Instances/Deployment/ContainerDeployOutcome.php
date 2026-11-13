@@ -43,6 +43,11 @@ final readonly class ContainerDeployOutcome
                 default => 'operation.native_failed',
             };
             $data = [...$data, 'error_code' => $code];
+            // A refused nested-fleet check names each difference, as `<container> <kind> <name>`.
+            if ($code === 'instance.container_fleet_drift' && is_array($file['fleet_drift'] ?? null)) {
+                $payload['fleet_drift'] = array_slice(array_map(static fn (mixed $line): string => mb_strcut(ValidatedData::string($line), 0, 255, 'UTF-8'),
+                    array_values($file['fleet_drift'])), 0, 32);
+            }
         }
 
         return [$data, $payload];

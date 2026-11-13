@@ -187,7 +187,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 178
+cost = 278
 slices = 7
 inputs = [
   "bin/swamp-shape-gate",
@@ -202,10 +202,14 @@ inputs = [
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing" = 22 # ESTIMATE: local 7s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and waits for readiness; a rerun only reads" = 22 # ESTIMATE: local 7s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
   "a start that fails names the nested container, and a readiness timeout names the check" = 34 # ESTIMATE: local 11s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
-  "a fleet without its rules is refused with the container and the rule, before any start" = 7 # ESTIMATE: local 2s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
+  "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written" = 16 # ESTIMATE: local 5s x 3, plus 1s
   "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules" = 40 # ESTIMATE: local 13s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
   "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units" = 25 # ESTIMATE: local 8s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
   "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused" = 28 # ESTIMATE: local 9s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
+  "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts" = 31 # ESTIMATE: local 10s x 3, plus 1s
+  "a live fleet with a foreign difference is refused by the check and by the rules before any change" = 13 # ESTIMATE: local 4s x 3, plus 1s
+  "a fleet built from the rules has the live shape, with boot.autostart true" = 19 # ESTIMATE: local 6s x 3, plus 1s
+  "on the live fleet a refresh writes only boot.autostart, then takes base" = 28 # ESTIMATE: local 9s x 3, plus 1s
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"

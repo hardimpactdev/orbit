@@ -1614,6 +1614,10 @@ non_command_output:
   reason: Builds drop-in paths from two fixed unit names; does not parse command output.
 - file: tasks/instance-fleet.yml
   task: Name the fleet rules
+  field: ansible.builtin.set_fact.fleet_unit_environment
+  reason: Quotes each proxy setting of the intent for one Environment line; does not parse command output.
+- file: tasks/instance-fleet.yml
+  task: Name the fleet rules
   field: vars.fleet_environment
   reason: Prefixes the proxy names of the intent with environment.; does not parse command output.
 - file: tasks/task-container-host-prepare.yml

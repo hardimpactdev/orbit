@@ -729,8 +729,8 @@ it('gives only a nested-fleet default on a switched-on Node the fleet of its dep
             'operator' => ['address' => '10.45.0.10', 'hub' => '10.45.0.1', 'network' => '10.45.0.0/24'],
             'checkout' => ['path' => '/home/orbit/orbit'],
             'proxy' => ['HTTP_PROXY' => 'http://10.253.0.1:3128', 'HTTPS_PROXY' => 'http://10.253.0.1:3128', 'http_proxy' => 'http://10.253.0.1:3128',
-                'https_proxy' => 'http://10.253.0.1:3128', 'NO_PROXY' => 'localhost,127.0.0.1,.orbit,10.45.0.0/24,10.232.2.0/24',
-                'no_proxy' => 'localhost,127.0.0.1,.orbit,10.45.0.0/24,10.232.2.0/24'],
+                'https_proxy' => 'http://10.253.0.1:3128', 'NO_PROXY' => 'localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24',
+                'no_proxy' => 'localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24'],
         ]);
     }
 })->with([
@@ -802,7 +802,13 @@ it('names the failed fleet step and its code, and keeps the code of the failed p
         ->and($payload['failed_step'])->toBe('Refresh the inner fleet')
         ->and($payload['started'])->toBeTrue();
     [$data, $payload] = $run('{"error_code":"instance.container_fleet_start_failed"}', ['Start the inner fleet', 'Restore the old seed']);
-    expect($data['error_code'])->toBe('instance.container_fleet_start_failed')->and($payload['failed_step'])->toBe('Start the inner fleet');
+    expect($data['error_code'])->toBe('instance.container_fleet_start_failed')->and($payload['failed_step'])->toBe('Start the inner fleet')
+        ->and($payload)->not->toHaveKey('fleet_drift');
+    // A refused check names each difference; nothing changed, so no restore ran.
+    [$data, $payload] = $run('{"error_code":"instance.container_fleet_drift","fleet_drift":["nested-gateway config raw.idmap"]}', ['Check the inner fleet']);
+    expect($data['error_code'])->toBe('instance.container_fleet_drift')
+        ->and($payload['failed_step'])->toBe('Check the inner fleet')
+        ->and($payload['fleet_drift'])->toBe(['nested-gateway config raw.idmap']);
 });
 
 it('admits one refresh per nested-fleet default to the release commit, and nothing without one', function (): void {
