@@ -1,7 +1,7 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 5, docs/reference/development-containers.md#nested-fleet): after each Gateway release, on each Node with the nested-fleet switch, the deployment of the nested-fleet Project's default Instance to the release commit. It refreshes the inner fleet and takes the seed that new Instances and tasks of that Project clone. It replaces the release trigger and the daily run of docs/cli/task/vm-image-refresh.mmd. Planned: nothing of this flow is built.
+  %% Container runtime (ADR 0250 step 5, docs/reference/development-containers.md#refresh-after-a-release): after each Gateway release, the deployment of each nested-fleet default Instance to the release commit. It is `instance.deploy` with the fleet steps that only a nested-fleet default's intent runs. It refreshes the inner fleet and takes the seed that new Instances of that Project clone. For the nested-fleet path it replaces the release trigger and the daily run of docs/cli/task/vm-image-refresh.mmd, and it calls neither.
   %% status: draft
-  %% command: none · after each Gateway release
+  %% command: none · after each Gateway release · instance:deploy on the default runs the same flow
   %% kind: instance.deploy
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
@@ -14,65 +14,59 @@ sequenceDiagram
   participant N as app-dev Node<br/>reached over ssh
   participant C as Container<br/>default Instance
   participant F as Inner fleet<br/>3 containers
-  Note over GW: Admit one per Node<br/>release commit
+  Note over GW: Admit nested-fleet refresh<br/>release commit
   %%> Started by:
-  %%> - each verified Gateway release, from its admission step after Horizon starts; the intent holds the release commit
+  %%> - the release step "Admit nested-fleet refresh", after the Gateway is verified and Horizon runs: `instances:refresh-nested-fleets --commit`
   %%> When:
-  %%> - one deployment per Node with the nested-fleet switch on which the nested-fleet Project's default Instance runs
-  %%> - a Node with a clone copy in flight waits until the copy ends: the run replaces the seed that the copy reads
-  %%> - a Node with a refresh open keeps it; the newest release commit waits behind it
+  %%> - one deployment per nested-fleet default whose runtime is in `orbit-instances-nested` on a Node with the nested-fleet switch on
+  %%> - none exists: the step prints one line and admits nothing
+  %%> - a clone of the default is being created: refused, `instance.clone_in_flight`; the next release tries again
+  %%> - a deployment of the default is open: refused by the Instance lock, `operation.target_busy`
+  %%> - the release commit is missing from the Project's repository: the admission's source read refuses it, `project.source_unavailable`
   %%> Result:
-  %%> - best effort: the release admits the run and does not wait for it; a refused admission never fails the release
+  %%> - best effort: the step allows failure and nothing waits for it; the release stays live
   GW->>SW: Start run, full intent<br/>instance-deploy-direct
-  SW->>N: Fetch into the mirror<br/>Ansible · tags fetch
   %%> What it does:
-  %%> - the same fetch as every container default deployment: the Node's mirror, then a bundle into the container; the token never enters it
+  %%> - the intent carries `fleet` (NestedFleetIntent): the fleet's names, the operator, the checkout path, the egress proxy and the commit of the old seed
+  %%> - the run budget grows by the fleet steps' bounds
+  SW->>N: Start the container<br/>Ansible · tags start
+  %%> What it does:
+  %%> - the one start of a container; the Club key is delivered there, outside the container's disk
+  SW->>N: Fetch into the mirror<br/>Ansible · tags fetch
   SW->>C: Check out in the container<br/>Ansible · tags checkout
   %%> What it does:
-  %%> - starts the stopped default first; the inner fleet stays stopped
-  %%> - checks out the release commit in `/srv/workspace`
+  %%> - checks out the release commit in `/srv/workspace`; the nested Gateway and app-dev see it through their `checkout` device
   SW->>C: Run dev deploy steps<br/>incus exec · vault copy
+  SW->>C: Install the Processes<br/>Ansible · tags processes
+  SW->>F: Start the inner fleet<br/>Ansible · tags fleet_start
   %%> What it does:
-  %%> - the Project's development deploy steps, as `orbit`: changed dependencies only
-  %%> - the image variant's tools change only with a new image, never here
-  SW->>F: Start the inner fleet<br/>incus start · wg-nested
+  %%> - checks the fleet rules, starts the three nested containers, brings up `wg-nested` with `ip` and `wg`, and waits for Doctor and the three agents
+  SW->>F: Refresh the inner fleet<br/>Ansible · tags fleet_refresh
   %%> What it does:
-  %%> - first places the nested-fleet Swamp Club key from the vault, as a clone does
-  %%> - starts the three nested containers and the operator tunnel
-  %%> Why:
-  %%> - the next steps run through the nested Gateway's own Swamp, which needs the key
-  SW->>F: Apply the checkout<br/>nested Gateway · migrate
-  %%> What it does:
-  %%> - the nested Gateway sees the new checkout through its disk device; Orbit migrates and restarts its services
-  SW->>F: Converge the nested Nodes<br/>node:converge · app-dev, prod
-  %%> What it does:
-  %%> - the nested Gateway converges app-dev, then app-prod, with the release's agent delivery
-  %%> - each must succeed before the next starts
-  SW->>F: Wait for Doctor<br/>POST /api/v1/doctor
-  %%> What it does:
-  %%> - the same check a proof uses: the nested Gateway is healthy and its three agents are online
-  %%> On failure:
-  %%> - no new `base`, no new seed
-  SW->>F: Stop and retake base<br/>incus snapshot · 3 containers
+  %%> - migrates the nested Gateway and restarts its services, converges the base of the three nested Nodes one by one, waits for Doctor
+  %%> - stops the fleet, applies the rules and retakes `base` of the three
   %%> Why:
   %%> - a snapshot of a running container on a directory pool is a file copy, not a consistent state
-  %%> - a restore reverts device and config keys, so `base` is taken after every fleet rule is in place
-  SW->>N: Take the seed snapshot<br/>incus stop · seed-COMMIT
+  SW->>N: Take the seed snapshot<br/>Ansible · tags seed
   %%> What it does:
-  %%> - removes the Club key file, stops the default and snapshots it; ZFS, under 1 s
-  %%> - deletes older seeds that no clone uses
-  %%> Why:
-  %%> - the key is never in `base`, in a seed or in an export
-  %%> - the default stays stopped: a stopped container uses no memory, and the next run starts it
+  %%> - refuses `instance.fleet_key_on_disk` when the Club key path is a file on the container's disk; the key is never read
+  %%> - stops the Processes, snapshots `seed-COMMIT` again even at the same commit, starts them, deletes the older seeds
+  SW->>C: Check the container<br/>Ansible · tags check
   alt every step passes
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record the seed commit
     %%> Result:
-    %%> - new Instances and tasks of the Project clone the new seed; existing clones keep the fleet they have
+    %%> - new Instances of the Project clone the new seed; existing clones keep the fleet they have
   else a step fails
+    SW->>N: Restore the old seed<br/>Ansible · tags fleet_restore
+    %%> What it does:
+    %%> - stops the container and restores `seed-OLD`, the seed the Gateway recorded at admission
+    %%> - refuses `instance.fleet_seed_missing` when that seed is gone
+    SW->>N: Start on the old seed<br/>Ansible · tags start
+    %%> What it does:
+    %%> - starts it through `start`, so the start delivers what every start delivers
     SW--xGW: Run failed<br/>failed step
     %%> Result:
-    %%> - the Operation names the failed step; the old seed stays the seed, and clones keep copying it
-    %%> - the default stays as the run left it; the next release runs again on it
-    %%> - open: whether a failure also restores the default to the old seed
+    %%> - the Operation names the first failed step and its code, such as `instance.container_fleet_refresh_failed`
+    %%> - the old seed stays the seed; clones keep copying it, and the next release runs again
   end

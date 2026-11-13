@@ -987,6 +987,46 @@
         ansible_connection: local
         ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
+# The inner fleet of a nested-fleet default (docs/reference/development-containers.md#refresh-after-a-release). Only such an intent has
+# `fleet`, and only its deployment runs these tags: `fleet_start` starts the fleet and waits for its Doctor, `fleet_refresh` applies
+# the checkout, converges the nested Nodes and retakes their `base` with the fleet stopped (tasks/instance-fleet-*.yml).
+- name: Run the phase of the nested fleet
+  tags: [fleet_start, fleet_refresh]
+  when: phase in ['fleet_start', 'fleet_refresh']
+  ansible.builtin.include_tasks:
+    file: "tasks/instance-fleet-{{ phase | replace('fleet_', '') }}.yml"
+    apply: {tags: [always]}
+
+# A failed deployment of a nested-fleet default puts the container back on the seed it had, so the fleet that clones copy stays
+# whole. The container stays stopped: the workflow's next step is `start`, the one start of a container.
+- name: Restore the old seed
+  tags: [fleet_restore]
+  when: phase == 'fleet_restore'
+  block:
+    - name: Read the seed snapshots
+      ansible.builtin.command:
+        argv: [incus, query, "--", "/1.0/instances/{{ container.name }}/snapshots?project={{ container.project }}&recursion=1"]
+      register: restore_snapshots
+      changed_when: false
+    - name: Require the old seed
+      ansible.builtin.assert:
+        that:
+          - intent.fleet.seed is string
+          - ('seed-' ~ intent.fleet.seed) in (restore_snapshots.stdout | from_json | map(attribute='name') | list)
+        fail_msg: instance.fleet_seed_missing
+        quiet: true
+    - name: Read the container's state
+      ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
+      register: restore_read
+      changed_when: false
+    - name: Stop the container
+      when: (restore_read.stdout | from_json).status == 'Running'
+      ansible.builtin.command: { argv: "{{ incus_project + ['stop', '--timeout', '30', container.name] }}" }
+      changed_when: true
+    - name: Restore the container to the old seed
+      ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'restore', container.name, 'seed-' ~ intent.fleet.seed] }}" }
+      changed_when: true
+
 # An explicit default deploy prepares its seed, not every running container.
 # The app-user conversion is atomic and never restarts a Process itself.
 - name: Prepare Node for the default seed without starting or stopping Processes
@@ -1017,9 +1057,36 @@
         container_commit: "{{ seed_head.stdout | trim }}"
         seed_name: "seed-{{ seed_head.stdout | trim }}"
         seed_names: "{{ seed_snapshots.stdout | from_json | map(attribute='name') | select('match', '^seed-') | list }}"
+    # The Swamp Club key of a nested fleet is delivered at each start to a place outside the container's disk, so no seed holds it.
+    # A key file on the disk refuses the seed. Only the path is tested; the key is never read.
+    - name: Name the nested fleet's paths
+      when: intent.fleet is defined
+      ansible.builtin.include_tasks:
+        file: tasks/instance-fleet.yml
+        apply: {tags: [seed]}
+    - name: Look for the Club key file of the nested fleet
+      when: intent.fleet is defined
+      ansible.builtin.command: { argv: "{{ as_root + ['test', '-e', fleet_club_key] }}" }
+      register: seed_key_file
+      changed_when: false
+      failed_when: false
+    - name: Read whether the Club key is a mount
+      when: intent.fleet is defined and seed_key_file.rc == 0
+      ansible.builtin.command: { argv: "{{ as_root + ['mountpoint', '-q', fleet_club_key] }}" }
+      register: seed_key_mount
+      changed_when: false
+      failed_when: false
+    - name: Refuse a seed that would hold the Club key
+      when: intent.fleet is defined and seed_key_file.rc == 0
+      ansible.builtin.assert:
+        that: seed_key_mount.rc == 0
+        fail_msg: instance.fleet_key_on_disk
+        quiet: true
+    # A nested-fleet default retakes its seed at every deployment: the refresh retook the fleet's `base` even at the same commit.
     - name: Snapshot the container with the Processes stopped
       when: >-
         seed_name not in seed_names
+        or intent.fleet is defined
         or (node_runtime_result | default({})).get('seed_refresh_required', false)
       block:
         - name: Stop the Processes

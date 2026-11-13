@@ -177,6 +177,25 @@ jobs:
         hosts: name:target
         timeoutSec: 300
         argv: [/usr/bin/timeout, '270', /bin/sh, -c, 'cd "/home/orbit/releases/$1/apps/gateway" && php8.5 artisan task-vms:refresh-images --commit="$2" --no-interaction', sh, '${{ inputs.intent.id }}', '${{ inputs.intent.sha }}']
+    # Best effort: each nested-fleet default deploys to this release, which refreshes its inner fleet and its seed
+    # (docs/cli/instance/container/fleet-refresh.mmd). The release never waits for it; with no nested-fleet default it admits nothing.
+  - name: Admit nested-fleet refresh
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: Verify the Gateway, condition: {type: succeeded}}
+    - {step: Start Horizon, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-nested-fleet-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 150
+        argv: [/usr/bin/timeout, '120', /bin/sh, -c, 'cd "/home/orbit/releases/$1/apps/gateway" && php8.5 artisan instances:refresh-nested-fleets --commit="$2" --no-interaction', sh, '${{ inputs.intent.id }}', '${{ inputs.intent.sha }}']
     # Best effort: the scheduler restart paused the release cleanups; they resume once a reconciliation finds no
     # differences. One that stays paused fails this step and keeps its own status; the release stays live.
   - name: Resume document cleanup

@@ -206,7 +206,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 2432
+cost = 2558
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -216,8 +216,8 @@ after_merge_cases = [
 ]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Every retained case cost comes from hosted run 43424152963, one case per slice, except the seven Club key estimates below.
-# 57 slices give each of the 57 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 57
+# 59 slices give each of the 59 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 59
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -235,6 +235,7 @@ inputs = [
   "swamp/ansible/tasks/address-node.yml",
   "swamp/ansible/tasks/instance-bridge-rules.yml",
   "swamp/ansible/tasks/instance-container-*.yml",
+  "swamp/ansible/tasks/instance-fleet.yml",
   "swamp/ansible/tasks/instance-network-nic-check.yml",
   "swamp/ansible/tasks/instance-host.yml",
   "swamp/ansible/tasks/instance-folder.yml",
@@ -302,6 +303,8 @@ inputs = [
   "a nested-fleet start refuses the key transfer by name, before it reads the value: pipelining turned off" = 10 # ESTIMATE: local 4s x 2.1, rounded up, plus 1s; no hosted measurement yet
   "a nested-fleet start refuses a /run that is not a tmpfs, before it reads the value" = 12 # ESTIMATE: local 5s x 2.1, rounded up, plus 1s; no hosted measurement yet
   "a normal container's create and deploy start run no Club key task and no Club key command" = 41 # ESTIMATE: local 19s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk" = 67 # completed unit 71.8s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a failed nested-fleet deployment restores the old seed with the container stopped, and refuses a seed that is gone" = 59 # completed unit 64.0s less 6s startup, rounded up, plus 1s; hosted run 43424152963
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_test.ts"
@@ -2284,6 +2287,18 @@ inputs = [
   "swamp/workflows/workflow-operation-instance-deploy-direct.yaml",
   "swamp/workflows/workflow-operation-process-container.yaml",
   "swamp/workflows/workflow-route-withdraw.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/workflow_instance_deploy_fleet_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-operation-instance-deploy-direct.yaml",
 ]
 
 [[fixture]]

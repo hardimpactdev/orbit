@@ -109,10 +109,23 @@ sequenceDiagram
     %%> What it does:
     %%> - writes changed `orbit-*` units and new environment files from the vault, removes former ones, and restarts the changed units
     %%> - the seed snapshot then restarts every running Process on the new commit
+    opt nested-fleet default
+      SW->>N: Start the inner fleet<br/>Ansible · tags fleet_start
+      SW->>N: Refresh the inner fleet<br/>Ansible · tags fleet_refresh
+      %%> What it does:
+      %%> - only an intent with `fleet` runs them: docs/cli/instance/container/fleet-refresh.mmd
+    end
     SW->>N: Take the seed snapshot<br/>Ansible · tags seed
     %%> What it does:
     %%> - stops the units, snapshots `seed-<commit>`, starts them again and deletes older seeds
+    %%> - a nested-fleet default retakes it at the same commit, and refuses a Club key file on its disk
     SW->>N: Check the container<br/>Ansible · tags check
+    opt nested-fleet default and a step failed
+      SW->>N: Restore the old seed<br/>Ansible · fleet_restore
+      SW->>N: Start on the old seed<br/>Ansible · tags start
+      %%> What it does:
+      %%> - puts the default back on the seed it had and starts it; the failed phase's result stays the run's result
+    end
     Note over SW: Read the container result<br/>result file
     %%> Returns:
     %%> - the deployed commit, or the public code of the refusal

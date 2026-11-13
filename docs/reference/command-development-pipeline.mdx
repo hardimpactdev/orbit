@@ -93,7 +93,7 @@ The checkout is already mounted when the containers boot, but the restored datab
 
 ## 6. Per-Node seed refresh
 
-**Planned.** After each verified Gateway release, Orbit deploys the nested-fleet Project's default Instance to the release commit on each Node with the nested-fleet switch. The run refreshes the inner fleet, retakes `base` and takes the seed snapshot that a task or a new Instance of the Project clones. [Refresh after a release](/reference/development-containers#refresh-after-a-release) owns the rules.
+After each verified Gateway release, Orbit deploys each nested-fleet default Instance on a Node with the nested-fleet switch to the release commit. The run refreshes the inner fleet, retakes `base` and takes the seed snapshot that a task or a new Instance of the Project clones. [Refresh after a release](/reference/development-containers#refresh-after-a-release) owns the rules.
 
 Until the last proof runs in containers, the task VM refresh still runs: a verified release and a daily schedule admit it, and per host it converges the base VM, snapshots it and proves the snapshot with one task start. [Old paths](/reference/old-paths) says when it goes.
 
@@ -101,7 +101,7 @@ Until the last proof runs in containers, the task VM refresh still runs: a verif
 
 - Charts: the stage chart above, the per-Node run [container/fleet-refresh.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd), and the old per-host run [`task_vm.image_refresh`](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-image-refresh.mmd).
 - Docs: [Nested fleet](/reference/development-containers#nested-fleet); for the old path, [Refresh the base snapshot](/reference/compute-drivers#refresh-the-base-snapshot).
-- Files: [`swamp/workflows/workflow-operation-task-vm-image-refresh.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-task-vm-image-refresh.yaml).
+- Files: [`swamp/workflows/workflow-operation-instance-deploy-direct.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-instance-deploy-direct.yaml) and its fleet tags in `swamp/ansible/instance-container.yml`; for the old path, [`swamp/workflows/workflow-operation-task-vm-image-refresh.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-task-vm-image-refresh.yaml).
 
 ## Capacity: ideal state
 

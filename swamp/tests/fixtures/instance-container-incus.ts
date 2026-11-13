@@ -186,6 +186,9 @@ if (family === "list") {
     // The snapshot's content: the root file system as it is now, never the tmpfs.
     Deno.mkdirSync(`${folder}/snapshots/${name}`, { recursive: true });
     new Deno.Command("cp", { args: ["-R", rootfs(name), `${folder}/snapshots/${name}/${snapshot}`] }).outputSync();
+  } else if (verb === "restore") {
+    if (!container.snapshots.includes(snapshot)) fail("Snapshot not found");
+    container.restored = [...(container.restored ?? []), snapshot];
   } else {
     container.snapshots = container.snapshots.filter((s: string) => s !== snapshot);
   }

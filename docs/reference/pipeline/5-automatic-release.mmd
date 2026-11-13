@@ -66,13 +66,14 @@ sequenceDiagram
     SW->>GN: Admit VM refreshes<br/>verified release's artisan
     %%> What it does:
     %%> - also permits a skipped Horizon start; admission is best effort and never waits for refresh completion (stage 6)
-    %%> Planned:
-    %%> - also admits the refresh of the nested-fleet default on each switched-on Node; the task VM refresh admission goes when the last proof runs in containers
+    SW->>GN: Admit nested-fleet refresh<br/>verified release's artisan
+    %%> What it does:
+    %%> - admits the deployment of each nested-fleet default to the release commit, best effort; with none it admits nothing (stage 6)
     SW-->>GW: Run succeeded<br/>terminal result
     Note over GW: Record the release<br/>verified
     %%> Result:
     %%> - the Gateway admits the [Fleet rollout](/reference/gateway-recovery#fleet-rollout), and a daily pass at 03:05 Amsterdam visits the Nodes it deferred
-    %%> - no fleet test follows a release; development defaults are not deployed by it, except the planned refresh of the nested-fleet default (stage 6)
+    %%> - no fleet test follows a release; development defaults are not deployed by it, except the refresh of the nested-fleet default (stage 6)
   else verification failed
     SW--xGW: Run failed<br/>switch-back result · alert
     %%> Result:

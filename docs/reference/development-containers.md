@@ -2,8 +2,8 @@
 title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
-  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection}.php
+  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,NestedFleetIntent,NestedFleetRefresh}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
@@ -20,7 +20,7 @@ covers:
 | --- | --- |
 | Records, Node preparation, egress and DNS | Built |
 | Default create and deploy, clone, forced non-default destroy, checkout migration | Built on the build-list Nodes |
-| [Nested fleet](#nested-fleet) | Placement, host preparation, start guards, readers and the [nested-fleet image](#the-nested-fleet-image) built on build-list Nodes whose switch is on; the [fleet step](#the-fleet-step) built, not called by a flow; the refresh and the clone with a ready fleet planned |
+| [Nested fleet](#nested-fleet) | Built on switched-on build-list Nodes: placement, host preparation, start guards, the [image](#the-nested-fleet-image) and the [refresh after a release](#refresh-after-a-release). Planned: the clone's fleet start, reset and rebuild |
 | Task containers, nested-fleet parity, sleep/wake and production containers | Planned |
 | Dedicated workspace volumes and explicit package workspace links | [Draft specification](#workspace-volumes-draft); not implemented or proved |
 
@@ -998,7 +998,7 @@ Migration checks executable availability before downtime and requires moved runn
 
 A Project setting turns on a nested fleet. Each Instance container of that Project then holds a fleet of Incus containers nested inside it: a Gateway with its own Swamp, an `app-dev` Node and an `app-prod` Node. Orbit uses it to prove its commands before a pull request. Other Projects leave it off and keep the kernel surface of [Inside a container](#inside-a-container).
 
-Built: placement, host preparation, the start guards, the readers below and the [nested-fleet image](#the-nested-fleet-image). The [fleet step](#the-fleet-step) is built, but no flow calls it yet. Every Instance of a Project with `nested_fleet` on is a container in the nested Incus project, on a [build-list](#the-build-list) Node with nested-fleet hosting on. One placement rule in the Gateway refuses every other result before any record, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
+Built: placement, host preparation, the start guards, the readers below and the [nested-fleet image](#the-nested-fleet-image). The [fleet step](#the-fleet-step) is built, and the deployment of the default calls it in the [refresh after a release](#refresh-after-a-release). Every Instance of a Project with `nested_fleet` on is a container in the nested Incus project, on a [build-list](#the-build-list) Node with nested-fleet hosting on. One placement rule in the Gateway refuses every other result before any record, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
 
 ### The container
 
@@ -1035,8 +1035,10 @@ After a host reboot, Incus restores the containers that were running, without th
 The outer container is only the operator of its fleet. It runs no fleet service itself. It holds:
 
 - the inner Incus, its directory pool and its bridge;
-- the operator end of the fleet's WireGuard network, brought up with `ip` and `wg` by the [start phase](#the-fleet-step) at each start of the fleet, with no unit, because `wg-quick` fails under the outer container's AppArmor profile;
+- the operator end of the fleet's WireGuard network, which the [start phase](#the-fleet-step) brings up with `ip` and `wg` at each fleet start;
 - the nested Gateway's root CA and a CLI profile `nested`, so the candidate CLI in `/srv/workspace` talks to the nested Gateway.
+
+The tunnel has no unit: `wg-quick` fails under the outer container's AppArmor profile.
 
 ### Capacity
 
@@ -1150,28 +1152,46 @@ Two users share the outer container, and only one of them reaches the fleet.
 - Swamp verifies a new key once at Swamp Club before serve runs. It goes through the egress proxy, by the proxy rule above.
 - Until the key is verified, serve exits with code 75. A verified key needs no network to run.
 - An agent with root in a clone can read the key. A task in any other Project never gets it.
+- The seed step of a nested-fleet default refuses with `instance.fleet_key_on_disk` while the old hand-placed file `/etc/orbit/swamp-club-api-key` is on the container's disk. It tests the path only; it never reads the key.
+- The fleet step and the refresh never read, write or copy the key.
 
 ### Refresh after a release
 
-After each Gateway release, Orbit deploys the default Instance of the nested-fleet Project to the release commit. It does so on each switched-on Node that holds that default. The run updates the outer checkout, starts the fleet, applies the checkout to the nested Gateway, converges the two nested Nodes with the release's agent delivery and waits for Doctor. Then it stops the fleet, retakes `base`, stops the outer container and takes the seed snapshot. The [refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd) has the steps. It is planned.
+After each Gateway release, Orbit deploys each nested-fleet default to the release commit. The deployment is `instance.deploy` with three more steps, which only an intent with `fleet` runs: it starts the inner fleet, refreshes it, and takes the seed snapshot again. The [refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd) has the steps. An `instance:deploy` of the default runs the same flow.
 
-Rules:
+A default gets `fleet` when its runtime is in `orbit-instances-nested`, its Project has `nested_fleet` on and its Node's switch is on (`InstancePlacement::keepsFleet`). Every other deployment runs the same steps and calls as before.
 
-- **Best effort.** The release admits the run and does not wait for it. A refused admission never fails the release.
-- **The old seed stays.** The new seed replaces it only after Doctor is healthy and every step passed.
-- **No refresh during a copy.** A clone copy reads the seed that a refresh replaces. So a refresh waits for every copy in flight.
-- **A failure names its step.** It leaves the old seed in place; clones keep copying it.
-- **An update, not a rebuild.** The image variant's tools change only with a new image.
+The release step "Admit nested-fleet refresh" runs `instances:refresh-nested-fleets --commit <release>` from the new release. It admits one deployment per nested-fleet default. With none, it prints one line and admits nothing.
 
-It replaces the release trigger and the daily run of the [task VM refresh](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-image-refresh.mmd); [Old paths](/reference/old-paths) says when those go. A Project has one default Instance in the whole fleet today, so the refresh runs on the Node that holds it.
+The run deploys the release commit itself. A commit missing from the Project's repository refuses the admission with `project.source_unavailable`. A commit off the Project's branch fails the fetch with `deployment.commit_not_on_branch`, and the old seed stays. The trial Project's repository is a hand-kept copy of `main`, so its release runbook pushes the release commit there before the release. The Orbit Project itself needs no such step.
+
+| Rule | What happens |
+| --- | --- |
+| Best effort | The release step allows failure, and nothing in the release waits for the run. A refusal or a failed run leaves the release live |
+| No refresh during a copy | A clone copy reads the seed that a refresh replaces. While a clone's create is open, the admission refuses with `instance.clone_in_flight` |
+| One run at a time | An open deployment of the default holds its Instance lock. A second admission refuses with `operation.target_busy` |
+| The old seed stays | A failed step restores the seed that the admission recorded, then starts the default. Clones keep copying the old seed |
+| A failure names its step | The Operation names the first failed step and its code, such as `instance.container_fleet_refresh_failed` |
+| An update, not a rebuild | The image variant's tools change only with a new image |
+| The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp. An open refresh can hold it |
+
+It replaces the release trigger and the daily run of the [task VM refresh](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-image-refresh.mmd) for the nested-fleet path, and calls neither; [Old paths](/reference/old-paths) says when those go. A Project has one default Instance in the whole fleet today, so the refresh runs on the Node that holds it.
+
+What stops during a refresh:
+
+- The outer container keeps running. Its Processes stop only for the seed snapshot: under 1 s on ZFS, plus their stop and start.
+- The inner fleet runs from its start until the refresh stops it to retake `base`. It stays stopped after the run; a clone starts its own copy.
+- After a failure, the outer container stops for the restore (at most 30 s for the stop) and starts again.
 
 | Step | Time | Source |
 | --- | --- | --- |
 | Start to a healthy Doctor | 31 to 55 s, measured | The second inner fleet experiment on a Node |
 | Apply the checkout to the nested Gateway | Not measured in a container | |
-| Converge of the two nested Nodes | Not measured in a container | |
+| Converge of the three nested Nodes | Not measured in a container | |
 | Retake `base` (stop and three snapshots) | 94 s, measured | The second experiment |
 | Seed snapshot of the outer container | Under 1 s on ZFS, measured | The ADR 0250 spike |
+
+Each step has a bound: 600 s to start the fleet, 3,600 s to refresh it, 150 s to restore and 120 s to start again. The run budget grows by their sum.
 
 ### A clone starts its fleet
 
@@ -1212,7 +1232,7 @@ Gap: which refusal comes first on a full Node for nested-fleet clones, and its e
 
 ### The fleet step
 
-Four phase task files keep the fleet of a nested-fleet Instance. They are built and tested, but no flow calls them yet. Each one runs on the Node and reaches the inner Incus with `incus exec` into the Instance container. Their input is `intent.container` and `intent.fleet`; the header of `swamp/ansible/tasks/instance-fleet.yml` defines it. The Gateway fills `intent.fleet` from the fleet constants of task VMs.
+Four phase task files keep the fleet of a nested-fleet Instance. The deployment of a nested-fleet default calls the start and the refresh through the tags `fleet_start` and `fleet_refresh` of `instance-container.yml`; no flow calls the rules or the reset alone yet. Each one runs on the Node and reaches the inner Incus with `incus exec` into the Instance container. Their input is `intent.container` and `intent.fleet`; the header of `swamp/ansible/tasks/instance-fleet.yml` defines it. The Gateway fills `intent.fleet` (`NestedFleetIntent`) from the fleet constants of task VMs, with the commit of the old seed.
 
 | Phase | Task file | What it does |
 | --- | --- | --- |
@@ -1300,6 +1320,9 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.migrate_<step>_failed` | 502 | A step of a move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before |
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
 | `instance.t3_unready` | 502 | The T3 server did not answer within 30 seconds of its first start in a clone |
+| `instance.clone_in_flight` | 409 | The refresh of a nested-fleet default while the create of a clone of it is open. The next release tries again |
+| `instance.fleet_key_on_disk` | 502 | The seed of a nested-fleet default found the Club key as a file on the container's disk. No seed is taken; the old seed is restored |
+| `instance.fleet_seed_missing` | 502 | A failed refresh found no old seed to restore. The default stays as the run left it |
 | `instance.default_seed_moved` | 409 | A deployment of the default replaced the seed that a clone's create admitted, before the copy. The step's report names it; run the same command again |
 | `instance.container_process_inactive` | 502 | A required unit is inactive when a clone records its sessions. The Operation names the unit and records its states, exit status and restart count |
 | `instance.create_register_failed` | 502 | A clone's registration step failed: T3 refused a session, or the Gateway's lacks its scopes. The step's report names the `conn.*` code |
@@ -1323,7 +1346,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.nested_club_key_unsafe_transfer` | 502 | A nested-fleet start would send the Club key with pipelining off or remote files kept. Orbit stops before it reads the value |
 | `instance.nested_club_key_not_tmpfs` | 502 | The container's `/run` is not a tmpfs, so a snapshot could hold the Club key. Orbit does not write it |
 | `instance.nested_club_key_delivery_failed` | 502 | Writing the Club key into the container failed. The error carries no output |
-| `instance.container_<phase>_failed` | 502 | A phase of a container default's create or deployment failed without a refusal, such as `instance.container_start_failed` |
+| `instance.container_<phase>_failed` | 502 | A phase of a container default's create or deployment failed without a refusal, such as `instance.container_start_failed` or, for a nested-fleet default, `instance.container_fleet_refresh_failed` |
 
 ## Why it works this way
 

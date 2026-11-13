@@ -42,3 +42,19 @@ Deno.test("Swamp load requires the bounded DB busy guard, including forced relea
   assertEquals(release.find((step) => step.name === "Load Swamp on Node 209")?.dependsOn,
     [{ step: "Wait for active Operations", condition: { type: "succeeded" } }]);
 });
+
+Deno.test("the nested-fleet refresh is admitted beside the VM refreshes, best effort, once per release", () => {
+  const refresh = activate.find((step) => step.name === "Admit nested-fleet refresh")!;
+  assert(refresh, "the activate child admits the nested-fleet refresh");
+  assert(!release.some((step) => step.name === "Admit nested-fleet refresh"));
+  assertEquals(activate.filter((step) => step.name === "Admit nested-fleet refresh").length, 1);
+  assertEquals(refresh.allowFailure, true);
+  assertEquals(refresh.guard, undefined);
+  assertEquals(refresh.dependsOn, activate.find((step) => step.name === "Admit VM refreshes")!.dependsOn);
+  const argv = refresh.task.inputs?.argv!;
+  assertEquals(argv.slice(0, 2), ["/usr/bin/timeout", "120"]);
+  assert(argv.join(" ").includes('php8.5 artisan instances:refresh-nested-fleets --commit="$2"'));
+  // Nothing else in the release waits for it.
+  assert(!activate.some((step) => step.dependsOn?.some((d) => d.step === "Admit nested-fleet refresh")));
+  assert(!activate.find((step) => step.name === "Admit VM refreshes")!.task.inputs?.argv?.join(" ").includes("nested"));
+});

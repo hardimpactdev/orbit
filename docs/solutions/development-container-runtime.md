@@ -471,7 +471,7 @@ The nested fleet comes in five parts. Each part has its own spec commit, code, t
 | --- | --- | --- |
 | F1 | The Project flag and the Node switch; the placement rule; the hosting (`orbit-instances-nested`, the outer keys, the start guard); the image variant (inner Incus, WireGuard tools, pinned Ansible tools, `agent` with root) | Flags merged; placement, hosting and image in progress |
 | F2 | A workspace device that works where a shifted mount fails, two levels below the host | Planned |
-| F3 | The fleet in the default Instance with its fleet rules, the Club key, the refresh after a release, a clone that starts its fleet, and reset | Planned |
+| F3 | The fleet in the default Instance with its fleet rules, the Club key, the refresh after a release, a clone that starts its fleet, and reset | The fleet step and the refresh after a release built; the Club key delivery, the clone's fleet start and reset planned |
 | F4 | The proof runner from an Instance: it reads its outer user, home and CLI home from the environment; a command for reset and one case | Planned |
 | F5 | The proof flows on a container | [PR 11](#pr-11-command-proofs-in-an-instance-container) |
 

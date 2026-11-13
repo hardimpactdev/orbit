@@ -71,6 +71,16 @@ final readonly class InstancePlacement
         return self::NestedProject;
     }
 
+    /**
+     * Whether a container runtime holds a nested fleet that Orbit keeps: a runtime in the nested project, of a nested-fleet Project, on a
+     * Node whose switch is on. Only then does its intent carry `fleet` (NestedFleetIntent).
+     */
+    public static function keepsFleet(Project $project, Node $node, string $incusProject): bool
+    {
+        return $incusProject === self::NestedProject && $project->nested_fleet
+            && app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->nested_fleet === true;
+    }
+
     /** @return list<string> Every Incus project that holds Instance containers. */
     public static function projects(): array
     {
