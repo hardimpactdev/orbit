@@ -6,7 +6,7 @@ sequenceDiagram
   participant CLI as CI job / CLI
   participant GW as Gateway
   participant GH as GitHub
-  participant Q as CI queue<br/>FIFO
+  participant Q as Proof queue<br/>FIFO
   participant SW as Swamp
   participant VM as Proof VMs
   CLI->>GW: Record the proof
@@ -25,9 +25,16 @@ sequenceDiagram
   GW->>GW: Plan selected cases<br/>in batches
   %%> Expand selected variant ids only. Sum measured case seconds from prior reports; unseen cases use the measured median, or one second with no history.
   GW->>Q: Join by proof Operation id
-  %%> Earlier open CI proofs without admitted runs block later proofs, including while selection is being read. Cancellation, failure and no selection remove a proof from admission.
+  %%> When:
+  %%> - Earlier open parents without runs block both operator and CI proofs, including during selection. Ended or cancelled parents and proofs with nothing to prove leave the queue. An older parent's own 7200-second admission allowance bounds its wait.
   Q->>GW: Admit the front proof
-  %%> Under the admission lock, take every currently free usable CI place, at least one and at most the batch count. A full pool or stale base waits, up to two hours, then fails clearly. Never refuse capacity or skip green. A plan in which a shard of more than one batch needs more than the longest run budget of a shard, two hours, waits for another place while a usable place is taken; with every usable place free it runs.
+  %%> Why:
+  %%> - The Swamp Node shares one CPU core, so only one proof works at a time. Under the admission transaction, check the place before creating groups or children; record runs and the execution start time together.
+  %%> When:
+  %%> - An open parent with runs holds the place, as does any non-terminal child or timed-out child still holding its lock. Parent cancellation alone cannot free it. The existing 60-minute stale-hold release bounds an unproven native end.
+  %%> - Other parents retry every 20 seconds. While a proof holds the place, show "Waiting for proof Operation <id> to finish." as the step and capacity reason. Clear the step at admission. A waiting parent holds no place.
+  %%> On failure:
+  %%> - Waiting more than 7200 seconds from creation fails proof.capacity_timeout, for both operator and CI proofs. A full VM pool or stale base uses the same allowance and its existing VM wait step.
   GW->>GW: Balance whole batches<br/>by measured time
   %%> Longest measured batch first; assign each to the least loaded VM. Selected cases of a batch stay together. Record expected cases and all shard operations atomically. Each shard records its run budget: 600 s for the shard, 180 s for each batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
   GW->>GW: Hold admitted child starts
