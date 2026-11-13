@@ -43,11 +43,16 @@ final class RuntimeActivationsController extends Controller
         $retry = in_array('orbit-wake-retry=1', explode('&', (string) parse_url($uri, PHP_URL_QUERY)), true);
 
         // A container Instance's site calls here only behind its asleep marker: start or join its one wake
-        // (docs/reference/development-containers.md#sleep-and-wake).
+        // (docs/reference/development-containers.md#sleep-and-wake). A wake that ended within this call (a frozen container's
+        // resume) sends the visitor's request again: the marker is gone, so Caddy now serves the app.
         if ($instance->runtime()->exists()) {
-            $failure = $wake->activate($instance, $retry, 'node:'.(RequireActiveWireGuardPeer::activePeer($request)->id ?? $instance->node_id));
+            $answer = $wake->activate($instance, $retry, 'node:'.(RequireActiveWireGuardPeer::activePeer($request)->id ?? $instance->node_id));
 
-            return $failure === null ? $pages->progress($instance, $uri) : $pages->failed($failure, $instance, $uri);
+            return match (true) {
+                $answer === true => $pages->again($uri),
+                $answer === null => $pages->progress($instance, $uri),
+                default => $pages->failed($answer, $instance, $uri),
+            };
         }
 
         if (! $policy->appliesToInstance($instance)) {

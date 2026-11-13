@@ -317,6 +317,65 @@
       when: (dev_ports_ruleset.changed or dev_ports_live.rc != 0) and not dev_ports_started.changed
       changed_when: true
 
+# The fast wake of a frozen container (docs/reference/development-containers.md#the-node-resumes-a-frozen-container): the Gateway's
+# wake request in /dev/shm/orbit/hibernation (root:caddy 0755, so only root writes there) starts the fixed script below. It runs as
+# root with no capabilities: the Incus socket and the container's cgroup file belong to root, and `incus-admin` is root's equal.
+# The files only add a unit: a converge that changes them restarts nothing that runs.
+- name: Install the wake of frozen Instance containers
+  block:
+    - name: Make the folder of the wake script
+      ansible.builtin.file: { path: /usr/local/libexec, state: directory, owner: root, group: root, mode: "0755" }
+    - name: Write the wake script
+      ansible.builtin.copy: { src: files/instance-container-wake.sh, dest: /usr/local/libexec/orbit-instance-wake, owner: root, group: root, mode: "0755" }
+    - name: Write the wake service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/orbit-instance-wake.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Orbit Instance containers: resume a frozen container on a wake request
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/libexec/orbit-instance-wake
+          TimeoutStartSec=30
+          CapabilityBoundingSet=
+          AmbientCapabilities=
+          NoNewPrivileges=yes
+          PrivateTmp=yes
+          PrivateNetwork=no
+          ProtectSystem=strict
+          ProtectHome=yes
+          ReadWritePaths=-/dev/shm/orbit/hibernation -/data/caddy/orbit/hibernation /sys/fs/cgroup
+          RuntimeDirectory=orbit-instance-wake
+          Environment=INCUS_CONF=/run/orbit-instance-wake
+      register: wake_service
+    - name: Write the wake request watch
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/orbit-instance-wake.path
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Orbit Instance containers: wake requests
+
+          [Path]
+          PathExistsGlob=/dev/shm/orbit/hibernation/app-instance-*.wake
+          Unit=orbit-instance-wake.service
+
+          [Install]
+          WantedBy=paths.target
+      register: wake_path
+    - name: Watch for wake requests
+      ansible.builtin.systemd_service:
+        name: orbit-instance-wake.path
+        daemon_reload: "{{ wake_service.changed or wake_path.changed }}"
+        enabled: true
+        state: started
+
 - name: Build the Instance image
   ansible.builtin.include_tasks: instance-image.yml
   vars:

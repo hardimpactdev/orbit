@@ -4,21 +4,30 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Power;
 
+use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Sleep;
 
 /** `instance:wake` and the wake of a Route visit: one open wake per Instance, which a second caller joins. */
 final readonly class InstanceWake extends InstancePower
 {
     public const string Kind = 'instance.wake';
+
+    /** The Operation state key of a wake that tries the Node's resume first (ContainerResume): `node`, then `workflow` or `resumed`. */
+    public const string ResumeState = 'wake_resume';
 
     protected function kind(): string
     {
@@ -40,7 +49,7 @@ final readonly class InstanceWake extends InstancePower
     public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
         if (! NestedFleetIntent::cloneKeepsFleet($instance, $instance->runtime()->first())) {
-            return parent::start($instance, $caller, $requestId);
+            return $this->resume(parent::start($instance, $caller, $requestId));
         }
         $idempotency = app(OperationIdempotency::class);
         if ($idempotency->key === null || $idempotency->fingerprint === null) {
@@ -84,6 +93,67 @@ final readonly class InstanceWake extends InstancePower
         return parent::reached($operation) || $operation->error_code === 'instance.t3_unready';
     }
 
+    /**
+     * A frozen container's wake is recorded without its run: the Node's resume comes first, after the commit (resume()).
+     *
+     * @param  array<string, mixed>  $input
+     */
+    protected function admit(Instance $instance, InstanceRuntime $runtime, array $input, ?string $caller, ?string $requestId): Operation
+    {
+        if (! app(ContainerResume::class)->applies($instance, $runtime, $input)) {
+            return parent::admit($instance, $runtime, $input, $caller, $requestId);
+        }
+        $operation = app(StartOperationAction::class)->execute(self::Kind, 'instance', $instance->id, $instance->node_id, $input,
+            $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id), start: false);
+        if ($operation->wasRecentlyCreated) {
+            $operation->forceFill(['state' => [...($operation->state ?? []), self::ResumeState => 'node']])->save();
+        }
+
+        return $operation;
+    }
+
+    /**
+     * The Node's resume of a wake admitted for it, after the admission committed: on success the Operation ends here; otherwise
+     * the same Operation starts its workflow. A caller who joins such a wake waits for it up to the bound, so a second visit
+     * gets the app too.
+     */
+    private function resume(Operation $operation): Operation
+    {
+        if ($operation->status !== OperationStatus::Queued || ($operation->state[self::ResumeState] ?? null) !== 'node') {
+            return $operation;
+        }
+        if (! $operation->wasRecentlyCreated) {
+            $until = ContainerResume::now() + ContainerResume::BoundSeconds + 0.5;
+            while (ContainerResume::now() < $until && $operation->status === OperationStatus::Queued
+                && ($operation->state[self::ResumeState] ?? null) === 'node') {
+                Sleep::usleep(100_000);
+                $operation->refresh();
+            }
+
+            return $operation;
+        }
+        $instance = Instance::query()->with('node')->findOrFail($operation->target_id);
+        $startedAt = Carbon::now();
+        // Both callers (the wake endpoint and the activation endpoint) hold no transaction here: the Node calls never run in one.
+        $result = app(ContainerResume::class)->run($operation, $instance->node);
+        $store = app(OperationStore::class);
+        if ($result === null) {
+            $store->change($operation, ['state' => [...($operation->state ?? []), self::ResumeState => 'workflow']]);
+            app(SwampDispatch::class)->start($operation);
+
+            return $operation->refresh();
+        }
+        DB::transaction(function () use ($store, $operation, $result, $startedAt): void {
+            $store->change($operation, ['status' => OperationStatus::Succeeded, 'result' => [...$this->result(), ...$result],
+                'started_at' => $startedAt, 'finished_at' => Carbon::now(), 'lock_key' => null,
+                'state' => [...($operation->state ?? []), self::ResumeState => 'resumed']]);
+            InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => $this->powerState()]);
+        });
+        $this->ended($operation);
+
+        return $operation->refresh();
+    }
+
     protected function open(Instance $instance): ?Operation
     {
         return Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
@@ -91,10 +161,11 @@ final readonly class InstanceWake extends InstancePower
     }
 
     /**
-     * The answer of the runtime activation endpoint for a container Instance behind its asleep marker: null while a wake is open
-     * or was started now, else the message of the failed wake that the failure page shows until a retry.
+     * The answer of the runtime activation endpoint for a container Instance behind its asleep marker: true when the wake has
+     * ended and the site serves the app again (the agent's resume), null while a wake is open or was started now, else the
+     * message of the failed wake that the failure page shows until a retry.
      */
-    public function activate(Instance $instance, bool $retry, string $caller): ?string
+    public function activate(Instance $instance, bool $retry, string $caller): string|true|null
     {
         if (! $retry) {
             $last = Operation::query()->whereIn('kind', [self::Kind, InstanceSleep::Kind])->where('target_type', 'instance')
@@ -105,7 +176,9 @@ final readonly class InstanceWake extends InstancePower
         }
         try {
             // A Route visit wakes a sleeping container only; a nested-fleet clone never sleeps, so it gets the wake's own refusal.
-            parent::start($instance, $caller, null);
+            if ($this->resume(parent::start($instance, $caller, null))->status === OperationStatus::Succeeded) {
+                return true;
+            }
         } catch (ResourceOperationException $exception) {
             // Other lifecycle work holds the Instance: the page polls again, and a later request starts the wake.
             if (! in_array($exception->errorCode, ['operation.target_busy', 'instance.lifecycle_busy'], true)) {
