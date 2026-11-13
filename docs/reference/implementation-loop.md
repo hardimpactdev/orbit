@@ -3,7 +3,7 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,test,ci-build-plan,ci-units,ci-delivery,ci-proof-eligibility,ci-proof-run,ci-cache-ref,ci-runner-prerequisites,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
+  - bin/{review-check,test,ci-build-plan,ci-units,ci-delivery,ci-tree-receipt,ci-proof-eligibility,ci-proof-run,ci-cache-ref,ci-runner-prerequisites,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy,swamp-shape-python,swamp_shape_host_tools}.py,swamp/bin/{check-swamp-shape,gate-test-support}.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - "{tools/check_budget.py,swamp/tests/_support/slice.ts}"
   - "{apps/*,packages/php-sdk}/rector.php"
@@ -45,7 +45,7 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 ## CI
 
-Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same fast checks.
+Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, task handoff pushes and manual runs use the same fast checks. Main can [reuse a green PR tree](#reuse-a-green-pr-tree-on-main).
 
 Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units in hosted shards. Route access fixtures share the admitted argv with the Gateway unit test, so hosted Ansible checks need no Gateway Composer installation. The fixture for destroy without a Route evaluates guards with the pinned CEL compiler. It runs source removal against real temporary Git trees. The expression-end fixture reads every workflow file and fails when an expression holds a `}}` before its end, because Swamp ends a `${{ … }}` expression at the first `}}`. Any change under `swamp/workflows` selects it.
 
@@ -74,7 +74,7 @@ Withdrawal fixtures also check that publication stops when the live checksum dif
 | CLI static analysis, PHP SDK static analysis, E2E static analysis | Run PHPStan for `apps/cli`, `packages/php-sdk` or `apps/e2e` |
 | Docs build | Generate contracts and the Docs index; run strict lint, Docs Pest, `bin/check-flows` and the PR docs-impact gate |
 | Generated contracts | Check Operation kinds, their charts and workflow intent; generate OpenAPI, MCP tools and the web schema; check the recorded fixtures |
-| Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
+| Web build | Build and retain the web app on every PR for tree reuse; require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only and docs-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and on the three-hour schedule, run the Operation Deno tests, enforce static Swamp-shape controls and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Run the case runner unit tests and lint the proof programs with `ruff` |
@@ -88,6 +88,14 @@ Withdrawal fixtures also check that publication stops when the live checksum dif
 The release resolver verifies a successful delivery job on the exact SHA in this repository's `ci.yml` main push or manual run; it accepts neither a PR check with the same name nor a commit status. The run may still be running or finish red because fixtures failed. Old commits without this result cannot be backfilled.
 
 Gateway automatic releases retain the `Required checks` name: on main, `main-required` verifies the exact SHA and main CI run before forwarding a successful `Main delivery checks` result. Its summary links the source CI and fixture report. It has no fixture dependency. Skipped gates have distinct names in each event, so a skipped PR gate cannot invalidate the main result. The Gateway also requires `Gateway release inputs`, preserving its current reader and rollout guards.
+
+### Reuse a green PR tree on main
+
+When main moves after a PR's green run, update the branch, wait for green, and merge promptly. Main CI compares the merged Git tree with the merge-ref tree that the PR run actually checked out, not the PR head tree. A match reuses the green checks. A different tree, missing evidence, or an API failure runs normal main CI.
+
+Every PR builds a web artifact and records its digest, tested commit and tree, and the body hash read by the Docs gate. Main's own CI verifies the repository, workflow identity, PR event, final PR head, latest Required job, which must have succeeded, checkout log, Git tree and live body hash. It downloads and verifies the source artifact before publishing `web-dist-<main SHA>`. A changed body needs a new successful Docs run; rerunning only Required cannot bless an old acknowledgement.
+
+The receipt keeps `Main delivery checks`, `Required checks` and `Gateway release inputs` on the main SHA. Release readers and CLI dispatch keep their existing names and lookup rules. Duplicate main fixtures skip for a reused tree; the independent Main full set still runs. The first two receipt-green merges must be compared with their PR runs before release.
 
 `Resolve release` gates `Build CLI`, `Build Linux agent` and `Build macOS agent`; `Publish release` requires the resolver and those builds. Version, main ancestry, tags, provenance and publication guards still apply. Neither fixture shards nor the independent Main full set receiver belongs to these dependencies.
 

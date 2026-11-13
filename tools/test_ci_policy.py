@@ -59,8 +59,12 @@ class RequiredGateTest(unittest.TestCase):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
         for source in [caller.split('  changes:\n')[1].split('\n  swamp:\n')[0]]:
             self.assertIn("MAIN: ${{ github.ref == 'refs/heads/main' }}", source)
-        publish = caller.split('      - name: Publish web build\n')[1].split('\n')[0]
-        self.assertEqual(publish, "        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'")
+        import yaml
+        steps = yaml.safe_load(caller)['jobs']['web']['steps']
+        publish = next(s for s in steps if s.get('id') == 'web-artifact')
+        self.assertEqual(publish['if'], "github.event_name == 'pull_request' || github.ref == 'refs/heads/main'")
+        self.assertIn("format('web-dist-{0}', github.sha)", publish['with']['name'])
+        self.assertIn("format('web-pr-{0}-{1}', github.run_id, github.run_attempt)", publish['with']['name'])
 
     def test_slow_jobs_are_absent_from_required_ci(self):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()

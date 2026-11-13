@@ -23,7 +23,7 @@ sequenceDiagram
   %%> - the chart, page, cases, code and proof cases are now in one PR, so a reviewer can check that they match
   %%> Built:
   %%> - the Swamp prep flow (`operation-task-prep`, stage 1) opens the draft PR as the Orbit App with `task:publish --draft`; 1 of 3 runs succeeded by 2026-11-06
-  GH->>CI: Start CI<br/>on the PR head, every push
+  GH->>CI: Start CI<br/>on the PR merge tree, every push
   %%> What it does:
   %%> - GitHub runs `ci.yml` for the PR head on every push, also while the PR is a draft; there is one CI, and the merge requires its one result
   %%> - the handoff branch `task-N-handoff`, which only the Orbit App pushes, runs the same CI before `task:publish`; its Swamp workflow validation step gets the read-only Swamp CI token for a push by the App
@@ -31,7 +31,7 @@ sequenceDiagram
   %%> - without the token, no handoff that changes `swamp/` could pass hosted CI; the token goes to that one step, never to `pull_request_target` or a fork
   Note over CI: Scope the change<br/>changed files pick the jobs
   %%> Rules:
-  %%> - documentation only (`docs/`, `*.md`, charts): docs checks only, never the proof CI; this is the spec commit alone
+  %%> - documentation only (`docs/`, `*.md`, charts): docs checks and the reusable web build, never the proof CI; this is the spec commit alone
   %%> - Gateway code: fast checks and the Gateway Pest suite
   %%> - web or CLI code: fast checks and that build
   %%> - command code (workflows, extensions, playbooks, roles, versions): fast checks and the proof CI
@@ -47,7 +47,7 @@ sequenceDiagram
   Note over CI: Fast checks<br/>about 2 minutes
   %%> What it does:
   %%> - the Project check fails on formatter drift: Rector and Pint run in fix mode, and a commit that they would change fails the check, so main stays formatter-clean and `composer check` in a task rewrites only the files the task touched
-  %%> - runs the required job set `Required checks`; every main commit also builds the web artifact and `Gateway release inputs` for the release (stage 5)
+  %%> - runs the required job set `Required checks`; every main commit also publishes the web artifact and `Gateway release inputs` for the release (stage 5)
   opt command code changed
     opt the PR is from outside
       GH->>CI: Review + run-proofs label<br/>maintainer
@@ -182,7 +182,9 @@ sequenceDiagram
     %%> - for a PR outside a Task group the authorized caller is the reviewer, so no review is read; the gate is the green merge check on the exact head, a PR that a Task group watches is refused (`task:pr-merge` owns it), and so is a PR that does not target the default branch or that comes from a fork (a fork can define its own workflow that reports a passing merge check; open for Nick: how to trust a fork)
     GH->>CI: CI on main<br/>after the merge
     %%> What it does:
-    %%> - the normal CI run of the new main commit; the Gateway release (stage 5) takes only a green one
+    %%> - main CI verifies the actual tested merge-ref tree of the latest green PR run, its live Docs body and web artifact digest; equal trees reuse that evidence and publish the artifact under the main SHA
+    %%> - a different tree or missing evidence runs normal main CI; Required checks and Gateway release inputs keep their names, and the Gateway release (stage 5) takes only a green commit
+    %%> - when main moved after a PR went green, update its branch, wait for green and merge promptly to retain the tested tree
     %%> When it fails:
     %%> - two green PRs can still break main together; main is fixed forward, and no release takes the red commit
   else a check fails

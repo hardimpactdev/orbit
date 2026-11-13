@@ -54,7 +54,7 @@ class DocsImpactPolicyTest(unittest.TestCase):
                 command.chmod(0o755)
                 result = subprocess.run(['bash', '-e', '-c', step['run']], cwd=root,
                                         env=os.environ | {'GITHUB_EVENT_PATH': str(root / 'event.json'),
-                                                          'RUNNER_TEMP': directory, 'GH_REPO': 'owner/repo', 'PR_NUMBER': '123',
+                                                          'RUNNER_TEMP': directory, 'GITHUB_OUTPUT': str(root / 'output'), 'GH_REPO': 'owner/repo', 'PR_NUMBER': '123',
                                                           'PR_HEAD': 'checked-head', 'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH']},
                                         capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, code, result.stderr)

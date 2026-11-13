@@ -15,12 +15,13 @@ loader.exec_module(plan)
 
 
 class BuildPlanTest(unittest.TestCase):
-    def test_every_pr_requires_docs_without_changing_other_selection_or_release(self):
+    def test_every_pr_requires_docs_and_web_without_changing_other_selection_or_release(self):
         for paths in ([], ['tools/unclaimed.txt'], ['apps/web/src/main.ts'], ['swamp/ansible/tasks/node.yml']):
             with self.subTest(paths=paths):
                 normal = plan.select(paths)
                 pr = plan.select(paths, pull_request=True)
                 normal['jobs']['docs'] = True
+                normal['jobs']['web'] = True
                 self.assertEqual(normal, pr)
 
 

@@ -300,7 +300,7 @@ def select(paths, main=False, selection=None, registry_checks=None, pull_request
     jobs = {name: name in selected for name in JOBS}
     swamp_checks = {name: 'swamp-' + name in selected or 'swamp' in selected for name in SWAMP_CHECKS}
     jobs['swamp'] = any(swamp_checks.values())
-    jobs['web'] |= main
+    jobs['web'] |= main or pull_request
     jobs['docs'] |= pull_request
     docs_only = selected == {'docs'}
     scope_paths = [path for path in paths if path != TABLE or registry_checks is None or registry_checks]
