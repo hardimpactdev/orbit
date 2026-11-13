@@ -16,19 +16,24 @@ use App\Models\Project;
  * the record.
  *
  * Each writer calls the entry for its kind: `assert()` where the result can be a container, `checkout()` where it is always a
- * host checkout, `taskWorkspace()` for a task workspace. The image for nested-fleet containers does not exist yet, so every
- * entry still refuses a nested-fleet Project; the image change edits only the bodies here, never a caller.
+ * host checkout, `taskWorkspace()` for a task workspace. A nested-fleet Project's Instances are only containers in the nested
+ * project, made from the nested-fleet image (docs/reference/development-containers.md#the-nested-fleet-image): `assert()` refuses
+ * it early on a Node whose switch is off, `place()` decides once the result is known, and the other two entries refuse it.
  */
 final readonly class InstancePlacement
 {
     /** The Incus project of a nested-fleet Project's containers: it allows nesting (docs/reference/development-containers.md#nested-fleet). */
     public const string NestedProject = 'orbit-instances-nested';
 
-    /** A writer whose result can be a container: development create and its admission, and the runtime reservation. */
-    public static function assert(Project $project): void
+    /**
+     * The early check of a writer whose result can be a container, before it writes anything: development create and its admission.
+     * A nested-fleet Project needs a Node whose switch is on; `place()` decides the rest once the result is known. A missing Node is
+     * the writer's own not-found.
+     */
+    public static function assert(Project $project, ?Node $node): void
     {
-        if ($project->nested_fleet) {
-            throw self::unavailable();
+        if ($project->nested_fleet && $node instanceof Node) {
+            self::assertSwitchedOn($node);
         }
     }
 
@@ -57,9 +62,7 @@ final readonly class InstancePlacement
         if (! $project->nested_fleet) {
             return $container ? InstanceHostIntent::Project : null;
         }
-        if (app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->nested_fleet !== true) {
-            throw new ResourceOperationException('instance.nested_fleet_host_unavailable', 'The Node has not switched on nested-fleet hosting.', 409);
-        }
+        self::assertSwitchedOn($node);
         if (! $container || ! app(ContainerNodes::class)->includes($node)) {
             throw new ResourceOperationException('instance.nested_fleet_container_required',
                 'An Instance of a nested-fleet Project must be a container: the Node must be on the build list and the default must be a container.', 409);
@@ -92,8 +95,15 @@ final readonly class InstancePlacement
         ] : [];
     }
 
+    private static function assertSwitchedOn(Node $node): void
+    {
+        if (app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->nested_fleet !== true) {
+            throw new ResourceOperationException('instance.nested_fleet_host_unavailable', 'The Node has not switched on nested-fleet hosting.', 409);
+        }
+    }
+
     private static function unavailable(): ResourceOperationException
     {
-        return new ResourceOperationException('operation.kind_unavailable', 'Instances of a nested-fleet Project are not available until nested-fleet hosting is built.', 503);
+        return new ResourceOperationException('operation.kind_unavailable', 'Only instance:create makes Instances of a nested-fleet Project, as containers.', 503);
     }
 }

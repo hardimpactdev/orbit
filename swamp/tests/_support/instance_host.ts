@@ -119,6 +119,7 @@ function writeTasks(folder: string) {
             "instance-folder.yml",
             "instance-vite-plus-home.yml",
             "instance-image.yml",
+            "artifact-fetch.yml",
             "task-container-host-system.yml",
             "task-container-host-ids.yml",
             "task-container-host-prepare.yml",
@@ -310,9 +311,11 @@ export const nodeAddresses = [
 ];
 
 export async function fixture(
-    { pool = "zfs", addresses = nodeAddresses }: {
+    { pool = "zfs", addresses = nodeAddresses, nested = false }: {
         pool?: string | null;
         addresses?: string[];
+        /** A switched-on Node: the nested-fleet member of the host intent, with its project and image. */
+        nested?: boolean;
     } = {},
 ) {
     const folder = Deno.makeTempDirSync();
@@ -487,15 +490,31 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
             },
         },
     };
+    const nestedPackages = [];
+    for (const name of ["incus-base", "incus-client"]) {
+        Deno.writeTextFileSync(`${folder}/artifacts/${name}.deb`, `fixture ${name}`);
+        nestedPackages.push({ name, sha256: await sha256(`${folder}/artifacts/${name}.deb`), urls: [`https://example.test/${name}.deb`] });
+    }
+    const hosted = {
+        ...instances,
+        ...(nested ? { nested: { project: "orbit-instances-nested", image: {
+            ...instances.image,
+            alias: "orbit-instance-nested-aaaaaaaaaaaa",
+            packages: [...instances.image.packages, "wireguard-tools", "sqlite3", "sudo"],
+            incus: nestedPackages,
+            prepare: instances.image.prepare + "usermod --append --groups incus-admin agent\n",
+            files: [...instances.image.files, { path: "/etc/sudoers.d/orbit-agent", content: "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", uid: 0, gid: 0, mode: "0440" }],
+        } } } : {}),
+    };
     const write = (value: unknown) =>
         Deno.writeTextFileSync(
             `${folder}/intent.json`,
             JSON.stringify({ instances: value }),
         );
-    write(instances);
+    write(hosted);
     return {
         folder,
-        instances,
+        instances: hosted as typeof instances & { nested?: { project: string; image: typeof instances.image & { incus: typeof nestedPackages } } },
         write,
         artifacts: (version: string) => artifacts(folder, version),
         async run(seconds = 240) {

@@ -111,7 +111,6 @@ final readonly class InstanceContainer
      */
     public function reserve(Instance $instance, Node $node, ?Instance $source = null): InstanceRuntime
     {
-        InstancePlacement::assert($instance->project()->firstOrFail());
         $existing = InstanceRuntime::query()->where('instance_id', $instance->id)->first();
         if ($existing instanceof InstanceRuntime) {
             return $existing;
@@ -198,7 +197,9 @@ final readonly class InstanceContainer
                     : array_combine(array_map(static fn (string $key): string => 'environment.'.$key, ['NO_PROXY', 'no_proxy']),
                         array_values(InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices))))],
             'root_disk_pool' => InstanceHostIntent::Pool, 'root_disk_size' => '40GiB',
-            'image' => self::Image, 'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
+            // A runtime recorded in the nested-fleet project starts from the nested-fleet image; every other one from the normal image.
+            'image' => $runtime->incus_project === InstancePlacement::NestedProject ? InstanceImage::NestedAlias : self::Image,
+            'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
             ...($runtime->incus_project === InstancePlacement::NestedProject ? ['allowed_devices' => $this->allowedDevices($instance, $runtime)] : []),
             'acl' => $runtime->container_name, 'nic_acl' => InstanceHostIntent::NicAcl,
             'bridge_cidr' => ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')),

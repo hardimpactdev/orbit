@@ -314,6 +314,15 @@
 
 - name: Build the Instance image
   ansible.builtin.include_tasks: instance-image.yml
+  vars:
+    instance_variant: { project: "{{ instances.project }}", image: "{{ instances.image }}", stable_alias: orbit-instance }
+
+# Only a switched-on Node gets the nested-fleet image, in its nested-fleet project (docs/reference/node-settings.md#nested-fleet-instance-hosting).
+- name: Build the nested-fleet Instance image
+  when: instances.nested is defined and instances.nested.image is defined
+  ansible.builtin.include_tasks: instance-image.yml
+  vars:
+    instance_variant: { project: "{{ instances.nested.project }}", image: "{{ instances.nested.image }}", stable_alias: orbit-instance-nested }
 
 # Read-only end check: a later regression on any NIC fails convergence instead of silently opening an Instance.
 - name: Check every Instance bridge NIC at the end of the role

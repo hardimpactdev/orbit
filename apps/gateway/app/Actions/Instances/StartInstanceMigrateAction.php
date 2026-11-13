@@ -17,6 +17,7 @@ use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceLifecycleContributions;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
@@ -66,6 +67,8 @@ final readonly class StartInstanceMigrateAction
     {
         return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
             $instance = Instance::query()->with(['project', 'node'])->lockForUpdate()->findOrFail($instance->id);
+            // A nested-fleet Project has only containers that create makes; migration reads a host checkout.
+            InstancePlacement::checkout($instance->project);
             $previous = Operation::query()->where('kind', InstanceMigration::Kind)->where('target_type', 'instance')
                 ->where('target_id', $instance->id)->latest('id')->first();
             $recovery = $previous?->result['recovery'] ?? null;

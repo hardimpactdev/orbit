@@ -220,7 +220,9 @@ it('merges only owned nested settings after successful asynchronous storage prep
 
 /* The one placement rule (docs/reference/projects.md#nested-fleet-setting): every writer of an Instance refuses a nested-fleet Project first. */
 
-const NestedFleetRefusal = 'Instances of a nested-fleet Project are not available until nested-fleet hosting is built.';
+const NestedFleetRefusal = 'Only instance:create makes Instances of a nested-fleet Project, as containers.';
+
+const NestedFleetHostRefusal = 'The Node has not switched on nested-fleet hosting.';
 
 /** The flag as the Project update API stores it; a flagged Project's Instance rows below exist only as fixtures. */
 function nestedFleetProject(): Project
@@ -246,6 +248,14 @@ function expectNestedFleetRefusal(Closure $write): void
     });
 }
 
+/** A path that can make a container refuses a nested-fleet Project on a Node whose switch is off (projects.md#nested-fleet-setting). */
+function expectNestedFleetHostRefusal(Closure $write): void
+{
+    expect($write)->toThrow(function (ResourceOperationException $error): void {
+        expect($error->errorCode)->toBe('instance.nested_fleet_host_unavailable')->and($error->status)->toBe(409)->and($error->getMessage())->toBe(NestedFleetHostRefusal);
+    });
+}
+
 describe('development create', function (): void {
     it('refuses a nested-fleet Project before any record, on a container or a checkout Node', function (string $name, bool $listed): void {
         $node = containerDefaultNode(listed: $listed);
@@ -254,7 +264,7 @@ describe('development create', function (): void {
             Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/home/orbit/apps/tool/default', 'status' => 'active']);
         }
         $before = nestedFleetRows();
-        expectNestedFleetRefusal(fn () => containerCreate($project, $node, $name));
+        expectNestedFleetHostRefusal(fn () => containerCreate($project, $node, $name));
         expect(nestedFleetRows())->toBe($before);
         Queue::assertNothingPushed();
     })->with(['default' => ['default'], 'other Instance' => ['feature']])->with(['build-list Node' => [true], 'checkout Node' => [false]]);
@@ -264,7 +274,7 @@ describe('development create', function (): void {
         $project = nestedFleetProject();
         DB::table('projects')->where('id', $project->id)->update(['source_facts_captured_at' => null]);
         $before = nestedFleetRows();
-        expectNestedFleetRefusal(fn () => containerCreate($project, $node));
+        expectNestedFleetHostRefusal(fn () => containerCreate($project, $node));
         expect(nestedFleetRows())->toBe($before);
     });
 
@@ -280,7 +290,7 @@ describe('development create', function (): void {
         });
         app()->instance(ProcessRunner::class, $runner);
         $before = nestedFleetRows();
-        expectNestedFleetRefusal(fn () => app(StartDevelopmentInstanceCreateAction::class)->execute(new CreateInstanceData($project->id, $node->id, 'feature', null, null, null,
+        expectNestedFleetHostRefusal(fn () => app(StartDevelopmentInstanceCreateAction::class)->execute(new CreateInstanceData($project->id, $node->id, 'feature', null, null, null,
             branchSelection: new InstanceBranchSelection('new', 'feature', 'main')), null, null));
         expect(Arr::except(nestedFleetRows(), 'projects'))->toBe(Arr::except($before, 'projects'));
     });
@@ -297,7 +307,7 @@ describe('development create', function (): void {
             DB::table('projects')->where('id', $project->id)->update(['nested_fleet' => true]);
         }
         $before = nestedFleetRows();
-        expectNestedFleetRefusal(fn () => containerCreate($project->refresh(), $node));
+        expectNestedFleetHostRefusal(fn () => containerCreate($project->refresh(), $node));
         expect(nestedFleetRows())->toBe($before);
     })->with(['checkout' => [false], 'container' => [true]]);
 
@@ -308,6 +318,31 @@ describe('development create', function (): void {
         expect($operation->kind)->toBe('instance.create')->and(containerIntentOf($operation))->not->toBeNull();
         expect(InstanceRuntime::query()->count())->toBe(1)->and(Instance::query()->count())->toBe(1);
     });
+
+    it('admits a nested-fleet default on a switched-on build-list Node, in the nested project, from the nested-fleet image', function (): void {
+        SwampNodeFixture::ensure();
+        $node = containerDefaultNode();
+        $node->update(['settings' => [...$node->settings, 'nested_fleet' => true]]);
+        $operation = containerCreate(nestedFleetProject(), $node);
+        $intent = containerIntentOf($operation);
+        expect($operation->kind)->toBe('instance.create')
+            ->and(InstanceRuntime::query()->sole()->incus_project)->toBe('orbit-instances-nested')
+            ->and($intent['project'] ?? null)->toBe('orbit-instances-nested')
+            ->and($intent['image'] ?? null)->toBe('orbit-instance-nested')
+            ->and($intent['config']['security.nesting'] ?? null)->toBe('true');
+    });
+
+    it('refuses a nested-fleet Project on a switched-on Node off the build list before any record', function (): void {
+        $node = containerDefaultNode(listed: false);
+        $node->update(['settings' => [...$node->settings, 'nested_fleet' => true]]);
+        $project = nestedFleetProject();
+        $before = nestedFleetRows();
+        expect(fn () => containerCreate($project, $node))->toThrow(function (ResourceOperationException $error): void {
+            expect($error->errorCode)->toBe('instance.nested_fleet_container_required')->and($error->status)->toBe(409);
+        });
+        expect(nestedFleetRows())->toBe($before);
+        Queue::assertNothingPushed();
+    });
 });
 
 describe('the runtime row', function (): void {
@@ -315,7 +350,7 @@ describe('the runtime row', function (): void {
         $node = containerDefaultNode();
         $project = nestedFleetProject();
         $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/default']);
-        expectNestedFleetRefusal(fn () => app(InstanceContainer::class)->reserve($instance, $node));
+        expectNestedFleetHostRefusal(fn () => app(InstanceContainer::class)->reserve($instance, $node));
         $this->assertDatabaseCount('instance_runtimes', 0);
     });
 });

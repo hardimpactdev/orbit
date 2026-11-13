@@ -68,7 +68,7 @@ final readonly class StartDevelopmentInstanceCreateAction
 
         // Projects added before source facts existed capture them once, outside the admission transaction.
         $project = Project::query()->findOrFail($data->projectId);
-        InstancePlacement::assert($project);
+        InstancePlacement::assert($project, Node::query()->find($data->nodeId));
         if ($project->source_facts_captured_at === null && $project->source_access !== ProjectSourceAccess::GhCli) {
             app(CaptureProjectSourceFactsAction::class)->execute($project);
         }

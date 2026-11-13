@@ -101,12 +101,25 @@ describe('the one placement rule', function (): void {
             ->and(InstancePlacement::place($nested, $listed, true))->toBe('orbit-instances-nested');
     });
 
-    it('refuses a nested-fleet Project at every entry until the image exists and passes a normal Project', function (string $entry): void {
+    it('refuses a nested-fleet Project at the checkout and task-workspace entries and passes a normal Project', function (string $entry): void {
         $project = containerDefaultProject();
         InstancePlacement::{$entry}($project);
         $project->update(['nested_fleet' => true]);
         expect(placementRefusal(fn () => InstancePlacement::{$entry}($project)))->toBe('operation.kind_unavailable 503');
-    })->with(['assert', 'checkout', 'taskWorkspace']);
+    })->with(['checkout', 'taskWorkspace']);
+
+    it('checks the switch early for a writer that can make a container, before it writes anything', function (): void {
+        $off = containerDefaultNode();
+        $on = nestedSwitch(containerDefaultNode('shark', '10.44.0.8'), true);
+        $project = containerDefaultProject();
+        expect(placementRefusal(fn () => InstancePlacement::assert($project, $off)))->toBe('')
+            ->and(placementRefusal(fn () => InstancePlacement::assert($project, $on)))->toBe('');
+        $project->update(['nested_fleet' => true]);
+        expect(placementRefusal(fn () => InstancePlacement::assert($project, $off)))->toBe('instance.nested_fleet_host_unavailable 409')
+            // A switched-on Node lets it through to place(); a missing Node is the writer's own not-found, later.
+            ->and(placementRefusal(fn () => InstancePlacement::assert($project, $on)))->toBe('')
+            ->and(placementRefusal(fn () => InstancePlacement::assert($project, null)))->toBe('');
+    });
 
     it('gives the nested project its six container keys and the normal project none', function (): void {
         expect(InstancePlacement::config('orbit-instances'))->toBe([])
@@ -150,7 +163,8 @@ describe('the recorded Incus project', function (): void {
         $intent = app(InstanceContainer::class)->intent($instance, $runtime);
         expect($intent['config'])->toMatchArray(InstancePlacement::config('orbit-instances-nested'))
             ->and($intent['config'])->not->toHaveKeys(['raw.lxc', 'raw.idmap', 'security.privileged'])
-            ->and($intent['image'])->toBe('orbit-instance')
+            // A nested runtime starts from the nested-fleet image; the normal intent below keeps `orbit-instance`.
+            ->and($intent['image'])->toBe('orbit-instance-nested')
             ->and($intent['allowed_devices'])->toBe([
                 'root' => ['type' => 'disk', 'path' => '/', 'pool' => 'orbit-instances', 'size' => '40GiB'],
                 'eth0' => ['type' => 'nic', 'name' => 'eth0', 'network' => 'orbitinst0', 'ipv4.address' => $runtime->bridge_address,
@@ -224,7 +238,9 @@ describe('a switched-on Node', function (): void {
         $node = nestedSwitch(containerDefaultNode(), true);
         $other = nestedSwitch(containerDefaultNode('shark', '10.44.0.8'), true);
         $host = app(InstanceHostIntent::class)->for($node);
-        expect($host['nested'])->toBe(['project' => 'orbit-instances-nested'])
+        expect(array_keys($host['nested']))->toBe(['project', 'image'])
+            ->and($host['nested']['project'])->toBe('orbit-instances-nested')
+            ->and($host['nested']['image']['alias'])->toStartWith('orbit-instance-nested-')
             ->and($host['project'])->toBe('orbit-instances')
             ->and($host['ids'])->toBe(13_172_736 + 2 * 101_000_000)
             ->and($host)->not->toHaveKey('runtime_projects');

@@ -4,15 +4,26 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\TaskVms\TaskVmNestedFleet;
+
 /**
  * The container image of a development Instance (docs/reference/development-containers.md#inside-a-container): the stock Ubuntu image
  * with the OS packages the runtime needs, the users `agent` and `orbit` in the group `work`, no sudo, the firewall of the model route
  * and T3's port, the egress proxy for everything and no DNS, `hidepid`, and the T3 unit, which starts only once the create flow writes `/etc/orbit/instance`. No PHP, Node or agent
  * software: those come from the shared folders. The host builds it once per alias, a digest of this whole definition.
+ *
+ * A Node with nested-fleet hosting on also builds the nested-fleet variant (docs/reference/development-containers.md#the-nested-fleet-image):
+ * the same image with the pinned inner Incus, `agent` in `incus-admin` with passwordless sudo, user namespaces, root's subordinate IDs,
+ * the AppArmor marker, and a firewall rule that keeps `orbit` off the inner fleet's networks.
  */
 final readonly class InstanceImage
 {
     public const string StableAlias = 'orbit-instance';
+
+    public const string NestedAlias = 'orbit-instance-nested';
+
+    /** The nested-fleet variant's packages beyond the normal ones: the tunnel to its fleet, the fleet's database client, and sudo. */
+    public const array NestedPackages = ['wireguard-tools', 'sqlite3', 'sudo'];
 
     /** OS packages beyond the stock image: the firewall, ACLs on the workspace, and Git for the workspace repository. */
     public const array Packages = ['acl', 'git', 'nftables'];
@@ -33,21 +44,29 @@ final readonly class InstanceImage
     public const string ShellPath = InstanceHostIntent::RuntimeFolder.'/current/bin:/usr/local/bin:$PATH';
 
     /**
-     * @return array{alias: string, packages: list<string>, prepare: string,
+     * The normal image, or with `$incus` (MachineRecipe::incus) the nested-fleet variant. The normal definition never depends on it.
+     *
+     * @param  array{line: string, packages: list<array{name: string, sha256: string, urls: list<string>}>}|null  $incus
+     * @return array{alias: string, packages: list<string>, incus?: list<array{name: string, sha256: string, urls: list<string>}>, prepare: string,
      *     files: list<array{path: string, content: string, uid: int, gid: int, mode: string}>, finish: list<list<string>>}
      */
-    public static function for(string $gateway): array
+    public static function for(string $gateway, ?array $incus = null): array
     {
+        $nested = $incus !== null;
         $image = [
-            'packages' => self::Packages,
+            'packages' => $nested ? [...self::Packages, ...self::NestedPackages] : self::Packages,
+            // The inner Incus from its pinned artifacts; the metapackage `incus` would pull the VM tools a container cannot run.
+            ...($nested ? ['incus' => array_values(array_filter($incus['packages'], static fn (array $package): bool => $package['name'] !== 'incus'))] : []),
             // Users, the workspace and the leftovers of the stock image. The stock `ubuntu` user holds uid 1000 and a sudo grant, and
             // cloud-init would make it again at each new Instance's first boot, so it is off; the network keeps its DHCP setup.
             // Cloud-init also made the group `lxd` for that user, and it took gid 1000, which `orbit` needs.
-            'prepare' => self::prepare(),
+            'prepare' => self::prepare().($nested ? "usermod --append --groups incus-admin agent\n" : ''),
             'files' => [
-                ['path' => '/etc/nftables.conf', 'content' => self::firewall($gateway), 'uid' => 0, 'gid' => 0, 'mode' => '0640'],
+                ['path' => '/etc/nftables.conf', 'content' => self::firewall($gateway, $nested), 'uid' => 0, 'gid' => 0, 'mode' => '0640'],
                 ['path' => '/etc/systemd/system/t3.service', 'content' => self::t3Unit(), 'uid' => 0, 'gid' => 0, 'mode' => '0640'],
-                ['path' => '/etc/sysctl.d/90-orbit-no-userns.conf', 'content' => "# Managed by Orbit.\nuser.max_user_namespaces = 0\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                ...($nested ? self::nestedFiles() : [
+                    ['path' => '/etc/sysctl.d/90-orbit-no-userns.conf', 'content' => "# Managed by Orbit.\nuser.max_user_namespaces = 0\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                ]),
                 ...self::egress($gateway),
                 ['path' => '/home/orbit/.gitconfig', 'content' => "[safe]\n\tdirectory = ".InstanceHostIntent::Workspace."\n",
                     'uid' => InstanceHostIntent::OrbitUid, 'gid' => InstanceHostIntent::OrbitUid, 'mode' => '0640'],
@@ -73,7 +92,10 @@ final readonly class InstanceImage
             ],
         ];
 
-        return ['alias' => self::StableAlias.'-'.substr(hash('sha256', json_encode($image, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)), 0, 12), ...$image];
+        // A package's download URLs are transport alternatives for the same digest, so they do not name the image.
+        $named = $nested ? [...$image, 'incus' => array_map(static fn (array $package): array => ['name' => $package['name'], 'sha256' => $package['sha256']], $image['incus'] ?? [])] : $image;
+
+        return ['alias' => ($nested ? self::NestedAlias : self::StableAlias).'-'.substr(hash('sha256', json_encode($named, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)), 0, 12), ...$image];
     }
 
     /**
@@ -134,12 +156,34 @@ final readonly class InstanceImage
             SH;
     }
 
-    /** Only `agent` reaches the model forwarder, and only root and `agent` reach T3's port; others get a reset. */
-    public static function firewall(string $gateway): string
+    /**
+     * The nested-fleet variant's own files: the inner Incus maps root's range and the outer `orbit` into its containers, Docker in
+     * them reads the AppArmor marker, and `agent` alone has sudo. Its user namespaces stay on, so it has no limit file.
+     *
+     * @return list<array{path: string, content: string, uid: int, gid: int, mode: string}>
+     */
+    private static function nestedFiles(): array
+    {
+        $ids = "root:1000000:100000000\nroot:".InstanceHostIntent::OrbitUid.":1\n";
+
+        return [
+            ['path' => '/etc/subuid', 'content' => $ids, 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+            ['path' => '/etc/subgid', 'content' => $ids, 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+            ['path' => '/etc/orbit/apparmor-off', 'content' => "N\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+            ['path' => '/etc/sudoers.d/orbit-agent', 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440'],
+        ];
+    }
+
+    /**
+     * Only `agent` reaches the model forwarder, and only root and `agent` reach T3's port; others get a reset. In the nested-fleet
+     * variant the first rule also drops `orbit`'s traffic to the inner fleet's networks.
+     */
+    public static function firewall(string $gateway, bool $nested = false): string
     {
         $agent = InstanceHostIntent::AgentUid;
         $forwarder = InstanceHostIntent::ModelForwarderPort;
         $t3 = InstanceHostIntent::T3Port;
+        $guard = $nested ? "\n        ip daddr { ".TaskVmNestedFleet::WireGuardSubnet.', '.TaskVmNestedFleet::Subnet.' } meta skuid '.InstanceHostIntent::OrbitUid.' drop' : '';
 
         return <<<NFT
             #!/usr/sbin/nft -f
@@ -147,7 +191,7 @@ final readonly class InstanceImage
             flush ruleset
             table inet orbit_agent_guard {
                 chain output {
-                    type filter hook output priority 0; policy accept;
+                    type filter hook output priority 0; policy accept;{$guard}
                     ip daddr {$gateway} tcp dport {$forwarder} meta skuid != {$agent} reject with tcp reset
                     tcp dport {$t3} meta skuid != { 0, {$agent} } reject with tcp reset
                 }
