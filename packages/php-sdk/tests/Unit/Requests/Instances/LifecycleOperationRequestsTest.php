@@ -9,8 +9,10 @@ use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
 use Orbit\Sdk\Requests\Instances\MigrateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
+use Orbit\Sdk\Requests\Instances\SleepInstanceRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceMailRequest;
+use Orbit\Sdk\Requests\Instances\WakeInstanceRequest;
 use Orbit\Sdk\Responses\Instances\InstanceRegistrationResult;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
@@ -47,6 +49,10 @@ it('preserves lifecycle admission payloads, keys and typed Operation receipts', 
         'instance.transfer', '/api/v1/instances/501/transfer', ['node_id' => 10, 'name' => 'proof']],
     'mail update' => [new UpdateInstanceMailRequest(501, idempotencyKey: 'lifecycle-proof'),
         'instance.mail_update', '/api/v1/instances/501/mail', []],
+    'sleep' => [new SleepInstanceRequest(501, idempotencyKey: 'lifecycle-proof'),
+        'instance.sleep', '/api/v1/instances/501/sleep', []],
+    'wake' => [new WakeInstanceRequest(501, idempotencyKey: 'lifecycle-proof'),
+        'instance.wake', '/api/v1/instances/501/wake', []],
     'migrate' => [new MigrateInstanceRequest(501, idempotencyKey: 'lifecycle-proof'),
         'instance.migrate', '/api/v1/instances/501/migrate', []],
     'destroy' => [new DestroyInstanceRequest(501, force: true, idempotencyKey: 'lifecycle-proof'),

@@ -28,7 +28,7 @@ const available =
         .outputSync().success;
 Deno.test({
     name:
-        "migrated container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers) and mirror; a retry changes nothing",
+        "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker and mirror; a retry changes nothing",
     ignore: !available,
     fn() {
         const folder = Deno.makeTempDirSync();
@@ -73,6 +73,9 @@ Deno.test({
                 Deno.readTextFileSync(new URL("instance-container-destroy.yml", root))
                     .replaceAll("/var/lib/orbit/instance-mail", `${folder}/mail-state`),
             );
+            // The stopped instance-7 sleeps: its asleep marker goes with it, and instance-8's stays.
+            Deno.mkdirSync(`${folder}/hibernation`);
+            for (const id of [7, 8]) Deno.writeTextFileSync(`${folder}/hibernation/app-instance-${id}.asleep`, "");
             for (const name of ["instance-7", "instance-8"]) {
                 Deno.mkdirSync(`${folder}/mail-state/${name}`, {recursive: true});
                 Deno.writeTextFileSync(`${folder}/mail-state/${name}/activation.json`, "[]");
@@ -153,6 +156,7 @@ Deno.test({
                         acl: "instance-7",
                         mirror: `${folder}/mirror.git`,
                         firewall_prefix: "orbit:instance-7-",
+                        asleep_marker: `${folder}/hibernation/app-instance-7.asleep`,
                     },
                 }),
             );
@@ -195,6 +199,7 @@ Deno.test({
                 Deno.readTextFileSync(`${folder}/state.json`),
             );
             assertEquals(Object.keys(state.containers), ["instance-8"]);
+            assertEquals([...Deno.readDirSync(`${folder}/hibernation`)].map((entry) => entry.name), ["app-instance-8.asleep"]);
             assert(!Deno.statSync(`${folder}/mail-state`).isFile);
             assertEquals([...Deno.readDirSync(`${folder}/mail-state`)].map((entry) => entry.name), ["instance-8"]);
             assertEquals(Deno.readTextFileSync(`${folder}/mail-state/instance-8/activation.json`), "[]");

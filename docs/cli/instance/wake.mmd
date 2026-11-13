@@ -1,0 +1,71 @@
+sequenceDiagram
+  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#sleep-and-wake): start a sleeping development container. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake.
+  %% status: draft
+  %% command: instance:wake
+  %% kind: instance.wake
+  autonumber
+  %% lane CL icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CL as Caller<br/>orbit · Caddy
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>Instance container
+  CL->>GW: instance:wake INSTANCE
+  %%> Command:
+  %%> - `orbit instance:wake INSTANCE`
+  %%> - syntax: `<instance-id> [--json]`
+  %%> Callers:
+  %%> - the command
+  %%> - Caddy on the Instance's Node, when a request finds the asleep marker: `GET runtime-activations/app-instance/ID`
+  %%> - planned: a Conn device that opens the T3 server, and the task flow before a turn on an attached Instance
+  %%> - a deployment of a sleeping default starts it in its own run instead
+  %%> Requirements:
+  %%> - the caller is the Instance's Node or has node access to it
+  Note over GW: Start or join the wake<br/>one per Instance
+  %%> When:
+  %%> - an active development container that is not a nested-fleet Instance
+  %%> Result:
+  %%> - an open wake of the Instance is joined: a second caller gets the same Operation, Caddy the same progress page
+  %%> - after a failed wake, Caddy gets the failure page with Try again until a retry or the command starts a new wake
+  %%> On failure:
+  %%> - no container, a nested-fleet Instance or other lifecycle work starts no run
+  GW->>SW: Start run, full intent<br/>operation-instance-wake
+  GW-->>CL: 202 Accepted<br/>Operation ID · progress page
+  SW->>N: Start the container<br/>Ansible · tags start
+  %%> What it does:
+  %%> - `incus start`; nftables, T3, FrankenPHP and the enabled Process units start with the container
+  %%> - waits until each desired-running unit is active
+  %%> Why:
+  %%> - unit enablement holds each Process's desired state, so a stopped Process stays stopped
+  SW->>N: Mark the Instance awake<br/>Ansible · tags awake
+  %%> What it does:
+  %%> - waits up to 30 s for T3's environment endpoint in a clone, else `instance.t3_unready`
+  %%> - removes the asleep marker, so Caddy sends the next request to the app
+  opt the Gateway session expires within 7 days
+    SW->>N: Issue the Gateway session<br/>sensitive output · vault
+    %%> When:
+    %%> - planned; until then the hourly renewal renews the session after the wake
+    %%> What it does:
+    %%> - see conn/environment-renew.mmd
+  end
+  alt the run passes
+    %% path: main
+    SW-->>GW: Run succeeded<br/>terminal result
+    Note over GW: Record awake
+    %%> Result:
+    %%> - the runtime's `power_state` is `running`; the Conn layer shows the T3 server awake
+    %%> - the progress page loads the original path
+  else a step fails
+    %% path: failed
+    SW--xGW: Run failed<br/>failed step, error_code
+    %%> Result:
+    %%> - the asleep marker stays; the Route shows the failure page with Try again
+    %%> Retry:
+    %%> - Try again or the same command; a start of a running container changes nothing
+  end
+  loop until terminal
+    CL->>GW: operation:show TASK
+    GW-->>CL: Status and result
+  end

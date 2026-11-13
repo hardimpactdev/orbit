@@ -163,6 +163,8 @@ additionalFiles:
   - ansible/tasks/instance-mail.yml
   - ansible/tasks/instance-mail-line.yml
   - ansible/instance-mail-update.yml
+  - ansible/instance-container-power.yml
+  - ansible/tasks/instance-container-power.yml
   - ansible/instance-connection-environment.yml
   - ansible/instance_env_keys.py
   - ansible/instance_node_services.py

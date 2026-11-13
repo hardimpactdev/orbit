@@ -1,0 +1,20 @@
+command: instance:wake
+chart: instance/wake
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+uncovered:
+  main: "The proof fleet lacks Instance containers. Pest covers admission, the projection of power_state and the Caddy rule; real-Ansible fixtures cover the marker phase; the live proof runs on a fixture clone."
+  failed: "A failed wake keeps power_state; Pest covers the projection of a failed run."
+cases:
+  - id: invalid-id
+    batch: fresh-fleet
+    covers: []
+    summary: Reject a nonnumeric Instance locally.
+    act:
+      - cli:
+          run: [instance:wake, invalid]
+          forms: [json, human]
+          expect: {exit: 1, code: instance.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}

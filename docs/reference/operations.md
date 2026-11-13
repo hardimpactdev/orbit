@@ -724,6 +724,8 @@ A declared `OperationArtifactSource` may return a bounded existing-file referenc
 
 Development `instance.mail_update` holds the Instance lock and has a 120-second run budget. Its 90-second mail phase leaves room for input, result and cleanup. It returns path and mailer outcomes without environment values; see [`instance:mail:update`](/cli/instance/mail-update).
 
+Development `instance.sleep` and `instance.wake` hold the Instance lock. Their run budgets are 120 and 300 seconds: a 30-second marker phase and a 60-second stop phase, or a 120-second start phase and a 120-second T3 and marker phase, plus input, result and cleanup. A second wake of the same Instance joins the open one. See [`instance:sleep`](/cli/instance/sleep) and [`instance:wake`](/cli/instance/wake).
+
 Container `instance.node_service_detach` uses one `node-service` Ansible phase with a 90-second execution bound and a 120-second Operation budget. It removes only the detached Instance access, retaining a shared port for other attachments; terminal success removes the record. A checkout detach still completes immediately without Node work.
 
 `instance.restore` returns a host development Instance whose removal failed to `active` ([Restore a failed removal](/reference/instance-removal#restore-a-failed-removal)). A failed run leaves the Instance removing and its failed removal live; a new request repeats the command.

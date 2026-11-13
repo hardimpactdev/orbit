@@ -1,0 +1,68 @@
+sequenceDiagram
+  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#sleep-and-wake): stop a development container and leave its Route on the wake page. The hibernation sweep admits the same kind after an idle hour; the command admits it at once.
+  %% status: draft
+  %% command: instance:sleep
+  %% kind: instance.sleep
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · sweep
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>Instance container
+  CLI->>GW: instance:sleep INSTANCE
+  %%> Command:
+  %%> - `orbit instance:sleep INSTANCE`
+  %%> - syntax: `<instance-id> [--json]`
+  %%> Callers:
+  %%> - the command, at once
+  %%> - planned: the hibernation sweep, every 10 min, for an Instance without HTTP or T3 activity for an hour, without a running task and without a desired-running keep-alive Process
+  Note over GW: Admit the sleep
+  %%> When:
+  %%> - an active development container that is not a default and not a nested-fleet Instance; take the Instance lock
+  %%> On failure:
+  %%> - no container, a default, a nested-fleet Instance, an active task or lifecycle work starts no run
+  GW->>SW: Start run, full intent<br/>operation-instance-sleep
+  GW-->>CLI: 202 Accepted<br/>Operation ID
+  opt the hibernation sweep
+    SW->>N: Check T3 is idle<br/>T3 MCP · thread list
+    %%> When:
+    %%> - planned, with the sweep; the sweep does not ship without this read
+    %%> What it does:
+    %%> - asks T3 for a running or queued turn and for the time of the last turn and client activity
+    %%> Result:
+    %%> - a turn or recent T3 activity ends the run with skip `t3_active`; the container stays running
+    %%> Why:
+    %%> - a sleep by itself never cuts a turn. The command does not check: its result says `t3_turn: not_checked`
+  end
+  SW->>N: Mark the Route asleep<br/>Ansible · tags asleep
+  %%> What it does:
+  %%> - checks that Caddy's loaded site of the Instance has the asleep rule, else `instance.sleep_route_unready`
+  %%> - writes the asleep marker, so each request from now on gets the wake page
+  %%> Why:
+  %%> - the marker comes before the stop: a request during the stop gets the wake page, not an error
+  SW->>N: Stop the container<br/>Ansible · tags stop
+  %%> What it does:
+  %%> - `incus stop` with a 30 s timeout: systemd stops T3, FrankenPHP and the Processes
+  %%> - a T3 turn that runs is cut; T3 continues it at the next wake
+  %%> - the disk, the databases, the Route, the unit states and the T3 sessions stay
+  alt the run passes
+    %% path: main
+    SW-->>GW: Run succeeded<br/>terminal result
+    Note over GW: Record asleep
+    %%> Result:
+    %%> - the runtime's `power_state` is `stopped`; the Conn layer shows its T3 server asleep
+  else a step fails
+    %% path: failed
+    SW--xGW: Run failed<br/>error_code
+    %%> Result:
+    %%> - `power_state` stays as it was. A marker without a stop is harmless: the next request wakes the Instance, which removes it
+    %%> Retry:
+    %%> - the same command again
+  end
+  loop until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: Status and result
+  end

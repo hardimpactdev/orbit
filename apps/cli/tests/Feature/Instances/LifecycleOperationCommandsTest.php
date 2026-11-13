@@ -11,7 +11,9 @@ use Orbit\Sdk\Requests\Instances\CloneInstanceRequest;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
 use Orbit\Sdk\Requests\Instances\MigrateInstanceRequest;
+use Orbit\Sdk\Requests\Instances\SleepInstanceRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
+use Orbit\Sdk\Requests\Instances\WakeInstanceRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
@@ -57,7 +59,24 @@ it('follows lifecycle admission and emits only the final Operation in JSON', fun
     'transfer' => ['instance:transfer', TransferInstanceRequest::class, ['instance' => 501, 'node' => 10, '--force' => true], ['node_id' => 10]],
     'migrate' => ['instance:migrate', MigrateInstanceRequest::class, ['instance' => 501, '--force' => true], []],
     'destroy' => ['instance:destroy', DestroyInstanceRequest::class, ['instance' => 501, '--yes' => true, '--force' => true], ['force' => true]],
+    'sleep' => ['instance:sleep', SleepInstanceRequest::class, ['instance' => 501], []],
+    'wake' => ['instance:wake', WakeInstanceRequest::class, ['instance' => 501], []],
 ]);
+
+it('says in human output that a sleep did not check T3', function (): void {
+    $final = ['id' => 901, 'kind' => 'instance.sleep', 'target_type' => 'instance', 'target_id' => 501, 'status' => 'succeeded', 'sequence' => 4,
+        'result' => ['power_state' => 'stopped', 't3_turn' => 'not_checked']];
+    MockClient::global([
+        SleepInstanceRequest::class => MockResponse::make(['data' => $final], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final]),
+    ]);
+
+    $exit = Artisan::call('instance:sleep', ['instance' => 501, '--no-interaction' => true]);
+
+    expect($exit)->toBe(0)->and(str_replace(["\n", "\r"], ' ', Artisan::output()))
+        ->toContain('T3 was not checked: a running agent turn, if any, was cut.');
+});
 
 it('names blockers in human and JSON migration failures', function (bool $json, string $code, string $message): void {
     $final = ['id' => 901, 'kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => 501,

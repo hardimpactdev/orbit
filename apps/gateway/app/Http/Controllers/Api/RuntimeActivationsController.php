@@ -7,9 +7,11 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Hibernation\ScheduleInstanceRuntimeWakeAction;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
+use App\Domain\Instances\Power\InstanceWake;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Responses\RuntimeActivationPage;
 use App\Models\Instance;
 use App\Models\Node;
@@ -28,6 +30,7 @@ final class RuntimeActivationsController extends Controller
         HibernationWakeFailureStore $failures,
         ScheduleInstanceRuntimeWakeAction $schedule,
         RuntimeActivationPage $pages,
+        InstanceWake $wake,
     ): Response {
         $caller = $request->user();
         $uri = $this->forwardedUri($request);
@@ -37,12 +40,20 @@ final class RuntimeActivationsController extends Controller
         }
 
         $instance->loadMissing('node');
+        $retry = in_array('orbit-wake-retry=1', explode('&', (string) parse_url($uri, PHP_URL_QUERY)), true);
+
+        // A container Instance's site calls here only behind its asleep marker: start or join its one wake
+        // (docs/reference/development-containers.md#sleep-and-wake).
+        if ($instance->runtime()->exists()) {
+            $failure = $wake->activate($instance, $retry, 'node:'.(RequireActiveWireGuardPeer::activePeer($request)->id ?? $instance->node_id));
+
+            return $failure === null ? $pages->progress($instance, $uri) : $pages->failed($failure, $instance, $uri);
+        }
 
         if (! $policy->appliesToInstance($instance)) {
             return $pages->failed("Instance [{$instance->name}] is not an app-dev development target.", $instance, $uri);
         }
 
-        $retry = in_array('orbit-wake-retry=1', explode('&', (string) parse_url($uri, PHP_URL_QUERY)), true);
         if ($retry) {
             $failures->forget($instance->id);
         }

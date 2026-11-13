@@ -43,7 +43,7 @@ sequenceDiagram
   GW-->>CONN: environment id<br/>named by its Instance
   %%> Result:
   %%> - each server of an Instance names its `instance_id` and the container's `power_state`; Conn shows a `stopped` server as asleep
-  %%> - waking it on open with container/wake.mmd comes with sleep and wake
+  %%> - waking it on open with instance/wake.mmd comes with sleep and wake
   CONN->>GW: Pair with the server<br/>conn pairing create
   %%> What it does:
   %%> - the pairing of docs/cli/conn/pairing-create.mmd: Conn follows its task with conn:operation:show and reads the link once with conn:pairing:show

@@ -421,6 +421,14 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
+  "operation-instance-sleep": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
+  "operation-instance-wake": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "operation-instance-connection-environment": {
    "result": "read-only",
    "cleanup": "idempotent"

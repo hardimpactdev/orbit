@@ -96,7 +96,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
 | `gateway` | `deploy`, `resume`, `rollback`, `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. The `gateway:release` and `gateway:auto-release` commands deploy and roll back the Gateway itself, and resume paused automatic releases. |
 | `github` | `sync` | The Gateway reads the [GitHub App installations](/cli/github/app-sync) from GitHub now; no Operation. |
-| `instance` | `attach`, `clone`, `deploy`, `detach`, `logs`, `migrate`, `register`, `rename`, `resolve`, `restore`, `rollback`, `setup`, `transfer` | Operate Instance source and runtime, read logs, run setup, record branches, migrate checkouts into containers, and record explicit Node service targets before migration and detach their records after migration too. |
+| `instance` | `attach`, `clone`, `deploy`, `detach`, `logs`, `migrate`, `register`, `rename`, `resolve`, `restore`, `rollback`, `setup`, `sleep`, `transfer`, `wake` | Operate Instance source and runtime, read logs, run setup, record branches, migrate checkouts, sleep and wake containers, and attach or detach Node service targets. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `ai-router` | `setup`, `status` | The CLI lists models from the collector snapshot, deploys or removes the fleet CLIProxyAPI quota collector, or reports its state. |
 | `operation` | `cancel` | The CLI asks a running [operation](/reference/operations) to stop. `operation:list` and `operation:show` read operations. |
