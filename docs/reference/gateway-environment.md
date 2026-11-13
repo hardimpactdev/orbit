@@ -181,7 +181,7 @@ The fleet-owned `instances.mailpit` configuration names the main Docker Node Pro
 
 `ORBIT_INSTANCES_NESTED_FLEET_PROJECTS` is the operator-set trial allow list, read as `instances.nested_fleet_projects`: a JSON list of positive integer Project IDs, such as `[123]`. It defaults to `[]`, so no Project can enable `nested_fleet` by default. Only list disposable trial Projects; do not enable the flag on a real Project.
 
-A list that is not a JSON array, such as `{}` or `{"0":123}`, is malformed: enabling then refuses with `project.nested_fleet_projects_invalid`. The Project flag refuses new Instances of its Project until their image exists; see [Nested fleet setting](/reference/projects#nested-fleet-setting). Removing an ID does not change its stored flag and does not prevent turning it off.
+A list that is not a JSON array, such as `{}` or `{"0":123}`, is malformed: enabling then refuses with `project.nested_fleet_projects_invalid`. See [Nested fleet setting](/reference/projects#nested-fleet-setting) for what the flag does. Removing an ID does not change its stored flag and does not prevent turning it off.
 
 Task VM hosts use [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list. Configure and verify each host's stored settings before removing the former `ORBIT_TASK_VMS_INCUS_HOSTS` variable with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read the environment list, including when configuration is cached.
 

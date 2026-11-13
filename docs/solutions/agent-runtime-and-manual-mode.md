@@ -27,7 +27,7 @@ These decisions are settled. Later steps build on them without asking again.
 | 2026-11-09 | A T3 server inside each container is the agent engine. It replaces Pi Durable in containers. |
 | 2026-11-09 | Swamp drives T3 through its `/mcp` endpoint and WebSocket API. The Pi server stays on task VMs until they switch. |
 | 2026-11-09 | Inside a development container, the app and every Orbit Process run as `orbit`. |
-| 2026-11-09 | T3, Claude Code and Codex run as `agent`, and so do their shell commands. There is no wrapper shell and no sudo. |
+| 2026-11-09 | T3, Claude Code and Codex run as `agent`, and so do their shell commands. There is no wrapper shell. There is no sudo, except for `agent` in a [nested-fleet container](/reference/development-containers#the-nested-fleet-image). |
 | 2026-11-09 | T3, Claude Code, Codex and the environment notes live once per Node, in a versioned read-only agent folder. Every development container mounts it. |
 | 2026-11-09 | The runtime binaries have their own such folder. |
 | 2026-11-09 | An update flips a link and restarts T3 per container. The CLI self-updaters are off. |

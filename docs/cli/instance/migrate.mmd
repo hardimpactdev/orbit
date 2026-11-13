@@ -27,7 +27,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - a previous migrate must be settled by the reconciler; otherwise instance.migrate_settlement_pending (409) names its Operation and hold limit; retry after settlement
   %%> - the Instance is an active checkout Instance on an `app-dev` Node of the build list, else `instance.migrate_unsupported`
-  %%> - a Project with `nested_fleet` on refuses with `operation.kind_unavailable` (503) before any record: nested-fleet hosting is not built yet; the runtime is not reserved
+  %%> - a Project with `nested_fleet` on refuses with `operation.kind_unavailable` (503) before any record: only `instance:create` makes Instances of such a Project, as containers; the runtime is not reserved
   %%> - a non-default Instance needs its Project's default on the same Node and its own source identity; no default seed or snapshot is consumed
   %%> - the Instance has only ordinary systemd or supported `vp-dev` Processes, no unfinished deployment or Process operation/runtime cleanup and no Route beside its own; a non-default Instance needs Conn and the model router, as a clone does
   %%> - `vp-dev` keeps its identity, assigned port and desired state; unsupported preset versions, custom commands, external paths and recorded container port conflicts refuse before downtime, naming the Process and reason

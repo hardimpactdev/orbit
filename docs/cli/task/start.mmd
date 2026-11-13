@@ -16,7 +16,7 @@ sequenceDiagram
   %%> Started by:
   %%> - `task:start` for a todo group, from proof CI or feature work
   %%> Result:
-  %%> - a group of a Project with `nested_fleet` on is refused at once with `operation.kind_unavailable` (503): no place, identity, workspace, wait or Operation is recorded, because nested-fleet hosting is not built yet; a waiting Operation that reaches the claim fails with the same code
+  %%> - a group of a Project with `nested_fleet` on is refused at once with `operation.kind_unavailable` (503): no place, identity, workspace, wait or Operation is recorded, because only `instance:create` makes Instances of such a Project, as containers; a waiting Operation that reaches the claim fails with the same code
   %%> - a group of any Project but the proof Project is refused at once with `task_vm.project_unsupported`: the base carries only the proof Project's checkout, so no free place can serve it, and it never joins the wait queue
   %%> - a task place in the separate task pool; a full pool waits up to two hours without an identity or workspace
   %%> - the lowest free place number under the capacity of the host with the most room: `shark-tvm-3`

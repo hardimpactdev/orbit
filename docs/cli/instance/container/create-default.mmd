@@ -21,7 +21,7 @@ sequenceDiagram
   Note over GW: Validate, reserve default<br/>address · .env
   %%> Requirements:
   %%> - the calling Node has node access to the target Node, an active `app-dev` Node
-  %%> - a Project with `nested_fleet` on refuses with `operation.kind_unavailable` (503) before any record: nested-fleet hosting is not built yet
+  %%> - a Project with `nested_fleet` on is admitted only as a container in the nested Incus project: `instance.nested_fleet_host_unavailable` (409) when the Node has nested-fleet hosting off, `instance.nested_fleet_container_required` (409) when the Node is not on the build list or the result is a host checkout, both before any record; its default is then made from the nested-fleet image
   %%> - the Project has no default Instance anywhere in the fleet; its other Instances are made on this Node
   %%> - a web-serving Project names its PHP version, and the runtime folder holds that static PHP build
   %%> Result:

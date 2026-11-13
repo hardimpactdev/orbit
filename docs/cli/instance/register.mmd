@@ -20,7 +20,7 @@ sequenceDiagram
   CLI->>GW: instance:register<br/>--project=7
   Note over GW: Check against the facts<br/>path · origin · layout
   %%> Requirements:
-  %%> - a Project with `nested_fleet` on refuses with `operation.kind_unavailable` (503) before any record: nested-fleet hosting is not built yet; the Gateway checks it before it reads the facts and again when it records the Instance
+  %%> - a Project with `nested_fleet` on refuses with `operation.kind_unavailable` (503) before any record: only `instance:create` makes Instances of such a Project, as containers; the Gateway checks it before it reads the facts and again when it records the Instance
   alt facts match
     Note over GW: Record the Instance<br/>branch · commit · application
     alt record-only

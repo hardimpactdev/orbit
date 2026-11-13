@@ -20,22 +20,26 @@ A Project records one Git repository and the defaults for running it. New Instan
 
 `nested_fleet` is a stored and public boolean that defaults to false. Set it through the Project update API with a JSON boolean. Do not set it on a real Project.
 
-Until the image for nested-fleet containers exists, Orbit refuses every new Instance of the Project with `operation.kind_unavailable` (503). One placement rule in the Gateway decides this for every path that writes an Instance. These paths are development create and its retry, Conn create, clone, register and migrate. They also include `proof:run` for the proof Project, and task work that needs a new workspace: provision, prep, build, turn, prep fix and review round, also after a wait.
+Every Instance of a Project with the flag on is a container in the nested Incus project, made from the [nested-fleet image](/reference/development-containers#the-nested-fleet-image). One placement rule in the Gateway decides this for every path that writes an Instance or its runtime. Only development create, its retry and Conn create make such an Instance: the Project's default, or a clone of it. They refuse every other result before any record:
 
-A new request is refused before any record: no Instance, runtime, task place, Node identity, capacity wait or Operation. An Operation that already waited when the flag was turned on ends `failed` with the same code. A Project with the flag off is not affected.
+- the Node has [nested-fleet hosting](/reference/node-settings#nested-fleet-instance-hosting) off: `instance.nested_fleet_host_unavailable` (409);
+- the Node is not on the [build list](/reference/development-containers#the-build-list): `instance.nested_fleet_container_required` (409);
+- the result would be a host checkout, such as a clone of a default that is a checkout: the same code.
+
+Every other path refuses such a Project with `operation.kind_unavailable` (503), because it makes no such container. These paths are clone, register and migrate, `proof:run` for the proof Project, and task work that needs a new workspace: provision, prep, build, turn, prep fix and review round, also after a wait. Each refusal comes before any record: no Instance, runtime, task place, Node identity, capacity wait or Operation. An Operation that already waited when the flag was turned on ends `failed` with the same code. A Project with the flag off is not affected.
 
 The same placement rule also says where a new Instance lives:
 
 | Project | Node | Result |
 | --- | --- | --- |
-| Flag off | Any | A container in the Incus project `orbit-instances` on a Node of the [build list](/reference/development-containers#the-build-list), else a host checkout, as before |
+| Flag off | Any | A container in the Incus project `orbit-instances` on a Node of the [build list](/reference/development-containers#the-build-list), else a host checkout |
 | Flag on | [Nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) off | Refused with `instance.nested_fleet_host_unavailable` (409) |
 | Flag on | Switch on, but the result is not a container: the Node is not on the build list, or the Project's default Instance is a host checkout | Refused with `instance.nested_fleet_container_required` (409) |
 | Flag on | Switch on, on the build list, and a container result | A container in the Incus project `orbit-instances-nested` |
 
-Each writer calls the rule's entry for its kind. Development create, Conn create, migration and the runtime reservation can make a container. Register and the production clone make a host checkout. Task work and `proof:run` make a task workspace. Today every entry refuses a nested-fleet Project, as above.
+Each writer calls the rule's entry for its kind. Development create, Conn create and the runtime reservation can make a container. Register, migration and the production clone read or make a host checkout. Task work and `proof:run` make a task workspace.
 
-The Instance runtime records the chosen Incus project once, when Orbit reserves it. A clone takes the project that its default's runtime records. Every later step reads that record and never derives the project from the flag again. Today the refusal above comes first, so the two 409 codes and the nested result are not reachable yet; they stay when the image arrives.
+The Instance runtime records the chosen Incus project once, when Orbit reserves it. A clone takes the project that its default's runtime records. Every later step reads that record and never derives the project from the flag again.
 
 Change it alone: a request that sends `nested_fleet` with any other Project setting is refused with `project.nested_fleet_update_separate` (422) before any change. Turning it on requires the Project ID in the operator-set [trial allow list](/reference/gateway-environment#keys-in-the-example-file); otherwise Orbit refuses with `project.nested_fleet_not_allowed` (409). The list defaults to empty. A malformed list refuses with `project.nested_fleet_projects_invalid` (500). A changed value refuses with `project.nested_fleet_in_use` (409) while the Project has any Instance. Sending the current value is allowed, and turning it off does not require allow-list membership. An omitted member preserves its value.
 
@@ -57,7 +61,7 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `source_access` | `github_app` or `gh_cli`. How Orbit reads a private `github.com` repository. See [Source access](#source-access). |
 | `default_branch` | Branch of the `default` Instance and the base for new branches. |
 | `root` | Repository-relative web root that Instances inherit, such as `public` or `apps/site/public`. It is not the checkout path or the Laravel application directory. |
-| `nested_fleet` | Boolean, default false. While on, Orbit refuses new Instances of the Project; do not enable it on a real Project. See [Nested fleet setting](#nested-fleet-setting). |
+| `nested_fleet` | Boolean, default false. While on, the Project's Instances are containers in the nested Incus project, which only `instance:create` makes; do not enable it on a real Project. See [Nested fleet setting](#nested-fleet-setting). |
 | `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
 | `task_workspace_routed` | Boolean, default true. Whether newly created task workspaces get a Route. See [Task workspace routing](#task-workspace-routing). |
 | `review_and_merge` | Boolean, default false. Whether Orbit reviews every push of the Project's tasks, reviews incoming pull requests, and merges reviewed green heads. See [Review and merge](/reference/tasks#review-and-merge). |
