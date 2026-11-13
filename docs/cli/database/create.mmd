@@ -94,7 +94,7 @@ sequenceDiagram
       %%> - Requires a MySQL or PostgreSQL server and existing Instance 42.
       %%> - Use the Instance owner and password, reusing them when already recorded on this server.
       %%> - Add the test database and default eight-worker pool to the same create batch.
-      %%> - After native success, project the attachment to Instance 42 under DB; run `env:sync` to install its keys.
+      %%> - After native success, project the attachment to Instance 42 under DB; run `env:sync` to install its keys (on a container Instance it writes only the connection's keys in place).
     end
     opt --test-processes
       Note over GW: Set the test pool size

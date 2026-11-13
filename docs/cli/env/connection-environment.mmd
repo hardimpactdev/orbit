@@ -1,0 +1,51 @@
+sequenceDiagram
+  %% env:sync on a container Instance: Orbit never renders an existing container .env again, so it writes only the attached connections' keys in place.
+  %% status: draft
+  %% command: env:sync
+  %% kind: instance.connection_environment
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as app-dev Node<br/>Instance container
+  CLI->>GW: env:sync --instance=24
+  %%> Command:
+  %%> - `orbit env:sync --instance=24`; Instance 24 runs in a container
+  Note over GW: Admit the connection keys<br/>key names · paths · units
+  %%> When:
+  %%> - a running container, active, with no unfinished lifecycle work; hold its Instance lock
+  %%> - key names of every attached connection, its ACL egress rule, bridge endpoint and UFW rule, and the Instance's running units
+  %%> On failure:
+  %%> - no attached connection (`env.connection_missing`), a stopped container or busy work start no run
+  GW->>SW: Push lines to the vault<br/>env-5140
+  %%> Why:
+  %%> - the rendered lines hold the password; only the vault key name goes in the run input (R3)
+  GW->>SW: Start run, full intent<br/>connection-environment
+  GW-->>CLI: 202 Accepted<br/>Operation ID
+  SW->>N: Write the connection keys<br/>Ansible · tags environment
+  %%> What it does:
+  %%> - adds the missing egress rules, bridge endpoints and UFW rules; removes nothing
+  %%> - replaces each key's line in `.env`, adds a missing key at the end; a `${...}` value stays and is named
+  %%> - every other byte stays; the lines reach the Node script on stdin, never argv or a log
+  %%> - a changed file clears Laravel's config cache and try-restarts the Instance's running units
+  alt keys written
+    %% path: main
+    N-->>SW: Key names per outcome<br/>written · added · kept · unchanged
+    SW-->>GW: Run succeeded<br/>terminal result
+    %%> Result:
+    %%> - the written keys become Orbit-owned keys of Instance 24
+  else file refused or phase failed
+    %% path: failed
+    N--xSW: env.configuration_invalid
+    %%> On failure:
+    %%> - a missing file, a link, or a quoted value that never closes leaves the file as it was; paths already added stay; a rerun is safe
+    SW--xGW: Run failed<br/>error code
+  end
+  loop until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: Status and result
+  end

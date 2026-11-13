@@ -1,0 +1,83 @@
+id: b8021b0c-528e-4af8-ba6f-09ecc563bf56
+name: operation-instance-connection-environment
+description: env:sync on a container Instance; add the attached connections' network paths and write only their keys into the .env.
+vaults: [orbit-control-inputs]
+queueTimeout: 10
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: instance.connection_environment}
+    intent: {type: object}
+    execution_secrets:
+      type: object
+      properties:
+        connection_environment:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^instance-environment-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [connection_environment]
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+  - name: environment
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ${{ "ansible-input" }}
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      - name: Write the connection keys
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "instance-connection-environment-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 150 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags environment "$ORBIT_ANSIBLE/instance-connection-environment.yml"
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+              ORBIT_CONNECTION_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.connection_environment.vault, inputs.execution_secrets.connection_environment.key) }}'
+      - name: result
+        labels: {role: swamp}
+        dependsOn: [{step: Write the connection keys, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "instance-connection-environment-result" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 cat "$ORBIT_RUN/result.json"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      - name: cleanup
+        labels: {role: swamp}
+        dependsOn: [{step: result, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "instance-connection-environment-cleanup" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'

@@ -2768,6 +2768,16 @@ inputs = [
 "test_real_default_launch_continues_after_mail_failure" = 3
 
 [[fixture]]
+file = "swamp/tests/ansible_instance_env_keys_test.py"
+cost = 3
+slices = false
+inputs = [
+  "swamp/ansible/instance_env_keys.py",
+  "swamp/ansible/instance-connection-environment.yml",
+  "swamp/workflows/workflow-operation-instance-connection-environment.yaml",
+]
+
+[[fixture]]
 file = "swamp/tests/ansible_instance_mail_line_test.py"
 cost = 57
 slices = false
