@@ -13,6 +13,7 @@ use App\Domain\Processes\ProcessSpecification;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Processes\VitePreset;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\ProjectDefinitions\DefinitionEnvironment;
 use App\Domain\Schedules\DesiredTimerState;
@@ -269,8 +270,12 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
     /** @return array{runtime: ProcessRuntime, working_directory: ?string, runtime_config: array<string,mixed>, restart_policy: string, keep_alive: bool, restart_on_deploy: bool} */
     public function attributesForDefinition(Instance $instance, ProcessDefinition $definition, ProcessTarget $target): array
     {
+        $container = $target->container !== null && ! $instance->placedOnAppProd();
+        if (($definition->spec['preset'] ?? null) === VitePreset::NAME && ! $container) {
+            throw new ResourceOperationException('process.container_command_unsupported', "Process definition [{$definition->name}] runs only in an Instance container.", 409);
+        }
         $attributes = $this->processSpecifications->attributes($this->processData($instance, $definition), $target);
-        if ($target->container !== null && ! $instance->placedOnAppProd()) {
+        if ($container) {
             foreach (['environment_file', 'required_mount_paths', 'preset', 'preset_version'] as $key) {
                 if (array_key_exists($key, $definition->spec)) {
                     $attributes['runtime_config'][$key] = $definition->spec[$key];
@@ -282,6 +287,12 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
                 }
                 // Capture precedes port allocation. Placement renders this supported template with the destination's port.
                 $attributes['runtime_config']['command'] = VpDevPreset::command();
+            }
+            if (($attributes['runtime_config']['preset'] ?? null) === VitePreset::NAME) {
+                if ($definition->spec['command'] !== VitePreset::definitionCommand()) {
+                    throw new ResourceOperationException('process.container_command_unsupported', "Process definition [{$definition->name}] has a custom preset command.", 409);
+                }
+                $attributes['runtime_config']['command'] = VitePreset::command($instance);
             }
         }
 

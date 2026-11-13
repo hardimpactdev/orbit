@@ -167,7 +167,7 @@ A Process can also store an environment map in its specification. The unit recei
 
 The derived keys always win: `PATH`, `NODE_USE_SYSTEM_CA`, `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, the `ORBIT_DEV_SERVER_*` keys, and the SSR keys when the Instance has an SSR port.
 
-A development Process also receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY`, the paths of the Instance's certificate files under `~/.orbit/certificates/app-instance-{id}/current/`. The `vp-dev` preset does not receive them. When the Instance has a Route, it receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, and `ORBIT_DEV_SERVER_PATH` for the [development-server endpoint](/reference/routes#development-server-endpoint), and `ORBIT_DEV_SERVER_PORT` only when `vite_port` is assigned. It also receives `ORBIT_SSR_PORT` and `INERTIA_SSR_URL` when it has an [assigned SSR port](/reference/assigned-ssr-ports), with or without a Route. These derived values are not secret. The unit carries them both as `Environment=` directives and on `ExecStart` through `/usr/bin/env`.
+A development Process also receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY`, the paths of the Instance's certificate files under `~/.orbit/certificates/app-instance-{id}/current/`. The `vp-dev` and `vite` presets do not receive them, and their units unset both names. When the Instance has a Route, it receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, and `ORBIT_DEV_SERVER_PATH` for the [development-server endpoint](/reference/routes#development-server-endpoint), and `ORBIT_DEV_SERVER_PORT` only when `vite_port` is assigned. The `vite` preset never receives `ORBIT_DEV_SERVER_PORT`. It also receives `ORBIT_SSR_PORT` and `INERTIA_SSR_URL` when it has an [assigned SSR port](/reference/assigned-ssr-ports), with or without a Route. These derived values are not secret. The unit carries them both as `Environment=` directives and on `ExecStart` through `/usr/bin/env`.
 
 Orbit adds the generic `DEV_SERVER_ORIGIN` alias only to the `vp-dev` dev-server preset. Orbit adds it beside `ORBIT_DEV_SERVER_ORIGIN` in the unit directives and command prefix when the Process has a Route and its own environment does not supply the generic name. The Project's own value wins, including an empty value: Orbit leaves its unit and managed Process environment file unchanged. The generic name is not reserved or filtered. Ordinary Route-backed, Node and Route-less Processes keep their existing rendering and `ORBIT_*` values.
 
@@ -180,12 +180,41 @@ A preset configures a development Instance Process. It sets the command, the run
 | Preset | Result |
 | --- | --- |
 | `vp-dev` | Runs VitePlus on an [assigned Vite port](/reference/assigned-vite-ports). The default restart policy is `on-failure`. |
+| `vite` | Runs the Project's own Vite on port 5173 in an Instance container. Browsers reach it at `https://<Route domain>:5173`. See [The vite preset](#the-vite-preset). |
 
-The preset also supplies the Instance's [Vite host allowance](/reference/assigned-vite-ports#application-setup) in its unit environment.
+Both presets supply the Instance's [Vite host allowance](/reference/assigned-vite-ports#application-setup) in their unit environment. Neither unit loads the application `.env` as an `EnvironmentFile`; Vite loads it. An Instance container runs at most one dev-server preset Process, `vp-dev` or `vite`. A second one fails the container's units with `process.container_port_conflict` and the message "Process [<id>:<name>] cannot run in the container: another dev-server preset Process owns the same port."
 
 A preset needs a development Instance target. The Gateway refuses a Node target with `validation.failed` on `target_type`, and any other Instance with `process.preset_target_invalid`. An Instance has at most one Process of each preset. Another name for the same preset fails with `process.preset_exists`. The same request again returns the existing Process and keeps its desired state. A Process name alone never selects a preset.
 
 A [hibernation wake](/reference/app-dev-runtime-hibernation#wake) starts Vite on its recorded port without changing the assignment or publishing Caddy. A port conflict keeps the site asleep and shows a failure page. [`process:start`](/cli/process/start) remains the explicit operation that rechecks the port and publishes its handler.
+
+### The vite preset
+
+The `vite` preset runs a plain Vite dev server, such as `"dev": "vite"`, in a development Instance container. It needs no change in the Project's repository and no Vite+.
+
+It comes only from a Project Process definition for `development`. Create one with the API behind the MCP tool `project-process-definition-create`:
+
+```json
+{"name": "vite", "environments": ["development"],
+ "spec": {"runtime": "systemd", "preset": "vite", "preset_version": 1,
+          "command": ["vite", "--host=0.0.0.0", "--port=5173", "--strictPort"],
+          "restart_policy": "on-failure"}}
+```
+
+The command must be exactly this canonical command. The definition may add `environment`, `keep_alive` and `restart_policy`; without `restart_policy`, Vite is not restarted after a crash. A container Instance created after that gets the Process, and a deployment of an existing container default adds it. The container unit runs `<application directory>/node_modules/.bin/vite --host=0.0.0.0 --port=5173 --strictPort` as `orbit`, in the application directory. It installs no dependencies. A checkout Instance has no container for it: its create refuses the definition with `process.container_command_unsupported`.
+
+The unit sets `VITE_APP_URL` to the Instance's Route URL, `https://<Route domain>`, beside the host allowance. The definition's own `VITE_APP_URL` wins, including an empty value; Orbit then adds none. Orbit does not read the Project's `.env` for it.
+
+- The preset works for a Project whose Vite config reads `VITE_APP_URL`, for example to write `public/hot` as `https://<Route domain>:5173`.
+- A stock `laravel-vite-plugin` config does not read it. Such a Project needs `server.origin` instead.
+- The unit's value beats a `VITE_APP_URL` in the Project's `.env`, because Vite gives the process environment priority over `.env` files.
+
+The preset has no assigned Vite port, no `/__orbit/vite` path and no `DEV_SERVER_ORIGIN`. Browsers reach port 5173 through the container's [development ports](/reference/development-containers#agent-development-servers). That way in has its limits:
+
+- Only a container clone with a private Route has development ports. A container default runs no T3 and has none, so its `vite` Process runs but no browser reaches it.
+- Only WireGuard clients reach them. A client that resolves the domain to the Node's LAN address does not.
+- The page at `https://<Route domain>` loads its modules from port 5173, another origin. Whether Vite allows that depends on the Project's Vite config.
+- A program on the Node that listens on port 5173 or publishes it takes the port from every clone on that Node.
 
 A supported `vp-dev` Process also moves during [Instance migration](/cli/instance/migrate). It keeps its preset identity, assigned port and desired state, uses the shared runtime in the container, and follows the ordinary container Process controls after cutover.
 
@@ -328,7 +357,7 @@ A Project holds Process definitions and Schedule definitions. A definition has a
 | `environments` | `production`, `development` or both; Schedule definitions accept only `production`. Production preparation copies definitions that include `production`. A development `instance:create` creates and starts definitions that include `development`, after its setup steps. |
 | `spec` | Process runtime fields, without owner, start or user. Development-only extensions are listed below. Schedule: `command`, `calendar` and `timeout_seconds`, with Schedule limits. |
 
-For systemd, definitions that apply only to development also accept `restart_on_deploy`, `environment_file`, `required_mount_paths` and private `environment`. Captured `vp-dev` definitions retain their preset name, version and canonical command; new preset definitions refuse.
+For systemd, definitions that apply only to development also accept `restart_on_deploy`, `environment_file`, `required_mount_paths` and private `environment`. Captured `vp-dev` definitions retain their preset name, version and canonical command. A new definition may name the [`vite` preset](#the-vite-preset) with its canonical command; a new `vp-dev` definition is refused. An edit keeps the definition's preset.
 
 A Schedule definition has no host Node, so the Gateway does not run `systemd-analyze calendar` when it stores one. The host Node checks the calendar when production preparation installs the copy.
 
@@ -383,7 +412,7 @@ A copied worker or Schedule can run before the new Instance's data is ready, for
 
 Node Process units reference immutable root-owned `0600` EnvironmentFiles. Managed environment values travel only through the admitted private-material callback and protected stdin. The public unit contains the environment file path.
 
-The `vp-dev` preset applies only to development Instance Processes. Process definitions with `development` are copied to each new development Instance; Schedule definitions are copied only to production Instances.
+The `vp-dev` and `vite` presets apply only to development Instance Processes. Process definitions with `development` are copied to each new development Instance; Schedule definitions are copied only to production Instances.
 
 ### A Node Process can name its account
 

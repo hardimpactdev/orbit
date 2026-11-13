@@ -68,7 +68,7 @@ class OpenApiPresetRulesTest(unittest.TestCase):
         exec(compile(ast.Module(body=nodes, type_ignores=[]), '<preset_rules>', 'exec'), namespace)
         return namespace
 
-    def test_preset_class_constant_accepts_only_vp_dev(self):
+    def test_preset_class_constants_accept_vp_dev_and_vite(self):
         namespace = self.rules_namespace()
         path = ROOT / 'apps/gateway/app/Http/Requests/ProjectDefinitions/ProcessDefinitionRequest.php'
         source = namespace['resolve_rule_constants'](path.read_text(), path)
@@ -76,7 +76,7 @@ class OpenApiPresetRulesTest(unittest.TestCase):
 
         schema, _, _ = namespace['schema_from_tokens'](namespace['tokens_for'](rule))
 
-        self.assertEqual(schema, {'type': 'string', 'enum': ['vp-dev']})
+        self.assertEqual(schema, {'type': 'string', 'enum': ['vp-dev', 'vite']})
 
     def test_integer_preset_version_accepts_only_integer_one(self):
         namespace = self.rules_namespace()

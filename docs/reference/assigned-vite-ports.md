@@ -117,4 +117,6 @@ Orbit does not guess from a Process name or command that it runs Vite. The store
 
 The `vp-dev` Process preset uses the assigned Vite port for a development Instance and does not apply to Node or Project targets.
 
+The [`vite` preset](/reference/processes-and-schedules#the-vite-preset) is also a stored fact. It runs on its own fixed port in a container, so it gets no assigned Vite port, no `/__orbit/vite` path and no port preparation.
+
 The `vp-dev` unit does not load the application `.env` as a systemd `EnvironmentFile`, on either a host checkout or a container. Vite loads that file itself, so workspace edits follow Vite's normal reload behavior and live references can expand. Orbit's own unit settings remain authoritative: systemd gives an `EnvironmentFile` precedence over `Environment=` regardless of directive order, so passing the app file would override them. Vite configuration that reads an application key from `process.env` must use `loadEnv` instead.
