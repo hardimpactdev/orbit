@@ -509,7 +509,7 @@ The wait for a nested fleet is not a phase of the role: it is the task file `swa
 
 The nested guests are Incus system containers. The role serves them nothing: each gets the checkout of its task as an Incus disk device, and a restore of `base` is a plain restore and a reboot (see [compute drivers](/reference/compute-drivers)).
 
-A nested fleet inside an Instance container is kept by its own task files, `swamp/ansible/tasks/instance-fleet-*.yml`, not by this role. No flow calls them yet. [The fleet step](/reference/development-containers#the-fleet-step) describes them.
+A nested fleet inside an Instance container is kept by its own task files, `swamp/ansible/tasks/instance-fleet-*.yml`, not by this role. Orbit calls them when it deploys the default of such a Project, through the `fleet_*` tags of `instance-container.yml`. A failed fleet phase writes its failed task and message into the run's result file. [The fleet step](/reference/development-containers#the-fleet-step) describes them.
 
 The fleet phase reconciles the checkout’s scoped Swamp grants before candidate operations. It uses the existing serve-driver credential; token renewal is separate. [Fleet apply](/reference/compute-drivers#apply-and-check-the-nested-fleet) also reconciles grants after restore.
 

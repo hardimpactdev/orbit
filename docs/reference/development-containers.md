@@ -1245,9 +1245,15 @@ The run deploys the release commit itself. A commit missing from the Project's r
 | One run at a time | An open deployment of the default holds its Instance lock. A second admission refuses with `operation.target_busy` |
 | The fleet stays | A step that fails from the checkout on restores the newest seed: the one the run took first, or a newer one. A restore never goes back past the fleet |
 | Check before a change | The check compares the inner fleet with its [rules](#fleet-rules) before the first seed. A refusal, `instance.container_fleet_drift`, changes nothing and restores nothing |
-| A failure names its step | The Operation names the first failed step and its code, such as `instance.container_fleet_refresh_failed`. A failed fleet phase also writes why into the run's result file, because a Swamp step that exits nonzero keeps no output: `error.detail` names the failed task and its message, such as the Doctor body of the readiness wait |
-| Migrate before Doctor | The checkout moves under the running nested Gateway. The start of the fleet checks only that its containers run and the tunnel reaches the hub. The refresh migrates and restarts the nested Gateway, waits for the three agents, converges the Nodes and only then waits for Doctor |
-| The fleet runs after the run | A passed run starts the fleet again after the seed and waits for readiness. If only that start fails, the run fails with `instance.container_fleet_resume_failed`; the new seed and `base` stay. After a restore, the run starts the restored fleet; if that fails, the detail says so too |
+| A failure names its step | The Operation names the first failed step and its code, such as `instance.container_fleet_refresh_failed`. `error.detail` names the failed task and its message |
+| Migrate before Doctor | The start checks only the containers and the tunnel. The refresh migrates the nested Gateway before its Doctor wait |
+| The fleet runs after the run | A passed run starts the fleet again after the seed. After a restore, the run starts the restored fleet |
+
+A Swamp step that exits nonzero keeps no output. So a failed fleet phase writes why into the run's result file, and the Gateway shows it as `error.detail`. For the readiness wait, that is the Doctor body.
+
+The checkout moves under the running nested Gateway, with its old schema and processes. So the start of the fleet checks only that the containers run and the tunnel reaches the hub. The refresh migrates and restarts the nested Gateway and waits for the three agents. Then it converges the Nodes, and only then waits for Doctor.
+
+A passed run starts the fleet again after the seed and waits for readiness. If only that start fails, the run fails with `instance.container_fleet_resume_failed`. The new seed and `base` stay. After a restore, the run starts the restored fleet. If that start fails, the detail says so too.
 | An update, not a rebuild | The image variant's tools change only with a new image |
 | The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Cancel an open refresh before the next release |
 
@@ -1256,7 +1262,9 @@ It replaces the release trigger and the daily run of the [task VM refresh](https
 What stops during a refresh:
 
 - The outer container keeps running. Its Processes stop only for the seed snapshot: under 1 s on ZFS, plus their stop and start.
-- The inner fleet runs from its start until the refresh stops it to retake `base`. It is stopped for `base` and the last seed, so both hold a stopped fleet, and starts again after the seed. A clone starts its own copy.
+- The inner fleet runs from its start until the refresh stops it to retake `base`.
+- It stays stopped for `base` and the last seed, so both hold a stopped fleet. It starts again after the seed.
+- A clone starts its own copy.
 - The run's first seed stops the Processes as briefly as the last one.
 - After a failure, the outer container stops for the restore (at most 30 s for the stop) and starts again.
 
@@ -1270,7 +1278,7 @@ What stops during a refresh:
 | Seed snapshot of the outer container | Under 1 s on ZFS, measured | The ADR 0250 spike |
 | Start the stopped fleet to a healthy Doctor | 31 to 55 s, measured | The second inner fleet experiment on a Node |
 
-Each step has a bound: 300 s for the check, 120 s for the first seed, 300 s to start the fleet, 3,600 s to refresh it, 600 s to start the refreshed fleet, 150 s to restore, 120 s to start again and 600 s to start the restored fleet. The run budget grows by their sum, 5,790 s. Inside the refresh, the agent wait and the Doctor wait are bounded by 300 s each, and each Node converge by 900 s.
+Each step has a bound. The check has 300 s, the first seed 120 s, the start 300 s and the refresh 3,600 s. The start of the refreshed fleet has 600 s. The restore has 150 s, the start after it 120 s, and the start of the restored fleet 600 s. The run budget grows by their sum, 5,790 s. Inside the refresh, the agent wait and the Doctor wait are bounded by 300 s each, and each Node converge by 900 s.
 
 ### A clone starts its fleet
 
@@ -1317,8 +1325,8 @@ Six phase task files keep the fleet of a nested-fleet Instance. The deployment o
 | --- | --- | --- |
 | Check | `instance-fleet-check.yml` | Waits for the inner Incus and compares the fleet with its rules. It changes nothing |
 | Rules | `instance-fleet-rules.yml` | Applies the fleet rules below to the stopped fleet, then checks them |
-| Start | `instance-fleet-start.yml` | Compares the fleet with its rules, starts the nested containers that are stopped, brings up `wg-nested` with `ip` and `wg`, and checks that the containers run and the tunnel reaches the hub (`instance-fleet-reach.yml`). It never waits for Doctor and changes no device or configuration key |
-| Refresh | `instance-fleet-refresh.yml` | For the default Instance: applies the checkout to the nested Gateway (delivery, grants, migrate, restart), waits for the three agents, converges the base of the three nested Nodes, waits for readiness (`instance-fleet-ready.yml`), stops the fleet and takes `base` again |
+| Start | `instance-fleet-start.yml` | Compares the fleet with its rules, starts the stopped nested containers and brings up `wg-nested`. It then checks the containers and the tunnel (`instance-fleet-reach.yml`), never Doctor |
+| Refresh | `instance-fleet-refresh.yml` | Migrates and restarts the nested Gateway, converges the three nested Nodes, waits for readiness (`instance-fleet-ready.yml`), stops the fleet and takes `base` again |
 | Resume | `instance-fleet-resume.yml` | Runs the start, then waits for readiness: the fleet after a passed refresh, or the fleet of a restored seed |
 | Reset | `instance-fleet-reset.yml` | Restores `base` on the three nested containers, then runs the start and waits for readiness |
 
