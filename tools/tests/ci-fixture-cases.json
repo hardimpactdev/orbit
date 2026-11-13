@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "edfe0c0bef37b22c7f493cc3bff9630826c5e888f822db74c61885b04795edbf",
+    "source_sha256": "f0dbb2b85125ee213c8dddb009fe6d07f3e61a378a1ac983ae57487ccaf4ba07",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -27,6 +27,8 @@
       "linked worktree quiesce carries tracked changes made after the container preflight",
       "an owner refuses retirement while its child is in the same retirement batch",
       "a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact",
+      "a moved Laravel checkout clears its config, route, event, compiled and view caches and its file cache store as orbit",
+      "a failed clear of the old path's caches warns and the move goes on; a store of another driver than file stays",
       "a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was",
       "a move starts with a new container: one that an earlier failed move left goes first",
       "a checkout on another branch than the recorded one is refused before anything changes",
@@ -2112,7 +2114,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts": {
-    "source_sha256": "c3c10c8a173e3f531893f6bbaa5cd86a3a216eb0911dbb6ad016e7bb8630035d",
+    "source_sha256": "85c32f35c9a3d01309f9189f298a5c366a42b9ecddb44d3aad6ed41b91877f58",
     "cases": [
       "a default that moved reports its commit and no T3 server",
       "a non-default Instance that moved reports its T3 server, and needs its registration",
@@ -2141,7 +2143,8 @@
       "the copied untracked count includes zero, excludes paths and survives later failure",
       "invalid or incomplete copied-file receipts do not claim a count",
       "carried Schedule activation failures and missing receipts warn without failing completed migration",
-      "environment warning receipts survive later phase results and remain generic"
+      "environment warning receipts survive later phase results and remain generic",
+      "a failed clear of the old path's caches warns beside the environment warnings and does not fail the move"
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {

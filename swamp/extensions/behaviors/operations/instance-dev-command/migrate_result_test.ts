@@ -326,3 +326,18 @@ Deno.test("environment warning receipts survive later phase results and remain g
         assertEquals((await writtenFailure(folder))?.warnings, undefined);
     } finally { Deno.removeSync(folder, {recursive:true}); }
 });
+
+Deno.test("a failed clear of the old path's caches warns beside the environment warnings and does not fail the move", async () => {
+    const folder = Deno.makeTempDirSync();
+    try {
+        const environment = {code: "instance.migrate_env_service_unused", message: ".env: DB_HOST=127.0.0.1:3306: no TCP service answered on the Node."};
+        const cache = {code: "instance.migrate_cache_clear_failed",
+            message: "Laravel caches from the old path were not all cleared: config:clear. Run php artisan optimize:clear in the Instance."};
+        await Deno.writeTextFile(folder + "/cache-clear.json", JSON.stringify({warnings: [cache]}));
+        const alone = result(defaultIntent, moved, workspace, null, await writtenFailure(folder));
+        assertEquals(alone.ready, true);
+        assertEquals(alone.warnings, [cache]);
+        await Deno.writeTextFile(folder + "/environment-warnings.json", JSON.stringify({warnings: [environment]}));
+        assertEquals(result(defaultIntent, moved, workspace, null, await writtenFailure(folder)).warnings, [environment, cache]);
+    } finally { Deno.removeSync(folder, {recursive:true}); }
+});

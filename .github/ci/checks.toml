@@ -20,13 +20,13 @@ default = ["swamp/tests/ansible_inputs_test.py"]
 [[fixture]]
 file = "swamp/tests/ansible_instance_migrate_test.ts"
 after_merge = true
-reason = "115 retained cases need 8152 declared seconds including startup, above the six-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963. Changed cases use individually measured local times rounded up plus one second. All migration cases run after merge until their work is reduced or selection is narrowed."
-cost = 7462
+reason = "117 retained cases need about 8384 declared seconds including startup, above the six-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963. Changed cases use individually measured local times rounded up plus one second. All migration cases run after merge until their work is reduced or selection is narrowed."
+cost = 7682
 # 159.019s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (120s); these are estimates, not completed measurements.
-slices = 115
+slices = 117
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -169,6 +169,8 @@ inputs = [
   "migration carries duplicate stash messages and every ordered stash entry and content" = 41 # completed local four-worker body; rounded up plus 1s
   "a worktree created after retirement listing refuses the source snapshot before retention" = 53 # completed local four-worker body; rounded up plus 1s
   "migration carries a surviving stash ref with an expired reflog without inventing entries" = 45 # completed local four-worker body; rounded up plus 1s
+  "a moved Laravel checkout clears its config, route, event, compiled and view caches and its file cache store as orbit" = 110 # ESTIMATE: local 42s; a full build like the standalone checkout case (100), rounded up
+  "a failed clear of the old path's caches warns and the move goes on; a store of another driver than file stays" = 110 # ESTIMATE: local 42s; a full build like the standalone checkout case (100), rounded up
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_git_scope_test.py"
@@ -2848,7 +2850,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts"
-cost = 29
+cost = 30
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -2857,6 +2859,7 @@ inputs = [
 ]
 [fixture.case_costs]
   "environment warning receipts survive later phase results and remain generic" = 1 # completed local receipt fixture
+  "a failed clear of the old path's caches warns beside the environment warnings and does not fail the move" = 1 # ESTIMATE: local under 1 ms, like the other receipt cases
 "a default that moved reports its commit and no T3 server" = 1
 "a non-default Instance that moved reports its T3 server, and needs its registration" = 1
 "a move that failed and restored names the failed phase with its own refusal, and says restored" = 1
