@@ -1925,7 +1925,7 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "54066f9ceb422a43942a25af7744c463badcd61793f3148f19ad16b2557cc1cd",
+    "source_sha256": "8bf7586f735dab4b5f54c7bbfd63fc4a32cd2443fa4764966fcf1d0393983c53",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
@@ -1938,7 +1938,11 @@
       "create finalization evaluates checkout, default and clone receipts with Swamp's CEL types",
       "only a clone whose intent has `fleet` starts its fleet; a normal clone skips the step and finishes as before",
       "deploy VP workspace reads retain step names for the capture schema",
-      "guarded withdrawal resolves the same child when cleanup is needed and stays deferred during parent preflight"
+      "guarded withdrawal resolves the same child when cleanup is needed and stays deferred during parent preflight",
+      "a normal clone create runs agent and T3 beside the workspace, and sessions waits for both",
+      "a clone whose workspace fails while T3 runs registers nothing and stops the container",
+      "a clone whose T3 or database phase fails registers nothing, stops the container and names that phase",
+      "a nested-fleet clone runs agent and T3 beside its fleet start; only the workspace waits for the fleet"
     ]
   },
   "swamp/tests/workflow_placement_test.ts": {

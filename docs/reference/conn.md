@@ -342,7 +342,7 @@ Conn follows that Operation with `GET /operations/{id}`. Conn Operation show als
 
 Operation show returns the same recorded `steps` as core Operation show, in recorded order: `name`, `job`, `status`, `started_at` and `finished_at`. Steps contain no command output, secrets or environment values. Both endpoints accept `after_sequence` but currently return all recorded steps.
 
-Conn maps these stable container-clone step names to stage detail, in this order: `clone-container`, `clone-workspace`, `clone-t3`, `clone-register`. Other steps can occur between them. Renaming or removing any of these four names is a breaking change for Conn.
+Conn maps these stable container-clone step names to stage detail, in this order: `clone-container`, `clone-workspace`, `clone-t3`, `clone-register`. Other steps can occur between them. `clone-t3` runs beside `clone-workspace`, so it can start and end before `clone-workspace` ends; `clone-register` always comes after both. Renaming or removing any of these four names is a breaking change for Conn.
 
 A server of an Instance names its `instance_id` and the container's `power_state`, `running` or `stopped`. Other servers have `null` for both. Conn shows a `stopped` server as asleep.
 
