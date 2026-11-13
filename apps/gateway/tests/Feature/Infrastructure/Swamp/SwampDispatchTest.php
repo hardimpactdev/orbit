@@ -230,6 +230,41 @@ it('keeps the target held when cancellation arrives while native start confirmat
         ->and($operation->lock_key)->toBe('instance:'.$operation->target_id);
 });
 
+it('queues only the first proof child after all copies while unrelated Operations start immediately', function (): void {
+    $this->freezeSecond();
+    Queue::fake([StartAdmittedSwampRun::class]);
+    $node = SwampNodeFixture::ensure();
+    $proof = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $node->id,
+        'node_id' => $node->id, 'input' => ['runs' => []], 'status' => OperationStatus::Running]);
+    $children = collect([42, 43, 44])->map(fn (int $id): Operation => Operation::query()->create([
+        'kind' => 'proof.command', 'target_type' => 'task_group', 'target_id' => $id, 'node_id' => $node->id,
+        'input' => ['proof_operation_id' => $proof->id], 'status' => OperationStatus::Queued,
+        'state' => ['swamp_start' => ['key' => 'operation:'.$id, 'workflow' => 'operation-proof-run']],
+    ]));
+    $other = Operation::query()->create(['kind' => 'proof.verify', 'target_type' => 'task_group', 'target_id' => 45,
+        'node_id' => $node->id, 'input' => ['proof_operation_id' => $proof->id], 'status' => OperationStatus::Queued]);
+    $copied = [];
+    DB::transaction(function () use ($children, $other, &$copied): void {
+        $dispatch = app(SwampDispatch::class);
+        foreach ($children as $child) {
+            $dispatch->copy(function () use ($child, &$copied): void {
+                Queue::assertNothingPushed();
+                $copied[] = $child->id;
+            });
+            $dispatch->start($child);
+        }
+        $dispatch->start($other);
+    });
+
+    expect($copied)->toBe($children->pluck('id')->all());
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $children->first()->id && $job->delay === null);
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $other->id && $job->delay === null);
+    expect($children->last()->refresh()->state['proof_child_start'])->toBe([
+        'not_before' => null, 'released_at' => null, 'advanced_at' => null,
+    ])->and($children->last()->state)->toHaveKey('swamp_start');
+});
+
 it('logs only start phase numbers while preserving the socket sequence', function (): void {
     $node = SwampNodeFixture::ensure();
     config(['swamp.run_token' => 'phase-log-private-token', 'swamp.address' => 'swamp.test', 'swamp.ca_path' => '/test/ca.pem']);

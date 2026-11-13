@@ -30,7 +30,13 @@ sequenceDiagram
   %%> Under the admission lock, take every currently free usable CI place, at least one and at most the batch count. A full pool or stale base waits, up to two hours, then fails clearly. Never refuse capacity or skip green. A plan in which a shard of more than one batch needs more than the longest run budget of a shard, two hours, waits for another place while a usable place is taken; with every usable place free it runs.
   GW->>GW: Balance whole batches<br/>by measured time
   %%> Longest measured batch first; assign each to the least loaded VM. Selected cases of a batch stay together. Record expected cases and all shard operations atomically. Each shard records its run budget: 600 s for the shard, 180 s for each batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
-  GW->>SW: Start one run per VM
+  GW->>GW: Hold admitted child starts
+  %%> Keep unrelated Operations able to start while this proof hands over its children. Execution copies must all succeed before the first start is queued.
+  loop each admitted child, in order
+    GW->>SW: Start one run per VM
+    %%> Queue only the first start, then queue its successor 20 seconds after its answer, including refusal or definite job failure. A lost confirmation never permits resubmission. Its successor waits until recovery binds the run or the child ends, bounded by the released child's 600-second admission deadline. The next start is due 20 seconds after that resolution. Before submission, an ended or cancelled parent cancels the child through normal cancellation and group cleanup.
+    %%> A held child has no native admission deadline. Release starts its normal 600-second admission budget and preserves its captured execution budget. A lost successor uses the existing watchdog: after the parent's allowance, all children quiet for 300 seconds makes unstarted children fail with proof.admission_interrupted and cleans up their groups.
+  end
   SW->>VM: Claim a place
   %%> Fresh VM from the host base at the trusted commit. No CI keep-failed option.
   SW->>VM: Read the workspace commit

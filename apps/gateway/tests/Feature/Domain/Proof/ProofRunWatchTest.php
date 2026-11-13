@@ -17,13 +17,16 @@ use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmRuntime;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
@@ -404,3 +407,46 @@ it('leaves an operator proof in task admission to its capacity budget instead of
         ->and($waiting->refresh()->status)->toBe(OperationStatus::Waiting);
     Queue::assertNotPushed(CancelProofGroup::class);
 });
+
+it('ends held children after a lost successor only when the proof is old and every child has been quiet', function (): void {
+    $this->freezeTime();
+    Queue::fake();
+    $proof = watchProof(watchNode(), ProofRunWatch::AdmissionSeconds + 1);
+    $answered = watchRun($proof, 'firewall:allow', OperationStatus::Failed, 'swamp.start_job_failed');
+    $held = watchRun($proof, 'firewall:list', OperationStatus::Queued);
+    $held->update(['state' => ['swamp_start' => ['key' => 'operation:'.$held->id, 'workflow' => 'operation-proof-run'],
+        'proof_child_start' => ['not_before' => now()->subSeconds(900)->toISOString(), 'released_at' => null, 'advanced_at' => null]]]);
+    watchAged($held, 900, 299);
+    expect(app(ProofRunWatch::class)->sweep())->toBe(0);
+    expect(OperationRunBudgets::deadline($held))->toBeNull();
+    $this->travel(2)->seconds();
+
+    expect(app(ProofRunWatch::class)->sweep())->toBe(1);
+    expect($held->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($held->error_code)->toBe('proof.admission_interrupted');
+    expect($proof->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and(array_column($proof->result['cases'], 'verdict'))->toBe(['unrun', 'unrun']);
+    Queue::assertPushed(CancelProofGroup::class, fn ($job): bool => $job->operationId === $held->id);
+});
+
+it('keeps the existing query count for proofs without holds while repairing held proofs', function (int $age, int $expected): void {
+    $this->freezeSecond();
+    Queue::fake();
+    $proof = watchProof(watchNode(), $age);
+    watchRun($proof, 'firewall:allow', OperationStatus::Running, started: true);
+    $queries = [];
+    DB::listen(function (QueryExecuted $query) use (&$queries): void {
+        $queries[] = $query->sql;
+    });
+    app(ProofRunWatch::class)->sweep();
+    expect($queries)->toHaveCount($expected);
+
+    $repair = watchProof(Node::query()->findOrFail($proof->node_id), 60);
+    $answered = watchRun($repair, 'firewall:allow', OperationStatus::Failed);
+    $held = watchRun($repair, 'firewall:list', OperationStatus::Queued);
+    foreach ([$answered, $held] as $child) {
+        $child->update(['state' => ['proof_child_start' => ['not_before' => null, 'released_at' => null, 'advanced_at' => null]]]);
+    }
+    app(ProofRunWatch::class)->sweep();
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $held->id && $job->delay->equalTo(now()->addSeconds(20)));
+})->with(['young' => [60, 2], 'old' => [ProofRunWatch::AdmissionSeconds + 1, 3]]);
