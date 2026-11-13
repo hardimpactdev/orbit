@@ -1,0 +1,47 @@
+---
+title: "orbit instance:wake"
+description: "Start a sleeping development container Instance, its T3 server and its Processes."
+covers:
+  - apps/gateway/app/Domain/Instances/Power/**
+  - apps/gateway/app/Http/Controllers/Api/{InstancePowerController,RuntimeActivationsController}.php
+  - apps/gateway/routes/api/instance-power.php
+  - apps/cli/app/Commands/Instances/WakeInstanceCommand.php
+  - packages/php-sdk/src/Requests/Instances/WakeInstanceRequest.php
+  - swamp/ansible/{instance-container-power.yml,tasks/instance-container-power.yml}
+  - swamp/workflows/workflow-operation-instance-wake.yaml
+---
+
+Wake one sleeping development container Instance. A visit to its Route does the same, so you rarely need this command. [Sleep and wake](/reference/development-containers#sleep-and-wake) explains the lifecycle.
+
+## Usage
+
+```sh
+orbit instance:wake 42
+orbit instance:wake 42 --json
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `instance-id` | Numeric Instance ID. |
+| `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
+
+Orbit starts the container. T3, FrankenPHP and each Process that ran before the sleep start with it; a stopped Process stays stopped. Orbit waits until each of them runs, and in a clone until T3 answers. Then it removes the asleep marker, and the Route serves the app again.
+
+There is one wake per Instance at a time. A second caller joins the open wake and gets the same Operation.
+
+Waking an Instance that is awake changes nothing and also succeeds. A failed wake keeps the asleep marker: the Route shows a failure page with Try again. Try again, or this command, starts a new wake.
+
+## How it works
+
+<div className="flow-at" data-chart="instance/wake"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance ID is not a positive number. |
+| `operation.kind_unavailable` | The Instance has no container. |
+| `instance.sleep_unsupported` | The Instance is not a development Instance, or runs a nested fleet. |
+| `instance.lifecycle_busy`, `operation.target_busy` | Other lifecycle work runs on the Instance. |
+| `instance.container_start_failed` | The container or one of its units did not start. |
+| `instance.t3_unready` | T3 did not answer within 30 seconds. |

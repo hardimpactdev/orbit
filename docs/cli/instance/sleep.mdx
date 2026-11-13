@@ -1,0 +1,49 @@
+---
+title: "orbit instance:sleep"
+description: "Stop a development container Instance now. Its Route shows a wake page, and the next visit wakes it."
+covers:
+  - apps/gateway/app/Domain/Instances/Power/**
+  - apps/gateway/app/Http/Controllers/Api/InstancePowerController.php
+  - apps/gateway/routes/api/instance-power.php
+  - apps/cli/app/Commands/Instances/SleepInstanceCommand.php
+  - packages/php-sdk/src/Requests/Instances/SleepInstanceRequest.php
+  - swamp/ansible/{instance-container-power.yml,tasks/instance-container-power.yml}
+  - swamp/workflows/workflow-operation-instance-sleep.yaml
+---
+
+Put one development container Instance to sleep now. Orbit stops the whole container, so it uses no memory. Its disk, databases, Route, T3 history and sessions stay. [Sleep and wake](/reference/development-containers#sleep-and-wake) explains the lifecycle.
+
+**This command does not check T3.** If an agent turn runs in the Instance, the stop cuts it. T3 continues the turn when the Instance wakes. The result says `t3_turn: not_checked`. The automatic sleep after an idle hour does check, and never cuts a turn.
+
+## Usage
+
+```sh
+orbit instance:sleep 42
+orbit instance:sleep 42 --json
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `instance-id` | Numeric Instance ID. |
+| `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
+
+Orbit first writes the asleep marker on the Node. From then on, each request to the Route gets the wake page. Then Orbit stops the container. A visit to the Route, or [`instance:wake`](/cli/instance/wake), starts it again.
+
+The Instance must be a development container that is not its Project's default and not a nested-fleet Instance. No other lifecycle work and no task may run in it.
+
+Sleeping an Instance that already sleeps runs again and changes nothing. A failed run leaves the container as it was; the marker may stay, and then the next visit wakes the Instance. Run the command again to retry.
+
+## How it works
+
+<div className="flow-at" data-chart="instance/sleep"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance ID is not a positive number. |
+| `operation.kind_unavailable` | The Instance has no container. |
+| `instance.sleep_unsupported` | The Instance is not a development Instance, is its Project's default, or runs a nested fleet. |
+| `instance.lifecycle_busy`, `operation.target_busy` | Lifecycle work, Process work or a task runs on the Instance. |
+| `instance.sleep_route_unready` | Caddy's loaded site of the Instance has no asleep rule yet. Nothing changed. Publish the Node's Caddy sites and retry. |
+| `instance.container_stop_failed` | The container did not stop. |

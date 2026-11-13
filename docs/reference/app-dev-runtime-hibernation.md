@@ -24,7 +24,7 @@ Hibernation applies to a Process that meets every condition:
 | Desired state | `running`. Orbit leaves a stopped Process stopped. |
 | `keep_alive` | `false`. |
 
-Processes in [Instance containers](/reference/development-containers#processes) are excluded from this Node-level policy. Container sleep is a separate part of the container lifecycle.
+Processes in [Instance containers](/reference/development-containers#processes) are excluded from this Node-level policy. A container sleeps as a whole: see [Sleep and wake](/reference/development-containers#sleep-and-wake). Its Route uses the same activation endpoint and pages as below.
 
 Restart policy does not matter. Hibernation never touches Node Processes, production Instances, Schedules, PHP-FPM services or pools, or Caddy socket paths.
 

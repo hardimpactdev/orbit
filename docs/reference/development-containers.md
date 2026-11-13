@@ -21,7 +21,8 @@ covers:
 | Records, Node preparation, egress and DNS | Built |
 | Default create and deploy, clone, forced non-default destroy, checkout migration | Built on the build-list Nodes |
 | [Nested fleet](#nested-fleet) | Built on switched-on build-list Nodes: placement, host preparation, start guards, the [image](#the-nested-fleet-image) and the [refresh after a release](#refresh-after-a-release). Planned: the clone's fleet start, reset and rebuild |
-| Task containers, nested-fleet parity, sleep/wake and production containers | Planned |
+| [Sleep and wake](#sleep-and-wake) | Built: the commands and the wake on a Route visit. Planned: the idle sleep, the wake from Conn and tasks |
+| Task containers, nested-fleet parity and production containers | Planned |
 | Dedicated workspace volumes and explicit package workspace links | [Draft specification](#workspace-volumes-draft); not implemented or proved |
 
 Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
@@ -40,8 +41,8 @@ The container flows keep the kinds of today's Instance flows. Their charts sit o
 | Create a Project's first default Instance | [container/create-default.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd) |
 | Deploy a merge to the default Instance | [container/deploy-default.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) |
 | Destroy an Instance | [container/destroy.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) |
-| Put an idle Instance to sleep | [container/sleep.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/sleep.mmd) |
-| Wake an Instance | [container/wake.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/wake.mmd) |
+| Put an idle Instance to sleep | [instance/sleep.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/sleep.mmd) |
+| Wake an Instance | [instance/wake.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/wake.mmd) |
 | Refresh a nested-fleet default after a release | [container/fleet-refresh.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd) |
 | Register and renew the T3 server | [conn/environment-renew.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) |
 | Start a thread in an Orbit Project | [container/thread.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/thread.mmd) |
@@ -767,11 +768,22 @@ A failed removal retains its intent and reserved port. A destroy whose native st
 
 ### Sleep and wake
 
-After one hour without activity, Orbit stops the whole container. It counts both HTTP activity and T3 activity: a turn, or a client working in a thread. A running task keeps the container awake. Keep-alive Processes do not: the whole container stops. A stopped container uses no memory; its disk stays.
+A sleeping Instance's container is stopped. It uses no memory; its disk, databases, Route, T3 history and sessions stay. Each Process unit keeps its enablement, which holds its desired state, so a wake brings back exactly what ran before. A container never prunes its dependencies: a stopped clone shares most of its blocks with the default Instance.
 
-The next request to its Route, a Conn connection, a task turn or a deployment wakes it. Orbit starts the container, and T3, the app and the Processes start with it in about 3 s.
+| Part | State |
+| --- | --- |
+| [`instance:sleep`](/cli/instance/sleep) and [`instance:wake`](/cli/instance/wake) | Built for development clones. A default and a nested-fleet Instance do not sleep |
+| A Route visit wakes the Instance | Built |
+| Sleep after an idle hour | Planned. It counts HTTP activity and T3 activity (a turn, or a client working in a thread). It never cuts a turn, and it does not ship without a T3 activity read. A running task and a desired-running keep-alive Process keep the container awake |
+| A Conn connection or a task turn wakes the Instance; the wake renews a session that ends within 7 days | Planned |
 
-The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/sleep.mmd) and [wake](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/wake.mmd) charts have the steps. A container never prunes its dependencies: a stopped clone shares most of its blocks with the default Instance.
+**The Route while asleep.** The Node's Caddy site of a container Instance checks for the asleep marker, `/data/caddy/orbit/hibernation/app-instance-<id>.asleep`. Without it, Caddy serves the request as before; the check is a file test on the Node and calls nothing. With it, Caddy calls the [runtime activation endpoint](/reference/app-dev-runtime-hibernation#wake), which shows the same progress page as for a checkout Instance and starts or joins the Instance's one `instance.wake`. A request with `X-Orbit-Probe: 1` skips the check. A failed wake keeps the marker, and the Route shows the failure page with Try again.
+
+The marker lives on disk, not in `/dev/shm`: a stopped container stays stopped after a host reboot, and so does its marker. A sleep writes the marker before it stops the container, and a wake removes it after T3 and the Processes run. A destroy removes it. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
+
+**While asleep.** Schedules in the container do not run, and nothing catches up at the wake. Other Operations that need the running container refuse it, as they do today (`process.target_inactive`). A deployment of a sleeping default starts it in its own run, and a clone of a sleeping default copies its seed snapshot without a start.
+
+The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/sleep.mmd) and [wake](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/wake.mmd) charts have the steps.
 
 ### Migrate a checkout Instance
 
@@ -1380,7 +1392,7 @@ Each Node records its Instance bridge, as [Nodes](#nodes) describes. Each contai
 | `runtime_version`, `agent_version` | The versions of the shared folders the container started with |
 | `operation_id` | The migrate Operation that owns this reservation. A new retry takes ownership before its run starts |
 | `clone_source_instance_id` | The default Instance it was cloned from. Null for the default Instance and for a migrated checkout |
-| `power_state` | `running` or `stopped`. A sleeping container is stopped |
+| `power_state` | `running` or `stopped`. A sleeping container is stopped. The terminal results of create, deploy, migrate, sleep and wake write it |
 | `seed_commit` | A default Instance's commit of its newest `seed-<commit>` snapshot, which clones copy. Null before its first seed |
 
 The database keeps these rules:
@@ -1424,6 +1436,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.create_register_failed` | 502 | A clone's registration step failed: T3 refused a session, or the Gateway's lacks its scopes. The step's report names the `conn.*` code |
 | `instance.database_clone_unsupported` | 422 | A clone names another Database server than the default's, or the default has no database on a server to clone |
 | `conn.environment_asleep` | 409 | A pairing with a sleeping Instance's T3 server |
+| `instance.sleep_unsupported` | 409 | `instance:sleep` of an Instance that is not a development container clone, or `instance:wake` of a nested-fleet Instance |
+| `instance.sleep_route_unready` | 409 | `instance:sleep` while Caddy's loaded site of the Instance lacks the asleep check. Nothing changed |
 | `node.instance_bridge_exhausted` | 409 | No `/24` of the fleet range is free for a Node's Instance bridge |
 | `instance.container_nodes_invalid` | 500 | `ORBIT_INSTANCES_CONTAINER_NODES` is not a JSON list of Node ids |
 | `instance.host_unavailable` | 409 | A build-list Node cannot be prepared: it lacks the pool `orbit-instances` or enough subordinate IDs, or the recipe has no pin for it. |

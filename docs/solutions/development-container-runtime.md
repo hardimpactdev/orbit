@@ -553,7 +553,7 @@ Tests: Pest for placement by runtime and the CI proof admission. Live: a normal 
 
 ### PR 13: sleep and wake
 
-The spec commit adds [container/sleep.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/sleep.mmd) and [container/wake.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/wake.mmd) to the hibernation page.
+The spec commit adds [instance/sleep.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/sleep.mmd) and [instance/wake.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/wake.mmd) to the hibernation page.
 
 The session renewal that PR 5 left out is built: an hourly `conn.environment_renew` tick, as [conn/environment-renew.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) shows. PR 13 still adds the wake. Its wake should admit the same renewal when the session ends within seven days, so a woken container does not wait for the tick.
 
