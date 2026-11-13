@@ -23,7 +23,7 @@ jobs:
         task:
           type: model_method
           modelType: "@nckrtl/automatic-deploy"
-          modelName: automatic-production-deploy
+          modelName: ${{ "automatic-production-deploy" }}
           methodName: tick
           inputs:
             instances: "${{ inputs.instances }}"

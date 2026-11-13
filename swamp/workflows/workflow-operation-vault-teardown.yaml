@@ -107,7 +107,7 @@ jobs:
         env:
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
             inputs.execution_secrets.configuration.key) }}
-      behaviorName: vault-teardown-inputs
+      behaviorName: ${{ "vault-teardown-inputs" }}
       behaviorType: '@nckrtl/vault-sync-plan'
     dependsOn: []
     weight: 0
@@ -140,7 +140,7 @@ jobs:
         env:
           BITWARDENCLI_APPDATA_DIR: ${{ steps["Create CLI session"].outputs.stdout.trim()
             }}
-      behaviorName: vault-teardown-session-file
+      behaviorName: ${{ "vault-teardown-session-file" }}
       behaviorType: command/shell
     dependsOn:
     - step: Create CLI session
@@ -235,7 +235,7 @@ jobs:
       methodName: session
       inputs:
         directory: ${{ steps["Create CLI session"].outputs.stdout.trim() }}
-      behaviorName: vault-teardown-session
+      behaviorName: ${{ "vault-teardown-session" }}
       behaviorType: '@nckrtl/vault-sync-plan'
     dependsOn:
     - step: Unlock the vault
@@ -291,7 +291,7 @@ jobs:
           ORBIT_OUTPUT: ${{ steps["Create CLI session"].outputs.stdout.trim() + "/inventory"
             }}
         timeout: 60000
-      behaviorName: vault-teardown-read-inventory
+      behaviorName: ${{ "vault-teardown-read-inventory" }}
       behaviorType: command/shell
     dependsOn:
     - step: Sync the vault
@@ -310,7 +310,7 @@ jobs:
         directory: ${{ steps["Create CLI session"].outputs.stdout.trim() }}
         file: inventory
         intent: ${{ inputs.intent }}
-      behaviorName: vault-teardown-public-inventory
+      behaviorName: ${{ "vault-teardown-public-inventory" }}
       behaviorType: '@nckrtl/vault-sync-plan'
     dependsOn:
     - step: Read private inventory
@@ -340,7 +340,7 @@ jobs:
           ORBIT_OUTPUT: ${{ steps["Create CLI session"].outputs.stdout.trim() + "/trash"
             }}
         timeout: 60000
-      behaviorName: vault-teardown-read-trash
+      behaviorName: ${{ "vault-teardown-read-trash" }}
       behaviorType: command/shell
     dependsOn:
     - step: inventory
@@ -359,7 +359,7 @@ jobs:
         directory: ${{ steps["Create CLI session"].outputs.stdout.trim() }}
         file: trash
         intent: ${{ inputs.intent }}
-      behaviorName: vault-teardown-public-trash
+      behaviorName: ${{ "vault-teardown-public-trash" }}
       behaviorType: '@nckrtl/vault-sync-plan'
     dependsOn:
     - step: Read private trash
@@ -407,7 +407,7 @@ jobs:
           ORBIT_OUTPUT: ${{ steps["Create CLI session"].outputs.stdout.trim() + "/organizations"
             }}
         timeout: 60000
-      behaviorName: vault-teardown-read-organizations
+      behaviorName: ${{ "vault-teardown-read-organizations" }}
       behaviorType: command/shell
     dependsOn:
     - step: Sync the vault
@@ -430,7 +430,7 @@ jobs:
             public data"].outputs.client_secret_key) }}
           ORBIT_MASTER_PASSWORD: ${{ vault.get("orbit-control-inputs", steps["Prepare
             public data"].outputs.master_password_key) }}
-      behaviorName: vault-teardown-select-the-organization
+      behaviorName: ${{ "vault-teardown-select-the-organization" }}
       behaviorType: '@nckrtl/vault-sync-plan'
     dependsOn:
     - step: Read organizations

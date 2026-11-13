@@ -315,7 +315,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-route-workload'
-      behaviorName: workload-prepared
+      behaviorName: ${{ "workload-prepared" }}
       methodName: prepared
       inputs:
         outcomes: ${{ steps }}

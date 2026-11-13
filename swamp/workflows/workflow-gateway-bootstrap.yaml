@@ -174,7 +174,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: gb-plan
+      behaviorName: ${{ "gb-plan" }}
       methodName: execute
       inputs:
         run: timeout 120 php "$ORBIT_CHECKOUT/apps/gateway/artisan" orbit:bootstrap-plan --url "$ORBIT_URL" --home "$ORBIT_HOME" --checkout "$ORBIT_APP" --apt-proxy="$ORBIT_APT_PROXY"
@@ -246,7 +246,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: gb-environment
+      behaviorName: ${{ "gb-environment" }}
       methodName: execute
       inputs:
         run: timeout 120 php "$ORBIT_CHECKOUT/apps/gateway/artisan" orbit:bootstrap-plan --environment --url "$ORBIT_URL" --home "$ORBIT_HOME" --checkout "$ORBIT_APP"

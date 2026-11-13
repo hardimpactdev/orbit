@@ -79,7 +79,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/node-role-command'
-          behaviorName: account-result
+          behaviorName: ${{ "account-result" }}
           methodName: account
           inputs:
             passwd: '${{ steps["account_command"].outputs.stdout }}'

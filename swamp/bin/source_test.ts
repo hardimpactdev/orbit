@@ -80,12 +80,17 @@ Deno.test("runtime credentials and generated records are ignored", async () => {
     assertEquals(new Set(result.stdout.trim().split("\n")), new Set(paths));
 });
 
-Deno.test("hot workflow trees avoid literal behavior lookups and preserve constant names", async () => {
+Deno.test("no workflow names a behavior by a literal and constant names are preserved", async () => {
     const workflows = new Map<string, Flow>();
     for await (const path of expandGlob(`${ROOT}/workflows/*.yaml`)) {
         const workflow = parse(await Deno.readTextFile(path.path)) as Flow;
         workflows.set(workflow.name!, workflow);
         if (workflow.id) workflows.set(workflow.id, workflow);
+    }
+    const shipped = new Set<string>();
+    for await (const path of expandGlob(`${ROOT}/models/**/*.yaml`)) {
+        const definition = parse(await Deno.readTextFile(path.path)) as { name?: unknown };
+        if (typeof definition?.name === "string") shipped.add(definition.name);
     }
     // These fixed identities must never become computed names.
     const expected = new Map(Object.entries({
@@ -124,13 +129,18 @@ Deno.test("hot workflow trees avoid literal behavior lookups and preserve consta
                 const task = step.task;
                 if (task.type === "workflow") {
                     assert(task.workflowIdOrName, `${workflow.name}/${step.name}`);
-                    walk(task.workflowIdOrName);
+                    // Every workflow is walked as a root, so a child chosen by an expression is covered too.
+                    const child = resolveConstantName(task.workflowIdOrName);
+                    if (!child.includes("${{")) walk(child);
                 } else if (task.type === "behavior" || task.type === "model_method") {
                     const at = `${workflow.name}/${step.name}`;
                     // Swamp reads the same reference from either spelling of a method step.
                     const spelled = task as Record<string, unknown>;
                     const name = spelled.behaviorName ?? spelled.modelName ?? spelled.behaviorIdOrName ??
                         spelled.modelIdOrName;
+                    // A reference to a definition that ships in swamp/models is found by its name, not searched for.
+                    const reference = spelled.behaviorIdOrName ?? spelled.modelIdOrName;
+                    if (typeof reference === "string" && shipped.has(reference)) continue;
                     assert(
                         typeof name === "string" && name.includes("${{"),
                         `${at}: literal behavior name ${name}`,
@@ -155,17 +165,8 @@ Deno.test("hot workflow trees avoid literal behavior lookups and preserve consta
             }
         }
     }
-    for (const root of [
-        "route-mutation-forward",
-        "route-mutation-withdraw",
-        "route-withdraw",
-        "operation-instance-migrate",
-        // Runs every two minutes on the shared starter.
-        "operation-vault-sync",
-        // A proof start loads these trees; each literal name held the shared starter for seconds.
-        "operation-proof-run",
-        "proof-fleet-verify",
-    ]) walk(root);
+    // Every workflow: serve looks a literal name up before a run's first event, on each start.
+    for (const workflow of new Set(workflows.values())) walk(workflow.name!);
     assertEquals(
         [...expected.keys()],
         [],

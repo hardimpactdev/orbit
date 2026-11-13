@@ -38,7 +38,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: worker-known-hosts-writer
+          behaviorName: ${{ "worker-known-hosts-writer" }}
           methodName: execute
           inputs:
             # OpenSSH reads the passwd home (/home/<user>), not the worker unit's HOME; systemd sets USER.
