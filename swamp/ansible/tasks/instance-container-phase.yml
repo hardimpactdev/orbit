@@ -1063,7 +1063,9 @@
   vars:
     node_fetch: false
 
-# A clone copies the seed snapshot, so it is taken with the Processes stopped: no file is half written in it.
+# A clone copies the seed snapshot, so it is taken with the Processes stopped: no file is half written in it. Every passed deployment
+# retakes it, also at the same commit: the default's files (caches, built assets) move on between deployments, and a clone must start
+# from what the default has now.
 - name: Take the seed snapshot
   tags: [seed]
   when: phase == 'seed'
@@ -1082,12 +1084,13 @@
         container_commit: "{{ seed_head.stdout | trim }}"
         seed_name: "seed-{{ seed_head.stdout | trim }}"
         seed_names: "{{ seed_snapshots.stdout | from_json | map(attribute='name') | select('match', '^seed-') | list }}"
-    # A nested-fleet default retakes its seed at every deployment: before its refresh, so a failure restores a seed with the fleet,
-    # and after it, because the refresh retook the fleet's `base` even at the same commit.
+    # Every passed deployment retakes the seed, also at the same commit: the default's caches and built files move on, and a clone must
+    # copy them as they are now. A nested-fleet default's deployment (its intent has `fleet` too) seeds before its refresh, so a
+    # failure restores a seed with the fleet, and after it, because the refresh retook the fleet's `base`.
     - name: Snapshot the container with the Processes stopped
       when: >-
         seed_name not in seed_names
-        or intent.fleet is defined
+        or intent.deployment is defined
         or (node_runtime_result | default({})).get('seed_refresh_required', false)
       block:
         - name: Stop the Processes

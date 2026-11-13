@@ -207,7 +207,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 2558
+cost = 2630
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -217,8 +217,8 @@ after_merge_cases = [
 ]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Every retained case cost comes from hosted run 43424152963, one case per slice, except the seven Club key estimates below.
-# 59 slices give each of the 59 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 59
+# 60 slices give each of the 60 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 60
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -306,6 +306,7 @@ inputs = [
   "a normal container's create and deploy start run no Club key task and no Club key command" = 41 # ESTIMATE: local 19s x 2.1, rounded up, plus 1s; no hosted measurement yet
   "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk" = 67 # completed unit 71.8s less 6s startup, rounded up, plus 1s; hosted run 43424152963
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left" = 59 # completed unit 64.0s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a deployment at the seed's commit retakes the seed; a seed phase outside a deployment keeps it" = 72 # ESTIMATE: local 23s against 22s local for the converted-store seed case (69), rounded up
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_test.ts"

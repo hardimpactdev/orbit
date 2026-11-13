@@ -136,7 +136,7 @@ function fixture() {
     },
   };
   const control = { process_id: 41, name: "orbit-process-41-worker.service" };
-  // Top-level intent parts beside the container, such as a nested-fleet default's `fleet`.
+  // Top-level intent parts beside the container, such as the `deployment` of an instance:deploy run and a nested-fleet default's `fleet`.
   const intent: Record<string, unknown> = {};
   const write = () =>
     Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ ssh_execution, container, control, ...intent }));
@@ -274,6 +274,41 @@ Deno.test({
       assert(again.ok, again.output);
       assertEquals(again.changed, 0);
       assertEquals(f.state().systemctl.filter((call: string[]) => call[0] === "stop").length, stops);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a deployment at the seed's commit retakes the seed; a seed phase outside a deployment keeps it",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      for (const phase of ["container", "workspace", "processes", "seed"]) {
+        const done = f.run(phase);
+        assert(done.ok, done.output);
+      }
+      const head = git(f.source, "rev-parse", "HEAD");
+      const snapshotCreates = () =>
+        Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[])
+          .filter((call) => call.includes("snapshot") && call.includes("create"));
+      assertEquals(snapshotCreates().length, 1);
+
+      const again = f.run("seed");
+      assert(again.ok, again.output);
+      assertEquals(snapshotCreates().length, 1);
+
+      // The default's caches and built files move on between deployments; a clone must copy them as they are now.
+      f.intent.deployment = { variant: "container" };
+      f.write();
+      const redeployed = f.run("seed");
+      assert(redeployed.ok, redeployed.output);
+      const creates = snapshotCreates();
+      assertEquals(creates.length, 2);
+      assert(creates[1].includes("--reuse"), "the same-commit seed is replaced in place");
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${head}`]);
     } finally {
       f.cleanup();
     }
@@ -1734,6 +1769,8 @@ Deno.test({
         Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-${name}.yml`,
           `- name: Mark the phase\n  ansible.builtin.debug: { msg: "fleet phase ${name} ran" }\n`);
       }
+      // Only a deployment has `fleet`, so its intent has `deployment` too.
+      f.intent.deployment = { variant: "container" };
       f.intent.fleet = fleetIntent();
       f.write();
       for (const name of ["start", "refresh"]) {
@@ -1768,8 +1805,9 @@ Deno.test({
       assertEquals(stops(), stopped);
       assert(!refused.output.includes("placeholder"), "the key's content never reaches the output");
       assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${commit}`]);
-      // A normal default with the same file seeds as before, and takes no new snapshot at the same commit.
+      // A seed outside a deployment, such as a create's, with the same file seeds as before and takes no new snapshot at the same commit.
       delete f.intent.fleet;
+      delete f.intent.deployment;
       f.write();
       const normal = stops();
       assert(f.run("seed").ok);
