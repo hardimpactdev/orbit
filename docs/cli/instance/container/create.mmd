@@ -97,7 +97,10 @@ sequenceDiagram
       SW->>N: Check the Valkey login<br/>docker exec · owner login
       %%> Runs beside the clone step. A default with more than one Valkey target, or one without an Orbit-made user, or one whose user grants pub/sub, refuses `instance.database_clone_unsupported`.
     end
+    par workspace beside agent and T3
     SW->>C: Prepare the workspace<br/>native clone-workspace
+    %%> Why beside: agent and T3 never read the workspace; the join below checks both
+    %%> When: after the copy, the Club key, the fleet start and the database steps
     %%> What it does:
     %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
     %%> - writes `.env` for `orbit` with group `work`: the default's file from the seed, with the clone's own connection keys, the keys of the connections it shares with its default and `APP_URL`, without the default's other connection and Reverb keys or a copy of its credentials; `APP_KEY` stays the default's, because the cloned data is encrypted with it
@@ -106,20 +109,26 @@ sequenceDiagram
     %%> - before Process start, prepares and fetches Node as orbit in this same phase; an inherited private recipe is kept, an old store is converted once even without Processes, so a later Node consumer can install its pin
     %%> No setup steps:
     %%> - the default Instance installed the dependencies and migrated; a later lockfile change is installed in the workspace
+    %%> What it does:
+    %%> - writes the shared FrankenPHP Caddyfile and unit, then restarts it as `orbit`; only the Node's bridge peer with `X-Forwarded-Proto: https` sets PHP's HTTPS scheme, port and resolved client IP
+    %%> - starts use nonblocking systemd jobs, then a bounded readiness check for each running unit; container Process units order after `network.target`
+    and agent and T3 beside the workspace
     SW->>C: Prepare the agent<br/>native clone-agent
+    %%> When: after the copy and the Club key; it does not wait for the fleet start, the workspace or the database steps
     %%> What it does:
     %%> - writes the placeholder key for `agent`, and the Claude Code and Codex settings that point at the model forwarder
     %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type
     %%> - writes `/etc/orbit/instance`, owned by root and readable by all
-    %%> What it does:
-    %%> - writes the shared FrankenPHP Caddyfile and unit, then restarts it as `orbit`; only the Node's bridge peer with `X-Forwarded-Proto: https` sets PHP's HTTPS scheme, port and resolved client IP
-  %%> - starts use nonblocking systemd jobs, then a bounded readiness check for each running unit; container Process units order after `network.target`
     SW->>C: Start T3<br/>native clone-t3
     %%> What it does:
     %%> - T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`
     %%> Check:
     %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`
+    %%> Why its own lock: the clone steps share one Swamp lock; agent and T3 take `ic-clone-t3-…`, so they run beside the workspace
+    end
     SW->>C: Register the T3 server<br/>native clone-register
+    %%> When: the join; the sessions check waits for T3 and the workspace, because it checks the branch, the commit and every Process unit
+    %%> On a failed workspace: no sessions check, no registration; the container stop below still runs
     %%> What it does:
     %%> - see conn/environment-renew.mmd: the sessions go to the vault, and the step checks the environment id and scopes
     %%> - an inactive required unit refuses with `instance.container_process_inactive`; copy its structured public refusal even when sessions failed, skip registration, and retain the unit states in the Operation
