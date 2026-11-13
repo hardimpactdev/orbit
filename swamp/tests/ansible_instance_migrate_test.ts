@@ -1129,7 +1129,7 @@ for (const broken of [false, true]) {
       const f = fixture();
       try {
         const named = `phar://${f.checkout}/vendor/phpstan/phpstan/phpstan.phar/stubs/a.stub`;
-        Deno.writeTextFileSync(`${f.checkout}/.gitignore`, "vendor/\n.env\ndatabase/*.sqlite\nstorage/framework/cache/*\nstorage/logs/\n");
+        Deno.writeTextFileSync(`${f.checkout}/.gitignore`, "vendor/\nnode_modules/\n.env\ndatabase/*.sqlite\nstorage/framework/cache/*\nstorage/logs/\n");
         const files: Record<string, string> = {
           "storage/framework/cache/phpstan/cache/PHPStan/a.php": named,
           "storage/framework/cache/rector/b.php": named,
@@ -1137,11 +1137,17 @@ for (const broken of [false, true]) {
           "storage/framework/cache/plain/c.php": "no path here\n",
           "storage/logs/laravel.log": named,
           "vendor/pkg/cache/d.php": named,
+          // Untracked but not ignored, under a cache folder: a file of the work, never a build output.
+          "app/cache/e.php": named,
+          "node_modules/x/cache/f.php": named,
+          "outside/target.php": named,
         };
         for (const [path, content] of Object.entries(files)) {
           Deno.mkdirSync(`${f.checkout}/${path.slice(0, path.lastIndexOf("/"))}`, { recursive: true });
           Deno.writeTextFileSync(`${f.checkout}/${path}`, content);
         }
+        // A link under a cache folder whose target names the path: neither the link nor its target is read or removed.
+        Deno.symlinkSync("../../../outside/target.php", `${f.checkout}/storage/framework/cache/link.php`);
         git(f.checkout, "add", ".gitignore");
         git(f.checkout, "add", "-f", "storage/framework/cache/tracked.php");
         git(f.checkout, "commit", "--quiet", "-m", "caches");
@@ -1159,7 +1165,8 @@ for (const broken of [false, true]) {
         }
         f.build();
         const kept = (path: string) => exists(`${f.rootfs}/srv/workspace/${path}`);
-        for (const path of ["storage/framework/cache/tracked.php", "storage/framework/cache/plain/c.php", "storage/logs/laravel.log", "vendor/pkg/cache/d.php"]) {
+        for (const path of ["storage/framework/cache/tracked.php", "storage/framework/cache/plain/c.php", "storage/logs/laravel.log", "vendor/pkg/cache/d.php",
+          "app/cache/e.php", "node_modules/x/cache/f.php", "storage/framework/cache/link.php", "outside/target.php"]) {
           assert(kept(path), path);
         }
         const receipt = `${f.folder}/run/tool-cache-clear.json`;

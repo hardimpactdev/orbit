@@ -536,7 +536,7 @@
         content: >-
           {{ {'warnings': [{'code': 'instance.migrate_tool_cache_clear_failed',
               'message': 'Tool caches from the old path were not all removed: Git could not list the ignored files, or a file could'
-                ~ ' not be read. Remove the ignored files under cache folders that name the old path, such as'
+                ~ ' not be read or removed. Remove the ignored files under cache folders that name the old path, such as'
                 ~ ' storage/framework/cache/phpstan.'}]} | to_json }}
         dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/tool-cache-clear.json"
         mode: "0600"

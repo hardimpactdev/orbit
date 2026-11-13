@@ -333,7 +333,7 @@ The copy carries ignored files, so also tool caches built at the old path. PHPSt
 - It is outside `vendor` and `node_modules`.
 - Its content holds the old checkout path.
 
-Tracked files, untracked files that Git does not ignore, and other ignored files, such as `storage/logs/laravel.log` or `.env`, stay. When Git cannot list the ignored files, Orbit removes nothing. That failure, or a file that Orbit cannot read, records `instance.migrate_tool_cache_clear_failed` in `warnings`. The move goes on.
+Tracked files, untracked files that Git does not ignore, and other ignored files, such as `storage/logs/laravel.log` or `.env`, stay. When Git cannot list the ignored files, Orbit removes nothing. That failure, or a file that Orbit cannot read or remove, records `instance.migrate_tool_cache_clear_failed` in `warnings`. The move goes on.
 
 A Laravel app also built caches at the old path. Before any Process starts, Orbit runs these commands as `orbit` in the application directory, when the container has PHP and the directory has `artisan`: `config:clear`, `route:clear`, `event:clear`, `view:clear` and `clear-compiled`.
 
