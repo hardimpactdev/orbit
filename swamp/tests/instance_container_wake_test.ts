@@ -136,7 +136,7 @@ Deno.test("the app-dev role installs the script as root and a watch on the reque
     const copy = (name: string) => block.find((task) => task.name === name)!["ansible.builtin.copy"];
     assertEquals(copy("Write the wake script"), { src: "files/instance-container-wake.sh", dest: "/usr/local/libexec/orbit-instance-wake", owner: "root", group: "root", mode: "0755" });
     const service = copy("Write the wake service").content as string;
-    for (const line of ["ExecStart=/usr/local/libexec/orbit-instance-wake", "CapabilityBoundingSet=\n", "NoNewPrivileges=yes", "ProtectSystem=strict"]) {
+    for (const line of ["ExecStart=/usr/local/libexec/orbit-instance-wake", "CapabilityBoundingSet=\n", "NoNewPrivileges=yes", "ProtectSystem=strict", "StartLimitIntervalSec=0"]) {
         assertStringIncludes(service, line);
     }
     assertStringIncludes(copy("Write the wake request watch").content, "PathExistsGlob=/dev/shm/orbit/hibernation/app-instance-*.wake");

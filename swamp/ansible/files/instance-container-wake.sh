@@ -17,7 +17,9 @@ cgroups=${ORBIT_CGROUP_ROOT:-/sys/fs/cgroup}
 project=orbit-instances
 # FrankenPHP's port in every Instance container (InstanceContainer::WebPort).
 web_port=8080
-# The Gateway waits 3 s from its request: a request older than 1 s is not acted on, so a resume never overlaps the wake's workflow.
+# The Gateway waits 3 s from its request, then starts the wake's workflow, whose first container step comes several seconds later
+# (measured: 8-13 s for its playbook step). A request older than 1 s is not acted on, and each Incus call has its own bound, so
+# the script ends within about 6.5 s of the request.
 max_age_ns=1000000000
 probe_limit_ns=1500000000
 
@@ -30,14 +32,14 @@ resume() {
         log "instance $id: no asleep marker; nothing to do"
         return 0
     fi
-    status=$(incus query -- "/1.0/instances/$container?project=$project" 2>/dev/null \
+    status=$(timeout 1 incus query -- "/1.0/instances/$container?project=$project" 2>/dev/null \
         | python3 -I -c 'import json, sys; print(json.load(sys.stdin).get("status", ""))' 2>/dev/null)
     if [ "$status" != Frozen ]; then
         log "instance $id: ${status:-missing}, not Frozen; nothing to do"
         return 0
     fi
     started=$(now_ns)
-    if ! incus --project "$project" resume "$container"; then
+    if ! timeout 2 incus --project "$project" resume "$container"; then
         log "instance $id: resume failed; the marker stays"
         return 0
     fi
@@ -48,7 +50,7 @@ resume() {
         return 0
     fi
     while :; do
-        code=$(incus exec --project "$project" "$container" -- curl --silent --output /dev/null --write-out '%{http_code}' \
+        code=$(timeout 2 incus exec --project "$project" "$container" -- curl --silent --output /dev/null --write-out '%{http_code}' \
             --max-time 1 "http://127.0.0.1:$web_port/" 2>/dev/null)
         if [[ $code =~ ^[1-4][0-9][0-9]$ ]]; then
             break

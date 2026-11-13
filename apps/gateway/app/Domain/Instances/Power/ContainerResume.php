@@ -34,6 +34,9 @@ final readonly class ContainerResume
     /** A request the Node has not taken by then finds no script on the Node (its role predates it): the workflow runs. */
     public const float TakeSeconds = 0.6;
 
+    /** The removal of an untaken request: the whole fast path stays within about 4.5 s of Gateway time. */
+    private const float RemoveSeconds = 1.0;
+
     /** The script needs about half a second after the request; the first read waits that long, later reads come 0.1 s apart. */
     private const float FirstReadSeconds = 0.35;
 
@@ -87,9 +90,11 @@ final readonly class ContainerResume
             $trigger = $marked - $started;
             Sleep::usleep((int) (self::FirstReadSeconds * 1_000_000));
             while (true) {
-                $times = $this->agents->run($node, 'hibernation.times', ['paths' => array_values($paths)], max(0.5, $until - self::now()))['times'] ?? [];
+                $times = $this->agents->run($node, 'hibernation.times', ['paths' => array_values($paths)], max(0.2, $until - self::now()))['times'] ?? [];
                 $at = fn (string $key): mixed => is_array($times) ? ($times[$paths[$key]] ?? null) : null;
-                if (is_int($at('resumed')) && $at('resumed') >= (int) floor($started) && $at('marker') === null) {
+                // The script removes an old `.resumed` when it takes the request, and the marker of a sleeping Instance is there
+                // until a resume: both together are this resume. The Node's clock is never compared with the Gateway's.
+                if ($at('resumed') !== null && $at('marker') === null) {
                     return ['wake' => 'resumed', 'marker_found' => true, 'trigger_seconds' => round($trigger, 3),
                         'confirm_seconds' => round(self::now() - $marked, 3)];
                 }
@@ -123,7 +128,7 @@ final readonly class ContainerResume
     {
         Log::info('The wake falls back to its workflow', ['operation_id' => $operation->id, 'reason' => $reason]);
         try {
-            $this->agents->run($node, 'hibernation.marker', ['operation' => 'remove', 'path' => $request], 5.0);
+            $this->agents->run($node, 'hibernation.marker', ['operation' => 'remove', 'path' => $request], self::RemoveSeconds);
         } catch (Throwable $exception) {
             // The script ignores a request older than one second, so a request left here wakes nothing later.
             Log::warning('The wake request could not be removed', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);

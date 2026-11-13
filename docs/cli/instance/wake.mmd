@@ -19,8 +19,7 @@ sequenceDiagram
   %%> Callers:
   %%> - the command
   %%> - Caddy on the Instance's Node, when a request finds the asleep marker: `GET runtime-activations/app-instance/ID`
-  %%> - a Conn device before it opens the T3 server of an asleep Instance (the same endpoint)
-  %%> - planned: the task flow before a turn on an attached Instance
+  %%> - planned: a Conn device that opens the T3 server, and the task flow before a turn on an attached Instance
   %%> - a deployment of a sleeping default starts it in its own run instead
   %%> Requirements:
   %%> - the caller is the Instance's Node or has node access to it
@@ -50,7 +49,9 @@ sequenceDiagram
     %%> - an API caller gets 202 with the ended Operation
     %%> - a caller who joins this wake waits for it up to the bound, then gets the same answer
     %%> On failure:
-    %%> - no script took the request in 0.6 s, the script declined (another state, FrankenPHP silent), an agent call failed, or the bound passed: the Gateway removes the request, and the same Operation starts the run below
+    %%> - no script took the request in 0.6 s, the script declined (another state, FrankenPHP silent), an agent call or the Gateway failed, or the bound passed: the Gateway removes the request, and the same Operation starts the run below
+    %%> - a Gateway worker that dies here: a delayed start runs the same Operation's run 15 s later
+    %%> - a cancel during the resume keeps the Operation cancelled
   end
   GW->>SW: Start run, full intent<br/>operation-instance-wake
   GW-->>CL: 202 Accepted<br/>Operation ID · progress page

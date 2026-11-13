@@ -336,6 +336,8 @@
         content: |
           [Unit]
           Description=Orbit Instance containers: resume a frozen container on a wake request
+          # Several Instances may wake at once; the start limit must never switch the wake requests off.
+          StartLimitIntervalSec=0
 
           [Service]
           Type=oneshot

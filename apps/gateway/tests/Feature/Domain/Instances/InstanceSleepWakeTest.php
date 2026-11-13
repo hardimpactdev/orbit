@@ -280,7 +280,7 @@ it('gives a production or checkout site no asleep check', function (): void {
  */
 function wakeNode(Instance $clone, array $node = []): object
 {
-    $state = (object) [...['script' => true, 'status' => 'Frozen', 'marker' => true, 'web' => true, 'fails' => null], ...$node,
+    $state = (object) [...['script' => true, 'status' => 'Frozen', 'marker' => true, 'web' => true, 'fails' => null, 'onRead' => null], ...$node,
         'files' => [], 'calls' => []];
     $marker = InstanceWake::markerPath($clone);
     if ($state->marker) {
@@ -306,6 +306,9 @@ function wakeNode(Instance $clone, array $node = []): object
             return [];
         }
         expect($command)->toBe('hibernation.times');
+        if ($state->onRead !== null) {
+            ($state->onRead)();
+        }
         if ($state->script && isset($state->files[$request])) {
             unset($state->files[$request]);
             if ($state->status === 'Frozen' && isset($state->files[$marker])) {
@@ -351,7 +354,10 @@ it('wakes a frozen container through the Node in the same Operation and sends th
         ->and($wake->state[InstanceWake::ResumeState])->toBe('resumed')
         ->and($clone->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Running)
         ->and($node->calls)->toBe(['hibernation.marker:mark', 'hibernation.times']);
-    Queue::assertNotPushed(StartAdmittedSwampRun::class);
+    // Only the safety net is queued, well after the bound: it starts nothing for an ended Operation.
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $wake->id
+        && $job->delay !== null && now()->diffInSeconds($job->delay) >= InstanceWake::SafetyNetSeconds - 1);
 });
 
 it('answers the wake command with the ended Operation when the Node resumed the container', function (): void {
@@ -361,7 +367,8 @@ it('answers the wake command with the ended Operation when the Node resumed the 
     $operation = app(InstanceWake::class)->start($clone, 'node:5', null);
 
     expect($operation->status->value)->toBe('succeeded')->and($operation->result['wake'])->toBe('resumed');
-    Queue::assertNotPushed(StartAdmittedSwampRun::class);
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->delay !== null);
+    Queue::assertNotPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->delay === null);
 });
 
 it('runs the wake workflow in the same Operation for every other state, removes an untaken request, and keeps the progress page', function (array $node, string $sleep, array $calls): void {
@@ -375,7 +382,7 @@ it('runs the wake workflow in the same Operation for every other state, removes 
         ->and($wake->state[InstanceWake::ResumeState] ?? null)->toBe($calls === [] ? null : 'workflow')
         ->and($state->calls)->toBe($calls)
         ->and($state->files)->not->toHaveKey(ContainerResume::requestPath($clone->id));
-    Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => true);
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->delay === null);
 })->with([
     'stopped and marker: the sleep fell back to a stop' => [[], 'stopped', []],
     'stopped and marker, found by the Node' => [['status' => 'Stopped'], 'frozen', ['hibernation.marker:mark', 'hibernation.times', 'hibernation.marker:remove']],
@@ -443,4 +450,30 @@ it('lets the extensions catch up after a wake through the Node, as after a workf
     app()->instance(InstanceLifecycleContributions::class, new InstanceLifecycleContributions([$contribution]));
 
     activationPoll($clone)->assertStatus(307);
+});
+
+it('keeps a cancel that came during the Node resume, and starts no workflow for it', function (): void {
+    $clone = frozenClone();
+    $state = wakeNode($clone);
+    $state->onRead = function () use ($clone): void {
+        Operation::query()->where('kind', InstanceWake::Kind)->where('target_id', $clone->id)->update(['status' => 'cancelled', 'lock_key' => null]);
+    };
+
+    $operation = app(InstanceWake::class)->start($clone, null, null);
+
+    expect($operation->status->value)->toBe('cancelled')
+        ->and($clone->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
+    Queue::assertNotPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->delay === null);
+});
+
+it('still sends the visitor to the app when an extension fails after the Node resume', function (): void {
+    $clone = frozenClone();
+    wakeNode($clone);
+    $contribution = Mockery::mock(InstanceLifecycleContribution::class)->shouldIgnoreMissing();
+    $contribution->shouldReceive('projectWake')->andThrow(new RuntimeException('extension down'));
+    app()->instance(InstanceLifecycleContributions::class, new InstanceLifecycleContributions([$contribution]));
+
+    activationPoll($clone)->assertStatus(307);
+    expect(Operation::query()->where('kind', InstanceWake::Kind)->sole()->status->value)->toBe('succeeded');
+    Queue::assertNotPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->delay === null);
 });

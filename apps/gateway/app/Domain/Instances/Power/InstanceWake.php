@@ -14,12 +14,16 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampDispatch;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
+use Throwable;
 
 /** `instance:wake` and the wake of a Route visit: one open wake per Instance, which a second caller joins. */
 final readonly class InstanceWake extends InstancePower
@@ -28,6 +32,9 @@ final readonly class InstanceWake extends InstancePower
 
     /** The Operation state key of a wake that tries the Node's resume first (ContainerResume): `node`, then `workflow` or `resumed`. */
     public const string ResumeState = 'wake_resume';
+
+    /** When the wake's run starts anyway if the Gateway never finished the Node's resume (ContainerResume's worst case is about 5 s). */
+    public const int SafetyNetSeconds = 15;
 
     protected function kind(): string
     {
@@ -107,6 +114,10 @@ final readonly class InstanceWake extends InstancePower
             $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id), start: false);
         if ($operation->wasRecentlyCreated) {
             $operation->forceFill(['state' => [...($operation->state ?? []), self::ResumeState => 'node']])->save();
+            // A safety net for a Gateway worker that dies during the Node's resume: the run starts after the bound has long
+            // passed. The job starts nothing once the Operation has ended or its run has started.
+            $id = $operation->id;
+            DB::afterCommit(static fn () => Bus::dispatch((new StartAdmittedSwampRun($id))->delay(now()->addSeconds(self::SafetyNetSeconds))));
         }
 
         return $operation;
@@ -132,26 +143,47 @@ final readonly class InstanceWake extends InstancePower
 
             return $operation;
         }
-        $instance = Instance::query()->with('node')->findOrFail($operation->target_id);
         $startedAt = Carbon::now();
-        // Both callers (the wake endpoint and the activation endpoint) hold no transaction here: the Node calls never run in one.
-        $result = app(ContainerResume::class)->run($operation, $instance->node);
-        $store = app(OperationStore::class);
-        if ($result === null) {
-            $store->change($operation, ['state' => [...($operation->state ?? []), self::ResumeState => 'workflow']]);
-            app(SwampDispatch::class)->start($operation);
+        try {
+            $instance = Instance::query()->with('node')->findOrFail($operation->target_id);
+            $result = app(ContainerResume::class)->run($operation, $instance->node);
+            if ($result !== null && $this->resumed($operation, $result, $startedAt)) {
+                $this->ended($operation);
 
-            return $operation->refresh();
+                return $operation->refresh();
+            }
+        } catch (Throwable $exception) {
+            Log::warning('The wake\'s Node resume failed; its workflow runs', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
         }
-        DB::transaction(function () use ($store, $operation, $result, $startedAt): void {
-            $store->change($operation, ['status' => OperationStatus::Succeeded, 'result' => [...$this->result(), ...$result],
-                'started_at' => $startedAt, 'finished_at' => Carbon::now(), 'lock_key' => null,
-                'state' => [...($operation->state ?? []), self::ResumeState => 'resumed']]);
-            InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => $this->powerState()]);
-        });
-        $this->ended($operation);
+        $operation->refresh();
+        if ($operation->status === OperationStatus::Queued) {
+            app(OperationStore::class)->change($operation, ['state' => [...($operation->state ?? []), self::ResumeState => 'workflow']]);
+            app(SwampDispatch::class)->start($operation);
+        }
 
         return $operation->refresh();
+    }
+
+    /**
+     * Records the Node's resume on the Operation only while it is still the queued wake that waits for it: a cancel in the
+     * meantime keeps its own end.
+     *
+     * @param  array<string, mixed>  $result
+     */
+    private function resumed(Operation $operation, array $result, Carbon $startedAt): bool
+    {
+        return DB::transaction(function () use ($operation, $result, $startedAt): bool {
+            $current = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
+            if ($current->status !== OperationStatus::Queued || ($current->state[self::ResumeState] ?? null) !== 'node') {
+                return false;
+            }
+            app(OperationStore::class)->change($operation, ['status' => OperationStatus::Succeeded, 'result' => [...$this->result(), ...$result],
+                'started_at' => $startedAt, 'finished_at' => Carbon::now(), 'lock_key' => null,
+                'state' => [...($current->state ?? []), self::ResumeState => 'resumed']]);
+            InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => $this->powerState()]);
+
+            return true;
+        });
     }
 
     protected function open(Instance $instance): ?Operation
