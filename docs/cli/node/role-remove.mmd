@@ -30,7 +30,7 @@ sequenceDiagram
   %%> - the role is `active` or `failed`; a `provisioning` or `removing` role is refused until its claim is stale
   %%> - `app-dev` and `app-prod` have no Route targets, `ingress` no public Routes, and `analytics` no tracking hosts
   %%> - one add, converge or remove Operation per Node (`operation.target_busy`); a second removal after the first finished finds no such role (`http.404`)
-  %%> - `--offline` is refused on both paths below (`operation.kind_unavailable`)
+  %%> - until the `--offline` flow below is built, `--offline` is refused on both paths (`operation.kind_unavailable`)
   %%> Then:
   %%> - the Gateway reads the recorded state of the assignment and picks one of the two paths below
   alt the role never touched the Node

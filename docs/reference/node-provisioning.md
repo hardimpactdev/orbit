@@ -941,7 +941,7 @@ Role convergence uses the same Swamp workflow and Ansible phases as role additio
 
 Each assignment records whether its runs ever changed the Node, in `node_roles.node_untouched`. Only a first `node:role:add` sets it true, when it creates the assignment. A `--converge` claim keeps it only from a `failed` assignment that still holds it. A run that fails at `Read the OS release` or `Require supported Ubuntu` keeps it. Any other end clears it for good: success, a failure at a later step, an interruption, a cancellation, or a lost result. Assignments from `node:add`, relocation, Metrics, or from before the column, hold false.
 
-A `failed` assignment that holds the fact is removed from the record alone. The Gateway deletes the assignment and its settings and records a `succeeded` `node.role_remove` Operation. It starts no run and does not contact the Node. Every other removal takes the run above. `--offline` is refused on both paths with `operation.kind_unavailable`.
+A `failed` assignment that holds the fact is removed from the record alone. The Gateway deletes the assignment and its settings and records a `succeeded` `node.role_remove` Operation. It starts no run and does not contact the Node. Every other removal takes the run above. The Gateway refuses `--offline` on both paths with `operation.kind_unavailable`: the offline removal is not built yet.
 
 ### Native role relocation
 
