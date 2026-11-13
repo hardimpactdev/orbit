@@ -659,7 +659,27 @@ A clone starts at the commit of the default's newest seed snapshot, with its dep
 
 Clone readiness checks PHP only when the Project has a PHP runtime. A Project without PHP can register T3 and its sessions. The Operation keeps its stable error code and shows the failed phase, command and exit code in `error.detail`; command output stays private.
 
-It keeps the default's `APP_KEY`, because the cloned database holds data encrypted with it; the rest of `.env` is the Instance's own. When the Instance's branch changes a lockfile later, the agent or the user installs the change in the workspace with the runtime folder's `composer` or `bun`. A sleeping default Instance is cloned from its snapshot without a start. A seed snapshot stays while a clone depends on it; Orbit deletes older seed snapshots that no clone uses.
+Its `.env` is a copy of the default's, except the keys it must own: see [the environment of a clone](#the-environment-of-a-clone). When the Instance's branch changes a lockfile later, the agent or the user installs the change in the workspace with the runtime folder's `composer` or `bun`. A sleeping default Instance is cloned from its snapshot without a start. A seed snapshot stays while a clone depends on it; Orbit deletes older seed snapshots that no clone uses.
+
+#### The environment of a clone
+
+A clone starts with its default's settings. The seed snapshot holds the default's `.env` as it was at the default's last deployment, so the copied container already has it. The workspace phase keeps that file as written, `${VAR}` references included, and changes only these keys:
+
+- **The clone's own keys.** Orbit writes them from the clone's render.
+- **The default's connection keys.** The clone never copies them.
+- **Copies of the default's credentials.** The clone drops them.
+
+The clone's own keys are the keys of its own database under `DB` and of its own [Valkey user](#a-clones-valkey-user), with `<PREFIX>_PREFIX` and `HORIZON_PREFIX`. `APP_URL` names the clone's Route, and the mail keys Orbit renders are its own too. A connection key that the clone's connection does not use goes.
+
+The default's connection keys are `<PREFIX>_CONNECTION`, `_HOST`, `_PORT`, `_DATABASE`, `_USERNAME` and `_PASSWORD` of every connection attached to the default. The clone gets its own, or none.
+
+A copy of a credential is a key whose value equals the default's database name, user name or password under an attached prefix. A key whose value contains such a password, for example `DATABASE_URL`, is a copy too. The check runs inside the clone, against the copied file.
+
+Keys of the render that the default's file lacks are added. `APP_KEY` comes from the default's file, because the cloned database holds data encrypted with it. When the default has no `.env` in its seed, the render is the file, as for any new Instance.
+
+Only key names leave the container. The Gateway sends the names of the three groups with the render. The Operation result names the keys the clone copied, `environment.copied`, and the keys it dropped, `environment.dropped`. No value enters an argument, a result or a log.
+
+A value set by hand in the default's `.env` after its last deployment reaches clones with the next seed snapshot. A hand-set key that points at the default's other data, such as a storage bucket or a database that Orbit does not attach, is shared with the clone. Its name is in `environment.copied`.
 
 #### What is built for clones
 
