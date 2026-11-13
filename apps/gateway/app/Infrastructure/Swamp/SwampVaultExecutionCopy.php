@@ -16,6 +16,8 @@ use Throwable;
 /** The Gateway owns the value; native vault.put receives its execution copy in an authenticated frame. */
 final readonly class SwampVaultExecutionCopy
 {
+    private const int ConnectSeconds = 15;
+
     public function __construct(private WebSocketClient $socket) {}
 
     /** @return array{vault:string,key:string} */
@@ -62,7 +64,7 @@ final readonly class SwampVaultExecutionCopy
         $shared = false;
         $socket = $this->socket;
         try {
-            [$socket, $shared] = $dispatch->socket($endpoint, 15, $this->socket);
+            [$socket, $shared] = $this->connect($dispatch, $endpoint, $vault, $key, $id);
             $phase = 'send';
             $socket->send(['type' => 'vault.put', 'id' => $id,
                 'payload' => ['vaultName' => $vault, 'key' => $key, 'value' => $value, 'force' => true]]);
@@ -101,14 +103,41 @@ final readonly class SwampVaultExecutionCopy
             }
             Log::warning('Swamp execution copy unavailable', ['vault' => $vault, 'key' => $key, 'vault_request_id' => $id,
                 'phase' => $phase, 'remote_code' => $remoteCode, 'exception_type' => $exception::class,
-                'http_status' => $phase === 'connect' && $exception instanceof WebSocketException
-                    && $exception->getCode() >= 400 && $exception->getCode() <= 599 ? $exception->getCode() : null]);
+                'http_status' => $phase === 'connect' ? self::httpStatus($exception) : null]);
             throw $this->unavailable();
         } finally {
             if (! $shared) {
                 $socket->close();
             }
         }
+    }
+
+    /**
+     * Connects for one vault.put, with one more try when the first connect gets no HTTP answer. vault.put with `force` stores the same
+     * key and value, so a second try is safe, and no request was sent before it. A refusal with an HTTP status is not tried again.
+     * Two tries cover a gap of up to about 30 seconds; a longer serve stall still fails the copy.
+     *
+     * @return array{0: WebSocketClient, 1: bool}
+     */
+    private function connect(SwampDispatch $dispatch, WebSocketEndpoint $endpoint, string $vault, string $key, string $id): array
+    {
+        try {
+            return $dispatch->socket($endpoint, self::ConnectSeconds, $this->socket);
+        } catch (Throwable $exception) {
+            if (self::httpStatus($exception) !== null) {
+                throw $exception;
+            }
+            Log::info('Swamp execution copy connect retried', ['vault' => $vault, 'key' => $key, 'vault_request_id' => $id,
+                'exception_type' => $exception::class]);
+
+            return $dispatch->socket($endpoint, self::ConnectSeconds, $this->socket);
+        }
+    }
+
+    private static function httpStatus(Throwable $exception): ?int
+    {
+        return $exception instanceof WebSocketException && $exception->getCode() >= 400 && $exception->getCode() <= 599
+            ? $exception->getCode() : null;
     }
 
     /** Read a native schema-sensitive output without putting the value in diagnostics or state. */
