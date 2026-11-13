@@ -193,7 +193,7 @@ sequenceDiagram
     %%> What it does:
     %%> - drops each database and user that Instance 42 owns on a Database server, one `docker exec -i` per statement with the SQL on stdin
     %%> How:
-    %%> - the admin login comes from the server's own vault key, as a 0600 option file for MySQL, local trust for Postgres, `AUTH` on stdin for Valkey
+    %%> - the admin login comes from the server's own vault key, as the first stdin line for MySQL and Postgres, `AUTH` on stdin for Valkey
     %%> Not included:
     %%> - registered external databases; their records go with the Instance, nothing on their host changes
   end
