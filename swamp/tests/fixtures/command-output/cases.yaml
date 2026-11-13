@@ -1503,6 +1503,26 @@ cases:
   context: ufw-deleted
   expected: true
 non_command_output:
+- file: tasks/task-instance-workspace-phase.yml
+  task: Validate the recorded workspace target
+  field: ansible.builtin.assert.that[1]
+  reason: Validates the admitted Incus project name, not command output.
+- file: tasks/task-instance-workspace-phase.yml
+  task: Validate the recorded workspace target
+  field: ansible.builtin.assert.that[2]
+  reason: Validates the admitted container name, not command output.
+- file: tasks/task-instance-workspace-phase.yml
+  task: Validate the recorded workspace target
+  field: ansible.builtin.assert.that[3]
+  reason: Validates the admitted snapshot UUID, not command output.
+- file: tasks/task-instance-workspace-phase.yml
+  task: Validate the recorded workspace target
+  field: ansible.builtin.assert.that[5]
+  reason: Validates the admitted candidate commit, not command output.
+- file: task-instance-workspace.yml
+  task: Record the public workspace refusal
+  field: ansible.builtin.copy.content
+  reason: Selects a public error code from Ansible failure metadata, not command output.
 - file: tasks/task-container-host-prepare.yml
   task: Require absolute image daemon paths
   field: ansible.builtin.assert.that[0]
