@@ -18,7 +18,7 @@ An [Instance container](/reference/development-containers#processes) runs Franke
 
 Migration reads only [application and unit-named environment files](/cli/instance/migrate#before-you-start) in its service preflight. Migration adds a [Process stability check before cutover](/cli/instance/migrate); other lifecycle and direct Process operations keep their own readiness checks. A shared runtime folder update restarts those units in each running container. The [clone copy](/reference/development-containers#lifecycle) supplies its complete root disk device, including when the seed inherited it from the Node's profile.
 
-Private Node-store conversion belongs to launch or explicit default-deploy seed capture, as the app user; Node convergence does not convert stores.
+Private Node-store conversion belongs to launch or explicit default-deploy seed capture, as the app user; Node convergence does not convert stores. Every passed default deploy retakes its seed, also at the same commit.
 
 Migrate and clone launch copy the recipe Node into a private writable store and fetch pins as the app user. This release changes no image, boot unit, startup hook or converge task. Fresh default creates start from the stock shared store and report that pins are not prepared for their first Process start; seed capture can then prepare the store for clones. Existing stores are unchanged by converge.
 

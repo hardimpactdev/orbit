@@ -52,6 +52,7 @@ sequenceDiagram
   %%> - a converted store requires a new seed even at the same commit, so clones inherit it; older seeds remain slower but correct until the explicit deploy refreshes them
   %%> What it does:
   %%> - stops the default's Processes for a moment, snapshots the container and starts them again, so clones copy no half-written file
+  %%> - every passed deployment retakes `seed-<commit>`, also at the same commit, so a clone copies the default's current caches and built files
   %%> - deletes older seed snapshots that no clone uses
   %%> - starting the units again restarts every running Process on the new commit, such as a queue worker
   SW->>C: Check the container<br/>Ansible · tags check
