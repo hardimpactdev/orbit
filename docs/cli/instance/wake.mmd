@@ -19,7 +19,8 @@ sequenceDiagram
   %%> Callers:
   %%> - the command
   %%> - Caddy on the Instance's Node, when a request finds the asleep marker: `GET runtime-activations/app-instance/ID`
-  %%> - planned: a Conn device that opens the T3 server, and the task flow before a turn on an attached Instance
+  %%> - a Conn device before it opens the T3 server of an asleep Instance (the same endpoint)
+  %%> - planned: the task flow before a turn on an attached Instance
   %%> - a deployment of a sleeping default starts it in its own run instead
   %%> Requirements:
   %%> - the caller is the Instance's Node or has node access to it
@@ -32,6 +33,25 @@ sequenceDiagram
   %%> - after a failed wake, Caddy gets the failure page with Try again until a retry or the command starts a new wake
   %%> On failure:
   %%> - no container, a nested-fleet Instance or other lifecycle work starts no run
+  opt the last sleep froze the container
+    %% path: resume
+    GW->>N: Write the wake request<br/>agent · hibernation.marker
+    %%> What it does:
+    %%> - the Operation is recorded without its run; the Node calls run after its commit
+    %%> - the frozen agent's `hibernation.marker` writes `/dev/shm/orbit/hibernation/app-instance-<id>.wake`; only root writes in that folder
+    %%> - the app-dev role's script, started by a systemd path unit, acts only on `instance-<id>` of `orbit-instances` found Frozen with its asleep marker and a request under 1 s old: `incus resume`, `memory.swap.max` 0, FrankenPHP until it answers below 500 (1.5 s at most), then it removes the marker and writes `app-instance-<id>.resumed`
+    %%> - the Gateway reads the request folder and the marker with `hibernation.times` until the resume shows, within 3 s
+    %%> Why:
+    %%> - measured on a frozen clone: the resume takes 0.02 s and the web probe 0.4 s, but the run's start-up and playbook took 8-13 s of the 9-19 s a visitor waited
+    %%> - the agent stays frozen (ADR 0253): two of its existing commands carry the request and the answer
+    %%> Result:
+    %%> - resumed: the Operation succeeds here with `wake: resumed`, `trigger_seconds` and `confirm_seconds`; `power_state` is `running`; Conn's renewal below runs as after a run
+    %%> - Caddy gets 307 to the same path: the browser sends the request again, with its method and body, and gets the app
+    %%> - an API caller gets 202 with the ended Operation
+    %%> - a caller who joins this wake waits for it up to the bound, then gets the same answer
+    %%> On failure:
+    %%> - no script took the request in 0.6 s, the script declined (another state, FrankenPHP silent), an agent call failed, or the bound passed: the Gateway removes the request, and the same Operation starts the run below
+  end
   GW->>SW: Start run, full intent<br/>operation-instance-wake
   GW-->>CL: 202 Accepted<br/>Operation ID · progress page
   SW->>N: Wake the container<br/>Ansible · tags start
