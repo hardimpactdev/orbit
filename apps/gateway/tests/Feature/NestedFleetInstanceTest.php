@@ -11,6 +11,7 @@ use App\Domain\AgentView\AgentNodeView;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewFreshness;
 use App\Domain\AgentView\AgentViewSubscriberHealth;
+use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\BaselineNormalInstanceContainer;
 use App\Domain\Instances\BaselineNormalInstanceHostIntent;
 use App\Domain\Instances\BaselineNormalInstanceImage;
@@ -22,6 +23,7 @@ use App\Domain\Nodes\NodeSettingsOperationCompletion;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -118,20 +120,6 @@ it('requires a JSON boolean for the Node hosting switch', function (mixed $value
     expect($node->refresh()->settings)->not->toHaveKey('nested_fleet');
 })->with([['true'], [1], [null]]);
 
-it('refuses every nested create before reservation regardless of the Node switch', function (string $name, bool $enabled): void {
-    $node = containerDefaultNode();
-    $node->update(['settings' => [...$node->settings, 'nested_fleet' => $enabled]]);
-    $project = containerDefaultProject();
-    $project->update(['nested_fleet' => true]);
-    expect(fn () => containerCreate($project, $node, $name))->toThrow(function (ResourceOperationException $error) use ($enabled): void {
-        expect($error->errorCode)->toBe($enabled ? 'operation.kind_unavailable' : 'instance.nested_fleet_host_unavailable')
-            ->and($error->status)->toBe($enabled ? 503 : 409);
-    });
-    $this->assertDatabaseCount('instances', 0);
-    $this->assertDatabaseCount('instance_runtimes', 0);
-    $this->assertDatabaseCount('operations', 0);
-})->with(['default', 'feature'])->with([false, true]);
-
 it('stores the Node switch and preserves it through unrelated record updates', function (): void {
     $node = containerDefaultNode();
     foreach ([true, false] as $enabled) {
@@ -203,6 +191,7 @@ it('prepares both projects and reserves subordinate IDs for inner Incus', functi
     $host = app(InstanceHostIntent::class)->for($node);
     expect($host['project'])->toBe('orbit-instances')->and($host['nested']['project'])->toBe('orbit-instances-nested')
 
+        ->and($host['nested']['image']['alias'])->toStartWith('orbit-instance-nested-')
         ->and($host['nested']['config']['security.idmap.size'])->toBe('101000000')
         ->and($host['pool'])->toBe('orbit-instances')->and($host['network'])->toBe('orbitinst0')
         ->and($host['ids'])->toBe(201 * 65536 + 2 * 101000000);
@@ -366,6 +355,47 @@ it('keeps the full normal Node intent and image byte-identical to the pre-nestin
         BaselineNormalInstanceImage::for('10.253.0.1'));
 })->with([false, true]);
 
+it('admits nested default creation on an enabled Node with its image and recorded project', function (): void {
+    SwampNodeFixture::ensure();
+    $node = containerDefaultNode();
+    $node->update(['settings' => [...$node->settings, 'nested_fleet' => true]]);
+    $project = containerDefaultProject();
+    $project->update(['nested_fleet' => true]);
+    $operation = containerCreate($project, $node);
+    $intent = containerIntentOf($operation);
+    expect($intent['project'])->toBe('orbit-instances-nested')->and($intent['image'])->toBe('orbit-instance-nested')
+        ->and($intent['config']['security.nesting'])->toBe('true');
+    $this->assertDatabaseHas('instance_runtimes', ['instance_id' => $operation->target_id, 'incus_project' => 'orbit-instances-nested']);
+});
+
+it('refuses nested default and clone admission on a Node without the hosting switch', function (string $name): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    $project->update(['nested_fleet' => true]);
+    expect(fn () => containerCreate($project, $node, $name))->toThrow(function (ResourceOperationException $error): void {
+        expect($error->errorCode)->toBe('instance.nested_fleet_host_unavailable')->and($error->status)->toBe(409);
+    });
+    $this->assertDatabaseCount('instances', 0);
+    $this->assertDatabaseCount('instance_runtimes', 0);
+    $this->assertDatabaseCount('operations', 0);
+})->with(['default', 'feature']);
+
+it('refuses a nested retry whose existing container is recorded in the normal project', function (): void {
+    $node = containerDefaultNode();
+    $node->update(['settings' => [...$node->settings, 'nested_fleet' => true]]);
+    $project = containerDefaultProject();
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/default']);
+    app(InstanceContainer::class)->reserve($instance, $node);
+    $project->update(['nested_fleet' => true]);
+    expect(fn () => containerCreate($project, $node))->toThrow(function (ResourceOperationException $error): void {
+        expect($error->errorCode)->toBe('operation.kind_unavailable')->and($error->getMessage())->toContain('requires a container');
+    });
+    $this->assertDatabaseCount('instances', 1);
+    $this->assertDatabaseCount('instance_runtimes', 1);
+    $this->assertDatabaseCount('operations', 0);
+    Queue::assertNothingPushed();
+});
+
 it('keeps the full normal default and clone intents byte-identical to the pre-nesting contract', function (bool $clone): void {
     require_once base_path('tests/Fixtures/BaselineNormalInstanceHostIntent.php');
     $this->freezeTime();
@@ -383,6 +413,53 @@ it('keeps the full normal default and clone intents byte-identical to the pre-ne
     $expected = app(BaselineNormalInstanceContainer::class)->intent($instance, $runtime);
     expect($containers->intent($instance, $runtime))->toBe($expected);
     expect(json_encode($containers->intent($instance, $runtime), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR));
+})->with([false, true]);
+
+it('admits only a clone whose source is recorded in the nested project', function (bool $nestedSource): void {
+    SwampNodeFixture::ensure();
+    app(ExtensionStore::class)->set('conn', true);
+    app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+    {
+        public function assertReady(): void {}
+
+        public function origin(): string
+        {
+            return 'http://10.44.0.3:8318';
+        }
+
+        public function key(): string
+        {
+            return 'placeholder-model-key';
+        }
+    });
+    $node = containerDefaultNode();
+    $node->update(['settings' => [...$node->settings, 'nested_fleet' => true]]);
+    $project = containerDefaultProject();
+    $project->update(['nested_fleet' => $nestedSource]);
+    $default = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default',
+        'checkout_path' => '/test/default', 'status' => 'active', 'first_setup_pending' => false]);
+    $source = app(InstanceContainer::class)->reserve($default, $node);
+    $source->update(['seed_commit' => str_repeat('c', 40)]);
+    $project->update(['nested_fleet' => true]);
+    if (! $nestedSource) {
+        expect(fn () => containerCreate($project, $node, 'feature'))->toThrow(function (ResourceOperationException $error): void {
+            expect($error->errorCode)->toBe('operation.kind_unavailable')->and($error->getMessage())->toContain('requires a container');
+        });
+        $this->assertDatabaseCount('instances', 1);
+        $this->assertDatabaseCount('instance_runtimes', 1);
+        $this->assertDatabaseCount('operations', 0);
+        Queue::assertNothingPushed();
+
+        return;
+    }
+    $operation = containerCreate($project, $node, 'feature');
+    $intent = containerIntentOf($operation);
+    expect($intent['project'])->toBe('orbit-instances-nested')
+        ->and($intent['clone']['source'])->toBe($source->container_name)
+        ->and($intent['image'])->toBe('orbit-instance-nested');
+    $this->assertDatabaseCount('instances', 2);
+    $this->assertDatabaseCount('instance_runtimes', 2);
+    $this->assertDatabaseCount('operations', 1);
 })->with([false, true]);
 
 it('refuses production cloning of a nested checkout before target reservation', function (): void {

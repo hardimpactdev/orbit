@@ -5,39 +5,46 @@
 # images it replaced remain for separately authorized operator cleanup. The build container reaches the internet as every container
 # does, through the egress proxy that the profile names for `incus exec` (tasks/instance-egress.yml), and it takes the bridge's last
 # address, which no Instance gets.
+- name: Reset this image builder ownership
+  when: instance_variant.project != instances.project
+  ansible.builtin.set_fact:
+    image_created: {rc: 1}
+
 - name: Read the Instance images
   environment: &image_local
     INCUS_REMOTE: local
     INCUS_SOCKET: "{{ container_image_socket }}"
-  ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", image, list, --format, json] }
+  ansible.builtin.command: { argv: [incus, --project, "{{ instance_variant.project }}", image, list, --format, json] }
   register: image_list
   changed_when: false
 
 - name: Build the image
   environment: *image_local
-  when: instances.image.alias not in (image_list.stdout | from_json | map(attribute='aliases') | flatten | map(attribute='name') | list)
+  when: instance_variant.image.alias not in (image_list.stdout | from_json | map(attribute='aliases') | flatten | map(attribute='name') | list)
   vars:
     build: orbit-instance-build
-    in_build: [incus, exec, --project, "{{ instances.project }}", orbit-instance-build, --env, DEBIAN_FRONTEND=noninteractive, --]
+    in_build: [incus, exec, --project, "{{ instance_variant.project }}", orbit-instance-build, --env, DEBIAN_FRONTEND=noninteractive, --]
   block:
     - name: Read existing prepared-image builders
-      ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances?project={{ instances.project }}&recursion=1"] }
+      ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances?project={{ instance_variant.project }}&recursion=1"] }
       register: image_leftover
       changed_when: false
     - name: Refuse a prior prepared-image builder
       ansible.builtin.assert:
         that: build not in (image_leftover.stdout | from_json | map(attribute='name') | list)
         fail_msg: >-
-          instance.host_unavailable: instance {{ instances.project }}/{{ build }} requires an operator;
+          instance.host_unavailable: instance {{ instance_variant.project }}/{{ build }} requires an operator;
           see /solutions/incus-shared-image-refresh#operator-cleanup
     - name: Create the build container
       ansible.builtin.command:
-        argv: [incus, --project, "{{ instances.project }}", init, "{{ instances.stock }}", "{{ build }}",
-               --config, security.idmap.isolated=true, --device, "eth0,ipv4.address={{ instances.build_address }}"]
+        argv: >-
+          {{ ['incus', '--project', instance_variant.project, 'init', instances.stock, build,
+              '--config', 'security.idmap.isolated=true', '--device', 'eth0,ipv4.address=' ~ instances.build_address]
+             + (['--config'] | product(instance_variant.config.items() | map('join', '=')) | list | flatten) }}
       register: image_created
       changed_when: true
     - name: Read the build container's effective devices
-      ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances/{{ build }}?project={{ instances.project }}"] }
+      ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances/{{ build }}?project={{ instance_variant.project }}"] }
       register: image_nic_read
       changed_when: false
     - name: Check every effective build container NIC before starting
@@ -48,13 +55,13 @@
         network_failure: instance.container_network_unsafe
         expected_network_device: eth0
     - name: Start the build container
-      ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", start, "{{ build }}"] }
+      ansible.builtin.command: { argv: [incus, --project, "{{ instance_variant.project }}", start, "{{ build }}"] }
       changed_when: true
     # Cloud-init's first boot makes the stock `ubuntu` user and its sudo grant; the setup script removes them only after it.
     # A container has no guest agent, so `cloud-init status --wait` blocks from the first moment of the boot. It exits 2 when
     # cloud-init finished with a recoverable warning; both are a finished boot.
     - name: Let cloud-init finish
-      ansible.builtin.command: { argv: [incus, exec, --project, "{{ instances.project }}", "{{ build }}", --, cloud-init, status, --wait] }
+      ansible.builtin.command: { argv: [incus, exec, --project, "{{ instance_variant.project }}", "{{ build }}", --, cloud-init, status, --wait] }
       timeout: 400
       register: image_cloud_init
       changed_when: false
@@ -68,34 +75,71 @@
       delay: 2
       changed_when: true
     - name: Install the OS packages
-      ansible.builtin.command: { argv: "{{ in_build + ['apt-get', 'install', '--yes', '--no-install-recommends', '--'] + instances.image.packages }}" }
+      ansible.builtin.command: { argv: "{{ in_build + ['apt-get', 'install', '--yes', '--no-install-recommends', '--'] + instance_variant.image.packages }}" }
       changed_when: true
-    - name: Set up the users, the workspace and no sudo
-      ansible.builtin.command: { argv: "{{ in_build + ['sh', '-c', instances.image.prepare] }}" }
+    - name: Install the pinned inner Incus packages
+      when: instance_variant.image.incus is defined
+      block:
+        - name: Create the inner Incus package cache
+          ansible.builtin.file: {path: /var/cache/orbit/debs, state: directory, owner: root, group: root, mode: "0755"}
+        - name: Fetch the pinned inner Incus packages
+          ansible.builtin.include_tasks: artifact-fetch.yml
+          vars:
+            artifact:
+              urls: "{{ inner_package.urls }}"
+              path: "/var/cache/orbit/debs/{{ inner_package.name }}_{{ inner_package.sha256 }}.deb"
+              sha256: "{{ inner_package.sha256 }}"
+          loop: "{{ instance_variant.image.incus }}"
+          loop_control: {loop_var: inner_package, label: "{{ inner_package.name }}"}
+        - name: Copy the pinned packages into the image builder
+          ansible.builtin.command:
+            argv: [incus, --project, "{{ instance_variant.project }}", file, push,
+                   "/var/cache/orbit/debs/{{ item.name }}_{{ item.sha256 }}.deb", "{{ build }}/tmp/{{ item.name }}.deb"]
+          loop: "{{ instance_variant.image.incus }}"
+          changed_when: true
+        - name: Install Incus and its dependencies through the image proxy
+          ansible.builtin.command:
+            argv: "{{ in_build + ['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--'] + (instance_variant.image.incus | map(attribute='name') | map('regex_replace', '^', '/tmp/') | map('regex_replace', '$', '.deb') | list) }}"
+          changed_when: true
+        - name: Remove the copied packages
+          ansible.builtin.command:
+            argv: "{{ in_build + ['rm', '--'] + (instance_variant.image.incus | map(attribute='name') | map('regex_replace', '^', '/tmp/') | map('regex_replace', '$', '.deb') | list) }}"
+          changed_when: true
+    - name: Set up the image users
+      ansible.builtin.command: { argv: "{{ in_build + ['sh', '-c', instance_variant.image.prepare] }}" }
       changed_when: true
     - name: Write the image files
       ansible.builtin.command:
-        argv: [incus, file, push, --project, "{{ instances.project }}", --create-dirs, --uid, "{{ item.uid }}", --gid, "{{ item.gid }}",
+        argv: [incus, file, push, --project, "{{ instance_variant.project }}", --create-dirs, --uid, "{{ item.uid }}", --gid, "{{ item.gid }}",
                --mode, "{{ item.mode }}", "-", "{{ build }}{{ item.path }}"]
         stdin: "{{ item.content }}"
         stdin_add_newline: false
-      loop: "{{ instances.image.files }}"
+      loop: "{{ instance_variant.image.files }}"
       loop_control: { label: "{{ item.path }}" }
       changed_when: true
     - name: Enable the units and clean up
       ansible.builtin.command: { argv: "{{ in_build + item }}" }
-      loop: "{{ instances.image.finish }}"
+      loop: "{{ instance_variant.image.finish }}"
       changed_when: true
-    # Nothing may publish an image with a sudo path: no `ubuntu` user, nothing in sudoers.d but its README, and no member of the
-    # groups `sudo` or `admin`.
+    # Normal images have no sudo path. The nested variant permits only its exact agent grant; orbit gets neither sudo nor Incus.
     - name: Read the sudo paths of the image
       ansible.builtin.command:
         argv: "{{ in_build + ['sh', '-c', image_audit] }}"
       vars:
         image_audit: >-
+          {{ image_nested_audit if instance_variant.image.incus is defined else image_normal_audit }}
+        image_normal_audit: >-
           getent passwd ubuntu >/dev/null && echo user:ubuntu;
           for f in /etc/sudoers.d/*; do [ "$f" = /etc/sudoers.d/README ] || [ ! -e "$f" ] || echo "sudoers:$f"; done;
           getent group sudo admin | cut -d: -f4 | tr , '\n' | sed '/^$/d; s/^/member:/'; true
+        image_nested_audit: >-
+          getent passwd ubuntu >/dev/null && echo user:ubuntu;
+          for f in /etc/sudoers.d/*; do [ "$f" = /etc/sudoers.d/README ] || [ "$f" = /etc/sudoers.d/orbit-agent ] || [ ! -e "$f" ] || echo "sudoers:$f"; done;
+          getent group sudo admin | cut -d: -f4 | tr , '\n' | sed '/^$/d; s/^/member:/';
+          getent group incus-admin | grep -qx 'incus-admin:[^:]*:[0-9]*:agent' || echo incus-admin:unexpected;
+          test "$(cat /etc/sudoers.d/orbit-agent)" = 'agent ALL=(ALL:ALL) NOPASSWD: ALL' || echo agent:grant;
+          runuser -u agent -- sudo -n true || echo agent:sudo;
+          runuser -u orbit -- sudo -n true 2>/dev/null && echo orbit:sudo; true
       register: image_sudo
       changed_when: false
     - name: Require an image without a sudo path
@@ -104,29 +148,29 @@
         fail_msg: "instance.host_unavailable: the image keeps a sudo path: {{ image_sudo.stdout_lines | join(', ') }}"
         quiet: true
     - name: Stop and publish the build container
-      ansible.builtin.command: { argv: "{{ ['incus', '--project', instances.project] + item }}" }
+      ansible.builtin.command: { argv: "{{ ['incus', '--project', instance_variant.project] + item }}" }
       loop:
         - [stop, "{{ build }}"]
-        - [publish, "{{ build }}", --alias, "{{ instances.image.alias }}", user.orbit.stock-build=]
+        - [publish, "{{ build }}", --alias, "{{ instance_variant.image.alias }}", user.orbit.stock-build=]
       changed_when: true
   always:
     - name: Remove the build container
       when: image_created is defined and image_created.rc == 0
-      ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", delete, --force, "--", "{{ build }}"] }
+      ansible.builtin.command: { argv: [incus, --project, "{{ instance_variant.project }}", delete, --force, "--", "{{ build }}"] }
       register: image_removed
       changed_when: false
       failed_when: image_removed.rc != 0 and 'not found' not in image_removed.stderr
 
 - name: Read the Instance images after the build
   environment: *image_local
-  ansible.builtin.command: { argv: [incus, --project, "{{ instances.project }}", image, list, --format, json] }
+  ansible.builtin.command: { argv: [incus, --project, "{{ instance_variant.project }}", image, list, --format, json] }
   register: image_built
   changed_when: false
 
 - name: Select the image and the image of the stable alias
   ansible.builtin.set_fact:
-    image_current: "{{ image_of[instances.image.alias] }}"
-    image_stable: "{{ image_of['orbit-instance'] | default('') }}"
+    image_current: "{{ image_of[instance_variant.image.alias] }}"
+    image_stable: "{{ image_of[instance_variant.stable_alias] | default('') }}"
   vars:
     image_of: >-
       {%- set out = {} -%}
@@ -140,6 +184,6 @@
   when: image_stable != image_current
   ansible.builtin.command:
     argv: [incus, query, --request, "{{ 'PUT' if image_stable != '' else 'POST' }}", --data,
-           "{{ ({'target': image_current} if image_stable != '' else {'name': 'orbit-instance', 'target': image_current}) | to_json }}",
-           --, "/1.0/images/aliases{{ '/orbit-instance' if image_stable != '' else '' }}?project={{ instances.project }}"]
+           "{{ ({'target': image_current} if image_stable != '' else {'name': instance_variant.stable_alias, 'target': image_current}) | to_json }}",
+           --, "/1.0/images/aliases{{ '/' ~ instance_variant.stable_alias if image_stable != '' else '' }}?project={{ instance_variant.project }}"]
   changed_when: true

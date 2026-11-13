@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\TaskVms\TaskVmNestedFleet;
+
 /**
  * The container image of a development Instance (docs/reference/development-containers.md#inside-a-container): the stock Ubuntu image
  * with the OS packages the runtime needs, the users `agent` and `orbit` in the group `work`, no sudo, the firewall of the model route
@@ -13,6 +15,8 @@ namespace App\Domain\Instances;
 final readonly class InstanceImage
 {
     public const string StableAlias = 'orbit-instance';
+
+    public const string NestedAlias = 'orbit-instance-nested';
 
     /** OS packages beyond the stock image: the firewall, ACLs on the workspace, and Git for the workspace repository. */
     public const array Packages = ['acl', 'git', 'nftables'];
@@ -33,21 +37,30 @@ final readonly class InstanceImage
     public const string ShellPath = InstanceHostIntent::RuntimeFolder.'/current/bin:/usr/local/bin:$PATH';
 
     /**
-     * @return array{alias: string, packages: list<string>, prepare: string,
+     * @param  array{line: string, packages: list<array{name: string, sha256: string, urls: list<string>}>}|null  $incus
+     * @return array{incus?: list<array{name: string, sha256: string, urls: list<string>}>, alias: string, packages: list<string>, prepare: string,
      *     files: list<array{path: string, content: string, uid: int, gid: int, mode: string}>, finish: list<list<string>>}
      */
-    public static function for(string $gateway): array
+    public static function for(string $gateway, ?array $incus = null): array
     {
         $image = [
-            'packages' => self::Packages,
+            'packages' => [...self::Packages, ...($incus === null ? [] : ['wireguard-tools', 'sqlite3', 'sudo'])],
+            ...($incus === null ? [] : ['incus' => array_values(array_filter($incus['packages'], static fn (array $package): bool => $package['name'] !== 'incus'))]),
             // Users, the workspace and the leftovers of the stock image. The stock `ubuntu` user holds uid 1000 and a sudo grant, and
             // cloud-init would make it again at each new Instance's first boot, so it is off; the network keeps its DHCP setup.
             // Cloud-init also made the group `lxd` for that user, and it took gid 1000, which `orbit` needs.
-            'prepare' => self::prepare(),
+            'prepare' => self::prepare().($incus === null ? '' : "usermod --append --groups incus-admin agent\n"),
             'files' => [
-                ['path' => '/etc/nftables.conf', 'content' => self::firewall($gateway), 'uid' => 0, 'gid' => 0, 'mode' => '0640'],
+                ['path' => '/etc/nftables.conf', 'content' => self::firewall($gateway, $incus !== null), 'uid' => 0, 'gid' => 0, 'mode' => '0640'],
                 ['path' => '/etc/systemd/system/t3.service', 'content' => self::t3Unit(), 'uid' => 0, 'gid' => 0, 'mode' => '0640'],
-                ['path' => '/etc/sysctl.d/90-orbit-no-userns.conf', 'content' => "# Managed by Orbit.\nuser.max_user_namespaces = 0\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                ...($incus === null ? [
+                    ['path' => '/etc/sysctl.d/90-orbit-no-userns.conf', 'content' => "# Managed by Orbit.\nuser.max_user_namespaces = 0\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                ] : [
+                    ['path' => '/etc/subuid', 'content' => "root:1000000:100000000\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                    ['path' => '/etc/subgid', 'content' => "root:1000000:100000000\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                    ['path' => '/etc/orbit/apparmor-off', 'content' => "N\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                    ['path' => '/etc/sudoers.d/orbit-agent', 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440'],
+                ]),
                 ...self::egress($gateway),
                 ['path' => '/home/orbit/.gitconfig', 'content' => "[safe]\n\tdirectory = ".InstanceHostIntent::Workspace."\n",
                     'uid' => InstanceHostIntent::OrbitUid, 'gid' => InstanceHostIntent::OrbitUid, 'mode' => '0640'],
@@ -73,7 +86,7 @@ final readonly class InstanceImage
             ],
         ];
 
-        return ['alias' => self::StableAlias.'-'.substr(hash('sha256', json_encode($image, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)), 0, 12), ...$image];
+        return ['alias' => ($incus === null ? self::StableAlias : self::NestedAlias).'-'.substr(hash('sha256', json_encode($image, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)), 0, 12), ...$image];
     }
 
     /**
@@ -135,13 +148,14 @@ final readonly class InstanceImage
     }
 
     /** Only `agent` reaches the model forwarder, and only root and `agent` reach T3's port; others get a reset. */
-    public static function firewall(string $gateway): string
+    public static function firewall(string $gateway, bool $nestedFleet = false): string
     {
         $agent = InstanceHostIntent::AgentUid;
         $forwarder = InstanceHostIntent::ModelForwarderPort;
         $t3 = InstanceHostIntent::T3Port;
+        $nestedGuard = $nestedFleet ? '        ip daddr { '.TaskVmNestedFleet::WireGuardSubnet.', '.TaskVmNestedFleet::Subnet.' } meta skuid '.InstanceHostIntent::OrbitUid." drop\n" : '';
 
-        return <<<NFT
+        $firewall = <<<NFT
             #!/usr/sbin/nft -f
             # Managed by Orbit.
             flush ruleset
@@ -154,6 +168,8 @@ final readonly class InstanceImage
             }
 
             NFT;
+
+        return $nestedFleet ? str_replace("policy accept;\n", "policy accept;\n".$nestedGuard, $firewall) : $firewall;
     }
 
     /**

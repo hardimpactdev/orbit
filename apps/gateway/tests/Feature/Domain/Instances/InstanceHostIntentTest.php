@@ -370,8 +370,8 @@ describe('the shared folders', function (): void {
         [ProjectType::LaravelPackage, 'package'], [ProjectType::NodePackage, 'package'],
     ]);
 
-    it('states facts only: the users, the workspace, the Instance file, no sudo and no internet', function (string $note): void {
-        expect(InstanceNotes::all()[$note])->toContain('`agent`', '`orbit`', '`/srv/workspace`', '`/etc/orbit/instance`', 'There is no sudo.', 'no direct internet')
+    it('states facts only: the users, the workspace, the Instance file, conditional sudo and no internet', function (string $note): void {
+        expect(InstanceNotes::all()[$note])->toContain('`agent`', '`orbit`', '`/srv/workspace`', '`/etc/orbit/instance`', 'Only in a nested-fleet container, `agent` has passwordless sudo.', 'no direct internet')
             // The pinned static PHP build and Composer are in the runtime folder, and the note says where.
             ->and(InstanceNotes::all()[$note])->toContain('Composer', '`/opt/orbit-runtime/current/php/<version>/bin`', '`php` and `frankenphp`', '`php` on `PATH`', 'so `composer` works')
             ->and(InstanceNotes::all()[$note])->not->toContain('No `php` is on `PATH`');

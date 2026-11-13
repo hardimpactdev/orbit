@@ -20,8 +20,8 @@ Deno.test({
             });
             result = await f.run();
             assert(result.ok, result.output);
-            const images = f.state().images.filter((i: { aliases: { name: string }[] }) =>
-                i.aliases.some((alias) => alias.name.startsWith("orbit-instance"))
+            const images = f.state().images.filter((i: { project: string; aliases: { name: string }[] }) =>
+                i.aliases.some((alias) => alias.name.startsWith("orbit-instance-")) && i.project === "orbit-instances"
             );
             assertEquals(images.map((i: { aliases: unknown }) => i.aliases), [
                 [{name: "orbit-instance-aaaaaaaaaaaa"}],
@@ -277,4 +277,97 @@ Deno.test({
             f.cleanup();
         }
     },
+});
+
+Deno.test({
+    name: "nested fleet host keeps the normal project strict and builds both image aliases from pinned packages",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture({pool: "dir", nested: true});
+        try {
+            const result = await f.run();
+            assert(result.ok, result.output);
+            const state = f.state();
+            const normal = state.projects.find((p: {name: string}) => p.name === "orbit-instances").config;
+            const nested = state.projects.find((p: {name: string}) => p.name === "orbit-instances-nested").config;
+            assertEquals(normal["restricted.containers.nesting"], undefined);
+            assertEquals(normal["restricted.containers.lowlevel"], undefined);
+            assertEquals(nested, {...normal, "restricted.containers.nesting": "allow", "restricted.containers.interception": "allow", "restricted.containers.lowlevel": "allow"});
+            assertEquals(nested["restricted.containers.privilege"], "isolated");
+            assertEquals(nested["limits.virtual-machines"], "0");
+            assertEquals(state.profiles["orbit-instances-nested"], state.profiles["orbit-instances"]);
+            for (const [project, alias] of [["orbit-instances", "orbit-instance"], ["orbit-instances-nested", "orbit-instance-nested"]]) {
+                assert(state.images.some((image: {project: string; aliases: {name: string}[]}) => image.project === project && image.aliases.some((row) => row.name === alias)));
+            }
+            const calls = f.calls().filter((call) => call.includes("orbit-instances-nested"));
+            const init = calls.find((call) => call.includes("init") && call.includes("orbit-instance-build"))!;
+            for (const key of ["security.nesting=true", "security.syscalls.intercept.mknod=true", "security.syscalls.intercept.setxattr=true", "security.idmap.size=101000000", "limits.memory=12GiB"]) assert(init.includes(key));
+            assert(calls.some((call) => call.includes("apt-get") && call.includes("wireguard-tools") && call.includes("sqlite3")));
+            assert(calls.some((call) => call.includes("apt-get") && call.includes("/tmp/incus-base.deb") && call.includes("/tmp/incus-client.deb")));
+            for (const packagePin of f.instances.nested!.image.incus) {
+                assert(Deno.statSync(`${f.folder}/debs/${packagePin.name}_${packagePin.sha256}.deb`).size > 0);
+            }
+            assertEquals(state.files["orbit-instance-build/etc/sudoers.d/orbit-agent"].content, "agent ALL=(ALL:ALL) NOPASSWD: ALL\n");
+            assert(calls.some((call) => call.some((arg) => arg.includes("runuser -u orbit -- sudo -n true"))));
+            const repeat = await f.run();
+            assert(repeat.ok, repeat.output);
+            assertStringIncludes(repeat.output, "changed=0");
+        } finally { f.cleanup(); }
+    },
+});
+
+Deno.test({
+    name: "nested fleet image refuses a bad pinned package digest before publication",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture({pool: "dir", nested: true});
+        try {
+            const broken = structuredClone(f.instances);
+            broken.nested!.image.incus[0].sha256 = "b".repeat(64);
+            f.write(broken);
+            const result = await f.run();
+            assert(!result.ok, result.output);
+            assert(!f.calls().some((call) => call.includes("publish") && call.includes("orbit-instance-nested-aaaaaaaaaaaa")));
+            assertEquals(f.state().instances, []);
+        } finally { f.cleanup(); }
+    },
+});
+
+Deno.test({
+    name: "nested fleet image preserves a prior builder after the normal variant built successfully",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture({pool: "dir", nested: true});
+        try {
+            const state = f.state();
+            const prior = {name: "orbit-instance-build", project: "orbit-instances-nested", status: "Stopped"};
+            state.instances.push(prior);
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+            const result = await f.run();
+            assert(!result.ok, result.output);
+            assertStringIncludes(result.output, "orbit-instances-nested/orbit-instance-build requires an operator");
+            assert(f.state().images.some((image: {project: string; aliases: {name: string}[]}) => image.project === "orbit-instances" && image.aliases.some((alias) => alias.name === "orbit-instance")));
+            assertEquals(f.state().instances, [prior]);
+            assert(!f.calls().some((call) => call.includes("delete") && call.includes("orbit-instances-nested") && call.includes("orbit-instance-build")));
+        } finally {f.cleanup();}
+    },
+});
+
+Deno.test({
+  name: "a captured hosting intent without the nested image remains valid after the image upgrade",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture({pool: "dir", nested: true});
+    try {
+      const nested = (f.instances as Record<string, any>).nested;
+      f.write({...f.instances, nested: {project: nested.project, config: nested.config}});
+      const result = await f.run();
+      assert(result.ok, result.output);
+      assertEquals(f.state().projects.map((row: {name: string}) => row.name), ["orbit-instances", "orbit-instances-nested"]);
+      const aliases = f.state().images.flatMap((row: {project: string; aliases: {name: string}[]}) =>
+        row.aliases.map(alias => `${row.project}/${alias.name}`));
+      assert(aliases.includes("orbit-instances/orbit-instance"), JSON.stringify(aliases));
+      assert(!aliases.includes("orbit-instances-nested/orbit-instance-nested"), JSON.stringify(aliases));
+    } finally { f.cleanup(); }
+  },
 });

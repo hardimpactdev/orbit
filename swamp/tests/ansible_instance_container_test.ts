@@ -1257,9 +1257,8 @@ Deno.test({
   name: "only an enabled nested host prepares the second project and nesting modules",
   ignore: !hasAnsible,
   async fn() {
-    const f = await hostFixture({pool: "dir"});
+    const f = await hostFixture({pool: "dir", nested: true});
     try {
-      f.write({...f.instances, nested: {project: "orbit-instances-nested", config: {"security.nesting": "true"}}});
       const result = await f.run();
       assert(result.ok, result.output);
       const state = f.state();

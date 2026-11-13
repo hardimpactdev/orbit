@@ -34,7 +34,7 @@ final readonly class InstanceContainerPlacement
 
     public static function image(string $project): string
     {
-        return $project === self::NestedProject ? 'orbit-instance-nested' : InstanceImage::StableAlias;
+        return $project === self::NestedProject ? InstanceImage::NestedAlias : InstanceImage::StableAlias;
     }
 
     /** @return array<string, string> */

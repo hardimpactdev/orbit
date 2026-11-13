@@ -56,7 +56,6 @@ final readonly class DevelopmentInstanceCreateAdmission
             || ($source !== null && $source->runtime?->incus_project !== InstanceContainerPlacement::NestedProject)) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Nested-fleet creation requires a container in the nested Instance project on an enabled build-list Node.', 503);
         }
-        throw new ResourceOperationException('operation.kind_unavailable', 'Nested-fleet Instance creation is not available until its image variant is built.', 503);
     }
 
     public function readyDefault(Project $project, ?Instance $default): Instance

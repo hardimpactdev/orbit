@@ -1651,3 +1651,12 @@ non_command_output:
   task: Write the failure
   field: ansible.builtin.copy.content
   reason: Maps Ansible failure metadata to a public error code; does not parse command output.
+
+- file: tasks/instance-image.yml
+  task: Install Incus and its dependencies through the image proxy
+  field: ansible.builtin.command.argv
+  reason: Builds package paths from the admitted recipe; does not parse command output.
+- file: tasks/instance-image.yml
+  task: Remove the copied packages
+  field: ansible.builtin.command.argv
+  reason: Builds the same package paths for cleanup from the admitted recipe; does not parse command output.

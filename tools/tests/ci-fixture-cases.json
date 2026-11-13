@@ -120,7 +120,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "34927020f7dcf4ff04d3ea1d9f0473a80fb86c48f23bb6d610979ba48b2c72e8",
+    "source_sha256": "a01101e0792914b9a6b967b368ee44124cfcf083d8c323bd4d43d6158ddfcbe1",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -174,7 +174,7 @@
     ]
   },
   "swamp/tests/ansible_instance_host_image_test.ts": {
-    "source_sha256": "9aaf5d30dca8e87b4bc1c04ab8603062408b4532ba3b061ede626216ebd5f3bc",
+    "source_sha256": "2dc7ef2db6d0e330423d2a934f251b9cf2fca3ef9800bd10d90a62cb028f05df",
     "cases": [
       "a new image definition takes the stable alias while retaining the old image",
       "a Node without its Instance pool is refused before anything changes",
@@ -184,7 +184,11 @@
       "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting",
       "prepared publication clears inherited stock build ownership",
       "the full prepared-image replacement and failure cleanup use the verified local socket despite the default remote",
-      "a prior prepared-image builder is refused by exact name and recipe without deletion"
+      "a prior prepared-image builder is refused by exact name and recipe without deletion",
+      "nested fleet host keeps the normal project strict and builds both image aliases from pinned packages",
+      "nested fleet image refuses a bad pinned package digest before publication",
+      "nested fleet image preserves a prior builder after the normal variant built successfully",
+      "a captured hosting intent without the nested image remains valid after the image upgrade"
     ]
   },
   "swamp/tests/ansible_instance_host_runtime_test.ts": {

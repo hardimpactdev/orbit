@@ -118,6 +118,7 @@ function writeTasks(folder: string) {
             "instance-folder.yml",
             "instance-vite-plus-home.yml",
             "instance-image.yml",
+            "artifact-fetch.yml",
             "task-container-host-system.yml",
             "task-container-host-prepare.yml",
         ]
@@ -135,6 +136,8 @@ function writeTasks(folder: string) {
             text,
         );
     }
+    Deno.mkdirSync(`${folder}/library`, { recursive: true });
+    Deno.copyFileSync(new URL("library/orbit_artifact.py", root), `${folder}/library/orbit_artifact.py`);
     Deno.copyFileSync(
         new URL("transport-exit-codes.json", root),
         `${folder}/transport-exit-codes.json`,
@@ -308,9 +311,10 @@ export const nodeAddresses = [
 ];
 
 export async function fixture(
-    { pool = "zfs", addresses = nodeAddresses }: {
+    { pool = "zfs", addresses = nodeAddresses, nested: enableNested = false }: {
         pool?: string | null;
         addresses?: string[];
+        nested?: boolean;
     } = {},
 ) {
     const folder = Deno.makeTempDirSync();
@@ -485,15 +489,29 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
             },
         },
     };
+    const nestedPackages = [];
+    for (const name of ["incus-base", "incus-client"]) {
+        const file = `${folder}/artifacts/${name}.deb`;
+        Deno.writeTextFileSync(file, `fixture ${name}`);
+        nestedPackages.push({name, sha256: await sha256(file), urls: [`https://example.test/${name}.deb`]});
+    }
+    const nested = {
+        project: "orbit-instances-nested",
+        config: {"security.nesting": "true", "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true", "security.idmap.isolated": "true", "security.idmap.size": "101000000", "limits.memory": "12GiB"},
+        image: {...instances.image, alias: "orbit-instance-nested-aaaaaaaaaaaa", packages: [...instances.image.packages, "wireguard-tools", "sqlite3", "sudo"], incus: nestedPackages,
+            prepare: instances.image.prepare + "usermod --append --groups incus-admin agent\n",
+            files: [...instances.image.files, {path: "/etc/sudoers.d/orbit-agent", content: "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", uid: 0, gid: 0, mode: "0440"}]},
+    };
+    const hostInstances = {...instances, ...(enableNested ? {nested} : {})};
     const write = (value: unknown) =>
         Deno.writeTextFileSync(
             `${folder}/intent.json`,
             JSON.stringify({ instances: value }),
         );
-    write(instances);
+    write(hostInstances);
     return {
         folder,
-        instances,
+        instances: hostInstances,
         write,
         artifacts: (version: string) => artifacts(folder, version),
         async run(seconds = 240) {

@@ -128,7 +128,7 @@ final readonly class InstanceHostIntent
             'arc' => $taskHost === null,
             'incus' => $incus,
             'image' => InstanceImage::for($gateway),
-            ...($nested ? ['nested' => ['project' => InstanceContainerPlacement::NestedProject,
+            ...($nested ? ['nested' => ['project' => InstanceContainerPlacement::NestedProject, 'image' => InstanceImage::for($gateway, $incus),
                 'config' => InstanceContainerPlacement::config(InstanceContainerPlacement::NestedProject)]] : []),
             ...($nestedRuntimes > 0 ? ['runtime_projects' => InstanceContainerPlacement::projects()] : []),
             'folders' => InstanceFolderPlan::for($folders),
