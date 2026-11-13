@@ -67,6 +67,9 @@ final readonly class TaskCancelIntent
             if ($kind === 'tasks.cancel') {
                 self::eligible($group->refresh(), $kind);
                 $this->review->assertOnOrigin($group);
+                if ($copy !== null) {
+                    TaskCopyEnd::assertFree($copy->instance);
+                }
                 $this->operations->cancelOpen($group);
                 if ($copy !== null && $workspace !== null) {
                     return app(TaskCopyEnd::class)->cancel($group, $copy->instance, $workspace, $caller, $request);

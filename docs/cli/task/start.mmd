@@ -40,7 +40,7 @@ sequenceDiagram
       %%> On failure:
       %%> - every end of the create counts: a failed run, a start that Swamp refuses, a cancel before the run starts, an expired run budget
       %%> - the task is `failed` and still owns the copy; a queued job admits `instance:destroy` of the copy with force
-      %%> - after an expired budget the run may still be stopping, so no destroy is queued: the task keeps the copy
+      %%> - an expired budget changes nothing: the run may still be stopping, so the task stays `reserved` with its copy
       %%> - while the task keeps the copy, `task:cancel` admits its destroy, and `orbit instance:destroy ID --yes --force` does too
     end
   else every other Project

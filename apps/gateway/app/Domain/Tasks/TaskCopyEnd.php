@@ -42,6 +42,17 @@ final readonly class TaskCopyEnd
             'untracked' => $count($read['untracked']), 'stashes' => $count($read['stashes'])];
     }
 
+    /** Refuses while an Operation holds the copy: its create still runs, or an earlier destroy has not ended. Call before any change. */
+    public static function assertFree(Instance $copy): void
+    {
+        $held = Operation::query()->where('target_type', 'instance')->where('target_id', $copy->id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->value('id');
+        if ($held !== null) {
+            throw new ResourceOperationException('operation.target_busy', 'An Operation still holds the task copy; cancel again when it has ended.', 409,
+                details: ['operation_id' => $held]);
+        }
+    }
+
     /**
      * Admits the destroy of the copy and records the cancel. Refused while an Operation holds the copy: its create still runs, or an
      * earlier destroy has not ended.
@@ -50,12 +61,7 @@ final readonly class TaskCopyEnd
      */
     public function cancel(Task $group, Instance $copy, array $workspace, string $caller, ?string $request): Operation
     {
-        $held = Operation::query()->where('target_type', 'instance')->where('target_id', $copy->id)
-            ->whereNotIn('status', OperationStatus::terminalValues())->value('id');
-        if ($held !== null) {
-            throw new ResourceOperationException('operation.target_busy', 'An Operation still holds the task copy; cancel again when it has ended.', 409,
-                details: ['operation_id' => $held]);
-        }
+        self::assertFree($copy);
         $key = $this->idempotency->key;
         $admit = static fn (): Operation => app(StartInstanceDestroyAction::class)->execute($copy->refresh(), true, $caller, $request);
         $destroy = $key === null ? $admit() : $this->idempotency->under('instance.destroy', $key, (string) $this->idempotency->fingerprint, $admit);

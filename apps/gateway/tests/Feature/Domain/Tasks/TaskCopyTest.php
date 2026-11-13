@@ -297,13 +297,13 @@ describe('the end of the copy\'s create', function (): void {
         Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $operation->target_id);
     });
 
-    it('fails the group but keeps the copy when the create\'s budget expired, as its run may still be stopping', function (): void {
+    it('leaves the group reserved with its copy when the create\'s budget expired, as its run may still be stopping', function (): void {
         $group = copyGroup(copySource()->project);
         $operation = runningOperation(startCopy($group));
 
         app(OperationStore::class)->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'operation.timed_out']);
 
-        expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed)->and($group->taskable_id)->toBe($operation->target_id);
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)->and($group->taskable_id)->toBe($operation->target_id);
         Queue::assertNotPushed(DestroyTaskCopy::class);
     });
 

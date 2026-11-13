@@ -17,9 +17,9 @@ use App\Models\Task;
 final readonly class TaskCopyLifecycle
 {
     /**
-     * The create of a copy ended, however it ended. A success runs a group that waits for it. Any other end fails a group that still
-     * runs and queues the copy's destroy, unless the run's budget expired: that run may still be stopping, so the group keeps the copy
-     * until `task:cancel` destroys it.
+     * The create of a copy ended, however it ended. A success runs a group that waits for it. An expired budget changes nothing: the
+     * run may still be stopping or be reopened, and the group stays reserved with its copy until the create ends again or `task:cancel`
+     * destroys the copy. Any other end fails a group that still runs and queues the copy's destroy.
      */
     public function createEnded(Operation $operation): void
     {
@@ -28,6 +28,9 @@ final readonly class TaskCopyLifecycle
             return;
         }
         [$instance, $group] = $owned;
+        if ($operation->error_code === 'operation.timed_out') {
+            return;
+        }
         if (self::ready($operation)) {
             if ($group->status === TaskGroupStatus::Reserved) {
                 $group->update(['status' => TaskGroupStatus::Running, 'started_at' => $group->started_at ?? now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
@@ -38,9 +41,7 @@ final readonly class TaskCopyLifecycle
         if (in_array($group->status, TaskGroupStatus::active(), true)) {
             $group->update(['status' => TaskGroupStatus::Failed, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
         }
-        if ($operation->error_code !== 'operation.timed_out') {
-            DestroyTaskCopy::dispatch($instance->id);
-        }
+        DestroyTaskCopy::dispatch($instance->id);
     }
 
     /**
