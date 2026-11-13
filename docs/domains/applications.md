@@ -190,7 +190,7 @@ A missing or stale report refuses with `instance.source_invalid`. Mismatched Git
 
 Registration transfers source ownership to Orbit. A later `instance:destroy` deletes the checkout. There is no unregister command. The CLI asks for default-No consent that names the source; JSON and noninteractive calls need `--yes`.
 
-The name comes from `--name` or the checkout directory name. An explicit name equal to the Project default branch becomes `default`. Names are lowercase DNS labels of at most 63 characters. The Project root applies unless `--root` supplies a valid override. Registration creates no Project: use [`project:create`](/cli/project/create) first. Project inference, relocation and adopting every worktree remain unavailable.
+The name comes from `--name` or the checkout directory name. An explicit name equal to the Project default branch becomes `default`. Names are lowercase DNS labels of at most 63 characters. The Project root applies unless `--root` supplies a valid override. Registration creates no Project: use [`project:create`](/cli/project/create) first. Project inference and relocation remain unavailable.
 
 ## Provision the application endpoint
 

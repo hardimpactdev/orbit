@@ -80,17 +80,6 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         $this->certificates->convergeInstanceHostnameChange($instance, $candidate->domain);
     }
 
-    public function prepareDestinationCertificates(Instance $instance, Route $route): void
-    {
-        $instance->loadMissing('node');
-        $this->certificates->convergeInstance($instance, $route);
-        $router = $this->router($instance, $route);
-
-        if ($router instanceof Node) {
-            $this->certificates->convergeRouteRouter($route, $router);
-        }
-    }
-
     private function usesCertificate(Node $node, string $scope): bool
     {
         return new DevelopmentSiteRepository()->forNode($node)->contains(

@@ -41,22 +41,6 @@ final readonly class AutomaticDeployHistory
             ->first();
     }
 
-    /** The latest terminal automatic attempt after resume, only when it is an alertable failure. */
-    public function failedAlert(): ?InstanceDeployment
-    {
-        $last = InstanceDeployment::query()
-            ->where('instance_id', $this->instance->id)
-            ->where('kind', 'deploy')
-            ->whereIn('triggered_by', self::Triggers)
-            ->where('status', '!=', 'running')
-            ->where(static fn ($query) => $query->whereNull('error_code')->orWhere('error_code', '!=', self::Paused))
-            ->where('id', '>', $this->instance->auto_deploy_resumed_after)
-            ->latest('id')
-            ->first();
-
-        return $last instanceof InstanceDeployment && $last->status === 'failed' && is_string($last->commit) ? $last : null;
-    }
-
     /** One observation supplies rollback blocks and a version of stored history, independent of display names. */
     public function snapshot(): AutomaticDeployHistorySnapshot
     {

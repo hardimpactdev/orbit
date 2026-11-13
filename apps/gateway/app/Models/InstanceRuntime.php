@@ -35,7 +35,6 @@ use LogicException;
  * @property Carbon|null $updated_at
  * @property-read Instance $instance
  * @property-read Node $node
- * @property-read Instance|null $cloneSource
  */
 final class InstanceRuntime extends Model
 {
@@ -81,12 +80,6 @@ final class InstanceRuntime extends Model
     public function node(): BelongsTo
     {
         return $this->belongsTo(Node::class);
-    }
-
-    /** @return BelongsTo<Instance, $this> */
-    public function cloneSource(): BelongsTo
-    {
-        return $this->belongsTo(Instance::class, 'clone_source_instance_id');
     }
 
     /** @return array<string, string> */

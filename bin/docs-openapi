@@ -1436,7 +1436,7 @@ EXAMPLE_BY_NAME = {
     'calendar': 'daily', 'timeout_seconds': 3600, 'target_type': 'node', 'families': ['node', 'instance'], 'limit': 25, 'lines': 100,
     'manager': 'vp', 'package': '@openai/codex', 'version_constraint': '^0.150', 'tag': '8.4',
     'php_version': '8.5', 'source_path': '/srv/orbit/apps/acme/main', 'environments': ['production'], 'phase': 'before_activation', 'release': '20260914T101500Z', 'value': 'log', 'status': 'success', 'state': 'active',
-    'force': True, 'offline': False, 'replace': True, 'converge': False, 'purge_data': False, 'include_worktrees': False,
+    'force': True, 'offline': False, 'replace': True, 'converge': False, 'purge_data': False,
     'sources': ['10.44.0.6', '10.44.0.9'], 'source': '10.6.0.0/24', 'protocol': 'tcp', 'instance_id': 4, 'sqlite_source_path': '/home/acme/database/database.sqlite', 'apps': {'path': '/srv/orbit/apps'}, 'settings': {'apps': {'path': '/srv/orbit/apps'}},
     'title': 'Build Tasks', 'brief': 'Persist groups. Accept when create and list work.',
 }
@@ -1874,7 +1874,7 @@ spec = {
         'Error': {'type': 'object', 'properties': {'error': {'type': 'object', 'properties': {'code': {'type': 'string', 'description': 'Stable error code, namespaced by family, such as `node.not_active` or `route.target_conflict`.'}, 'message': {'type': 'string', 'description': 'Safe message without credentials, environment values, or remote output.'}, 'details': {'type': 'object', 'additionalProperties': True, 'description': 'Bounded, redacted details such as the conflicting record IDs or the failed validation rule.'}, 'request_id': {'type': 'string', 'format': 'uuid'}}, 'required': ['code', 'message']}}, 'required': ['error']},
     }},
 }
-BOOLEAN_FIELDS = {'force', 'offline', 'replace', 'converge', 'converge_existing', 'purge_data', 'handoff', 'accept_termination', 'publish_observer', 'include_worktrees', 'start', 'keep_alive', 'write'}
+BOOLEAN_FIELDS = {'force', 'offline', 'replace', 'converge', 'converge_existing', 'purge_data', 'handoff', 'accept_termination', 'publish_observer', 'start', 'keep_alive', 'write'}
 nav_pages = {t: [] for _, t, _ in TAGS}
 unmatched = []
 

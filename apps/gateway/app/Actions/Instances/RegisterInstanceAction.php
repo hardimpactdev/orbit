@@ -63,7 +63,7 @@ final readonly class RegisterInstanceAction
             || ! $caller->roles()->where('role', RoleName::AppDev)->where('status', LifecycleStatus::Active)->exists()) {
             throw new ResourceOperationException('instance.caller_not_app_dev', 'Registration requires an active app-dev caller Node.', 422);
         }
-        if ($data->projectId === null || $data->includeWorktrees) {
+        if ($data->projectId === null) {
             throw $this->unavailable();
         }
         $project = Project::query()->findOrFail($data->projectId);
@@ -114,11 +114,9 @@ final readonly class RegisterInstanceAction
                 'project_id' => $project->id, 'node_id' => $caller->id, 'name' => $name,
                 'source_layout' => 'checkout', 'checkout_path' => $data->sourcePath,
                 'root' => $root !== $project->root ? $root : null, 'status' => InstanceState::Reserved,
-                'registration_request_id' => (string) Str::uuid(), 'registration_primary' => true,
-                'registration_include_worktrees' => false, 'registration_original_path' => $data->sourcePath,
-                'registration_authoritative_path' => $data->sourcePath,
+                'registration_request_id' => (string) Str::uuid(), 'registration_original_path' => $data->sourcePath,
             ]);
-            RegistrationFacts::record($instance, $facts, $project->repository_url, $project->repository_identity);
+            RegistrationFacts::record($instance, $facts);
             $instance->update(['status' => InstanceState::Reserved, 'first_setup_pending' => $data->runSetup]);
             $route = $data->domain === null ? null : app(CreateRouteAction::class)->ensureForInstance($instance, $data->domain);
             $setup = null;
@@ -132,7 +130,7 @@ final readonly class RegisterInstanceAction
                 $members = app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions', includeActive: true)['members'];
             }
             if (! $protectEnvironment && ($setup['steps'] ?? []) === [] && $members === [] && $data->domain === null) {
-                RegistrationFacts::activate($instance, $facts, $project->repository_url, $project->repository_identity);
+                RegistrationFacts::activate($instance, $facts);
                 $instance->update(['first_setup_pending' => false]);
 
                 return $instance->refresh();
@@ -197,6 +195,6 @@ final readonly class RegisterInstanceAction
 
     private function unavailable(): ResourceOperationException
     {
-        return new ResourceOperationException('operation.kind_unavailable', 'Registration requires a named Project and one in-place checkout under its configured apps path; adopting every worktree is unavailable.', 503);
+        return new ResourceOperationException('operation.kind_unavailable', 'Registration requires a named Project and one in-place checkout under its configured apps path.', 503);
     }
 }

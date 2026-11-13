@@ -8,7 +8,7 @@ covers:
 ---
 
 ```bash
-orbit instance:register --project=ID [--path=PATH] [--name=NAME] [--root=PATH] [--domain=HOST] [--setup] [--yes] [--include-worktrees] [--json]
+orbit instance:register --project=ID [--path=PATH] [--name=NAME] [--root=PATH] [--domain=HOST] [--setup] [--yes] [--json]
 ```
 
 | Option | Default | Meaning |
@@ -20,7 +20,6 @@ orbit instance:register --project=ID [--path=PATH] [--name=NAME] [--root=PATH] [
 | `--domain=HOST` | none | Create a Route for this domain, which must sit below the Node's TLD. A Cluster TLD does not apply. |
 | `--setup` | off | Run the Project setup steps, then create and start its development Processes. |
 | `--yes` | prompt | Confirm the source ownership transfer without prompting. Required without a terminal and with `--json`. |
-| `--include-worktrees` | off | Reserved for adopting every worktree; unavailable. A single linked worktree needs no flag. |
 | `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the Instance, or the final task, as JSON. |
 
@@ -31,9 +30,9 @@ orbit instance:register --project=12 --name=feature --yes --json
 
 Run the command on the `app-dev` Node that holds the source. In a terminal, an omitted Project is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `project.id_invalid` and sends no request, and so is a value that is not a positive integer.
 
-The CLI inspects the path first. It refuses a directory outside Git, and an origin that is empty, a local path or `git://`, carries credentials or a password, or has a query or fragment, with `instance.source_invalid` before it sends a request. `--include-worktrees` is refused with `operation.kind_unavailable` before any prompt. In a terminal the CLI then asks, with No selected, to transfer the source to Orbit ownership, naming the path and the effect: Orbit may relocate and later remove it. Declining ends with `instance.registration_cancelled`. A noninteractive or `--json` call without `--yes` is refused with `input.confirmation_required`.
+The CLI inspects the path first. It refuses a directory outside Git, and an origin that is empty, a local path or `git://`, carries credentials or a password, or has a query or fragment, with `instance.source_invalid` before it sends a request. In a terminal the CLI then asks, with No selected, to transfer the source to Orbit ownership, naming the path and the effect: Orbit may relocate and later remove it. Declining ends with `instance.registration_cancelled`. A noninteractive or `--json` call without `--yes` is refused with `input.confirmation_required`.
 
-The Gateway checks the [Node agent's fresh checkout report](/reference/node-agent#checkouts), which must exist for the path and come from an online agent. The source must belong to the Node account and the Project repository, sit directly under `<apps-root>/<project-slug>/`, have a commit, have a `.env` that is absent or a regular file owned by the Node account, and not overlap another managed checkout. A plain checkout and a linked worktree of that repository are accepted. A branch renamed after the worktree was created is recorded as reported; registration changes no Git metadata. Project inference, source relocation and adopting every worktree stay unavailable; a request without a Project, or for a source outside the apps directory, is refused with `operation.kind_unavailable`. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
+The Gateway checks the [Node agent's fresh checkout report](/reference/node-agent#checkouts), which must exist for the path and come from an online agent. The source must belong to the Node account and the Project repository, sit directly under `<apps-root>/<project-slug>/`, have a commit, have a `.env` that is absent or a regular file owned by the Node account, and not overlap another managed checkout. A plain checkout and a linked worktree of that repository are accepted. Registration adopts one source. The API has no `include_worktrees` field any more: a body that holds it is refused with `validation.failed`. A branch renamed after the worktree was created is recorded as reported; registration changes no Git metadata. Project inference and source relocation stay unavailable; a request without a Project, or for a source outside the apps directory, is refused with `operation.kind_unavailable`. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
 
 With an absent `.env`, or one that only the Node account can read, and no opt-in work, registration answers at once with the active Instance. It starts no task, and the Gateway reads nothing on the Node: it records the observed branch, commit, PHP version and Laravel marker from the agent's report. `--setup`, `--domain`, or a `.env` with any group or other permission bit starts one task; a `.env` already protected as `0640` therefore starts a task on every repeat, which skips the finished step. Its guarded steps protect an existing public `.env` as `0640 orbit-env`, run the Project setup steps in order, start its development Processes, and create the Route as `route:create` does. Each step runs only when requested or needed. The Route must answer over TLS before the Instance becomes active. Registration preserves your `.env`; setup follows the Project's commands, and Route creation may set `APP_URL`. If setup has no steps or Process definitions and no other Node work is needed, registration answers at once.
 
@@ -56,7 +55,7 @@ The CLI shows one progress display while it inspects the source. A record-only r
 | `instance.registration_cancelled` | You declined the ownership transfer. |
 | `validation.failed` | `--root` is not a normalized relative web path or is rejected for the Project type, the domain is not a valid domain, the name is over 63 characters, or the Project does not exist. |
 | `instance.caller_not_app_dev` | The caller is not an active Linux Node with the `app-dev` role. |
-| `operation.kind_unavailable` | `--include-worktrees`, a missing Project, or a source outside `<apps-root>/<project-slug>`. |
+| `operation.kind_unavailable` | A missing Project, or a source outside `<apps-root>/<project-slug>`. |
 | `operation.kind_unavailable` | The Project has `nested_fleet` on. Only `instance:create` makes Instances of such a Project, as containers, so Orbit records nothing. See [Nested fleet setting](/reference/projects#nested-fleet-setting). |
 | `instance.name_invalid` | The name is not a lowercase DNS label. |
 | `project.root_invalid` | The Project's stored root is not valid for its type. |

@@ -125,15 +125,15 @@ final readonly class RegistrationFacts
      *
      * @param  Facts  $facts
      */
-    public static function activate(Instance $instance, array $facts, string $repository, ?string $identity): void
+    public static function activate(Instance $instance, array $facts): void
     {
-        self::record($instance, $facts, $repository, $identity);
+        self::record($instance, $facts);
         $instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active',
             'registration_completed_at' => now(), 'failed_step' => null, 'error_code' => null]);
     }
 
     /** @param Facts $facts */
-    public static function record(Instance $instance, array $facts, string $repository, ?string $identity): void
+    public static function record(Instance $instance, array $facts): void
     {
         $instance->update([
             'source_layout' => $facts['common'] === $instance->checkout_path.'/.git' ? 'checkout' : 'worktree',
@@ -141,13 +141,9 @@ final readonly class RegistrationFacts
             'starting_commit' => $facts['commit'],
             'selected_php_version' => $facts['php_version'],
             'source_is_laravel' => $facts['laravel'],
-            'registration_repository_url' => $repository, 'registration_repository_identity' => $identity,
             'registration_source_digest' => $facts['digest'],
             'registration_detached' => $facts['detached'],
-            'registration_default_branch' => $facts['default_branch'],
-            'registration_inferred_slug' => $facts['inferred_slug'],
-            'registration_common_repository_path' => $facts['common'], 'registration_worktree_paths' => [$instance->checkout_path],
-            'registration_relocation_state' => 'relocated',
+            'registration_common_repository_path' => $facts['common'],
         ]);
     }
 }

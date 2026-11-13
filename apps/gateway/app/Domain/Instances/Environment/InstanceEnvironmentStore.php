@@ -297,44 +297,6 @@ final readonly class InstanceEnvironmentStore
         }
     }
 
-    public function cloneSynchronizationCapacity(InstanceEnvironmentContext $expected): int
-    {
-        $requiredCapacity = DB::transaction(function () use ($expected): int {
-            $this->assertCloneCurrent($expected, requireActiveNode: true);
-            $rows = DB::table('instance_environment_values')
-                ->where('instance_id', $expected->instanceId)
-                ->orderBy('env_key')
-                ->get(['env_key', 'env_value']);
-            $encryptedStorageBytes = 0;
-
-            foreach ($rows as $row) {
-                if (! is_string($row->env_key) || ! is_string($row->env_value)) {
-                    $this->configurationUnreadable();
-                }
-
-                $encryptedStorageBytes += strlen($row->env_key) + strlen($row->env_value) + 4;
-            }
-
-            return InstanceEnvironmentValidator::MaximumFileBytes + $encryptedStorageBytes;
-        });
-
-        return $requiredCapacity;
-    }
-
-    public function cloneSynchronizationSnapshot(
-        InstanceEnvironmentContext $expected,
-    ): InstanceEnvironmentSynchronizationSnapshot {
-        $snapshot = DB::transaction(function () use ($expected): InstanceEnvironmentSynchronizationSnapshot {
-            $this->assertCloneCurrent($expected, requireActiveNode: true);
-
-            return new InstanceEnvironmentSynchronizationSnapshot(
-                $this->storedValues($expected->instanceId),
-            );
-        });
-
-        return $snapshot;
-    }
-
     private function assertCurrent(InstanceEnvironmentContext $expected, bool $requireActiveNode): void
     {
         if ($expected->cloning) {

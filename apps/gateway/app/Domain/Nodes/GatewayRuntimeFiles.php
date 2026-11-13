@@ -24,7 +24,7 @@ final readonly class GatewayRuntimeFiles
      * file; a key leaves this list once no Gateway has it (docs/reference/old-paths.md).
      */
     public const array RetiredSettings = ['ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE', 'ORBIT_TASK_VMS_UPCLOUD_MAX_VMS', 'ORBIT_TASK_VMS_UPCLOUD_PLAN',
-        'ORBIT_TASK_VMS_UPCLOUD_DISK_GB'];
+        'ORBIT_TASK_VMS_UPCLOUD_DISK_GB', 'ORBIT_SWAMP_DIRECT_WRITERS'];
 
     /**
      * The tmpfiles rule that creates `/run/orbit` at every boot, owned by `orbit`. The Documents cleanup state lives under it and never

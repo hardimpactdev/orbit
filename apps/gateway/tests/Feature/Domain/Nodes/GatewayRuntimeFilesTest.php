@@ -38,7 +38,8 @@ it('converges the Gateway runtime with the gateway role and retires the release 
 
     expect($runtime['gateway'])->toBe(['pool' => GatewayRuntimeFiles::Pool, 'release_units' => GatewayRuntimeFiles::ReleaseUnits, 'account' => 'orbit',
         'environment' => GatewayReleaseLayout::fromConfig()->sharedPath().'/gateway.env',
-        'retired_settings' => ['ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE', 'ORBIT_TASK_VMS_UPCLOUD_MAX_VMS', 'ORBIT_TASK_VMS_UPCLOUD_PLAN', 'ORBIT_TASK_VMS_UPCLOUD_DISK_GB'],
+        'retired_settings' => ['ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE', 'ORBIT_TASK_VMS_UPCLOUD_MAX_VMS', 'ORBIT_TASK_VMS_UPCLOUD_PLAN', 'ORBIT_TASK_VMS_UPCLOUD_DISK_GB',
+            'ORBIT_SWAMP_DIRECT_WRITERS'],
         'tmpfiles' => '/etc/tmpfiles.d/orbit-gateway.conf'])
         ->and($files['/etc/tmpfiles.d/orbit-gateway.conf'])->toMatchArray(['ensure' => 'present', 'owner' => 'root', 'group' => 'root', 'mode' => '0644'])
         ->and($files['/etc/tmpfiles.d/orbit-gateway.conf']['content'])->toEndWith("\nd /run/orbit 0755 orbit orbit -\n")

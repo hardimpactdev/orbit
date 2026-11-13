@@ -229,7 +229,7 @@ describe('instance:register', function (): void {
             ->toBe('instance.project_missing');
     });
 
-    it('transports include worktrees and omits inferred values for a selected Project', function (): void {
+    it('omits inferred values for a selected Project', function (): void {
         $mockClient = MockClient::global([
             RegisterInstanceRequest::class => registration_mock_response(),
         ]);
@@ -238,7 +238,6 @@ describe('instance:register', function (): void {
             ->artisan('instance:register', [
                 '--yes' => true,
                 '--project' => '3',
-                '--include-worktrees' => true,
                 '--name' => 'feature',
                 '--domain' => 'feature.test',
                 '--json' => true,
@@ -249,7 +248,6 @@ describe('instance:register', function (): void {
 
         expect($mockClient->getLastRequest()?->body()->all())->toBe([
             'source_path' => '/work/acme',
-            'include_worktrees' => true,
             'project_id' => 3,
             'instance_name' => 'feature',
             'domain' => 'feature.test',

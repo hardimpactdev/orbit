@@ -8,7 +8,6 @@ final readonly class RegisterInstanceData
 {
     public function __construct(
         public string $sourcePath,
-        public bool $includeWorktrees,
         public ?int $projectId,
         public ?string $instanceName,
         public ?string $root,

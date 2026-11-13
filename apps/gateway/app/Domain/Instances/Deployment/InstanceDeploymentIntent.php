@@ -221,31 +221,4 @@ final readonly class InstanceDeploymentIntent
 
         return $created->toImmutable()->utc()->format('YmdHis').'-op-'.sprintf('%020d', $operation->id);
     }
-
-    public static function provenActivation(Operation $operation): ?DeploymentRelease
-    {
-        $run = InstanceExecutionEvidence::run($operation, 'activation');
-        if (($run['name'] ?? null) !== 'instance.activate-release' || ($run['transport'] ?? null) !== 'instance-deploy-agent'
-            || isset($run['result']['error_code'])) {
-            return null;
-        }
-
-        return self::storedRelease($run['result']);
-    }
-
-    /** @return array{name:string,path:string,commit:string}|null */
-    public static function storableRelease(?DeploymentRelease $release): ?array
-    {
-        return $release === null ? null : ['name' => $release->name, 'path' => $release->path, 'commit' => $release->commit];
-    }
-
-    public static function storedRelease(mixed $value): ?DeploymentRelease
-    {
-        if (! is_array($value) || ! is_string($value['name'] ?? null)
-            || ! is_string($value['path'] ?? null) || ! is_string($value['commit'] ?? null)) {
-            return null;
-        }
-
-        return new DeploymentRelease($value['name'], $value['path'], $value['commit']);
-    }
 }

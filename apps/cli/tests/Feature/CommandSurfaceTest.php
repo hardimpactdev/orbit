@@ -780,7 +780,6 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             [],
             [
                 'path' => null,
-                'include-worktrees' => false,
                 'project' => null,
                 'name' => null,
                 'root' => null,
