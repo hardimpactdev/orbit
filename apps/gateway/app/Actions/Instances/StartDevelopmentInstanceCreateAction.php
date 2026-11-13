@@ -203,6 +203,11 @@ final readonly class StartDevelopmentInstanceCreateAction
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
                 $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? $server['connection'] ?? null, $source, $valkey['target'] ?? null);
                 $input['mail_keys_set'] = app(DevelopmentCreateEnvironment::class)->mailKeys($instance);
+                if ($container && $instance->runtime()->whereNotNull('t3_port')->exists()) {
+                    // An Instance with T3 keeps the .env its container already holds, a clone its default's from the seed copy,
+                    // except these keys (names only).
+                    $input['environment_clone'] = app(DevelopmentCreateEnvironment::class)->cloneKeys($instance, $source, $copy['connection'] ?? $server['connection'] ?? null, $valkey['target'] ?? null);
+                }
                 // A rerun after a failed create checks the Processes its first run already started.
                 $input['members'] = $container ? [] : app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions', includeActive: true)['members'];
             }

@@ -514,10 +514,12 @@ def main():
         if outcome == "changed":
             changes.append("club-key")
     elif phase == "workspace":
-        # Admission frames both private values in one vault copy for native SSH stdin.
+        # Admission frames the private values and the clone's key names in one vault copy for native SSH stdin.
         workspace = json.loads(secret)
         environment = workspace["environment"]
         processes = workspace["processes"]
+        # A value framed before the merge names existed has none; the guest then writes the render.
+        merge = workspace.get("merge")
         git = [
             "git",
             "-c",
@@ -561,7 +563,7 @@ def main():
             )
             output = inside(
                 "workspace",
-                json.dumps({"environment": environment, "processes": processes}),
+                json.dumps({"environment": environment, "processes": processes, "merge": merge}),
             )
             print("orbit-commit=" + target)
             print(json.dumps(output))

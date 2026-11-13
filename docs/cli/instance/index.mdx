@@ -97,7 +97,7 @@ Analytics commands publish the tracking hosts that send visits to the [analytics
 | [`instance:analytics:show`](/cli/instance/analytics-show) | Show the tracking hosts, their DNS records, and the script tag. |
 | [`instance:analytics:disable`](/cli/instance/analytics-disable) | Remove every tracking host. |
 
-On a Node of the build list, a Project's first `default` Instance runs in a container, and every other Instance of the Project is a [clone](/reference/development-containers#create) of it, with its own T3 server. See [the default Instance](/reference/development-containers#the-default-instance).
+On a Node of the build list, a Project's first `default` Instance runs in a container, and every other Instance of the Project is a [clone](/reference/development-containers#create) of it, with its own T3 server. A clone keeps its default's `.env` except its own connection keys and `APP_URL`; its result names the copied and dropped keys. See [the environment of a clone](/reference/development-containers#the-environment-of-a-clone). See [the default Instance](/reference/development-containers#the-default-instance).
 
 Conn can also [create a thread clone on a selected branch](/reference/conn#threads-in-an-orbit-project). That optional API selection reserves a branch before creation and freezes its source commit. The CLI keeps its existing create rules.
 

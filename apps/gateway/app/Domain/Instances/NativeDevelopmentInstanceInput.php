@@ -52,10 +52,13 @@ final readonly class NativeDevelopmentInstanceInput
         }
 
         $processEnvironments = $container === null ? null : app(ContainerProcesses::class)->environments($instance, ValidatedData::object($container)['processes']);
-        // A clone's workspace phase takes one private JSON value through native SSH stdin.
+        // A clone's workspace phase takes one private JSON value through native SSH stdin: its rendered .env, its Process files
+        // and the key names that merge the render into the default's .env of the seed copy.
         if ($container !== null && (ValidatedData::object($container)['clone'] ?? null) !== null) {
             $processEnvironments = json_encode(['environment' => $environment->content($instance),
-                'processes' => json_decode(ValidatedData::string($processEnvironments), false, 512, JSON_THROW_ON_ERROR)], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+                'processes' => json_decode(ValidatedData::string($processEnvironments), false, 512, JSON_THROW_ON_ERROR),
+                // A create admitted before `environment_clone` existed has none: the clone writes the render as before.
+                'merge' => isset($input['environment_clone']) ? ValidatedData::object($input['environment_clone']) : null], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         }
 
         $testing = $environment->testing($instance);
