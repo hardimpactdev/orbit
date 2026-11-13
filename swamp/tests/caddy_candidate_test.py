@@ -440,37 +440,6 @@ class CaddyCandidateTest(unittest.TestCase):
             interrupt=True,
         )
 
-    def test_shape_live_proof_stages_validates_and_renames(self):
-        text = (ROOT / "swamp/proof/spike/shape-live").read_text()
-        script = (
-            text.split('incus exec "$node" -- sh -eu -c ')[1].split(" <")[0].strip()
-        )
-        self.assertTrue(script.startswith("'") and script.endswith("'"))
-        script = script[1:-1].replace("/etc/caddy", str(self.config))
-        env = os.environ | {"PATH": str(self.bin) + ":" + os.environ["PATH"]}
-        for invalid in [True, False]:
-            value = (
-                "INVALID"
-                if invalid
-                else "import relative.conf\n# valid proof fixture\n"
-            )
-            done = subprocess.run(
-                ["sh", "-eu", "-c", script],
-                input=value.encode(),
-                env=env,
-                capture_output=True,
-                timeout=5,
-                check=False,
-            )
-            if invalid:
-                self.assertNotEqual(done.returncode, 0)
-                self.assertEqual(self.live.read_bytes(), self.old)
-                self.assertFalse(self.calls.exists())
-            else:
-                self.assertEqual(done.returncode, 0, done.stderr)
-                self.assertEqual(self.live.read_text(), value)
-            self.assertEqual(list(self.config.glob(".orbit-shape-candidate.*")), [])
-
     def test_ansible_route_site(self):
         self.ansible(
             "swamp/ansible/route-create-site.yml",

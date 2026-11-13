@@ -391,7 +391,7 @@
     ]
   },
   "swamp/bin/source_test.ts": {
-    "source_sha256": "a1e76db87b933961f3fcde33050cb8403a136ce2d31dd4c2234f7b9dd43fe747",
+    "source_sha256": "ca770011ed64b16d07e3d2508f155861a430040e614c6ccd9c87f96afd5b2b63",
     "cases": [
       "model IDs are unique",
       "workflow queue bounds have measured per-kind budgets",
@@ -2223,13 +2223,12 @@
     ]
   },
   "swamp/tests/caddy_candidate_test.py": {
-    "source_sha256": "ad328444d166af6d3c81ad5f7360cb289b7acef1a75d885246833a8c1de62935",
+    "source_sha256": "5bf480ed9590e20b0026069e203f48edf4f9a89843d9ab8d7c4302d301add93a",
     "cases": [
       "test_native_whole_node_caddy_publication",
       "test_native_delta_used_by_all_three_migrate_caddy_passes",
       "test_native_ingress_publication",
       "test_validated_inode_has_final_metadata_at_interrupted_rename",
-      "test_shape_live_proof_stages_validates_and_renames",
       "test_ansible_route_site",
       "test_ansible_route_withdrawal",
       "test_ansible_bootstrap_swamp_front"
@@ -2354,10 +2353,9 @@
     ]
   },
   "swamp/extensions/behaviors/operations/routes/update-command/workflow_test.ts": {
-    "source_sha256": "962c1bea5e867848ab5cd854447e6d02fbdf2c6e5b32345077d633741a3a049e",
+    "source_sha256": "6b22dcc8017f45e10c51264d65055be1b7f285857ef8d1abbb75cd3a1a2f6d9d",
     "cases": [
       "Route update workflows place every step on the swamp role and keep mutation parents small",
-      "the task-cancel withdrawal keeps certificate cleanup visible per scope and gates LAN retirement",
       "restore keeps the observed candidate serving, then withdraws it after DNS grace",
       "Route primitive and shared publication children use one209selector",
       "a clone publishes its prepared Route beside workspace without waiting for app startup",

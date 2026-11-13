@@ -1378,8 +1378,7 @@ The scheduled workflow continues to discover the other Task VM kinds. A direct a
 ### Direct Incus VM effects
 
 Incus create, start, stop and delete also declare the direct Swamp workflow
-`operation-task-vm-incus`. Each kind defaults to `polled` in
-`swamp.direct_writers` until its owning Node worker passes a canary. Direct
+`operation-task-vm-incus`. Direct
 admission captures the agent digest and the fixed VM command. The exact Node
 worker runs the pinned agent with the Node user's passwordless sudo. The
 Gateway records its bounded result; it adds no execution queue, retry or wait.

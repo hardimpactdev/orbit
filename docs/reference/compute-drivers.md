@@ -374,7 +374,7 @@ Internal source commits and digests remain in the identity; relocating identical
 
 Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, external artifact URL, `artifact_mirror`, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit.
 
-A [refresh](#refresh-the-base-snapshot) records the same identity on the build row of the base snapshot. Schema version `1` and a short display hash are not substitutes.
+A [refresh](#refresh-the-base-snapshot) records the same identity on the build row of the base snapshot. Schema version `1` and a short display hash are not substitutes. No code writes the `task_vm_image_recipe` row any more; only the recovery of an old `recipe-image:` problem reads it.
 
 ### Show and validate the recipe
 
