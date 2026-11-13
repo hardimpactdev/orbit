@@ -12,11 +12,24 @@ use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Orbit\Extensions\Conn\Actions\DestroyConnInstanceAction;
+use Orbit\Extensions\Conn\Domain\ConnInstanceWorkState;
 use Orbit\Extensions\Conn\Http\Requests\DestroyConnInstanceRequest;
 
 final class ConnInstancesController extends Controller
 {
+    /** The remove sheet's read: the same live read the destroy admits with (docs/reference/conn.md#remove-an-instance). */
+    #[RequiresNodeAccess(ServingNode::InstanceOwning)]
+    public function work(Request $request, int $instance_id, ConnInstanceWorkState $work): JsonResponse
+    {
+        $instance = Instance::query()->findOrFail($instance_id);
+        DestroyConnInstanceAction::assertContainer($instance);
+
+        return response()->json(['data' => $work->read($instance),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
+    }
+
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     #[StartsOperation('instance.destroy', requiresKey: true, bindCaller: true)]
     public function destroy(DestroyConnInstanceRequest $request, int $instance_id, DestroyConnInstanceAction $action): JsonResponse

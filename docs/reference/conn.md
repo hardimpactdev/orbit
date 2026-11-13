@@ -352,9 +352,31 @@ A server of an Instance names its `instance_id` and the container's `power_state
 
 - A default refuses with `instance.default_protected` (409).
 - A host checkout refuses with `instance.not_container` (409).
-- Without acknowledgement, Orbit always refuses with `instance.unsaved_work` (409) and `{"uncommitted": null, "unpushed": null, "state": "unknown"}` in error details. Container Git observations are not available yet.
+- Without acknowledgement, a `dirty` or `unknown` workspace refuses with `instance.unsaved_work` (409). Its error details are the whole read below.
+- Without acknowledgement, a `clean` workspace is removed.
 
-Orbit never probes the container in this request. When Git observations become available, uncommitted work, unpushed commits or no upstream each require acknowledgement. An observation over ten minutes old or from an offline agent remains unknown. The Conn checks above leave Schedules, Routes, databases, pairings, environments and Operations unchanged when they refuse. These checks do not change the CLI's destroy rules.
+The remove sheet calls `GET /instances/{id}/work` when it opens. The removal without acknowledgement runs the same live read, so the sheet and the click cannot disagree. If work appears between them, the click is refused with the new details. The caller needs access to the Instance's Node, as for the removal. A host checkout refuses with `instance.not_container` (409). The read answers within about 4 s and never writes to Git. [Workspace work state](/reference/development-containers#workspace-work-state) defines what counts as work.
+
+```json
+{"instance_id": 2610, "state": "dirty", "reason": null, "read_at": "2026-11-13T20:31:02Z", "duration_ms": 180,
+ "baseline": "recorded", "head": "feature-x", "uncommitted": 4, "unpushed": 2,
+ "modified": {"count": 3, "names": ["app/Foo.php", "routes/web.php", "README.md"]},
+ "untracked": {"count": 1, "names": ["notes.txt"]},
+ "commits": {"count": 2, "branch_count": 1, "branches": [{"name": "feature-x", "count": 2}]},
+ "stashes": {"count": 1, "names": ["stash@{0}: WIP on feature-x: 1a2b3c4 msg"]}}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `state` | `clean`, `dirty` or `unknown`. |
+| `reason` | Only for `unknown`: `stopped`, `asleep`, `timeout`, `not_a_repository` or `unreachable`. |
+| `baseline` | `recorded`, `default_now` or `none`; `null` when `unknown`. |
+| `uncommitted` | `modified.count` + `untracked.count`; `null` when `unknown`. |
+| `unpushed` | `commits.count`; `null` when `unknown`. |
+| `modified`, `untracked`, `stashes` | `count` and the first 5 `names`; `null` when `unknown`. |
+| `commits` | `count` of distinct commits, `branch_count`, and the first 5 `branches` by name with their own count. |
+
+Names come from the workspace. Each is at most 200 characters; Conn shows them as plain text.
 
 With acknowledgement, Orbit admits the existing `instance.destroy` engine with force enabled and answers its Operation with HTTP 202. Existing lifecycle, Route and database blockers keep their codes and messages. The shared engine tries the same pure preparation before it stops Schedules and discards that result. Admission runs the preparation again inside its transaction and records only current facts. Conn runs no separate engine checks. If Schedule removal fails, no removal intent or Operation is recorded, and the Instance and Route stay active. Follow the Operation on `GET /operations/{id}`; `succeeded`, `failed`, `cancelled` and `interrupted` are terminal.
 
@@ -422,6 +444,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `GET /projects` | — | list of project |
 | `GET /projects/{id}/instances/check` | `name` query string | name, available, reason, domain |
 | `POST /projects/{id}/instances` | `{"name": "fix-login-k3j9"}` | Operation (202) |
+| `GET /instances/{id}/work` | — | workspace work state |
 | `POST /instances/{id}/destroy` | `{"acknowledge_unsaved": true}` and `Idempotency-Key` | Operation (202) |
 | `GET /environments` | — | list of environment |
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |

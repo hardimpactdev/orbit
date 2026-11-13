@@ -31,6 +31,8 @@ use LogicException;
  * @property int|null $clone_source_instance_id
  * @property InstanceRuntimePowerState $power_state
  * @property string|null $seed_commit
+ * @property array{heads: list<string>, stashes: list<string>, untracked: list<string>|null}|null $workspace_baseline
+ * @property Carbon|null $workspace_baseline_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Instance $instance
@@ -53,6 +55,8 @@ final class InstanceRuntime extends Model
         'clone_source_instance_id',
         'power_state',
         'seed_commit',
+        'workspace_baseline',
+        'workspace_baseline_at',
     ];
 
     /** A container gets a guest address of its Node's bridge; the bridge keeps the first usable address. */
@@ -92,6 +96,8 @@ final class InstanceRuntime extends Model
             't3_port' => 'integer',
             'clone_source_instance_id' => 'integer',
             'power_state' => InstanceRuntimePowerState::class,
+            'workspace_baseline' => 'array',
+            'workspace_baseline_at' => 'datetime',
         ];
     }
 }
