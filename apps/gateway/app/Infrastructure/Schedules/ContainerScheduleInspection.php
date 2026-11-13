@@ -24,6 +24,8 @@ use Throwable;
 /** Reads bounded Schedule state and journals through the shared Swamp container reader. */
 final readonly class ContainerScheduleInspection
 {
+    private const string Uuid = '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
+
     public function __construct(private WebSocketClient $socket) {}
 
     public function read(Schedule $schedule, ScheduleTarget $target, int $lines): ScheduleLogsData
@@ -48,7 +50,12 @@ final readonly class ContainerScheduleInspection
             return ['state' => 'inactive', 'last_run_at' => null, 'last_run_status' => null];
         }
 
-        return $this->inspect($schedule, $target, 1);
+        try {
+            return $this->inspect($schedule, $target, 1);
+        } catch (ResourceOperationException) {
+            // Every refusal of inspect() is a failed read. The record still answers; only the observed part is unreadable.
+            return ['state' => 'unreadable'];
+        }
     }
 
     /** @return array<string,mixed> */
@@ -97,7 +104,7 @@ final readonly class ContainerScheduleInspection
                     $reference = ValidatedData::object(app(SwampCommandStep::class)->scheduleInspection($run['id'], $request)['inspection']);
                     $key = ValidatedData::string($reference['key']);
                     if (($reference['vault'] ?? null) !== 'orbit-control-inputs'
-                        || preg_match('/\Anckrtl-process-command-assets-[a-f0-9-]{36}-inspection-inspection-'.preg_quote($request, '/').'-value\z/D', $key) !== 1) {
+                        || preg_match('/\Anckrtl-process-command-assets-'.self::Uuid.'-inspection-inspection-inspection-'.preg_quote($request, '/').'-value\z/D', $key) !== 1) {
                         $this->unavailable();
                     }
                     $value = ValidatedData::object(json_decode(app(SwampVaultExecutionCopy::class)->readSecret('orbit-control-inputs', $key), true, flags: JSON_THROW_ON_ERROR));
