@@ -94,6 +94,36 @@ class MustTest(unittest.TestCase):
 
 
 class RelayTest(unittest.TestCase):
+    def test_single_host_failure_before_recap_keeps_the_inner_label_and_task(self):
+        output = ('TASK [Reload the Swamp grants] ***\n' + NOISE +
+                  'fatal: [localhost]: FAILED! => changed=false\n'
+                  '  msg: grant file missing\n'
+                  'PLAY RECAP ***\nlocalhost : ok=41 changed=3 failed=1\n')
+        inner = 'cannot prepare the nested Gateway prerequisites: exit 2, ' + fleet_module.failure_detail(output, '')
+        with patch.object(fleet_module.subprocess, 'run', return_value=completed(1, '', inner)):
+            with self.assertRaises(fleet_module.FleetError) as caught:
+                fleet_module.prepare()
+        message = str(caught.exception)
+        self.assertIn('cannot prepare the nested Gateway prerequisites', message)
+        self.assertIn('failed task [Reload the Swamp grants]', message)
+        self.assertIn('grant file missing', message)
+
+    def test_multiple_host_failures_keep_the_earlier_cause_through_the_relay(self):
+        output = ('TASK [Install candidate observer] ***\n'
+                  'fatal: [nested-gateway]: FAILED! => changed=false\n'
+                  '  msg: checksum mismatch\n' + NOISE +
+                  'TASK [Wait for observer] ***\n'
+                  'fatal: [nested-app-dev]: FAILED! => changed=false\n'
+                  '  msg: observer timed out\n'
+                  'PLAY RECAP ***\nnested-gateway : failed=1\nnested-app-dev : failed=1\n')
+        inner = 'cannot prepare candidate observers: exit 2, ' + fleet_module.failure_detail(output, '')
+        with patch.object(fleet_module.subprocess, 'run', return_value=completed(1, '', inner)):
+            with self.assertRaises(fleet_module.FleetError) as caught:
+                fleet_module.prepare()
+        message = str(caught.exception)
+        for expected in ('Install candidate observer', 'checksum mismatch', 'Wait for observer', 'observer timed out'):
+            self.assertIn(expected, message)
+
     def test_the_message_of_the_preparation_subprocess_reaches_the_runner_whole(self):
         inner = fleet_module.FleetError('cannot prepare the nested Gateway prerequisites: exit 2, ' + fleet_module.failure_detail(ANSIBLE, ''))
         with patch.object(fleet_module.subprocess, 'run', return_value=completed(1, '', str(inner))):

@@ -78,10 +78,13 @@ def ansible_failures(text):
     return failures, task
 
 
-def failure_detail(stdout, stderr, limit=DETAIL_LIMIT):
+def failure_detail(stdout, stderr, limit=DETAIL_LIMIT, *, relay=False):
     """The cause of a failed command, redacted and at most about `limit` characters: the failed Ansible tasks first, then the end of the output
     (all the room that is left when no task failed, so a relayed message of the preparation subprocess stays whole). Ansible prints on stdout, other programs on stderr."""
     text = redact('\n'.join(part.strip() for part in (stderr, stdout) if part and part.strip()))
+    # prepare_observers already puts each cause first. Parsing its raw recap tail again can discard those causes and their task names.
+    if relay:
+        return text[:limit] or 'no output'
     failures, last = ansible_failures(text)
     parts = [f'failed task [{task}]: {message}' if task else message for task, message in failures[:5]]
     if not failures and last:
@@ -177,15 +180,15 @@ class Fleet:
             raise FleetError(f'{node}: the tested CLI cannot add the profile {PROFILE}: exit {added.returncode}, {failure_detail(added.stdout, added.stderr)}')
 
     @staticmethod
-    def must(argv, what, timeout=120, limit=DETAIL_LIMIT):
+    def must(argv, what, timeout=120, limit=DETAIL_LIMIT, *, relay=False):
         try:
             done = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
         except subprocess.TimeoutExpired as error:
             seen = failure_detail(error.stdout if isinstance(error.stdout, str) else (error.stdout or b'').decode(errors='replace'),
-                                  error.stderr if isinstance(error.stderr, str) else (error.stderr or b'').decode(errors='replace'), limit)
+                                  error.stderr if isinstance(error.stderr, str) else (error.stderr or b'').decode(errors='replace'), limit, relay=relay)
             raise FleetError(f'{what}: timed out after {timeout} seconds, {seen}' if seen != 'no output' else f'{what}: timed out after {timeout} seconds') from error
         if done.returncode != 0:
-            raise FleetError(f'{what}: exit {done.returncode}, {failure_detail(done.stdout, done.stderr, limit)}')
+            raise FleetError(f'{what}: exit {done.returncode}, {failure_detail(done.stdout, done.stderr, limit, relay=relay)}')
         return done
 
     def cli_background(self, args):
@@ -294,7 +297,7 @@ def prepare_observers():
 def prepare():
     # One subprocess gives controller bootstrap, downloads and report readiness a single hard deadline.
     done = Fleet.must(['timeout', '330', sys.executable, str(Path(__file__).resolve())],
-                      'cannot prepare the proof fleet', timeout=340, limit=RELAY_LIMIT)
+                      'cannot prepare the proof fleet', timeout=340, limit=RELAY_LIMIT, relay=True)
     return Fleet(json.loads(done.stdout))
 
 

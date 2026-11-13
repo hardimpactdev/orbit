@@ -54,7 +54,7 @@ class RecordedReadsTest(unittest.TestCase):
             with self.subTest(bound=bound), self.assertRaises(steps.Infra):
                 steps.check_json({'elapsed': 1}, [{'path': 'elapsed', 'at_most': bound}])
 
-    def test_repeat_case_requires_a_bounded_no_op_only_on_the_second_operation(self):
+    def test_repeat_case_requires_a_no_op_without_a_load_sensitive_time_assertion(self):
         root = Path(__file__).resolve().parents[4]
         converge = spec.load(root / 'swamp/proof/node/converge.cases.yaml', runner.BATCHES)
         repeat = converge.case('repeat')
@@ -67,10 +67,11 @@ class RecordedReadsTest(unittest.TestCase):
                                       {'rc': 0, 'json': {**operation, 'result': result}}, expect)
 
         self.assertEqual(check(first, {'changed': 5, 'elapsed_seconds': 180}), [])
-        self.assertEqual(check(second, {'changed': 0, 'elapsed_seconds': 120}), [])
+        for result in ({'changed': 0, 'elapsed_seconds': 120}, {'changed': 0, 'elapsed_seconds': 122},
+                       {'changed': 0, 'elapsed_seconds': 180}, {'changed': 0}):
+            with self.subTest(result=result):
+                self.assertEqual(check(second, result), [])
         for result, path in (({'changed': 1, 'elapsed_seconds': 30}, 'result.changed'),
-                             ({'changed': 0, 'elapsed_seconds': 120.001}, 'result.elapsed_seconds'),
-                             ({'changed': 0}, 'result.elapsed_seconds'),
                              ({'elapsed_seconds': 30}, 'result.changed')):
             with self.subTest(result=result):
                 self.assertTrue(any(path in failure for failure in check(second, result)))
