@@ -38,7 +38,7 @@ class GitHub:
     def raw(self, path):
         left = self.deadline - time.monotonic()
         require(left > 0, 'Receipt API budget exceeded')
-        return subprocess.check_output(['gh', 'api', f'repos/{self.repository}/{path}'],
+        return subprocess.check_output(['gh', 'api', '--allow-escape-sequences', f'repos/{self.repository}/{path}'],
                                        timeout=min(left, 10))
 
     def one(self, path):
