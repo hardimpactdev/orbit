@@ -14,6 +14,8 @@ const names = Object.values(guests);
 const outer = ["--project", "orbit-instances-nested", "exec", "instance-9", "--"];
 const clubKey = "/run/orbit-club/swamp-club-api-key";
 const clubValue = "club-key-value-that-never-leaves-the-file";
+/** The nested Gateway's hub key: a WireGuard public key, 32 bytes in base64. */
+const hubKey = "HUBKEY" + "A".repeat(37) + "=";
 const proxy = {
   HTTP_PROXY: "http://10.253.0.1:3128",
   HTTPS_PROXY: "http://10.253.0.1:3128",
@@ -90,7 +92,7 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
   if (options.club) files[clubKey] = clubValue;
   Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({
     outer: { project: "orbit-instances-nested", name: "instance-9", files },
-    containers, tunnel: null, hubKey: "HUBPUB=", nodes,
+    containers, tunnel: null, hubKey, nodes,
   }));
   Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
     container: { project: "orbit-instances-nested", name: "instance-9", workspace: "/srv/workspace" },
@@ -172,7 +174,7 @@ const startCalls = [
   "incus exec nested-gateway -- wg show orbit public-key",
   "wg show wg-nested",
   "ip link add wg-nested type wireguard",
-  "wg set wg-nested private-key /etc/wireguard/wg-nested.key listen-port 51821 peer HUBPUB= endpoint 10.232.2.11:51820 allowed-ips 10.45.0.0/24 persistent-keepalive 25",
+  `wg set wg-nested private-key /etc/wireguard/wg-nested.key listen-port 51821 peer ${hubKey} endpoint 10.232.2.11:51820 allowed-ips 10.45.0.0/24 persistent-keepalive 25`,
   "ip -j addr show dev wg-nested",
   "ip addr add 10.45.0.10/24 dev wg-nested",
   "ip link set wg-nested up",
@@ -237,7 +239,7 @@ Deno.test({
       assertKeyUntouched(calls, first.output);
       assert(!calls.some((call) => call.includes("wg-quick")));
       assertEquals(f.state().containers["nested-gateway"].links, { "/home/orbit/.config/swamp/api-key": "club/swamp-club-api-key" });
-      assertEquals(f.state().tunnel, { addresses: ["10.45.0.10/24"], up: true, key: "/etc/wireguard/wg-nested.key", port: "51821", peer: "HUBPUB=", endpoint: "10.232.2.11:51820", allowed: "10.45.0.0/24" });
+      assertEquals(f.state().tunnel, { addresses: ["10.45.0.10/24"], up: true, key: "/etc/wireguard/wg-nested.key", port: "51821", peer: hubKey, endpoint: "10.232.2.11:51820", allowed: "10.45.0.0/24" });
       const again = f.run("start");
       assert(again.ok, again.output);
       assertEquals(again.changed, 0);
@@ -274,6 +276,40 @@ Deno.test({
       const offline = f.run("resume");
       assert(!offline.ok);
       assertStringIncludes(offline.output, "Readiness check 'agents' failed: the agent of app-prod is not online");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled());
+    try {
+      // Operation 19987: wg-quick had made the hub interface but not yet set its private key.
+      f.change((state) => state.hubKeyNone = 1);
+      const started = f.run("start");
+      assert(started.ok, started.output);
+      const calls = f.calls();
+      const read = "incus exec nested-gateway -- wg show orbit public-key";
+      assertEquals(calls.filter((call) => call === read).length, 2);
+      assertEquals(calls, [...reads, ...startCalls.flatMap((call) => call === read ? [read, read] : [call]), ...reachCalls]);
+      assertEquals(f.state().tunnel.peer, hubKey);
+      assert(!calls.some((call) => call.includes("(none)")));
+
+      const late = fixture(ruled());
+      try {
+        late.change((state) => state.hubKeyNone = 1000);
+        const failed = late.run("start", ["-e", "fleet_boot_seconds=3", "-e", "fleet_ready_delay=1"]);
+        assert(!failed.ok);
+        assertStringIncludes(failed.output, "The nested Gateway's WireGuard key was not ready after 3 s; the last read got (none)");
+        assert(!late.calls().some((call) => call.startsWith("wg set")), "a peer was set without a key");
+        assertEquals(late.state().tunnel, null);
+      } finally {
+        late.cleanup();
+      }
     } finally {
       f.cleanup();
     }
@@ -370,6 +406,36 @@ Deno.test({
 });
 
 Deno.test({
+  name: "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled(), { club: true, base: true });
+    try {
+      assert(f.run("start").ok);
+      f.calls();
+      f.change((state) => state.activating = 1);
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      const mounts = f.calls().filter((call) => call.includes("systemctl is-active home-orbit"));
+      assertEquals(mounts.map((call) => call.split(" ")[2]), ["nested-gateway", "nested-gateway", "nested-app-dev"]);
+
+      const g = fixture(ruled(), { club: true, base: true });
+      try {
+        assert(g.run("start").ok);
+        g.change((state) => state.activating = 1000);
+        const failed = g.run("refresh", ["-e", "fleet_boot_seconds=2", "-e", "fleet_ready_delay=1"]);
+        assert(!failed.ok);
+        assertStringIncludes(failed.output, "The state mounts are not active after 2 s in nested-gateway, nested-app-dev");
+      } finally {
+        g.cleanup();
+      }
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
   name: "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units",
   ignore: !hasAnsible,
   fn() {
@@ -437,7 +503,7 @@ Deno.test({
 // The three nested containers of the first inner fleet as they run (read from Instance 2454 on 2026-11-13, without volatile keys and
 // cloud-init data), with the `club-key` device as the key move to /run sets it. step8/runbook.sh built them by hand.
 const live = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-live.json", import.meta.url)));
-const tunnelUp = { addresses: ["10.45.0.10/24"], up: true, key: "/etc/wireguard/wg-nested.key", port: "51821", peer: "HUBPUB=", endpoint: "10.232.2.11:51820", allowed: "10.45.0.0/24" };
+const tunnelUp = { addresses: ["10.45.0.10/24"], up: true, key: "/etc/wireguard/wg-nested.key", port: "51821", peer: hubKey, endpoint: "10.232.2.11:51820", allowed: "10.45.0.0/24" };
 const writes = (calls: string[]) => calls.filter((call) => / config (set|device) | file push | snapshot | stop /.test(call));
 // deno-lint-ignore no-explicit-any
 const withStatus = (status: string): Record<string, any> =>

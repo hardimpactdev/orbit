@@ -123,13 +123,15 @@
     ]
   },
   "swamp/tests/ansible_instance_fleet_test.ts": {
-    "source_sha256": "77078bc5dcf92a9c2ee0f569239390594c16a236aa7fc26baef1b27c8d8322c3",
+    "source_sha256": "fa12056d7ff366cee883454048d9dcd21fb57cf753312e15ca73921c278b2ac0",
     "cases": [
       "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
       "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
       "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check",
+      "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words",
       "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written",
       "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules",
+      "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers",
       "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units",
       "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused",
       "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts",

@@ -13,7 +13,8 @@
   changed_when: false
   failed_when: false
 
-# `.env`, `storage` and `bootstrap/cache` stay on each guest's own disk, bound over the checkout at boot.
+# `.env`, `storage` and `bootstrap/cache` stay on each guest's own disk, bound over the checkout at boot. Right after a start a mount
+# can still be `activating`, so the read waits until all three are active.
 - name: Read the state mounts
   ansible.builtin.command:
     argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests[item], '--', 'systemctl', 'is-active'] + fleet_state_mounts }}"
@@ -21,12 +22,15 @@
   register: fleet_mounts
   changed_when: false
   failed_when: false
+  until: fleet_mounts.stdout_lines == ['active', 'active', 'active']
+  retries: "{{ ((fleet_boot_seconds | int) / ([fleet_ready_delay | int, 1] | max)) | round(0, 'ceil') | int }}"
+  delay: "{{ fleet_ready_delay }}"
 - name: Check the state mounts
   vars:
     fleet_mounts_down: "{{ fleet_mounts.results | rejectattr('stdout_lines', 'eq', ['active', 'active', 'active']) | map(attribute='item') | list }}"
   ansible.builtin.assert:
     that: fleet_mounts_down | length == 0
-    fail_msg: "The state mounts are not active in {{ fleet_mounts_down | map('extract', intent.fleet.guests) | join(', ') }}"
+    fail_msg: "The state mounts are not active after {{ fleet_boot_seconds }} s in {{ fleet_mounts_down | map('extract', intent.fleet.guests) | join(', ') }}"
     quiet: true
 # The nested Gateway gives its Nodes the agent of the checkout's pin, a byte copy of the published release manifest.
 - name: Place the agent delivery
