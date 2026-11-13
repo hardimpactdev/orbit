@@ -1641,34 +1641,51 @@ Deno.test({
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/tmpfiles.d/orbit-club.conf`), "d /run/orbit-club 0750 0 1000 -\n");
       assertEquals(f.state().club_key_runs, [["/run/orbit-club", "swamp-club-api-key", "1000", "1000", "/etc/tmpfiles.d/orbit-club.conf", "nested-gateway", "orbit-swamp-serve"]]);
       // A new key restarts the nested Gateway's Swamp serve, which reads the key at its start.
-      assertEquals(innerCalls(f), ["list --format csv --columns s -- ^nested-gateway$", "exec nested-gateway -- systemctl reset-failed -- orbit-swamp-serve",
-        "exec nested-gateway -- systemctl restart --no-block -- orbit-swamp-serve"]);
+      assertEquals(innerCalls(f), ["systemctl is-active --quiet incus.service", "list --format csv --columns s -- ^nested-gateway$",
+        "exec nested-gateway -- systemctl reset-failed -- orbit-swamp-serve", "exec nested-gateway -- systemctl restart --no-block -- orbit-swamp-serve"]);
       assert(!created.output.includes(CLUB), "the run's output holds the key");
-      for (const phase of ["workspace", "processes", "seed"]) assert(f.run(phase).ok, phase);
+      // The result names what the start did; each later phase of the run keeps that word.
+      assertEquals(f.result().club_key, "changed");
+      for (const phase of ["workspace", "processes", "seed"]) {
+        assert(f.run(phase).ok, phase);
+        assertEquals(f.result().club_key, "changed", phase);
+      }
       // The seed snapshot holds the folder's tmpfiles line, never the key; a clone copies that snapshot.
       assert(f.state().containers["instance-7"].snapshots.length > 0);
       const deployed = f.run("start", {ORBIT_CLUB_KEY: CLUB, ANSIBLE_VERBOSITY: "3"});
       assert(deployed.ok, deployed.output);
       // The same key on a running container changes nothing and restarts nothing.
-      assertEquals(innerCalls(f).length, 3);
+      assertEquals(innerCalls(f).length, 4);
+      assertEquals(f.result().club_key, "unchanged");
       assertEquals(filesHolding(f, CLUB), []);
     } finally { f.cleanup(); }
   },
 });
 
 Deno.test({
-  name: "a stopped nested-fleet container loses the key with its /run, and the deploy start delivers it again",
+  name: "a stopped nested-fleet container loses the key with its /run, and the deploy start delivers it again without blocking on its inner Incus",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
       nestedClub(f);
       assert(f.run("container", {ORBIT_CLUB_KEY: CLUB}).ok);
-      assert(f.run("stop").ok);
-      assertThrows(() => Deno.statSync(clubFile(f)));
-      const started = f.run("start", {ORBIT_CLUB_KEY: CLUB});
-      assert(started.ok, started.output);
-      assertEquals(Deno.readTextFileSync(clubFile(f)), CLUB);
+      // Right after a boot the inner Incus is not ready: its service is not active, its client hangs, or the restart fails. The start
+      // writes the key, leaves serve to start by itself, and says so; the bound for the inner Incus's answer is 5 s.
+      for (const inner of ["ready", "inactive", "hang", "restart_fails"]) {
+        assert(f.run("stop").ok);
+        assertThrows(() => Deno.statSync(clubFile(f)));
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify({...f.state(), inner_incus: inner}));
+        Deno.writeTextFileSync(`${f.folder}/inner-calls`, "");
+        const began = Date.now();
+        const started = f.run("start", {ORBIT_CLUB_KEY: CLUB});
+        assert(started.ok, `${inner}: ${started.output}`);
+        assert(Date.now() - began < 60_000, `${inner} took ${Date.now() - began} ms`);
+        assertEquals(Deno.readTextFileSync(clubFile(f)), CLUB);
+        assertEquals(f.result().club_key, inner === "ready" ? "changed" : "changed_serve_pending", inner);
+        assertEquals(innerCalls(f).some((call) => call.startsWith("exec ")), ["ready", "restart_fails"].includes(inner), inner);
+        assertEquals(innerCalls(f).some((call) => call.startsWith("list ")), inner !== "inactive", inner);
+      }
     } finally { f.cleanup(); }
   },
 });
@@ -1687,6 +1704,8 @@ Deno.test({
       assertEquals(f.state().club_key_runs, undefined);
       assertThrows(() => Deno.statSync(clubFile(f)));
       assertEquals(filesHolding(f, "git-credential-fallback"), []);
+      // Nothing was written, so the result names no outcome and the Operation says `missing`.
+      assertEquals(f.result().club_key, undefined);
     } finally { f.cleanup(); }
   },
 });
@@ -1739,6 +1758,7 @@ Deno.test({
         const result = f.run(phase, {ORBIT_CLUB_KEY: CLUB});
         assert(result.ok, `${phase}: ${result.output}`);
         assert(!/TASK \[(Refuse a key transfer|Read the file system of the container's \/run|Write the Club key)/.test(result.output), result.output);
+        assert(!("club_key" in f.result()), phase);
       }
       assertEquals(f.state().club_key_runs, undefined);
       assert(!incusCalls(f).some((call) => call.includes("findmnt")), JSON.stringify(incusCalls(f)));

@@ -59,6 +59,7 @@ sequenceDiagram
       SW->>C: Deliver the Club key<br/>native clone-club-key
       %%> What it does:
       %%> - SSH stdin into the copy's /run (a tmpfs, never a snapshot); a new key restarts the nested Gateway's Swamp serve
+      %%> - the result's `nested_fleet_club_key` is what this step did; a clone that skips it says `missing`
       %%> On failure:
       %%> - `instance.nested_club_key_not_tmpfs` or `instance.nested_club_key_delivery_failed`; the workspace phase does not run
     end

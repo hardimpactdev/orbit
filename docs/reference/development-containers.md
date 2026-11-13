@@ -1155,15 +1155,28 @@ The nested Gateway's `swamp serve` needs a Swamp Club API key. It is never the p
 
 | Part | Rule |
 | --- | --- |
-| Source | The Gateway env setting `ORBIT_NESTED_FLEET_CLUB_API_KEY`. `gateway:nested-fleet-club-key:install` writes it from stdin ([Gateway environment](/reference/gateway-environment)) |
+| Source | The setting `ORBIT_NESTED_FLEET_CLUB_API_KEY` in the shared Gateway env file. `gateway:nested-fleet-club-key:install` writes it from stdin ([Gateway environment](/reference/gateway-environment)) |
 | Vault | One Swamp vault entry, `orbit-control-inputs` / `nested-fleet-club-api-key`. The Gateway replaces it when the value changes; no run deletes it |
 | Intent | A nested-fleet container's intent has `club_key`: the folder, the owner `1000:1000`, the tmpfiles line, the nested Gateway and its serve unit. A run sets `club_key.available`. Other containers have no `club_key` |
 | Starts | The create of the default, the clone and every deploy start, right after the container starts |
 | Channel | Stdin only. The value is in no argument, intent, result, log or file on the Node |
 | Place | `/run/orbit-club/swamp-club-api-key`, mode `0600`, owner `1000:1000`, in a folder `root:1000` mode `0750`. `/run` is a tmpfs, checked before each write. A tmpfiles line makes the empty folder at boot |
 | Nested Gateway | The disk device `club-key` binds the folder `/run/orbit-club` into nested-gateway at `/home/orbit/.config/swamp/club`, `shift=false`. `/home/orbit/.config/swamp/api-key` there is a link to `club/swamp-club-api-key`. A new value restarts its `orbit-swamp-serve` |
-| Without a value | The container starts without the key. The Operation's input says `nested_fleet_club_key: missing`; with a value it says `delivered`. Serve stays down until a later start delivers the key |
+| Result | `nested_fleet_club_key`: `written`, `written_serve_not_restarted`, `unchanged`, `refused` or `missing`. See below |
+| Without a value | The container starts without the key and the result says `missing`. Serve stays down until a later start delivers the key |
 | Other containers | No new task runs and no command changes. Their workflow steps name a key that every run has, which the step never delivers |
+
+The Gateway reads the value once per run, when the run starts, from the shared env file itself. That one read decides both `club_key.available` and the vault copy; admission reads nothing. The queue workers that start runs keep the configuration they loaded at boot, so a read from the configuration cache would miss a key placed after they started. Reading the file means a placed or changed key reaches the next start with no reload.
+
+The Operation's result says what the start did, never what the Gateway held at admission. It comes from the delivery script's own word, which the Ansible phases keep in the run's result file and a clone's `clone-club-key` step prints:
+
+- `written`: the start wrote a new key and restarted the nested Gateway's serve.
+- `written_serve_not_restarted`: the start wrote a new key, but the inner Incus was not ready. Serve starts by itself later (`Restart=on-failure`) and reads the key then.
+- `unchanged`: the same key was already there.
+- `refused`: the start refused before the write, with `instance.nested_club_key_unsafe_transfer` or `instance.nested_club_key_not_tmpfs`.
+- `missing`: the start wrote nothing. The run had no value, the write failed, or the run ended before the step.
+
+Right after a boot, the inner Incus can wait behind `network-online.target`, and its client then blocks. So after the write the script touches the inner Incus only when `incus.service` is active and `incus list` answers within 5 seconds; each restart command has 10 seconds. Otherwise it skips the restart and says `changed_serve_pending`. The step never waits on the inner Incus.
 
 The step runs right after `Start the container`, before any check of the inner fleet. That covers the restart after a failed refresh too, which starts the container through the same `start` phase. A clone runs its own step, `clone-club-key`, right after `clone-container`.
 

@@ -209,7 +209,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 3319
+cost = 3389
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -301,7 +301,7 @@ inputs = [
   "a changed shared folder restarts running normal and nested runtimes before clearing its marker" = 23 # p90 of 14 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 17.2-22.3s
   "a changed shared folder on a normal Node runs main's list and restart command lines" = 23 # p90 of 14 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 13.1-22.2s
   "a nested-fleet create and deploy start deliver the Club key into /run by stdin; no call, output, result, snapshot or copy holds it" = 53 # ESTIMATE: fewer than five hosted runs (2, max 51.5s); largest of the earlier estimate and hosted max rounded up plus 1s
-  "a stopped nested-fleet container loses the key with its /run, and the deploy start delivers it again" = 35 # ESTIMATE: fewer than five hosted runs (2, max 33.3s); largest of the earlier estimate and hosted max rounded up plus 1s
+  "a stopped nested-fleet container loses the key with its /run, and the deploy start delivers it again without blocking on its inner Incus" = 105 # ESTIMATE: the case now runs four starts (hosted p90 of the one-start case 35 s x 3); no hosted measurement yet
   "a nested-fleet start without the vault copy starts the container without the key" = 19 # ESTIMATE: fewer than five hosted runs (1, max 17.6s); largest of the earlier estimate and hosted max rounded up plus 1s
   "a nested-fleet start refuses the key transfer by name, before it reads the value: kept remote files" = 17 # ESTIMATE: fewer than five hosted runs (2, max 15.3s); largest of the earlier estimate and hosted max rounded up plus 1s
   "a nested-fleet start refuses the key transfer by name, before it reads the value: pipelining turned off" = 16 # ESTIMATE: fewer than five hosted runs (2, max 14.5s); largest of the earlier estimate and hosted max rounded up plus 1s
@@ -1736,7 +1736,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 62
+cost = 64
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1786,6 +1786,7 @@ inputs = [
   "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value" = 2
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing" = 2
   "test_the_same_key_changes_nothing" = 2
+  "test_a_key_written_while_the_inner_incus_was_not_ready_says_so" = 2
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_native_faults_test.ts"
@@ -2892,7 +2893,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts"
-cost = 17
+cost = 18
 inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts", "swamp/workflows/workflow-operation-instance-create.yaml"]
 [fixture.case_costs]
 "create returns only the commit when every step finished" = 1
@@ -2912,6 +2913,7 @@ inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts"
 "default and clone finish workspace T3 and registration despite bounded mail failure" = 1
 "a Node without the main Mailpit gets no mail warning or failure" = 1
 "a failed container phase keeps a Node service target refusal and the nested-fleet image refusal, nothing else" = 1
+"a nested-fleet create carries what its start did with the Club key, from the run, and a normal create never names it" = 1
 
 [[fixture]]
 file = "swamp/tests/ansible_route_site_test.py"

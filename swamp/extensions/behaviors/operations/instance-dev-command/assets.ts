@@ -5,9 +5,19 @@ const ObjectValue = z.record(z.string(), z.unknown());
 type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
+/** The run folder's result file, or null when no phase wrote one. */
+async function resultFile(folder: string): Promise<unknown> {
+    try {
+        return JSON.parse(await Deno.readTextFile(folder + "/result.json"));
+    } catch (error) {
+        if (error instanceof Deno.errors.NotFound || error instanceof SyntaxError) return null;
+        throw error;
+    }
+}
+
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.10.1",
+    version: "2026.11.13.1",
     resources: {
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
     },
@@ -38,6 +48,7 @@ export const behavior = {
                     t3: z.string().default("skipped"),
                     register: z.string().default("skipped"),
                     server: z.string().nullable().default(null),
+                    club_key: Step.nullable().default(null),
                 }).nullable().default(null),
             }),
             execute: async (
@@ -64,20 +75,20 @@ export const behavior = {
                         t3?: string;
                         register?: string;
                         server?: string | null;
+                        club_key?: z.infer<typeof Step> | null;
                     } | null;
                 },
                 ctx: Context,
             ) => {
-                const value = createResult(args.intent, args);
+                const container = args.intent.container as {clone?: unknown; club_key?: unknown} | null | undefined;
+                // A nested-fleet default's container phases leave in the result file what its start did with the Club key.
+                const file = container?.club_key != null && container.clone == null ? await resultFile(args.folder) : null;
+                const value = createResult(args.intent, {...args, club_key_file: file});
                 const result = JSON.parse(value.stdout);
                 if (!value.ready && ["container", "clone"].includes(result.failed_step)) {
-                    try {
-                        // The phase owns redaction; preserve its public evidence in the Operation.
-                        const failure = containerFailure(JSON.parse(await Deno.readTextFile(args.folder + "/result.json")));
-                        if (failure !== null) value.stdout = JSON.stringify({...result, ...failure});
-                    } catch (error) {
-                        if (!(error instanceof Deno.errors.NotFound || error instanceof SyntaxError)) throw error;
-                    }
+                    // The phase owns redaction; preserve its public evidence in the Operation.
+                    const failure = containerFailure(file ?? await resultFile(args.folder));
+                    if (failure !== null) value.stdout = JSON.stringify({...result, ...failure});
                 }
                 if (!value.ready && result.failed_step === "register") {
                     try {

@@ -27,7 +27,8 @@ final readonly class ContainerDeployOutcome
         $stdout = ValidatedData::nullableString(ValidatedData::object($steps[self::ResultStep] ?? [])['stdout'] ?? null);
         $file = is_string($stdout) ? json_decode(trim($stdout), true) : null;
         $file = is_array($file) ? $file : [];
-        $payload = ['commit' => null, 'failed_step' => null, 'started' => true];
+        // A nested-fleet start's word for what it did with the Club key, kept in the result file by every later phase.
+        $payload = ['commit' => null, 'failed_step' => null, 'started' => true, 'club_key' => $file['club_key'] ?? null];
         $status = ValidatedData::nullableString($data['status'] ?? null);
         if ($status === 'succeeded') {
             $payload['commit'] = is_string($file['commit'] ?? null) ? $file['commit'] : null;

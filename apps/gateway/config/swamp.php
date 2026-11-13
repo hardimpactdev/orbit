@@ -11,8 +11,6 @@ return [
     'ssh_public_key' => env('ORBIT_SWAMP_SSH_PUBLIC_KEY', ''),
     'address' => env('ORBIT_SWAMP_ADDRESS', 'swamp.orbit'),
     'proof_club_api_key' => env('ORBIT_SWAMP_PROOF_CLUB_API_KEY', ''),
-    // The nested fleet's own Swamp Club key, never the proof key (App\Domain\Instances\NestedFleetClubKey).
-    'nested_fleet_club_api_key' => env('ORBIT_NESTED_FLEET_CLUB_API_KEY', ''),
     'read_token' => env('ORBIT_SWAMP_READ_TOKEN', ''),
     'run_token' => env('ORBIT_SWAMP_RUN_TOKEN', ''),
     'direct_writers' => $directWriters,

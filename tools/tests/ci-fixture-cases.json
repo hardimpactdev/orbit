@@ -135,7 +135,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "3d46823c1e944ca4fc0084540670d44567b78074a297f7860582bd4cce9cae45",
+    "source_sha256": "0e1006e8c6adb23bd0ad21213b45a4a2f4ad2408d0839038c24216ff2fe11112",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -191,7 +191,7 @@
       "a changed shared folder restarts running normal and nested runtimes before clearing its marker",
       "a changed shared folder on a normal Node runs main's list and restart command lines",
       "a nested-fleet create and deploy start deliver the Club key into /run by stdin; no call, output, result, snapshot or copy holds it",
-      "a stopped nested-fleet container loses the key with its /run, and the deploy start delivers it again",
+      "a stopped nested-fleet container loses the key with its /run, and the deploy start delivers it again without blocking on its inner Incus",
       "a nested-fleet start without the vault copy starts the container without the key",
       "a nested-fleet start refuses the key transfer by name, before it reads the value: kept remote files",
       "a nested-fleet start refuses the key transfer by name, before it reads the value: pipelining turned off",
@@ -1472,7 +1472,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "0318eb5113283dd84f880c19973439dc37b9b019adb9cc448fc53c3875fbda66",
+    "source_sha256": "655b0a886c43d470f1f88dae4c6aa242646dadf2ff0879e677eee69ae50b5fca",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1502,6 +1502,7 @@
       "test_node_command_failure_names_executable_and_exit_without_output",
       "test_delivers_the_key_only_as_the_scripts_stdin_after_the_tmpfs_check",
       "test_the_same_key_changes_nothing",
+      "test_a_key_written_while_the_inner_incus_was_not_ready_says_so",
       "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value",
       "test_names_a_failed_delivery_without_its_output",
       "test_refuses_without_a_vault_copy_or_value_and_runs_nothing"
@@ -1901,7 +1902,7 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "0d00617833fef18ffebd4ab69cd5db157c35e2a4b3abf712aaa93e41de57f7a6",
+    "source_sha256": "7422271014a92868113a89b70c31069d6e36a5d4095d43b889e3f7f1d28ff04d",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
@@ -2148,7 +2149,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {
-    "source_sha256": "1db8f28f3068a49a7d905c75cfb2350d8d1175920a7df787df5a868133252e86",
+    "source_sha256": "b401a17b4913884335e385ebc09c27c2e69acc77b9df751c965c104313f96cc6",
     "cases": [
       "create returns only the commit when every step finished",
       "create names the first unfinished phase",
@@ -2166,7 +2167,8 @@
       "container mail skips retain their reason and missing mail observations stay advisory",
       "default and clone finish workspace T3 and registration despite bounded mail failure",
       "a Node without the main Mailpit gets no mail warning or failure",
-      "a failed container phase keeps a Node service target refusal and the nested-fleet image refusal, nothing else"
+      "a failed container phase keeps a Node service target refusal and the nested-fleet image refusal, nothing else",
+      "a nested-fleet create carries what its start did with the Club key, from the run, and a normal create never names it"
     ]
   },
   "swamp/tests/instance_destroy_git_test.py": {

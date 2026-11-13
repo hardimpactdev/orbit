@@ -56,7 +56,7 @@ The Gateway reads [Swamp run output](/reference/tasks#swamp-run-output) with the
 | `ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT` | Installed UTC expiry, written by the installer and checked hourly. |
 | `ORBIT_SWAMP_CA_PATH` | Orbit root CA file. Default `<ORBIT_HOME>/ca/root.pem`, with `ORBIT_HOME` defaulting to `$HOME/.orbit`. |
 | `ORBIT_SWAMP_PROOF_CLUB_API_KEY` | Dedicated club credential for disposable proof topologies. Keep its value in the Gateway environment. |
-| `ORBIT_NESTED_FLEET_CLUB_API_KEY` | The Swamp Club key of nested fleets' Gateways, separate from the proof key. Written by `gateway:nested-fleet-club-key:install`. Empty: a nested-fleet container starts without it. |
+| `ORBIT_NESTED_FLEET_CLUB_API_KEY` | The Swamp Club key of nested fleets' Gateways, separate from the proof key. Written by `gateway:nested-fleet-club-key:install`; each run start reads this file. Empty: a nested-fleet container starts without it. |
 
 Two provisions receive a names-only execution copy: Project 62 (`swamp-proof`), and the task group that a `proof:run` creates. Every other task, in the Orbit Project too, gets none.
 
@@ -64,15 +64,14 @@ Proof provision writes the credential to `/home/orbit/.config/swamp/club-api-key
 
 ### Install the nested-fleet Club key
 
-`gateway:nested-fleet-club-key:install` writes `ORBIT_NESTED_FLEET_CLUB_API_KEY` from stdin. Run it on Gateway as `orbit`. It reads one token of at least 16 printable characters without spaces or quotes; one final newline is allowed. It holds the Gateway release lock and uses the same protected env writer as the reader installer: a private mode-`0600` backup, then one atomic rename that keeps every other setting. It never prints the value or takes it as an argument. Then apply the configuration:
+`gateway:nested-fleet-club-key:install` writes `ORBIT_NESTED_FLEET_CLUB_API_KEY` from stdin. Run it on Gateway as `orbit`. It reads one token of at least 16 printable characters without spaces or quotes; one final newline is allowed. It holds the Gateway release lock and uses the same protected env writer as the reader installer: a private mode-`0600` backup, then one atomic rename that keeps every other setting. It never prints the value or takes it as an argument.
 
 ```bash
 set +x
 <the key on stdin> | php /home/orbit/orbit/apps/gateway/artisan gateway:nested-fleet-club-key:install
-php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure
 ```
 
-The next start of each nested-fleet container delivers it ([Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway)). The backup holds the old env, so keep backups under the Gateway operator's retention policy.
+No `gateway:release:configure` and no worker reload is needed. The queue workers that start runs keep the configuration they loaded at boot, so each run start reads this one setting from the env file itself. The next start of each nested-fleet container delivers it ([Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway)). The backup holds the old env, so keep backups under the Gateway operator's retention policy.
 
 ### Rotate the Swamp reader credential
 

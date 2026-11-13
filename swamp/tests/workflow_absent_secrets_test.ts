@@ -173,6 +173,15 @@ Deno.test("create finalization evaluates checkout, default and clone receipts wi
     assertEquals(JSON.parse(result.stdout).commit, commit);
     assertEquals(JSON.parse(result.stdout).t3, container?.clone ? server : undefined);
   }
+  // A nested-fleet clone's club-key step reaches the receipt as the script's own word; a skipped step gives none.
+  const nested = { clone: { source: "instance-7" }, club_key: { directory: "/run/orbit-club" } };
+  const intent = { instance_id: 8, already_active: false, container: nested, database: null, server_database: null, server_valkey: null, processes: [], setup_steps: [], route: null };
+  for (const [club, word] of [[{ ...succeeded, outputs: { stdout: '{"phase": "club-key", "changed": false, "club_key": "unchanged", "completed_at": "x"}' } }, "unchanged"], [{ status: "skipped" }, undefined]] as const) {
+    const values = Object.fromEntries(Object.entries(expressions).map(([key, value]) => [
+      key, environment.evaluate(value.trim().slice(3, -2).trim(), { inputs: { intent }, steps: { ...steps, "clone-club-key": club }, run: { id: "r" } }),
+    ]));
+    assertEquals(JSON.parse(createResult(intent, behavior.methods.create_result.arguments.parse(values)).stdout).club_key, word);
+  }
 });
 
 Deno.test("deploy VP workspace reads retain step names for the capture schema", () => {

@@ -309,14 +309,17 @@ if (family === "list") {
     Deno.mkdirSync(bin, { recursive: true });
     Deno.writeTextFileSync(`${bin}/findmnt`, `#!/bin/sh\necho "$FAKE_FSTYPE"\n`);
     Deno.writeTextFileSync(`${bin}/chown`, `#!/bin/sh\necho "$*" >> '${folder}/club-chown'\n`);
-    Deno.writeTextFileSync(`${bin}/incus`, `#!/bin/sh\necho "$*" >> '${folder}/inner-calls'\n[ "$1" = list ] && echo "$FAKE_GATEWAY"\nexit 0\n`);
-    for (const tool of ["findmnt", "chown", "incus"]) Deno.chmodSync(`${bin}/${tool}`, 0o755);
+    // A just-booted container's inner Incus waits behind network-online.target: its service is not active and its client hangs.
+    Deno.writeTextFileSync(`${bin}/systemctl`, `#!/bin/sh\necho "systemctl $*" >> '${folder}/inner-calls'\n[ "$FAKE_INNER" != inactive ]\n`);
+    Deno.writeTextFileSync(`${bin}/incus`, `#!/bin/sh\necho "$*" >> '${folder}/inner-calls'\n[ "$FAKE_INNER" = hang ] && exec sleep 600\n[ "$FAKE_INNER" = restart_fails ] && [ "$1" = exec ] && case "$*" in *restart*) exit 1;; esac\n[ "$1" = list ] && echo "$FAKE_GATEWAY"\nexit 0\n`);
+    for (const tool of ["findmnt", "chown", "incus", "systemctl"]) Deno.chmodSync(`${bin}/${tool}`, 0o755);
     state.club_key_runs = [...(state.club_key_runs ?? []), command.slice(4)];
     save();
     const done = new Deno.Command("sh", {
       args: ["-c", command[2], "sh", tmpfs(name) + directory, file, owner, group, rootfs(name) + tmpfiles, gateway, unit],
       stdin: "inherit",
-      env: { PATH: `${bin}:${Deno.env.get("PATH")}`, FAKE_FSTYPE: state.run_fstype ?? "tmpfs", FAKE_GATEWAY: state.gateway_status ?? "RUNNING" },
+      env: { PATH: `${bin}:${Deno.env.get("PATH")}`, FAKE_FSTYPE: state.run_fstype ?? "tmpfs", FAKE_GATEWAY: state.gateway_status ?? "RUNNING",
+        FAKE_INNER: state.inner_incus ?? "ready" },
     }).outputSync();
     // The script saw the tmpfs folder at its fixture path; inside the container that folder is the /run path itself.
     try {

@@ -17,7 +17,6 @@ use App\Domain\Instances\Deployment\ProductionDeployInput;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
 use App\Domain\Instances\InstanceContainer;
-use App\Domain\Instances\NestedFleetClubKey;
 use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
@@ -133,11 +132,6 @@ final readonly class StartInstanceDeployAction
                     app(InstanceEnvironmentContextResolver::class)->resolve($instance, requireActiveNode: true, lockRoute: true), includeRuntime: false);
                 $input['php_input'] = app(ProductionDeployInput::class)->phpInput($instance, $deployment);
                 $input['vp_setup'] = $deployment['needs_vp'] === true ? app(ToolManagerIntent::class)->nativeInput($instance->node, ToolManagerName::Vp) : null;
-            }
-            $admitted = $deployment['container'] ?? null;
-            if (is_array($admitted) && isset($admitted['club_key'])) {
-                // Whether this nested-fleet start gets its Club key; without it the container starts without one.
-                $input['nested_fleet_club_key'] = NestedFleetClubKey::status();
             }
             if ($callerNodeId !== null) {
                 $input['caller_node_id'] = $callerNodeId;
