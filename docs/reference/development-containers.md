@@ -8,7 +8,7 @@ covers:
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts}
-  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py},app/Infrastructure/Instances/ContainerWorkspaceRead.php,app/Jobs/RecordWorkspaceBaseline.php}
+  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py},app/Infrastructure/Instances/ContainerWorkspaceRead.php,app/Jobs/RecordWorkspaceBaseline.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
 ---
 
@@ -909,24 +909,40 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | A long freeze becomes a stop | Planned |
 | A Conn connection or a task turn wakes the Instance | Planned |
 
-**The idle sleep.** The [runtime hibernator](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) puts a development clone to sleep after an idle hour, with the same idle window and sweep as a checkout Instance. It acts only while `ORBIT_HIBERNATION_CONTAINER_SLEEP` is on; it is off by default. A clone sleeps when all of these are true:
+**The idle sleep.** The [runtime hibernator](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) puts a development clone to sleep after an idle hour, with the same idle window and sweep as a checkout Instance. It acts only while `ORBIT_HIBERNATION_CONTAINER_SLEEP` is on; it is off by default. A clone sleeps only when no row of this table keeps it awake. The sweep checks them in this order, and the first match is the reason it reports:
 
-- It is a running development clone: not a default, not a nested-fleet Instance, and not in `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP`.
-- No Operation is open on it or on its Processes, and no task runs in it.
-- None of its Processes is desired-running with `keep_alive`. In a container, `keep_alive` keeps the whole container awake: a frozen container runs no Process.
-- Its Route's access log exists and did not change for the idle window. A clone without the log is unknown and stays awake.
-- No wake of it ended within the idle window.
-- Its T3 server answers.
-- No turn in it runs, and no run waits for a delegated thread or a background task.
-- Its newest user message, turn end, or request that waits for the user is older than the idle window.
+| Reason | The clone stays awake when |
+| --- | --- |
+| `default`, `nested_fleet`, `not_development` | It is a default, a nested-fleet Instance, or not a development Instance. |
+| `never_sleep` | Its id is in `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP`. |
+| `asleep` | It already sleeps. The sweep does not read it. |
+| `busy`, `task` | It is not active, an Operation is open on it or on its Processes, or a task runs in it. |
+| `keep_alive` | One of its Processes is desired-running with `keep_alive`. A frozen container runs no Process, so this keeps the whole container awake. |
+| `node_service` | It uses a [Node service](/cli/instance/node-service-attach), such as PowerSync on another Node. The service may call back into the app, which a frozen app cannot answer. |
+| `http_unreadable` | Its Node does not answer the read of the access logs. |
+| `watch_starting`, `watching` | The sweep has not yet watched it for one idle window. |
+| `http_active` | Its Route's access log changed within the window. |
+| `woke_recently` | A wake of it ended within the window. |
+| `t3_unreadable` | Its T3 server cannot be read. |
+| `t3_turn_running` | A turn runs, or a run waits for a delegated thread or a background task. |
+| `t3_active` | Its newest user message, turn end, or request that waits for the user is within the window. |
+| `next_run` | The run already started five sleeps. |
 
-A running turn is preparing, queued, starting or running. Missing data never puts a clone to sleep. A Node that does not answer, or a T3 server that cannot be read, keeps the clone awake, and the run says why.
+A running turn is preparing, queued, starting or running. Missing data never puts a clone to sleep.
+
+**The watch.** The first run that acts on a clone records when it began to watch it, in `idle_watch_started_at` of the Instance's runtime. Until one idle window has passed since then, the clone stays awake with `watch_starting` or `watching`. An access log written before the watch, such as the file a migrated Instance kept from its checkout, proves nothing about the time since. A dry run never starts a watch.
+
+A clone without a Route sleeps on the watch, its wakes and T3 alone. A Node that does not answer, or a T3 server that cannot be read, keeps the clone awake, and the run says why.
 
 A turn that runs is never cut, whatever its age. A thread that waits for the user keeps the clone awake only while its request is younger than the idle window; the freeze keeps the request, and the user's answer in Conn wakes the clone. A Conn client that is only connected is no activity: Conn keeps a socket open to every server it knows and pings it.
 
-The Gateway reads T3 with the admin session it already holds and renews for each clone: one `GET /api/orchestration/shell` per candidate, and none for a sleeping clone. It writes nothing in the container. It reads the access logs of all clones on a Node in one call to the Node agent.
+The Gateway reads T3 with the admin session it already holds and renews for each clone: one `GET /api/orchestration/shell` per watched clone, and none for a sleeping clone. It writes nothing in the container. It reads the access logs of all clones on a Node in one call to the Node agent.
 
-Each sleep is an `instance.sleep` Operation with `triggered_by` `hibernation-sweep`, and its result says `t3_turn: idle`. A run starts at most five sleeps; the next run takes the rest. `orbit:runtime-hibernator --dry-run` on the Gateway host lists every container Instance with its decision and reason, and changes nothing. `--instance=ID`, repeated, limits a run to those Instances and acts while the switch is off. `--idle-seconds=N`, at least 60 and only with `--instance`, gives that run its own idle window. A scoped run applies every rule above.
+Each sleep is an `instance.sleep` Operation with `triggered_by` `hibernation-sweep`, and its result says `t3_turn: idle`. A run starts at most five sleeps; the next run takes the rest. `orbit:runtime-hibernator --dry-run` on the Gateway host lists every container Instance with its decision, its reason and the evidence it used: the watch start, the last HTTP request, the last T3 activity or `turn running`, and the last wake. It changes nothing. `--instance=ID`, repeated, limits a run to those Instances and acts while the switch is off. `--idle-seconds=N`, at least 60 and only with `--instance`, gives that run its own idle window. A scoped run applies every rule above.
+
+**Compared with the checkout rule.** The [checkout rule](/reference/app-dev-runtime-hibernation) stops only an Instance's Processes; its site keeps serving. The container rule freezes the whole Instance, site and T3 included, and it wakes on a Route visit, from Conn, or by [`instance:wake`](/cli/instance/wake).
+
+**Terminals.** T3 0.1.7 shows no terminal state in an HTTP read; only its WebSocket API does. So an open terminal, or a process started in one, does not keep a clone awake by itself.
 
 **HTTP activity.** Caddy's site of a container Instance writes each request to `/data/caddy/orbit/hibernation/app-instance-<id>.log`, and the idle sleep reads the file's modification time. Caddy creates the file when it loads the site, so a new site gets a full idle window. The log rolls at 1 MiB and keeps one compressed roll. A destroy removes the log, but not a roll.
 

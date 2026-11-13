@@ -104,7 +104,7 @@ function connIdleClone(): array
     app(InstanceContainer::class)->reserve($default, $node)->update(['power_state' => 'running', 'seed_commit' => str_repeat('a', 40)]);
     $clone = Instance::query()->forceCreate(['node_id' => $node->id, 'project_id' => $project->id, 'name' => 'clone',
         'checkout_path' => '/workspace/clone', 'root' => 'public', 'status' => 'active', 'first_setup_pending' => false, 'source_is_laravel' => true]);
-    app(InstanceContainer::class)->reserve($clone, $node, $default)->update(['power_state' => 'running']);
+    app(InstanceContainer::class)->reserve($clone, $node, $default)->update(['power_state' => 'running', 'idle_watch_started_at' => now()->subHours(2)]);
     $environment = ConnEnvironment::query()->create(['environment_id' => 'env-clone', 'label' => 'tool / clone', 'url' => 'http://10.44.0.7:3840',
         'node_id' => $node->id, 'admin_session' => 'gateway-session', 'admin_session_expires_at' => now()->addDays(20), 'registered_at' => now()->subDays(1)]);
     $environment->forceFill(['instance_id' => $clone->id])->save();

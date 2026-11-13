@@ -33,6 +33,7 @@ use LogicException;
  * @property string|null $seed_commit
  * @property array{heads: list<string>, stashes: list<string>, untracked: list<string>|null}|null $workspace_baseline
  * @property Carbon|null $workspace_baseline_at
+ * @property Carbon|null $idle_watch_started_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Instance $instance
@@ -57,6 +58,7 @@ final class InstanceRuntime extends Model
         'seed_commit',
         'workspace_baseline',
         'workspace_baseline_at',
+        'idle_watch_started_at',
     ];
 
     /** A container gets a guest address of its Node's bridge; the bridge keeps the first usable address. */
@@ -98,6 +100,7 @@ final class InstanceRuntime extends Model
             'power_state' => InstanceRuntimePowerState::class,
             'workspace_baseline' => 'array',
             'workspace_baseline_at' => 'datetime',
+            'idle_watch_started_at' => 'datetime',
         ];
     }
 }

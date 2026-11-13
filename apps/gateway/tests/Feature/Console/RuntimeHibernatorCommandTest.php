@@ -13,6 +13,7 @@ use App\Domain\Projects\ProjectType;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 
@@ -22,6 +23,7 @@ require_once __DIR__.'/../Domain/Instances/ContainerInstanceHelpers.php';
 /** One clone whose access log is 200 s old and whose T3 is idle: asleep under a 120 s window, awake under the hour. */
 beforeEach(function (): void {
     Queue::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-11-14 12:00:00'));
     $node = containerDefaultNode();
     $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
     $default = Instance::query()->create(['node_id' => $node->id, 'project_id' => $project->id, 'name' => 'default',
@@ -29,7 +31,7 @@ beforeEach(function (): void {
     app(InstanceContainer::class)->reserve($default, $node)->update(['power_state' => 'running', 'seed_commit' => str_repeat('a', 40)]);
     $this->clone = Instance::query()->forceCreate(['node_id' => $node->id, 'project_id' => $project->id, 'name' => 'clone',
         'checkout_path' => '/workspace/clone', 'root' => 'public', 'status' => 'active', 'first_setup_pending' => false, 'source_is_laravel' => true]);
-    app(InstanceContainer::class)->reserve($this->clone, $node, $default)->update(['power_state' => 'running']);
+    app(InstanceContainer::class)->reserve($this->clone, $node, $default)->update(['power_state' => 'running', 'idle_watch_started_at' => now()->subHours(2)]);
     $this->reads = 0;
     $log = RuntimeHibernation::accessLogPath(RuntimeHibernation::key($this->clone->id));
     $files = new class($this, $log) implements NodeFileTimes
@@ -83,8 +85,9 @@ it('lists every decision in a dry run, changes nothing, and skips the checkout s
     $default = Instance::query()->where('name', 'default')->sole();
 
     $this->artisan('orbit:runtime-hibernator --dry-run')->assertSuccessful()
-        ->expectsTable(['Instance', 'Name', 'Decision', 'Reason', 'Operation'], [
-            [$default->id, 'default', 'skip', 'default', ''], [$this->clone->id, 'clone', 'sleep', 'idle', ''],
+        ->expectsTable(['Instance', 'Name', 'Decision', 'Reason', 'Watched since', 'Last HTTP', 'Last T3', 'Last wake', 'Operation'], [
+            [$default->id, 'default', 'skip', 'default', '-', '-', '-', '-', ''],
+            [$this->clone->id, 'clone', 'sleep', 'idle', '2026-11-14T10:00:00Z', '2026-11-14T11:56:40Z', '-', '-', ''],
         ])
         ->expectsOutputToContain('Would put [1] idle development containers to sleep.')
         ->doesntExpectOutputToContain('Halted');

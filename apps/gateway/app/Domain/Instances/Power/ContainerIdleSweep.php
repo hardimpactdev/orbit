@@ -21,22 +21,25 @@ use Illuminate\Database\Eloquent\Builder;
 
 /**
  * The idle sleep of development containers (docs/reference/development-containers.md#sleep-and-wake). The runtime hibernator calls it
- * every sweep. An Instance sleeps when it had no HTTP activity, no wake and no agent activity for the idle window, and no turn runs.
- * Missing or unreadable activity keeps an Instance awake: a container site without its access log, a Node that does not answer, a
- * T3 server that cannot be read. Each sleep is an `instance.sleep` Operation triggered by the sweep, at most a few per run.
+ * every sweep. An Instance sleeps after one full idle window of watching in which it had no HTTP activity, no wake and no agent activity,
+ * and no turn runs. The watch starts the first time an acting run reads the Instance: an access log written before then, or a site
+ * without one, is no evidence of idleness by itself. A Node or a T3 server that cannot be read keeps an Instance awake. Each sleep is an
+ * `instance.sleep` Operation triggered by the sweep, at most a few per run.
  */
 final readonly class ContainerIdleSweep
 {
     public const string TriggeredBy = 'hibernation-sweep';
 
-    /** @param iterable<InstanceAgentActivity> $agents */
+    /**
+     * @param  iterable<InstanceAgentActivity>  $agents
+     * @param  list<int>  $neverSleep
+     */
     public function __construct(
         private NodeFileTimes $files,
         private InstanceSleep $sleep,
         #[Tag(InstanceAgentActivity::class)] private iterable $agents,
         private int $idleSeconds = RuntimeHibernation::DefaultIdleSeconds,
         private int $sleepsPerRun = 5,
-        /** @var list<int> */
         private array $neverSleep = [],
     ) {}
 
@@ -50,11 +53,11 @@ final readonly class ContainerIdleSweep
         $window = $idleSeconds ?? $this->idleSeconds;
         $runtimes = InstanceRuntime::query()
             ->when($only !== null, static fn (Builder $query) => $query->whereIn('instance_id', $only))
-            ->with(['instance.node.roles', 'instance.project', 'instance.processes'])
+            ->with(['instance.node.roles', 'instance.project', 'instance.processes', 'instance.nodeServiceTargets'])
             ->orderBy('instance_id')->get();
 
         $decisions = [];
-        $http = [];
+        $watched = [];
         foreach ($runtimes as $runtime) {
             $instance = $runtime->instance;
             $reason = $this->standing($instance, $runtime);
@@ -63,49 +66,41 @@ final readonly class ContainerIdleSweep
 
                 continue;
             }
-            $http[$instance->node_id][] = $instance;
-        }
-
-        $candidates = [];
-        foreach ($http as $instances) {
-            $node = $instances[0]->node;
-            $paths = array_map(static fn (Instance $instance): string => RuntimeHibernation::accessLogPath(RuntimeHibernation::key($instance->id)), $instances);
-            $times = $this->files->read($node, $paths);
-            foreach ($instances as $index => $instance) {
-                $reason = $this->httpReason($times === null ? false : ($times[$paths[$index]] ?? null), $now, $window)
-                    ?? $this->wakeReason($instance, $now, $window);
-                if ($reason !== null) {
-                    $decisions[$instance->id] = ContainerIdleDecision::skip($instance, $reason);
-
-                    continue;
-                }
-                $candidates[] = $instance;
-            }
+            $watched[$instance->node_id][] = $runtime;
         }
 
         $sleeps = 0;
-        foreach ($candidates as $instance) {
-            $reason = $this->agentReason($instance, $now, $window);
-            if ($reason !== null) {
-                $decisions[$instance->id] = ContainerIdleDecision::skip($instance, $reason);
+        foreach ($watched as $group) {
+            $paths = array_map(static fn (InstanceRuntime $runtime): string => RuntimeHibernation::accessLogPath(RuntimeHibernation::key($runtime->instance_id)), $group);
+            $times = $this->files->read($group[0]->instance->node, $paths);
+            foreach ($group as $index => $runtime) {
+                $instance = $runtime->instance;
+                if ($times === null) {
+                    $decisions[$instance->id] = ContainerIdleDecision::skip($instance, 'http_unreadable');
 
-                continue;
-            }
-            if ($sleeps >= $this->sleepsPerRun) {
-                $decisions[$instance->id] = ContainerIdleDecision::skip($instance, 'next_run');
+                    continue;
+                }
+                $evidence = $this->evidence($runtime, $times[$paths[$index]] ?? null, $dryRun, $now);
+                $reason = $this->reason($evidence, $now, $window);
+                if ($reason === null && $sleeps >= $this->sleepsPerRun) {
+                    $reason = 'next_run';
+                }
+                if ($reason !== null) {
+                    $decisions[$instance->id] = $evidence->with('skip', $reason);
 
-                continue;
-            }
-            $sleeps++;
-            if ($dryRun) {
-                $decisions[$instance->id] = ContainerIdleDecision::sleep($instance, null);
+                    continue;
+                }
+                $sleeps++;
+                if ($dryRun) {
+                    $decisions[$instance->id] = $evidence->with('sleep', 'idle');
 
-                continue;
-            }
-            try {
-                $decisions[$instance->id] = ContainerIdleDecision::sleep($instance, $this->sleep->start($instance, self::TriggeredBy, null)->id);
-            } catch (ResourceOperationException $error) {
-                $decisions[$instance->id] = ContainerIdleDecision::skip($instance, 'refused:'.$error->errorCode);
+                    continue;
+                }
+                try {
+                    $decisions[$instance->id] = $evidence->with('sleep', 'idle', $this->sleep->start($instance, self::TriggeredBy, null)->id);
+                } catch (ResourceOperationException $error) {
+                    $decisions[$instance->id] = $evidence->with('skip', 'refused:'.$error->errorCode);
+                }
             }
         }
         ksort($decisions);
@@ -126,41 +121,45 @@ final readonly class ContainerIdleSweep
             InstancePower::hasActiveTask($instance) => 'task',
             $instance->processes->contains(static fn (Process $process): bool => $process->keep_alive
                 && $process->desired_state === DesiredProcessState::Running) => 'keep_alive',
+            // A Node service, such as PowerSync, may call back into the Instance through its Route: a frozen app cannot answer it.
+            $instance->nodeServiceTargets->isNotEmpty() => 'node_service',
             default => null,
         };
     }
 
-    /** @param  int|false|null  $time  false when the Node did not answer, null when the site has no access log yet */
-    private function httpReason(int|false|null $time, CarbonImmutable $now, int $window): ?string
+    /** Every activity the sweep knows of one watched Instance. An acting run starts the watch of an Instance it reads for the first time. */
+    private function evidence(InstanceRuntime $runtime, ?int $log, bool $dryRun, CarbonImmutable $now): ContainerIdleDecision
     {
-        return match (true) {
-            $time === false => 'http_unreadable',
-            $time === null => 'http_unknown',
-            $now->getTimestamp() - $time < $window => 'http_active',
-            default => null,
-        };
-    }
-
-    /** A wake counts as activity: a visit that woke the Instance gets a full window before the next sleep. */
-    private function wakeReason(Instance $instance, CarbonImmutable $now, int $window): ?string
-    {
-        $woke = Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
-            ->where('finished_at', '>', $now->subSeconds($window))->exists();
-
-        return $woke ? 'woke_recently' : null;
-    }
-
-    private function agentReason(Instance $instance, CarbonImmutable $now, int $window): ?string
-    {
+        $instance = $runtime->instance;
+        $watch = $runtime->idle_watch_started_at?->getTimestamp();
+        if ($watch === null && ! $dryRun) {
+            $runtime->forceFill(['idle_watch_started_at' => $now])->save();
+        }
+        $wake = Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
+            ->whereNotNull('finished_at')->max('finished_at');
         $activity = null;
         foreach ($this->agents as $agent) {
             $activity = $agent->read($instance) ?? $activity;
         }
 
+        return new ContainerIdleDecision($instance->id, $instance->name, 'skip', '', null, $watch, $log,
+            $activity ?? AgentActivity::unreadable(), is_string($wake) ? CarbonImmutable::parse($wake)->getTimestamp() : null);
+    }
+
+    /** The first reason that keeps a watched Instance awake, or null when it may sleep. A watch that starts now reads as `watch_starting`. */
+    private function reason(ContainerIdleDecision $evidence, CarbonImmutable $now, int $window): ?string
+    {
+        $recent = static fn (?int $time): bool => $time !== null && $now->getTimestamp() - $time < $window;
+        $t3 = $evidence->t3;
+
         return match (true) {
-            $activity === null || ! $activity->readable => 't3_unreadable',
-            $activity->turnRuns => 't3_turn_running',
-            $activity->lastActivityUnix !== null && $now->getTimestamp() - $activity->lastActivityUnix < $window => 't3_active',
+            $evidence->watchStartedAt === null => 'watch_starting',
+            $recent($evidence->watchStartedAt) => 'watching',
+            $recent($evidence->lastHttpAt) => 'http_active',
+            $recent($evidence->lastWakeAt) => 'woke_recently',
+            $t3 === null || ! $t3->readable => 't3_unreadable',
+            $t3->turnRuns => 't3_turn_running',
+            $recent($t3->lastActivityUnix) => 't3_active',
             default => null,
         };
     }
