@@ -53,6 +53,8 @@ final readonly class UpdateProjectAction
 
     public function execute(Project $project, UpdateProjectData $data): Project
     {
+        // The flag rule runs first: before the source read and before any write.
+        $this->assertNestedFleetChange($project, $data);
         // A changed source refreshes the facts a development create needs; the read happens before any change commits.
         $facts = app(CaptureProjectSourceFactsAction::class);
         $read = $data->typeProvided || $data->sourceAccessProvided || $data->hasReconcilableChanges() ? $facts->read(
@@ -76,8 +78,6 @@ final readonly class UpdateProjectAction
                 status: 422,
             );
         }
-
-        $this->assertNestedFleetChange($project, $data);
 
         if ($data->reviewAndMergeProvided && $data->reviewAndMerge && ! $project->review_and_merge) {
             $origin = $data->repositoryUrlProvided && is_string($data->repositoryUrl) ? $data->repositoryUrl : $project->repository_url;
@@ -184,6 +184,9 @@ final readonly class UpdateProjectAction
     {
         if (! $data->nestedFleetProvided) {
             return;
+        }
+        if ($data->changesBesideNestedFleet()) {
+            throw new ResourceOperationException('project.nested_fleet_update_separate', 'Update the nested fleet setting separately from other Project settings.', 422);
         }
         if ($data->nestedFleet && ! $project->nested_fleet) {
             $ids = config('instances.nested_fleet_projects');

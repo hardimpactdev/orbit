@@ -52,6 +52,14 @@ final readonly class UpdateProjectData
             || $this->mergeCheckProvided || $this->nestedFleetProvided;
     }
 
+    /** The nested-fleet flag travels alone, so its refusal has no other write to undo. */
+    public function changesBesideNestedFleet(): bool
+    {
+        return $this->code !== null || $this->name !== null || $this->typeProvided || $this->sourceAccessProvided
+            || $this->taskCheckProvided || $this->taskWorkspaceRoutedProvided || $this->reviewAndMergeProvided || $this->mergeCheckProvided
+            || $this->hasReconcilableChanges();
+    }
+
     /** Settings that change only the Project row, under the Instance operation lock. */
     public function hasTaskSettings(): bool
     {

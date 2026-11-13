@@ -40,22 +40,28 @@ describe('nested-fleet Project records', function (): void {
         if ($mode === 'other Project') {
             config(['instances.nested_fleet_projects' => [$project->id + 1]]);
         }
-        $this->patchJson('/api/v1/projects/'.$project->id, ['nested_fleet' => true, 'name' => 'Rejected'])
+        $this->patchJson('/api/v1/projects/'.$project->id, ['nested_fleet' => true])
             ->assertStatus(409)->assertJsonPath('error.code', 'project.nested_fleet_not_allowed');
         expect($project->refresh()->nested_fleet)->toBeFalse()->and($project->name)->toBe('tool');
         $this->assertDatabaseCount('operations', 0);
         Queue::assertNothingPushed();
     })->with(['default empty', 'other Project']);
 
-    it('leaves every other Project field unchanged when the flag is refused', function (array $other, string $field): void {
+    it('refuses a flag change that travels with another Project field, before any write', function (array $other): void {
         $project = containerDefaultProject();
-        $before = $project->refresh()->getRawOriginal($field);
+        config(['instances.nested_fleet_projects' => [$project->id]]);
+        $before = $project->refresh()->getRawOriginal();
         $this->patchJson('/api/v1/projects/'.$project->id, [...$other, 'nested_fleet' => true])
-            ->assertStatus(409)->assertJsonPath('error.code', 'project.nested_fleet_not_allowed');
-        expect($project->refresh()->getRawOriginal($field))->toBe($before)->and($project->nested_fleet)->toBeFalse();
+            ->assertStatus(422)->assertJsonPath('error.code', 'project.nested_fleet_update_separate');
+        expect($project->refresh()->getRawOriginal())->toBe($before);
         $this->assertDatabaseCount('operations', 0);
     })->with([
-        'code' => [['code' => 'NEW'], 'code'],
+        'code' => [['code' => 'NEW']],
+        'name' => [['name' => 'Other']],
+        'type' => [['type' => 'laravel-package']],
+        'source access' => [['source_access' => 'gh_cli']],
+        'task check' => [['task_check' => 'composer test']],
+        'root' => [['root' => 'public']],
     ]);
 
     it('refuses an invalid operator trial allow list', function (mixed $list): void {

@@ -20,7 +20,7 @@ A Project records one Git repository and the defaults for running it. New Instan
 
 `nested_fleet` is a stored and public boolean that defaults to false. Set it through the Project update API with a JSON boolean. It is stored only and has no effect yet. Do not set it on a real Project. Hosting that reads this flag and the Node switch follows in a later change.
 
-Turning it on requires the Project ID in the operator-set [trial allow list](/reference/gateway-environment#keys-in-the-example-file); otherwise Orbit refuses with `project.nested_fleet_not_allowed` (409). The list defaults to empty. A malformed list refuses with `project.nested_fleet_projects_invalid` (500). A changed value refuses with `project.nested_fleet_in_use` (409) while the Project has any Instance. Sending the current value is allowed, and turning it off does not require allow-list membership. An omitted member preserves its value.
+Change it alone: a request that sends `nested_fleet` with any other Project setting is refused with `project.nested_fleet_update_separate` (422) before any change. Turning it on requires the Project ID in the operator-set [trial allow list](/reference/gateway-environment#keys-in-the-example-file); otherwise Orbit refuses with `project.nested_fleet_not_allowed` (409). The list defaults to empty. A malformed list refuses with `project.nested_fleet_projects_invalid` (500). A changed value refuses with `project.nested_fleet_in_use` (409) while the Project has any Instance. Sending the current value is allowed, and turning it off does not require allow-list membership. An omitted member preserves its value.
 
 ## Project Documents
 
