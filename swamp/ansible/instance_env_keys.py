@@ -27,7 +27,9 @@ cp --attributes-only --preserve=mode,ownership,timestamps,xattr -- "$1" "$2"
 acl=$(getfacl --absolute-names -- "$1")
 printf '%s\n' "$acl" | setfacl --set-file=- -- "$2"
 """
-ASSIGNMENT = re.compile(rb'[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_.]*)[ \t]*=[ \t]*(.*)')
+BOM = b'\xef\xbb\xbf'
+# phpdotenv's trim set for names and comment lines.
+TRIM = b' \n\r\t\x00\x0b'
 KEY = re.compile(r'[A-Z][A-Z0-9_]*')
 # An unescaped `${`: Orbit's own quoting writes `$` as `\\$`, so a written value is never read as a reference.
 REFERENCE = re.compile(rb'(?<!\\)\$\{')
@@ -39,46 +41,68 @@ class Refused(Exception):
         self.detail = detail
 
 
-def closes(text, quote, start=1):
-    """Whether `text` holds the closing `quote` from `start` on; double quotes honour backslash escapes, as phpdotenv does."""
-    index = start
-    while index < len(text):
-        if quote == b'"' and text[index:index + 1] == b'\\':
-            index += 2
-            continue
-        if text[index:index + 1] == quote:
-            return True
-        index += 1
-    return False
+def multiline_stop(line, started):
+    """phpdotenv Lines::looksLikeMultilineStop: count quotes not after a backslash, once `\\\\` pairs are gone."""
+    count = len(re.findall(rb'(?<!\\)"', line.replace(b'\\\\', b'')))
+    return count > 1 if started else count >= 1
+
+
+def multiline_start(line):
+    """phpdotenv Lines::looksLikeMultilineStart: a `="` before any `#`, not closed on the same line."""
+    pos = line.find(b'="')
+    if pos < 0:
+        return False
+    hash_at = line.find(b'#')
+    if 0 <= hash_at < pos:
+        return False
+    return not multiline_stop(line, True)
+
+
+def entry_name(entry):
+    """phpdotenv EntryParser's name: text before the first `=`, trimmed, without `export ` and outer quotes."""
+    if b'=' not in entry:
+        return None
+    name = entry.split(b'=', 1)[0].strip(TRIM)
+    if len(name) > 6 and name[:6] == b'export' and name[6:7].isspace():
+        name = name[6:].lstrip(b' \t\n\r\x0b\x0c')
+    if len(name) >= 3 and name[:1] == name[-1:] and name[:1] in (b'"', b"'"):
+        name = name[1:-1]
+    return name.decode('latin-1')
 
 
 def assignments(lines):
-    """Map each key to the indexes of its assignment lines. Lines inside a multi-line quoted value are not assignments."""
+    """Map each key to the (first, last) line indexes of its entries, grouped as phpdotenv groups lines."""
     found = {}
-    index = 0
-    while index < len(lines):
-        line = lines[index][:-1] if lines[index].endswith(b'\r') else lines[index]
-        match = ASSIGNMENT.fullmatch(line)
-        if match is None or line.lstrip().startswith(b'#'):
-            index += 1
+    opened = None
+    for index, raw in enumerate(lines):
+        line = raw[:-1] if raw.endswith(b'\r') else raw
+        if index == 0 and line.startswith(BOM):
+            line = line[len(BOM):]
+        if opened is None and multiline_start(line):
+            opened = (index, line)
             continue
-        value = match[2]
-        start = index
-        quote = value[:1]
-        if quote in (b'"', b"'") and not closes(value, quote):
-            # Skip the continuation; a value that never closes is not a file we can edit safely.
-            index += 1
-            while index < len(lines) and not closes(lines[index], quote, 0):
-                index += 1
-            if index >= len(lines):
-                raise Refused('line %d' % (start + 1))
-        found.setdefault(match[1].decode(), []).append((start, index))
-        index += 1
+        if opened is not None:
+            if not multiline_stop(line, False):
+                continue
+            start, line = opened
+            opened = None
+        else:
+            start = index
+        if line.strip(TRIM)[:1] in (b'', b'#'):
+            continue
+        name = entry_name(line)
+        if name is not None:
+            found.setdefault(name, []).append((start, index))
+    if opened is not None:
+        raise Refused('line %d' % (opened[0] + 1))
     return found
 
 
 def edit(data, wanted):
     """The new bytes and the public key lists. `wanted` maps key to its rendered line."""
+    if re.search(rb'\r(?!\n)', data):
+        # phpdotenv also splits on a bare CR; this rule edits LF and CRLF files only.
+        raise Refused('line endings')
     lines = data.split(b'\n')
     found = assignments(lines)
     result = {'written': [], 'added': [], 'kept': [], 'unchanged': []}
@@ -98,8 +122,9 @@ def edit(data, wanted):
         changed = False
         for start, _ in spans:
             ending = b'\r' if lines[start].endswith(b'\r') else b''
-            if lines[start] != line + ending:
-                lines[start] = line + ending
+            bom = BOM if start == 0 and lines[0].startswith(BOM) else b''
+            if lines[start] != bom + line + ending:
+                lines[start] = bom + line + ending
                 changed = True
         result['written' if changed else 'unchanged'].append(key)
     if appended:

@@ -120,6 +120,23 @@ sys.exit(subprocess.run(args).returncode)
         self.assertEqual((again['unchanged'], again['kept']), (['DB_PASSWORD'], []))
         self.assertEqual(self.envfile.read_bytes(), line.encode() + b'\n')
 
+    def test_multiline_values_are_grouped_as_phpdotenv_groups_them(self):
+        for opener in [b'\xef\xbb\xbfA', b'1A', b'\xc3\xa9A', b'\x0bA', b'export\tA']:
+            before = opener + b'="x\nDB_HOST=inner\n"\nDB_HOST=old\n'
+            result = self.run_rule(before, {'DB_HOST': LINES['DB_HOST']})
+            self.assertEqual(result['written'], ['DB_HOST'], opener)
+            self.assertEqual(self.envfile.read_bytes(), before.replace(b'DB_HOST=old', b'DB_HOST="10.44.0.7"'), opener)
+
+    def test_a_key_on_the_first_line_keeps_the_bom_and_quoted_names_count(self):
+        result = self.run_rule(b'\xef\xbb\xbfDB_HOST=old\n"DB_PORT"=1\n', {k: LINES[k] for k in ['DB_HOST', 'DB_PORT']})
+        self.assertEqual(sorted(result['written']), ['DB_HOST', 'DB_PORT'])
+        self.assertEqual(self.envfile.read_bytes(), b'\xef\xbb\xbfDB_HOST="10.44.0.7"\nDB_PORT="3306"\n')
+
+    def test_a_bare_carriage_return_file_is_refused(self):
+        before = b'A=1\rDB_HOST=old\r'
+        self.assertEqual(self.run_rule(before, check=False)['error_detail'], 'line endings')
+        self.assertEqual(self.envfile.read_bytes(), before)
+
     def test_owner_group_and_mode_survive_the_replace(self):
         self.envfile.write_bytes(b'DB_HOST=old\n')
         self.envfile.chmod(0o640)
