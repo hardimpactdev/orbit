@@ -19,6 +19,7 @@ use App\Domain\Instances\DevelopmentInstanceBranchAdmission;
 use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
@@ -67,6 +68,7 @@ final readonly class StartDevelopmentInstanceCreateAction
 
         // Projects added before source facts existed capture them once, outside the admission transaction.
         $project = Project::query()->findOrFail($data->projectId);
+        InstancePlacement::assert($project);
         if ($project->source_facts_captured_at === null && $project->source_access !== ProjectSourceAccess::GhCli) {
             app(CaptureProjectSourceFactsAction::class)->execute($project);
         }

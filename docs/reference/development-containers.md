@@ -988,6 +988,8 @@ Migration checks executable availability before downtime and requires moved runn
 
 A Project setting turns on a nested fleet. Its Instance containers then run a fleet of Incus containers nested inside them. Orbit uses it for its command proofs: a Gateway, an `app-dev` and an `app-prod` Node. Other Projects leave it off and keep the kernel surface of [Inside a container](#inside-a-container).
 
+Nested-fleet hosting is not built yet. Until it is, the Project setting `nested_fleet` has one effect: Orbit refuses every new Instance of the Project with `operation.kind_unavailable` (503), before any record. One placement rule in the Gateway makes this decision for every path that writes an Instance or its runtime. [Nested fleet setting](/reference/projects#nested-fleet-setting) lists the paths. The rest of this section describes the target design.
+
 ### The container
 
 An Instance container with a nested fleet lives in its own Incus project on the Node, which allows what the fleet needs. `orbit-instances` keeps refusing it. It changes these settings:

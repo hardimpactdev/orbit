@@ -35,6 +35,7 @@ The run takes its mode from the review mode of the group, `manual` or `automatic
 | --- | --- |
 | `tasks.prep_command_invalid` | `command` is not `family:command` or `family:part:command` in lower case |
 | `tasks.not_todo`, `tasks.group_closed`, `tasks.already_claimed` | the group is not an open `todo` group with no VM |
+| `operation.kind_unavailable` | the Project has `nested_fleet` on; nested-fleet hosting is not built yet, and Orbit records nothing |
 | `tasks.subtask_deliverables_missing` | the group has no subtask, or its first subtask has no deliverable |
 | `tasks.capacity_unavailable` | no task VM host has room, or no host with room holds usable nested fleet copies for a VM that needs them; the group is unchanged |
 | `tasks.prep_not_committed` | the draft or a fix left HEAD where it was |

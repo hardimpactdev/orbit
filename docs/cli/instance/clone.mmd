@@ -37,6 +37,7 @@ sequenceDiagram
   Note over GW: Validate, reserve 43<br/>render .env · task #5152
   %%> Requirements:
   %%> - your Node has access grants to Node 12 and Node 14
+  %%> - a Project with `nested_fleet` on refuses with `operation.kind_unavailable` (503) before any record: nested-fleet hosting is not built yet
   %%> - Node 14 is active, has the `app-prod` role and a TLD
   %%> - Instance 42 is active with a recorded source and no attached server database; a web Project's Node is not in an active Cluster
   %%> - Project 7 has no production Instance on Node 14 yet, and the preview domain is free

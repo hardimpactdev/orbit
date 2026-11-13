@@ -10,7 +10,7 @@ sequenceDiagram
   participant SW as Swamp
   participant VM as Proof VMs
   CLI->>GW: Record the proof
-  %%> Record commit, authenticated caller and options, then queue admission. Only an active authenticated ci-runner Node uses the CI pool. Operator proofs join task admission.
+  %%> Record commit, authenticated caller and options, then queue admission. Only an active authenticated ci-runner Node uses the CI pool. Operator proofs join task admission. A proof Project with `nested_fleet` on refuses with `operation.kind_unavailable` (503) before the proof is recorded; a recorded proof that reaches task admission later fails with the same code.
   GW-->>CLI: Follow one proof Operation
   GW->>GH: Select commands<br/>check trust
   %%> Read the trusted commit, selection list and cases. A fork needs approval of this head and run-proofs. No selected command succeeds without a VM.

@@ -57,6 +57,7 @@ The CLI shows one progress display while it inspects the source. A record-only r
 | `validation.failed` | `--root` is not a normalized relative web path or is rejected for the Project type, the domain is not a valid domain, the name is over 63 characters, or the Project does not exist. |
 | `instance.caller_not_app_dev` | The caller is not an active Linux Node with the `app-dev` role. |
 | `operation.kind_unavailable` | `--include-worktrees`, a missing Project, or a source outside `<apps-root>/<project-slug>`. |
+| `operation.kind_unavailable` | The Project has `nested_fleet` on. Nested-fleet hosting is not built yet, so Orbit records nothing. See [Nested fleet setting](/reference/projects#nested-fleet-setting). |
 | `instance.name_invalid` | The name is not a lowercase DNS label. |
 | `project.root_invalid` | The Project's stored root is not valid for its type. |
 | `instance.source_owner_invalid` | The Node account is `root` or not a valid account name, or the checkout or its `.env` is owned by another account. |

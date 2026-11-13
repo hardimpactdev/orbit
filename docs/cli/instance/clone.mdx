@@ -61,6 +61,7 @@ A failed or cancelled clone keeps the new Instance reserved and records the erro
 | `route.tld_required` | A web Project's Node has no TLD. |
 | `route.domain_conflict` | Another Route owns the preview domain. |
 | `operation.kind_unavailable` | The Node, or the candidate's Node, is a task VM, a web Project's Node is in an active Cluster, or the candidate has an attached Database connection. |
+| `operation.kind_unavailable` | The Project has `nested_fleet` on. Nested-fleet hosting is not built yet, so Orbit records nothing. See [Nested fleet setting](/reference/projects#nested-fleet-setting). |
 | `instance.clone_database_slug_taken` | The cloned database connection slug is taken by another owner. |
 | `instance.removal_conflict` | The target Instance of this name is being removed. |
 | `instance.clone_retry_conflict` | A different request is unfinished for this target. |

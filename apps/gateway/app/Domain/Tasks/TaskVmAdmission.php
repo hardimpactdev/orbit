@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Data\Tasks\StartTaskPrepData;
 use App\Data\Tasks\StartTaskPrepFixData;
 use App\Data\Tasks\TaskTurnData;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -48,6 +49,7 @@ final readonly class TaskVmAdmission
     {
         try {
             return DB::transaction(function () use ($group, $kind, $capture, $caller, $requestId): Operation {
+                InstancePlacement::assert($group->project()->firstOrFail());
                 if (TaskVm::forGroup($group) === null) {
                     app(TaskVmSlotPool::class)->assertServes($group);
                     if (self::queue()->exists()) {
@@ -120,6 +122,7 @@ final readonly class TaskVmAdmission
                     return;
                 }
                 $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
+                InstancePlacement::assert($group->project()->firstOrFail());
                 if (TaskVm::forGroup($group) === null) {
                     app(TaskVmSlotPool::class)->assertServes($group);
                 }

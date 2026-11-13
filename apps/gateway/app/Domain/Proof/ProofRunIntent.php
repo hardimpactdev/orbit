@@ -8,6 +8,7 @@ use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
 use App\Domain\GitHub\GitHubApiException;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
@@ -27,6 +28,7 @@ use App\Jobs\Proof\AdmitProofRun;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
@@ -67,6 +69,10 @@ final readonly class ProofRunIntent
         $swamp = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($roles) => $roles
             ->where('role', RoleName::Swamp)->where('status', LifecycleStatus::Active))->first()
             ?? throw new ResourceOperationException('proof.swamp_unavailable', 'No active Swamp Node can run a proof.', 503);
+        // Every executable proof needs a workspace Instance of the proof Project; a missing Project fails later, as before.
+        if (($project = Project::query()->find($this->settings->projectId())) instanceof Project) {
+            InstancePlacement::assert($project);
+        }
         // The proof the CLI follows closes once, when the last of its runs has ended. Each run is an Operation of its own on its own task group.
         $proof = $this->store->create(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id,
             ['commit' => $commit, 'all' => $all, 'report_only' => $reportOnly,

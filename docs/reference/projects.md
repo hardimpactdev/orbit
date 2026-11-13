@@ -18,7 +18,11 @@ A Project records one Git repository and the defaults for running it. New Instan
 
 ## Nested fleet setting
 
-`nested_fleet` is a stored and public boolean that defaults to false. Set it through the Project update API with a JSON boolean. It is stored only and has no effect yet. Do not set it on a real Project. Hosting that reads this flag and the Node switch follows in a later change.
+`nested_fleet` is a stored and public boolean that defaults to false. Set it through the Project update API with a JSON boolean. Do not set it on a real Project. Hosting that reads this flag and the Node switch follows in a later change.
+
+Until then, the flag has one effect: Orbit refuses every new Instance of the Project with `operation.kind_unavailable` (503). One placement rule in the Gateway decides this for every path that writes an Instance. These paths are development create and its retry, Conn create, clone, register and migrate. They also include `proof:run` for the proof Project, and task work that needs a new workspace: provision, prep, build, turn, prep fix and review round, also after a wait.
+
+A new request is refused before any record: no Instance, runtime, task place, Node identity, capacity wait or Operation. An Operation that already waited when the flag was turned on ends `failed` with the same code. A Project with the flag off is not affected.
 
 Change it alone: a request that sends `nested_fleet` with any other Project setting is refused with `project.nested_fleet_update_separate` (422) before any change. Turning it on requires the Project ID in the operator-set [trial allow list](/reference/gateway-environment#keys-in-the-example-file); otherwise Orbit refuses with `project.nested_fleet_not_allowed` (409). The list defaults to empty. A malformed list refuses with `project.nested_fleet_projects_invalid` (500). A changed value refuses with `project.nested_fleet_in_use` (409) while the Project has any Instance. Sending the current value is allowed, and turning it off does not require allow-list membership. An omitted member preserves its value.
 
@@ -40,7 +44,7 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `source_access` | `github_app` or `gh_cli`. How Orbit reads a private `github.com` repository. See [Source access](#source-access). |
 | `default_branch` | Branch of the `default` Instance and the base for new branches. |
 | `root` | Repository-relative web root that Instances inherit, such as `public` or `apps/site/public`. It is not the checkout path or the Laravel application directory. |
-| `nested_fleet` | Boolean, default false; stored only, with no effect yet. Do not enable on a real Project. See [Nested fleet setting](#nested-fleet-setting). |
+| `nested_fleet` | Boolean, default false. While on, Orbit refuses new Instances of the Project; do not enable it on a real Project. See [Nested fleet setting](#nested-fleet-setting). |
 | `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
 | `task_workspace_routed` | Boolean, default true. Whether newly created task workspaces get a Route. See [Task workspace routing](#task-workspace-routing). |
 | `review_and_merge` | Boolean, default false. Whether Orbit reviews every push of the Project's tasks, reviews incoming pull requests, and merges reviewed green heads. See [Review and merge](/reference/tasks#review-and-merge). |

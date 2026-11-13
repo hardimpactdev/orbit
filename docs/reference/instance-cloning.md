@@ -31,7 +31,7 @@ The CLI calls `POST /api/v1/instances/{candidate}/clone`. The caller needs acces
 
 The candidate must be active, have a recorded source profile, and keep its recorded branch checked out. Native read steps verify the repository identity, branch, commit, clean working tree and absence of submodules before the clone writes anything. Git hooks and filesystem monitors are disabled. An origin that contains credentials is rejected on the Node before its value can enter native history.
 
-A candidate in a container is refused with `operation.kind_unavailable`: the clone reads a checkout. See [the default Instance](/reference/development-containers#the-default-instance).
+A candidate in a container is refused with `operation.kind_unavailable`: the clone reads a checkout. A candidate of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on is refused with the same code (503) before that check, because nested-fleet hosting is not built yet. See [the default Instance](/reference/development-containers#the-default-instance).
 
 ## Destination checks
 

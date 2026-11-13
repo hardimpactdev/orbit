@@ -179,7 +179,9 @@ The fleet-owned `instances.mailpit` configuration names the main Docker Node Pro
 
 `ORBIT_INSTANCES_CONTAINER_NODES` is the build list of [Instance containers](/reference/development-containers#the-build-list): a JSON list of the Node ids that run container Instances. It is empty by default.
 
-`ORBIT_INSTANCES_NESTED_FLEET_PROJECTS` is the operator-set trial allow list, read as `instances.nested_fleet_projects`: a JSON list of positive integer Project IDs, such as `[123]`. It defaults to `[]`, so no Project can enable `nested_fleet` by default. Only list disposable trial Projects; do not enable the flag on a real Project. The Project flag and Node switch are stored only and have no effect yet. Hosting that reads them follows in a later change. Removing an ID does not change its stored flag and does not prevent turning it off.
+`ORBIT_INSTANCES_NESTED_FLEET_PROJECTS` is the operator-set trial allow list, read as `instances.nested_fleet_projects`: a JSON list of positive integer Project IDs, such as `[123]`. It defaults to `[]`, so no Project can enable `nested_fleet` by default. Only list disposable trial Projects; do not enable the flag on a real Project.
+
+A list that is not a JSON array, such as `{}` or `{"0":123}`, is malformed: enabling then refuses with `project.nested_fleet_projects_invalid`. The Node switch is stored only and has no effect yet. The Project flag only refuses new Instances of its Project; see [Nested fleet setting](/reference/projects#nested-fleet-setting). Hosting that reads both values follows in a later change. Removing an ID does not change its stored flag and does not prevent turning it off.
 
 Task VM hosts use [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list. Configure and verify each host's stored settings before removing the former `ORBIT_TASK_VMS_INCUS_HOSTS` variable with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read the environment list, including when configuration is cached.
 
