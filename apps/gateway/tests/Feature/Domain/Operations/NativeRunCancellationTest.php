@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskOperations;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\CancelSwampRun;
+use App\Infrastructure\Swamp\NativeRunProgress;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Node;
@@ -56,6 +57,22 @@ it('does not ask twice for the same expiry, and has nothing to cancel without a 
     expect(app(NativeRunCancellation::class)->request($expired->refresh()))->toBeFalse()
         ->and(app(NativeRunCancellation::class)->request(runningScript(null), again: true))->toBeFalse();
     Queue::assertPushed(ReconcileSwampOperations::class, 1);
+});
+
+it('keeps the state that another writer stored after the caller loaded the Operation', function (): void {
+    Queue::fake();
+    $stale = runningScript();
+    app(NativeRunProgress::class)->apply($stale->id, RUN, ['kind' => 'step_started', 'stepId' => 'clone', 'jobId' => 'main', 'seq' => 1]);
+    $fresh = Operation::query()->findOrFail($stale->id);
+    app(OperationStore::class)->change($fresh, ['state' => [...$fresh->state, 'native_failure' => ['failed_step' => 'clone']]]);
+
+    expect(app(NativeRunCancellation::class)->request($stale))->toBeTrue();
+
+    $state = $stale->refresh()->state;
+    expect($state)->toHaveKey('native_cancel_requested_at')
+        ->and($state['native_failure'])->toBe(['failed_step' => 'clone'])
+        ->and(array_column($state['native_progress']['steps'], 'name'))->toBe(['clone'])
+        ->and($stale->current_step)->toBe('clone');
 });
 
 it('lets an operator cancel ask again for a run that outlives its timed out Operation', function (): void {
