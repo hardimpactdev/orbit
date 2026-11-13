@@ -36,12 +36,22 @@ sequenceDiagram
     %%> - `instance.container_destroy_force_required`
   else forced clone
     %% path: admitted
-    Note over GW: Capture removal intent<br/>mark removing
+    Note over GW: Dry run preparation<br/>discard its result
     %%> Result:
     %%> - capture the clone's container identity, Route, Processes and owned databases
-    %%> - Conn runs stored blocker checks before calling the engine; the engine keeps its existing Schedule removal and failure boundary
+    %%> - all callers try the same pure preparation that admission uses; discard its result before any Schedule effect
+    %%> - the dry run checks publication Nodes, SSH pins, Caddy, PHP and DNS; it changes no state, records no intent, stages no copy and takes no Route hold
     %%> - keep its runtime row, address and T3 port reserved until terminal success
     %%> - Conn refuses new pairings while the Instance is removing
+    GW->>SW: Remove Schedule triggers<br/>then workflows and secrets
+    %%> Failure boundary:
+    %%> - a validation refusal leaves Schedules untouched; a Schedule removal failure keeps the Instance and Route active and records no destroy Operation
+    %%> Fresh admission:
+    %%> - if a fact changes after the dry run, admission uses its current value and may refuse; Schedules may already be stopped
+    %%> - build all publication, participant, database, member, runtime, Route and root facts fresh in the admission transaction; keep no lock across Schedule calls
+    Note over GW: Record removal intent<br/>mark removing
+    %%> Result:
+    %%> - call the same preparation again inside the admission transaction; record only this fresh intent, then mark the Instance removing and the Route retiring
     GW->>SW: Start run, full intent<br/>operation-instance-destroy
     GW-->>CLI: 202 Accepted<br/>Operation ID
     opt clone has a Route

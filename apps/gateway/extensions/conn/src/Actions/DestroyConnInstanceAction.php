@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Actions;
 
 use App\Actions\Instances\StartInstanceDestroyAction;
-use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\DefaultInstanceName;
-use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
@@ -32,8 +30,6 @@ final readonly class DestroyConnInstanceAction
             $this->work->assertRemovalSafe($instance);
         }
 
-        app(ContainerInstanceDestroy::class)->assertAvailable($instance, true);
-        app(DirectInstanceDestroyIntent::class)->assertAvailable($this->destroy->snapshot($instance, true));
         $operation = $this->destroy->execute($instance, true, 'node:'.$caller->id, $requestId);
 
         return DB::transaction(function () use ($operation, $caller): Operation {
