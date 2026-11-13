@@ -288,6 +288,17 @@ class RequiredGateTest(unittest.TestCase):
         self.assertIn('ref: ${{ github.sha }}', outside)
         self.assertIn('pull_request_target:', outside)
 
+    def test_proof_admission_requires_explicit_enablement(self):
+        import yaml
+        for filename, jobs in [('ci.yml', ('proof-eligibility', 'proof-run')),
+                               ('proof-outside.yml', ('proof-run',))]:
+            workflow = yaml.safe_load((ROOT / '.github/workflows' / filename).read_text())
+            for job in jobs:
+                condition = workflow['jobs'][job]['if']
+                self.assertTrue(condition.startswith("vars.ORBIT_PROOF_ENABLED == 'true' && "),
+                                (filename, job, condition))
+                self.assertNotIn('||', condition)
+
     def test_units_use_one_pool_job_with_deno_parallelism(self):
         block = SOURCE.split('\n  tests:\n')[1]
         self.assertNotIn('  test-shards:', SOURCE)

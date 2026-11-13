@@ -78,6 +78,7 @@ sequenceDiagram
     %%> Built, not yet passed live:
     %%> - when the PR adds or changes a case with `fails_on_base: true`, the same proof VM then switches its checkout to the merge base with the head cases file and must see every selected flagged case fail with cause `assertion`; unflagged and unchanged cases never replay; see `Select replay cases` in the [stage 3 chart](/reference/command-development-pipeline#3-proof)
     %%> Built:
+    %%> - CI proof admission, including outside PRs, requires `ORBIT_PROOF_ENABLED=true`; it stays disabled until container proofs are ready
     %%> - the proof CI is part of Required checks only when both `ORBIT_SLOW_CHECKS_BLOCKING` and `ORBIT_PROOF_BLOCKING` are not `false`: the job `proof-run` calls `proof:run`, requires every selected case verdict and fails on a failed case or missing verdict; no selected command passes
     GW-->>CI: Verdict per case
     %%> Result:

@@ -199,6 +199,8 @@ The CLI release starts after Required checks on main. Measure that chain separat
 
 ### The proof run job
 
+CI proof admission is paused until container proofs are ready. Set the repository variable `ORBIT_PROOF_ENABLED=true` to enable both same-repository and outside proof jobs. Unset or `false` skips their admission; the proof harness and Required checks policy are unchanged. Enable admission before turning proof blocking back on; otherwise a selected proof fails Required as skipped.
+
 `proof-run` in `.github/workflows/ci.yml` runs when changed paths select commands in a pull request from this repository and a hosted metadata preflight finds the exact commit eligible. Eligibility follows the Gateway trust rule: a current repository branch head, or the head of an open pull request with `run-proofs` and a writer's latest decisive approval of that exact commit. Comments do not revoke approval; change requests and dismissals do. The preflight reads GitHub metadata within 20 seconds. It skips the managed-runner job when ineligible. API errors fail the preflight. Unselected proofs do no eligibility work. The preflight adds no dependency to Required checks.
 
 Proof gates `Required checks` only when both [blocking switches](#ci-budget) permit it. While blocking, Required checks accepts a skipped proof only with a successful preflight's explicit ineligible marker; missing evidence, API failure and unexpected skips fail closed. It does not wait for intentionally skipped proofs to run.
