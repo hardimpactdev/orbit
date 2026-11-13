@@ -1084,8 +1084,12 @@ It is the normal image with these changes:
 | AppArmor marker | `/etc/orbit/apparmor-off` holds `N` |
 | `agent` | A member of the inner `incus-admin` group, with passwordless sudo from `/etc/sudoers.d/orbit-agent` (root:root, mode 0440) |
 | `orbit` | Neither the group nor sudo. The first rule of the firewall's output chain drops its traffic to the inner fleet's networks, `10.45.0.0/24` and `10.232.2.0/24`. The other rules stay the same |
-| Firewall reset | `/etc/nftables.conf` replaces only its own table (`destroy table inet orbit_agent_guard`), not the whole rule set, and `nftables.service.d/90-orbit-own-table.conf` makes a stop of nftables remove only that table. So a reload or restart of nftables keeps the inner Incus's own tables: its bridge NAT and ACLs |
-| Network wait | `systemd-networkd-wait-online.service.d/90-orbit-no-dns.conf` waits only until eth0 has a route, for at most 30 s. Netplan's own wait also asks for a DNS server, which a container never gets, so it held each start for 120 s once the inner Incus wanted `network-online.target`. The wait is not masked: the inner Incus still starts after eth0 has its address |
+| Firewall reset | `destroy table inet orbit_agent_guard` instead of `flush ruleset`, also as the `ExecStop` of `nftables.service` |
+| Network wait | `systemd-networkd-wait-online.service.d/90-orbit-no-dns.conf`: eth0 routable, at most 30 s, no DNS |
+
+The firewall resets only its own table. So a reload or restart of nftables keeps the inner Incus's own tables, its bridge NAT and ACLs.
+
+The inner Incus wants `network-online.target`. Netplan's own wait asks for a DNS server on eth0, which a container never gets, so it held a start for 120 s. The image's wait asks only for a route. It is not masked, so the inner Incus still starts after eth0 has its address.
 
 The Node fetches each Incus package through the artifact cache, checks its SHA-256 and pushes it into the build container. The build container installs both packages with their dependencies through the egress proxy. A `policy-rc.d` file stops the packages from starting the inner Incus during the build; the build removes it before it publishes.
 
