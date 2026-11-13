@@ -151,13 +151,13 @@ final readonly class ServingNodeResolver
     /** @return list<Node> */
     private function instanceOwning(Request $request): array
     {
-        $instance = $request->route($request->routeIs('conn:instance:destroy') ? 'instance_id' : 'instance');
+        $instance = $request->route($request->routeIs('conn:instance:destroy', 'conn:instance:work') ? 'instance_id' : 'instance');
 
         if ($instance instanceof Instance) {
             return [Node::query()->findOrFail($instance->node_id)];
         }
 
-        if ($request->routeIs('instance:destroy', 'conn:instance:destroy') && ($id = $this->positiveInteger($instance)) !== null) {
+        if ($request->routeIs('instance:destroy', 'conn:instance:destroy', 'conn:instance:work') && ($id = $this->positiveInteger($instance)) !== null) {
             $record = Instance::query()->find($id);
             if ($record !== null) {
                 return [Node::query()->findOrFail($record->node_id)];

@@ -34,6 +34,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\NativeStepFailure;
+use App\Jobs\RecordWorkspaceBaseline;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -550,6 +551,7 @@ describe('the clone\'s create result', function (): void {
             ->and(Instance::query()->findOrFail($operation->target_id)->status)->toBe(InstanceState::Active)
             ->and(InstanceRuntime::query()->where('instance_id', $operation->target_id)->firstOrFail()->only(['power_state', 'seed_commit']))
             ->toBe(['power_state' => InstanceRuntimePowerState::Running, 'seed_commit' => null]);
+        Queue::assertPushed(RecordWorkspaceBaseline::class, static fn (RecordWorkspaceBaseline $job): bool => $job->instanceId === $operation->target_id);
     });
 
     it('refuses a result that names no registered server, and a server that belongs to another Instance', function (): void {
@@ -576,7 +578,7 @@ describe('the clone\'s create result', function (): void {
 });
 
 it('wires Conn into the create flow of a container Instance', function (): void {
-    $contributions = (new ReflectionProperty(InstanceLifecycleContributions::class, 'contributions'))->getValue(app(InstanceLifecycleContributions::class));
+    $contributions = new ReflectionProperty(InstanceLifecycleContributions::class, 'contributions')->getValue(app(InstanceLifecycleContributions::class));
 
     expect(collect($contributions)->map(fn (object $contribution): string => $contribution::class)->all())->toBe([ConnInstanceLifecycle::class]);
 });

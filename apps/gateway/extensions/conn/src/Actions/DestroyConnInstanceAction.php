@@ -13,7 +13,7 @@ use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\Conn\Domain\ConnInstanceWorkState;
 
-/** Conn consent precedes the existing forced engine; no request probes the container. */
+/** Conn consent, or a clean workspace read, precedes the existing forced engine. */
 final readonly class DestroyConnInstanceAction
 {
     public function __construct(private StartInstanceDestroyAction $destroy, private ConnInstanceWorkState $work) {}
@@ -23,9 +23,7 @@ final readonly class DestroyConnInstanceAction
         if ($instance->name === DefaultInstanceName::Name) {
             throw new ResourceOperationException('instance.default_protected', 'The default Instance cannot be removed from Conn.', 409);
         }
-        if (! $instance->runtime()->exists()) {
-            throw new ResourceOperationException('instance.not_container', 'Conn removes only container Instances.', 409);
-        }
+        self::assertContainer($instance);
         if (! $acknowledgeUnsaved) {
             $this->work->assertRemovalSafe($instance);
         }
@@ -38,5 +36,12 @@ final readonly class DestroyConnInstanceAction
 
             return $recorded;
         });
+    }
+
+    public static function assertContainer(Instance $instance): void
+    {
+        if (! $instance->runtime()->exists()) {
+            throw new ResourceOperationException('instance.not_container', 'Conn removes only container Instances.', 409);
+        }
     }
 }

@@ -8,7 +8,7 @@ covers:
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts}
-  - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/{notes/**,frankenphp.Caddyfile}}
+  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py},app/Infrastructure/Instances/ContainerWorkspaceRead.php,app/Jobs/RecordWorkspaceBaseline.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
 ---
 
@@ -766,6 +766,8 @@ A clone refuses with `instance.database_clone_unsupported` when the default has 
 
 `orbit instance:destroy INSTANCE --yes --force` removes a non-default container Instance, cloned or migrated. The default is the Instance named `default`. This first slice requires `--force`: it runs no work or turn checks and no Project teardown steps. Guarded removal and container default destruction follow separately. A call without force refuses with `instance.container_destroy_force_required`; a container default still refuses with `operation.kind_unavailable`.
 
+A removal from Conn without acknowledgement reads the [workspace work state](#workspace-work-state) first and removes only a `clean` workspace. The CLI's rules do not change.
+
 The run withdraws the clone's Route, drops its owned server databases, then stops and deletes its Incus container with its Processes, T3 history, snapshots, storage volume and published proxy device. It removes the `instance-<id>` ACL from Incus project `default`, its UFW rules and its Node repository mirror. Deleting T3 retires every session and unused pairing link. Terminal projection removes execution copies and Conn records, then deletes the runtime row to free its address and T3 port. The default and other clones stay.
 
 The run deletes each UFW rule by the rule itself, as `ufw show added` lists it under the Instance's comment. It never deletes by number: another removal on the Node can delete a rule at the same time and shift every number above it.
@@ -773,6 +775,31 @@ The run deletes each UFW rule by the rule itself, as `ufw show added` lists it u
 A migrated Instance's retained Git directory survives destroy and is purged only by hand. Its successful destroy Operation result keeps `retained_git_path` and `retained_git_at` after the Instance record is deleted; [instance:destroy](/cli/instance/destroy) explains how to read them.
 
 A failed removal retains its intent and reserved port. A destroy whose native start failed for good (for example `swamp.start_unavailable`) also leaves its removal `failed`, at `source_preparation` or at the step an earlier failed run stopped at, with the Instance still `removing`; that start changed nothing on the Node. A fresh forced destroy accepts resources already gone and finishes cleanup. After withdrawal, the Route stays down until removal completes. The [clone destroy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) has the steps.
+
+### Workspace work state
+
+Before a removal, Conn asks whether the workspace holds work that exists nowhere else ([Remove an Instance](/reference/conn#remove-an-instance)). The Gateway reads it live with one bounded SSH call to the Node. The call runs a fixed reader, `resources/instances/workspace-git-read.py`, as the [container Process read](/reference/node-agent#commands) does.
+
+The reader first asks Incus whether the container runs. A stopped container answers `unknown` with `asleep` when its [asleep marker](#sleep-and-wake) exists, and with `stopped` when it does not. A running container gets its Git calls through `incus exec` as `agent`, with `safe.directory=/srv/workspace` on the command line. The read writes no Git file or setting and fetches nothing. The whole read has 2 seconds on the Node, and the SSH call 4 seconds; past either it answers `timeout`. A missing work tree answers `not_a_repository`, and a failed SSH call or an answer the Gateway cannot read is `unreachable`.
+
+Work is what lies beyond the Instance's baseline:
+
+- `modified`: tracked files that are changed, staged or deleted. They always count.
+- `untracked`: files that are not ignored and not in the baseline. Orbit writes `.env` and `.env.testing` at the workspace root, so an untracked copy there is left out. A nested `.env` and a change to a tracked one count.
+- `commits`: commits on local branches that no remote-tracking ref and no baseline head reaches. The read compares with the remote refs as last fetched. A branch without an upstream gets no special case.
+- `stashes`: stash entries that are not in the baseline.
+
+Build output that appears after the create counts too. It stays work until the Project's `.gitignore` covers it.
+
+The baseline is what a new Instance held when it was made, so a fresh copy of a default with local branches, stashes or untracked files reads `clean`. When a create or clone of a non-default container succeeds, a queued job records the local branch heads, the stash ids and the untracked set. They go to the Gateway's `instance_runtimes.workspace_baseline`, outside the container.
+
+The job normally runs seconds after the create ends; work done in those seconds falls into the baseline. A job that starts more than 60 seconds after the end records nothing, because the workspace may then hold work of its own. When the untracked set has more than 2,000 entries, or the answer would pass 900 KB, Orbit drops it, so every untracked file counts. Nothing rewrites a recorded baseline: not a deploy, a rename or a removal restore.
+
+An Instance without a recorded baseline, such as one made before baselines existed, compares with the Project default as it is at the time of the read.
+
+A commit counts only when the default does not reach it from its local branches, so a default branch that moved on since the copy still covers what the clone inherited. A stash counts when the default does not hold it. Its answer says `baseline: default_now`, and all its untracked files count. If the default cannot be read, the answer is the plain state, `baseline: none`. A default Instance has no baseline: its answer is always the plain state.
+
+Names from the workspace never become arguments. Git returns them NUL-separated, and they reach the Gateway only as JSON text, cut at 200 characters. Only object ids of 40 or 64 hex characters from the baseline join a `rev-list` call.
 
 ### Sleep and wake
 

@@ -12,6 +12,7 @@ use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
+use App\Jobs\RecordWorkspaceBaseline;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Route;
@@ -94,6 +95,10 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                     } elseif ($container !== null) {
                         // A container default runs, and clones start at the seed snapshot the run took of its commit.
                         $instance->runtime()->firstOrFail()->update(['power_state' => InstanceRuntimePowerState::Running, 'seed_commit' => ValidatedData::string($result['commit'])]);
+                    }
+                    if ($container !== null && $instance->name !== DefaultInstanceName::Name) {
+                        // What the new workspace holds now is not work of its own (development-containers.md#workspace-work-state).
+                        RecordWorkspaceBaseline::dispatch($instance->id);
                     }
                 } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
                     $instance->update(['failed_step' => $result['failed_step'] ?? 'source', 'error_code' => $data['error_code'] ?? 'operation.cancelled']);
