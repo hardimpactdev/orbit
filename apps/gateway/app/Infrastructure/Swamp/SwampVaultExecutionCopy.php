@@ -104,7 +104,8 @@ final readonly class SwampVaultExecutionCopy
             Log::warning('Swamp execution copy unavailable', ['vault' => $vault, 'key' => $key, 'vault_request_id' => $id,
                 'phase' => $phase, 'remote_code' => $remoteCode, 'exception_type' => $exception::class,
                 'http_status' => $phase === 'connect' ? self::httpStatus($exception) : null]);
-            throw $this->unavailable();
+            // A failed connect keeps its cause: no frame was sent, so a workflow start that needed this copy may be queued again.
+            throw $this->unavailable($phase === 'connect' ? $exception : null);
         } finally {
             if (! $shared) {
                 $socket->close();
@@ -185,8 +186,8 @@ final readonly class SwampVaultExecutionCopy
         return new ResourceOperationException('swamp.secret_output_unavailable', 'The native secret output could not be read.', 503);
     }
 
-    private function unavailable(): ResourceOperationException
+    private function unavailable(?Throwable $connectFailure = null): ResourceOperationException
     {
-        return new ResourceOperationException('swamp.vault_sync_unavailable', 'The Swamp execution copy could not be stored.', 503);
+        return new ResourceOperationException('swamp.vault_sync_unavailable', 'The Swamp execution copy could not be stored.', 503, $connectFailure);
     }
 }

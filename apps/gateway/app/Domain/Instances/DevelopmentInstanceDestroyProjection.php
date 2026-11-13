@@ -9,6 +9,7 @@ use App\Domain\DatabaseServers\DatabaseOwnedRemoval;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Operation;
@@ -17,7 +18,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /** Frozen public removal DAG input and terminal record projection only. */
-final readonly class DevelopmentInstanceDestroyProjection implements DirectOperationProjection
+final readonly class DevelopmentInstanceDestroyProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
     public function __construct(private DirectOperation $direct) {}
 
@@ -97,6 +98,27 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
 
             return $this->direct->project($operation, $data, $result);
         });
+    }
+
+    /**
+     * A destroy whose run never started leaves its removal failed, as a failed run would: at its first step, or at the step
+     * an earlier failed run of the same removal stopped at. The Instance keeps
+     * status `removing`, and a new destroy of it (also with `--force`) is admitted. Runs inside the refusal's transaction.
+     */
+    public function refused(Operation $operation): void
+    {
+        $id = $operation->input['removal_id'] ?? null;
+        if (! is_string($id)) {
+            return;
+        }
+        $removal = InstanceRemoval::query()->whereKey($id)->where('status', InstanceRemovalStatus::Removing)->first();
+        // A retry of a removal that failed mid-run keeps the step where that run stopped; admission clears only failed_step.
+        if ($removal === null) {
+            return;
+        }
+        $step = $removal->current_step ?? InstanceRemovalStep::SourcePreparation;
+        $removal->update(['status' => InstanceRemovalStatus::Failed, 'error_code' => $operation->error_code ?? 'swamp.start_unavailable',
+            'current_step' => $step, 'failed_step' => $step]);
     }
 
     /** The public result from Swamp's run data: the first failed step names the phase; a forEach item's index suffix is dropped.

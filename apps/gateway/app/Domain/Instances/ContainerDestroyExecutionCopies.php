@@ -58,9 +58,8 @@ final readonly class ContainerDestroyExecutionCopies
                 }
             }
         }
-        foreach (array_unique($keys) as $key) {
-            $this->vault->deleteSecret('orbit-control-inputs', $key);
-        }
+        // One connection for every key: serve refuses a burst of connections from the Gateway's address.
+        $this->vault->deleteSecrets('orbit-control-inputs', array_values(array_unique($keys)));
     }
 
     /** @param array<array-key, mixed> $data
