@@ -2306,7 +2306,7 @@ describe('nested-fleet Projects', function (): void {
     $refused = static function (Closure $admit): void {
         expect($admit)->toThrow(function (ResourceOperationException $error): void {
             expect($error->errorCode)->toBe('operation.kind_unavailable')->and($error->status)->toBe(503)
-                ->and($error->getMessage())->toBe('Instances of a nested-fleet Project are not available until nested-fleet hosting is built.');
+                ->and($error->getMessage())->toBe('Only instance:create makes Instances of a nested-fleet Project, as containers.');
         });
     };
     $flag = static fn (Project $project) => DB::table('projects')->where('id', $project->id)->update(['nested_fleet' => true]);
