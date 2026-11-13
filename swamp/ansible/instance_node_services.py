@@ -296,6 +296,29 @@ def ready(row, port):
     return owns(row, port) and row.get('UnitFileState') == 'enabled'
 
 
+def write_proxy_environment(environment, root=Path('/'), run=command):
+    """The container's own proxy bypass for units and login shells, the one writer of its two drop-ins and of systemd's manager
+    environment, so a unit that starts next reads it with no reload. The Node services apply and a nested fleet's start call it.
+    Returns whether it changed anything."""
+    changed = False
+    assignments = ' '.join(key + '=' + environment[key] for key in ('NO_PROXY', 'no_proxy'))
+    files = {'etc/systemd/system.conf.d/99-orbit-node-services.conf': MARKER + '[Manager]\nDefaultEnvironment=' + assignments + '\n',
+             'etc/profile.d/99-orbit-node-services.sh': MARKER + 'export ' + assignments + '\n'}
+    for name, content in files.items():
+        path = root / name
+        if path.is_symlink() or (path.exists() and not path.read_text().startswith(MARKER)):
+            raise RuntimeError('instance.node_service_unit_conflict')
+        if not path.exists() or path.read_text() != content:
+            atomic(path, content, 0o644)
+            os.chown(path, 0, 0, follow_symlinks=False)
+            changed = True
+    current = dict(line.split('=', 1) for line in run(['systemctl', 'show-environment']).splitlines() if '=' in line)
+    if any(current.get(key) != value for key, value in environment.items()):
+        run(['systemctl', 'set-environment'] + [key + '=' + value for key, value in environment.items()])
+        changed = True
+    return changed
+
+
 def guest(action, plan, root=Path('/'), run=command, connect=socket.create_connection):
     directory = root / 'etc/systemd/system'
     desired = units(plan['targets'])
@@ -374,22 +397,8 @@ def guest(action, plan, root=Path('/'), run=command, connect=socket.create_conne
                 started.append(port)
             probe_proxy(target, root, run, connect)
     environment = plan.get('proxy_environment')
-    if environment is not None:
-        assignments = ' '.join(key + '=' + environment[key] for key in ('NO_PROXY', 'no_proxy'))
-        files = {'etc/systemd/system.conf.d/99-orbit-node-services.conf': MARKER + '[Manager]\nDefaultEnvironment=' + assignments + '\n',
-                 'etc/profile.d/99-orbit-node-services.sh': MARKER + 'export ' + assignments + '\n'}
-        for name, content in files.items():
-            path = root / name
-            if path.is_symlink() or (path.exists() and not path.read_text().startswith(MARKER)):
-                raise RuntimeError('instance.node_service_unit_conflict')
-            if not path.exists() or path.read_text() != content:
-                atomic(path, content, 0o644)
-                os.chown(path, 0, 0, follow_symlinks=False)
-                mutation = True
-        current = dict(line.split('=', 1) for line in run(['systemctl', 'show-environment']).splitlines() if '=' in line)
-        if any(current.get(key) != value for key, value in environment.items()):
-            run(['systemctl', 'set-environment'] + [key + '=' + value for key, value in environment.items()])
-            mutation = True
+    if environment is not None and write_proxy_environment(environment, root, run):
+        mutation = True
     if plan.get('probe', True):
         for target in plan['targets']:
             if not target.get('docker', True):
@@ -492,7 +501,10 @@ def apply(container, bundle, run=command, state=Path('/var/lib/orbit/instance-no
 
 def main():
     try:
-        result = guest(sys.argv[1], json.load(sys.stdin)) if sys.argv[1] in ('inspect', 'install') else apply(json.loads(sys.argv[1]), json.loads(sys.argv[2]))
+        if sys.argv[1] == 'proxy':
+            result = {'changed': write_proxy_environment(json.load(sys.stdin)['proxy_environment'])}
+        else:
+            result = guest(sys.argv[1], json.load(sys.stdin)) if sys.argv[1] in ('inspect', 'install') else apply(json.loads(sys.argv[1]), json.loads(sys.argv[2]))
         print(json.dumps(result))
     except Exception as error:  # noqa: BLE001 - public diagnostic boundary; never echo tool output.
         code = str(error)

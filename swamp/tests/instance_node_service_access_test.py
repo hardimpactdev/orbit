@@ -120,6 +120,34 @@ class RemoteAccessTest(unittest.TestCase):
             self.assertEqual((self.root / 'guest' / path).stat().st_mode & 0o777, 0o644)
         self.assertEqual(self.apply(), {'status': 'unchanged', 'ports': [8094]})
 
+    def test_fleet_proxy_writes_the_same_drop_ins_and_manager_value_once_and_refuses_a_foreign_file(self):
+        fleet = self.base + ',10.45.0.1,10.45.0.0/24,10.232.2.0/24'
+        environment = {'NO_PROXY': fleet, 'no_proxy': fleet}
+        with patch.object(services.os, 'chown'):
+            self.assertTrue(services.write_proxy_environment(environment, self.root / 'guest', self.guest_run))
+            self.assertFalse(services.write_proxy_environment(environment, self.root / 'guest', self.guest_run))
+        self.assertEqual(self.manager, environment)
+        self.assertEqual((self.root / 'guest/etc/profile.d/99-orbit-node-services.sh').read_text(),
+                         services.MARKER + 'export NO_PROXY=' + fleet + ' no_proxy=' + fleet + '\n')
+        self.assertEqual((self.root / 'guest/etc/systemd/system.conf.d/99-orbit-node-services.conf').read_text(),
+                         services.MARKER + '[Manager]\nDefaultEnvironment=NO_PROXY=' + fleet + ' no_proxy=' + fleet + '\n')
+        # A file of the same name that Orbit did not write stays, and the writer fails with the public code.
+        (self.root / 'guest/etc/profile.d/99-orbit-node-services.sh').write_text('# not Orbit\n')
+        with patch.object(services.os, 'chown'), self.assertRaisesRegex(RuntimeError, 'instance.node_service_unit_conflict'):
+            services.write_proxy_environment({'NO_PROXY': 'x', 'no_proxy': 'x'}, self.root / 'guest', self.guest_run)
+        self.assertEqual((self.root / 'guest/etc/profile.d/99-orbit-node-services.sh').read_text(), '# not Orbit\n')
+
+    def test_the_proxy_command_reads_its_value_from_stdin_and_prints_only_whether_it_changed(self):
+        seen = []
+        stdin = __import__('io').StringIO('{"proxy_environment": {"NO_PROXY": "secretless", "no_proxy": "secretless"}}')
+        out = __import__('io').StringIO()
+        with patch.object(services, 'write_proxy_environment', lambda environment: seen.append(environment) or True), \
+                patch.object(sys, 'argv', ['instance_node_services.py', 'proxy']), patch.object(sys, 'stdin', stdin), \
+                patch.object(sys, 'stdout', out):
+            services.main()
+        self.assertEqual(seen, [{'NO_PROXY': 'secretless', 'no_proxy': 'secretless'}])
+        self.assertEqual(json.loads(out.getvalue()), {'changed': True})
+
     def test_attached_remote_probe_failure_has_public_target_identity(self):
         self.reachable = False
         with self.assertRaises(services.TargetFailure) as error:

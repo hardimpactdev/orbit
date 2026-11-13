@@ -47,7 +47,10 @@ Deno.test("a nested-fleet clone's start runs the deployment's start with the Clu
     // The same two phases as the create's clone-fleet, each with its bound, and no Club key in the fleet step.
     const create = (parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as { jobs: { steps: Step[] }[] })
         .jobs.flatMap((job) => job.steps).find((step) => step.name === "clone-fleet")!;
-    assert(fleet.task.inputs.run!.includes(create.task.inputs.run!), "the clone's fleet command");
+    // The create's command, and only the start may restart T3 for the proxy bypass.
+    assertEquals(fleet.task.inputs.run!.split("; rc=$?")[0].split("s=$(date +%s%N); ")[1],
+        create.task.inputs.run!.replace("--tags fleet_resume", "--tags fleet_resume -e fleet_proxy_restart_t3=true"));
+    assert(!create.task.inputs.run!.includes("fleet_proxy_restart_t3"));
     assert(fleet.task.inputs.run!.includes('> "$ORBIT_RUN/fleet_ms"'));
     assertEquals(fleet.task.inputs.env!.ORBIT_CLUB_KEY, undefined);
     assertEquals(fleet.dependsOn?.[0].step, "Start the container");
