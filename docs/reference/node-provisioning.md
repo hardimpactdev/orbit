@@ -495,6 +495,8 @@ A task VM is a Node with the `app-dev` role, and its software has its own Ansibl
 
 The wait for a nested fleet is not a phase of the role: it is the task file `swamp/ansible/tasks/task-vm-nested-wait.yml`, which stops when the nested Gateway guest is not running. When the Operation it waits for does not succeed, it names that Operation's failed step and error code. The playbook `task-vm-fleet-wait.yml` runs it from Node 209 for the readiness of a fleet, and the `fleet` phase imports it for the waits of its [fleet build](/reference/compute-drivers#build-the-nested-fleet-in-the-converge).
 
+Every image refresh runs the real base-scoped Node converge on the three nested Nodes before snapshots. It repairs kernel/update policy, agent and managed CLI state without selecting role work; failure prevents promotion. Direct task starts reuse that refreshed state. See [nested Node base state](/reference/compute-drivers#nested-node-base-state).
+
 The nested guests are Incus system containers. The role serves them nothing: each gets the checkout of its task as an Incus disk device, and a restore of `base` is a plain restore and a reboot (see [compute drivers](/reference/compute-drivers)).
 
 The fleet phase reconciles the checkout’s scoped Swamp grants before candidate operations. It uses the existing serve-driver credential; token renewal is separate. [Fleet apply](/reference/compute-drivers#apply-and-check-the-nested-fleet) also reconciles grants after restore.

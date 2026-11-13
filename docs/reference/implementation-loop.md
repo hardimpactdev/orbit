@@ -161,6 +161,8 @@ The fixture table in `.github/ci/checks.toml` maps changed inputs to files and d
 
 Measured container and fleet files declare costs by exact case name, with run IDs for completed measurements and explicit estimates for unmeasured cases. Their file cost equals the retained case total. Packing includes six seconds of startup per slice. Slice counts never exceed the retained case count.
 
+Fleet fixture costs use hosted timings as well as local measurements. Host-clean uses per-case hosted maxima with a 25% allowance, rounded up plus one second; its smaller slices retain all sixteen cases. A shard cut-off is only a lower bound on runtime. The grants fixture reserves a whole planning lane after two shard cut-offs; its 150-second cost is a conservative estimate, not a completed measurement. Runtime ceilings stay unchanged.
+
 Container host preparation uses one case per unit. Each declared body cost uses its largest completed observation, rounded up plus one second; paired cases must not receive an equal share of the file total. Deadline cuts are censored observations, not completed measurements.
 
 Each fixture unit has its own child subreaper. It reaps adopted children while the session leader runs, so exited grandchildren do not remain zombies until the unit ends. The leader alone decides success or failure. Deadlines and cancellation still kill and reap the unit’s remaining descendants before temporary files are removed.
@@ -224,6 +226,8 @@ The Swamp shape job runs `bin/swamp-shape-gate --only control`. Its serial contr
 The full shape group runs the gate, Python analyzer, frozen-base policy and validation CI regression tests through Deno. It also runs pinned `ansible-lint` against the Node enrollment, role, development create, Route and task VM playbooks and checks the private Ansible input builder, the enrollment playbook contract and the waits of a nested fleet against a stub `incus`. The firewall regression test evaluates changed shapes, rule order and unchanged state through the pinned Ansible engine. The artifact tests cover candidate order, transport-only fallback, checksum rejection, cache reuse and staging cleanup.
 
 The bridge writer fixture executes the shipped Ansible task against a temporary ACL boundary. It checks immediate busy refusal, partial withdrawal followed by refresh, failure health and successful recovery. Its fixture input map includes the shipped task and fake curl boundary. It performs no live Incus operation.
+
+The fleet base-convergence fixture runs the product Ansible tasks with fake CLI and Incus boundaries. It checks ordered base scope, first-failure stopping, snapshot gating and direct-start exclusion. Live refresh time and OS repair require a separate disposable-fleet measurement.
 
 The task VM Incus tests require the SSH user's client config before parallel fleet work and preserve it on a second converge with zero changes.
 

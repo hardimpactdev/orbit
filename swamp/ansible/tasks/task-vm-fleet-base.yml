@@ -1,0 +1,66 @@
+---
+# A refreshed snapshot must hold current Node OS state, not only current checkout files.
+# Use the operator's real CLI and base scope; role work belongs to command proof, not image refresh.
+- name: Read the nested Nodes through the operator CLI
+  become: true
+  become_user: "{{ orbit_user }}"
+  environment: &base_cli_environment
+    HOME: "{{ orbit_home }}"
+    ORBIT_HOME: "{{ orbit_home }}/.orbit"
+  ansible.builtin.command:
+    argv: [timeout, "120", php, "{{ intent.checkout.path }}/apps/cli/orbit", node:list, --json]
+  register: fleet_base_nodes_read
+  changed_when: false
+
+- name: Select the three nested Nodes in convergence order
+  vars:
+    nodes: "{{ (fleet_base_nodes_read.stdout | from_json).nodes }}"
+  ansible.builtin.set_fact:
+    fleet_base_nodes: >-
+      {{ (nodes | selectattr('name', 'eq', 'gateway') | list)
+       + (nodes | selectattr('name', 'eq', 'app-dev') | list)
+       + (nodes | selectattr('name', 'eq', 'app-prod') | list) }}
+
+- name: Require exactly the three managed nested Nodes
+  ansible.builtin.assert:
+    that:
+      - fleet_base_nodes | map(attribute='name') | list == ['gateway', 'app-dev', 'app-prod']
+      - fleet_base_nodes | map(attribute='id') | unique | length == 3
+    fail_msg: "The nested fleet must contain exactly one gateway, app-dev and app-prod Node before base convergence."
+    quiet: true
+
+# Stop only the timers: an inherited update transaction must finish normally.
+- name: Prevent new periodic updates in the nested fleet
+  ansible.builtin.command:
+    argv: [timeout, "30", incus, exec, "{{ intent.fleet.guests[item.name] }}", --, systemctl, stop, apt-daily.timer, apt-daily-upgrade.timer]
+  loop: "{{ fleet_base_nodes }}"
+  loop_control: { label: "{{ item.name }}" }
+  changed_when: true
+
+- name: Wait for inherited update services to finish before base convergence
+  ansible.builtin.command:
+    argv: [timeout, "5", incus, exec, "{{ intent.fleet.guests[item.name] }}", --, systemctl, show, --property=ActiveState, --value,
+           apt-daily.service, apt-daily-upgrade.service]
+  register: fleet_base_update_services
+  vars:
+    update_states: "{{ fleet_base_update_services.stdout_lines | reject('equalto', '') | list }}"
+    updates_idle: "{{ update_states | length == 2 and update_states | difference(['inactive', 'failed']) | length == 0 }}"
+  until: fleet_base_update_services.rc != 0 or updates_idle
+  retries: "{{ fleet_base_update_retries | default(29) }}"
+  delay: "{{ fleet_base_update_delay | default(5) }}"
+  failed_when: fleet_base_update_services.rc != 0 or not updates_idle
+  changed_when: false
+  loop: "{{ fleet_base_nodes }}"
+  loop_control: { label: "{{ item.name }}" }
+
+# An include per Node stops the host on a failed command; a command loop could continue with the next Node after a failure.
+- name: Converge each nested Node base before snapshots
+  ansible.builtin.include_tasks: task-vm-fleet-base-node.yml
+  loop: "{{ fleet_base_nodes }}"
+  loop_control: { loop_var: fleet_base_node, label: "{{ fleet_base_node.name }}" }
+  vars:
+    fleet_base_environment: *base_cli_environment
+
+- name: Record that every nested Node base converged
+  ansible.builtin.set_fact:
+    fleet_base_converged: true

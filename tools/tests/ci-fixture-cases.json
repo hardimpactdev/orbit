@@ -2244,6 +2244,20 @@
       "test_invalid_lock_or_checksum_refuses_without_touching_live_file"
     ]
   },
+  "swamp/tests/ansible_task_vm_fleet_base_test.py": {
+    "source_sha256": "dcf07ecdf7e00f85933a23d584752d53040e7d46f4ff6ddb24be55b3a36b5500",
+    "cases": [
+      "test_refresh_converges_all_nodes_in_order_before_all_snapshots_even_when_code_is_current",
+      "test_failed_node_stops_later_nodes_and_all_snapshots",
+      "test_running_updates_finish_on_every_node_before_any_base_converges",
+      "test_busy_updates_exhaust_the_wait_without_convergence_or_snapshots",
+      "test_failed_update_read_never_converges_or_snapshots",
+      "test_missing_service_state_never_converges_or_snapshots",
+      "test_failed_timer_stop_never_waits_converges_or_snapshots",
+      "test_direct_task_start_does_not_converge_or_snapshot",
+      "test_incomplete_fleet_fails_before_convergence"
+    ]
+  },
   "swamp/extensions/behaviors/operations/routes/update-command/workflow_test.ts": {
     "source_sha256": "962c1bea5e867848ab5cd854447e6d02fbdf2c6e5b32345077d633741a3a049e",
     "cases": [

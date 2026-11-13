@@ -57,6 +57,10 @@ sequenceDiagram
   %%> - the tools phase prepares `orbit`'s Incus client config with one serial read before the fleet phase; task copies inherit it, so parallel Incus calls never race on first use
   %%> - every fleet reconcile renders the candidate checkout's scoped Swamp grants and reloads them with the existing serve-driver credential; token renewal is separate
   %%> - a grant-file change also retakes the nested base snapshots, even when Gateway code is unchanged; record the grants digest only after all three snapshots succeed, so a failed reload or snapshot remains due on retry
+  %%> - before any nested base converge, stop both daily apt timers on all three Nodes and wait for their active update services to finish naturally; an exhausted wait or unreadable state fails before convergence and snapshots, without stopping services or killing package-manager processes
+  %%> - after checkout, grants and migrations, the refresh runs the real `node:converge --base` through its operator CLI for gateway, app-dev and app-prod, in that order; each must reach terminal success before the next starts
+  %%> - this applies current kernel/update policy, agent and managed CLI state without selecting app-dev or other role work; any failure prevents snapshots and promotion
+  %%> - only refresh does this: task starts do not run extra base converges; every successful refresh snapshots the three reconciled Nodes
   %%> - the refresh owns the containers' `base` snapshots and retakes them when the fleet changed; the nested Gateway's services restart only when `apps/gateway` changed, and its agent delivery manifest is placed only when the pinned agent build changed
   %%> - a base VM without a nested fleet builds it here, once, in the fleet phase: three system containers from stock Ubuntu on the nested network, the nested Gateway prepared by one local `gateway-bootstrap` run, its own Node, `gateway` and `websocket` converges, app-dev and app-prod added through its own Orbit, the checkout as their disk device, a Doctor wait, then the operator join
   %%> - the build runs only when the fleet is not complete: a container is missing, or the operator stamp that the join writes last is not recorded; it removes that stamp and any container first and builds whole. A complete fleet skips it and restarts no container
@@ -83,7 +87,7 @@ sequenceDiagram
     Note over GW: Promote<br/>record the new snapshot
     %%> Result:
     %%> - task starts copy the new snapshot; the one before it is `-previous`
-    %%> - target: about 25 s for a no-op refresh before the proof (boot 10 s, converge 8 s, stop 5 s, snapshot 1 s); the first refresh of a new host builds the whole base, so it takes much longer: about 30 min of it is the fleet build
+    %%> - refresh time includes three nested base converges; the first refresh of a new host builds the whole base, so it takes much longer: about 30 min of it is the fleet build
   else a step failed
     SW--xGW: Run failed<br/>failed step
     %%> On failure:

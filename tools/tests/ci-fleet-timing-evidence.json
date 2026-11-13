@@ -1,0 +1,87 @@
+{
+  "host_clean": {
+    "source_sha256": "4e07c9f1a22195040881f4bd1502fe1fd07fff0028671c7120b823d8304ce5f7",
+    "cases": {
+      "base-start refuses absent authorization after cloud-init 0": {
+        "seconds": 4.970361197,
+        "run_id": "43321083193"
+      },
+      "base-start refuses wrong authorization after cloud-init 0": {
+        "seconds": 6.013294388,
+        "run_id": "43321083193"
+      },
+      "base-start accepts the admitted fingerprint after cloud-init 0": {
+        "seconds": 13.178174043999997,
+        "run_id": "43321083193"
+      },
+      "base-start refuses empty authorization after cloud-init 2": {
+        "seconds": 5.237614246000001,
+        "run_id": "43321083193"
+      },
+      "base-start refuses malformed authorization after cloud-init 2": {
+        "seconds": 6.095851158999998,
+        "run_id": "43321083193"
+      },
+      "host-clean removes only old images, retired prefixes, the retired projects whole and the images of the image projects": {
+        "seconds": 16.709769347,
+        "run_id": "43321083193"
+      },
+      "host-clean refuses a task VM project that shares images or volumes with default": {
+        "seconds": 2.399978651000005,
+        "run_id": "43172025439"
+      },
+      "a retired project that shares its profiles with default loses none of them": {
+        "seconds": 13.402909530000004,
+        "run_id": "43178956955"
+      },
+      "base-start refuses empty authorization after cloud-init 0": {
+        "seconds": 4.845844780999999,
+        "run_id": "43321083193"
+      },
+      "base-start refuses malformed authorization after cloud-init 0": {
+        "seconds": 6.085953581000001,
+        "run_id": "43170734940"
+      },
+      "base-start refuses absent authorization after cloud-init 2": {
+        "seconds": 5.047321955000001,
+        "run_id": "43170734940"
+      },
+      "base-start refuses wrong authorization after cloud-init 2": {
+        "seconds": 6.535833132,
+        "run_id": "43170734940"
+      },
+      "base-start accepts the admitted fingerprint after cloud-init 2": {
+        "seconds": 13.342705259999999,
+        "run_id": "43170734940"
+      },
+      "a project that cannot be emptied fails the phase after the other projects had their turn": {
+        "seconds": 20.570515508000003,
+        "run_id": "43170734940"
+      },
+      "a profile that cannot be removed keeps its project and fails the phase after the other projects had their turn": {
+        "seconds": 20.17428319200001,
+        "run_id": "43170734940"
+      },
+      "a rebuild deletes the base VM and its seed; a recorded-base refresh preserves them": {
+        "seconds": 21.46485437999999,
+        "run_id": "43170734940"
+      }
+    }
+  },
+  "whole_units": [
+    {
+      "unit": "swamp/tests/ansible_gateway_swamp_grants_test.py",
+      "seconds": 111.132,
+      "status": "OVER BUDGET",
+      "source_sha256": "e65082ef2239b950247725ae95fba5250f4ce825d5471fd1daeec5d025e9272f",
+      "run_id": "43321083193"
+    },
+    {
+      "unit": "swamp/tests/ansible_task_vm_fleet_base_test.py",
+      "seconds": 48.073,
+      "status": "passed",
+      "source_sha256": "dcf07ecdf7e00f85933a23d584752d53040e7d46f4ff6ddb24be55b3a36b5500",
+      "run_id": "43321083193"
+    }
+  ]
+}
