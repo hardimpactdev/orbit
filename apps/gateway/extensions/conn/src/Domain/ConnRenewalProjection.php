@@ -17,7 +17,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Orbit\Extensions\Conn\Actions\AdmitConnCleanupAction;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
-use stdClass;
 use Throwable;
 
 /**
@@ -34,7 +33,8 @@ final readonly class ConnRenewalProjection implements DirectOperationProjection
 
     public function input(Operation $operation): array
     {
-        return ['intent' => ValidatedData::object($operation->input['intent']), 'execution_secrets' => new stdClass];
+        // No secret goes in; the dispatcher sends an empty map as `{}`.
+        return ['intent' => ValidatedData::object($operation->input['intent']), 'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation

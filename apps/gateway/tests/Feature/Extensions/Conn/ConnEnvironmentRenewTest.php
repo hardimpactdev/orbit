@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
@@ -322,4 +323,30 @@ it('admits a pairing with the session the server row holds now, not the one its 
 
     expect($operation->kind)->toBe('conn.pairing_create')
         ->and(collect($this->vault->sent)->where('type', 'vault.put')->pluck('payload.value')->all())->toBe(['renewed-session-sentinel']);
+});
+
+it('hands the native run its intent and an empty secrets map, never a credential', function (): void {
+    $environment = renewServer($this->project, renewNode(1), 'dispatch', 2);
+    $operation = app(AdmitConnRenewalAction::class)->execute($environment);
+
+    $inputs = app(DirectOperation::class)->workflowInputs($operation);
+
+    expect($inputs['kind'])->toBe('conn.environment_renew')
+        ->and($inputs['execution_secrets'])->toEqual((object) [])
+        ->and(json_encode($inputs))->toContain('"execution_secrets":{}')
+        ->and(json_encode($inputs))->not->toContain('old-session-dispatch')
+        ->and($inputs['intent']['container']['name'])->toBe('instance-'.$environment->instance_id);
+});
+
+it('hands the cleanup run after a renewal its vault reference to the new session, never the session', function (): void {
+    $environment = renewServer($this->project, renewNode(1), 'cleaned', 3);
+    renewEnd(renewOperation($environment), 'succeeded', renewReport($environment));
+    $cleanup = Operation::query()->where('kind', 'conn.gateway_sessions_revoke')->sole();
+
+    $inputs = app(DirectOperation::class)->workflowInputs($cleanup);
+
+    expect($inputs['kind'])->toBe('conn.gateway_sessions_revoke')
+        ->and($inputs['execution_secrets']['admin_session']['vault'])->toBe('orbit-control-inputs')
+        ->and($inputs['execution_secrets']['admin_session']['key'])->toStartWith('conn-pairing-revoke-')
+        ->and(json_encode($inputs))->not->toContain('renewed-session-sentinel');
 });

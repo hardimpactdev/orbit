@@ -202,7 +202,7 @@ The Gateway records the session. Only then does it admit the cleanup that revoke
 
 #### Secrets
 
-The new session goes from a 0600 file on the Node to a native sensitive field in the vault. The run removes each private copy on every path. A cancelled run can leave its Node copy; the next renewal on that Node removes copies older than ten minutes. The session never enters an Operation input, result, Activity or log. The Gateway deletes the vault copy after it records the session.
+The run's input holds only the intent and an empty secrets map. The new session goes from a 0600 file on the Node to a native sensitive field in the vault. The run removes each private copy on every path. A cancelled run can leave its Node copy; the next renewal on that Node removes copies older than ten minutes. The session never enters an Operation input, result, Activity or log. The Gateway deletes the vault copy after it records the session.
 
 #### Failure
 
