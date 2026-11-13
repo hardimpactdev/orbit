@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Data\Nodes\NodeData;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Analytics\PlausibleProcess;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NativeNodeRoleAddInput;
 use App\Domain\Nodes\NativeNodeRoleRelocateInput;
@@ -18,6 +21,7 @@ use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleMetricsInput;
 use App\Domain\Nodes\NodeRolePublicationInput;
 use App\Domain\Nodes\NodeRoleRelocateInput;
+use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\NodeRoleRemoveInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeRoleSettings;
@@ -160,8 +164,11 @@ final readonly class AdmitNodeRoleOperationAction
                     'reason' => 'instances_attached', 'role' => $role->value,
                 ]);
             }
-            $operation = $this->operations->execute('node.role_remove', 'node', $node->id, $node->id,
-                ['node_id' => $node->id, 'role' => $role->value, 'purge_data' => $purgeData, 'offline' => $offline], 'operator', $requestId);
+            $input = ['node_id' => $node->id, 'role' => $role->value, 'purge_data' => $purgeData, 'offline' => $offline];
+            if ($assignment->neverTouchedNode()) {
+                return $this->recordRemoval($node, $assignment, $input, $requestId);
+            }
+            $operation = $this->operations->execute('node.role_remove', 'node', $node->id, $node->id, $input, 'operator', $requestId);
             if (! $operation->wasRecentlyCreated) {
                 return $operation;
             }
@@ -175,6 +182,27 @@ final readonly class AdmitNodeRoleOperationAction
 
             return $operation;
         });
+    }
+
+    /**
+     * R1: a role that never touched the Node has nothing to withdraw, so the Gateway deletes the
+     * assignment and its settings and records a succeeded Operation. The caller holds the Node and assignment locks.
+     *
+     * @param  array<string,mixed>  $input
+     */
+    private function recordRemoval(Node $node, NodeRole $assignment, array $input, ?string $requestId): Operation
+    {
+        $snapshot = app(NodeRoleRuntimeInput::class)->removal($node, $assignment->role);
+        $result = ['node_id' => $node->id, 'assignment_id' => $assignment->id, 'role' => $assignment->role->value,
+            'role_removed' => true, 'offline' => false];
+        $operation = $this->operations->record('node.role_remove', 'node', $node->id, $node->id, $input, $result, 'operator', $requestId);
+        if ($operation->wasRecentlyCreated) {
+            NodeRoleRemovalProjection::recordCleanup(['node_id' => $node->id, 'role' => $assignment->role->value, 'runtime' => $snapshot, 'purge_data' => false]);
+            $assignment->delete();
+            app(RecordEventBroadcaster::class)->broadcast(RecordEventType::NodeUpdated, $node->id, NodeData::fromModel($node->refresh())->toArray());
+        }
+
+        return $operation;
     }
 
     public function relocate(Node $target, RoleName $role, bool $force = false, ?Node $from = null, ?string $requestId = null): Operation

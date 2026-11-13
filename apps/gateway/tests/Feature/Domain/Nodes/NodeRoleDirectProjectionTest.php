@@ -123,3 +123,32 @@ it('retains the admission claim when the Gateway machine phase fails after DNS i
 
     expect(app(GatewayPrivateDnsState::class)->owned($node->id))->toBeTrue();
 });
+
+it('records that a failed convergence left the Node untouched only when it failed before its first change', function (string $step, string $status, bool $untouched): void {
+    Http::preventStrayRequests();
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'untouched', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.6',
+        'wireguard_ip' => '10.44.0.6', 'user' => 'orbit',
+    ]));
+    $assignment = $node->roles()->create(['role' => RoleName::Database, 'status' => 'provisioning']);
+    $operation = Operation::query()->create(['kind' => 'node.role_add', 'target_type' => 'node', 'target_id' => $node->id,
+        'node_id' => $node->id, 'status' => 'running', 'sequence' => 1, 'attempts' => 1,
+        'input' => ['_role' => ['assignment_id' => $assignment->id, 'role' => 'database', 'created' => true,
+            'certificates' => ['leaves' => [], 'withdrawals' => []]],
+            'native_role' => ['publications' => [], 'artifact_digests' => []]],
+        'state' => ['swamp_run_id' => 'fixture-native-role']]);
+
+    app(NodeRoleDirectProjection::class)->apply($operation, ['run_id' => 'fixture-native-role', 'status' => $status,
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['steps' => [$step => ['status' => 'failed']], 'summary' => ['failed_steps' => [$step]]]]);
+
+    expect($assignment->refresh()->status)->toBe(LifecycleStatus::Failed)
+        ->and($assignment->node_untouched)->toBe($untouched)
+        ->and($assignment->neverTouchedNode())->toBe($untouched);
+})->with([
+    'OS release unreadable' => ['Read the OS release', 'failed', true],
+    'unsupported OS' => ['Require supported Ubuntu', 'failed', true],
+    'first Node change' => ['Install Python venv', 'failed', false],
+    'role check' => ['Check the role', 'failed', false],
+    'interrupted at the OS check' => ['Require supported Ubuntu', 'interrupted', false],
+]);
