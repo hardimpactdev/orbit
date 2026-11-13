@@ -1338,9 +1338,10 @@ Deno.test({
   },
 });
 
-for (const damage of ["raw.lxc", "privileged", "host-disk", "extra-share-key"]) {
+const probeDamage: Record<string, string> = {"raw.lxc": "a raw.lxc key", "privileged": "security.privileged", "host-disk": "a host disk", "extra-share-key": "an extra share key"};
+for (const damage of Object.keys(probeDamage)) {
   Deno.test({
-    name: `the nested clone probe refuses a ${damage} profile before it starts`,
+    name: `the nested clone probe refuses a profile with ${probeDamage[damage]} before it starts`,
     ignore: !hasAnsible,
     async fn() {
       const f = await hostFixture({pool: "zfs"});

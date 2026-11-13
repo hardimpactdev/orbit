@@ -185,12 +185,13 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 1562
+cost = 2139
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (141s); these are estimates, not completed measurements.
-slices = 23
+# 38 slices keep the 138-second nested host case apart from every other long case, within the 150-second lane.
+slices = 38
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -199,6 +200,7 @@ inputs = [
   "swamp/ansible/instance-container.yml",
   "swamp/ansible/instance_bridge.py",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance_nested.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
@@ -206,8 +208,13 @@ inputs = [
   "swamp/ansible/tasks/instance-bridge-rules.yml",
   "swamp/ansible/tasks/instance-container-*.yml",
   "swamp/ansible/tasks/instance-network-nic-check.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/task-container-host-*.yml",
+  "swamp/tests/_support/instance_host.ts",
   "swamp/tests/fixtures/instance-bridge-curl.ts",
   "swamp/tests/fixtures/instance-container-incus.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
 ]
 
 [fixture.case_costs]
@@ -235,6 +242,22 @@ inputs = [
   "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read" = 72 # completed body 51.951s, run 43010311414; larger completed history retained
   "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish" = 68 # completed body 46.788s, run 43010311414; larger completed history retained
   "a thirty-second Process stop succeeds" = 93 # completed body 78.064s, run 43010311414; larger completed history retained
+  "nested fleet start gate: raw.lxc" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "nested fleet start gate: extra-device" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "nested fleet start gate: changed-host-path" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "nested fleet start gate: writable-share" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "nested fleet start gate: privileged" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "nested fleet start gate: clean" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "a normal host intent runs the exact tasks, Incus command lines and host files of main" = 67 # ESTIMATE: local 31s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "a switched-on host with a short subuid range refuses before any nesting change" = 4 # ESTIMATE: local 1s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "a switched-on host with a short subgid range refuses before any nesting change" = 4 # ESTIMATE: local 1s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "only a switched-on host prepares the nested project, its profile and the nesting modules" = 138 # ESTIMATE: local 65s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "the nested clone probe refuses a profile with a raw.lxc key before it starts" = 52 # ESTIMATE: local 24s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "the nested clone probe refuses a profile with security.privileged before it starts" = 52 # ESTIMATE: local 24s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "the nested clone probe refuses a profile with a host disk before it starts" = 52 # ESTIMATE: local 24s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "the nested clone probe refuses a profile with an extra share key before it starts" = 52 # ESTIMATE: local 24s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "a changed shared folder restarts running normal and nested runtimes before clearing its marker" = 18 # ESTIMATE: local 8s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "a changed shared folder on a normal Node runs main's list and restart command lines" = 18 # ESTIMATE: local 8s x 2.1, rounded up, plus 1s; no hosted measurement yet
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_test.ts"
@@ -1651,11 +1674,12 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 44
+cost = 48
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance_nested.py",
   "swamp/ansible/instance_node_services.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
@@ -1680,6 +1704,8 @@ inputs = [
   "test_clone_launch_applies_mail_without_another_playbook" = 2
   "test_clone_uses_the_admitted_common_acl_name" = 2
   "test_clone_refuses_unsafe_effective_nics_before_start" = 2
+  "test_normal_clone_uses_the_exact_original_checker_program_and_argv" = 2
+  "test_nested_clone_refuses_inherited_raw_keys_and_extra_devices_before_start" = 2
   "test_guest_and_node_command_names_stay_in_sync" = 2
   "test_preserves_only_the_guest_command_and_exit_code" = 2
   "test_rejects_private_or_mismatched_guest_diagnostics" = 2
@@ -2972,3 +2998,17 @@ inputs = ["swamp/workflows/**", "swamp/tests/fixtures/route-forward-intents.json
 "a failed first publication still fails completeness and guards later work" = 1
 "DNS grace and withdrawal order remain independent of omitting the final publication" = 1
 "either a records-only or catalog-only final difference retains the final DNS child" = 1
+
+# The shape gate lists no command for this file, so it runs only through this entry. No `slices` key: a Deno file
+# with `slices = false` would start under python3 (docs/reference/implementation-loop.md).
+[[fixture]]
+file = "swamp/extensions/behaviors/operations/ansible-input/write_test.ts"
+cost = 8 # ESTIMATE: eight command-boundary cases completed in 0.33 s locally; one second per case
+inputs = [
+  "swamp/extensions/behaviors/operations/ansible-input/write.ts",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance_nested.py",
+  "swamp/scripts/instance_clone.py",
+  "swamp/scripts/instance_clone_guest.py",
+  "swamp/scripts/instance_clone_launch.py",
+]
