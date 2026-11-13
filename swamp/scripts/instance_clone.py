@@ -278,7 +278,7 @@ def main():
                 )
                 own_units = {unit["name"] for unit in container.get("processes", [])}
                 own_ids = {str(unit["id"]) for unit in container.get("processes", [])}
-                remove = []
+                links, remove = [], []
                 for index, directory in enumerate(
                     [
                         "/etc/systemd/system/multi-user.target.wants",
@@ -316,7 +316,11 @@ def main():
                                                or item.startswith("orbit-node-service-")))
                             or (index == 1 and item.startswith("orbit-node-service-"))
                         ):
-                            remove.append(name + directory + "/" + item)
+                            (links if directory.endswith(".wants") else remove).append(name + directory + "/" + item)
+                # The enablement links go first and without --force: Incus 7.0.2 resolves the path for --force, so a link whose
+                # unit file is already gone (this delete's own unit files, or an earlier failed clone) fails as "file does not exist".
+                if links:
+                    change(project + ["file", "delete"] + links)
                 if remove:
                     change(project + ["file", "delete", "--force"] + remove)
                 change(
