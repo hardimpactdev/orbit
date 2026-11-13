@@ -27,8 +27,7 @@ inputs:
             snapshot_id: {type: string, format: uuid}
           required: [runtime, branch, snapshot_id]
           additionalProperties: false
-        check_name: {type: 'null'}
-      required: [workspace, check_name]
+      required: [workspace]
     # A container check mints no token: hosted CI is refused at admission.
     execution_secrets: {type: object, additionalProperties: false}
     run_id: {type: string}
