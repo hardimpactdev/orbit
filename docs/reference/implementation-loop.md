@@ -199,6 +199,8 @@ Each unit has a 180-second ceiling; a unit that exceeds it fails with its name, 
 
 The case inventory in `tools/tests/ci-fixture-cases.json` records measured registrations. Inventory edits select only the fixtures whose entries differ between the merge base and PR head, including added or removed entries for fixtures that still exist. Edits that only change JSON formatting select no fixture bodies.
 
+A PR that adds or renames a Deno case updates its entry's `cases` and `source_sha256` and the fixture's `cost` and `case_costs` together. `bin/ci-units collect --file <test>` prints the entry. A stale entry fails the fixture before any case runs: `Stale fixture case population`.
+
 Source hashes are evidence, not a gate on unrelated changes. Selected Deno units compare current registrations with their recorded population before running a body, including loop-generated cases. Changed populations, zero registrations and stale excluded names fail by name. A successful process must also provide a receipt proving that every selected case passed; ignored cases, unrun cases and missing receipts fail. New files use the default cost and the same runtime deadlines. Use `bin/ci-units collect --file PATH` to collect names without executing bodies, then review costs when updating a measured population. When a case name changes, update its inventory and cost key together.
 
 The from-stock fleet case runs in PR fixtures with a deterministic fixture key pair, without installed WireGuard tools. It checks the stored private key and both public-key consumers, then stops before real WireGuard or systemd activation. Its table cost remains an estimate until a hosted run measures the restored case.
