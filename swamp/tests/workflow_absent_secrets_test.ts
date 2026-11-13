@@ -442,3 +442,12 @@ Deno.test("a nested-fleet clone runs agent and T3 beside its fleet start; only t
   assertEquals(ran["clone-sessions"].start, ran["clone-workspace"].end);
   assertEquals(ran.finish.outputs!.ready, true);
 });
+
+Deno.test("a nested-fleet clone's start reads only the Club key, and every wake reads no key", () => {
+  assertEquals(failures("workflow-operation-instance-start.yaml", {
+    execution_secrets: { club_key: copy("nested-fleet-club-api-key") },
+    intent: { container: { clone: {}, project: "orbit-instances-nested", club_key: { available: true } }, fleet: {} },
+  }), []);
+  // The wake's own workflow names no secret: a normal wake keeps its empty map.
+  assertEquals(failures("workflow-operation-instance-wake.yaml", { execution_secrets: {}, intent: { container: { clone: {} } } }), []);
+});

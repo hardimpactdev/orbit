@@ -33,6 +33,64 @@ Deno.test("each sleep and wake step runs its charted part with the shipped Ansib
     }
 });
 
+Deno.test("a nested-fleet clone's start runs the deployment's start with the Club key, then the clone's fleet check and resume, and times the fleet", () => {
+    const context = { inputs: { node_id: 9, intent: {}, execution_secrets: { club_key: { vault: "orbit-control-inputs", key: "nested-fleet-club-api-key" } } },
+        steps: { input: { status: "succeeded", outputs: { assets: shipped } } }, run: { id: runId } };
+    const vault = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false })
+        .registerFunction("vaultget(dyn, dyn): string", (v: unknown, k: unknown) => `${v}/${k}`);
+    const evaluate = (value: string) => value.startsWith("${{") ? String(vault.evaluate(value.slice(3, -2).trim().replaceAll("vault.get(", "vaultget("), context)) : value;
+    const all = steps("start");
+    assertEquals(all.map((step) => step.name), ["input", "Start the container", "Start the inner fleet", "result", "cleanup"]);
+    const container = all[1], fleet = all[2];
+    assert(container.task.inputs.run!.includes('--tags start "$ORBIT_ANSIBLE/instance-container.yml"'));
+    assertEquals(evaluate(container.task.inputs.env!.ORBIT_CLUB_KEY), "orbit-control-inputs/nested-fleet-club-api-key");
+    // The same two phases as the create's clone-fleet, each with its bound, and no Club key in the fleet step.
+    const create = (parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as { jobs: { steps: Step[] }[] })
+        .jobs.flatMap((job) => job.steps).find((step) => step.name === "clone-fleet")!;
+    assert(fleet.task.inputs.run!.includes(create.task.inputs.run!), "the clone's fleet command");
+    assert(fleet.task.inputs.run!.includes('> "$ORBIT_RUN/fleet_ms"'));
+    assertEquals(fleet.task.inputs.env!.ORBIT_CLUB_KEY, undefined);
+    assertEquals(fleet.dependsOn?.[0].step, "Start the container");
+    for (const step of [container, fleet]) {
+        const env = Object.fromEntries(Object.entries(step.task.inputs.env!).map(([key, value]) => [key, evaluate(value)]));
+        assertEquals([env.ANSIBLE_CONFIG, env.ORBIT_ANSIBLE, env.ORBIT_RUN_ID], [`${shipped}/ansible.cfg`, shipped, runId]);
+        assert(evaluate(step.task.behaviorName!).endsWith("-9"), step.name);
+    }
+});
+
+Deno.test("a start's result adds the fleet's seconds when the fleet step ran, and is the phases' result as it is when it did not", () => {
+    const run = steps("start").find((step) => step.name === "result")!.task.inputs.run!;
+    const folder = Deno.makeTempDirSync();
+    try {
+        Deno.writeTextFileSync(`${folder}/result.json`, JSON.stringify({ commit: null, club_key: "unchanged" }));
+        const read = () => {
+            const done = new Deno.Command("sh", { args: ["-c", run.replace("/opt/orbit/ansible/venv/bin/python", "python3")], env: { ORBIT_RUN: folder } }).outputSync();
+            assert(done.success, new TextDecoder().decode(done.stderr));
+            return JSON.parse(new TextDecoder().decode(done.stdout));
+        };
+        assertEquals(read(), { commit: null, club_key: "unchanged" });
+        Deno.writeTextFileSync(`${folder}/fleet_ms`, "91437\n");
+        assertEquals(read(), { commit: null, club_key: "unchanged", fleet_seconds: 91.4 });
+    } finally {
+        Deno.removeSync(folder, { recursive: true });
+    }
+});
+
+Deno.test("the start's fleet step writes its milliseconds and keeps the exit code of the phase that failed", () => {
+    const run = steps("start").find((step) => step.name === "Start the inner fleet")!.task.inputs.run!;
+    for (const [playbook, success] of [["true", true], ["false", false]] as const) {
+        const folder = Deno.makeTempDirSync();
+        try {
+            const done = new Deno.Command("sh", { args: ["-c", run.replaceAll("/opt/orbit/ansible/venv/bin/ansible-playbook", playbook)],
+                env: { ORBIT_RUN: folder, ORBIT_ANSIBLE: folder, PATH: Deno.env.get("PATH")! } }).outputSync();
+            assertEquals(done.success, success);
+            assert(/^\d+\n$/.test(Deno.readTextFileSync(`${folder}/fleet_ms`)));
+        } finally {
+            Deno.removeSync(folder, { recursive: true });
+        }
+    }
+});
+
 const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 const user = new TextDecoder().decode(new Deno.Command("id", { args: ["-un"] }).outputSync().stdout).trim();
 const group = new TextDecoder().decode(new Deno.Command("id", { args: ["-gn"] }).outputSync().stdout).trim();

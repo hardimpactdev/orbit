@@ -429,6 +429,10 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
+  "operation-instance-start": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "operation-instance-connection-environment": {
    "result": "read-only",
    "cleanup": "idempotent"

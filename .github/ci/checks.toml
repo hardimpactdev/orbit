@@ -1013,7 +1013,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_power_test.ts"
-cost = 26
+cost = 29
 # Local Deno case times on Beast rounded up by one second; not CI measurements.
 slices = 1
 inputs = [
@@ -1026,10 +1026,15 @@ inputs = [
   "swamp/tests/fixtures/instance-container-incus.ts",
   "swamp/workflows/workflow-operation-instance-sleep.yaml",
   "swamp/workflows/workflow-operation-instance-wake.yaml",
+  "swamp/workflows/workflow-operation-instance-start.yaml",
+  "swamp/workflows/workflow-operation-instance-create.yaml",
 ]
 
 [fixture.case_costs]
   "each sleep and wake step runs its charted part with the shipped Ansible settings; the wake is one playbook" = 1
+  "a nested-fleet clone's start runs the deployment's start with the Club key, then the clone's fleet check and resume, and times the fleet" = 1
+  "a start's result adds the fleet's seconds when the fleet step ran, and is the phases' result as it is when it did not" = 1
+  "the start's fleet step writes its milliseconds and keeps the exit code of the phase that failed" = 1
   "a sleep writes the marker once Caddy's loaded site has the check, and refuses without changing anything when it lacks it" = 3
   "a freeze opens swap for the container, pauses it and pushes its memory to swap; the marker stays" = 3
   "a freeze whose memory stays in RAM (swap is full) resumes and stops the container instead" = 3
@@ -2353,6 +2358,8 @@ inputs = [
   "swamp/workflows/workflow-operation-instance-deploy-direct.yaml",
   "swamp/workflows/workflow-operation-process-container.yaml",
   "swamp/workflows/workflow-route-withdraw.yaml",
+  "swamp/workflows/workflow-operation-instance-start.yaml",
+  "swamp/workflows/workflow-operation-instance-wake.yaml",
   "swamp/tests/_support/swamp_expression.ts",
 ]
 
