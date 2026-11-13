@@ -54,8 +54,8 @@
       fail: instance.host_unavailable
       incus: "{{ instances.incus }}"
       ids: "{{ instances.ids }}"
-      # An Instance container runs no WireGuard, Docker or nested bridges.
-      modules: []
+      # Nested-fleet Instances share these host kernel modules.
+      modules: "{{ ['wireguard', 'overlay', 'br_netfilter'] if instances.nested is defined else [] }}"
       project: "{{ instances.project }}"
       network: "{{ instances.network }}"
       address: "{{ instances.address }}"
@@ -139,8 +139,11 @@
 
 - name: Prepare the Instance bridge, project and profile
   ansible.builtin.include_tasks: task-container-host-prepare.yml
+  loop: "{{ [instances.project] + ([instances.nested.project] if instances.nested is defined else []) }}"
+  loop_control: {loop_var: instance_project}
   vars:
-    container_host: *instance_host
+    instance_host: *instance_host
+    container_host: "{{ instance_host | combine({'project': instance_project}) }}"
     container_acl_name: "{{ instances.network }}-egress"
     container_dns: false
     # Endpoint mutations use ETags; never replace the existing shared list with an admission-time snapshot.
@@ -191,7 +194,8 @@
         { type: disk, source: "{{ instances.folders.runtime.path }}", path: "{{ instances.folders.runtime.path }}", readonly: 'true', shift: 'true' }
       orbit-agent:
         { type: disk, source: "{{ instances.folders.agent.path }}", path: "{{ instances.folders.agent.path }}", readonly: 'true', shift: 'true' }
-    container_restrictions:
+    container_restrictions: "{{ instance_restrictions | combine({'restricted.containers.nesting': 'allow', 'restricted.containers.interception': 'allow', 'restricted.containers.lowlevel': 'allow'} if instances.nested is defined and instance_project == instances.nested.project else {}) }}"
+    instance_restrictions:
       restricted: 'true'
       restricted.networks.access: "{{ instances.network }}"
       restricted.containers.privilege: isolated

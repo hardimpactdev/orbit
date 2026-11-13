@@ -1318,6 +1318,7 @@ Deno.test({
                 const instances = collision === "orbit-stock-build"
                     ? [{
                         name: collision,
+                        project: stockProject,
                         config: { "user.orbit.stock-build": stockAlias },
                     }]
                     : [];

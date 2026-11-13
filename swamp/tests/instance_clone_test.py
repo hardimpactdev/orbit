@@ -196,7 +196,7 @@ class CloneTest(unittest.TestCase):
                         str(SCRIPT),
                         json.dumps(container),
                         "guest",
-                        NETWORK_CHECK.read_text(),
+                        (NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0] + (NETWORK_CHECK.parent / "instance_nested.py").read_text()) if container.get("allowed_devices") else NETWORK_CHECK.read_text(),
                         pwd.getpwuid(os.getuid()).pw_name,
                         folder + "/private",
                         json.dumps({"node_services": node_service_code or 'print(\'{"status":"unchanged"}\')', "mail": mail_code or 'print(\'{"status":"unchanged"}\')'}),
@@ -339,6 +339,45 @@ class CloneTest(unittest.TestCase):
                 self.assertEqual(error, "instance.container_network_unsafe\n")
                 self.assertFalse(any("start" in call for call in calls))
 
+    def test_normal_clone_uses_the_exact_original_checker_program_and_argv(self):
+        calls, _, error = self.clone()
+        self.assertEqual(error, "")
+        self.assertIn(["python3", "-c", NETWORK_CHECK.read_text(), "orbitinst0", "eth0"], calls)
+
+    def test_nested_clone_refuses_inherited_raw_keys_and_extra_devices_before_start(self):
+        allowed = {
+            "root": {"type": "disk", "path": "/", "pool": "orbit-instances", "size": "40GiB"},
+            "eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",
+                     "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject",
+                     "security.acls.default.ingress.action": "reject"},
+            "orbit-runtime": {"type": "disk", "source": "/opt/orbit-runtime", "path": "/opt/orbit-runtime", "readonly": "true", "shift": "true"},
+            "orbit-agent": {"type": "disk", "source": "/opt/orbit-agent", "path": "/opt/orbit-agent", "readonly": "true", "shift": "true"},
+            "t3": {"type": "proxy", "listen": "tcp:10.44.0.7:3800", "connect": "tcp:10.253.0.2:3773", "nat": "true"},
+        }
+        for damage in ["clean", "raw.lxc", "privileged", "extra-device", "changed-host-path", "writable-share"]:
+            def inherited(read):
+                read["expanded_config"] = {}
+                read["expanded_devices"] = copy.deepcopy(allowed)
+                if damage == "raw.lxc":
+                    read["expanded_config"]["raw.lxc"] = "lxc.apparmor.profile=unconfined"
+                elif damage == "privileged":
+                    read["expanded_config"]["security.privileged"] = "true"
+                elif damage == "changed-host-path":
+                    read["expanded_devices"]["orbit-runtime"]["source"] = "/fast"
+                elif damage == "extra-device":
+                    read["expanded_devices"]["host"] = {"type": "disk", "source": "/fast", "path": "/host"}
+                elif damage == "writable-share":
+                    del read["expanded_devices"]["orbit-runtime"]["readonly"]
+            with self.subTest(damage=damage):
+                calls, _, error = self.clone(inherited, overrides={"project": "orbit-instances-nested", "allowed_devices": allowed})
+                starts = [call for call in calls if "start" in call]
+                if damage == "clean":
+                    self.assertEqual(error, "")
+                    self.assertEqual(starts, [["incus", "--project", "orbit-instances-nested", "start", "instance-7"]])
+                else:
+                    self.assertEqual(error, "instance.container_network_unsafe\n")
+                    self.assertFalse(starts)
+
     def test_guest_and_node_command_names_stay_in_sync(self):
         def commands(path):
             tree = ast.parse(path.read_text())
@@ -380,7 +419,7 @@ class CloneTest(unittest.TestCase):
                         str(SCRIPT),
                         json.dumps(container),
                         "guest",
-                        NETWORK_CHECK.read_text(),
+                        (NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0] + (NETWORK_CHECK.parent / "instance_nested.py").read_text()) if container.get("allowed_devices") else NETWORK_CHECK.read_text(),
                         account.pw_name,
                         folder,
                         phase,

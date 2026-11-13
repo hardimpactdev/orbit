@@ -181,12 +181,12 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 1562
+cost = 2049
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (141s); these are estimates, not completed measurements.
-slices = 23
+slices = 33
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -195,6 +195,11 @@ inputs = [
   "swamp/ansible/instance-container.yml",
   "swamp/ansible/instance_bridge.py",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance_nested.py",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
@@ -231,6 +236,17 @@ inputs = [
   "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read" = 72 # completed body 51.951s, run 43010311414; larger completed history retained
   "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish" = 68 # completed body 46.788s, run 43010311414; larger completed history retained
   "a thirty-second Process stop succeeds" = 93 # completed body 78.064s, run 43010311414; larger completed history retained
+
+  "nested fleet start gate: raw.lxc" = 30 # ESTIMATE: conservative existing case maximum; local focused receipt recorded in review report
+  "nested fleet start gate: extra-device" = 30 # ESTIMATE: conservative existing case maximum; local focused receipt recorded in review report
+  "nested fleet start gate: changed-host-path" = 30 # ESTIMATE: conservative existing case maximum; local focused receipt recorded in review report
+  "nested fleet start gate: writable-share" = 30 # ESTIMATE: conservative existing case maximum; local focused receipt recorded in review report
+  "nested fleet start gate: privileged" = 30 # ESTIMATE: conservative existing case maximum; local focused receipt recorded in review report
+  "nested fleet start gate: clean" = 30 # ESTIMATE: conservative existing case maximum; local focused receipt recorded in review report
+
+  "an old normal host intent keeps the exact pre-nesting Incus command lines" = 141 # ESTIMATE: conservative existing maximum pending hosted measurement
+  "only an enabled nested host prepares the second project and nesting modules" = 141 # ESTIMATE: conservative existing maximum pending hosted measurement
+  "a changed shared folder restarts running normal and nested runtimes before clearing its marker" = 25 # ESTIMATE: local 11s * 2.1 rounded up + 1s, startup separate
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_test.ts"
@@ -1628,11 +1644,12 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 44
+cost = 48
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance_nested.py",
   "swamp/ansible/instance_node_services.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
@@ -1667,6 +1684,9 @@ inputs = [
 
   "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement" = 2
   "test_clone_target_failure_receipt_keeps_public_identity_and_bounds_tool_output" = 2
+
+  "test_normal_clone_uses_the_exact_original_checker_program_and_argv" = 2 # ESTIMATE: normal command-boundary case
+  "test_nested_clone_refuses_inherited_raw_keys_and_extra_devices_before_start" = 2 # ESTIMATE: six local damage variants complete below 1s
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_native_faults_test.ts"
@@ -2948,3 +2968,14 @@ inputs = ["swamp/workflows/**", "swamp/tests/fixtures/route-forward-intents.json
 "a failed first publication still fails completeness and guards later work" = 1
 "DNS grace and withdrawal order remain independent of omitting the final publication" = 1
 "either a records-only or catalog-only final difference retains the final DNS child" = 1
+
+[[fixture]]
+file = "swamp/extensions/behaviors/operations/ansible-input/write_test.ts"
+cost = 8 # ESTIMATE: 8 command-boundary cases completed in 0.24s locally; 1s per case.
+slices = false
+inputs = [
+  "swamp/extensions/behaviors/operations/ansible-input/write.ts",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance_nested.py",
+  "swamp/scripts/instance_clone.py",
+]

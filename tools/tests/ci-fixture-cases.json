@@ -120,7 +120,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "91629da1b85c04707d33538c7f2e30c3ad8908731c140b8268870aa4bc5693e4",
+    "source_sha256": "34927020f7dcf4ff04d3ea1d9f0473a80fb86c48f23bb6d610979ba48b2c72e8",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -146,7 +146,16 @@
       "a copied seed with an unguarded extra local NIC refuses before the clone starts",
       "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read",
       "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish",
-      "a thirty-second Process stop succeeds"
+      "a thirty-second Process stop succeeds",
+      "nested fleet start gate: raw.lxc",
+      "nested fleet start gate: extra-device",
+      "nested fleet start gate: changed-host-path",
+      "nested fleet start gate: writable-share",
+      "nested fleet start gate: privileged",
+      "nested fleet start gate: clean",
+      "an old normal host intent keeps the exact pre-nesting Incus command lines",
+      "only an enabled nested host prepares the second project and nesting modules",
+      "a changed shared folder restarts running normal and nested runtimes before clearing its marker"
     ]
   },
   "swamp/tests/ansible_instance_host_test.ts": {
@@ -873,7 +882,7 @@
     ]
   },
   "swamp/tests/ansible_task_container_host_prepare_test.ts": {
-    "source_sha256": "e945c4caef36728af235d06e490e7472da77b6a86814f2aca85f2d7888a78ced",
+    "source_sha256": "4879718a2611335a3e49f434d7a176bbab6e3f5d268993f8f552cf2ca242df39",
     "cases": [
       "a container host gets its kernel side, bridge, project and clone check beside the VM side, then changes nothing",
       "the container bridge gets DHCP and DNS input rules under its own catalog names",
@@ -1411,7 +1420,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "6c0b177613603a6210c342c13c46032417e173eab2c2f14df37253171aaeb50d",
+    "source_sha256": "d7458ef67bc0d4df021c70c972fe956e1472f4eb685094ab6207571d2fbe57bb",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1431,6 +1440,8 @@
       "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful",
       "test_clone_uses_the_admitted_common_acl_name",
       "test_clone_refuses_unsafe_effective_nics_before_start",
+      "test_normal_clone_uses_the_exact_original_checker_program_and_argv",
+      "test_nested_clone_refuses_inherited_raw_keys_and_extra_devices_before_start",
       "test_guest_and_node_command_names_stay_in_sync",
       "test_preserves_only_the_guest_command_and_exit_code",
       "test_rejects_private_or_mismatched_guest_diagnostics",
@@ -2219,7 +2230,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/ansible-input/write_test.ts": {
-    "source_sha256": "0095bb2c3ad26a5c8ef616a5c3075a0f051d8fac6eb014bf9bd4761e819f1559",
+    "source_sha256": "386a7d0de725832f0833aea85dcc4783144820243a41fedb4db04cf59e0d5a08",
     "cases": [
       "the full intent reaches a private file beyond the environment size limit",
       "an intent write refuses paths outside its run folder",
@@ -2227,7 +2238,8 @@
       "the fleet reboot finalizer reports a fixed error when private callback inputs cannot be parsed",
       "real clone commands stay below 32 KiB with a large Gateway intent",
       "real clone launch preserves stdin and cleanup works after an early container failure",
-      "workflow command and inline script templates keep 16 KiB of budget headroom"
+      "workflow command and inline script templates keep 16 KiB of budget headroom",
+      "nested clone input ships the composed pre-start policy and keeps the normal program unchanged"
     ]
   },
   "swamp/tests/caddy_publish_test.py": {

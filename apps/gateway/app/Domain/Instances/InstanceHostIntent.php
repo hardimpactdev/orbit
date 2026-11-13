@@ -12,6 +12,7 @@ use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\TaskVm;
 
@@ -58,7 +59,7 @@ final readonly class InstanceHostIntent
 
     public const int IdMapSize = 65536;
 
-    /** The isolated range of each task container place and the base on a task container host (compute-drivers.md#the-host-system). */
+    /** The outer isolated range for an inner Incus: 1000000 reserved IDs plus its 100000000 subordinate IDs. */
     public const int TaskPlaceIds = 101000000;
 
     public function __construct(
@@ -95,7 +96,11 @@ final readonly class InstanceHostIntent
             throw new ResourceOperationException('instance.host_unavailable', 'The Node has no Instance bridge yet: the admission of a role add or converge allocates it.', 409);
         }
         // Instance containers and the task containers of the same host take their isolated ID maps from root's one range.
-        $taskHost = app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->task_vms;
+        $settings = app(NodeSettingsNormalizer::class)->fromStored($node->settings);
+        $nested = $settings?->nested_fleet === true;
+        $nestedRuntimes = InstanceRuntime::query()->where('node_id', $node->id)
+            ->where('incus_project', InstanceContainerPlacement::NestedProject)->count();
+        $taskHost = $settings?->task_vms;
         $taskContainers = $taskHost?->containers;
         $taskIds = $taskContainers instanceof NodeTaskVmContainersData ? ($taskContainers->task_places + $taskContainers->ci_places + 1) * self::TaskPlaceIds : 0;
         $subnet = Ipv4Subnet::from($cidr);
@@ -116,12 +121,16 @@ final readonly class InstanceHostIntent
             'bridge_admitted_at' => $admittedAt,
             'bridge_endpoints' => app(InstanceContainer::class)->nodeEndpoints($node),
             'egress' => InstanceEgress::for(self::Network, $gateway, $cidr, $this->privateDns->domains()),
-            'ids' => (self::Containers + 1) * self::IdMapSize + $taskIds,
+            'ids' => (self::Containers + 1) * self::IdMapSize + $taskIds
+                + ($nestedRuntimes + ($nested ? 2 : 0)) * self::TaskPlaceIds,
             // A task VM host sizes the ARC for its task side, or keeps the Node's own (task-vm-host-prepare.yml): the Instance side
             // never changes it there.
             'arc' => $taskHost === null,
             'incus' => $incus,
             'image' => InstanceImage::for($gateway),
+            ...($nested ? ['nested' => ['project' => InstanceContainerPlacement::NestedProject,
+                'config' => InstanceContainerPlacement::config(InstanceContainerPlacement::NestedProject)]] : []),
+            ...($nestedRuntimes > 0 ? ['runtime_projects' => InstanceContainerPlacement::projects()] : []),
             'folders' => InstanceFolderPlan::for($folders),
             // The redirect of agent development ports on the WireGuard address to Caddy's development listener.
             'dev_ports' => ['table' => InstanceDevPorts::Table, 'unit' => InstanceDevPorts::TableUnit,

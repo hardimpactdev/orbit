@@ -83,11 +83,12 @@ final readonly class StartDevelopmentInstanceCreateAction
             $root = $data->root === null ? null : ProjectRoot::validate($data->root, $project->type);
             $name = DefaultInstanceName::resolve($project, $data->name);
             $instance = Instance::query()->where('project_id', $project->id)->where('name', $name)->lockForUpdate()->first();
-            $selection = $selection === null ? null
-                : app(DevelopmentInstanceBranchAdmission::class)->reserve($project, $observed, $selection, $instance, $caller);
             $created = ! $instance instanceof Instance;
             // A container Instance is the Project's default, or a clone of that default ($source).
             [$container, $source] = $this->container($project, $node, $name, $instance, $data);
+            $this->admission->assertNestedContainer($project, $node, $container, $instance, $source);
+            $selection = $selection === null ? null
+                : app(DevelopmentInstanceBranchAdmission::class)->reserve($project, $observed, $selection, $instance, $caller);
 
             if ($instance instanceof Instance) {
                 $this->assertRetry($instance, $node, $root, $data->branch);
@@ -312,7 +313,7 @@ final readonly class StartDevelopmentInstanceCreateAction
             return [false, null];
         }
         if ($name !== 'default') {
-            if (! $default instanceof Instance) {
+            if (! $default instanceof Instance && ! $project->nested_fleet) {
                 throw new ResourceOperationException('instance.default_missing', 'Create the Project\'s default Instance on this Node first.', 409);
             }
 

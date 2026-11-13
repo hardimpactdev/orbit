@@ -156,6 +156,7 @@ additionalFiles:
   - ansible/tasks/instance-bridge-rules.yml
   - ansible/instance_bridge.py
   - ansible/instance_network.py
+  - ansible/instance_nested.py
   - ansible/tasks/instance-bridge-refresh.yml
   - ansible/tasks/instance-image.yml
   - ansible/library/orbit_incus_images.py

@@ -25,12 +25,13 @@ function render(expression: string, outputs: unknown, intent: unknown): unknown 
         },
     });
 }
-async function cloneInput() {
+async function cloneInput(nested = false) {
     const id = crypto.randomUUID();
     const folder = `/tmp/orbit-ansible-${id}`;
     const account = new TextDecoder().decode((await new Deno.Command("id", { args: ["-un"] }).output()).stdout).trim();
     const container = {
-        instance_id: 7, name: "instance-7", project: "orbit-instances", network: "orbitinst0", acl: "instance-7",
+        instance_id: 7, name: "instance-7", project: nested ? "orbit-instances-nested" : "orbit-instances",
+        ...(nested ? {allowed_devices: {root: {type: "disk", path: "/", pool: "orbit-instances"}}} : {}), network: "orbitinst0", acl: "instance-7",
         nic_acl: "orbitinst0-proxy", address: "10.253.0.7", acl_rules: { description: "Orbit Instance 7", egress: [], ingress: [] },
         root_disk_pool: "orbit-instances", root_disk_size: "40GiB", config: {}, mirror: folder + "/mirror",
         repository: "https://github.com/example/fixture.git", protocols: ["https"], branch: "feature/clone",
@@ -252,4 +253,21 @@ Deno.test("workflow command and inline script templates keep 16 KiB of budget he
         if (file.name.endsWith(".yaml")) inspect(parse(await Deno.readTextFile(asset("workflows/" + file.name))), file.name);
     }
     console.log(JSON.stringify(largest));
+});
+
+Deno.test("nested clone input ships the composed pre-start policy and keeps the normal program unchanged", async () => {
+    for (const nested of [false, true]) {
+        const {folder, outputs} = await cloneInput(nested);
+        try {
+            const payload = JSON.parse(outputs.clone_payload);
+            const normal = await Deno.readTextFile(asset("ansible/instance_network.py"));
+            if (nested) {
+                assertEquals(payload.network, normal.split('if __name__ == "__main__":')[0] + await Deno.readTextFile(asset("ansible/instance_nested.py")));
+                const manifest = parse(await Deno.readTextFile(asset("manifest.yaml"))) as {additionalFiles: string[]};
+                assert(manifest.additionalFiles.includes("ansible/instance_nested.py"));
+            } else {
+                assertEquals(payload.network, normal);
+            }
+        } finally { await Deno.remove(folder, {recursive: true}); }
+    }
 });

@@ -40,12 +40,23 @@ final readonly class DevelopmentInstanceCreateAdmission
 
     public function assertProject(Project $project, Node $node): void
     {
-        if ($project->nested_fleet) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Nested-fleet Instance creation is not available until its image variant is built.', 503);
-        }
+        InstanceContainerPlacement::assertHost($project, $node);
         $this->assertDefaults($project);
         $this->assertPlacement($node);
         $this->assertSourceProfile($project);
+    }
+
+    public function assertNestedContainer(Project $project, Node $node, bool $container, ?Instance $instance, ?Instance $source): void
+    {
+        if (! $project->nested_fleet) {
+            return;
+        }
+        if (! app(ContainerNodes::class)->includes($node) || ! $container
+            || ($instance !== null && $instance->runtime?->incus_project !== InstanceContainerPlacement::NestedProject)
+            || ($source !== null && $source->runtime?->incus_project !== InstanceContainerPlacement::NestedProject)) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Nested-fleet creation requires a container in the nested Instance project on an enabled build-list Node.', 503);
+        }
+        throw new ResourceOperationException('operation.kind_unavailable', 'Nested-fleet Instance creation is not available until its image variant is built.', 503);
     }
 
     public function readyDefault(Project $project, ?Instance $default): Instance

@@ -5,6 +5,7 @@
  */
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
+import { fixture as hostFixture } from "./_support/instance_host.ts";
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -52,6 +53,7 @@ function fixture() {
   Deno.mkdirSync(`${folder}/tasks`);
   Deno.copyFileSync(new URL("instance_bridge.py", root), `${folder}/instance_bridge.py`);
     Deno.copyFileSync(new URL("instance_network.py", root), `${folder}/instance_network.py`);
+    Deno.copyFileSync(new URL("instance_nested.py", root), `${folder}/instance_nested.py`);
   Deno.writeTextFileSync(`${folder}/bin/curl`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-bridge-curl.ts", import.meta.url).pathname}' "$@"\n`);
   Deno.chmodSync(`${folder}/bin/curl`, 0o755);
   Deno.writeTextFileSync(`${folder}/nat.txt`, "");
@@ -1186,5 +1188,133 @@ Deno.test({
     } finally {
       f.cleanup();
     }
+  },
+});
+
+for (const damage of ["raw.lxc", "extra-device", "changed-host-path", "writable-share", "privileged", "clean"]) {
+  Deno.test({
+    name: `nested fleet start gate: ${damage}`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        assert(f.run("container").ok);
+        const state = f.state();
+        const row = state.containers["instance-7"];
+        row.status = "Stopped";
+        row.project = "orbit-instances-nested";
+        const disks = {
+          "orbit-runtime": {type: "disk", source: "/opt/orbit-runtime", path: "/opt/orbit-runtime", readonly: "true", shift: "true"},
+          "orbit-agent": {type: "disk", source: "/opt/orbit-agent", path: "/opt/orbit-agent", readonly: "true", shift: "true"},
+        };
+        Object.assign(f.container, {project: "orbit-instances-nested", allowed_devices: {
+          root: {type: "disk", path: "/", pool: "orbit-instances", size: "40GiB"},
+          eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject"},
+          ...structuredClone(disks),
+        }});
+        row.added = disks;
+        if (damage === "raw.lxc") row.inherited_config = {"raw.lxc": "lxc.apparmor.profile=unconfined"};
+        if (damage === "privileged") row.inherited_config = {"security.privileged": "true"};
+        if (damage === "extra-device") row.added.socket = {type: "disk", source: "/var/lib/incus/unix.socket", path: "/run/host-incus"};
+        if (damage === "writable-share") delete row.added["orbit-runtime"].readonly;
+        if (damage === "changed-host-path") row.added["orbit-runtime"].source = "/fast";
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+        f.write();
+        const result = f.run("start");
+        if (damage === "clean") {
+          assert(result.ok, result.output);
+          assertEquals(f.state().containers["instance-7"].status, "Running");
+        } else {
+          assert(!result.ok, result.output);
+          assertEquals(f.result(), {error_code: "instance.container_network_unsafe"});
+          assertEquals(f.state().containers["instance-7"].status, "Stopped");
+        }
+      } finally { f.cleanup(); }
+    },
+  });
+}
+
+Deno.test({
+  name: "an old normal host intent keeps the exact pre-nesting Incus command lines",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await hostFixture({pool: "dir"});
+    try {
+      const result = await f.run();
+      assert(result.ok, result.output);
+      const calls = JSON.stringify(f.calls()).replaceAll(f.folder, "FIXTURE");
+      const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(calls)))).map(x => x.toString(16).padStart(2, "0")).join("");
+      // Captured from the production tasks at 01101a64c1, with this same ordinary host shape.
+      assertEquals(f.calls().length, 53);
+      assertEquals(digest, "8f561f588e7131982062fa610be3e27b86f7aa5bb5fe010e420c24549f050c05");
+      assertEquals(f.state().projects.map((row: {name: string}) => row.name), ["orbit-instances"]);
+      assert(!f.has("modules-load/orbit-instances.conf"));
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "only an enabled nested host prepares the second project and nesting modules",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await hostFixture({pool: "dir"});
+    try {
+      f.write({...f.instances, nested: {project: "orbit-instances-nested", config: {"security.nesting": "true"}}});
+      const result = await f.run();
+      assert(result.ok, result.output);
+      const state = f.state();
+      assertEquals(state.projects.map((row: {name: string}) => row.name), ["orbit-instances", "orbit-instances-nested"]);
+      assert(!("restricted.containers.nesting" in state.projects.find((row: {name: string}) => row.name === "orbit-instances").config));
+      assertEquals(Object.fromEntries(Object.entries(state.projects.find((row: {name: string}) => row.name === "orbit-instances-nested").config).filter(([key]) => ["restricted.containers.nesting", "restricted.containers.interception", "restricted.containers.lowlevel", "restricted.containers.privilege", "limits.virtual-machines"].includes(key))), {
+        "restricted.containers.nesting": "allow", "restricted.containers.interception": "allow", "restricted.containers.lowlevel": "allow", "restricted.containers.privilege": "isolated", "limits.virtual-machines": "0",
+      });
+      assertEquals(Deno.readTextFileSync(`${f.folder}/modules-load/orbit-instances.conf`), "wireguard\noverlay\nbr_netfilter\n");
+      assert(f.calls().some(args => args.includes("orbit-instances-nested")));
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "a changed shared folder restarts running normal and nested runtimes before clearing its marker",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await hostFixture({pool: "dir"});
+    try {
+      const state = f.state();
+      state.instances = [
+        {project: "orbit-instances", name: "instance-7", status: "Running"},
+        {project: "orbit-instances-nested", name: "instance-8", status: "Running"},
+        {project: "orbit-instances-nested", name: "instance-9", status: "Stopped"},
+        {project: "unrelated", name: "other", status: "Running"},
+      ];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      // Existing versions let this case exercise only the real refresh and restart path.
+      for (const folder of Object.values(f.instances.folders)) {
+        Deno.mkdirSync(`${folder.path}/aaaaaaaaaaaa`, {recursive: true});
+        Deno.mkdirSync(`${folder.path}/${folder.version}`, {recursive: true});
+        Deno.symlinkSync("aaaaaaaaaaaa", `${folder.path}/current`);
+      }
+      f.write({...f.instances, runtime_projects: ["orbit-instances", "orbit-instances-nested", "not-created-yet"]});
+      Deno.writeTextFileSync(`${f.folder}/play.yml`, stringify([{
+        hosts: "localhost", gather_facts: false,
+        tasks: [{"ansible.builtin.include_tasks": "tasks/instance-folder.yml",
+          loop: "{{ instances.folders | dict2items }}", loop_control: {loop_var: "shared"},
+          vars: {folder_name: "{{ shared.key }}", folder: "{{ shared.value }}"}}],
+      }]));
+      const result = await f.run();
+      assert(result.ok, result.output);
+      assertEquals(f.state().folder_restarts, ["orbit-*.service", "t3.service"].flatMap(unit => [
+        {project: "orbit-instances", name: "instance-7", unit, marked: true},
+        {project: "orbit-instances-nested", name: "instance-8", unit, marked: true},
+      ]));
+      for (const folder of Object.values(f.instances.folders)) {
+        assert(!f.has(`opt/${folder.path.split("/").at(-1)}/.restart`));
+        assertEquals(Deno.readLinkSync(`${folder.path}/current`), folder.version);
+      }
+      const again = await f.run();
+      assert(again.ok, again.output);
+      assert(/changed=0/.test(again.output), again.output);
+      assertEquals(f.state().folder_restarts.length, 4);
+    } finally { f.cleanup(); }
   },
 });
