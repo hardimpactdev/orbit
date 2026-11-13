@@ -185,7 +185,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 2270
+cost = 2432
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -194,15 +194,17 @@ after_merge_cases = [
   "only a switched-on host prepares the nested project, its profile and the nesting modules",
 ]
 # Completed Deno case times rounded up by one second; startup is added per slice.
-# Every retained case cost comes from hosted run 43424152963, one case per slice.
-# 50 slices give each of the 50 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 50
+# Every retained case cost comes from hosted run 43424152963, one case per slice, except the seven Club key estimates below.
+# 57 slices give each of the 57 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 57
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance-container.yml",
+  "swamp/ansible/instance_nested_club_key.sh",
+  "swamp/ansible/tasks/instance-nested-club-key.yml",
   "swamp/ansible/instance_bridge.py",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/instance_nested.py",
@@ -272,6 +274,13 @@ inputs = [
   "the nested clone probe refuses a profile with an extra share key before it starts" = 54 # completed unit 58.4s less 6s startup, rounded up, plus 1s; hosted run 43424152963
   "a changed shared folder restarts running normal and nested runtimes before clearing its marker" = 17 # completed unit 21.3s less 6s startup, rounded up, plus 1s; hosted run 43424152963
   "a changed shared folder on a normal Node runs main's list and restart command lines" = 16 # completed unit 20.5s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a nested-fleet create and deploy start deliver the Club key into /run by stdin; no call, output, result, snapshot or copy holds it" = 46 # ESTIMATE: local 21s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "a stopped nested-fleet container loses the key with its /run, and the deploy start delivers it again" = 27 # ESTIMATE: local 12s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "a nested-fleet start without the vault copy starts the container without the key" = 16 # ESTIMATE: local 7s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "a nested-fleet start refuses the key transfer by name, before it reads the value: kept remote files" = 10 # ESTIMATE: local 4s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "a nested-fleet start refuses the key transfer by name, before it reads the value: pipelining turned off" = 10 # ESTIMATE: local 4s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "a nested-fleet start refuses a /run that is not a tmpfs, before it reads the value" = 12 # ESTIMATE: local 5s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "a normal container's create and deploy start run no Club key task and no Club key command" = 41 # ESTIMATE: local 19s x 2.1, rounded up, plus 1s; no hosted measurement yet
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_test.ts"
@@ -1698,12 +1707,13 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 48
+cost = 62
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/instance_nested.py",
+  "swamp/ansible/instance_nested_club_key.sh",
   "swamp/ansible/instance_node_services.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
@@ -1729,7 +1739,6 @@ inputs = [
   "test_clone_uses_the_admitted_common_acl_name" = 2
   "test_clone_refuses_unsafe_effective_nics_before_start" = 2
   "test_normal_clone_uses_the_exact_original_checker_program_and_argv" = 2
-  "test_nested_clone_refuses_inherited_raw_keys_and_extra_devices_before_start" = 2
   "test_guest_and_node_command_names_stay_in_sync" = 2
   "test_preserves_only_the_guest_command_and_exit_code" = 2
   "test_rejects_private_or_mismatched_guest_diagnostics" = 2
@@ -1740,6 +1749,14 @@ inputs = [
 
   "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement" = 2
   "test_clone_target_failure_receipt_keeps_public_identity_and_bounds_tool_output" = 2
+  "test_clone_of_a_default_with_a_node_service_target_strips_it_on_the_first_try_and_on_a_retry" = 2
+  "test_delivers_the_key_only_as_the_scripts_stdin_after_the_tmpfs_check" = 2
+  "test_names_a_failed_delivery_without_its_output" = 2
+  "test_nested_clone_starts_only_with_exactly_the_written_config_and_devices" = 2
+  "test_nested_guard_admits_the_live_shape_of_the_first_nested_container" = 2
+  "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value" = 2
+  "test_refuses_without_a_vault_copy_or_value_and_runs_nothing" = 2
+  "test_the_same_key_changes_nothing" = 2
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_native_faults_test.ts"
