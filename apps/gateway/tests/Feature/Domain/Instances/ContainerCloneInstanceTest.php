@@ -758,8 +758,9 @@ ENV;
     expect($file)->toBe(collect($vault->puts)->firstWhere('key', 'instance-create-environment-input-'.$operation->id)['value']);
     // The clone's Route URL is its own; the default's file keeps the rest, APP_KEY included.
     expect($workspace['merge']['own'])->toContain('APP_URL')->not->toContain('APP_KEY');
-    // A copied value on one of the default's Route hosts moves to the clone's Route host; only host names travel, no .env value.
-    expect($workspace['merge']['hosts'])->toBe(['from' => ['docs.tool.test', 'tool.test'], 'to' => $domain])
+    // A copied value on one of the default's own Route hosts moves to the clone's Route host; a Route with a web root serves
+    // other content and stays. Only host names travel, no .env value.
+    expect($workspace['merge']['hosts'])->toBe(['from' => ['tool.test'], 'to' => $domain])
         ->and($operation->input['environment_clone']['hosts'])->toBe($workspace['merge']['hosts']);
 });
 
