@@ -928,6 +928,7 @@ A task of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setti
 
 | Part | Rule |
 | --- | --- |
+| Source | The Project's default Instance, active with a seed, whose container runs: `task:start` reads it once before it admits the copy, because the power record can be stale |
 | Cap | `ORBIT_TASKS_COPIES_MAX` in the Gateway's `.env`, default 1: the task copies one Node holds at once. A start over it fails with `tasks.copy_capacity_full`, with no wait |
 | Model key | The copy's agent gets the fixed task model key, as every clone does. It is not per task. Per-task model keys are an open decision |
 | Failed create | The task is `failed`, and Orbit destroys the copy with force. A refused start or a cancel before the run counts too |

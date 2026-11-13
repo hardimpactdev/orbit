@@ -13,8 +13,10 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Instances\ContainerWorkspaceRead;
 use App\Models\Instance;
 use App\Models\Operation;
+use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +28,7 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class TaskCopyStart
 {
-    public function __construct(private OperationIdempotency $idempotency) {}
+    public function __construct(private OperationIdempotency $idempotency, private ContainerWorkspaceRead $read) {}
 
     /** A retry with the request's Idempotency-Key replays the same create: the key moves to the create's own kind. */
     public function start(Task $group, string $caller, ?string $request): Operation
@@ -47,6 +49,7 @@ final readonly class TaskCopyStart
         if ($project->source_facts_captured_at === null && $project->source_access !== ProjectSourceAccess::GhCli) {
             app(CaptureProjectSourceFactsAction::class)->execute($project);
         }
+        $this->assertDefaultRuns($project);
 
         return DB::transaction(function () use ($group, $caller, $request): Operation {
             $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
@@ -77,6 +80,25 @@ final readonly class TaskCopyStart
 
             return $operation;
         });
+    }
+
+    /**
+     * The default's container must run now. Its power record can be stale, for example after a stop by hand, so one bounded read of the
+     * container (ContainerWorkspaceRead, at most about 6 s) decides before the transaction. A stopped, asleep or unreachable container
+     * refuses. A timeout does not: the reader first sees the container run, then may run out of time on its Git work. A missing default
+     * or runtime is refused inside the transaction.
+     */
+    private function assertDefaultRuns(Project $project): void
+    {
+        $default = Instance::query()->with('node')->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)->first();
+        if ($default === null || ! $default->runtime()->exists()) {
+            return;
+        }
+        $read = $this->read->read($default);
+        if ($read['state'] === 'unknown' && in_array($read['reason'], ['stopped', 'asleep', 'unreachable'], true)) {
+            throw new ResourceOperationException('tasks.copy_source_unavailable',
+                "Project [{$project->slug}] has no running default Instance with a seed snapshot to copy.", 409, details: ['default' => $read['reason']]);
+        }
     }
 
     /** The task copies on the Node now: every Instance with a container that a task group owns, also one that is failing or being destroyed. */

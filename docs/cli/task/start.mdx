@@ -19,7 +19,7 @@ Orbit refuses the start at once and records nothing in these cases:
 
 | Code | When |
 | --- | --- |
-| `tasks.copy_source_unavailable` (409) | The default Instance is missing, not active, stopped, or has no seed snapshot |
+| `tasks.copy_source_unavailable` (409) | The default Instance is missing, not active, stopped, or has no seed snapshot. One read of its container, at most about 6 s, confirms that it runs, whatever its record says: a stopped, asleep or unreachable container refuses |
 | `tasks.copy_name_taken` (409) | An Instance named `task-<id>` exists |
 | `tasks.copy_capacity_full` (409) | The default's Node holds as many task copies as the Gateway allows. There is no wait |
 
