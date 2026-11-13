@@ -501,6 +501,24 @@ class MigrationGitStateTest(unittest.TestCase):
             self.state['import_state'](self.target, self.manifest, self.pack)
         self.assertEqual(calls, 2)
 
+    def test_fsck_roots_include_older_stash_reflog_entries(self):
+        self.stash(1)
+        old = self.command(self.source, 'rev-parse', 'refs/stash').strip().decode()
+        self.stash(2)
+        self.carry()
+        unpacked = self.folder / 'unpacked-stashes'
+        unpacked.mkdir()
+        subprocess.run(['git', '-C', str(self.target), 'unpack-objects'], input=self.pack.read_bytes(),
+                       env={**self.environment, 'GIT_OBJECT_DIRECTORY': str(unpacked)}, check=True, capture_output=True)
+        objects = self.target / '.git/objects'
+        shutil.copytree(unpacked, objects, dirs_exist_ok=True)
+        for path in (objects / 'pack').iterdir():
+            path.unlink()
+        (objects / old[:2] / old[2:]).unlink()
+        self.assertEqual(self.state['snapshot'](self.source), self.state['snapshot'](self.target))
+        with self.assertRaisesRegex(self.state['GitStateError'], 'instance.migrate_git_objects_incomplete'):
+            self.state['import_state'](self.target, self.manifest, self.pack)
+
     def test_missing_off_branch_tree_requires_fsck_even_on_identical_snapshot(self):
         self.command(self.source, 'checkout', '--quiet', '-b', 'off-main')
         (self.source / 'off-main').write_text('only on another local branch')

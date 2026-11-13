@@ -179,7 +179,7 @@
   block:
     - name: Read checkout symlinks
       ansible.builtin.command:
-        argv: ["python3", "-", "{{ migrate.checkout }}", "--predict-copy"]
+        argv: ["python3", "-I", "-", "{{ migrate.checkout }}", "--predict-copy"]
         expand_argument_vars: false
         stdin: "{{ migrate_links_script }}"
       register: migrate_links_read
@@ -357,7 +357,7 @@
   block:
     - name: Export local Git state without changing the source
       ansible.builtin.command:
-        argv: [python3, '-', "{{ migrate.checkout }}", export, "{{ node_archive }}", "--branch", "{{ migrate.branch }}"]
+        argv: [python3, "-I", '-', "{{ migrate.checkout }}", export, "{{ node_archive }}", "--branch", "{{ migrate.branch }}"]
         stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_git.py') }}"
       register: migrate_git_export
       no_log: true
@@ -371,7 +371,7 @@
         quiet: true
     - name: Archive the file overlay and directories absent from the Git checkout
       ansible.builtin.command:
-        argv: ["python3", "-", "{{ migrate.checkout }}", "--archive-prefix", "{{ node_archive }}"]
+        argv: ["python3", "-I", "-", "{{ migrate.checkout }}", "--archive-prefix", "{{ node_archive }}"]
         expand_argument_vars: false
         stdin: "{{ migrate_links_script }}"
       environment:
@@ -381,7 +381,7 @@
       changed_when: true
     - name: Count archived untracked leaves that Git does not ignore
       ansible.builtin.command:
-        argv: [python3, '-', "{{ node_archive }}.tar", "{{ node_archive }}.counted"]
+        argv: [python3, "-I", '-', "{{ node_archive }}.tar", "{{ node_archive }}.counted"]
         stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_files.py') }}"
       register: migrate_untracked_count
       changed_when: false
@@ -403,7 +403,7 @@
       changed_when: true
     - name: Recheck the source snapshot before verifying the copy
       ansible.builtin.command:
-        argv: [python3, '-', "{{ migrate.checkout }}", check-source, "{{ node_archive }}.git.json"]
+        argv: [python3, "-I", '-', "{{ migrate.checkout }}", check-source, "{{ node_archive }}.git.json"]
         stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_git.py') }}"
       register: migrate_git_source
       no_log: true
@@ -416,7 +416,7 @@
         quiet: true
     - name: Import and verify all local Git state before path rewrites
       ansible.builtin.command:
-        argv: "{{ as_orbit + ['python3', '-', container.workspace, 'import', container_archive ~ '.git.json', container_archive ~ '.git.pack'] }}"
+        argv: "{{ as_orbit + ['python3', '-I', '-', container.workspace, 'import', container_archive ~ '.git.json', container_archive ~ '.git.pack'] }}"
         stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_git.py') }}"
       register: migrate_git_import
       no_log: true
@@ -431,7 +431,7 @@
     # Inspect and rewrite the actual copy, including bundle-only links. No link name or target crosses Incus's JSON argv.
     - name: Check and rewrite links inside the copied workspace
       ansible.builtin.command:
-        argv: "{{ as_orbit + ['python3', '-', container.workspace, '--old-checkout', migrate.checkout, '--rewrite'] }}"
+        argv: "{{ as_orbit + ['python3', '-I', '-', container.workspace, '--old-checkout', migrate.checkout, '--rewrite'] }}"
         expand_argument_vars: false
         stdin: "{{ migrate_links_script }}"
       register: migrate_links_read
@@ -447,7 +447,7 @@
     - name: Restore the added directories' exact modes including special bits
       ansible.builtin.command:
         argv: >-
-          {{ as_orbit + ['python3', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py'),
+          {{ as_orbit + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py'),
               container.workspace, '--restore-directories'] }}
         expand_argument_vars: false
         stdin: "{{ (migrate_archive.stdout | from_json).directory_modes }}"

@@ -111,7 +111,7 @@
       changed_when: false
     - name: Read staged and unstaged tracked changes
       ansible.builtin.command:
-        argv: [python3, '-', "{{ retired.path }}", guards]
+        argv: [python3, "-I", '-', "{{ retired.path }}", guards]
         stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_git.py') }}"
       register: retirement_status
       changed_when: false

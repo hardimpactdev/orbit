@@ -1711,6 +1711,11 @@ Deno.test({
   fn() {
     const f = fixture("default", true);
     try {
+      const shadow = f.folder + "/untrusted-python-module-ran";
+      Deno.writeTextFileSync(f.checkout + "/json.py", `from pathlib import Path
+Path(${JSON.stringify(shadow)}).write_text("executed")
+raise RuntimeError("untrusted checkout module")
+`);
       const prepared = f.run(["container", "quiesce", "workspace"]);
       assert(prepared.ok, prepared.output);
       const before = gitFiles(f.apps);
@@ -1729,6 +1734,7 @@ Deno.test({
       const copied = f.run("files");
       assert(!copied.ok, copied.output);
       assertEquals(f.result().error_code, "instance.migrate_git_state_mismatch");
+      assert(!exists(shadow), "the receiver imported a repository-controlled Python module");
       assertEquals(gitFiles(f.apps), before);
       const restored = f.run("restore");
       assert(restored.ok, restored.output);

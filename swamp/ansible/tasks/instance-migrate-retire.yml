@@ -50,7 +50,7 @@
 - name: Recheck the moved source snapshot immediately before retirement
   when: retired.path == migrate.checkout and (retired_worktree | bool or retired_repository | bool)
   ansible.builtin.command:
-    argv: [python3, '-', "{{ retired.path }}", check-source, "{{ node_archive }}.git.json"]
+    argv: [python3, "-I", '-', "{{ retired.path }}", check-source, "{{ node_archive }}.git.json"]
     stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_git.py') }}"
   register: retirement_snapshot
   no_log: true
