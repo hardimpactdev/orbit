@@ -1256,6 +1256,7 @@ export function createDemoGateway() {
             started_at: null,
             finished_at: null,
             overdue_since: null,
+            ready_at: null,
             // The demo has no worker to wait for, so the page reads again at once.
             poll_after_seconds: 0,
             capacity_wait: null,

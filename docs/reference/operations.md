@@ -228,7 +228,7 @@ Every operation has the same fields, whatever its kind.
 | `created_at`, `started_at`, `finished_at` | ISO 8601 times. `started_at` is the first start |
 | `poll_after_seconds` | How long a polling client waits before its next read, or null once terminal. [Follow an operation by polling](#follow-an-operation-by-polling) gives the values |
 | `capacity_wait` | For an Operation on a task group that waits for a task place: `operation_id`, `position` and `holders`, as [Task places](/reference/tasks#task-places) defines. Null otherwise |
-| `ready_at` | When a clone's create took its [ready mark](#ready-mark-of-a-clone-create), as an ISO 8601 time. Null for every other Operation and before the mark. It never changes after it is set |
+| `ready_at` | When a clone's create took its [ready mark](#ready-mark-of-a-clone-create), as an ISO 8601 time. Null for every other Operation and before the mark |
 
 A cancelled operation has an `error_code` only when a rollback superseded it: `operation.superseded`.
 
@@ -585,11 +585,10 @@ A container clone's create run can tell the Gateway that the clone is ready whil
 - The caller is the Operation's Node or the Swamp Node, else `operation.executor_forbidden` (403). `run_id` must be the run bound to the Operation, else `operation.run_unbound` or `operation.run_mismatch` (409).
 - Only the `instance.create` of a new container clone has the mark. Another Operation answers `operation.ready_forbidden` (403).
 - A terminal Operation answers `operation.finished` (409). A `t3` that does not prove a registered server answers `instance.result_invalid`.
-- Before its transaction, the Gateway reads the session from the vault and the [workspace baseline](/reference/development-containers#workspace-work-state) from the Node. The transaction makes no network call.
-- One transaction then records the T3 server through `InstanceLifecycleContribution::projectCreate()`, sets the runtime's `power_state` to `running` and sets `ready_at`.
-- The same transaction records the workspace baseline. It keeps a baseline that is already recorded.
-- The answer is `{"ready_at": "<time>"}`. A second call with the same body changes nothing and answers the same time.
-- A call that names another server replaces the record, as a terminal success would. `ready_at` keeps its first time.
+
+Before its transaction, the Gateway reads the session from the vault and the [workspace baseline](/reference/development-containers#workspace-work-state) from the Node. The transaction makes no network call. It records the T3 server through `InstanceLifecycleContribution::projectCreate()`, sets the runtime's `power_state` to `running` and sets `ready_at`. It records the workspace baseline too, but keeps a baseline that is already recorded. Conn's contribution stays loaded while Conn is off, so the mark of an admitted create still records its server.
+
+The answer is `{"ready_at": "<time>"}`. A second call with the same body changes nothing and answers the same time. A call that names another server replaces the record, as a terminal success would, and `ready_at` keeps its first time.
 
 The terminal success later records the same server again, and that changes nothing ([Instance servers](/reference/conn#instance-servers)). A failure after the mark keeps the server record.
 

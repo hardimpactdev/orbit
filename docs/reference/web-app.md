@@ -432,3 +432,5 @@ The removal deletes the Gateway's annotation records, revision counter, and anno
 Before deploying this removal, destroy all removed preset Processes through the old Gateway. The migration refuses to change data while any such Process remains and names its ID. This blocks the release before activation. The destructive migration requires a verified pre-migration database backup to restore removed data. Rollback restores empty annotation tables and the Task schema and defaults required by the previous release, not deleted records. See [retained Node files](/reference/node-provisioning#converge-the-orbit-footprint) for cleanup.
 
 Operation response types include nullable `overdue_since`, the [Gateway-expiry audit](/reference/operations). Demo and test Operations use null when no expiry was recorded.
+
+Operation response types include nullable `ready_at`, the [ready mark of a clone create](/reference/operations#ready-mark-of-a-clone-create). Demo and test Operations use null.
