@@ -33,7 +33,7 @@ Every command accepts `--json`. Machine output never supplies consent. Human lis
 
 Placement commands create, adopt, inspect, and remove an Instance on one Node. Instance names use lowercase letters, digits and hyphens, contain 1–63 characters, and start and end with a letter or digit. Conn checks the same format with its [name check](/reference/conn#threads-in-an-orbit-project). Its Project directory reports the shared read-only clone admission result before a name is chosen. A web Instance create also checks the [live certificate limit](/reference/routes#certificate-request-forms) before it starts an Operation.
 
-`instance:create`, `instance:clone`, `instance:transfer`, `instance:migrate`, and `instance:destroy` return an Operation. `instance:rename` records the branch at once from the Node agent's report and returns the Instance. `instance:register` returns the Instance at once when the checkout's `.env` is absent or private, and otherwise an Operation for the run that protects `.env`. The Gateway validates and records intent, then queues the native start. The API returns the Operation before that start runs. Swamp executes the work. The CLI follows the Operation and prints its final receipt in JSON mode. `--idempotency-key=KEY` retries the same admission without creating another Operation. Ctrl+C stops following; it leaves the Operation running. Use `operation:show` to read it again.
+`instance:create`, `instance:clone`, `instance:transfer`, `instance:migrate`, `instance:destroy`, `instance:restore`, `instance:sleep`, and `instance:wake` return an Operation. `instance:rename` records the branch at once from the Node agent's report and returns the Instance. `instance:register` returns the Instance at once when the checkout's `.env` is absent or private, and otherwise an Operation for the run that protects `.env`. The Gateway validates and records intent, then queues the native start. The API returns the Operation before that start runs. Swamp executes the work. The CLI follows the Operation and prints its final receipt in JSON mode. `--idempotency-key=KEY` retries the same admission without creating another Operation. Ctrl+C stops following; it leaves the Operation running. Use `operation:show` to read it again.
 
 | Command | Result |
 | --- | --- |
@@ -58,6 +58,8 @@ Placement commands create, adopt, inspect, and remove an Instance on one Node. I
 | [`instance:node-service:detach`](/cli/instance/node-service-detach) | Delete one attachment record, including after successful migration, and return a completed Operation without network, environment or runtime changes. |
 | [`instance:destroy`](/cli/instance/destroy) | Remove an Instance and its owned Processes, Schedules, and Route; refuse Git data needed by another worktree. |
 | [`instance:restore`](/cli/instance/restore) | Return a host development Instance to active after its removal failed, and serve its Route again. |
+| [`instance:sleep`](/cli/instance/sleep) | Stop one development container Instance until a visit or `instance:wake` starts it. |
+| [`instance:wake`](/cli/instance/wake) | Start a sleeping development container Instance and serve its Route again. |
 | [`instance:logs`](/cli/instance/logs) | Return the application log tail, or follow new lines. |
 
 `instance:migrate` reports `moved` and `restored` in its Operation result. Human output also shows the mailer outcome or advisory mail warning. A mail warning does not block cutover or retirement. A failure after cutover can leave the container serving.

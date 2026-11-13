@@ -389,7 +389,7 @@ It runs `config:cache` locally into a temporary file, sets mode `0600`, then ren
 
 ## Automatic releases
 
-The Gateway scheduler runs `gateway:release:auto` every five minutes through `GatewaySchedule::command`. PRs merge straight into main, so the merges of those five minutes go out in one release of the newest green commit. With the [Gateway queue](/reference/gateway-queue#scheduled-work) configured, each tick is a queued job. It looks for the newest green commit and admits a Swamp run. Automatic releases are disabled by default. Turn them on after the Gateway runs from the [release layout](#release-layout) and a first manual release succeeds.
+The Gateway scheduler runs `gateway:release:auto` every five minutes through `GatewaySchedule::command`. PRs merge straight into main, so the merges of those five minutes go out in one release of the newest green commit. With the [Gateway queue](/reference/gateway-queue#scheduled-work) configured, each tick is a queued job. It looks for the newest green commit and admits a Swamp run. Automatic releases are disabled by default, and they are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet). Turn them on after the Gateway runs from the [release layout](#release-layout) and a first manual release succeeds.
 
 Every release also admits the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of each task VM host, from its step "Admit VM refreshes", after verification succeeds and Start Horizon finishes. Refresh admission failure never fails the release; the release waits for admission only, while the refresh runs separately. A refresh that is open on a host keeps running, and the newest commit waits behind it.
 
@@ -701,6 +701,8 @@ The Gateway reads a running release's result from its Swamp run. An interrupted 
 A fleet rollout visit does not set `updating`. Its progress is in the Operation and its Swamp run.
 
 ## Fleet reboot
+
+The nightly admission is [off in the live fleet](/reference/old-paths#off-in-the-live-fleet): the live Gateway sets `ORBIT_FLEET_REBOOT=false`.
 
 Every night, Swamp reboots the managed Linux Nodes that need it into their kernel and library fixes, one at a time, after it drained their work ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)). The Nodes install the fixes themselves through their [update policy](/reference/node-provisioning#update-policy); the pass only reboots. Each pass is one `fleet.reboot` Operation and its Swamp run. Read them with [`operation:list --kind=fleet.reboot`](/cli/operation/list) and [`operation:show`](/cli/operation/show).
 

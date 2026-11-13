@@ -39,7 +39,7 @@ In a terminal, an omitted commit is asked for with a text prompt. A noninteracti
 
 The command takes the commit and nothing else. The calling Node needs an access grant to the Gateway Node. Continuous integration calls it for every change to command code; see [the proof CI](/reference/feature-flow#the-proof-ci).
 
-Built so far: the trust check, the case selection, the run in a task VM and the verdict of each case. The CI job `proof-run` is part of Required checks. A failed case or missing verdict fails it. Capacity waits never pass as a proof. Not built yet: the receipt store.
+Built so far: the trust check, the case selection, the run in a task VM and the verdict of each case. The CI job `proof-run` is part of Required checks. Today it starts no proof: the repository variable `ORBIT_PROOF_ENABLED` is unset ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)). A failed case or missing verdict fails it. Capacity waits never pass as a proof. Not built yet: the receipt store.
 
 The CI wrapper waits up to 270 minutes, covering the two-hour admission budget and two-hour execution budget with 30 minutes of margin. Its Actions jobs allow 275 minutes. See [CI time budgets](/reference/implementation-loop) for the separate fast-check limits.
 

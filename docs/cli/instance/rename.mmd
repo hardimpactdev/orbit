@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: docs/cli/instance.mdx#orbit-instancerename, ADR 0244, R1 record-only; read-only rule (Nick 2026-11-02): the Gateway checks the Node agent's checkout facts, like instance:register.
+  %% Target design: docs/cli/instance/rename.mdx, ADR 0244, R1 record-only; read-only rule (Nick 2026-11-02): the Gateway checks the Node agent's checkout facts, like instance:register.
   %% Tightened: flow-tighten 2026-11-02, rule 5 (its own example: rename records the branch the Node agent reported, with no run).
   %% Decided: Nick 2026-11-02, this chart is the ideal record-only flow. Implemented in the observer pass (agent 0.7.0, 2026-11-03).
   %% status: reviewed

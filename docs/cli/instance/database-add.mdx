@@ -38,6 +38,8 @@ An add that would change or remove a key that is already stored is refused with 
 
 `--shared` marks a mysql or pgsql connection that every copy of the Instance may use, such as a read-only catalogue. A container clone then gets the same attachment, its keys in `.env` and the network path to it. A destroy of the clone leaves the connection alone. The mark acts on container clones only. See [Share a connection with clones](/reference/database-connections#share-a-connection-with-clones). A change of the mark alone counts as a change. Passing both flags is refused with `database.shared_flags_conflict` and sends no request.
 
+[`instance:show`](/cli/instance/show) does not show the shared mark yet.
+
 The Instance must be active, and its placement and Route must be usable (`env.owner_unavailable`). An Instance without a recorded source profile is refused with `instance.source_profile_missing`, and a stored configuration that would be invalid with the new keys, for example more keys than the limit, with `env.configuration_invalid`.
 
 The command prints a detail titled `Database connection [<slug>] added to Instance [<id>].` with Instance ID, Slug, Prefix, Keys (the key names written), Host and Port (`—` for sqlite), Operation (`attach`), Changed, Stored keys (the number of keys the Instance holds afterwards), `Workload file: unchanged` and the request ID. With `--json`, stdout holds `instance_id`, `slug`, `prefix`, `keys`, `host`, `port`, `operation`, `changed`, `key_count` and `request_id`.

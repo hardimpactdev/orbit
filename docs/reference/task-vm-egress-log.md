@@ -67,7 +67,7 @@ A kernel without `/proc/net/nf_conntrack` is the reason for the `nftables` rule.
 
 ## Running the host part
 
-The host part is built. It is the tag `egress-log` of `swamp/ansible/task-vm-host.yml`. The [base snapshot refresh](/reference/compute-drivers#refresh-the-base-snapshot) runs it as its first step, `Log egress`, in a job of its own. Every task VM host therefore gets it after a release that changed the playbooks, in the daily refresh at 03:20, and with `task-vms:refresh-image <host>`.
+The host part is built. It is the tag `egress-log` of `swamp/ansible/task-vm-host.yml`. The [base snapshot refresh](/reference/compute-drivers#refresh-the-base-snapshot) runs it as its first step, `Log egress`, in a job of its own. Every task VM host therefore gets it after a release that changed the playbooks, in the daily refresh at 03:20, and with `task-vms:refresh-image <host>`. While every host holds the image refresh ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)), no host gets it this way.
 
 The step runs before the base is touched. Only a safety check fails the refresh: rules that do not load, a bridge with IPv6, or an ACL that lost its drop rule. Every other check prints a warning with its code in the Swamp run log, and the refresh goes on, because a log-only failure must not block the base refresh. A failure of the host itself still fails the part: Incus down, SSH lost, or `nft` missing. [Log task VM egress](/reference/compute-drivers#log-task-vm-egress) lists the checks. The part writes these files on the host:
 

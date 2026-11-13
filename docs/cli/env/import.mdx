@@ -18,6 +18,8 @@ Swamp reads the file through official SSH, stores its private bytes in a one-sho
 
 Without `--replace`, a file key that is already stored fails the Operation with `env.import_conflict`, and nothing is stored. For a Laravel Instance, import stores `APP_URL` as `https://{{instance.domain}}`.
 
+An Instance in a container is refused with `operation.kind_unavailable`: import reads a file from a checkout on the Node.
+
 ```bash
 orbit env:import --instance=12
 orbit env:import --instance=shop.example.test --replace

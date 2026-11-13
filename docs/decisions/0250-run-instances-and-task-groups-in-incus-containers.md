@@ -196,7 +196,7 @@ Task work is the critical path. The Swamp migration waits until step 6 passes, a
 - Isolation between tasks, and between Projects, on one Node relies on the kernel. An escape from one container reaches the others.
 - Task agents lose `incus exec` into a host; with a nested fleet they keep full control of their own fleet.
 - Docker inside nested containers runs without its own AppArmor profile.
-- Each running Instance container costs about 400 MB for its T3 server before any agent runs. Development containers stop after an hour idle, and a wake takes about 3 s.
+- Each running Instance container costs about 400 MB for its T3 server before any agent runs. Development containers stop after an hour idle, and a wake takes about 3 s. (Amended 2026-11-13: the idle stop is planned; only `instance:sleep` stops a container. A measured wake through Orbit takes about 9 to 12 s.)
 - A new Instance starts at the default Instance's commit and data. A template copy of the default database briefly refuses the default Instance's connections.
 - The default Instance cannot be destroyed while it has clones.
 - Containers reach neither the Gateway nor any other private service, and hold no GitHub credentials. Orbit moves Git branches in and out from the host. Containers and nested test Nodes reach the public internet only through the Orbit egress proxy.

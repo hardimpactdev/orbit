@@ -4,7 +4,7 @@ sidebarTitle: "Overview"
 description: "Prove commands in a disposable test fleet on a VM, and report a verdict for each case."
 ---
 
-The `proof` family runs the verification cases of Orbit commands. [`proof`](/cli/proof/proof) runs them on the nested fleet of your own task VM. [`proof:run`](/cli/proof/run) builds a fresh test fleet in a VM, runs the cases of the commands that a commit changes with the CLI built from that commit, and reports a verdict for each case. Continuous integration uses it as a required check; see [the proof CI](/reference/feature-flow#the-proof-ci). The family belongs to the [tasks extension](/reference/tasks).
+The `proof` family runs the verification cases of Orbit commands. [`proof`](/cli/proof/proof) runs them on the nested fleet of your own task VM. [`proof:run`](/cli/proof/run) builds a fresh test fleet in a VM, runs the cases of the commands that a commit changes with the CLI built from that commit, and reports a verdict for each case. Continuous integration can run it as a required check; see [the proof CI](/reference/feature-flow#the-proof-ci). Proof CI and task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet). The family belongs to the [tasks extension](/reference/tasks).
 
 ## Commands
 

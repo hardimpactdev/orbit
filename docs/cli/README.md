@@ -190,7 +190,7 @@ In every workflow, write each fixed `behaviorName` as a constant expression, for
 
 One behavior has one lock, and differing global arguments rewrite its definition. Steps that share a name take turns. A step that waits for the lock fails after 60 seconds (`SWAMP_LOCK_TIMEOUT_MS`). Swamp refuses a second type under one name, and it refuses a name with other characters when the step runs. With the dot rule, `10.44.0.2` becomes `10-44-0-2`. The run id, the index and integer ids need no wrapping.
 
-The Swamp shape job runs `bin/lint-behavior-names.ts`. It rejects a workflow that has more per-run names than at the comparison base, any name that Swamp would refuse, and a name used with two behavior types.
+The Swamp shape job runs `swamp/bin/lint-behavior-names.ts`. It rejects a workflow that has more per-run names than at the comparison base, any name that Swamp would refuse, and a name used with two behavior types.
 
 ## Designing a command
 

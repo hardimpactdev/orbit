@@ -712,7 +712,7 @@ That list holds the methods that only read, or that write only Swamp data, each 
 
 Every audited step declares `writes: true` or has a step entry in the same file: read-only, idempotent or unreviewed. A check that runs over SSH leaves transport files on the worker, so it is idempotent rather than read-only. The unreviewed count is pinned, so a rise shows in the diff. The audit joins shell continuation lines before checking commands. Commands built from step outputs and effects inside playbooks still need a manual check.
 
-`instance.transfer_discard` uses only `operation-instance-lifecycle-direct`; it has no executor claim/run registration or polled discovery entry. `instance:rename` starts no Operation: the Gateway records the branch from the Node agent's checkout report.
+`instance:rename` starts no Operation: the Gateway records the branch from the Node agent's checkout report.
 
 Prove each kind end to end on a dev or canary target. Its takeover PR changes the writer and deletes the replaced Gateway path and execution tests together. Rollback is a revert PR. Admitted Operations retain their writer. Scoped workflow grants and token custody require review before activation; extending one family's run grant to another workflow is not implicit.
 

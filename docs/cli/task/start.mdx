@@ -9,7 +9,7 @@ orbit task:start <task> [--idempotency-key=KEY] [--json]
 
 Start the VM for a parent task in Todo. The task must use external orchestration and have no claimed workspace. Orbit admits the existing `tasks.provision` operation and returns its reference. The command follows that operation until it ends. It starts no subtask, check, turn, or publication.
 
-A task VM serves only the proof Project, because the base VM carries only its checkout. Orbit refuses a task of another Project at once with HTTP 409 `task_vm.project_unsupported` and records no Operation.
+Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet): every host has 0 task places, so no task VM starts. A task VM serves only the proof Project, because the base VM carries only its checkout. Orbit refuses a task of another Project at once with HTTP 409 `task_vm.project_unsupported` and records no Operation.
 
 Orbit first checks the Project's [`nested_fleet`](/reference/projects#nested-fleet-setting) flag. A task of a Project with the flag on is refused at once with HTTP 503 `operation.kind_unavailable`, also for the proof Project, and Orbit records no Operation.
 

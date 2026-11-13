@@ -9,6 +9,8 @@ covers:
 
 Check this page before you build on something. Each row is code that still runs, was not removed, and is replaced by a stage of the [command development pipeline](/reference/command-development-pipeline). Keep it and do not extend it. When its stage lands, delete it with its tests and remove the row. Code that is replaced and has no live caller is deleted, not listed here.
 
+[Off in the live fleet](#off-in-the-live-fleet) lists code that stays but does not run today.
+
 | Item | Replaced by | Removed at |
 | --- | --- | --- |
 | The `<name>-topology-seed` clone name in `TaskVmSlotRuns::seedClone` for VMs without a place number | Every start's VM has a place and a `<name>-seed` clone | When no VM of the old pool (`tvm-610`, `tvm-663`) is live |
@@ -24,3 +26,15 @@ The admission of `task:start` mints no GitHub token. The provision clone, the se
 `apps/agent/**` is being stripped to an observer: commands that nothing calls leave in small pull requests, and the rest leave with their Swamp ports.
 
 The capacity model replaces the shared CI reserve, `task_max_vms`, resource-unit admission and the `task:park` command. Hosts expose separate task and CI place counts. Publication deletes task VMs; later work claims a fresh VM. See [capacity](/reference/command-development-pipeline#capacity-ideal-state).
+
+## Off in the live fleet
+
+This section describes the live Orbit fleet, not the code. On 13 November 2026 these parts stay in the code but do not run:
+
+| Part | Comes back as |
+| --- | --- |
+| Task VMs (0 task places on every host) and their image refresh (held on every host) | Tasks that start from the Orbit container's snapshot |
+| Proof CI in a VM (the repository variable `ORBIT_PROOF_ENABLED` is unset) | Proof on a copy of that snapshot |
+| Automatic deploys of development Instances | One deploy per new commit, for container defaults only |
+| The nightly fleet reboot (`ORBIT_FLEET_REBOOT=false`) | The same pass, after one safe test |
+| Automatic Gateway releases (disabled; a manual deploy also pauses them) | The same tick, when the container path is stable |

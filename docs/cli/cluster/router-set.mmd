@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Decided by the orchestrator, for Nick's review (2026-11-06): only the Route-publish step of this run holds the Route-serving Nodes, for its seconds, through the Gateway's `route-hold` call; the rest of the run is not held (docs/reference/routes.md#coordinate-publication).
-  %% Target design: ADR 0244 task, DECISIONS 1 (cert signing is the one step→Gateway call), R2-R4. docs/reference/native-cluster-router.md, docs/cli/cluster.mdx.
+  %% Target design: ADR 0244 task, DECISIONS 1 (cert signing is the one step→Gateway call), R2-R4. docs/reference/native-cluster-router.md, docs/cli/cluster/index.mdx.
   %% Tightened: flow-tighten 2026-11-02, rules 17, 18, 22 (certificates installed in the publish step, as route:create does; cfgmgmt behaviors named).
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Node work of the site child is one Ansible phase (see route:create).
   %% status: draft

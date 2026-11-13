@@ -17,8 +17,8 @@ Orbit consists of these components. Each one lives in its own project in the rep
 | Swamp | `swamp/` | Applies state to Nodes. It runs the workflows the Gateway starts, reaches Nodes over SSH, and returns the result of each run to the Gateway. |
 | CLI | `apps/cli`, `packages/php-sdk` | A thin client for humans and agents. It calls the Gateway API and never connects to a Node. |
 | Web app | `apps/web`, `apps/desktop` | A static single-page app that reads the API and shows record changes live. The desktop app is a native shell around it. |
-| Node agent | `apps/agent` | A program on every Node that reports presence and Process state. It never changes a Node. |
-| pi-server | `apps/pi-server` | Runs Pi sessions for task agents on task VMs. Implementers and reviewers use this driver only. |
+| Node agent | `apps/agent` | A program on every Node that reports presence and Process state. It also runs the typed commands that the Gateway sends. |
+| pi-server | `apps/pi-server` | Runs Pi sessions for task agents on task VMs. Implementers and reviewers use this driver only. Task VMs are off in the live fleet today. |
 
 ## Trust
 
@@ -56,7 +56,7 @@ A role refuses a Node that holds a conflicting role. For example, the `gateway` 
 
 **Observation.** Node agents publish state to the `websocket` Node. The Gateway keeps a view of it, and the web app shows it live. [Doctor](/cli/doctor) compares the state the Gateway expects with each Node's actual state and reports every difference without changing anything.
 
-**Tasks.** With the Tasks extension enabled, the Gateway provisions a task workspace on an `app-dev` Node. It runs coding agents there one subtask at a time and checks each handoff with the Project's task check. At the end, it opens a pull request through the GitHub App. See [Tasks](/reference/tasks).
+**Tasks.** With the Tasks extension enabled, the Gateway provisions a task workspace on an `app-dev` Node. It runs coding agents there one subtask at a time and checks each handoff with the Project's task check. At the end, it opens a pull request through the GitHub App. See [Tasks](/reference/tasks). Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet), so no task group runs today.
 
 ## Data
 

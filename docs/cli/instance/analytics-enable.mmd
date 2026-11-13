@@ -22,7 +22,7 @@ sequenceDiagram
   GW->>SW: Copy the Plausible login<br/>to the vault
   %%> Why:
   %%> - the run gets the vault key name, never the credentials; a missing login stops the command before any task starts
-  GW->>SW: Start run, full intent<br/>operation-analytics-enable
+  GW->>SW: Start run, full intent<br/>operation-analytics-enable-direct
   GW-->>CLI: 202 Accepted<br/>task ID
   SW->>P: Converge the site<br/>@nckrtl/analytics-site · site
   %%> Why:

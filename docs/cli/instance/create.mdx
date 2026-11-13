@@ -49,7 +49,7 @@ A Project that serves no web pages has no Route and takes no `--domain` (`instan
 
 On a Node of the [build list](/reference/development-containers#the-build-list), the Project's first `default` Instance is a container, not a checkout ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd)). Orbit creates the container from the Node's image and fetches the default branch into a mirror on the Node. It pushes the branch in, writes `.env`, and runs the Project's [development deploy steps](/reference/deployments#development-deploy-steps) as `orbit`; there are no setup steps. Then it starts FrankenPHP, publishes the Route to it, and takes the first seed snapshot. A Project has one `default` in the fleet, and its other Instances are made on that `default`'s Node. [The default Instance](/reference/development-containers#the-default-instance) has the details and what a container default cannot run yet.
 
-Every other Instance of the Project is a clone of that `default` ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd)). Orbit copies the default's newest seed snapshot, a ZFS clone, and gives the copy its own address, ACL and T3 port. It clones the default's database on the same Database server, brings in the Instance's branch, and writes `.env`, the agent settings and `/etc/orbit/instance`. Then it starts FrankenPHP and T3, publishes the Route, and records the T3 server with the [Conn layer](/reference/conn#instance-servers). The branch is the matching origin branch, or a new branch at the seed's commit. [Create](/reference/development-containers#create) has the details.
+Every other Instance of the Project is a clone of that `default` ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd)). Orbit copies the default's newest seed snapshot, a ZFS clone, and gives the copy its own address, ACL and T3 port. It clones the default's database on the same Database server, brings in the Instance's branch, and writes `.env`, the agent settings and `/etc/orbit/instance`. The clone's `.env` is the default's, with the clone's own keys in place of the default's ([the environment of a clone](/reference/development-containers#the-environment-of-a-clone)); a connection that the default marks shared stays attached. Then it starts FrankenPHP and T3, publishes the Route, and records the T3 server with the [Conn layer](/reference/conn#instance-servers). The branch is the matching origin branch, or a new branch at the seed's commit. [Create](/reference/development-containers#create) has the details.
 
 A failed or cancelled create keeps its reservation, runtime, and any container, workspace, owned databases, test databases and role until the owner acts. A refused retry removes none of them. After work starts, Orbit attempts to stop the container and withdraw the Route. Compensation can fail; its step then stays failed. Shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live.
 
@@ -67,7 +67,7 @@ The API answers `202` with a queued Operation after recording the create, before
 | Another name without `--branch` | `<node-apps-root>/<project-slug>/<name>` | The matching origin branch, otherwise the existing local branch, otherwise a new branch from the fetched `default_branch` commit. |
 | Any name with `--branch` | The checkout for the requested name | The requested origin branch, otherwise the existing local branch, otherwise a new branch from the fetched `default_branch` commit. It need not match the Instance name. |
 
-An existing local branch is not reset. If the fetched `default_branch` is needed and missing, create fails with `instance.branch_resolution_failed`. An invalid Git branch name is refused with `validation.failed` before anything changes. When the name equals the default branch, the result carries `name_converted_from` with the requested name, and `--branch` keeps its meaning. See [a default-branch name means default](/domains/applications#a-default-branch-name-means-default).
+An existing local branch is not reset. If the fetched `default_branch` is needed and missing, create fails. An invalid Git branch name is refused with `validation.failed` before anything changes. When the name equals the default branch, the result carries `name_converted_from` with the requested name, and `--branch` keeps its meaning. See [a default-branch name means default](/domains/applications#a-default-branch-name-means-default).
 
 ## Repeat and failure
 
@@ -96,7 +96,6 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | `instance.database_server_existing` | `--database-server` was given for an Instance that finished its first setup. |
 | `instance.database_slug_taken` | The database connection name belongs to another owner. |
 | `instance.setup_step_failed`, `instance.setup_step_unavailable` | A setup step failed, or its command is missing. |
-| `instance.branch_resolution_failed` | The default branch could not be fetched. |
 | `operation.target_busy` | Another change to the Instance is running. |
 | `instance.default_missing` | The Project's `default` runs in a container on another Node, is not active or has no seed snapshot yet, or a build-list Node has no `default` of the Project yet. |
 | `instance.database_clone_unsupported` | The default's database cannot be cloned: a clone in a container names another Database server, or the database is not on a server. |
@@ -108,6 +107,7 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | `instance.nested_fleet_host_unavailable` | The Project has `nested_fleet` on, and the Node has nested-fleet hosting off. Orbit records nothing. See [Nested fleet setting](/reference/projects#nested-fleet-setting). |
 | `instance.nested_fleet_container_required` | The Project has `nested_fleet` on, and the result would not be a container: the Node is not on the build list, or the default is a host checkout. Orbit records nothing. |
 | `instance.nested_fleet_image_unavailable` | The Project has `nested_fleet` on, and the Node's last converge failed to build the nested-fleet image. The create of the default makes no container. Converge the Node again; see [The nested-fleet image](/reference/development-containers#the-nested-fleet-image). |
+| `instance.nested_club_key_unsafe_transfer`, `instance.nested_club_key_not_tmpfs`, `instance.nested_club_key_delivery_failed` | A nested-fleet clone could not get its Club key into `/run`. The workspace phase did not run. See [the Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway). |
 
 ## How it works
 

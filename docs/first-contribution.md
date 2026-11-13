@@ -123,6 +123,6 @@ Orbit's maintainers and Orbit's own agents do the following work. A person who c
 - Docs impact waivers in `.git/orbit/docs-unaffected/`. A reviewer confirms them for Orbit task branches.
 - The Incus review. Orbit's reviewer reproduces your change on Incus, so you do not need Incus machines.
 - The agent skills in `.agents/skills`. They guide an agent through the same steps as this page.
-- Root `composer check`. It runs `bin/review-check`, the gate that Orbit Tasks run at each handoff. CI's Project check runs the same gate. The root checks in step 5 still apply to you.
+- Root `composer check`. It runs `bin/review-check`, the gate that Orbit Tasks run at each handoff. CI does not run the Project check for now. The root checks in step 5 still apply to you.
 
 [Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology) explains why contributors do not run Incus.
