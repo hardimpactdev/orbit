@@ -964,7 +964,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_destroy_test.ts"
-cost = 12
+cost = 13
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (12s); these are estimates, not completed measurements.
 slices = 1
@@ -976,9 +976,12 @@ inputs = [
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/fixtures/instance-container-incus.ts",
+  "swamp/workflows/workflow-operation-instance-destroy.yaml",
 ]
 
 [fixture.case_costs]
+  "a normal destroy deletes the container over one pipelined SSH master with the shipped config" = 1
   "migrated container cleanup keeps retained Git while removing its container, volume, ACL, rules and mirror; a retry changes nothing" = 12 # CENSORED lower bound 6.893s, run 43010311414; not a completed measurement
 
 [[fixture]]
