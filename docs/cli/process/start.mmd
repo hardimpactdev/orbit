@@ -27,7 +27,7 @@ sequenceDiagram
   Note over GW: Validate, record the task<br/>Process 417: provisioning · #5130
   %%> Requirements:
   %%> - your Node has an access grant to the Node that runs Process 417
-  %%> - Process 417 exists and is not being removed
+  %%> - Process 417 exists and is not being removed; a container Process whose definition the Project removed refuses `process.removing` until the default's next deployment removes it
   %%> - a production Process's release is checked against the recorded releases, not on the Node
   %%> Result:
   %%> - task #5130 recorded with the full intent: unit or container name, runtime, on-demand flag, Vite plan

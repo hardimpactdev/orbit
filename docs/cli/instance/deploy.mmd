@@ -29,6 +29,9 @@ sequenceDiagram
     %%> - reads the requested commit, or the default branch head once; freezes that SHA for the run
     %%> - checks the Instance migration before reading; reads outside the write transaction; admission rechecks migration, source configuration and idempotency
     %%> - capture or classification failure refuses admission; see /reference/deployments#container-source-facts
+    Note over GW: Mark removed Processes<br/>status removing
+    %%> What it does:
+    %%> - a Process whose development definition the Project removed is marked `removing` and leaves the run's units; a definition added again under its name replaces it
   end
   Note over GW: Validate, freeze intent<br/>Instance 42 locked · task #5150
   %%> Requirements:
@@ -117,6 +120,7 @@ sequenceDiagram
     SW->>N: Install the Processes<br/>Ansible · tags processes
     %%> What it does:
     %%> - writes changed `orbit-*` units and new environment files from the vault, removes former ones, and restarts the changed units
+    %%> - stops and removes the units and environment folders of the Processes the run does not own, such as those marked `removing`
     %%> - enables and starts each running unit and waits for it; on failure the detail names the unit that is not active
     %%> - the seed snapshot then restarts every running Process on the new commit
     opt nested-fleet default
@@ -252,6 +256,7 @@ sequenceDiagram
     Note over GW: Record the deployment<br/>release, commit · task succeeded
     %%> Result:
     %%> - deployment 88 succeeds with its release and commit
+    %%> - a container default deletes the Processes marked `removing` and names them in the result's `processes_removed`; a failed run keeps them `removing`
     %%> - task #5150 succeeds
   else a required step fails
     N--xSW: exit ≠ 0 or timeout
