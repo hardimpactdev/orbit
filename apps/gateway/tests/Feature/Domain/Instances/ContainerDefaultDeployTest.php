@@ -292,12 +292,37 @@ it('removes a Process whose definition the Project removed at the next passed de
         ->and($mailer->refresh()->status)->toBe(LifecycleStatus::Removing)
         ->and($failed->result)->not->toHaveKey('processes_removed')
         ->and(processAdmissionError(fn () => app(ProcessOperationAdmission::class)->execute($mailer, 'start')))->toBe('process.removing')
-        ->and(processAdmissionError(fn () => app(ProcessOperationAdmission::class)->execute($mailer, 'restart')))->toBe('process.removing');
+        ->and(processAdmissionError(fn () => app(ProcessOperationAdmission::class)->execute($mailer, 'restart')))->toBe('process.removing')
+        ->and(processAdmissionError(fn () => app(ProcessOperationAdmission::class)->execute($mailer, 'stop')))->toBe('process.removing')
+        ->and($mailer->refresh()->status)->toBe(LifecycleStatus::Removing);
 
     $passed = deployAndFinish($instance, 'succeeded', str_repeat('e', 40));
     expect($passed->result['processes_removed'])->toBe(['mailer'])
         ->and(Process::query()->whereKey($mailer->id)->exists())->toBeFalse()
         ->and($worker->refresh()->status)->toBe(LifecycleStatus::Active);
+
+    // The same terminal result again, such as a retried result post, replays the stored one.
+    $replayed = app(InstanceDeployProjection::class)->apply($passed, ['status' => 'succeeded', 'run_id' => 'run-'.str_repeat('e', 40),
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['steps' => [
+            'Read the container result' => ['stdout' => json_encode(['commit' => str_repeat('e', 40)], JSON_THROW_ON_ERROR)]], 'summary' => ['failed_steps' => []]]]);
+    expect($replayed->result)->toBe($passed->result);
+});
+
+it('installs a removing Process again when its definition applies to development again', function (): void {
+    Queue::fake();
+    $instance = deployDefaultWithProcesses();
+    $mailer = $instance->processes()->where('name', 'mailer')->sole();
+    $definition = ProcessDefinition::query()->where('name', 'mailer')->sole();
+    $definition->update(['environments' => ['production']]);
+    deployAndFinish($instance, 'failed', str_repeat('d', 40));
+    expect($mailer->refresh()->status)->toBe(LifecycleStatus::Removing);
+    $definition->update(['environments' => ['development']]);
+
+    $operation = deployAndFinish($instance, 'succeeded', str_repeat('e', 40));
+
+    expect($operation->result['processes_removed'])->toBe([])
+        ->and($mailer->refresh()->status)->toBe(LifecycleStatus::Active)
+        ->and(deployedUnitNames($operation))->toContain("orbit-process-{$mailer->id}-mailer.service");
 });
 
 it('replaces a removed definition\'s Process when the Project adds a definition of the same name again', function (): void {

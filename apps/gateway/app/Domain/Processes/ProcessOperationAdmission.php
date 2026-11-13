@@ -28,7 +28,7 @@ final readonly class ProcessOperationAdmission
     public function execute(Process $process, string $verb, bool $created = false, bool $preserveRecord = false, ?Node $caller = null, ?string $requestId = null): Operation
     {
         return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId): Operation {
-            if (in_array($verb, ['start', 'restart'], true) && $process->status === LifecycleStatus::Removing
+            if (in_array($verb, ['start', 'stop', 'restart'], true) && $process->status === LifecycleStatus::Removing
                 && $this->targets->forInspection($process)->container !== null) {
                 // Its definition is gone; the default's next deployment removes it (docs/reference/development-containers.md#processes).
                 throw new ResourceOperationException('process.removing', "Process [{$process->name}] is being removed: the Project removed its definition.", 409);

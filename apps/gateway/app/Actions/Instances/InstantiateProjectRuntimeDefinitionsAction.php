@@ -151,6 +151,10 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
                 continue;
             }
             $attributes = $this->attributesForDefinition($instance, $definition, $target);
+            if ($record->status === LifecycleStatus::Removing) {
+                // Its definition applies again, for example once more to development: the deployment installs it again.
+                $record->status = LifecycleStatus::Provisioning;
+            }
             if ($forCreateRetry) {
                 $record->forceFill(['name' => $definition->name, 'desired_state' => $this->desiredFor($instance, $definition),
                     'status' => LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null]);

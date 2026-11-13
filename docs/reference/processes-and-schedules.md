@@ -18,7 +18,7 @@ A Process is one long-running systemd service or Docker container that Orbit man
 
 An Instance container’s Process start and restart use nonblocking systemd jobs with bounded readiness checks. The [container Process contract](/reference/development-containers#processes) defines their network ordering and runtime.
 
-A retained container create retry derives its Processes from the Project's current development definitions at admission. Changed definitions update their Processes, and removed definitions remove theirs. On a container default, the next deployment removes the Process of a removed definition and names it in `processes_removed`; until then, `process:start` and `process:restart` refuse it with `process.removing`. See [create retry](/reference/development-containers#processes) for the units, environment files and recovery result.
+A retained container create retry derives its Processes from the Project's current development definitions at admission. Changed definitions update their Processes, and removed definitions remove theirs. On a container default, the next deployment removes the Process of a removed definition and names it in `processes_removed`; until then, `process:start`, `process:stop` and `process:restart` refuse it with `process.removing`. See [create retry](/reference/development-containers#processes) for the units, environment files and recovery result.
 
 ## Execution
 
