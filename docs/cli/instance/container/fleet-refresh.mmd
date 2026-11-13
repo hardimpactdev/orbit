@@ -54,12 +54,17 @@ sequenceDiagram
   SW->>C: Install the Processes<br/>Ansible · tags processes
   SW->>F: Start the inner fleet<br/>Ansible · tags fleet_start
   %%> What it does:
-  %%> - compares the fleet with its rules as the check does, starts the nested containers that are stopped, brings up `wg-nested` with `ip` and `wg`, and waits for Doctor and the three agents
-  %%> - changes no device or configuration key: on a running healthy fleet it only reads
+  %%> - compares the fleet with its rules as the check does, starts the nested containers that are stopped, links the Club key, brings up `wg-nested` with `ip` and `wg`
+  %%> - checks only what a start can promise: the three containers run and the tunnel reaches the hub; no Doctor wait
+  %%> - changes no device or configuration key: on a running fleet it only reads
+  %%> Why:
+  %%> - the checkout just moved under the running nested Gateway; until the refresh migrates and restarts it, its Doctor cannot be healthy
   SW->>F: Refresh the inner fleet<br/>Ansible · tags fleet_refresh
   %%> What it does:
-  %%> - migrates the nested Gateway and restarts its services, converges the base of the three nested Nodes one by one, waits for Doctor
+  %%> - places the agent delivery, reloads the grants, migrates the nested Gateway and restarts its services
+  %%> - waits until the three agents are online (300 s), converges the base of the three nested Nodes one by one, then waits for readiness once: Doctor healthy, three agents, the operator
   %%> - stops the fleet, writes the owned rules that differ (and a build rule only where it is absent), checks every rule, and retakes `base` of the three
+  %%> - at the same commit it runs the same steps; the migrate has nothing to do
   %%> Why:
   %%> - a snapshot of a running container on a directory pool is a file copy, not a consistent state
   SW->>N: Take the seed snapshot<br/>Ansible · tags seed
@@ -67,6 +72,12 @@ sequenceDiagram
   %%> - refuses `instance.fleet_key_on_disk` when the Club key path is a file on the container's disk; the key is never read
   %%> - stops the Processes, snapshots `seed-COMMIT` again even at the same commit, starts them, deletes the older seeds
   SW->>C: Check the container<br/>Ansible · tags check
+  SW->>F: Start the refreshed fleet<br/>Ansible · tags fleet_resume
+  %%> What it does:
+  %%> - starts the fleet that the refresh stopped for `base` and the seed, and waits for readiness
+  %%> - fails with `instance.container_fleet_resume_failed`; the new seed and `base` stay, nothing is restored, and the detail says so
+  %%> Why:
+  %%> - the seed and `base` are taken with the fleet stopped; the default then runs on the new commit, fleet included
   alt every step passes
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record the seed commit
@@ -80,8 +91,13 @@ sequenceDiagram
     SW->>N: Start on the old seed<br/>Ansible · tags start
     %%> What it does:
     %%> - starts it through `start`, so the start delivers what every start delivers
+    SW->>F: Start the restored fleet<br/>Ansible · tags fleet_resume
+    %%> What it does:
+    %%> - starts the inner fleet of the restored seed and waits for readiness, so the default is as it was before the run
+    %%> - on failure the error detail adds: the inner fleet of the restored seed did not start, and why
     SW--xGW: Run failed<br/>failed step
     %%> Result:
     %%> - the Operation names the first failed step and its code, such as `instance.container_fleet_refresh_failed`
+    %%> - a fleet phase's error detail names the failed task and its message, such as the Doctor body
     %%> - the old seed stays the seed; clones keep copying it, and the next release runs again
   end
