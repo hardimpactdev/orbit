@@ -133,6 +133,7 @@ sequenceDiagram
     N--xSW: exit ≠ 0 or timeout
     %%> When:
     %%> - a command exits non-zero, a Process or the site does not come up, or the budget ends
+    %%> - the container step of a nested-fleet default refuses with `instance.nested_fleet_image_unavailable` before any Incus change while the Node records a failed nested-fleet image build; a later converge that builds the image clears the record
     SW->>N: Withdraw the Route<br/>child route-withdraw
     %%> Caddy publication:
     %%> - on the Node, wait at most 5 s for the publish lock; compare the composed-from SHA-256 with the live file, then validate, rename and reload under that lock

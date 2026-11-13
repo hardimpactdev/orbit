@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { createResult } from "./result.ts";
+import { containerFailure, createResult } from "./result.ts";
 import { vpInstallSteps } from "../instance-vp-command/steps.ts";
 const intent = {
     instance_id: 7,
@@ -319,4 +319,14 @@ Deno.test("a Node without the main Mailpit gets no mail warning or failure", () 
     assertEquals(result.ready, true);
     assertEquals(result.mail, undefined);
     assertEquals(result.warnings, undefined);
+});
+Deno.test("a failed container phase keeps a Node service target refusal and the nested-fleet image refusal, nothing else", () => {
+    const target = { error_code: "instance.node_service_target_unreachable", node_service_target: { port: 6379 } };
+    assertEquals(containerFailure(target), target);
+    assertEquals(containerFailure({ error_code: "instance.nested_fleet_image_unavailable" }),
+        { error_code: "instance.nested_fleet_image_unavailable" });
+    // Every other refusal keeps the phase's own code, as on main: a normal create's Operation does not change.
+    for (const raw of [{ error_code: "instance.container_network_unsafe" }, { error_code: "instance.default_seed_moved" }, {}, null, "x"]) {
+        assertEquals(containerFailure(raw), null);
+    }
 });

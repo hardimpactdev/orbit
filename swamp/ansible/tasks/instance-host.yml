@@ -319,11 +319,29 @@
     instance_variant: { project: "{{ instances.project }}", image: "{{ instances.image }}", stable_alias: orbit-instance }
 
 # Only a switched-on Node gets the nested-fleet image, in its nested-fleet project (docs/reference/node-settings.md#nested-fleet-instance-hosting).
+# A failed nested build fails only the nested project: the role goes on for normal Instances, and the record below makes a nested
+# create refuse with instance.nested_fleet_image_unavailable until a later converge builds the image. The normal build above has
+# no rescue: its failure still fails the role.
 - name: Build the nested-fleet Instance image
   when: instances.nested is defined and instances.nested.image is defined
-  ansible.builtin.include_tasks: instance-image.yml
-  vars:
-    instance_variant: { project: "{{ instances.nested.project }}", image: "{{ instances.nested.image }}", stable_alias: orbit-instance-nested }
+  block:
+    - name: Build the nested-fleet image
+      ansible.builtin.include_tasks: instance-image.yml
+      vars:
+        instance_variant: { project: "{{ instances.nested.project }}", image: "{{ instances.nested.image }}", stable_alias: orbit-instance-nested }
+    - name: Clear the record of a failed nested-fleet image build
+      ansible.builtin.file: { path: /var/lib/orbit/instance-nested-image.json, state: absent }
+  rescue:
+    - name: Record the failed nested-fleet image build
+      ansible.builtin.copy:
+        dest: /var/lib/orbit/instance-nested-image.json
+        content: "{{ {'error': 'nested image build failed', 'alias': instances.nested.image.alias, 'task': ansible_failed_task.name | default('')} | to_json }}\n"
+        owner: root
+        group: root
+        mode: "0644"
+    - name: Report the failed nested-fleet image build
+      ansible.builtin.debug:
+        msg: "nested image build failed: {{ ansible_failed_task.name | default('') }}; nested-fleet creates refuse until a converge builds {{ instances.nested.image.alias }}"
 
 # Read-only end check: a later regression on any NIC fails convergence instead of silently opening an Instance.
 - name: Check every Instance bridge NIC at the end of the role

@@ -77,7 +77,8 @@ function fixture() {
   const tasks = (parse(
     Deno.readTextFileSync(new URL("tasks/instance-container-phase.yml", root)),
   ) as Task[]).map((task) => transform(structuredClone(task)));
-  Deno.writeTextFileSync(`${folder}/tasks/instance-container-phase.yml`, stringify(tasks));
+  Deno.writeTextFileSync(`${folder}/tasks/instance-container-phase.yml`,
+    stringify(tasks).replaceAll("/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`));
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
@@ -1236,6 +1237,77 @@ for (const damage of ["raw.lxc", "extra-device", "changed-host-path", "writable-
     },
   });
 }
+
+/** The intent of a nested-fleet default: only it has `allowed_devices`, and it starts from the nested-fleet image. */
+function nestedCreate(f: ReturnType<typeof fixture>) {
+  Object.assign(f.container, {project: "orbit-instances-nested", image: "orbit-instance-nested", allowed_devices: {
+    root: {type: "disk", path: "/", pool: "orbit-instances", size: "40GiB"},
+    eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject"},
+  }});
+  f.write();
+}
+
+const incusCalls = (f: ReturnType<typeof fixture>) => {
+  try {
+    return Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return [];
+    throw error;
+  }
+};
+
+Deno.test({
+  name: "a nested-fleet create refuses by name, before any Incus change, while the host converge records a failed nested-fleet image build",
+  ignore: !hasAnsible,
+  async fn() {
+    // The record comes from the shipped host tasks: a switched-on Node whose nested build fails its sudo audit.
+    const host = await hostFixture({pool: "dir", nested: true});
+    let record: string;
+    try {
+      const state = host.state();
+      state.sudo_paths_by_project = {"orbit-instances-nested": "agent:syntax"};
+      Deno.writeTextFileSync(`${host.folder}/state.json`, JSON.stringify(state));
+      const converged = await host.run();
+      assert(converged.ok, converged.output.slice(-4000));
+      record = Deno.readTextFileSync(`${host.folder}/nested-image.json`);
+    } finally { host.cleanup(); }
+    const f = fixture();
+    try {
+      nestedCreate(f);
+      Deno.writeTextFileSync(`${f.folder}/nested-image.json`, record);
+      const result = f.run("container");
+      assert(!result.ok, result.output);
+      assertEquals(f.result(), {error_code: "instance.nested_fleet_image_unavailable"});
+      // Only the read of the container ran: no ACL, no container, no init.
+      assertEquals(incusCalls(f).map((call) => call.slice(0, 2)), [["query", "--"]]);
+      assertEquals(f.state().containers?.["instance-7"], undefined);
+      assertEquals(f.state()["network-acls"].map((acl: {name: string}) => acl.name), ["orbitinst0-egress"]);
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "without a recorded failed build a nested-fleet create makes its container from the nested-fleet image, and a normal create never reads the record",
+  ignore: !hasAnsible,
+  fn() {
+    const nested = fixture();
+    try {
+      nestedCreate(nested);
+      const result = nested.run("container");
+      assert(result.ok, result.output);
+      assert(incusCalls(nested).some((call) => call.includes("init") && call.includes("orbit-instance-nested")), JSON.stringify(incusCalls(nested)));
+    } finally { nested.cleanup(); }
+    const normal = fixture();
+    try {
+      // A record left on the Node never touches a normal create: its refusal task is skipped.
+      Deno.writeTextFileSync(`${normal.folder}/nested-image.json`, JSON.stringify({error: "nested image build failed"}));
+      const result = normal.run("container");
+      assert(result.ok, result.output);
+      assert(/skipping: \[node\]/.test(result.output.split("TASK [Refuse a nested-fleet create while its image build has failed]")[1] ?? ""), result.output);
+      assertEquals(normal.state().containers["instance-7"].status, "Running");
+    } finally { normal.cleanup(); }
+  },
+});
 
 /**
  * What a host converge did: every Incus command line, every task that ran (ok or changed, never a skipped one or an include line)

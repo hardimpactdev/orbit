@@ -243,6 +243,8 @@ The converge does not load `br_netfilter`. The module is host-wide: it sends the
 
 After the normal image, the converge also builds the [nested-fleet image](/reference/development-containers#the-nested-fleet-image) in that project. Only on such a Node does `instance:create` make Instances of a Project with the flag on ([Nested fleet setting](/reference/projects#nested-fleet-setting)); do not set the flag on a real Project. A Node with the switch off gets the same host intent and the same commands as before, and builds only the normal image.
 
+A failed nested-fleet build does not fail the converge. The rest of the role completes, the Node records the failed task, and only the create of a nested-fleet default refuses until a later converge builds the image ([The nested-fleet image](/reference/development-containers#the-nested-fleet-image)).
+
 The converge checks root's largest subordinate range in both `/etc/subuid` and `/etc/subgid` before any nesting change on the host. It refuses with `instance.host_unavailable` when either range is smaller than the demand, and then leaves no nesting preparation behind. It never enlarges a range. The demand is:
 
 `13,172,736 + task IDs + (N + 2) × 101,000,000`

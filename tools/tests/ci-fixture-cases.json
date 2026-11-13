@@ -121,7 +121,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "93c586e2ff40e7882a4f5d0326307041748171cc5a03c2ab6f18070a4cae744f",
+    "source_sha256": "d621b5d4ba2aa2f2a6fa9175b3ade8ba348505b1fdc0cc11d878aae57514ba1f",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -154,6 +154,8 @@
       "nested fleet start gate: writable-share",
       "nested fleet start gate: privileged",
       "nested fleet start gate: clean",
+      "a nested-fleet create refuses by name, before any Incus change, while the host converge records a failed nested-fleet image build",
+      "without a recorded failed build a nested-fleet create makes its container from the nested-fleet image, and a normal create never reads the record",
       "a normal host intent runs the exact tasks, Incus command lines and host files of main",
       "a switched-on host with a short subuid range refuses before any nesting change",
       "a switched-on host with a short subgid range refuses before any nesting change",
@@ -182,7 +184,7 @@
     ]
   },
   "swamp/tests/ansible_instance_host_image_test.ts": {
-    "source_sha256": "9f054bfc90315baf61d73dad64567970f30a537ecfe2531f953ce17bdd18d39e",
+    "source_sha256": "7461b0dcb188890ffb3e75de9514f5ad702f9d204882a2caa89cc98bbc9f1795",
     "cases": [
       "a new image definition takes the stable alias while retaining the old image",
       "a Node without its Instance pool is refused before anything changes",
@@ -195,7 +197,9 @@
       "a prior prepared-image builder is refused by exact name and recipe without deletion",
       "a Node without the nested-fleet switch runs the exact command lines of the normal image",
       "a switched-on Node builds the nested-fleet image in its project from the verified pinned packages",
-      "a wrong pinned digest publishes no nested-fleet image and leaves no build container",
+      "a wrong pinned digest fails only the nested-fleet image: the role succeeds and records the failed task, and a later good build clears it",
+      "a sudo path in the nested-fleet image fails only the nested-fleet image: the role succeeds and records the failed task",
+      "a failed normal image build on a switched-on Node still fails the role and builds no nested-fleet image",
       "a hosting intent without the nested-fleet image builds only the normal image",
       "the nested-fleet audit judges visudo by its exit code, not by what it prints"
     ]
@@ -2099,7 +2103,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {
-    "source_sha256": "7b5244c4236f3869ddff74290c7c58b31c570ff9ea9b8309214137ace1239478",
+    "source_sha256": "1db8f28f3068a49a7d905c75cfb2350d8d1175920a7df787df5a868133252e86",
     "cases": [
       "create returns only the commit when every step finished",
       "create names the first unfinished phase",
@@ -2116,7 +2120,8 @@
       "readiness records only timestamps from the T3 checks and the Route TLS probe",
       "container mail skips retain their reason and missing mail observations stay advisory",
       "default and clone finish workspace T3 and registration despite bounded mail failure",
-      "a Node without the main Mailpit gets no mail warning or failure"
+      "a Node without the main Mailpit gets no mail warning or failure",
+      "a failed container phase keeps a Node service target refusal and the nested-fleet image refusal, nothing else"
     ]
   },
   "swamp/tests/instance_destroy_git_test.py": {

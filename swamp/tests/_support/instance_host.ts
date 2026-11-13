@@ -17,7 +17,7 @@ type Task = Record<string, unknown>;
  */
 function transform(task: Task, folder: string): Task {
     stockImageTask(task, folder);
-    for (const part of ["block", "always"]) {
+    for (const part of ["block", "rescue", "always"]) {
         if (Array.isArray(task[part])) {
             task[part] = (task[part] as Task[]).map((inner) =>
                 transform(inner, folder)
@@ -86,6 +86,7 @@ function transform(task: Task, folder: string): Task {
 const replacements = (folder: string): [string, string][] => [
     ["/usr/local/libexec", `${folder}/libexec`],
     ["/var/lib/orbit/instance-bridge", `${folder}/bridge-policy`],
+    ["/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`],
     ["/etc/modprobe.d/orbit-instances-zfs.conf", `${folder}/arc.conf`],
     ["/etc/systemd/system/", `${folder}/systemd/`],
     ["/sys/module/zfs/parameters/zfs_arc_max", `${folder}/arc`],

@@ -1,6 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { MigratePhases, migrateResult, writtenFailure } from "./migrate_result.ts";
-import { createResult, Step } from "./result.ts";
+import { containerFailure, createResult, Step } from "./result.ts";
 const ObjectValue = z.record(z.string(), z.unknown());
 type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
@@ -72,12 +72,9 @@ export const behavior = {
                 const result = JSON.parse(value.stdout);
                 if (!value.ready && ["container", "clone"].includes(result.failed_step)) {
                     try {
-                        // The phase owns redaction; preserve its public target evidence in the Operation.
-                        const failure = z.object({
-                            error_code: z.string().regex(/^[a-z]+\.[a-z0-9_]+$/),
-                            node_service_target: ObjectValue,
-                        }).safeParse(JSON.parse(await Deno.readTextFile(args.folder + "/result.json")));
-                        if (failure.success) value.stdout = JSON.stringify({...result, ...failure.data});
+                        // The phase owns redaction; preserve its public evidence in the Operation.
+                        const failure = containerFailure(JSON.parse(await Deno.readTextFile(args.folder + "/result.json")));
+                        if (failure !== null) value.stdout = JSON.stringify({...result, ...failure});
                     } catch (error) {
                         if (!(error instanceof Deno.errors.NotFound || error instanceof SyntaxError)) throw error;
                     }

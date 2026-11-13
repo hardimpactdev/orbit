@@ -349,6 +349,7 @@ Deno.test({
             // The normal build audits as before: no grant at all.
             const normalAudit = f.calls().filter((call) => call.includes("orbit-instances") && call[0] === "exec" && call.at(-1)!.includes("getent passwd ubuntu"));
             assertEquals(normalAudit.map((call) => call.at(-1)!.includes("orbit-agent")), [false]);
+            assertEquals(nestedRecord(f.folder), null);
             const repeat = await f.run();
             assert(repeat.ok, repeat.output);
             assertStringIncludes(repeat.output, "changed=0");
@@ -358,23 +359,86 @@ Deno.test({
     },
 });
 
+/** The record a failed nested-fleet build leaves on the Node; a nested-fleet create reads it (instance-container-phase.yml). */
+const nestedRecord = (folder: string) => {
+    try {
+        return JSON.parse(Deno.readTextFileSync(`${folder}/nested-image.json`));
+    } catch (error) {
+        if (error instanceof Deno.errors.NotFound) return null;
+        throw error;
+    }
+};
+
+// Two different failing tasks of the nested build: the pinned package fetch, and the sudo audit of the built image.
+// The first also proves that a later good converge clears the record; one repair run keeps the second case within its lane.
+const nestedFailures: [string, string, boolean, (f: Awaited<ReturnType<typeof fixture>>) => void][] = [
+    ["a wrong pinned digest", "Fetch and verify pinned artifact", true, (f) => {
+        const broken = structuredClone(f.instances);
+        broken.nested!.image.incus[1].sha256 = "b".repeat(64);
+        f.write(broken);
+    }],
+    ["a sudo path in the nested-fleet image", "Require an image without a sudo path", false, (f) => {
+        const state = f.state();
+        state.sudo_paths_by_project = { "orbit-instances-nested": "agent:syntax" };
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+    }],
+];
+
+for (const [failure, task, repair, breakIt] of nestedFailures) {
+    Deno.test({
+        name: `${failure} fails only the nested-fleet image: the role succeeds and records the failed task${repair ? ", and a later good build clears it" : ""}`,
+        ignore: !hasAnsible,
+        async fn() {
+            const f = await fixture({ pool: "dir", nested: true });
+            try {
+                const good = structuredClone(f.instances);
+                breakIt(f);
+                const result = await f.run();
+                assert(result.ok, result.output.slice(-6000));
+                // The normal part is complete: its image and stable alias, and the end checks ran after the nested build.
+                const aliases = aliasesOf(f.state());
+                for (const alias of ["orbit-instances/orbit-instance", "orbit-instances/orbit-instance-aaaaaaaaaaaa"]) {
+                    assert(aliases.includes(alias), JSON.stringify(aliases));
+                }
+                assertStringIncludes(result.output, "TASK [Require a healthy bridge endpoint refresh]");
+                assertEquals(aliases.filter((alias) => alias.startsWith("orbit-instances-nested/orbit-instance-nested")), []);
+                assert(!f.calls().some((call) => call.includes("publish") && call.includes("orbit-instances-nested") && call.includes("orbit-instance-build")));
+                assertEquals(f.state().instances, []);
+                assertEquals(nestedRecord(f.folder),
+                    { error: "nested image build failed", alias: "orbit-instance-nested-aaaaaaaaaaaa", task });
+                assertStringIncludes(result.output, `nested image build failed: ${task}`);
+                if (!repair) return;
+                // A later converge with a good build publishes the image and clears the record.
+                const state = f.state();
+                delete state.sudo_paths_by_project;
+                Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+                f.write(good);
+                const repaired = await f.run();
+                assert(repaired.ok, repaired.output);
+                assert(aliasesOf(f.state()).includes("orbit-instances-nested/orbit-instance-nested-aaaaaaaaaaaa"));
+                assertEquals(nestedRecord(f.folder), null);
+            } finally {
+                f.cleanup();
+            }
+        },
+    });
+}
+
 Deno.test({
-    name: "a wrong pinned digest publishes no nested-fleet image and leaves no build container",
+    name: "a failed normal image build on a switched-on Node still fails the role and builds no nested-fleet image",
     ignore: !hasAnsible,
     async fn() {
         const f = await fixture({ pool: "dir", nested: true });
         try {
-            const broken = structuredClone(f.instances);
-            broken.nested!.image.incus[1].sha256 = "b".repeat(64);
-            f.write(broken);
+            const state = f.state();
+            state.sudo_paths_by_project = { "orbit-instances": "user:ubuntu" };
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
             const result = await f.run();
             assert(!result.ok, result.output);
-            const aliases = aliasesOf(f.state());
-            assert(aliases.includes("orbit-instances/orbit-instance"), JSON.stringify(aliases));
-            assertEquals(aliases.filter((alias) => alias.startsWith("orbit-instances-nested/orbit-instance-nested")), []);
-            assert(!f.calls().some((call) => call.includes("publish") && call.includes("orbit-instances-nested") && call.includes("orbit-instance-build")));
-            assert(!f.calls().some((call) => call.includes("apt-get") && call.includes("/tmp/incus-client.deb")));
-            assertEquals(f.state().instances, []);
+            assertStringIncludes(result.output, "the image keeps a sudo path: user:ubuntu");
+            assertEquals(aliasesOf(f.state()).filter((alias) => alias.split("/")[1].startsWith("orbit-instance")), []);
+            assert(!f.calls().some((call) => call.includes("orbit-instances-nested") && call.includes("orbit-instance-build")));
+            assertEquals(nestedRecord(f.folder), null);
         } finally {
             f.cleanup();
         }
