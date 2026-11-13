@@ -1622,3 +1622,7 @@ A lost merge reply fails the operation. A fresh admission for the same PR and he
 Swamp runs task turns on the Swamp role worker and reaches the task VM over SSH. The Gateway admits the group, current subtask, role, model and session, then starts `operation-task-turn`. It records the returned thread state, workspace identities and token metrics. It does not send Pi messages, wait for turns or acquire workspace execution leases. Swamp's native workflow owns placement, locking, cancellation and recovery.
 
 Pi writes and reviews code inside the VM. Swamp clears the old receipt, then sends the prompt and receipt schema with a stable Pi submission key and consumes the Pi event stream until the turn ends. A resumed step uses the same session and submission key. Git snapshots use a temporary index, include untracked files and leave the real index unchanged. The turn trusts the admitted workspace. Reviewer changes are captured and the candidate is restored with Git reset and clean before the result returns. VM provision, readiness and enrollment belong to the task VM workflows.
+
+### Internal container workspace phases
+
+[Task Instance workspace phases](/reference/task-instance-workspace) define the internal evidence and export contract. They add no container admission to the existing task commands.

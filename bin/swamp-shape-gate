@@ -43,7 +43,7 @@ BASES = ('origin/main', 'main')
 
 ANSIBLE_TESTS = ('tests/ansible_artifact_test.py', 'tests/ansible_inputs_test.py', 'tests/ansible_firewall_test.py', 'tests/ansible_model_forwarder_test.py',
                  'tests/ansible_instance_egress_test.py', 'tests/ansible_instance_bridge_test.py', 'tests/ansible_instance_migrate_links_test.py',
-                 'tests/ansible_container_host_system_test.py',
+                 'tests/ansible_container_host_system_test.py', 'tests/task_instance_workspace_test.py',
                  'tests/ansible_node_add_test.py', 'tests/ansible_shape_gate_tools_test.py', 'tests/ansible_task_vm_role_test.py',
                  'tests/ansible_task_vm_incus_test.py',
                  'tests/ansible_gateway_swamp_grants_test.py', 'tests/ansible_task_vm_fleet_base_test.py',
@@ -105,7 +105,7 @@ def plan(base, reports, cache, collections):
         Step('shape', 'ansible collections', ['ansible-galaxy', 'collection', 'install', '-r', 'ansible/requirements.yml', '-p', str(collections)],
              env=ansible_env),
         Step('shape', 'ansible-lint', ['ansible-lint', 'ansible/operation-instance-create.yml', 'ansible/route-create-site.yml', 'ansible/route-withdraw.yml', 'ansible/ai-router-task-guard.yml', 'ansible/ai-router-model-forwarder.yml', 'ansible/operation-node-add.yml', 'ansible/operation-node-role-add.yml', 'ansible/operation-node-role-add-local-dns.yml', 'ansible/operation-node-converge-local-dns.yml', 'ansible/swamp-worker-renewal.yml', 'ansible/task-vm-role.yml',
-                                       'ansible/task-vm-fleet-wait.yml', 'ansible/task-vm-idle-save.yml', 'ansible/task-vm-host.yml', 'ansible/proof-gateway.yml', 'ansible/proof-observers.yml', 'ansible/operation-fleet-reboot.yml'], env=ansible_env, parallel=True),
+                                       'ansible/task-vm-fleet-wait.yml', 'ansible/task-instance-workspace.yml', 'ansible/task-vm-idle-save.yml', 'ansible/task-vm-host.yml', 'ansible/proof-gateway.yml', 'ansible/proof-observers.yml', 'ansible/operation-fleet-reboot.yml'], env=ansible_env, parallel=True),
     ]
     deno_files = deno_test_files()
 

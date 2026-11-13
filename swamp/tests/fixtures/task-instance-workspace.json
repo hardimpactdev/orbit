@@ -1,0 +1,49 @@
+{
+  "provenance": {
+    "source": "Disposable local Git checkout captured on Beast; no Incus, Node, SSH or Orbit Operation.",
+    "git_version": "git version 2.55.0",
+    "capture_script": "/fast/scratch/task-lane/capture-t1.py",
+    "head_command": "git rev-parse HEAD",
+    "tree_commands": [
+      "GIT_INDEX_FILE=<scratch> git read-tree HEAD",
+      "GIT_INDEX_FILE=<scratch> git add --all",
+      "GIT_INDEX_FILE=<scratch> git write-tree",
+      "git ls-tree -r <tree>"
+    ],
+    "index_unchanged": true
+  },
+  "git_env": {
+    "GIT_PAGER": "cat",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_AUTHOR_NAME": "T1 fixture",
+    "GIT_AUTHOR_EMAIL": "t1@example.test",
+    "GIT_COMMITTER_NAME": "T1 fixture",
+    "GIT_COMMITTER_EMAIL": "t1@example.test",
+    "GIT_AUTHOR_DATE": "2026-11-13T00:00:00Z",
+    "GIT_COMMITTER_DATE": "2026-11-13T00:00:00Z"
+  },
+  "branch": "proof-branch",
+  "base_files": {
+    "base.txt": "base\n",
+    "staged.txt": "original\n",
+    ".gitignore": "ignored/\n"
+  },
+  "changes": {
+    "staged.txt": "staged content\n",
+    "untracked.txt": "untracked content\n",
+    "space name.txt": "spaced content\n"
+  },
+  "symlinks": {
+    "link": "base.txt"
+  },
+  "staged": [
+    "staged.txt"
+  ],
+  "expected": {
+    "head": "ee8979745caf062013913b3b34d8d97c040b5699",
+    "tree": "dc1b4884596284c041d844dd5db739dd415679f8",
+    "ls_tree": "100644 blob 8007d41d5794e6ce4d4d2c97e370d5a9aa6d5213\t.gitignore\n100644 blob df967b96a579e45a18b8251732d16804b2e56a55\tbase.txt\n120000 blob 8286e959cff43df99673fa7f155037bcd4a91551\tlink\n100644 blob 971280a657c03209a9b3ab72b736dce27013ae71\tspace name.txt\n100644 blob 350888f88b7647220e610e725a503c1983ba6a3f\tstaged.txt\n100644 blob 3f4c56d3d8d73bb43575b07d84c82e30210900d1\tuntracked.txt\n",
+    "status": "M  staged.txt\n?? link\n?? \"space name.txt\"\n?? untracked.txt\n"
+  }
+}

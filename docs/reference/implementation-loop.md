@@ -49,6 +49,8 @@ Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest s
 
 Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units in hosted shards. Route access fixtures share the admitted argv with the Gateway unit test, so hosted Ansible checks need no Gateway Composer installation. The fixture for destroy without a Route evaluates guards with the pinned CEL compiler. It runs source removal against real temporary Git trees.
 
+The [task Instance workspace regression](/reference/task-instance-workspace#verification) runs the production Ansible phases against disposable Git checkouts through a local transport shim. It checks evidence, receipt bounds and branch export; the live Instance proof remains separate.
+
 The migration environment fixtures cover dependency-file isolation and explicit application, Process and Schedule file selection. Clone runtime fixtures cover inherited-store reuse, empty-clone preparation followed by a later pinned Process, and same-commit seed refresh after conversion.
 
 A separate remote Node service access fixture covers exact TCP admission, proxy bypass for execution sessions and systemd Processes, shared paths and detach. It uses fake commands and connections; the release fixture proves live reachability and isolation.

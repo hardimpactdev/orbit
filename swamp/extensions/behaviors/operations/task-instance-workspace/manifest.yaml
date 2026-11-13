@@ -1,0 +1,8 @@
+manifestVersion: 1
+name: '@nckrtl/task-instance-workspace'
+version: 2026.11.13.1
+visibility: private
+license: MIT
+description: Typed evidence from internal task Instance workspace Ansible phases.
+behaviors:
+  - operations/task-instance-workspace/assets.ts
