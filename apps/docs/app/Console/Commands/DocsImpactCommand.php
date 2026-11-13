@@ -50,6 +50,9 @@ final class DocsImpactCommand extends Command
         }
         $prBody = '';
         $bodyFile = $this->input->getOption('pr-body-file');
+        if ($bodyFile === null && $this->option('gate')) {
+            $bodyFile = getenv('ORBIT_DOCS_PR_BODY_FILE') ?: null;
+        }
         if ($bodyFile !== null) {
             if (! $this->option('gate') || ! is_string($bodyFile) || ! is_file($bodyFile) || ! is_readable($bodyFile)) {
                 $this->error('The --pr-body-file option requires --gate and a readable PR body file.');
@@ -80,7 +83,11 @@ final class DocsImpactCommand extends Command
                         $this->line('Docs-unaffected: '.$page.': <explain why no docs change is needed>');
                     }
                     $this->line('Check before pushing: bin/docs-impact --gate --base origin/main --pr-body-file /path/to/pr-body.md');
-                    $this->line('CI reads the PR body and reruns when it is edited. Private Git notes do not waive this gate.');
+                    $runId = getenv('GITHUB_RUN_ID');
+                    $run = is_string($runId) && ctype_digit($runId) ? $runId : '<run-id>';
+                    $this->line('After editing the PR body, rerun failed jobs: gh run rerun '.$run.' --failed');
+                    $this->line('The Docs job reads the live PR body. Successful jobs are retained; Required checks is re-evaluated.');
+                    $this->line('Private Git notes do not waive this gate.');
                 }
                 foreach ($gate['failures'] as $failure) {
                     $this->error($failure);

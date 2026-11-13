@@ -288,7 +288,9 @@ Each main SHA has its own concurrency group in both CI and the reusable Swamp wo
 
 Docs build installs the locked Docs dev dependencies and Gateway runtime dependencies. It uses the existing PHP action and Bun 1.4.2 pin, installs only the API-types workspace, and generates OpenAPI, MCP tools and web types before building the Docs index and running Pest. Python 3, Git and Node come from `ubuntu-26.04`; no service or fleet operation is needed.
 
-Every pull request selects this job, including changes with no covered documentation. Other events retain path selection, including `apps/docs/**`, `bin/check-*` and docs chart changes. After generation, the PR gate compares the event merge commit with its base SHA and reads acknowledgements from the event body as data. A body edit starts a new CI run; it needs no code push. [Documentation acknowledgements](/contributor-guide#2-write-the-documentation) use the same command locally with `--pr-body-file`.
+Every pull request selects this job, including changes with no covered documentation. Other events retain path selection, including `apps/docs/**`, `bin/check-*` and docs chart changes.
+
+After generation, the PR gate compares the checked-out merge commit with its first parent. It reads the live PR body through the API, treats it as data, and checks that the PR head still matches this run. A body edit starts no workflow; `gh run rerun <run-id> --failed` rechecks failed jobs and Required on the same head. Successful jobs keep their existing results. [Documentation acknowledgements](/contributor-guide#2-write-the-documentation) use the same command locally with `--pr-body-file`.
 
 The complete Unit and Feature suites run with two workers and fail on an empty suite; the Python wrapper discovers every `*_test.py` file and rejects an empty collection. No Docs case is deferred to Main full set.
 

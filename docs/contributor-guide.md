@@ -73,7 +73,11 @@ Every pull request runs `bin/docs-impact --gate` in the Docs job, which blocks R
 Docs-unaffected: docs/reference/tasks.md: This fixes the implementation to match the existing documented behavior.
 ```
 
-Use the exact page path and a specific, non-empty reason. There is no blanket waiver. The gate prints accepted reasons under `exceptions`; the reviewer checks each one. Editing the PR body reruns CI. The gate ignores private `.git/orbit/docs-unaffected` notes. Ownership errors and failed generators cannot be waived.
+Use the exact page path and a specific, non-empty reason. There is no blanket waiver. The gate prints accepted reasons under `exceptions`; the reviewer checks each one.
+
+After editing the body, run `gh run rerun <run-id> --failed`; the failure prints the run ID. This reruns failed jobs and the aggregate while keeping successful jobs, including a successful proof. A body edit itself starts no CI run. The Docs job reads the live PR body through the API and rejects a changed head.
+
+The gate ignores private `.git/orbit/docs-unaffected` notes. Ownership errors and failed generators cannot be waived.
 
 Before pushing, save the proposed PR body outside the checkout and run the same gate locally after preparing the generated contracts:
 
@@ -81,7 +85,7 @@ Before pushing, save the proposed PR body outside the checkout and run the same 
 bin/docs-impact --gate --base origin/main --pr-body-file /tmp/orbit-pr-body.md
 ```
 
-The file is input data, never executed. Copy its acknowledgement lines into the PR body. To let the pre-push hook use the same file, export `ORBIT_DOCS_PR_BODY_FILE=/tmp/orbit-pr-body.md` before pushing. Without a body file, the gate accepts no waivers. This policy runs through Orbit's `composer check` and `bin/review-check`; the generic Gateway task engine does not know about docs-first or documentation conventions. Jev is out of scope for this version.
+The file is input data, never executed. Copy its acknowledgement lines into the PR body. To let the pre-push hook and task handoff (`composer check` / `bin/review-check`) use the same file, export `ORBIT_DOCS_PR_BODY_FILE=/tmp/orbit-pr-body.md` before pushing. Without a body file, the gate accepts no waivers. This policy runs through Orbit's `composer check` and `bin/review-check`; the generic Gateway task engine does not know about docs-first or documentation conventions. Jev is out of scope for this version.
 
 Run from the repository root:
 
@@ -328,7 +332,7 @@ A deterministic report makes the docs-first decision repeatable. It combines cha
 
 Deleting a migration without an owner does not require a new ownership binding for the removed file. Removing an owned migration still routes the change to its page, and new or changed migrations still need owners.
 
-A waiver lives in the Git directory, not in a tracked file, because it matters only to one branch and nothing reads it after the merge. A shared tracked file is rejected: concurrent branches appended to the same lines, so most merges of `main` into a task branch conflicted.
+A waiver belongs in the PR body so a reviewer can see it. Before the PR exists, the task check reads the proposed body from `ORBIT_DOCS_PR_BODY_FILE`; the author copies those lines to the PR body before READY. Private Git notes are not review evidence. A shared tracked waiver file is rejected because concurrent branches would edit the same lines.
 
 Page ownership belongs beside the documentation, in `covers:` frontmatter and the extractor's surface mappings. Listing owners in every task brief is rejected, because duplicate lists go stale and miss new surfaces. Running only existing generators is also rejected: generated API, CLI, and MCP contracts do not find every hand-written page affected by configuration, errors, migrations, or schedules. Current generator output needs no duplicate prose, but stale or missing output still requires an update.
 

@@ -125,4 +125,4 @@ Child-process timeout tests must observe the PID returned by spawn, not require 
 
 A shared CI registry needs semantic selection for both fixture units and fast jobs. Compare entries at the same merge base, keep unrelated paths active, and exercise the CLI output in a diverged-history regression.
 
-A required docs-impact check must read per-page reasons from the PR body as data, recheck body edits, and keep generator failures non-waivable. Verify the same proposed body locally with `bin/docs-impact --gate --base origin/main --pr-body-file /tmp/orbit-pr-body.md`; private branch notes are not review evidence.
+A required docs-impact check must read per-page reasons from the PR body as data, read the live body when failed jobs are rerun after a body edit, and keep generator failures non-waivable. Verify the same proposed body locally with `bin/docs-impact --gate --base origin/main --pr-body-file /tmp/orbit-pr-body.md`; private branch notes are not review evidence.

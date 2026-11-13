@@ -2,7 +2,6 @@ name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main, 'task-*-handoff']
   workflow_dispatch:
@@ -368,6 +367,9 @@ jobs:
 
   docs:
     name: Docs build
+    permissions:
+      contents: read
+      pull-requests: read
     needs: changes
     if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['docs']) != 'false' }}
     runs-on: ubuntu-26.04
@@ -399,15 +401,22 @@ jobs:
       - name: Require documentation updates or visible PR acknowledgements
         if: github.event_name == 'pull_request'
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           python3 - <<'PYTHON'
-          import json, os
+          import json, os, subprocess
           from pathlib import Path
-          event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
-          Path(os.environ['RUNNER_TEMP'], 'docs-impact-pr-body.txt').write_text(event['pull_request']['body'] or '')
+          pr = json.loads(subprocess.check_output([
+              'gh', 'api', f"repos/{os.environ['GH_REPO']}/pulls/{os.environ['PR_NUMBER']}"
+          ], text=True, timeout=30))
+          if pr['head']['sha'] != os.environ['PR_HEAD']:
+              raise SystemExit('PR head moved; use the CI run of the new head.')
+          Path(os.environ['RUNNER_TEMP'], 'docs-impact-pr-body.txt').write_text(pr['body'] or '')
           PYTHON
-          bin/docs-impact --gate --base "$BASE" --pr-body-file "$RUNNER_TEMP/docs-impact-pr-body.txt"
+          bin/docs-impact --gate --base HEAD^1 --pr-body-file "$RUNNER_TEMP/docs-impact-pr-body.txt"
       - name: Run the complete Docs Pest suite
         working-directory: apps/docs
         env:

@@ -336,3 +336,52 @@ it('PR acknowledgements cannot waive generator and ownership failures', function
         ->and($gate['failures'])->toContain('bin/mcp-tools generator status is missing.')
         ->and(implode(' ', $gate['failures']))->toContain('Unowned migration surface');
 });
+
+it('task handoffs and the hook use the proposed body from the environment', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    changeDocsImpactGateSource($root);
+    $bodyFile = $root.'/.git/proposed-pr-body.txt';
+    file_put_contents($bodyFile, 'Docs-unaffected: docs/reference/tasks.md: Fix matches the documented task behavior.');
+    $previous = getenv('ORBIT_DOCS_PR_BODY_FILE');
+    putenv('ORBIT_DOCS_PR_BODY_FILE='.$bodyFile);
+    try {
+        [$status, $output] = runDocsImpactGateCommand($root, $base);
+        expect($status)->toBe(0)
+            ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['exceptions']['docs/reference/tasks.md'])
+            ->toBe('Fix matches the documented task behavior.');
+        file_put_contents($bodyFile, '');
+        expect(runDocsImpactGateCommand($root, $base)[0])->toBe(1);
+    } finally {
+        putenv($previous === false ? 'ORBIT_DOCS_PR_BODY_FILE' : 'ORBIT_DOCS_PR_BODY_FILE='.$previous);
+    }
+});
+
+it('the explicit PR body overrides an inherited handoff body and reporting ignores it', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    changeDocsImpactGateSource($root);
+    $bodyFile = $root.'/.git/actual-pr-body.txt';
+    file_put_contents($bodyFile, 'Docs-unaffected: docs/reference/tasks.md: Documentation still describes this fix.');
+    config(['librarian.path' => $root.'/docs']);
+    $previous = getenv('ORBIT_DOCS_PR_BODY_FILE');
+    putenv('ORBIT_DOCS_PR_BODY_FILE='.$root.'/missing');
+    try {
+        expect(Artisan::call('orbit:docs-impact', ['--base' => $base, '--gate' => true, '--pr-body-file' => $bodyFile]))->toBe(0)
+            ->and(Artisan::call('orbit:docs-impact', ['--base' => $base]))->toBe(0);
+    } finally {
+        putenv($previous === false ? 'ORBIT_DOCS_PR_BODY_FILE' : 'ORBIT_DOCS_PR_BODY_FILE='.$previous);
+    }
+});
+
+it('a failed CI gate prints the exact failed-job rerun command', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    changeDocsImpactGateSource($root);
+    $previous = getenv('GITHUB_RUN_ID');
+    putenv('GITHUB_RUN_ID=123456789');
+    try {
+        [$status, $output] = runDocsImpactGateCommand($root, $base);
+        expect($status)->toBe(1)
+            ->and($output)->toContain('gh run rerun 123456789 --failed', 'Docs-unaffected: docs/reference/tasks.md:', 'live PR body');
+    } finally {
+        putenv($previous === false ? 'GITHUB_RUN_ID' : 'GITHUB_RUN_ID='.$previous);
+    }
+});
