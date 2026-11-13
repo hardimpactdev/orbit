@@ -108,7 +108,10 @@ final readonly class InstanceRestoreProjection implements DirectOperationProject
         return [$code, ['restored' => false, 'failed_step' => $step, 'error_code' => $code, ...$ids]];
     }
 
-    /** Members and removal abandoned, the Instance active and the same Route active, in that order (the schema's triggers). */
+    /**
+     * Members and removal abandoned, the same Route active, then the Instance active, in that order: the schema refuses an
+     * active Laravel Instance without exactly one active Route (`instances_active_route_update`).
+     */
     private function restore(Operation $operation): void
     {
         $instance = Instance::query()->lockForUpdate()->findOrFail(ValidatedData::integer($operation->input['instance_id']));
@@ -119,8 +122,8 @@ final readonly class InstanceRestoreProjection implements DirectOperationProject
         }
         $removal->members()->update(['abandoned_at' => now()]);
         $removal->update(['status' => InstanceRemovalStatus::Abandoned, 'current_step' => null, 'failed_step' => null, 'error_code' => null]);
-        $instance->update(['status' => InstanceState::Active]);
         $route->update(['status' => RouteStatus::Active, 'sites_published' => true, 'failed_step' => null, 'error_code' => null]);
+        $instance->update(['status' => InstanceState::Active]);
         $this->broadcaster->broadcast(RecordEventType::InstanceUpdated, $instance->id,
             InstanceData::fromModel($instance->load(['project', 'node', 'routes.targets']))->toArray());
     }
