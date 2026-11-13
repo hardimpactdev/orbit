@@ -2,6 +2,19 @@ import { z } from "npm:zod@4.4.3";
 export const Public = z.record(z.string(), z.unknown());
 export const Step = z.object({ status: z.string(), outputs: Public.optional() })
     .passthrough();
+
+/**
+ * The public part of a failed container or clone phase's result.json that the Operation keeps, or null. A refusal with a Node
+ * service target keeps its code and target. A nested-fleet default refused while its Node records a failed nested-fleet image build
+ * keeps its own code (docs/reference/development-containers.md#the-nested-fleet-image). Every other phase failure keeps the
+ * phase's own code.
+ */
+export function containerFailure(raw: unknown): Record<string, unknown> | null {
+    const target = z.object({ error_code: z.string().regex(/^[a-z]+\.[a-z0-9_]+$/), node_service_target: Public }).safeParse(raw);
+    if (target.success) return target.data;
+    const nested = z.object({ error_code: z.literal("instance.nested_fleet_image_unavailable") }).safeParse(raw);
+    return nested.success ? nested.data : null;
+}
 type Phase = z.infer<typeof Step> | null | undefined;
 type Phases = {
     checkout: Phase;

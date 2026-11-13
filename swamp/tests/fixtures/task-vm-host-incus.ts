@@ -293,9 +293,11 @@ if (family === "query") {
   if (command.join(" ") === "truncate --size 0 /etc/machine-id") {
     instance(action).machine_id = "";
   }
-  // The audit of the image's sudo paths reads what the fixture says the build left; a clean image prints nothing.
+  // The audit of the image's sudo paths reads what the fixture says the build left, in every project or in one; a clean image
+  // prints nothing.
   if (command[0] === "sh" && command[2]?.includes("sudoers.d")) {
-    if (state.sudo_paths) console.log(state.sudo_paths);
+    const paths = state.sudo_paths_by_project?.[project] ?? state.sudo_paths;
+    if (paths) console.log(paths);
   }
 } else if (family === "file" && action === "push") {
   state.files ??= {};

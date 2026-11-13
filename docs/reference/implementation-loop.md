@@ -161,7 +161,7 @@ Required checks has static dependencies on the selected checks, including Swamp.
 
 The fixture table in `.github/ci/checks.toml` maps changed inputs to files and declares their costs. Editing fixture entries selects only those fixtures, using the same merge base as path selection. Formatting and edits to check definitions select no extra fixture bodies. Changes to shared fixture budgets, defaults or fixture order, or to the runner and slice preload, select all fixtures within the existing budget.
 
-`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most six shards per pull request. Each shard runs up to four units at once. A file can declare a larger slice count when its cases need finer slices.
+`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most six shards per pull request. Each shard runs up to four units at once. A file can declare a larger slice count when its cases need finer slices. A slice takes every n-th case, so a new case can move two long cases into one slice; then raise the slice count until no slice is above the lane budget.
 
 A file without its own command in the shape gate runs with Deno only while it is sliceable; `slices = false` makes the runner start it with `python3`. So register a Deno file that the gate does not list without `slices = false`. A Deno file of at most 60 seconds runs as one unit anyway.
 

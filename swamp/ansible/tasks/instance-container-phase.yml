@@ -57,6 +57,23 @@
   failed_when: false
   when: phase in ['container', 'clone', 'stop', 'start']
 
+# A nested-fleet container (only its intent has `allowed_devices`) is made from the nested-fleet image. While the Node's last
+# converge recorded a failed build of that image, the stable alias may name an older image or none: the create refuses before any
+# change (docs/reference/development-containers.md#the-nested-fleet-image). A later converge that builds the image clears the record.
+- name: Read the record of a failed nested-fleet image build
+  tags: [container]
+  when: phase == 'container' and container_read.rc != 0 and container.allowed_devices is defined
+  ansible.builtin.stat: { path: /var/lib/orbit/instance-nested-image.json, get_checksum: false }
+  register: nested_image_failure
+
+- name: Refuse a nested-fleet create while its image build has failed
+  tags: [container]
+  when: phase == 'container' and container_read.rc != 0 and container.allowed_devices is defined
+  ansible.builtin.assert:
+    that: not nested_image_failure.stat.exists
+    fail_msg: instance.nested_fleet_image_unavailable
+    quiet: true
+
 # The container's own ACL: the bridge's way to the model forwarder stays in the bridge ACL; this one lets the Node's Caddy reach
 # FrankenPHP, a clone's T3 clients reach T3, and the container reach its database server. Network ACLs live in the default project.
 - name: Converge the container's ACL
