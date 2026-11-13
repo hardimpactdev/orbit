@@ -26,6 +26,7 @@ sequenceDiagram
   Note over GW: Start or join the wake<br/>one per Instance
   %%> When:
   %%> - an active development container that is not a nested-fleet Instance
+  %%> - a clone of a nested-fleet default takes its start instead: see instance/start.mmd
   %%> Result:
   %%> - an open wake of the Instance is joined: a second caller gets the same Operation, Caddy the same progress page
   %%> - after a failed wake, Caddy gets the failure page with Try again until a retry or the command starts a new wake

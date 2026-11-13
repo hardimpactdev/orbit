@@ -1,0 +1,107 @@
+id: 35a1f0ac-6649-407c-bba9-8e4e483a22d3
+name: operation-instance-start
+description: Start a stopped nested-fleet clone, deliver its Club key, then start its inner fleet and wait for Doctor.
+queueTimeout: 10
+labels: {role: swamp}
+vaults: [orbit-control-inputs]
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: instance.start}
+    intent: {type: object}
+    # Every admitted start carries the nested Gateway's Club key: the Gateway fails the run before its start without one.
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^nested-fleet-club-api-key$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+  - name: start
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ${{ "ansible-input" }}
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      # The deployment's start phase: boot.autostart stays false, the egress gates are checked, the container starts, and the Club key
+      # goes into its /run on stdin (docs/reference/development-containers.md#the-club-key-of-the-nested-gateway).
+      - name: Start the container
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "instance-start-container-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 240 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start "$ORBIT_ANSIBLE/instance-container.yml"
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ANSIBLE_FORCE_COLOR: '0'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+              ORBIT_CLUB_KEY: '${{ vault.get(inputs.execution_secrets.club_key.vault, inputs.execution_secrets.club_key.key) }}'
+      # The clone's fleet start (clone-fleet of the create): the fleet rules, the nested containers, the tunnel wg-nested, Doctor and the
+      # three agents (docs/reference/development-containers.md#a-clone-starts-its-fleet). It records its own seconds for the result.
+      - name: Start the inner fleet
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: Start the container, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "instance-start-fleet-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: s=$(date +%s%N); timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_check "$ORBIT_ANSIBLE/instance-container.yml" && timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_resume "$ORBIT_ANSIBLE/instance-container.yml"; rc=$?; echo $(( ($(date +%s%N) - s) / 1000000 )) > "$ORBIT_RUN/fleet_ms"; exit $rc
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ANSIBLE_FORCE_COLOR: '0'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      # The phases' result file, with the fleet's seconds when the fleet step ran.
+      - name: result
+        labels: {role: swamp}
+        dependsOn: [{step: Start the inner fleet, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "instance-start-result" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 /opt/orbit/ansible/venv/bin/python -I -c 'import json,os,sys; r=os.environ["ORBIT_RUN"]; d=json.load(open(r+"/result.json")); f=r+"/fleet_ms"; d.update({"fleet_seconds":round(int(open(f).read())/1000,1)} if os.path.exists(f) else {}); sys.stdout.write(json.dumps(d))'
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      - name: cleanup
+        labels: {role: swamp}
+        dependsOn: [{step: result, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "instance-start-cleanup" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'

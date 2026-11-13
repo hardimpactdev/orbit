@@ -7,6 +7,8 @@ namespace App\Domain\Instances\Power;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
+use App\Domain\Instances\NestedFleetIntent;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -29,6 +31,25 @@ final readonly class InstanceWake extends InstancePower
     }
 
     protected function refuse(Instance $instance, InstanceRuntime $runtime): void {}
+
+    /**
+     * A nested-fleet clone never sleeps, so its wake is its start: the container, its Club key and its inner fleet
+     * (InstanceStart, docs/reference/development-containers.md#a-stopped-nested-fleet-clone-starts). The request's Idempotency-Key
+     * then keys that start. Every other Instance takes the wake below.
+     */
+    public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
+    {
+        if (! NestedFleetIntent::cloneKeepsFleet($instance, $instance->runtime()->first())) {
+            return parent::start($instance, $caller, $requestId);
+        }
+        $idempotency = app(OperationIdempotency::class);
+        if ($idempotency->key === null || $idempotency->fingerprint === null) {
+            return app(InstanceStart::class)->start($instance, $caller, $requestId);
+        }
+
+        return $idempotency->under(InstanceStart::Kind, $idempotency->key, $idempotency->fingerprint,
+            fn (): Operation => app(InstanceStart::class)->start($instance, $caller, $requestId));
+    }
 
     /**
      * FrankenPHP's port in the container, how long the wake waits for it to answer, and how long a 5xx answer may last before the
@@ -83,7 +104,8 @@ final readonly class InstanceWake extends InstancePower
             }
         }
         try {
-            $this->start($instance, $caller, null);
+            // A Route visit wakes a sleeping container only; a nested-fleet clone never sleeps, so it gets the wake's own refusal.
+            parent::start($instance, $caller, null);
         } catch (ResourceOperationException $exception) {
             // Other lifecycle work holds the Instance: the page polls again, and a later request starts the wake.
             if (! in_array($exception->errorCode, ['operation.target_busy', 'instance.lifecycle_busy'], true)) {

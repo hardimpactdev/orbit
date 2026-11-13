@@ -23,6 +23,9 @@ final class OperationBudgetTable
         // The 120 s start phase and the 120 s T3 and marker phase (31 T3 tries of up to 3 s), plus input, result and cleanup.
         // Measured on a fixture clone: T3 answered 2.6 to 3.4 s after the start. No live run of the kind yet.
         'instance.wake' => 300,
+        // A nested-fleet clone's start: the 240 s start phase with the Club key, the 300 s fleet check and the 600 s fleet start with
+        // its Doctor wait, plus input, result and cleanup. Expected about 110 s: a clone's fleet start took 91 s (Operation 20180).
+        'instance.start' => 1200,
         // One 150 s network, file and restart phase, plus input, result and cleanup. No live sample yet.
         'instance.connection_environment' => 180,
         // No run yet. Basis: the import step's own bound, DatabaseImport::TimeoutSeconds (3,600 s: a 2 GB dump at 1 MB/s), plus

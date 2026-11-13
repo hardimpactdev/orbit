@@ -83,6 +83,9 @@ abstract readonly class InstancePower implements DirectOperationProjection
             if ($runtime === null) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Sleep and wake require a container Instance.', 409);
             }
+            if ($runtime->incus_project === InstancePlacement::NestedProject && $runtime->t3_port === null) {
+                throw new ResourceOperationException('instance.sleep_unsupported', 'A nested-fleet default starts through its deployment; it does not sleep or wake.', 409);
+            }
             if ($instance->placementEnvironment() !== 'development' || $runtime->incus_project === InstancePlacement::NestedProject
                 || $instance->project->nested_fleet) {
                 throw new ResourceOperationException('instance.sleep_unsupported', 'Only a development container that runs no nested fleet sleeps and wakes.', 409);
@@ -90,17 +93,28 @@ abstract readonly class InstancePower implements DirectOperationProjection
             if (($open = $this->open($instance)) !== null) {
                 return $open;
             }
-            if ($instance->status !== InstanceState::Active
-                || Operation::query()->where('target_type', 'process')->whereIn('target_id', $instance->processes()->select('id'))
-                    ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
-                throw new ResourceOperationException('instance.lifecycle_busy', 'The Instance has unfinished lifecycle work.', 409);
-            }
+            self::assertIdle($instance);
             $this->refuse($instance, $runtime);
 
             return app(StartOperationAction::class)->execute($this->kind(), 'instance', $instance->id, $instance->node_id,
                 ['container' => app(InstanceContainer::class)->intent($instance, $runtime), 'marker' => self::markerPath($instance), ...$this->intent()],
                 $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
         });
+    }
+
+    /**
+     * The power Operations' shared refusal of other lifecycle work: an Instance that is not active, or a Process of it with an open
+     * Operation. A sleep, a wake and the start of a nested-fleet clone (InstanceStart) all call it inside the Instance lock.
+     */
+    public static function assertIdle(Instance $instance, string $inactive = 'The Instance has unfinished lifecycle work.'): void
+    {
+        if ($instance->status !== InstanceState::Active) {
+            throw new ResourceOperationException('instance.lifecycle_busy', $inactive, 409);
+        }
+        if (Operation::query()->where('target_type', 'process')->whereIn('target_id', $instance->processes()->select('id'))
+            ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
+            throw new ResourceOperationException('instance.lifecycle_busy', 'The Instance has unfinished lifecycle work.', 409);
+        }
     }
 
     /** An open Operation of this kind that a second caller joins; only a wake is joined. */
