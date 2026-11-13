@@ -120,7 +120,7 @@ sequenceDiagram
     %%> - stops the units, snapshots `seed-<commit>`, starts them again and deletes older seeds
     %%> - a nested-fleet default retakes it at the same commit, and refuses a Club key file on its disk
     SW->>N: Check the container<br/>Ansible · tags check
-    opt nested-fleet default and a step failed
+    opt nested-fleet default failed after checkout
       SW->>N: Restore the old seed<br/>Ansible · fleet_restore
       SW->>N: Start on the old seed<br/>Ansible · tags start
       %%> What it does:

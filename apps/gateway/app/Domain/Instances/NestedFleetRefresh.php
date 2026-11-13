@@ -9,6 +9,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * The release hook of the nested fleet (docs/cli/instance/container/fleet-refresh.mmd): after a Gateway release, it admits one
@@ -19,6 +20,9 @@ use Illuminate\Support\Facades\Log;
 final readonly class NestedFleetRefresh
 {
     public const string Trigger = 'release';
+
+    /** The line of a default whose admission failed with an error that is no refusal. */
+    public const string AdmissionFailed = 'operation.admission_failed';
 
     public function __construct(private StartInstanceDeployAction $deploy) {}
 
@@ -32,6 +36,10 @@ final readonly class NestedFleetRefresh
                 $results[$label] = 'operation:'.$this->deploy->pinned($instance, self::Trigger, null, $commit)->id;
             } catch (ResourceOperationException $refused) {
                 $results[$label] = $refused->errorCode;
+            } catch (Throwable $failed) {
+                // One default's failed admission never holds the others, and the release step still ends.
+                report($failed);
+                $results[$label] = self::AdmissionFailed;
             }
         }
         Log::info('Nested-fleet refresh admissions.', ['commit' => $commit, 'defaults' => $results]);

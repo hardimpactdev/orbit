@@ -2358,11 +2358,11 @@
     ]
   },
   "swamp/tests/workflow_instance_deploy_fleet_test.ts": {
-    "source_sha256": "3477df62f0340a7538bd59f2955d26709c1278ae52677509775d16b8bb1eb135",
+    "source_sha256": "95dc611e0a46adb5b29570d4d7dbaaa2c812a8de4ddec65c1abfa88afbd0d18d",
     "cases": [
       "a normal container deployment skips every fleet step, after success and after a failure",
       "a nested-fleet default starts and refreshes its fleet before the seed, and restores nothing when every step passes",
-      "a failed nested-fleet deployment restores the old seed, starts through start and keeps the failed phase's result"
+      "a nested-fleet deployment that failed after its checkout restores the old seed, starts through start and keeps the failed phase's result"
     ]
   }
 }

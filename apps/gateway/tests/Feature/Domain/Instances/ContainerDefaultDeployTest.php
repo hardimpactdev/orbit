@@ -839,3 +839,12 @@ it('reports a refused refresh and still ends the release step with success', fun
     expect(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(0);
     $this->artisan('instances:refresh-nested-fleets', ['--commit' => 'main'])->assertExitCode(2);
 });
+
+it('reports an admission that fails with any other error as one line, and still ends with success', function (): void {
+    Queue::fake();
+    nestedFleetDefault();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andThrow(new RuntimeException('network'));
+
+    $this->artisan('instances:refresh-nested-fleets', ['--commit' => str_repeat('a', 40)])
+        ->expectsOutput('tool/default on beast: '.NestedFleetRefresh::AdmissionFailed)->assertExitCode(0);
+});

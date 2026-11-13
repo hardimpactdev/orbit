@@ -1170,10 +1170,10 @@ The run deploys the release commit itself. A commit missing from the Project's r
 | Best effort | The release step allows failure, and nothing in the release waits for the run. A refusal or a failed run leaves the release live |
 | No refresh during a copy | A clone copy reads the seed that a refresh replaces. While a clone's create is open, the admission refuses with `instance.clone_in_flight` |
 | One run at a time | An open deployment of the default holds its Instance lock. A second admission refuses with `operation.target_busy` |
-| The old seed stays | A failed step restores the seed that the admission recorded, then starts the default. Clones keep copying the old seed |
+| The old seed stays | A step that fails from the checkout on restores the seed that the admission recorded, then starts the default. Clones keep copying the old seed |
 | A failure names its step | The Operation names the first failed step and its code, such as `instance.container_fleet_refresh_failed` |
 | An update, not a rebuild | The image variant's tools change only with a new image |
-| The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp. An open refresh can hold it |
+| The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Cancel an open refresh before the next release |
 
 It replaces the release trigger and the daily run of the [task VM refresh](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-image-refresh.mmd) for the nested-fleet path, and calls neither; [Old paths](/reference/old-paths) says when those go. A Project has one default Instance in the whole fleet today, so the refresh runs on the Node that holds it.
 

@@ -1986,8 +1986,8 @@ jobs:
         run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags check "$ORBIT_ANSIBLE/instance-container.yml"
         env: *container_ansible
   - name: Restore the old seed
-    # A failed deployment of a nested-fleet default goes back to its old seed and starts again through `start`, so the start
-    # delivers what every start delivers. The failed phase's result file stays the run's result.
+    # A nested-fleet default that failed after its container changed (from the checkout on) goes back to its old seed and starts
+    # again through `start`, so the start delivers what every start delivers. The failed phase's result file stays the run's result.
     labels:
       role: swamp
     writes: true
@@ -2019,7 +2019,7 @@ jobs:
     - step: Check the container
       condition:
         type: always
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed") }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Start the container", "Fetch into the mirror"])) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -2036,7 +2036,7 @@ jobs:
     - step: Restore the old seed
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed") }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Start the container", "Fetch into the mirror"])) }}
     task:
       type: behavior
       behaviorType: command/shell

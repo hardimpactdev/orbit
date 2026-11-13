@@ -57,7 +57,7 @@ sequenceDiagram
     Note over GW: Record the seed commit
     %%> Result:
     %%> - new Instances of the Project clone the new seed; existing clones keep the fleet they have
-  else a step fails
+  else a step fails from the checkout on
     SW->>N: Restore the old seed<br/>Ansible · tags fleet_restore
     %%> What it does:
     %%> - stops the container and restores `seed-OLD`, the seed the Gateway recorded at admission

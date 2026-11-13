@@ -66,14 +66,18 @@ Deno.test("a nested-fleet default starts and refreshes its fleet before the seed
     assert(names.indexOf("Refresh the inner fleet") < names.indexOf("Take the seed snapshot"));
 });
 
-Deno.test("a failed nested-fleet deployment restores the old seed, starts through start and keeps the failed phase's result", () => {
+Deno.test("a nested-fleet deployment that failed after its checkout restores the old seed, starts through start and keeps the failed phase's result", () => {
     for (const failing of ["Refresh the inner fleet", "Start the inner fleet", "Take the seed snapshot", "Check out in the container"]) {
         const statuses = { ...passed, [failing]: "failed" };
         for (const name of fleetSteps.filter((n) => n !== failing)) assertEquals(skips(name, nested, statuses), true, name);
         for (const name of restoreSteps) assertEquals(skips(name, nested, statuses), false, `${name} after ${failing}`);
     }
-    // Without the intent file there is nothing to run the restore with.
+    // Without the intent file there is nothing to run the restore with; a failed start or fetch changed nothing in the container.
     assertEquals(skips("Restore the old seed", nested, { "Write the container intent": "failed" }), true);
+    for (const unchanged of ["Start the container", "Fetch into the mirror"]) {
+        assertEquals(skips("Restore the old seed", nested, { ...passed, [unchanged]: "failed" }), true, unchanged);
+    }
+    assertEquals(skips("Restore the old seed", nested, { ...passed, "Run dev deploy steps-0": "failed" }), false);
     const before = ["Start the container", "Fetch into the mirror", "Check out in the container", "Run dev deploy steps",
         "Install the Processes", ...fleetSteps, "Take the seed snapshot", "Check the container"];
     assertEquals(step("Restore the old seed").dependsOn, before.map((name) => ({ step: name, condition: { type: "always" } })));
