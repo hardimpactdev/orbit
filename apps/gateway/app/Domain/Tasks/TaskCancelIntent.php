@@ -42,8 +42,11 @@ final readonly class TaskCancelIntent
         if (($replay = $this->keys->replay($kind)) !== null) {
             return $replay;
         }
+        // A group that owns a task copy ends through the copy's destroy (TaskCopyEnd); the read of its workspace runs before any lock.
+        $copy = $kind === 'tasks.cancel' && ! TaskVm::forGroup($group) instanceof TaskVm ? TaskInstanceWorkspace::forGroup($group) : null;
+        $workspace = $copy === null ? null : app(TaskCopyEnd::class)->workspace($copy->instance);
 
-        return $this->execution->synchronized($group->id, function () use ($group, $caller, $request, $kind): Operation {
+        return $this->execution->synchronized($group->id, function () use ($group, $caller, $request, $kind, $copy, $workspace): Operation {
             if (($replay = $this->keys->replay($kind)) !== null) {
                 return $replay;
             }
@@ -65,6 +68,9 @@ final readonly class TaskCancelIntent
                 self::eligible($group->refresh(), $kind);
                 $this->review->assertOnOrigin($group);
                 $this->operations->cancelOpen($group);
+                if ($copy !== null && $workspace !== null) {
+                    return app(TaskCopyEnd::class)->cancel($group, $copy->instance, $workspace, $caller, $request);
+                }
             } elseif (Operation::query()->where('target_type', 'task_group')->where('target_id', $group->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('operation.target_busy', 'The current Task root must settle before maintenance cleanup.', 409);

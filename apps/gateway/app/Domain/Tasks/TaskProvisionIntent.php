@@ -34,6 +34,11 @@ final readonly class TaskProvisionIntent
     /** A proof starts its group at the commit it proves; any other group starts at the newest green commit of the default branch. */
     public function start(Task $group, string $caller, ?string $request, ?string $commit = null): Operation
     {
+        // A task of a nested-fleet Project starts as a copy of its default Instance (docs/cli/task/start.mmd); every other keeps its task VM.
+        if (InstancePlacement::taskRuntime($group->project()->firstOrFail()) === TaskRuntime::Copy) {
+            return app(TaskCopyStart::class)->start($group, $caller, $request);
+        }
+
         return $this->admit($group, $commit, 'tasks.provision', static fn (array $input): array => $input, $caller, $request);
     }
 

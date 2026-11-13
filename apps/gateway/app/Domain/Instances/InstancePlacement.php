@@ -6,6 +6,7 @@ namespace App\Domain\Instances;
 
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskRuntime;
 use App\Models\Node;
 use App\Models\Project;
 
@@ -16,7 +17,7 @@ use App\Models\Project;
  * the record.
  *
  * Each writer calls the entry for its kind: `assert()` where the result can be a container, `checkout()` where it is always a
- * host checkout, `taskWorkspace()` for a task workspace. A nested-fleet Project's Instances are only containers in the nested
+ * host checkout, `taskWorkspace()` for a task workspace on a task VM, `taskRuntime()` where a task starts. A nested-fleet Project's Instances are only containers in the nested
  * project, made from the nested-fleet image (docs/reference/development-containers.md#the-nested-fleet-image): `assert()` refuses
  * it early on a Node whose switch is off, `place()` decides once the result is known, and the other two entries refuse it.
  */
@@ -45,10 +46,19 @@ final readonly class InstancePlacement
         }
     }
 
-    /** A writer of a task workspace: task provision and admission, and a proof's workspace. */
+    /**
+     * Where a task of the Project runs: a copy of its default Instance for a nested-fleet Project, a task VM for every other Project
+     * (docs/reference/development-containers.md#tasks-in-an-instance-container). The one place that reads the flag for tasks.
+     */
+    public static function taskRuntime(Project $project): TaskRuntime
+    {
+        return $project->nested_fleet ? TaskRuntime::Copy : TaskRuntime::Vm;
+    }
+
+    /** A writer of a task workspace on a task VM: task provision and admission, and a proof's workspace. A task copy has no VM. */
     public static function taskWorkspace(Project $project): void
     {
-        if ($project->nested_fleet) {
+        if (self::taskRuntime($project) === TaskRuntime::Copy) {
             throw self::unavailable();
         }
     }

@@ -15,7 +15,7 @@ use Illuminate\Support\Str;
  * The container Instance workspace of a task group (docs/reference/task-instance-workspace.md#check-phases). The group's
  * Instance has a recorded container runtime on its own Node and names the group as its workspace owner. Swamp reaches the
  * container through that Node; every guest command runs as `agent` in the fixed root. A group without one keeps its task
- * VM path. No public command creates this ownership yet.
+ * VM path. A task copy (TaskCopyStart) creates this ownership.
  */
 final readonly class TaskInstanceWorkspace
 {
