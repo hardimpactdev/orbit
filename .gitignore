@@ -20,3 +20,6 @@ node_modules/
 /docs/generated/context.json
 /docs/docs.json
 /docs/flows-data.js
+
+# Local fixture timing output; CI also rejects a forced add.
+ci-unit-times.json
