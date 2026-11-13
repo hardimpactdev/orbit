@@ -692,6 +692,19 @@ contexts:
     item: "ufw route deny in on orbit out on orbitinst0 from 10.44.0.128/25 to 10.253.0.7 port 3773 proto tcp comment 'orbit:instance-7-t3-task-vms'"
   instance-destroy-firewall-plain-rule:
     item: "ufw allow in on orbitinst0 from 10.253.0.7 to 10.44.0.7 port 3306 proto tcp comment 'orbit:instance-7-database'"
+  # `ufw show added` lines in the recorded format of the destroy cases above, for env:sync's websocket reconcile.
+  connection-websocket-removed:
+    plan: {websocket: null, websocket_comment: 'orbit:instance-7-websocket'}
+    connection_firewall:
+      stdout_lines: ["Added user rules (see 'ufw status' for running firewall):", "ufw route allow in on orbitinst0 out on orbit from 10.253.0.7 to 10.44.0.3 port 8443 proto tcp comment 'orbit:instance-7-websocket'", "ufw route allow in on orbitinst0 out on orbit from 10.253.0.7 to 10.44.0.9 port 8443 proto tcp comment 'orbit:instance-7-websocket'", "ufw allow in on orbitinst0 from 10.253.0.7 to 10.44.0.7 port 3306 proto tcp comment 'orbit:instance-7-database'", "ufw route allow in on orbitinst0 out on orbit from 10.253.0.70 to 10.44.0.3 port 8443 proto tcp comment 'orbit:instance-70-websocket'"]
+  connection-websocket-current:
+    plan:
+      websocket_comment: 'orbit:instance-7-websocket'
+      websocket: {firewall: {from_ip: 10.253.0.7, to_ip: 10.44.0.3, to_port: '8443'}}
+    connection_firewall:
+      stdout_lines: ["Added user rules (see 'ufw status' for running firewall):", "ufw route allow in on orbitinst0 out on orbit from 10.253.0.7 to 10.44.0.3 port 8443 proto tcp comment 'orbit:instance-7-websocket'", "ufw route allow in on orbitinst0 out on orbit from 10.253.0.7 to 10.44.0.9 port 8443 proto tcp comment 'orbit:instance-7-websocket'", "ufw allow in on orbitinst0 from 10.253.0.7 to 10.44.0.7 port 3306 proto tcp comment 'orbit:instance-7-database'", "ufw route allow in on orbitinst0 out on orbit from 10.253.0.70 to 10.44.0.3 port 8443 proto tcp comment 'orbit:instance-70-websocket'"]
+  connection-websocket-route-rule:
+    item: "ufw route allow in on orbitinst0 out on orbit from 10.253.0.7 to 10.44.0.3 port 8443 proto tcp comment 'orbit:instance-7-websocket'"
   retirement-alone:
     retired_worktree: false
     retired_repository: true
@@ -902,6 +915,26 @@ cases:
   field: ansible.builtin.set_fact.retirement_other_worktrees
   context: retirement-linked-descendant
   expected: ["/srv/tool/feature space/nested\ncheckout"]
+- file: instance-connection-environment.yml
+  task: Find the websocket firewall rules the plan no longer names
+  field: vars.connection_websocket_lines
+  context: connection-websocket-removed
+  expected: ["ufw route allow in on orbitinst0 out on orbit from 10.253.0.7 to 10.44.0.3 port 8443 proto tcp comment 'orbit:instance-7-websocket'", "ufw route allow in on orbitinst0 out on orbit from 10.253.0.7 to 10.44.0.9 port 8443 proto tcp comment 'orbit:instance-7-websocket'"]
+- file: instance-connection-environment.yml
+  task: Find the websocket firewall rules the plan no longer names
+  field: ansible.builtin.set_fact.connection_stale_firewall
+  context: connection-websocket-removed
+  expected: ["ufw route allow in on orbitinst0 out on orbit from 10.253.0.7 to 10.44.0.3 port 8443 proto tcp comment 'orbit:instance-7-websocket'", "ufw route allow in on orbitinst0 out on orbit from 10.253.0.7 to 10.44.0.9 port 8443 proto tcp comment 'orbit:instance-7-websocket'"]
+- file: instance-connection-environment.yml
+  task: Find the websocket firewall rules the plan no longer names
+  field: ansible.builtin.set_fact.connection_stale_firewall
+  context: connection-websocket-current
+  expected: ["ufw route allow in on orbitinst0 out on orbit from 10.253.0.7 to 10.44.0.9 port 8443 proto tcp comment 'orbit:instance-7-websocket'"]
+- file: instance-connection-environment.yml
+  task: Delete the websocket firewall rules the plan no longer names
+  field: vars.rule
+  context: connection-websocket-route-rule
+  expected: [ufw, route, allow, in, 'on', orbitinst0, out, 'on', orbit, from, 10.253.0.7, to, 10.44.0.3, port, '8443', proto, tcp]
 - file: instance-container-destroy.yml
   task: Delete only this Instance's rules
   field: loop

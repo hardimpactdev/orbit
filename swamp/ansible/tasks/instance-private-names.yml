@@ -1,0 +1,40 @@
+---
+# The fleet private names of the container's access plan, in the container's /etc/hosts. The container has no DNS server, and the
+# egress proxy refuses private names, so each name the plan admits, such as `reverb.orbit` for an attached websocket app, gets the
+# exact address the plan admits for it. Orbit owns only the lines between its two markers; an Instance without a name keeps none.
+# Inputs: `private_names_root` (the `incus exec ... --` argv as root), `private_names_push` (the `incus --project` argv),
+# `private_names_container`, and `private_names` (a list of name, host and port).
+- name: Read the container's hosts file
+  ansible.builtin.command: { argv: "{{ private_names_root + ['cat', '--', '/etc/hosts'] }}" }
+  register: private_names_hosts
+  changed_when: false
+  failed_when: private_names_hosts.rc != 0 and 'No such file or directory' not in private_names_hosts.stderr
+
+- name: Compose the hosts file with the plan's private names
+  vars:
+    private_names_newline: "\n"
+    private_names_begin: "# BEGIN Orbit private names"
+    private_names_end: "# END Orbit private names"
+  ansible.builtin.set_fact:
+    private_names_content: >-
+      {%- set kept = namespace(lines=[], inside=false) -%}
+      {%- for line in private_names_hosts.stdout.splitlines() -%}
+        {%- if line == private_names_begin -%}{%- set kept.inside = true -%}
+        {%- elif line == private_names_end -%}{%- set kept.inside = false -%}
+        {%- elif not kept.inside -%}{%- set kept.lines = kept.lines + [line] -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- set names = private_names | default([]) -%}
+      {%- set block = [private_names_begin] + (names | map(attribute='host') | zip(names | map(attribute='name')) | map('join', ' ') | list)
+         + [private_names_end] if names | length > 0 else [] -%}
+      {{ ((kept.lines + block) | join(private_names_newline) ~ private_names_newline) if (kept.lines + block) else '' }}
+
+- name: Write the changed hosts file
+  when: private_names_content.splitlines() != private_names_hosts.stdout.splitlines()
+  ansible.builtin.command:
+    argv: >-
+      {{ private_names_push + ['file', 'push', '--uid', '0', '--gid', '0', '--mode', '0644', '-',
+      private_names_container ~ '/etc/hosts'] }}
+    stdin: "{{ private_names_content }}"
+    stdin_add_newline: false
+  changed_when: true

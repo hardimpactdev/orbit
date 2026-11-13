@@ -419,6 +419,20 @@
     - name: Finish applying changed PHP settings
       ansible.builtin.meta: flush_handlers
 
+# The access plan's private names, such as `reverb.orbit` for an attached websocket app (docs/reference/development-containers.md#private-names-of-the-access-plan).
+- name: Write the private names of the access plan
+  tags: [container, clone, start]
+  when: phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool
+  ansible.builtin.include_tasks:
+    file: instance-private-names.yml
+    apply:
+      tags: [container, clone, start]
+  vars:
+    private_names_root: "{{ as_root }}"
+    private_names_push: "{{ incus_project }}"
+    private_names_container: "{{ container.name }}"
+    private_names: "{{ container.private_names | default([]) }}"
+
 - name: Stop the container
   tags: [stop]
   when: phase == 'stop' and container_read.rc == 0 and (container_read.stdout | from_json).status == 'Running'

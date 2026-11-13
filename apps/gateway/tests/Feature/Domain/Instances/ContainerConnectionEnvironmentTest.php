@@ -17,6 +17,8 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Operation;
+use App\Models\WebSocketApp;
+use App\Models\WebSocketAppTarget;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -158,8 +160,8 @@ it('refuses a changed set of connections at the run start instead of writing oth
         fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('env.connection_changed'));
 });
 
-it('refuses a container with nothing to write, a stopped container and busy lifecycle work before any Operation', function (string $case, string $code): void {
-    $instance = connectionEnvFixture($case !== 'no connection');
+it('refuses a stopped container and busy lifecycle work before any Operation', function (string $case, string $code): void {
+    $instance = connectionEnvFixture();
     match ($case) {
         'stopped' => $instance->runtime()->update(['power_state' => 'stopped']),
         'lifecycle' => $instance->update(['status' => 'checkout_prepared']),
@@ -168,7 +170,45 @@ it('refuses a container with nothing to write, a stopped container and busy life
     expect(fn () => app(StartInstanceEnvironmentSyncAction::class)->execute($instance))->toThrow(
         fn (ResourceOperationException $error) => expect($error->errorCode)->toBe($code));
     expect(Operation::query()->count())->toBe(0);
-})->with([['no connection', 'env.connection_missing'], ['stopped', 'process.target_inactive'], ['lifecycle', 'instance.lifecycle_busy']]);
+})->with([['stopped', 'process.target_inactive'], ['lifecycle', 'instance.lifecycle_busy']]);
+
+it('writes an attached private websocket app\'s keys and reconciles its exact path, and a run with no key withdraws a removed app\'s path', function (): void {
+    $instance = connectionEnvFixture(false);
+    $services = containerDefaultNode('Services', '10.44.0.3', false);
+    $services->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']);
+    $app = WebSocketApp::query()->create(['name' => 'tool', 'app_id' => '1001', 'key' => 'reverb-key', 'secret' => CONNECTION_ENV_SECRET, 'credential_generation' => 1]);
+    $target = WebSocketAppTarget::query()->create(['websocket_app_id' => $app->id, 'instance_id' => $instance->id]);
+    $vault = connectionEnvVault();
+
+    $operation = app(ContainerConnectionEnvironment::class)->start($instance, null, null);
+
+    $plan = $operation->input['connection_environment'];
+    expect($plan['keys'])->toBe(['BROADCAST_CONNECTION', 'REVERB_APP_ID', 'REVERB_APP_KEY', 'REVERB_APP_SECRET', 'REVERB_HOST', 'REVERB_PORT', 'REVERB_SCHEME'])
+        ->and($plan['websocket'])->toBe([
+            'egress' => ['action' => 'allow', 'destination' => '10.44.0.3/32', 'protocol' => 'tcp', 'destination_port' => '8443', 'state' => 'enabled',
+                'description' => 'Orbit websocket app'],
+            'bridge_endpoint' => ['host' => '10.44.0.3', 'port' => 8443, 'docker' => false],
+            'firewall' => ['rule' => 'allow', 'interface_in' => 'orbitinst0', 'from_ip' => '10.253.0.2', 'to_ip' => '10.44.0.3', 'to_port' => '8443',
+                'proto' => 'tcp', 'comment' => "orbit:instance-{$instance->id}-websocket", 'route' => 'yes', 'interface_out' => 'orbit']])
+        ->and($plan['websocket_comment'])->toBe("orbit:instance-{$instance->id}-websocket")
+        ->and($plan['private_names'])->toBe([['name' => 'reverb.orbit', 'host' => '10.44.0.3', 'port' => 8443]])
+        // Database paths stay add-only and separate.
+        ->and($plan['egress'])->toBe([])->and($plan['firewall'])->toBe([])
+        ->and(json_encode($operation->input))->not->toContain(CONNECTION_ENV_SECRET);
+    containerDefaultNode('control', '10.44.0.209', false)->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+    app(ContainerConnectionEnvironment::class)->input($operation);
+    $lines = json_decode(collect($vault->puts)->firstWhere('key', 'instance-environment-'.$operation->id)['value'], true, 512, JSON_THROW_ON_ERROR)['lines'];
+    expect($lines['REVERB_HOST'])->toBe('REVERB_HOST="reverb.orbit"')->and($lines['REVERB_PORT'])->toBe('REVERB_PORT="8443"');
+
+    // The app is removed: the next sync has no key to write, still runs, and its plan has no websocket path, so the run withdraws it.
+    $operation->forceFill(['status' => 'succeeded', 'lock_key' => null])->save();
+    $target->delete();
+    $removed = app(ContainerConnectionEnvironment::class)->start($instance->refresh(), null, null);
+    expect($removed->input['connection_environment']['keys'])->toBe([])
+        ->and($removed->input['connection_environment']['websocket'])->toBeNull()
+        ->and($removed->input['connection_environment']['private_names'])->toBe([])
+        ->and($removed->input['connection_environment']['websocket_comment'])->toBe("orbit:instance-{$instance->id}-websocket");
+});
 
 it('keeps the host Instance on the full render path', function (): void {
     $instance = connectionEnvFixture();

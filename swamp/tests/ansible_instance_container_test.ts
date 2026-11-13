@@ -83,7 +83,7 @@ function fixture() {
   Deno.writeTextFileSync(`${folder}/tasks/instance-container-phase.yml`,
     stringify(tasks).replaceAll("/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`));
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml",
-    "tasks/instance-container-power.yml",
+    "tasks/instance-container-power.yml", "tasks/instance-private-names.yml",
     "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
@@ -1346,6 +1346,47 @@ Deno.test({
       assert(again.ok, again.output);
       assertEquals(again.changed, 0, again.output);
       assertEquals(tryRestarts().length, before + 1);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "container writes the access plan's private names into /etc/hosts, keeps other lines, and removes them when the plan has none",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    const hosts = `${f.folder}/containers/instance-7/etc/hosts`;
+    const block = "# BEGIN Orbit private names\n10.44.0.3 reverb.orbit\n# END Orbit private names\n";
+    try {
+      // A normal Instance: the plan has no names, and the step writes nothing, also where the image has a hosts file.
+      const plain = f.run("container");
+      assert(plain.ok, plain.output);
+      assert(!/Write the changed hosts file\]\s*\n\s*changed/.test(plain.output), plain.output);
+      Deno.writeTextFileSync(hosts, "127.0.0.1 localhost\n");
+      const again = f.run("start");
+      assert(again.ok, again.output);
+      assertEquals(Deno.readTextFileSync(hosts), "127.0.0.1 localhost\n");
+      assertEquals(again.changed, 0, again.output);
+
+      // An Instance with a private websocket app: its name at the plan's address, after the image's own lines.
+      Object.assign(f.container, { private_names: [{ name: "reverb.orbit", host: "10.44.0.3", port: 8443 }] });
+      f.write();
+      const named = f.run("start");
+      assert(named.ok, named.output);
+      assertEquals(Deno.readTextFileSync(hosts), "127.0.0.1 localhost\n" + block);
+      assertEquals(f.state().files["/etc/hosts"], { uid: "0", gid: "0", mode: "0644" });
+      const rerun = f.run("start");
+      assertEquals(rerun.changed, 0, rerun.output);
+
+      // The app is removed: the next start takes the block away and keeps every other line.
+      Deno.writeTextFileSync(hosts, "127.0.0.1 localhost\n" + block + "10.1.1.1 operator\n");
+      delete (f.container as Record<string, unknown>).private_names;
+      f.write();
+      const removed = f.run("start");
+      assert(removed.ok, removed.output);
+      assertEquals(Deno.readTextFileSync(hosts), "127.0.0.1 localhost\n10.1.1.1 operator\n");
     } finally {
       f.cleanup();
     }

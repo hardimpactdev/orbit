@@ -646,6 +646,19 @@ class InstanceMigrateEnvTest(unittest.TestCase):
         self.assertEqual(self.inspect('API_HOST=api-eu.pusher.com\nAPI_PORT=443\n'), [])
         self.assertEqual(len(self.inspect('BROADCAST_CONNECTION=pusher\nPUSHER_HOST=api-eu.pusher.com\nPUSHER_PORT=443\n', proxy_policy=None)), 1)
 
+    def test_the_private_websocket_endpoint_is_admitted_only_at_the_port_the_access_plan_names(self):
+        env = 'BROADCAST_CONNECTION=reverb\nREVERB_HOST=reverb.orbit\nREVERB_PORT={port}\nREVERB_SCHEME=https\n'
+        # The plan of an Instance that holds a private app: the address and the name, both at the Instance port.
+        plan = [{'host': '10.44.0.3', 'port': 8443}, {'host': 'reverb.orbit', 'port': 8443}]
+        self.assertEqual(self.inspect(env.format(port=8443), plan), [])
+        # The shared 443 listener serves other sites, so the plan never admits it, and an Instance without the app has no target.
+        refused = self.inspect(env.format(port=443), plan)
+        self.assertEqual(len(refused), 1)
+        self.assertIn('REVERB_HOST=reverb.orbit:443: the HTTP endpoint is refused by the Instance proxy policy', refused[0])
+        self.assertEqual(len(self.inspect(env.format(port=8443))), 1)
+        # Another private name on the same Node stays refused.
+        self.assertEqual(len(self.inspect(env.format(port=8443).replace('reverb.orbit', 'analytics.orbit'), plan)), 1)
+
     def test_known_listeners_and_browser_settings_are_not_outbound_services(self):
         for stem in ('REVERB_SERVER', 'SERVER', 'PI_SERVER', 'VITE_PUSHER', 'VITE_REVERB'):
             with self.subTest(stem=stem):
