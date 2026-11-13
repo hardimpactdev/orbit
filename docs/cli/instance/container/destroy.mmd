@@ -60,6 +60,11 @@ sequenceDiagram
       %%> Caddy publication:
       %%> - on the Node, wait at most 5 s for the publish lock; compare the composed-from SHA-256 with the live file, then validate, rename and reload under that lock
       %%> - a changed base refuses with `caddy.composed_from_live_mismatch`; a busy lock refuses with `caddy.publish_busy`; the live Caddyfile stays unchanged and the normal failure path runs
+      SW->>GW: Release the Route Nodes<br/>route-release · run ID
+      %%> When:
+      %%> - only after the withdrawal held; the container delete writes only this clone's files, so the next Route write on the Node starts now
+      %%> If it is refused:
+      %%> - the run goes on; the end frees the Nodes, and the result says route_hold_released false
     end
     opt clone owns server databases
       %% path: server-database
@@ -88,5 +93,6 @@ sequenceDiagram
       %%> Retry:
       %%> - a fresh forced destroy reuses the removal identity and accepts resources already gone
       %%> - after withdrawal the Route stays down; records and the reserved port stay until success
+      %%> - the removal records route_withdrawn_at, so the retry skips the withdrawal and holds no Node
     end
   end

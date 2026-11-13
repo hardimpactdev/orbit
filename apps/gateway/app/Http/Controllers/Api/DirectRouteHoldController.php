@@ -4,14 +4,16 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Domain\Instances\InstanceDestroyRouteWithdrawal;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Operations\DirectRouteHoldRequest;
 use App\Models\Operation;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 
-/** The two calls of a run around its Route-publish step (docs/reference/routes.md#coordinate-publication). */
+/** The two calls of a run around its Route-publish step, and a removal's release after its withdraw step (docs/reference/routes.md#coordinate-publication). */
 final class DirectRouteHoldController extends Controller
 {
     /** The Gateway answers after this long when the Nodes stay busy; the step asks again. */
@@ -39,7 +41,15 @@ final class DirectRouteHoldController extends Controller
 
     public function release(DirectRouteHoldRequest $request, Operation $operation, RoutePublicationHolds $holds): JsonResponse
     {
-        $holds->releaseStep($operation);
+        if (RoutePublicationHolds::releasesAfterWithdraw($operation->kind)) {
+            // A removal's Route is withdrawn: a retry of it has no Route work left, and its Nodes serve the next write now.
+            DB::transaction(static function () use ($operation, $holds): void {
+                app(InstanceDestroyRouteWithdrawal::class)->record($operation);
+                $holds->releaseWithdrawn($operation);
+            });
+        } else {
+            $holds->releaseStep($operation);
+        }
 
         return response()->json(['data' => ['released' => true], 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
     }

@@ -12,13 +12,15 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Validation\Validator;
 
-/** The hold call of a run's Route-publish step: only the root Node or the Swamp Node, for the run bound to the Operation. */
+/** The hold call of a run's Route-publish step, or a removal's release after its withdraw step: only the root Node or the Swamp Node, for the run bound to the Operation. */
 final class DirectRouteHoldRequest extends OperationPeerRequest
 {
     public function authorize(): bool
     {
         $operation = $this->route('operation');
-        if (! $operation instanceof Operation || ! RoutePublicationHolds::holdsPerStep($operation->kind)) {
+        // A removal only gives its admission hold back early; it never asks for a step hold.
+        $early = $this->routeIs('operation:direct:route-release') && $operation instanceof Operation && RoutePublicationHolds::releasesAfterWithdraw($operation->kind);
+        if (! $operation instanceof Operation || (! $early && ! RoutePublicationHolds::holdsPerStep($operation->kind))) {
             throw new ResourceOperationException('operation.route_hold_forbidden', 'This Operation holds no Nodes for a step.', 403);
         }
         $caller = $this->peerNodeId();
