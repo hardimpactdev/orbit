@@ -37,6 +37,7 @@ sequenceDiagram
   %%> - the NIC carries `orbitinst0-proxy` and the container's own ACL, which lets only the Node's Caddy reach port 8080; `orbitinst0-egress` stays on the bridge only
   %%> - the agent folder is mounted too, so its clones have it; nothing in the default runs from it
   %%> - a nested-fleet default then gets its nested Gateway's Club key into /run by pipelined stdin, never on disk or in its seed
+  %%> - the result's `nested_fleet_club_key` is what that write did (`written`, `written_serve_not_restarted`, `unchanged`, `refused`, `missing`), never what admission read
   %%> - fetches the default branch into the Node's mirror with the read token; the token stays on the Node
   %%> Mail:
   %%> - the same launch applies the exact SMTP path before the four root-owned mail units; no separate mail playbook or step

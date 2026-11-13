@@ -664,6 +664,7 @@ class ClubKeyPhaseTest(unittest.TestCase):
         calls, output, error = self.phase()
         self.assertEqual(error, "")
         self.assertEqual(json.loads(output)["changed"], True)
+        self.assertEqual(json.loads(output)["club_key"], "changed")
         self.assertEqual([argv[:6] for argv, _ in calls], [
             ["incus", "--project", "orbit-instances-nested", "exec", "instance-9", "--"],
             ["incus", "--project", "orbit-instances-nested", "exec", "instance-9", "--"]])
@@ -677,6 +678,13 @@ class ClubKeyPhaseTest(unittest.TestCase):
     def test_the_same_key_changes_nothing(self):
         _, output, _ = self.phase(outcome="unchanged")
         self.assertEqual(json.loads(output)["changed"], False)
+        self.assertEqual(json.loads(output)["club_key"], "unchanged")
+
+    def test_a_key_written_while_the_inner_incus_was_not_ready_says_so(self):
+        _, output, error = self.phase(outcome="changed_serve_pending")
+        self.assertEqual(error, "")
+        self.assertEqual(json.loads(output)["changed"], True)
+        self.assertEqual(json.loads(output)["club_key"], "changed_serve_pending")
 
     def test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value(self):
         calls, _, error = self.phase(fstype="zfs")

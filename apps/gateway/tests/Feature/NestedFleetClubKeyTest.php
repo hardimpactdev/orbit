@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\Instances\Deployment\ContainerDeployOutcome;
+use App\Domain\Instances\Deployment\InstanceDeployProjection;
+use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\NestedFleetClubKey;
 use App\Domain\Operations\DirectOperation;
@@ -33,8 +36,30 @@ beforeEach(function (): void {
     Queue::fake();
     Cache::flush();
     $this->withoutMiddleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class]);
-    config(['swamp.proof_club_api_key' => FakeProofClubKey, 'swamp.nested_fleet_club_api_key' => '']);
+    config(['swamp.proof_club_api_key' => FakeProofClubKey]);
+    $this->clubEnvironment = clubEnvironment();
 });
+
+/** A shared Gateway env file without the key, as a release reads it; the layout and lock point at it. */
+function clubEnvironment(): string
+{
+    $base = sys_get_temp_dir().'/orbit-club-env-'.bin2hex(random_bytes(4));
+    mkdir($base.'/shared', 0700, true);
+    $path = $base.'/shared/gateway.env';
+    file_put_contents($path, "APP_NAME=Orbit\nORBIT_SWAMP_PROOF_CLUB_API_KEY=".FakeProofClubKey."\n");
+    chmod($path, 0600);
+    app()->instance(GatewayReleaseLayout::class, new GatewayReleaseLayout($base.'/current/apps/gateway'));
+    app()->instance(GatewayReleaseLock::class, new GatewayReleaseLock($base.'/release.lock'));
+
+    return $path;
+}
+
+/** Place the key in the shared env file, or take it out, as the installer would; the configuration stays as it is. */
+function placeClubKey(string $path, ?string $value): void
+{
+    $lines = array_filter(explode("\n", (string) file_get_contents($path)), static fn (string $line): bool => $line !== '' && ! str_starts_with($line, 'ORBIT_NESTED_FLEET_CLUB_API_KEY='));
+    file_put_contents($path, implode("\n", [...$lines, ...($value === null ? [] : ['ORBIT_NESTED_FLEET_CLUB_API_KEY='.$value])])."\n");
+}
 
 function clubSwitchedOnNode(): Node
 {
@@ -89,7 +114,7 @@ describe('the intent and the run inputs', function (): void {
 
     it('copies the nested-fleet key, never the proof key, to its one vault entry and marks the container', function (): void {
         $sent = clubVault();
-        config(['swamp.nested_fleet_club_api_key' => FakeNestedClubKey]);
+        placeClubKey($this->clubEnvironment, FakeNestedClubKey);
         $run = NestedFleetClubKey::forRun(['project' => 'orbit-instances-nested', 'club_key' => NestedFleetClubKey::intent()]);
         expect($run['container']['club_key']['available'])->toBeTrue()
             ->and($run['copies'])->toBe(['club_key' => ['vault' => 'orbit-control-inputs', 'key' => 'nested-fleet-club-api-key']])
@@ -103,7 +128,7 @@ describe('the intent and the run inputs', function (): void {
         $nested = ['project' => 'orbit-instances-nested', 'club_key' => NestedFleetClubKey::intent()];
         $missing = NestedFleetClubKey::forRun($nested);
         $normal = ['project' => 'orbit-instances', 'name' => 'instance-7'];
-        config(['swamp.nested_fleet_club_api_key' => FakeNestedClubKey]);
+        placeClubKey($this->clubEnvironment, FakeNestedClubKey);
         expect($missing['container']['club_key']['available'])->toBeFalse()
             ->and($missing['copies'])->toBe([])
             ->and(NestedFleetClubKey::forRun($normal))->toBe(['container' => $normal, 'copies' => []])
@@ -113,22 +138,32 @@ describe('the intent and the run inputs', function (): void {
 });
 
 describe('a create', function (): void {
-    it('says on the Operation whether a nested-fleet start gets the key, and a normal create says nothing', function (string $key): void {
+    it('reads the key once, at the run start, from the env file: admission reads nothing and a placed key needs no reload', function (): void {
         SwampNodeFixture::ensure();
-        config(['swamp.nested_fleet_club_api_key' => $key]);
+        clubVault();
         $node = clubSwitchedOnNode();
-        $nested = containerCreate(clubProject('trial', true), $node);
-        $normal = containerCreate(clubProject('plain', false), $node);
-        expect($nested->input['nested_fleet_club_key'])->toBe($key === '' ? 'missing' : 'delivered')
-            ->and(Operation::query()->findOrFail($nested->id)->input)->not->toHaveKey('club')
-            ->and($normal->input)->not->toHaveKey('nested_fleet_club_key')
+        // Admitted without a key: the Operation says nothing yet, and a key placed afterwards reaches this run.
+        $placedLater = containerCreate(clubProject('trial', true), $node);
+        placeClubKey($this->clubEnvironment, FakeNestedClubKey);
+        $later = app(DirectOperation::class)->workflowInputs($placedLater);
+        // Admitted with a key that was taken out before the start: the run has neither the flag nor the copy.
+        $removedLater = containerCreate(clubProject('other', true), $node);
+        placeClubKey($this->clubEnvironment, null);
+        $removed = app(DirectOperation::class)->workflowInputs($removedLater);
+        expect($placedLater->input)->not->toHaveKey('nested_fleet_club_key')
+            ->and($removedLater->input)->not->toHaveKey('nested_fleet_club_key')
+            ->and($later['intent']['container']['club_key']['available'])->toBeTrue()
+            ->and($later['execution_secrets']['club_key'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'nested-fleet-club-api-key'])
+            ->and($removed['intent']['container']['club_key']['available'])->toBeFalse()
+            ->and($removed['execution_secrets'])->not->toHaveKey('club_key')
+            ->and(config()->has('swamp.nested_fleet_club_api_key'))->toBeFalse()
             ->and(json_encode(Operation::query()->get()->toArray(), JSON_THROW_ON_ERROR))->not->toContain(FakeNestedClubKey);
-    })->with(['', FakeNestedClubKey]);
+    });
 
     it('hands a nested-fleet create run its vault reference and flag, and a normal create run neither', function (): void {
         SwampNodeFixture::ensure();
         $sent = clubVault();
-        config(['swamp.nested_fleet_club_api_key' => FakeNestedClubKey]);
+        placeClubKey($this->clubEnvironment, FakeNestedClubKey);
         $node = clubSwitchedOnNode();
         $nested = app(DirectOperation::class)->workflowInputs(containerCreate(clubProject('trial', true), $node));
         $normal = app(DirectOperation::class)->workflowInputs(containerCreate(clubProject('plain', false), $node));
@@ -142,19 +177,6 @@ describe('a create', function (): void {
 });
 
 describe('the stdin installer', function (): void {
-    function clubEnvironment(): string
-    {
-        $base = sys_get_temp_dir().'/orbit-club-env-'.bin2hex(random_bytes(4));
-        mkdir($base.'/shared', 0700, true);
-        $path = $base.'/shared/gateway.env';
-        file_put_contents($path, "APP_NAME=Orbit\nORBIT_SWAMP_PROOF_CLUB_API_KEY=".FakeProofClubKey."\n");
-        chmod($path, 0600);
-        app()->instance(GatewayReleaseLayout::class, new GatewayReleaseLayout($base.'/current/apps/gateway'));
-        app()->instance(GatewayReleaseLock::class, new GatewayReleaseLock($base.'/release.lock'));
-
-        return $path;
-    }
-
     function installClubKey(string $stdin): array
     {
         $stream = fopen('php://memory', 'r+');
@@ -172,7 +194,7 @@ describe('the stdin installer', function (): void {
     }
 
     it('adds the key from stdin, keeps every other setting and prints no value', function (): void {
-        $path = clubEnvironment();
+        $path = $this->clubEnvironment;
         [$code, $printed] = installClubKey(FakeNestedClubKey."\n");
         $environment = (string) file_get_contents($path);
         expect($code)->toBe(0)
@@ -187,11 +209,78 @@ describe('the stdin installer', function (): void {
     });
 
     it('refuses an empty, short or multi-word value and changes nothing', function (string $stdin): void {
-        $path = clubEnvironment();
+        $path = $this->clubEnvironment;
         $before = (string) file_get_contents($path);
         [$code, $printed] = installClubKey($stdin);
         expect($code)->toBe(1)
             ->and((string) file_get_contents($path))->toBe($before)
             ->and($printed)->not->toContain('fake-nested');
     })->with(['', 'short', "fake-nested key with spaces\n", "fake-nested-one\nfake-nested-two\n"]);
+});
+
+describe('the result of a start', function (): void {
+    it('maps what the run did to the one public word', function (mixed $word, ?string $code, string $outcome): void {
+        expect(NestedFleetClubKey::outcome($word, $code))->toBe($outcome);
+    })->with([
+        'written' => ['changed', null, 'written'],
+        'written while the inner Incus was not ready' => ['changed_serve_pending', null, 'written_serve_not_restarted'],
+        'unchanged' => ['unchanged', null, 'unchanged'],
+        'written, then a later phase failed' => ['changed', 'instance.create_seed_failed', 'written'],
+        'nothing written' => [null, null, 'missing'],
+        'a word the script never prints' => ['delivered', null, 'missing'],
+        'a failed write' => [null, 'instance.nested_club_key_delivery_failed', 'missing'],
+        'refused transfer' => [null, 'instance.nested_club_key_unsafe_transfer', 'refused'],
+        'refused /run' => [null, 'instance.nested_club_key_not_tmpfs', 'refused'],
+    ]);
+
+    it('reports on a create what the run did, never what admission read', function (array $result, string $status, string $outcome): void {
+        SwampNodeFixture::ensure();
+        // The Gateway held a key when it admitted the create; only the run's word counts.
+        placeClubKey($this->clubEnvironment, FakeNestedClubKey);
+        $node = clubSwitchedOnNode();
+        $operation = containerCreate(clubProject('trial', true), $node);
+        $normal = containerCreate(clubProject('plain', false), $node);
+        foreach ([$operation, $normal] as $admitted) {
+            $admitted->forceFill(['status' => 'running', 'finished_at' => null, 'error_code' => null, 'result' => null, 'state' => ['swamp_run_id' => 'run-1']])->save();
+            app(DevelopmentInstanceCreateProjection::class)->apply($admitted->refresh(), ['status' => $status, 'run_id' => 'run-1',
+                ...($status === 'failed' ? ['error_code' => $result['error_code']] : []),
+                'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+                'result' => ['ready' => $status === 'succeeded', 'instance_id' => $admitted->target_id, 'commit' => str_repeat('d', 40), ...$result]]);
+        }
+        expect($operation->refresh()->result['nested_fleet_club_key'])->toBe($outcome)
+            ->and($operation->result)->not->toHaveKey('club_key')
+            ->and($normal->refresh()->result)->not->toHaveKey('nested_fleet_club_key')
+            ->and($normal->result)->not->toHaveKey('club_key');
+    })->with([
+        'written' => [['club_key' => 'changed'], 'succeeded', 'written'],
+        'unchanged' => [['club_key' => 'unchanged'], 'succeeded', 'unchanged'],
+        'the run delivered nothing' => [[], 'succeeded', 'missing'],
+        'refused' => [['failed_step' => 'container', 'error_code' => 'instance.nested_club_key_unsafe_transfer'], 'failed', 'refused'],
+    ]);
+
+    it('reports on a deployment what its start did', function (?array $file, string $status, array $failed, string $outcome): void {
+        SwampNodeFixture::ensure();
+        placeClubKey($this->clubEnvironment, FakeNestedClubKey);
+        $instance = Instance::query()->findOrFail(containerCreate(clubProject('trial', true), clubSwitchedOnNode())->target_id);
+        $deploy = static function (bool $nested) use ($instance, $file, $status, $failed): Operation {
+            $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+                'status' => 'running', 'state' => ['swamp_run_id' => 'run-1'], 'input' => ['deployment' => ['variant' => 'container', 'home' => '/srv/trial',
+                    'container' => ['processes' => [], ...($nested ? ['club_key' => NestedFleetClubKey::intent()] : [])]]]]);
+            app(InstanceDeployProjection::class)->apply($operation, ['status' => $status, 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+                'finished_at' => now()->toIso8601String(), 'result' => ['steps' => $file === null ? [] : [ContainerDeployOutcome::ResultStep => ['stdout' => json_encode($file, JSON_THROW_ON_ERROR)]],
+                    'summary' => ['failed_steps' => $failed]]]);
+
+            return $operation->refresh();
+        };
+        $nested = $deploy(true);
+        $normal = $deploy(false);
+        expect($nested->result['nested_fleet_club_key'])->toBe($outcome)
+            ->and($normal->result)->not->toHaveKey('nested_fleet_club_key');
+    })->with([
+        'written' => [['commit' => str_repeat('c', 40), 'club_key' => 'changed'], 'succeeded', [], 'written'],
+        'written, serve not restarted' => [['commit' => str_repeat('c', 40), 'club_key' => 'changed_serve_pending'], 'succeeded', [], 'written_serve_not_restarted'],
+        'unchanged' => [['commit' => str_repeat('c', 40), 'club_key' => 'unchanged'], 'succeeded', [], 'unchanged'],
+        'the run delivered nothing' => [['commit' => str_repeat('c', 40)], 'succeeded', [], 'missing'],
+        'refused' => [['error_code' => 'instance.nested_club_key_unsafe_transfer'], 'failed', ['Start the container'], 'refused'],
+    ]);
 });

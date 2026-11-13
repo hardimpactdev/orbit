@@ -57,7 +57,7 @@
                   (mail_result if mail_result is defined else
                   (process_result if process_result is defined else
                    (node_runtime_result if node_runtime_result is defined and ansible_run_tags | first in ['node-store', 'node-runtime']
-                    else {'commit': container_commit | default(none)})))) | to_json }}
+                    else {'commit': container_commit | default(none)})))) | combine(club_key_carried) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           no_log: true
@@ -68,6 +68,16 @@
           vars:
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
+            # A nested-fleet container's result names what a start of this run did with its Club key: the delivery script's word,
+            # `changed`, `changed_serve_pending` or `unchanged`. Each phase writes the result file again, so a later phase keeps an
+            # earlier phase's word. Any other container's result never names it. The failure below uses the same two values.
+            club_key_result_file: &club_key_result_file "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/result.json' }}"
+            club_key_carried: &club_key_carried >-
+              {{ {} if container.club_key is not defined
+                 else {'club_key': club_key_written} if club_key_written is defined
+                 else {'club_key': (lookup('ansible.builtin.file', club_key_result_file) | from_json).club_key}
+                   if club_key_result_file is file and (lookup('ansible.builtin.file', club_key_result_file) | from_json).club_key | default('') in ['changed', 'changed_serve_pending', 'unchanged']
+                 else {} }}
       rescue:
         # The code of a refusal is the fail_msg of its assert; anything else is the phase's own failure.
         - name: Write the failure
@@ -79,7 +89,7 @@
                   else 'process.' ~ process_action ~ '_failed'
                   if (ansible_run_tags | first) == 'process' and process_action in ['start', 'restart']
                   else 'instance.container_' ~ (ansible_run_tags | first) ~ '_failed'}
-                  | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({})) | to_json }}
+                  | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({})) | combine(club_key_carried) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           delegate_to: localhost
@@ -87,6 +97,8 @@
           vars:
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
+            club_key_result_file: *club_key_result_file
+            club_key_carried: *club_key_carried
         - name: Fail the phase
           tags: [always]
           ansible.builtin.fail:
