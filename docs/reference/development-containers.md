@@ -614,7 +614,7 @@ A normal container without these keeps the image's value only. Every writer of t
 | Units: T3, its agents, each Process | `/etc/systemd/system.conf.d/99-orbit-node-services.conf`, and systemd's manager environment | A unit's next start |
 | Login shells | `/etc/profile.d/99-orbit-node-services.sh` | The next login shell |
 
-A create and a clone write the keys. A clone of a nested-fleet default also writes both files before its first start, so its first boot, T3 included, reads the value. `instance_node_services.py` is the one writer of the files and the manager environment, through its function `write_proxy_environment` and its command `proxy`. The Node service apply calls it when a target changes. The [start of a stopped clone](#a-stopped-nested-fleet-clone-starts) also calls it, and restarts T3 once when it changed the files.
+A create and a clone write the keys. A clone of a nested-fleet default also writes both files before its first start, so its first boot, T3 included, reads the value. `instance_node_services.py` is the one writer of the files and the manager environment, through its function `write_proxy_environment` and its command `proxy`. The Node service apply calls it when a target changes. The [start of a stopped clone](#a-stopped-nested-fleet-clone-starts) also calls it.
 
 A nested-fleet container made before these keys, such as the Orbit default, keeps the image's value until a start phase writes the composed value. Its copies do not wait for that: each copy gets the keys and the files at its create.
 
@@ -1607,7 +1607,7 @@ A success records `power_state` `running`. The result also gives `nested_fleet_c
 
 Each step leaves what already runs as it is, so a start of a running copy only checks it. The start does not wait for T3: T3 starts with the container, as at every boot.
 
-Its fleet step also writes the copy's [proxy bypass](#proxy-settings-in-a-container) for units and login shells. When that changed the files, the start restarts T3 once, so that it reads the value; nobody works in a stopped copy. A nested-fleet default does not take this path: a wake refuses it with `instance.sleep_unsupported`, and only its deployment starts it. The run budget is 1,200 seconds; a clone's fleet start took 91 seconds (Operation 20180).
+Its fleet step also writes the copy's [proxy bypass](#proxy-settings-in-a-container) for units and login shells. T3 restarts once so that it reads the value, but only when the write changed the drop-ins or the manager environment and this start booted the container. Incus records each start as `last_used_at`. A copy that was already running keeps its T3, because someone may work in it. A nested-fleet default does not take this path: a wake refuses it with `instance.sleep_unsupported`, and only its deployment starts it. The run budget is 1,200 seconds; a clone's fleet start took 91 seconds (Operation 20180).
 
 ### Reset
 

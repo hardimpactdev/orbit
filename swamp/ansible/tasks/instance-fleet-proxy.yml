@@ -2,9 +2,10 @@
 # The start of a stopped nested-fleet clone (instance.start, which alone sets `fleet_proxy_restart_t3`): the copy's proxy bypass for
 # units and login shells, then one restart of T3 when it changed (docs/reference/development-containers.md#a-stopped-nested-fleet-clone-starts).
 # The value is the intent's own `environment.NO_PROXY` (InstanceNodeServiceTargets::proxyEnvironment, the one builder).
-# instance_node_services.py `proxy` is the one writer of the drop-ins and of systemd's manager environment. T3 booted before this run,
-# so a copy whose drop-ins lacked the value gets T3 restarted once; nobody works in a stopped copy. Every other fleet start skips this
-# file.
+# instance_node_services.py `proxy` is the one writer of the drop-ins and of systemd's manager environment. T3 restarts only when the
+# write changed something AND this Operation started the container: Incus records each start as `last_used_at`, and the intent's
+# `bridge_admitted_at` is the admission. So nobody works in it yet; a copy that was running keeps its T3 as it is. Every other fleet
+# start skips this file.
 # Follow-up: when the start phase writes the composed proxy environment itself (the realtime change's step "Write the composed proxy
 # environment"), this write becomes redundant and only the T3 restart, keyed on that step's result, stays.
 - name: Write the drop-ins and the manager environment
@@ -14,9 +15,20 @@
       {{ {'proxy_environment': {'NO_PROXY': intent.container.config['environment.NO_PROXY'],
                                 'no_proxy': intent.container.config['environment.no_proxy']}} | to_json }}
   register: fleet_proxy_write
-  changed_when: (fleet_proxy_write.stdout | from_json).changed
+  # A failed write keeps its own exit and public code on stderr for the phase's failure detail.
+  changed_when: fleet_proxy_write.rc == 0 and (fleet_proxy_write.stdout | from_json).changed
 
-- name: Restart T3 so that it reads the new value
+- name: Read when the container last started
   when: fleet_proxy_write is changed
+  ansible.builtin.command: { argv: [timeout, "30", incus, query, --, "/1.0/instances/{{ intent.container.name }}?project={{ intent.container.project }}"] }
+  register: fleet_proxy_container
+  changed_when: false
+
+# Both times are UTC; the same `YYYY-MM-DDTHH:MM:SS` form compares as text.
+- name: Restart T3 so that it reads the new value
+  when: >-
+    fleet_proxy_write is changed
+    and (fleet_proxy_container.stdout | from_json).last_used_at[:19]
+        >= '%Y-%m-%dT%H:%M:%S' | strftime(intent.container.bridge_admitted_at / 1000000, utc=True)
   ansible.builtin.command: { argv: "{{ ['timeout', '60'] + fleet_outer + ['systemctl', 'try-restart', '--', intent.container.clone.t3.unit] }}" }
   changed_when: true
