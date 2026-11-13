@@ -33,6 +33,7 @@ sequenceDiagram
   %%> - `reporting` is not the server's admin login or a system role, such as `root`, `postgres` or `pg_*` (`database.user_reserved`)
   %%> - `reporting` is not the owner of a connection on the server, nor a user another connection recorded (`database.name_conflict`)
   %%> - no database removal runs on `beast-mysql`; the Gateway holds one lock per Database server
+  %%> - no other user create runs on `beast-mysql` (`operation.target_busy`), so two creates of one new name never pass the checks together
   %%> Result:
   %%> - task #5123 recorded with the database, owner, username and grant policy
   %%> - the password stored encrypted; nothing has happened on the Node yet

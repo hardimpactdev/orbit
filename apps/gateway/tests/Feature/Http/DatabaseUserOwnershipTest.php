@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\DatabaseConnections\DropServerDatabaseAction;
 use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Swamp\SwampDispatch;
@@ -140,12 +141,23 @@ it('stops a MySQL batch on an account this connection did not record', function 
     $apply = app(DatabaseStatements::class)->user($input, 'p', base64_encode('0123456789abcdef'))['apply'];
     $guard = "SELECT 1 FROM mysql.user WHERE User='stranger'";
 
-    // The marker names the refusal; the prepared statement reads a table that does not exist, so the batch stops.
+    // The marker names the refusal. The stop statement fails on any server, whatever tables its users made, so the
+    // batch stops before CREATE USER and ALTER USER.
     expect($apply)->toStartWith("SELECT 'database.name_conflict' FROM DUAL WHERE EXISTS ({$guard});\n"
-        ."SET @orbit_guard = IF(EXISTS ({$guard}), 'SELECT 1 FROM orbit_name_conflict.refused', 'DO 0');\n"
+        ."SET @orbit_guard = IF(EXISTS ({$guard}), 'DO (SELECT 1 UNION ALL SELECT 2)', 'DO 0');\n"
         ."PREPARE orbit_guard FROM @orbit_guard;\nEXECUTE orbit_guard;\nDEALLOCATE PREPARE orbit_guard;\nCREATE USER IF NOT EXISTS 'stranger'@'%'")
         ->and(app(DatabaseStatements::class)->user([...$input, 'known_user' => true], 'p', base64_encode('0123456789abcdef'))['apply'])
-        ->toStartWith("CREATE USER IF NOT EXISTS 'stranger'@'%'");
+        ->toStartWith("CREATE USER IF NOT EXISTS 'stranger'@'%'")
+        ->and($apply)->not->toContain('orbit_name_conflict');
+});
+
+it('stops a MySQL database create with a statement no table can satisfy', function (): void {
+    $create = app(DatabaseStatements::class)->create(['driver' => 'mysql', 'username' => 'shop', 'databases' => ['shop'], 'test_prefix' => null,
+        'locale' => null, 'index' => null, 'patterns' => [], 'allow' => []], 'p', base64_encode('0123456789abcdef'))['create'];
+
+    expect($create)->toContain("'DO (SELECT 1 UNION ALL SELECT 2)', 'DO 0');\nPREPARE orbit_guard FROM @orbit_guard;\nEXECUTE orbit_guard;\n")
+        ->and($create)->not->toContain('orbit_name_conflict')
+        ->and(strpos($create, 'EXECUTE orbit_guard'))->toBeLessThan((int) strpos($create, 'CREATE USER'));
 });
 
 it('refuses a database whose derived user is the admin login', function (): void {
@@ -179,3 +191,12 @@ it('keeps a managed SQL connection on its own database and user', function (stri
     'mysql another owner' => ['mysql', ['username' => 'blog_owner']],
     'pgsql another database' => ['pgsql', ['database' => 'blog']],
 ]);
+
+it('never drops the admin login that an old record names', function (string $driver, string $admin): void {
+    $blog = DatabaseConnection::query()->where('slug', "blog-{$driver}")->sole();
+    DatabaseUser::query()->create(['database_connection_id' => $blog->id, 'username' => $admin, 'password' => 'old-record', 'privileges' => 'x']);
+
+    $prepared = app(DropServerDatabaseAction::class)->prepareMany([$blog]);
+
+    expect($prepared[0]->input['users'])->toBe(['blog_owner', 'blog_move']);
+})->with([['mysql', 'root'], ['pgsql', 'postgres']]);
