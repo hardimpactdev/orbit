@@ -22,7 +22,7 @@ sequenceDiagram
   Note over GW: Validate, record import<br/>task #5181 · lock on shop
   %%> Requirements:
   %%> - the connection is on an active MySQL or PostgreSQL Database server (`database.import_unsupported`)
-  %%> - your Node has an access grant to NODE, the server's Node (`node_access.required`)
+  %%> - your Node has an access grant to the Gateway Node, which reaches NODE (`node_access.required`)
   %%> - the path is absolute, ends in `.sql` or `.sql.gz`, has no `.` or `..` part (`database.import_path_invalid`)
   %%> Result:
   %%> - task #5181 with the path; the owner password stays encrypted in the connection
@@ -66,7 +66,7 @@ sequenceDiagram
     %%> - the file or the database is refused, the owner cannot log in, or a statement fails
     SW--xGW: Run failed<br/>error_code, database_state
     %%> Result:
-    %%> - `database_state` is `unchanged`, `empty` or `partial`
+    %%> - `database_state` is `unchanged`, `empty`, `partial`, or `unknown` when the run ends without its result
     %%> - PostgreSQL loads in one transaction, so a failed load leaves it empty
     %%> - MySQL commits each table, so a failed load can leave it partly filled
     %%> Retry:

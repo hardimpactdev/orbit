@@ -89,7 +89,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | Family | Actions | Result |
 | --- | --- | --- |
 | `cluster` | `activate`, `deactivate` | The CLI makes a Cluster serve its private domains and LAN ingress, or returns its Routes to Node scope and stops the Router and its LAN ingress; see [cluster](/cli/cluster/activate). |
-| `database` | `describe`, `query`, `schema`, `tables` | The CLI inspects a registered [Database connection](/reference/database-connections), or requires a password on a Valkey server [adopted earlier](/reference/database-servers#close-an-adopted-server) with `database:server:update --require-password`. `database:server:create` creates new servers only. |
+| `database` | `describe`, `import`, `query`, `schema`, `tables` | The CLI inspects a registered [Database connection](/reference/database-connections), loads a dump into one with `database:import`, or requires a password on a Valkey server [adopted earlier](/reference/database-servers#close-an-adopted-server) with `database:server:update --require-password`. `database:server:create` creates new servers only. |
 | `dns` | `resolve` | The CLI writes a caller-local TLD or exact private Route resolver mapping. |
 | `doctor` | `doctor` | [Doctor](/cli/doctor) compares the state the Gateway expects with each Node's state. |
 | `env` | `import`, `sync` | The CLI imports or synchronizes Instance environment values. |

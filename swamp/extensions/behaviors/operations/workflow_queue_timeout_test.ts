@@ -35,6 +35,7 @@ Deno.test("workflow targets resolve only anchored double-quoted CEL constants", 
 const roots = [
     "operation-database-read",
     "operation-database-write",
+    "operation-database-import",
     "operation-database-user-create",
     "operation-database-server-close",
     "operation-database-connection-update",

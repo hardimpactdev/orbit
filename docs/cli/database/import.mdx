@@ -35,7 +35,9 @@ The file is on the server's Node. Orbit reads it as the Node's SSH user, the `us
 - it is a regular file;
 - the Node's SSH user owns it.
 
-The Gateway checks the first rule and answers `database.import_path_invalid`. The Node checks the rest on the open file and answers `database.import_file_refused`. Your Node needs an access grant to the server's Node. So Orbit reads only a file that its owner on that Node put there; it never reads a file of root or of another user.
+The Gateway checks the first rule and answers `database.import_path_invalid`. The Node checks the rest on the open file and answers `database.import_file_refused`. So Orbit reads only a file that the Node's SSH user owns; it never reads a file of root or of another user.
+
+As every database command, the call needs an access grant to the Gateway Node, which gives access to every Node, the server's Node included.
 
 To import a dump, copy it as the Node's SSH user to any folder of that user, for example `scp shop.sql.gz deploy@NODE:imports/`, then pass the absolute path.
 
@@ -61,6 +63,7 @@ A successful import returns `bytes_read` (the bytes read from the file), `exit_c
 | `database.not_empty` | `unchanged` | Import only into an empty database. |
 | `database.import_login_failed` | `unchanged` | The owner could not log in. Check the server with `database:server:show`. |
 | `database.import_failed` | `empty` | Fix the dump, then import again. PostgreSQL loads in one transaction, so it always ends here. |
+| `database.import_failed` | `unknown` | The run ended without its result, for example after the 3600 seconds. Count the tables with `database:tables`. |
 | `database.import_failed` | `partial` | MySQL commits each table, so the database holds the tables loaded before the error. Empty it, then import again. |
 
 A failed import also returns `bytes_read`, `exit_code`, `tables` and `error`, the client's error code and line, such as `ERROR 1044 (42000) at line 23`. The message text is left out, because it can hold data.
@@ -77,7 +80,7 @@ To empty a `partial` database, drop its tables. For a Laravel application, run `
 | --- | --- | --- |
 | `database.import_unsupported` | 422 | The connection is not a MySQL or PostgreSQL database on an active Database server. |
 | `database.import_path_invalid` | 422 | The path is not absolute, has a `.` or `..` part or another character, or does not end in `.sql` or `.sql.gz`. |
-| `node_access.required` | 403 | Your Node has no access grant to the server's Node. |
+| `node_access.required` | 403 | Your Node has no access grant to the Gateway Node. |
 | `database.import_file_refused` | Operation | The file is a symbolic link, not a regular file, missing, or not owned by the Node's SSH user. |
 | `database.not_empty` | Operation | The database already has tables. |
 | `database.import_login_failed` | Operation | The owner could not log in. |
