@@ -163,7 +163,7 @@ Required checks has static dependencies on the selected checks, including Swamp.
 
 The fixture table in `.github/ci/checks.toml` maps changed inputs to files and declares their costs. Editing fixture entries selects only those fixtures, using the same merge base as path selection. Formatting and edits to check definitions select no extra fixture bodies. Changes to shared fixture budgets, defaults or fixture order, or to the runner and slice preload, select all fixtures within the existing budget.
 
-`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most six shards per pull request. Each shard runs up to four units at once. A file can declare a larger slice count when its cases need finer slices.
+`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most eight shards per pull request. Runs with six shards peaked at 16 to 17 concurrent hosted jobs, so eight shards reach about 19 of the organisation's 20 concurrent hosted jobs; a second run at the same time queues. Each shard runs up to four units at once. A file can declare a larger slice count when its cases need finer slices.
 
 A slice takes every n-th case, so a new case can move two long cases into one slice; then raise the slice count until no slice is above the lane budget. A slice count equal to the number of retained cases always meets this: each case gets its own slice.
 
@@ -171,13 +171,19 @@ A file without its own command in the shape gate runs with Deno only while it is
 
 Measured container and fleet files declare costs by exact case name, with run IDs for completed measurements and explicit estimates for unmeasured cases. Their file cost equals the retained case total. Packing includes six seconds of startup per slice. Slice counts never exceed the retained case count.
 
-Container host preparation uses one case per unit. Each declared body cost uses its largest completed observation, rounded up plus one second; paired cases must not receive an equal share of the file total. Deadline cuts are censored observations, not completed measurements.
+A case cost is a high percentile of hosted runs, not one run. When a case is added or changed, declare its local time × 2.1, rounded up, plus one second, marked `ESTIMATE`. When the case has completed in at least five hosted pull request runs, replace the estimate with the 90th percentile of those completed times, rounded up, plus one second, and name the runs.
+
+The 40 seconds between the 150-second lane and the 190-second shard deadline is the headroom above that percentile. A case moves to after-merge only when its own cost plus startup exceeds the 150-second lane; name it and its percentile in the table.
+
+The container fixture uses that rule from 23 hosted pull request runs of 13 November 2026 (43344497786 to 43427754924): its 60 retained cases declare 3319 seconds, 3679 with startup, and need seven shards. On the same runs, a case's slowest completed time was at most 1.26 times its 90th percentile. A replay of those times through the planned shards, four workers each, kept every shard below 160 seconds at the 99th percentile.
+
+Container host preparation uses one case per unit. Each of its declared body costs uses its largest completed observation, rounded up plus one second, which is stricter than the 90th percentile; paired cases must not receive an equal share of the file total. Deadline cuts are censored observations, not completed measurements.
 
 Each fixture unit has its own child subreaper. It reaps adopted children while the session leader runs, so exited grandchildren do not remain zombies until the unit ends. The leader alone decides success or failure. Deadlines and cancellation still kill and reap the unit’s remaining descendants before temporary files are removed.
 
-Direct input matches take priority when work exceeds that limit, then fixture table order decides admission. A file runs with all its slices or is deferred whole; the plan names deferred units, their cases and unmapped Swamp paths in its summary. A file that cannot fit even an otherwise empty six-shard plan, or contains a unit above the lane budget, makes Required checks fail; admitted files still run. Unmapped paths select the table’s default checks.
+Direct input matches take priority when work exceeds that limit, then fixture table order decides admission. A file runs with all its slices or is deferred whole; the plan names deferred units, their cases and unmapped Swamp paths in its summary. A file that cannot fit even an otherwise empty eight-shard plan, or contains a unit above the lane budget, makes Required checks fail; admitted files still run. Unmapped paths select the table’s default checks.
 
-Migration remains after-merge-only: its declared work needs twelve shards, above the six-shard limit. The host ACL file also exceeds a lane, and the host build-list file needs an isolated measurement before admission. The FrankenPHP proxy fixture needs the pinned binary through `ORBIT_FRANKENPHP`, which hosted fixture setup does not install. Their table entries explain these coverage gaps. The measured container file remains eligible.
+Migration remains after-merge-only: its declared work needs twelve shards, above the eight-shard limit. The host ACL file also exceeds a lane, and the host build-list file needs an isolated measurement before admission. The FrankenPHP proxy fixture needs the pinned binary through `ORBIT_FRANKENPHP`, which hosted fixture setup does not install. Their table entries explain these coverage gaps. The measured container file remains eligible.
 
 The native migration fixture also forces advisory mail failure and malformed receipts for defaults and clones, proving that Route cutover and retirement succeed without rollback. Its account gate uses Swamp's upstream [throwaway credential fixture](https://github.com/swamp-club/swamp/blob/db3f6373/integration/auth_gate_fixture.ts), with no real credential or fleet call.
 

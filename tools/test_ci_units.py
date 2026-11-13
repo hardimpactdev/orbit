@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
 units = module_from_spec(spec_from_loader(loader.name, loader))
 loader.exec_module(units)
-BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=6, default_cost=30)
+BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=8, default_cost=30)
 
 
 def fixture(file, cost=30, inputs=(), **options):
@@ -44,7 +44,7 @@ class PlanningTest(unittest.TestCase):
 
     def test_six_shards_have_four_bounded_lanes_and_defer_the_twenty_fifth_full_lane(self):
         fixtures = [fixture(f'swamp/{i:02d}.py', 100, ['swamp/input']) for i in range(25)]
-        result = planned(['swamp/input'], fixtures)
+        result = planned(['swamp/input'], fixtures, budget={**BUDGET, 'pr_shards': 6})
         self.assertEqual(len(result['shards']), 6)
         self.assertTrue(all(len(shard['units']) == 4 for shard in result['shards']))
         self.assertEqual(result['deferred'], ['swamp/24.py'])
@@ -698,7 +698,8 @@ class PopulationTest(unittest.TestCase):
         self.assertEqual(units.units_for(f, BUDGET), [('swamp/cases.ts#0/2', 136), ('swamp/cases.ts#1/2', 16)])
         f['slices'] = 100
         self.assertEqual(len(units.units_for(f, BUDGET)), 2, 'no empty slices')
-        result = planned(['swamp/cases.ts'], [fixture('swamp/cases.ts', 2500, cases=[f'case-{i}' for i in range(25)], slices=25)])
+        result = planned(['swamp/cases.ts'], [fixture('swamp/cases.ts', 2500, cases=[f'case-{i}' for i in range(25)], slices=25)],
+                         budget={**BUDGET, 'pr_shards': 6})
         self.assertEqual(result['shards'], [])
         self.assertEqual(len(result['deferred']), 25)
         self.assertEqual(result['capacity'], [{'file': 'swamp/cases.ts', 'seconds': 2650, 'shards': 7, 'workers': 28}])

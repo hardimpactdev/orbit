@@ -269,7 +269,7 @@ def plan_summary(result, fixtures):
             for unit in row['oversize']:
                 lines.append(f"- CAPACITY: `{unit['unit']}` needs {unit['seconds']} declared seconds, above the 150-second lane; cases: {json.dumps(unit['cases'])}. Required checks will fail.")
         else:
-            lines.append(f"- CAPACITY: `{row['file']}` needs {row['seconds']} declared seconds, {row['shards']} shards / {row['workers']} workers; limit is six shards. Required checks will fail.")
+            lines.append(f"- CAPACITY: `{row['file']}` needs {row['seconds']} declared seconds, {row['shards']} shards / {row['workers']} workers, above the pull request shard limit. Required checks will fail.")
     lines += [f"- After merge only: `{row['file']}` — {row['case']}" for row in result.get('excluded', [])]
     lines += [f'- Unmapped `{path}`: selected default fixtures' for path in result['unmapped']]
     return '\n'.join(lines)
