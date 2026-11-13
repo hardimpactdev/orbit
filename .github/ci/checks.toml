@@ -3133,6 +3133,10 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_restore_test.ts"
-cost = 1
+cost = 3
 slices = false
 inputs = ["swamp/workflows/workflow-operation-instance-restore.yaml", "swamp/workflows/workflow-operation-route-create.yaml", "docs/cli/instance/restore.mmd"]
+[fixture.case_costs]
+"the step names are the chart's" = 1
+"each server's database steps reach its Node with its own batch" = 1
+"the Route is republished by the Route create workflow, only after the database check, with its own secrets" = 1

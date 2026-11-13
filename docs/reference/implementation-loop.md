@@ -763,6 +763,8 @@ The destroy dependency fixture uses real Git in private temporary directories, r
 
 Clone branch fixtures use unprivileged local Git repositories and run without an Ansible playbook. Their registered case names and conservative costs change together in `tools/tests/ci-fixture-cases.json` and `.github/ci/checks.toml`; collect names with `bin/ci-units collect --file swamp/tests/instance_clone_test.py`.
 
+The `instance:restore` workflow fixture evaluates every expression of `operation-instance-restore` against the input its projection renders. It needs no Node, database or playbook.
+
 The container fixture cases that deliver the Club key of a nested fleet carry estimated costs (local time × 2.1, rounded up, plus one second) until a hosted run measures them. The table marks each one `ESTIMATE`. The container fixture file is at its slice limit: a new case there splits a slice over its budget, so new Club key checks extend an existing case.
 
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise. The Ansible structure test also checks parsed command argument types before module validation can coerce them.
