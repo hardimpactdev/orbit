@@ -176,6 +176,10 @@ additionalFiles:
   - ansible/instance_bridge.py
   - ansible/instance_network.py
   - ansible/instance_nested.py
+  - ansible/instance_folder_debs.py
+  - ansible/instance_folder_same.py
+  - ansible/instance_container_files.py
+  - ansible/tasks/instance-container-files.yml
   - ansible/instance_nested_club_key.sh
   - ansible/tasks/instance-bridge-refresh.yml
   - ansible/tasks/instance-image.yml

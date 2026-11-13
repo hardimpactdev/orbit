@@ -291,8 +291,11 @@ Deno.test({
             const calls = JSON.stringify(f.calls()).replaceAll(f.folder, "FIXTURE");
             const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(calls))))
                 .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-            // Captured from the tasks at 2a-local 7b9e25ba02, before the nested-fleet image existed, with this same host shape.
-            assertEquals([f.calls().length, digest], [53, "8f561f588e7131982062fa610be3e27b86f7aa5bb5fe010e420c24549f050c05"]);
+            // Captured from the tasks at 2a-local 7b9e25ba02, before the nested-fleet image existed, with this same host shape; and
+            // again when the image removed its linker cache last and the converge read the existing containers (two calls more).
+            assertEquals([f.calls().length, digest], [55, "38e311a084b87f551f11b9bca602bca318516d6d5eca1e15dedf26af7c51a083"]);
+            assert(f.calls().some((call) => call.includes("exec") && call.slice(-3).join(" ") === "rm -f /etc/ld.so.cache"));
+            assert(f.calls().some((call) => call[0] === "query" && call.at(-1) === "/1.0/instances?all-projects=true&recursion=1"));
             assertEquals(f.state().images.flatMap((image: {project: string; aliases: {name: string}[]}) =>
                 image.aliases.map((alias) => `${image.project}/${alias.name}`)).filter((name: string) => name.includes("orbit-instance-nested")), []);
         } finally {

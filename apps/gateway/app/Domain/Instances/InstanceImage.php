@@ -75,8 +75,7 @@ final readonly class InstanceImage
                     ['path' => '/etc/sysctl.d/90-orbit-no-userns.conf', 'content' => "# Managed by Orbit.\nuser.max_user_namespaces = 0\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
                 ]),
                 ...self::egress($gateway),
-                ['path' => '/home/orbit/.gitconfig', 'content' => "[safe]\n\tdirectory = ".InstanceHostIntent::Workspace."\n",
-                    'uid' => InstanceHostIntent::OrbitUid, 'gid' => InstanceHostIntent::OrbitUid, 'mode' => '0640'],
+                ...self::shared(),
                 // The container environment for units (T3, its agents and every Orbit Process) and login shells; the Instance profile
                 // gives it to `incus exec` sessions.
                 ['path' => '/etc/systemd/system.conf.d/90-orbit-runtime.conf', 'content' => "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=".self::assignments(self::Path, $gateway)."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
@@ -96,6 +95,9 @@ final readonly class InstanceImage
                 ['truncate', '--size', '0', '/etc/machine-id'],
                 // D-Bus links its copy to that file. A copy that is a file of its own would keep the old id.
                 ['sh', '-c', 'if [ -f /var/lib/dbus/machine-id ] && [ ! -L /var/lib/dbus/machine-id ]; then rm /var/lib/dbus/machine-id; fi'],
+                // The build container may not see the runtime folder's `lib`. Without a cache, the stock `ldconfig.service` builds one
+                // at each new container's first start, with the runtime folder mounted.
+                ['rm', '-f', '/etc/ld.so.cache'],
             ],
         ];
 
@@ -120,6 +122,53 @@ final readonly class InstanceImage
         $environment = ['PATH' => $path, ...self::environment($gateway)];
 
         return implode(' ', array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment));
+    }
+
+    /**
+     * The files that every container needs, also one made from an older image: the converge writes them into each existing
+     * container too, marked `existing` (docs/reference/development-containers.md#existing-containers). Each later process reads them
+     * by itself, so nothing restarts.
+     *
+     * - The dynamic linker finds the runtime folder's libraries, such as a headless browser's. The name sorts after
+     *   `x86_64-linux-gnu.conf`, so a system library of the same name always wins: the folder only adds what the image lacks.
+     * - Fontconfig, also the copy that Chromium bundles, finds the runtime folder's fonts and maps the generic families to them.
+     * - Git trusts the workspace for every user, `agent` and `orbit` alike, and only that path: both users share it by design.
+     *
+     * @return list<array{path: string, content: string, uid: int, gid: int, mode: string, existing: true}>
+     */
+    public static function shared(): array
+    {
+        $runtime = InstanceHostIntent::RuntimeFolder.'/current';
+        $file = static fn (string $path, string $content): array => ['path' => $path, 'content' => $content, 'uid' => 0, 'gid' => 0,
+            'mode' => '0644', 'existing' => true];
+
+        return [
+            $file('/etc/ld.so.conf.d/zz-orbit-browser.conf', "# Managed by Orbit.\n{$runtime}/lib\n"),
+            $file('/etc/fonts/fonts.conf', self::fonts("{$runtime}/fonts")),
+            $file('/etc/gitconfig', "# Managed by Orbit.\n[safe]\n\tdirectory = ".InstanceHostIntent::Workspace."\n"),
+        ];
+    }
+
+    private static function fonts(string $folder): string
+    {
+        return <<<XML
+            <?xml version="1.0"?>
+            <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+            <!-- Managed by Orbit. -->
+            <fontconfig>
+              <dir>{$folder}</dir>
+              <cachedir prefix="xdg">fontconfig</cachedir>
+              <alias><family>sans-serif</family><prefer><family>DejaVu Sans</family><family>Noto Color Emoji</family></prefer></alias>
+              <alias><family>serif</family><prefer><family>DejaVu Serif</family><family>Noto Color Emoji</family></prefer></alias>
+              <alias><family>monospace</family><prefer><family>DejaVu Sans Mono</family><family>Noto Color Emoji</family></prefer></alias>
+              <alias><family>emoji</family><prefer><family>Noto Color Emoji</family></prefer></alias>
+              <alias binding="same"><family>Arial</family><accept><family>Liberation Sans</family></accept></alias>
+              <alias binding="same"><family>Helvetica</family><accept><family>Liberation Sans</family></accept></alias>
+              <alias binding="same"><family>Times New Roman</family><accept><family>Liberation Serif</family></accept></alias>
+              <alias binding="same"><family>Courier New</family><accept><family>Liberation Mono</family></accept></alias>
+            </fontconfig>
+
+            XML;
     }
 
     private static function prepare(): string

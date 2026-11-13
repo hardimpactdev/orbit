@@ -247,6 +247,9 @@ inputs = [
   "swamp/ansible/instance_nested_club_key.sh",
   "swamp/ansible/tasks/instance-nested-club-key.yml",
   "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/instance_nested.py",
   "swamp/ansible/requirements.txt",
@@ -258,6 +261,7 @@ inputs = [
   "swamp/ansible/tasks/instance-fleet.yml",
   "swamp/ansible/tasks/instance-network-nic-check.yml",
   "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
   "swamp/ansible/tasks/instance-folder.yml",
   "swamp/tests/_support/instance_host.ts",
   "swamp/tests/fixtures/instance-bridge-curl.ts",
@@ -350,6 +354,9 @@ inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/library/**",
   "swamp/ansible/requirements.txt",
@@ -357,6 +364,7 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/instance-bridge-*.yml",
   "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
   "swamp/ansible/tasks/instance-folder.yml",
   "swamp/ansible/tasks/instance-host.yml",
   "swamp/ansible/tasks/instance-image.yml",
@@ -389,14 +397,18 @@ file = "swamp/tests/ansible_instance_host_image_test.ts"
 # Hosted forecasts are ceil(Beast seconds * 2.1) + 1; larger completed hosted costs stay.
 # The renamed first case retains its existing after-merge classification (158s hosted, run 43000765953).
 # The new full replacement case measured 70s on Beast: 148s estimated body + 6s startup exceeds the 150s lane.
-after_merge_cases = ["a new image definition takes the stable alias while retaining the old image", "the full prepared-image replacement and failure cleanup use the verified local socket despite the default remote"]
-cost = 1071
+# The wrong-digest case ran 180.0s on a hosted PR shard (run 43515415287, the ceiling) and 81-92s on Beast on main and this branch.
+after_merge_cases = ["a new image definition takes the stable alias while retaining the old image", "the full prepared-image replacement and failure cleanup use the verified local socket despite the default remote", "a wrong pinned digest fails only the nested-fleet image: the role succeeds and records the failed task, and a later good build clears it"]
+cost = 946
 slices = 12
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_nested.py",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/library/**",
@@ -406,6 +418,7 @@ inputs = [
   "swamp/ansible/tasks/artifact-fetch.yml",
   "swamp/ansible/tasks/instance-bridge-*.yml",
   "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
   "swamp/ansible/tasks/instance-folder.yml",
   "swamp/ansible/tasks/instance-host.yml",
   "swamp/ansible/tasks/instance-image.yml",
@@ -431,11 +444,53 @@ inputs = [
   "a prior prepared-image builder is refused by exact name and recipe without deletion" = 63 # completed unit 68.5s less 6s startup, run 43414301389; earlier: ESTIMATE: ede21ef9 Beast 23.0s * 2.1, rounded up + 1s
   "a Node without the nested-fleet switch runs the exact command lines of the normal image" = 81 # completed unit 86.4s less 6s startup, run 43414301389; earlier: ESTIMATE: Beast 30s * 2.1, rounded up + 1s
   "a switched-on Node builds the nested-fleet image in its project from the verified pinned packages" = 132 # ESTIMATE: Beast 62s * 2.1, rounded up + 1s; with 6s startup within the 150s lane
-  "a wrong pinned digest fails only the nested-fleet image: the role succeeds and records the failed task, and a later good build clears it" = 125 # ESTIMATE: Beast 59s * 2.1, rounded up + 1s
   "a sudo path in the nested-fleet image fails only the nested-fleet image: the role succeeds and records the failed task" = 79 # ESTIMATE: Beast 37s * 2.1, rounded up + 1s (one converge, no repair run)
   "a failed normal image build on a switched-on Node still fails the role and builds no nested-fleet image" = 91 # completed unit 96.5s less 6s startup, run 43414301389; earlier: ESTIMATE: Beast 30s * 2.1, rounded up + 1s
   "a hosting intent without the nested-fleet image builds only the normal image" = 103 # completed unit 108.5s less 6s startup, run 43414301389; earlier: ESTIMATE: Beast 33s * 2.1, rounded up + 1s
   "the nested-fleet audit judges visudo by its exit code, not by what it prints" = 1 # ESTIMATE: Beast 0.02s, no Ansible; rounded up
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_host_browser_test.ts"
+cost = 233
+# Beast case times * 2.1, rounded up + 1s; startup is added per slice.
+slices = 5
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "apps/gateway/resources/machine-software/recipe.json",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[fixture.case_costs]
+  "a Debian package part gives the runtime folder its libraries and fonts; existing containers get the shared files with no restart" = 82 # ESTIMATE: Beast 38s * 2.1, rounded up + 1s
+  "two Debian packages that give the same library name fail the folder build: one would hide the other" = 18 # ESTIMATE: Beast 8s * 2.1, rounded up + 1s
+  "a second pass writes nothing and runs no ldconfig; a new library reaches running and stopped containers alike" = 2 # ESTIMATE: Beast 0.82s, no Ansible; rounded up
+  "a new folder version that only adds files keeps every running process valid; a changed, missing or relinked file does not" = 1 # ESTIMATE: Beast 0.1s, no Ansible; rounded up
+  "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container" = 130 # ESTIMATE: Beast 61s * 2.1, rounded up + 1s; two converges, with 6s startup within the 150s lane
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_runtime_test.ts"
@@ -451,6 +506,9 @@ inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/library/**",
   "swamp/ansible/requirements.txt",
@@ -458,6 +516,7 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/instance-bridge-*.yml",
   "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
   "swamp/ansible/tasks/instance-folder.yml",
   "swamp/ansible/tasks/instance-host.yml",
   "swamp/ansible/tasks/instance-image.yml",
@@ -492,6 +551,9 @@ inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/library/**",
   "swamp/ansible/requirements.txt",
@@ -499,6 +561,7 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/instance-bridge-*.yml",
   "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
   "swamp/ansible/tasks/instance-folder.yml",
   "swamp/ansible/tasks/instance-host.yml",
   "swamp/ansible/tasks/instance-image.yml",
@@ -530,6 +593,9 @@ inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/library/**",
   "swamp/ansible/requirements.txt",
@@ -537,6 +603,7 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/instance-bridge-*.yml",
   "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
   "swamp/ansible/tasks/instance-folder.yml",
   "swamp/ansible/tasks/instance-host.yml",
   "swamp/ansible/tasks/instance-image.yml",
@@ -1112,6 +1179,9 @@ inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/library/orbit_artifact.py",
   "swamp/ansible/requirements.txt",
@@ -1121,6 +1191,7 @@ inputs = [
   "swamp/ansible/tasks/instance-bridge-refresh.yml",
   "swamp/ansible/tasks/instance-bridge-rules.yml",
   "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
   "swamp/ansible/tasks/instance-folder.yml",
   "swamp/ansible/tasks/instance-host.yml",
   "swamp/ansible/tasks/instance-image.yml",
@@ -1154,6 +1225,7 @@ inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-container-files.yml",
   "swamp/ansible/tasks/instance-folder.yml",
 ]
 

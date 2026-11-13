@@ -1,0 +1,23 @@
+---
+# The image's shared files in every existing Instance container (docs/reference/development-containers.md#existing-containers):
+# the linker and font configuration that reach the runtime folder's `lib` and `fonts`, and the system Git setting for the workspace.
+# A container made from an older image gets them here, running or stopped, in the Instance project and the nested-fleet one.
+# Nothing restarts: T3, the agents and the Processes keep running, and each later process reads the files by itself.
+- name: Write the image's shared files into each existing container
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -I
+      - "-"
+      - >-
+        {{ {'projects': instances.runtime_projects | default([instances.project] + ([instances.nested.project] if instances.nested is defined else [])),
+            'files': instances.image.files | selectattr('existing', 'defined') | selectattr('existing') | map('dict2items')
+              | map('selectattr', 'key', 'in', ['path', 'content', 'mode']) | map('items2dict') | list,
+            'libraries': instances.folders.runtime.path ~ '/current/lib',
+            'state': '/var/lib/orbit/instance-container-libraries'} | to_json }}
+    stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_container_files.py') }}"
+  register: container_files
+  changed_when: >-
+    {{ ((container_files.stdout | from_json).written + (container_files.stdout | from_json).ldconfig
+       + (container_files.stdout | from_json).cache_dropped) | length > 0 }}
+  failed_when: container_files.rc != 0

@@ -32,10 +32,11 @@ function nestedImageIncus(): array
 it('keeps the normal image definition byte-identical to the one before the nested-fleet variant', function (): void {
     $normal = InstanceImage::for('10.253.0.1');
 
-    // Captured at 2a-local 7b9e25ba02. The alias is a digest of the rest of the definition, and the second value of the whole of it.
-    expect($normal['alias'])->toBe('orbit-instance-797779e64d85')
+    // Captured at 2a-local 7b9e25ba02, and again when the image gained the files every container needs (InstanceImage::shared). The
+    // alias is a digest of the rest of the definition, and the second value of the whole of it.
+    expect($normal['alias'])->toBe('orbit-instance-bcb694e9b59f')
         ->and(hash('sha256', json_encode($normal, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)))
-        ->toBe('e46d7b0f395fadb16f8e12185f15f3e700e12b1524ff306e7d7efd066d290e16');
+        ->toBe('d86fd0f8711a10f66eb655de688a735a9e77e7bb88ab8dd295c8f76973fc9ca2');
 });
 
 it('gives a Node without the switch the same host intent members as before, and a switched-on Node only the nested image more', function (): void {

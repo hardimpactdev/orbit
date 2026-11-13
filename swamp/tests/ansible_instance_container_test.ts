@@ -8,7 +8,9 @@ import { parse, stringify } from "jsr:@std/yaml@1";
 import { fixture as hostFixture } from "./_support/instance_host.ts";
 
 /** The normal host transcript of main; see the case that compares it. */
-const MAIN_NORMAL_HOST = {calls: 62, tasks: 167, digest: "bcb8b155d1ed79779db39fb031203821dcc080608df96e496845afa57feee213"};
+// The browser change adds exactly one task (the image's shared files in existing containers) and two Incus calls (its instance
+// list, and the image's last `rm -f /etc/ld.so.cache`); the host files stay as they were.
+const MAIN_NORMAL_HOST = {calls: 64, tasks: 168, digest: "1682b35945050c29d78103b601dce0820a5aa135259d9e8d8d201833f4b3e43a"};
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -1861,7 +1863,9 @@ Deno.test({
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
       // Existing versions let this case exercise only the real refresh and restart path.
       for (const folder of Object.values(f.instances.folders)) {
-        Deno.mkdirSync(`${folder.path}/aaaaaaaaaaaa`, {recursive: true});
+        Deno.mkdirSync(`${folder.path}/aaaaaaaaaaaa/bin`, {recursive: true});
+        // A program the new version lacks: only a version that changes or drops something restarts (instance_folder_same.py).
+        Deno.writeTextFileSync(`${folder.path}/aaaaaaaaaaaa/bin/old`, "old");
         Deno.mkdirSync(`${folder.path}/${folder.version}`, {recursive: true});
         Deno.symlinkSync("aaaaaaaaaaaa", `${folder.path}/current`);
       }
