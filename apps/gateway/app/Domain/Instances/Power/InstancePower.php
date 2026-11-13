@@ -106,11 +106,13 @@ abstract readonly class InstancePower implements DirectOperationProjection
      * The power Operations' shared refusal of other lifecycle work: an Instance that is not active, or a Process of it with an open
      * Operation. A sleep, a wake and the start of a nested-fleet clone (InstanceStart) all call it inside the Instance lock.
      */
-    public static function assertIdle(Instance $instance): void
+    public static function assertIdle(Instance $instance, string $inactive = 'The Instance has unfinished lifecycle work.'): void
     {
-        if ($instance->status !== InstanceState::Active
-            || Operation::query()->where('target_type', 'process')->whereIn('target_id', $instance->processes()->select('id'))
-                ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
+        if ($instance->status !== InstanceState::Active) {
+            throw new ResourceOperationException('instance.lifecycle_busy', $inactive, 409);
+        }
+        if (Operation::query()->where('target_type', 'process')->whereIn('target_id', $instance->processes()->select('id'))
+            ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
             throw new ResourceOperationException('instance.lifecycle_busy', 'The Instance has unfinished lifecycle work.', 409);
         }
     }

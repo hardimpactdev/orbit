@@ -50,7 +50,7 @@ final readonly class InstanceStart implements DirectOperationProjection
                 ->whereNotIn('status', OperationStatus::terminalValues())->orderBy('id')->first()) !== null) {
                 return $open;
             }
-            InstancePower::assertIdle($instance);
+            InstancePower::assertIdle($instance, 'Only an active copy starts: a copy whose create or set-up did not finish is not startable this way.');
             $fleet = app(NestedFleetIntent::class)->forClone($instance, $runtime);
 
             return app(StartOperationAction::class)->execute(self::Kind, 'instance', $instance->id, $instance->node_id,

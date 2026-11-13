@@ -160,6 +160,14 @@ it('refuses a start that the start does not allow, before any run', function (st
     ['instance.deploy', 'operation.target_busy'], ['instance.destroy', 'operation.target_busy'],
 ]);
 
+it('names why a copy that is not active does not start', function (): void {
+    [, $clone] = startPair(true);
+    $clone->update(['status' => 'source_resolved']);
+
+    expect(fn () => app(InstanceStart::class)->start($clone->refresh(), null, null))->toThrow(fn (ResourceOperationException $error) => expect([$error->errorCode, $error->getMessage()])
+        ->toBe(['instance.lifecycle_busy', 'Only an active copy starts: a copy whose create or set-up did not finish is not startable this way.']));
+});
+
 it('joins an open start, and keys it by the wake request\'s Idempotency-Key', function (): void {
     [, $clone] = startPair(true);
     $idempotency = app(OperationIdempotency::class);
