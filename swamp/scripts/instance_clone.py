@@ -341,6 +341,11 @@ def main():
                     ],
                     read["config"]["volatile.uuid"].replace("-", "") + "\n",
                 )
+                # Rule: only a copy that is not running gets these files; a running copy may already hold its own value from the
+                # Node services apply below, which runs after the start and so writes last. An intent without the key has none.
+                for item in container["clone"].get("boot_files", []):
+                    change(project + ["file", "push", "--create-dirs", "--uid", str(item["uid"]), "--gid", str(item["gid"]),
+                                      "--mode", item["mode"], "-", name + item["path"]], item["content"])
             for rule in container.get("firewall", []):
                 argv = (
                     ["ufw"]
