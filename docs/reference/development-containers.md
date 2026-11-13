@@ -1382,6 +1382,55 @@ A Swamp step that exits nonzero keeps no output. So a failed fleet phase writes 
 
 The checkout moves under the running nested Gateway, with its old schema and processes. So the start of the fleet checks only that the containers run and the tunnel reaches the hub. The refresh migrates and restarts the nested Gateway and waits for the three agents. Then it converges the Nodes, and only then waits for Doctor.
 
+#### What a refresh skips
+
+A refresh does only the parts whose inputs changed, as the task VM refresh did. Each part has a digest, made from Git object IDs of the checkout. The refresh compares them with its record, `/var/lib/orbit/fleet-refresh.json` in the outer container.
+
+| Part | Digest | When it runs |
+| --- | --- | --- |
+| Migrate the nested Gateway, restart its services | `apps/gateway` and `apps/agent/contract`, which it reads | The digest differs |
+| Wait for the three agents | | The services restarted, or the converges run |
+| Base converge of the three nested Nodes | `apps/gateway`, `apps/agent/contract`, `swamp` and the fleet intent | The digest differs |
+| Agent delivery, grants, state mounts, fleet files, readiness | None | Every run. The delivery writes into the checkout. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
+| Stop the fleet, apply the rules, retake `base` | See below | Only when the fleet's disks changed |
+
+The migrate follows `apps/gateway`, not only its migrations folder. Packages in its Composer lock ship migrations too, so a new lock can bring a migration.
+
+The converge digest is coarse on purpose. The nested Gateway builds the converge intent from its code, and the converge runs `swamp`. A narrower digest could miss an input, and then a nested Node would keep old files.
+
+A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `base` is the slow part: about 32 s for each container on the directory pool, plus its stop and start. So the refresh retakes `base` only for the containers whose disk changed, and the set stays consistent:
+
+| What changed | `base` retaken for |
+| --- | --- |
+| A step that writes a nested container's own disk reported a change: the migrate (output without "Nothing to migrate" counts as applied), or the grants reload (a recap other than `changed=0`) | That container: today the nested Gateway, whose disk holds the database and the grants |
+| A converge reported a changed task on a Node | That Node and the nested Gateway, whose database records the converge |
+| A nested container has no `base` | That container |
+| The record is missing or unreadable, or a fleet rule or file differed on the running fleet | All three, with the rules applied on the stopped fleet |
+
+The refresh lists each step that writes a nested container's own disk once, with that container. A new writer joins that list. So a reset after a refresh that migrated or reloaded grants comes up on the new schema and grants.
+
+The nested Gateway's other two state mounts need no rule. The refresh writes nothing to `swamp/vaults`: on the live default, no file there changed during a refresh.
+
+Swamp serve writes `swamp/.swamp` all the time, with or without a refresh. It holds run records, outputs, an audit log and caches built from the checkout. These are records, not inputs. After a reset, serve builds the caches again.
+
+With only some containers stopped, the rules only compare. A rule that differs on a running container fails the refresh, so the refresh never writes to a container whose `base` it keeps. Each container to retake stops; the others keep running. While the nested Gateway is stopped, the agents of the other two lose it and connect again after its start, as after the restart of its services. The start of the refreshed fleet starts what stopped and waits for readiness. If nothing changed, the fleet keeps running and `base` stays.
+
+The refresh removes the record before its first write to a nested disk, and writes it again as its last task, before the seed. So:
+
+- A refresh that stops in the middle leaves no record. That covers a failed step, a failed restore of the old seed and a run by hand.
+- The next run then does every part again and retakes `base` of all three.
+- The seed holds the record of the fleet it holds. A restore of an older seed brings its own record, so the next refresh redoes what changed since then.
+- A record that was deleted makes every part run.
+- A record that cannot be read or parsed makes every part run too, with a warning in the result. It never fails the run.
+
+The record is owned by root, mode 0644, in a root-owned folder. The workspace user cannot write it without root. The `agent` user has root through `sudo`, so the mode is no guard against it. So a user with root in the default can make a refresh skip a part. That user can change the inner fleet directly too, so the record adds no new risk. A copy is never refreshed, so a record in a copy has no effect.
+
+The Operation's result has `fleet_refresh`. It holds `migrate` (`applied`, `nothing` or `skipped`), `converge` (`ran` or `skipped`), `changed` (the tasks the converges changed), `base` (`retaken` or `kept`), `base_containers` (the containers whose `base` was retaken), `restart` (`yes` or `no`), `record` (`present`, `missing` or `unreadable`) and `seconds` per part.
+
+When `base` stays, the seed is taken while the inner fleet runs. The inner storage pool is a directory pool on the outer container's disk, one ZFS dataset. So the seed is one point in time of all three containers and the inner Incus database, the state a power cut leaves. The nested Gateway's database is SQLite, which recovers from a power cut. A copy boots its nested containers cold, as a copy of a stopped seed does.
+
+The first seed of every run, "Keep the current seed", was always taken with the fleet running. On a nested proof Node with a directory pool, the seed is a file copy and not one point in time; that affects only proofs.
+
 A passed run starts the fleet again after the seed and waits for readiness. If only that start fails, the run fails with `instance.container_fleet_resume_failed`. The new seed and `base` stay. After a restore, the run starts the restored fleet. If that start fails, the detail says so too.
 | An update, not a rebuild | The image variant's tools change only with a new image |
 | The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Cancel an open refresh before the next release |
@@ -1391,8 +1440,9 @@ It replaces the release trigger and the daily run of the [task VM refresh](https
 What stops during a refresh:
 
 - The outer container keeps running. Its Processes stop only for the seed snapshot: under 1 s on ZFS, plus their stop and start.
-- The inner fleet runs from its start until the refresh stops it to retake `base`.
-- It stays stopped for `base` and the last seed, so both hold a stopped fleet. It starts again after the seed.
+- The inner fleet runs from its start. A nested container stops only for its own `base`.
+- A container stopped for `base` stays stopped for the last seed. It starts again after the seed.
+- When `base` stays, the fleet runs through the seed.
 - A clone starts its own copy.
 - The run's first seed stops the Processes as briefly as the last one.
 - After a failure, the outer container stops for the restore (at most 30 s for the stop) and starts again.
@@ -1406,6 +1456,9 @@ What stops during a refresh:
 | Retake `base` (stop and three snapshots) | 94 s, measured | The second experiment |
 | Seed snapshot of the outer container | Under 1 s on ZFS, measured | The ADR 0250 spike |
 | Start the stopped fleet to a healthy Doctor | 31 to 55 s, measured | The second inner fleet experiment on a Node |
+| A whole refresh that converges and retakes `base` | 6 min 32 s to 6 min 38 s, measured | Operations 20079 and 20121 |
+| A whole refresh whose converges change nothing (`base` kept) | About 3 min 55 s, estimated | Operation 20121 minus stop, `base` and start |
+| A whole refresh that changes neither `apps/gateway` nor `swamp` | About 2 min 20 s, estimated | Operation 20121 minus the converges too |
 
 Each step has a bound. The check has 300 s, the first seed 120 s, the start 300 s and the refresh 3,600 s. The start of the refreshed fleet has 600 s. The restore has 150 s, the start after it 120 s, and the start of the restored fleet 600 s. The run budget grows by their sum, 5,790 s. Inside the refresh, the agent wait and the Doctor wait are bounded by 300 s each, and each Node converge by 900 s.
 
@@ -1509,7 +1562,9 @@ A restore of `base` reverts devices and configuration keys. So the rules must be
 
 Readiness is the proof's own check, from the container over `wg-nested`: every nested container runs, Doctor of the nested Gateway is healthy within a bounded wait, the three agents are online and the Gateway knows the operator with its key. A failure names the nested container or the check. A failed Doctor wait names what its last poll got: the HTTP status and the first 300 characters of the body, or curl's error when no response came.
 
-A read right after a start waits for what the nested container sets up at boot, at most 60 s, and accepts only a ready value. The start takes the nested Gateway's hub key only when it is a WireGuard key: `wg-quick` makes the interface before it sets the key, and in between `wg show orbit public-key` prints `(none)` with exit 0. With no key in time, the start fails with "the nested Gateway's WireGuard key was not ready after 60 s" and sets no peer. The refresh waits in the same way until the state mounts of the nested Gateway and `app-dev` are active.
+A read right after a start waits for what the nested container sets up at boot, at most 60 s, and accepts only a ready value. The start takes the nested Gateway's hub key only when it is a WireGuard key: `wg-quick` makes the interface before it sets the key, and in between `wg show orbit public-key` prints `(none)` with exit 0. With no key in time, the start fails with "the nested Gateway's WireGuard key was not ready after 60 s" and sets no peer.
+
+The refresh waits in the same way until the state mounts of the nested Gateway and `app-dev` are active, with the nested Gateway's Swamp state mounts when the Club key is there.
 
 Every API call of the fleet step passes `--noproxy '*'`. The Instance container's environment sends every address but the egress proxy's own through that proxy, which cannot reach the tunnel; it answers `CONNECT tunnel failed, response 503`.
 

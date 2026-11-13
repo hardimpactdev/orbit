@@ -128,7 +128,7 @@
     ]
   },
   "swamp/tests/ansible_instance_fleet_test.ts": {
-    "source_sha256": "fa12056d7ff366cee883454048d9dcd21fb57cf753312e15ca73921c278b2ac0",
+    "source_sha256": "64d446b3e83c43974a99498d32a4c0d4ccc37cb80406ae8dc9df015a33aae7ab",
     "cases": [
       "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
       "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
@@ -147,11 +147,26 @@
       "readiness reads a healthy Doctor on the first poll; an empty, an error or no response fails with what the last poll got",
       "a refresh after the checkout moved migrates and restarts the nested Gateway before its only Doctor wait, and passes",
       "a refresh waits for the three agents after the restart before it converges, and names the agent that stays offline",
-      "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore"
+      "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore",
+      "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness",
+      "a changed input alone runs its own part, once: the code with a pending migration migrates, restarts, converges and retakes base of the nested Gateway",
+      "a changed input alone runs its own part, once: the code without a pending migration migrates, restarts and converges, and keeps base",
+      "a changed input alone runs its own part, once: swamp converges",
+      "a changed input alone runs its own part, once: the agent contract migrates, restarts and converges",
+      "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base",
+      "a converge that changes a task on one Node retakes base of that Node and the nested Gateway; a missing base retakes it too",
+      "a failed run that changed a Node leaves no record, so the next refresh runs every part and retakes all three",
+      "a deleted record runs every part and never fails the refresh",
+      "a malformed record runs every part and never fails the refresh",
+      "an unreadable record runs every part and never fails the refresh",
+      "a failed digest read runs every part and never fails the refresh",
+      "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema",
+      "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants",
+      "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing"
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "0648e30da31fd50392d5417db5a56c74f550a74bce9da51fcbb6fc5dfa990c3e",
+    "source_sha256": "a881f68693af2f30491f1c7515586fb77655cc1cc04b56a9d9880ba5effbb6e3",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",

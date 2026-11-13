@@ -309,4 +309,32 @@ describe('the result of a start', function (): void {
         'the run delivered nothing' => [['commit' => str_repeat('c', 40)], 'succeeded', [], 'missing'],
         'refused' => [['error_code' => 'instance.nested_club_key_unsafe_transfer'], 'failed', ['Start the container'], 'refused'],
     ]);
+
+    it('reports on a refresh what each part did, and nothing for a run without a refresh', function (): void {
+        SwampNodeFixture::ensure();
+        placeClubKey($this->clubEnvironment, FakeNestedClubKey);
+        $instance = Instance::query()->findOrFail(containerCreate(clubProject('trial', true), clubSwitchedOnNode())->target_id);
+        $refresh = ['migrate' => 'nothing', 'restart' => 'yes', 'converge' => 'ran', 'changed' => 0, 'base' => 'kept', 'base_containers' => [], 'record' => 'present',
+            'seconds' => ['gateway' => 14, 'converge' => 70, 'ready' => 3, 'base' => 1]];
+        $deploy = static function (array $file) use ($instance): Operation {
+            $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+                'status' => 'running', 'state' => ['swamp_run_id' => 'run-1'], 'input' => ['deployment' => ['variant' => 'container', 'home' => '/srv/trial',
+                    'container' => ['processes' => [], 'club_key' => NestedFleetClubKey::intent()]]]]);
+            app(InstanceDeployProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+                'finished_at' => now()->toIso8601String(), 'result' => ['steps' => [ContainerDeployOutcome::ResultStep => ['stdout' => json_encode($file, JSON_THROW_ON_ERROR)]],
+                    'summary' => ['failed_steps' => []]]]);
+
+            return $operation->refresh();
+        };
+        $commit = str_repeat('c', 40);
+
+        expect($deploy(['commit' => $commit, 'club_key' => 'unchanged', 'fleet_refresh' => $refresh])->result['fleet_refresh'])->toBe($refresh)
+            ->and($deploy(['commit' => $commit, 'club_key' => 'unchanged'])->result)->not->toHaveKey('fleet_refresh')
+            // Words the refresh does not use, or a count that is no count, are not recorded.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'base' => 'maybe']])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'changed' => '3']])->result)->not->toHaveKey('fleet_refresh')
+            // Unknown parts of `seconds` are dropped.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'seconds' => ['gateway' => 2, 'secret' => 'x']]])->result['fleet_refresh']['seconds'])
+            ->toBe(['gateway' => 2]);
+    });
 });

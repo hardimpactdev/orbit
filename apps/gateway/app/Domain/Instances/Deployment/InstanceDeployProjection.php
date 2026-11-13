@@ -90,6 +90,9 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             if (isset($payload['fleet_drift'])) {
                 $facts['fleet_drift'] = $payload['fleet_drift'];
             }
+            if (isset($payload['fleet_refresh'])) {
+                $facts['fleet_refresh'] = $payload['fleet_refresh'];
+            }
             $club = ValidatedData::object($locked->input['deployment'])['container'] ?? null;
             if ($status !== 'running' && is_array($club) && isset($club['club_key'])) {
                 // What this nested-fleet start did with its Club key, from the run's own word.

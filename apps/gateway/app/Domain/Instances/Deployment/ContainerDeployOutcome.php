@@ -32,6 +32,11 @@ final readonly class ContainerDeployOutcome
         $file = is_array($file) ? $file : [];
         // A nested-fleet start's word for what it did with the Club key, kept in the result file by every later phase.
         $payload = ['commit' => null, 'failed_step' => null, 'started' => true, 'club_key' => $file['club_key'] ?? null];
+        // What a nested-fleet refresh did, part by part, kept in the result file by every later phase.
+        $refresh = self::fleetRefresh($file['fleet_refresh'] ?? null);
+        if ($refresh !== null) {
+            $payload['fleet_refresh'] = $refresh;
+        }
         $status = ValidatedData::nullableString($data['status'] ?? null);
         if ($status === 'succeeded') {
             $payload['commit'] = is_string($file['commit'] ?? null) ? $file['commit'] : null;
@@ -77,5 +82,46 @@ final readonly class ContainerDeployOutcome
         }
 
         return [$data, $payload];
+    }
+
+    /**
+     * The refresh's own words for each part (docs/reference/development-containers.md#what-a-refresh-skips), or null when the run
+     * has no refresh or its words are not these.
+     *
+     * @return array{migrate:string,restart:string,converge:string,changed:int,base:string,base_containers:list<string>,record:string,seconds:array<string,int>}|null
+     */
+    private static function fleetRefresh(mixed $raw): ?array
+    {
+        if (! is_array($raw)) {
+            return null;
+        }
+        $words = ['migrate' => ['applied', 'nothing', 'skipped'], 'restart' => ['yes', 'no'], 'converge' => ['ran', 'skipped'], 'base' => ['retaken', 'kept'],
+            'record' => ['present', 'missing', 'unreadable']];
+        $refresh = [];
+        foreach ($words as $part => $allowed) {
+            if (! in_array($raw[$part] ?? null, $allowed, true)) {
+                return null;
+            }
+            $refresh[$part] = $raw[$part];
+        }
+        if (! is_int($raw['changed'] ?? null) || $raw['changed'] < 0) {
+            return null;
+        }
+        $containers = $raw['base_containers'] ?? [];
+        if (! is_array($containers) || ! array_is_list($containers) || count($containers) > 3
+            || array_filter($containers, static fn (mixed $name): bool => ! is_string($name) || preg_match('/\A[a-z0-9-]{1,63}\z/', $name) !== 1) !== []) {
+            return null;
+        }
+        $refresh = ['migrate' => $refresh['migrate'], 'restart' => $refresh['restart'], 'converge' => $refresh['converge'],
+            'changed' => $raw['changed'], 'base' => $refresh['base'], 'base_containers' => $containers, 'record' => $refresh['record']];
+        $seconds = is_array($raw['seconds'] ?? null) ? $raw['seconds'] : [];
+        $refresh['seconds'] = [];
+        foreach (['gateway', 'converge', 'ready', 'base'] as $part) {
+            if (is_int($seconds[$part] ?? null) && $seconds[$part] >= 0) {
+                $refresh['seconds'][$part] = $seconds[$part];
+            }
+        }
+
+        return $refresh;
     }
 }

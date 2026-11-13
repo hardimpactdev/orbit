@@ -59,7 +59,7 @@
                   (process_result if process_result is defined else
                    (node_runtime_result if node_runtime_result is defined and ansible_run_tags | first in ['node-store', 'node-runtime']
                     else {'commit': container_commit | default(none)})))) | combine(club_key_carried)
-                 | combine(wake_result | default({})) | to_json }}
+                 | combine(wake_result | default({})) | combine(fleet_refresh_carried) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           no_log: true
@@ -80,6 +80,14 @@
                  else {'club_key': (lookup('ansible.builtin.file', club_key_result_file) | from_json).club_key}
                    if club_key_result_file is file and (lookup('ansible.builtin.file', club_key_result_file) | from_json).club_key | default('') in ['changed', 'changed_serve_pending', 'unchanged']
                  else {} }}
+            # What the refresh of a nested fleet did, part by part (tasks/instance-fleet-refresh.yml): its phase sets it, and each later
+            # phase of the run keeps it from the result file, as the Club key's word.
+            fleet_refresh_carried: &fleet_refresh_carried >-
+              {{ {'fleet_refresh': fleet_refresh_result} if fleet_refresh_result is defined
+                 else {'fleet_refresh': (lookup('ansible.builtin.file', club_key_result_file) | from_json).fleet_refresh}
+                   if intent.fleet is defined and club_key_result_file is file
+                      and (lookup('ansible.builtin.file', club_key_result_file) | from_json).fleet_refresh | default(none) is mapping
+                 else {} }}
       rescue:
         # The code of a refusal is the fail_msg of its assert; anything else is the phase's own failure. A swamp step that exits
         # nonzero keeps no output, so a failed fleet phase also writes why into the result: `detail`, the failed task and its
@@ -98,7 +106,7 @@
                   | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({}))
                   | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
                   | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(club_key_carried)
-                  | combine(wake_result | default({})))) | to_json }}
+                  | combine(wake_result | default({})) | combine(fleet_refresh_carried))) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           delegate_to: localhost
@@ -108,6 +116,7 @@
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
             club_key_result_file: *club_key_result_file
             club_key_carried: *club_key_carried
+            fleet_refresh_carried: *fleet_refresh_carried
             failure_phase: "{{ ansible_run_tags | first }}"
             failure_code: >-
               {{ ansible_failed_result.msg

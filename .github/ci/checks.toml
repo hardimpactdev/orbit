@@ -192,7 +192,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 621
+cost = 1892
 slices = 15
 inputs = [
   "bin/swamp-shape-gate",
@@ -222,6 +222,21 @@ inputs = [
   "a refresh after the checkout moved migrates and restarts the nested Gateway before its only Doctor wait, and passes" = 55 # ESTIMATE: local 18s x 3, plus 1s
   "a refresh waits for the three agents after the restart before it converges, and names the agent that stays offline" = 64 # ESTIMATE: local 21s x 3, plus 1s
   "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore" = 13 # ESTIMATE: local 4s x 3, plus 1s
+  "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness" = 57 # local 28s on Beast, x2, plus 1s
+  "a changed input alone runs its own part, once: the code with a pending migration migrates, restarts, converges and retakes base of the nested Gateway" = 85 # local about 42s each (168s for four) on Beast, x2, plus 1s
+  "a changed input alone runs its own part, once: the code without a pending migration migrates, restarts and converges, and keeps base" = 85 # local about 42s each (168s for four) on Beast, x2, plus 1s
+  "a changed input alone runs its own part, once: swamp converges" = 85 # local about 42s each (168s for four) on Beast, x2, plus 1s
+  "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base" = 85 # local about 42s each (168s for four) on Beast, x2, plus 1s
+  "a converge that changes a task on one Node retakes base of that Node and the nested Gateway; a missing base retakes it too" = 141 # local 70s on Beast, x2, plus 1s
+  "a failed run that changed a Node leaves no record, so the next refresh runs every part and retakes all three" = 85 # local 42s on Beast, x2, plus 1s
+  "a deleted record runs every part and never fails the refresh" = 73 # local about 35s each (141s for four) on Beast, x2, plus 1s
+  "a malformed record runs every part and never fails the refresh" = 73 # local about 35s each (141s for four) on Beast, x2, plus 1s
+  "an unreadable record runs every part and never fails the refresh" = 73 # local about 35s each (141s for four) on Beast, x2, plus 1s
+  "a failed digest read runs every part and never fails the refresh" = 73 # local about 35s each (141s for four) on Beast, x2, plus 1s
+  "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema" = 101 # ESTIMATE: two refreshes and a reset, about 50s local, x2, plus 1s
+  "a changed input alone runs its own part, once: the agent contract migrates, restarts and converges" = 85 # as the other input cases: local about 42s, x2, plus 1s
+  "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 85 # ESTIMATE: two refreshes, local about 42s, x2, plus 1s
+  "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 85 # ESTIMATE: two refreshes, local about 42s, x2, plus 1s
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"

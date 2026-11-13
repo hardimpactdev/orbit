@@ -2166,12 +2166,21 @@ Deno.test({
       f.intent.deployment = deployment;
       f.write();
 
+      // The refresh names what each part did; every later phase of the run keeps it in the result file, a failed one too.
+      const refreshed = { migrate: "nothing", restart: "yes", converge: "ran", changed: 0, base: "kept", record: "present",
+        seconds: { gateway: 14, converge: 70, ready: 3, base: 1 } };
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-refresh.yml`,
+        `- ansible.builtin.set_fact: { fleet_refresh_result: ${JSON.stringify(refreshed)} }\n`);
+      assert(f.run("fleet_refresh").ok);
+      assertEquals(f.result().fleet_refresh, refreshed);
+
       // The refresh retook the fleet's base, so the seed is taken again at the same commit.
       const stops = () => ((f.state().systemctl ?? []) as string[][]).filter((call) => call[0] === "stop").length;
       const before = stops();
       assert(f.run("seed").ok);
       assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${commit}`]);
       assertEquals(stops(), before + 1, "the Processes stop for a new snapshot");
+      assertEquals(f.result(), { commit, fleet_refresh: refreshed });
       const key = `${f.folder}/containers/instance-7/etc/orbit/swamp-club-api-key`;
       Deno.mkdirSync(`${f.folder}/containers/instance-7/etc/orbit`, { recursive: true });
       Deno.writeTextFileSync(key, "placeholder");
@@ -2180,7 +2189,7 @@ Deno.test({
       const stopped = stops();
       const refused = f.run("seed");
       assert(!refused.ok);
-      assertEquals(f.result(), { error_code: "instance.fleet_key_on_disk" });
+      assertEquals(f.result(), { error_code: "instance.fleet_key_on_disk", fleet_refresh: refreshed });
       // Refused before the seed changes anything: no Node-store preparation, no Process stop.
       assertEquals((f.state().node_seed_calls ?? []).length, prepared);
       assertEquals(stops(), stopped);

@@ -45,6 +45,9 @@
     # The key file that was placed by hand before the delivery; it lay on the container's disk, so a seed refuses while it is there.
     fleet_old_club_key: /etc/orbit/swamp-club-api-key
     fleet_operator_key: /etc/wireguard/wg-nested.key
+    # The refresh record (instance-fleet-refresh.yml): the digests of the parts the last passed refresh did, on the container's own
+    # disk, so a seed holds the record of the fleet it holds. Absent while a refresh runs. Root-owned, in a root-owned folder.
+    fleet_record: /var/lib/orbit/fleet-refresh.json
     fleet_tunnel: wg-nested
     fleet_tunnel_port: "51821"
     fleet_hub_port: "51820"
@@ -56,6 +59,8 @@
     fleet_swamp_services: [orbit-swamp-serve.service, orbit-swamp-worker@a.service, orbit-swamp-worker@b.service]
     fleet_state_mounts: [home-orbit-orbit-apps-gateway-.env.mount, home-orbit-orbit-apps-gateway-storage.mount,
                          home-orbit-orbit-apps-gateway-bootstrap-cache.mount]
+    # The nested Gateway's Swamp state on its own disk: run records, vault files and the grants (TaskVmNestedFleet::GatewayState).
+    fleet_swamp_state_mounts: [home-orbit-orbit-swamp-.swamp.mount, home-orbit-orbit-swamp-vaults.mount, home-orbit-orbit-swamp-grants.mount]
 
 # The fleet rules by role: devices with the keys they must have, configuration keys, and files with their whole content (the proxy
 # drop-ins of the nested Gateway's Swamp units, and the egress proxy of apt and of sudo and SSH sessions). They are the shape of the fleet that runs (docs/reference/development-containers.md#fleet-rules). A restore of `base`

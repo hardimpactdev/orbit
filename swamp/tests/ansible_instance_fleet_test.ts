@@ -74,6 +74,8 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
     "    intent: \"{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}\"",
     "  tasks:",
     "    - ansible.builtin.include_tasks: \"tasks/instance-fleet-{{ phase }}.yml\"",
+    "    - ansible.builtin.copy: { content: \"{{ fleet_refresh_result | to_json }}\", dest: \"{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/refresh.json\" }",
+    "      when: fleet_refresh_result is defined",
     "",
   ].join("\n"));
   Deno.writeTextFileSync(`${folder}/bin/incus`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-fleet-incus.ts", import.meta.url).pathname}' "$@"\n`);
@@ -148,6 +150,23 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
       const output = new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr);
       return { ok: result.success, output, changed: Number(/^localhost\s*:.*changed=(\d+)/m.exec(output)?.[1] ?? -1) };
     },
+    /** Edit the run's intent. */
+    // deno-lint-ignore no-explicit-any
+    intent(edit: (value: Record<string, any>) => void) {
+      const value = JSON.parse(Deno.readTextFileSync(`${folder}/run/intent.json`));
+      edit(value);
+      Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify(value));
+    },
+    /** What the last refresh did (`fleet_refresh_result`), or null when no refresh passed. */
+    refreshed(): Record<string, unknown> | null {
+      try {
+        const value = JSON.parse(Deno.readTextFileSync(`${folder}/run/refresh.json`));
+        Deno.removeSync(`${folder}/run/refresh.json`);
+        return value;
+      } catch {
+        return null;
+      }
+    },
     cleanup: () => Deno.removeSync(folder, { recursive: true }),
   };
 }
@@ -183,6 +202,11 @@ const startCalls = [
 const reachCalls = ["incus list --format csv --columns ns", "ping -c 1 -W 2 10.45.0.1"];
 /** The operator's API calls never use the container's proxy, and keep curl's error. */
 const api = "curl -sSk --noproxy * -m 80 -H Host: gateway.orbit -H Accept: application/json";
+/** The refresh reads its record and the checkout's digests first, and writes the record last (instance-fleet-refresh.yml). */
+const record = "/var/lib/orbit/fleet-refresh.json";
+const recordReads = [`cat ${record}`, "git -c safe.directory=* -C /srv/workspace rev-parse HEAD:apps/gateway HEAD:apps/agent/contract HEAD:swamp"];
+const recordWrite = `install -D -o root -g root -m 0644 /dev/stdin ${record}`;
+const recordRemove = `rm -f ${record}`;
 const readyCalls = [
   "incus list --format csv --columns ns",
   "ping -c 1 -W 2 10.45.0.1",
@@ -360,9 +384,13 @@ Deno.test({
       const exec = (name: string, command: string) => `incus exec ${name} -- ${command}`;
       const services = ["orbit-gateway-horizon.service", "orbit-gateway-schedule.service", "orbit-agent-view.service"];
       const mounts = "home-orbit-orbit-apps-gateway-.env.mount home-orbit-orbit-apps-gateway-storage.mount home-orbit-orbit-apps-gateway-bootstrap-cache.mount";
+      const swampMounts = "home-orbit-orbit-swamp-.swamp.mount home-orbit-orbit-swamp-vaults.mount home-orbit-orbit-swamp-grants.mount";
       assertEquals(calls, [
         `test -s ${clubKey}`,
-        exec("nested-gateway", `systemctl is-active ${mounts}`),
+        ...recordReads,
+        recordRemove,
+        // With the Club key the nested Gateway's Swamp state mounts must be up too: the grants are written there.
+        exec("nested-gateway", `systemctl is-active ${mounts} ${swampMounts}`),
         exec("nested-app-dev", `systemctl is-active ${mounts}`),
         // The app user with its groups: `work` opens the checkout.
         exec("nested-gateway", "runuser -u orbit -- install -D -m 0444 /home/orbit/orbit/apps/gateway/resources/agent/frozen-manifest.json /home/orbit/orbit/apps/agent/delivery/manifest.json"),
@@ -371,9 +399,9 @@ Deno.test({
         exec("nested-gateway", `systemctl restart ${services.join(" ")}`),
         ...[...services, "orbit-swamp-serve.service", "orbit-swamp-worker@a.service", "orbit-swamp-worker@b.service"]
           .map((unit) => exec("nested-gateway", `systemctl is-active --quiet ${unit}`)),
-        `${api} --fail https://10.45.0.1/api/v1/nodes`,
-        // The egress files are read (and written where they differ) before the converge, on the running fleet.
+        // The rules and files are read (and files written where they differ) on the running fleet, before the converge.
         ...reads,
+        `${api} --fail https://10.45.0.1/api/v1/nodes`,
         ...names.map((name) => exec(name, "systemctl stop apt-daily.timer apt-daily-upgrade.timer")),
         ...names.map((name) => exec(name, "systemctl show --property=ActiveState --value apt-daily.service apt-daily-upgrade.service")),
         ...[1, 2, 3].flatMap((node) => [
@@ -381,14 +409,15 @@ Deno.test({
           `${api} --fail https://10.45.0.1/api/v1/operations/${900 + node}`,
         ]),
         ...readyCalls,
+        ...names.map((name) => `incus query /1.0/instances/${name}/snapshots?recursion=1`),
         ...names.map((name) => `incus stop ${name} --timeout 90`),
         "incus list --format csv --columns ns",
         ...reads,
         "incus config device add nested-app-prod apparmor-off disk source=/etc/orbit/apparmor-off path=/sys/module/apparmor/parameters/enabled readonly=true",
         ...reads,
-        ...names.map((name) => `incus query /1.0/instances/${name}/snapshots?recursion=1`),
         ...names.map((name) => `incus snapshot delete ${name} base`),
         ...names.map((name) => `incus snapshot create ${name} base`),
+        recordWrite,
       ]);
       assertKeyUntouched(calls, refreshed.output);
       const state = f.state();
@@ -761,6 +790,306 @@ Deno.test({
       assertKeyUntouched(calls, resumed.output);
       for (const name of names) assertEquals(f.state().containers[name].status, "Running");
       assertEquals(writes(calls), []);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+/** A fleet refreshed once, running again: the state after a passed refresh and the next release's start. */
+function refreshedOnce() {
+  const f = fixture(ruled(), { club: true, base: true });
+  assert(f.run("start").ok);
+  const first = f.run("refresh");
+  assert(first.ok, first.output);
+  assertEquals(f.refreshed()?.base, "retaken");
+  assert(f.run("start").ok);
+  f.calls();
+  f.change((state) => state.doctorCalls = 0);
+  return f;
+}
+const ran = (calls: string[], part: string) => calls.some((call) => call.includes(part));
+const parts = {
+  migrate: "php artisan migrate --force",
+  restart: "systemctl restart orbit-gateway-horizon.service",
+  converge: "/converge",
+  stop: "incus stop ",
+  base: "incus snapshot create ",
+};
+
+Deno.test({
+  name: "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      const before = structuredClone(f.state().containers);
+      const again = f.run("refresh");
+      assert(again.ok, again.output);
+      const calls = f.calls();
+      for (const part of Object.values(parts)) assert(!ran(calls, part), `${part} ran: ${calls.join("\n")}`);
+      // The agent delivery, the grants, the rules read and one Doctor wait run every time.
+      assert(ran(calls, "frozen-manifest.json") && ran(calls, "--tags grants") && ran(calls, "/doctor"), calls.join("\n"));
+      assertEquals(calls.at(-1), recordWrite);
+      for (const name of names) {
+        assertEquals(f.state().containers[name].status, "Running");
+        assertEquals(f.state().containers[name].snapshots.base, before[name].snapshots.base);
+      }
+      const result = f.refreshed()!;
+      assertEquals({ ...result, seconds: undefined }, { migrate: "skipped", restart: "no", converge: "skipped", changed: 0, base: "kept",
+        base_containers: [], record: "present", seconds: undefined });
+      assertEquals(Object.keys(result.seconds as object), ["gateway", "converge", "ready", "base"]);
+      assertEquals(f.state().outer.modes[record], "-D -o root -g root -m 0644");
+      assertEquals(JSON.parse(f.state().outer.files[record]), {
+        code: JSON.parse(f.state().outer.files[record]).code, converge: JSON.parse(f.state().outer.files[record]).converge });
+      assertEquals(Object.keys(JSON.parse(f.state().outer.files[record])), ["code", "converge"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+// deno-lint-ignore no-explicit-any
+const inputCases: [string, (state: Record<string, any>) => void, string[], string][] = [
+  // A package's migration (the Composer lock in `apps/gateway`) moves the code digest only; the migrate applies it.
+  ["the code with a pending migration migrates, restarts, converges and retakes base of the nested Gateway", (state) => {
+    state.digests = { "apps/gateway": "a9", swamp: "c3" };
+    state.pendingMigration = true;
+  }, ["migrate", "restart", "converge", "stop", "base"], "retaken"],
+  ["the code without a pending migration migrates, restarts and converges, and keeps base",
+    (state) => state.digests = { "apps/gateway": "a9", swamp: "c3" }, ["migrate", "restart", "converge"], "kept"],
+  ["swamp converges", (state) => state.digests = { "apps/gateway": "a1", swamp: "c9" }, ["converge"], "kept"],
+  // The nested Gateway reads the agent contract from outside `apps/gateway`: it is part of the code.
+  ["the agent contract migrates, restarts and converges",
+    (state) => state.digests = { "apps/gateway": "a1", "apps/agent/contract": "d9", swamp: "c3" }, ["migrate", "restart", "converge"], "kept"],
+];
+for (const [input, change, due, base] of inputCases) {
+  Deno.test({
+    name: `a changed input alone runs its own part, once: ${input}`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = refreshedOnce();
+      try {
+        f.change(change);
+        const refreshed = f.run("refresh");
+        assert(refreshed.ok, refreshed.output);
+        const calls = f.calls();
+        for (const [part, call] of Object.entries(parts)) assertEquals(ran(calls, call), due.includes(part), `${part}\n${calls.join("\n")}`);
+        assertEquals(f.refreshed()?.base, base);
+        // The next refresh at the same inputs does nothing of it again.
+        assert(f.run("start").ok);
+        f.calls();
+        assert(f.run("refresh").ok);
+        const next = f.calls();
+        for (const call of Object.values(parts)) assert(!ran(next, call), `${call} ran again`);
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
+}
+
+Deno.test({
+  name: "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      f.intent((intent) => intent.fleet.proxy.HTTP_PROXY = "http://10.253.0.1:3129");
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      const calls = f.calls();
+      assert(ran(calls, parts.converge) && !ran(calls, parts.migrate) && !ran(calls, parts.restart), calls.join("\n"));
+      assertEquals(f.refreshed()?.base, "retaken");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a converge that changes a task on one Node retakes base of that Node and the nested Gateway; a missing base retakes it too",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      f.change((state) => {
+        state.digests = { "apps/gateway": "a1", swamp: "c9" };
+        state.convergeChanged = { 2: 4 };
+      });
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      const takes = (calls: string[]) => calls.filter((call) => call.startsWith("incus snapshot create "));
+      // The changed Node and the nested Gateway, whose database records the converge; app-prod keeps running and its base.
+      assertEquals(takes(f.calls()), ["nested-gateway", "nested-app-dev"].map((name) => `incus snapshot create ${name} base`));
+      assertEquals(f.state().containers["nested-app-prod"].status, "Running");
+      const result = f.refreshed()!;
+      assertEquals([result.converge, result.changed, result.base, result.base_containers], ["ran", 4, "retaken", ["nested-gateway", "nested-app-dev"]]);
+
+      // A converge result without a count counts as one change per Node.
+      assert(f.run("start").ok);
+      f.change((state) => {
+        state.digests = { "apps/gateway": "a1", swamp: "c8" };
+        delete state.convergeChanged;
+        state.convergeNoCount = true;
+      });
+      f.calls();
+      assert(f.run("refresh").ok);
+      assertEquals(takes(f.calls()), names.map((name) => `incus snapshot create ${name} base`));
+      const counted = f.refreshed()!;
+      assertEquals([counted.changed, counted.base], [3, "retaken"]);
+
+      assert(f.run("start").ok);
+      f.change((state) => delete state.containers["nested-app-prod"].snapshots.base);
+      f.calls();
+      assert(f.run("refresh").ok);
+      const calls = f.calls();
+      assert(!ran(calls, parts.converge), calls.join("\n"));
+      assertEquals(takes(calls), ["incus snapshot create nested-app-prod base"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a failed run that changed a Node leaves no record, so the next refresh runs every part and retakes all three",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      // Run 1 changes app-dev, then the app-prod converge fails: nothing is recorded and the old record is gone.
+      f.change((state) => {
+        state.digests = { "apps/gateway": "a1", swamp: "c9" };
+        state.convergeChanged = { 2: 3 };
+        state.convergeStatus = { 3: "failed" };
+      });
+      assert(!f.run("refresh").ok);
+      const failed = f.calls();
+      assert(failed.includes(recordRemove) && !failed.includes(recordWrite), failed.join("\n"));
+      assertEquals(f.state().outer.files[record], undefined);
+      // Run 2: every converge now reports no change, yet app-dev's disk is ahead of its base. The missing record retakes all three.
+      f.change((state) => {
+        delete state.convergeStatus;
+        delete state.convergeChanged;
+      });
+      assert(f.run("start").ok);
+      f.calls();
+      assert(f.run("refresh").ok);
+      const calls = f.calls();
+      assert(ran(calls, parts.converge) && calls.at(-1) === recordWrite, calls.join("\n"));
+      const result = f.refreshed()!;
+      assertEquals([result.record, result.changed, result.base, result.base_containers], ["missing", 0, "retaken", names]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+// deno-lint-ignore no-explicit-any
+const recordCases: [string, (state: Record<string, any>) => void, string, boolean, string][] = [
+  // A record that cannot be trusted also retakes base of all three.
+  ["a deleted record", (state) => delete state.outer.files[record], "missing", true, "retaken"],
+  ["a malformed record", (state) => state.outer.files[record] = '{"code": "a1", "converge": ', "unreadable", true, "retaken"],
+  ["an unreadable record", (state) => state.outer.unreadable = [record], "unreadable", true, "retaken"],
+  // Without the checkout's digests every part runs and nothing is recorded, so the next refresh runs every part again. The record
+  // that is there is still the fleet's, so base follows what the parts changed: nothing here.
+  ["a failed digest read", (state) => state.digestsFail = true, "present", false, "kept"],
+];
+for (const [name, change, recordState, writes, base] of recordCases) {
+  Deno.test({
+    name: `${name} runs every part and never fails the refresh`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = refreshedOnce();
+      try {
+        f.change(change);
+        const refreshed = f.run("refresh");
+        assert(refreshed.ok, refreshed.output);
+        const calls = f.calls();
+        for (const part of ["migrate", "restart", "converge"] as const) assert(ran(calls, parts[part]), `${part} did not run`);
+        for (const part of ["stop", "base"] as const) assertEquals(ran(calls, parts[part]), base === "retaken", part);
+        const result = f.refreshed()!;
+        assertEquals([result.record, result.base, result.migrate, result.converge, result.restart], [recordState, base, "nothing", "ran", "yes"]);
+        assertEquals(result.base_containers, base === "retaken" ? names : []);
+        assertEquals(calls.at(-1) === recordWrite, writes);
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
+}
+
+Deno.test({
+  name: "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      const before = structuredClone(f.state().containers);
+      f.change((state) => {
+        state.digests = { "apps/gateway": "a9", swamp: "c3" };
+        state.pendingMigration = true;
+      });
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      const calls = f.calls();
+      assertEquals(calls.filter((call) => /^incus (stop|snapshot create) /.test(call)),
+        ["incus stop nested-gateway --timeout 90", "incus snapshot create nested-gateway base"]);
+      const state = f.state();
+      assertEquals(state.containers["nested-gateway"].snapshots.base.files["/home/orbit/.orbit/schema"], "1");
+      for (const name of ["nested-app-dev", "nested-app-prod"]) {
+        assertEquals(state.containers[name].status, "Running");
+        assertEquals(state.containers[name].snapshots.base, before[name].snapshots.base);
+      }
+      assertEquals(f.refreshed()?.base_containers, ["nested-gateway"]);
+      // A proof's reset restores base of all three and comes up on the new schema.
+      f.change((value) => value.containers["nested-gateway"].files["/home/orbit/.orbit/schema"] = "0");
+      const reset = f.run("reset");
+      assert(reset.ok, reset.output);
+      assertEquals(f.state().containers["nested-gateway"].files["/home/orbit/.orbit/schema"], "1");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      f.change((state) => state.grantsChanged = 2);
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      const calls = f.calls();
+      assert(!ran(calls, parts.converge) && !ran(calls, parts.migrate), calls.join("\n"));
+      assertEquals(calls.filter((call) => /^incus (stop|snapshot create) /.test(call)),
+        ["incus stop nested-gateway --timeout 90", "incus snapshot create nested-gateway base"]);
+      assertEquals(f.refreshed()?.base_containers, ["nested-gateway"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      f.change((state) => {
+        state.grantsChanged = 1;
+        state.driftOnStop = { container: "nested-app-prod", device: "apparmor-off" };
+      });
+      const failed = f.run("refresh");
+      assert(!failed.ok);
+      assertStringIncludes(failed.output, "The nested fleet differs from its rules while only nested-gateway stopped: nested-app-prod device apparmor-off");
+      const calls = f.calls();
+      assert(!calls.some((call) => call.startsWith("incus config device") || call.startsWith("incus snapshot create")), calls.join("\n"));
+      assert(!calls.includes(recordWrite));
     } finally {
       f.cleanup();
     }

@@ -1,7 +1,9 @@
 ---
 # One nested Node's base converge for the refresh (instance-fleet-refresh.yml), through the nested Gateway's API as the operator: the
 # base places the agent of the checkout's delivery pin, Orbit's files and units. The task VM refresh does the same with
-# `node:converge <id> --base` (task-vm-fleet-base-node.yml). The wait reads the Operation every 5 s, 900 s at most.
+# `node:converge <id> --base` (task-vm-fleet-base-node.yml). The wait reads the Operation every 5 s, 900 s at most. The count of tasks
+# the converge changed (`result.changed`) adds to `fleet_converge_changed`, and a Node with a change joins `fleet_converge_changed_roles`;
+# a result without a count counts as a change.
 - name: Admit the base converge of {{ fleet_node.name }}
   ansible.builtin.command:
     argv: >-
@@ -30,3 +32,11 @@
       {{ fleet_operation.status | default('with no status') }}{{ (' with ' ~ fleet_operation.error_code)
          if fleet_operation.error_code | default(none) else '' }}
     quiet: true
+- name: Count the tasks the base converge of {{ fleet_node.name }} changed
+  vars:
+    fleet_operation_changed: "{{ ((fleet_converge_wait.stdout | default('{}', true) | from_json).data.result | default({}, true)).changed | default(none) }}"
+  ansible.builtin.set_fact:
+    fleet_converge_changed: "{{ fleet_converge_changed | int + (fleet_operation_changed | int if fleet_operation_changed is number else 1) }}"
+    # The Nodes whose disk the converge changed: their `base` is retaken, with the nested Gateway's.
+    fleet_converge_changed_roles: >-
+      {{ fleet_converge_changed_roles + ([fleet_node.name] if fleet_operation_changed is not number or fleet_operation_changed | int > 0 else []) }}
