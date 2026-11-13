@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/node-worker-assets"
-version: 2026.11.02.2
+version: 2026.11.13.1
 visibility: private
 license: MIT
 description: Swamp credential expiry classification for the sole Swamp Node209.

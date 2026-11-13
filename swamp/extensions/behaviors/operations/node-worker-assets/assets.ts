@@ -22,15 +22,10 @@ const Lists = {
         z.object({ name: z.string(), state: z.string(), expiresAt: Expiry })
             .passthrough(),
     ),
-    club: z.array(
-        z.object({ name: z.string(), enabled: z.boolean(), expiresAt: Expiry })
-            .passthrough(),
-    ),
 };
 export const ReportArgs = z.object({
     access: z.string(),
     enrollment: z.string(),
-    club: z.string(),
     certificate: z.string(),
 }).strict();
 const Alert = z.object({
@@ -111,7 +106,7 @@ function certificateEnd(stdout: string): string {
     return end.toISOString();
 }
 
-/** Classifies the four read-only native outputs; reads nothing itself. */
+/** Classifies the three read-only native outputs; reads nothing itself. */
 export function report(
     args: z.infer<typeof ReportArgs>,
     now: Date,
@@ -126,15 +121,6 @@ export function report(
             if (row.state !== "revoked") {
                 listed.push(record(kind, row.name, row.expiresAt, now));
             }
-        }
-    }
-    for (
-        const row of parsed<
-            { name: string; enabled: boolean; expiresAt: string | null }
-        >("club", args.club)
-    ) {
-        if (row.enabled) {
-            listed.push(record("club", row.name, row.expiresAt, now));
         }
     }
     listed.push(
@@ -176,7 +162,7 @@ export function report(
 
 export const behavior = {
     type: "@nckrtl/node-worker-assets",
-    version: "2026.11.02.2",
+    version: "2026.11.13.1",
     resources: {
         credential_report: {
             schema: Report,

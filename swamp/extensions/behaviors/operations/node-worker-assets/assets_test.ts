@@ -1,6 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { behavior, MAXIMUM_ROWS, report } from "./assets.ts";
+import { behavior, MAXIMUM_ROWS, report, ReportArgs } from "./assets.ts";
 
 const NOW = new Date("2026-11-02T07:07:00Z");
 const at = (hours: number) =>
@@ -20,11 +20,9 @@ const certificate = "notAfter=Nov  7 20:56:22 2027 GMT\n";
 const lists = (
     accessRows: unknown[],
     enrollmentRows: unknown[],
-    clubRows: unknown[] = [],
 ) => ({
     access: JSON.stringify(accessRows),
     enrollment: JSON.stringify(enrollmentRows),
-    club: JSON.stringify(clubRows),
     certificate,
 });
 const pair = [access("orbit-node-209-access", 500)];
@@ -37,13 +35,9 @@ Deno.test("each expiry class alerts by its own reason; ok and no_expiry stay qui
                 access("orbit-node-209-access", 5),
                 access("old", -1, "revoked"),
                 access("orbit-gateway-read", 400),
+                { ...access("forever", 1), expiresAt: null },
             ],
             [enrollment("orbit-node-209", 30), enrollment("orbit-node-13", -2)],
-            [{ name: "orbit-monorepo-ci", enabled: true, expiresAt: null }, {
-                name: "off",
-                enabled: false,
-                expiresAt: at(1),
-            }],
         ),
         NOW,
     );
@@ -151,4 +145,45 @@ Deno.test("the report is written as a native resource and the manifest version m
         await Deno.readTextFile(new URL("manifest.yaml", import.meta.url)),
     ) as { version: string };
     assertEquals(manifest.version, behavior.version);
+});
+
+Deno.test("the monitor reads only what the Node's service key may read and passes each source to the report", async () => {
+    const workflow = parse(
+        await Deno.readTextFile(
+            new URL(
+                "../../../../workflows/workflow-swamp-credential-monitor.yaml",
+                import.meta.url,
+            ),
+        ),
+    ) as {
+        jobs: {
+            steps: {
+                name: string;
+                task: { inputs: Record<string, string> };
+            }[];
+        }[];
+    };
+    const steps = workflow.jobs[0].steps;
+    const check = steps.find((step) => step.name === "check")!;
+    const sources = steps.filter((step) => step !== check);
+    assertEquals(
+        Object.keys(check.task.inputs).sort(),
+        Object.keys(ReportArgs.shape).sort(),
+    );
+    assertEquals(
+        sources.map((step) => step.name).sort(),
+        Object.keys(ReportArgs.shape).sort(),
+    );
+    // `swamp auth` needs a personal Swamp Club account; a Node has none.
+    for (const step of sources) {
+        const run = step.task.inputs.run;
+        assertEquals(
+            run.startsWith(
+                "SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key timeout 30 /usr/local/bin/swamp ",
+            ) || run.startsWith("timeout 30 openssl x509 "),
+            true,
+            step.name,
+        );
+        assertEquals(run.includes("swamp auth "), false, step.name);
+    }
 });
