@@ -410,6 +410,16 @@ class WorkspaceCheckoutTest(unittest.TestCase):
             found["/" + str(relative)] = (text, path.stat().st_mode & 0o777)
         return found
 
+    def state(self):
+        """What a run leaves, free of this fixture's own commit id: each fresh fixture commits anew, and a new second gives a new id."""
+        mark, mode = self.mark()
+        named = dict(mark, commit=mark["commit"] == self.expected)
+        return self.files(), (named, mode), self.branch(), self.head(self.workspace) == self.expected
+
+    def named(self, commands):
+        """The commands of a run with this fixture's own commit id named, so two fixtures compare."""
+        return json.loads(json.dumps(commands).replace(self.expected, "<commit>"))
+
     def changed(self, result):
         """The changes a phase names, at container paths: the fixture's root maps container paths to its own folder."""
         return [change.replace(str(self.base), "") for change in result["changes"]]
@@ -425,21 +435,22 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         whole_commands = []
         whole = self.phase("workspace", self.full_container(), self.full_private(), whole_commands)
         whole["changes"] = self.changed(whole)
-        whole_state = (self.files(), self.mark(), self.branch(), self.head(self.workspace) == self.expected)
+        whole_state = self.state()
+        whole_commands, whole_commit = self.named(whole_commands), self.expected
 
         self.fresh()
         part_commands = []
         first = self.phase("checkout", self.full_container(), self.full_private(), part_commands)
         second = self.phase("services", self.full_container(), self.full_private(), part_commands)
         second["changes"] = self.changed(second)
-        self.assertEqual((self.files(), self.mark(), self.branch(), self.head(self.workspace) == self.expected), whole_state)
+        self.assertEqual(self.state(), whole_state)
         # The same units start, the same Node store call runs, in the same order.
-        self.assertEqual(part_commands, whole_commands)
+        self.assertEqual(self.named(part_commands), whole_commands)
         self.assertIn(["systemctl", "start", "orbit-process-19.service"], whole_commands)
         self.assertIn(["systemctl", "start", "orbit-frankenphp.service"], whole_commands)
         # One printed result as before: the same keys, the same changes, the commit and the environment names from the checkout.
         self.assertEqual(set(whole), {"phase", "changes", "environment", "commit"})
-        self.assertEqual((whole["phase"], whole["commit"], whole["environment"]), ("workspace", self.expected, first["environment"]))
+        self.assertEqual((whole["phase"], whole["commit"], whole["environment"]), ("workspace", whole_commit, first["environment"]))
         # The checkout's changes come first, then the rest; the PHP settings now follow `.env` (nothing reads the order).
         self.assertEqual(whole["changes"], first["changes"] + second["changes"])
         self.assertEqual((first["phase"], first["commit"]), ("checkout", self.expected))
