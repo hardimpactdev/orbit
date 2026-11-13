@@ -135,6 +135,7 @@
     # Nothing may publish an image with a sudo path: no `ubuntu` user, nothing in sudoers.d but its README, and no member of the
     # groups `sudo` or `admin`. The nested-fleet image has one more path, which the audit requires exactly: `agent`'s grant and
     # `agent` alone in `incus-admin`; `orbit` stays without sudo.
+    # visudo is judged by its exit code alone: visudo-rs ignores -q and prints "parsed OK" on stdout for a clean file.
     - name: Read the sudo paths of the image
       ansible.builtin.command:
         argv: "{{ in_build + ['sh', '-c', image_nested_audit if instance_variant.image.incus is defined else image_audit] }}"
@@ -145,7 +146,7 @@
           getent group sudo admin | cut -d: -f4 | tr , '\n' | sed '/^$/d; s/^/member:/';
           getent group incus-admin | grep -qx 'incus-admin:[^:]*:[0-9]*:agent' || echo incus-admin:unexpected;
           test "$(cat /etc/sudoers.d/orbit-agent)" = 'agent ALL=(ALL:ALL) NOPASSWD: ALL' || echo agent:grant;
-          visudo -cqf /etc/sudoers.d/orbit-agent || echo agent:syntax;
+          visudo -cqf /etc/sudoers.d/orbit-agent >/dev/null || echo agent:syntax;
           runuser -u agent -- sudo -n true || echo agent:sudo;
           runuser -u orbit -- sudo -n true 2>/dev/null && echo orbit:sudo; true
         image_audit: >-
