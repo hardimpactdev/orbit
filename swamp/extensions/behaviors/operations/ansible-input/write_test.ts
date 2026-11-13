@@ -10,7 +10,7 @@ const flow = parse(Deno.readTextFileSync(asset("workflows/workflow-operation-ins
     jobs: { steps: CloneStep[] }[];
 };
 const cloneSteps = flow.jobs.flatMap((job) => job.steps).filter((step) =>
-    ["clone-input", "clone-container", "clone-workspace", "clone-agent", "clone-t3", "clone-sessions", "clone-private-cleanup"].includes(step.name));
+    ["clone-input", "clone-container", "clone-workspace", "clone-t3", "clone-sessions", "clone-private-cleanup"].includes(step.name));
 const cel = new Environment({ unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false })
     .registerFunction("vaultget(dyn, dyn): string", () => "fixture-private-credential");
 const bytes = (text: string) => new TextEncoder().encode(text).length;

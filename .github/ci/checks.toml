@@ -1871,7 +1871,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 68
+cost = 78
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1907,6 +1907,11 @@ inputs = [
   "test_preserves_only_the_guest_command_and_exit_code" = 2
   "test_rejects_private_or_mismatched_guest_diagnostics" = 2
   "test_node_command_failure_names_executable_and_exit_without_output" = 2
+  "test_runs_agent_then_t3_and_passes_the_key_only_to_the_agent" = 2
+  "test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code" = 2
+  "test_a_failed_t3_part_names_t3_and_keeps_the_t3_code" = 2
+  "test_a_timeout_names_the_part_that_was_running" = 2
+  "test_the_agent_phase_alone_is_no_longer_a_step" = 2
   "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful" = 2
 
 "test_schedule_cleanup_listing_error_refuses_before_clone_boot" = 2 # local completed under 2 s; conservative CI estimate

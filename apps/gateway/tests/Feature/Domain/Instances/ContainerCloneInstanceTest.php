@@ -1012,7 +1012,6 @@ it('names retained create resources and proves the advertised recovery paths', f
     'clone-input' => [true, 'clone', false, 'failed'],
     'clone-container' => [true, 'clone', false, 'failed'],
     'clone-workspace' => [true, 'workspace', false, 'failed'],
-    'clone-agent' => [true, 'agent', true, 'failed'],
     'clone-t3' => [true, 't3', true, 'failed'],
     'clone-sessions' => [true, 'register', true, 'failed'],
     'clone-register' => [true, 'register', true, 'failed'],

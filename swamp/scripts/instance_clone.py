@@ -59,7 +59,7 @@ def main():
     account = sys.argv[4]
     folder = Path(sys.argv[5])
     phase = sys.argv[-1]
-    if phase not in {"container", "club-key", "workspace", "agent", "t3", "sessions", "cleanup"}:
+    if phase not in {"container", "club-key", "workspace", "t3", "sessions", "cleanup"}:
         raise ValueError("instance.clone_phase_invalid")
     name = container["name"]
     project = ["incus", "--project", container["project"]]
@@ -579,12 +579,18 @@ def main():
         finally:
             bundle.unlink(missing_ok=True)
         return
-    elif phase in {"agent", "t3", "sessions"}:
+    elif phase in {"t3", "sessions"}:
         cached = folder / "t3.json"
-        private = secret
-        if phase == "sessions":
-            private = cached.read_text() if cached.exists() else ""
-        if phase in {"t3", "sessions"}:
+
+        def part(name):
+            # The part that runs now, written before it starts, so a failure or a timeout leaves it for the create result:
+            # clone-session-copy copies this file when clone-t3 fails. Success removes it before sessions reads the file.
+            owner = private_folder()
+            cached.write_text(json.dumps({"t3_part": name}))
+            cached.chmod(0o600)
+            os.chown(cached, owner.pw_uid, owner.pw_gid)
+
+        def expected_commit():
             container["expected_commit"] = run(
                 [
                     "git",
@@ -594,7 +600,19 @@ def main():
                     "refs/heads/" + container["branch"],
                 ]
             ).stdout.strip()
-        output = inside(phase, private)
+
+        if phase == "t3":
+            # One step, two guest phases in order: the agent's files from the model key on stdin, then T3's first start, which
+            # reads no private input. The step prints only T3's receipt; a failure names its own phase.
+            part("agent")
+            inside("agent", secret)
+            part("t3")
+            expected_commit()
+            output = inside("t3", "")
+            cached.unlink()
+        else:
+            expected_commit()
+            output = inside(phase, cached.read_text() if cached.exists() else "")
         reply = output.pop("private_reply", None)
         if reply is not None and not cached.exists():
             owner = private_folder()

@@ -71,7 +71,7 @@ sequenceDiagram
       %%> What it does:
       %%> - waits for the inner Incus and checks the fleet rules, then starts the three nested containers and the operator tunnel `wg-nested`
       %%> - waits for the same Doctor check a proof uses: the nested Gateway is healthy and its three agents are online
-      %%> - only an intent with `fleet` runs it; every other clone skips it, and the workspace phase waits for it or its skip
+      %%> - only an intent with `fleet` runs it; every other clone skips it, and the workspace phase and T3 wait for it or its skip
       %%> Why:
       %%> - the seed holds a stopped, ready fleet, so a clone builds and converges nothing
       %%> - the clone's first start drops the copied boot links, so the tunnel comes from this step, not from a unit
@@ -98,10 +98,11 @@ sequenceDiagram
       SW->>N: Check the Valkey login<br/>docker exec · owner login
       %%> Runs beside the clone step. A default with more than one Valkey target, or one without an Orbit-made user, or one whose user grants pub/sub, refuses `instance.database_clone_unsupported`.
     end
-    par workspace beside agent and T3
+    par workspace beside T3
     SW->>C: Prepare the workspace<br/>native clone-workspace
-    %%> Why beside: agent and T3 never write the workspace; T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no Git lock; the join below checks both
+    %%> Why beside: the T3 step never writes the workspace; T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no Git lock; the join below checks both
     %%> When: after the copy, the Club key, the fleet start and the database steps
+    %%> Why the same level: Swamp starts a level of steps only when the whole level before it has ended, in each job and across jobs; the workspace and T3 depend on steps of the same depth, so both start when that level ends
     %%> What it does:
     %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
     %%> - after the checkout it checks the branch and commit, then writes the root-owned mark `/var/lib/orbit/workspace-checkout` with the Instance id and commit; when the mark already names this Instance, a retry skips the fetch and checkout, so the branch never moves and the result's commit stays the mark's
@@ -114,19 +115,21 @@ sequenceDiagram
     %%> What it does:
     %%> - writes the shared FrankenPHP Caddyfile and unit, then restarts it as `orbit`; only the Node's bridge peer with `X-Forwarded-Proto: https` sets PHP's HTTPS scheme, port and resolved client IP
     %%> - starts use nonblocking systemd jobs, then a bounded readiness check for each running unit; container Process units order after `network.target`
-    and agent and T3 beside the workspace
-    SW->>C: Prepare the agent<br/>native clone-agent
-    %%> When: after the copy and the Club key; it does not wait for the fleet start, the workspace or the database steps
-    %%> What it does:
-    %%> - writes the placeholder key for `agent`, and the Claude Code and Codex settings that point at the model forwarder
-    %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type
-    %%> - writes `/etc/orbit/instance`, owned by root and readable by all
+    and T3 beside the workspace
     SW->>C: Start T3<br/>native clone-t3
-    %%> What it does:
-    %%> - T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`
+    %%> When: with the workspace; it depends on the copy, the Club key and the fleet start, which also sets its level; it reads nothing of the fleet or the database steps
+    %%> - a failed Club key or fleet start skips it, as it skips the workspace
+    %%> - a nested-fleet clone starts T3 after the fleet step, beside the workspace; T3 still reads the seed's `NO_PROXY` files at boot
+    %%> What it does, in one step:
+    %%> - the agent part: writes the placeholder key for `agent` from SSH stdin, and the Claude Code and Codex settings that point at the model forwarder
+    %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type, and writes `/etc/orbit/instance`, owned by root and readable by all
+    %%> - the T3 part: T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`
     %%> Check:
     %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`
-    %%> Why its own lock: the clone steps share one Swamp lock; agent and T3 take `ic-clone-t3-…`, so they run beside the workspace
+    %%> On failure:
+    %%> - before each part the step writes the part's name to its private `t3.json`, and success removes it; on a failure or timeout `clone-session-copy` brings that file to the run, so the result keeps `failed_step: t3` with the part's code: `instance.create_agent_failed` or `instance.t3_unready`
+    %%> - the Operation's failure detail is the part's own line, `instance.container_agent_failed` or `instance.container_t3_failed`, or the timeout
+    %%> Why its own lock: the clone steps share one Swamp lock; T3 takes `ic-clone-t3-…`, so it runs beside the workspace
     end
     SW->>C: Register the T3 server<br/>native clone-register
     %%> When: the join; the sessions check waits for T3 and the workspace, because it checks the branch, the checkout mark and every Process unit
@@ -141,7 +144,7 @@ sequenceDiagram
       %%> What it adds:
       %%> - the same steps as `route:create`, with the signed certificate, then a TLS handshake check; no HTTP request waits for app startup
       %%> - the Node's Caddy proxies the Route to FrankenPHP at the container's bridge address
-      %%> - the Route job waits only for its CSR; a separate job prevents depth scheduling from delaying the container phases
+      %%> - the Route job waits only for its CSR; jobs of one level keep their own step levels, so the Route steps never delay the container phases; the create job starts when every job of this level has ended
       %%> - the prepared Route skips workspace ACL and environment writes; the container job owns those
     end
   end
