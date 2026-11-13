@@ -89,14 +89,8 @@
       tags: [check]
       when: converge_due.check
 
-    - name: Converge nested Node bases for the image
-      ansible.builtin.include_tasks:
-        file: tasks/task-vm-fleet-base.yml
-        apply: { tags: [fleet] }
-      tags: [fleet]
-      when: not (intent.direct | default(false))
-
-# A refresh converges the nested Node bases before these snapshots. A task start leaves both to the refreshed image.
+# The converge waits for no nested service, except the fleet build of a base VM that has no fleet: readiness belongs to a task start
+# (docs/cli/task/start.mmd).
 - name: Task VM image
   hosts: task_vm
   become: true
@@ -112,7 +106,6 @@
       when: >-
         not (intent.direct | default(false)) and
         (fleet_new | length > 0 or "code" not in checkout_current or converge_due.operator or converge_due.tokens or fleet_grants.changed or
-         (fleet_base_converged | default(false)) or
          fleet_grants_snapshot_digest != (converge_stamps['grants-snapshot'] | default('')))
       ansible.builtin.command: { argv: [timeout, "180", incus, snapshot, create, --reuse, "{{ item }}", base] }
       loop: "{{ intent.fleet.guests.values() | list }}"

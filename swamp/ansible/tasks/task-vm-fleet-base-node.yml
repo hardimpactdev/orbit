@@ -1,9 +1,0 @@
----
-# The CLI follows the real Operation to terminal success; nonzero includes refusal, failure and interruption.
-- name: Converge the base of {{ fleet_base_node.name }}
-  become: true
-  become_user: "{{ orbit_user }}"
-  environment: "{{ fleet_base_environment }}"
-  ansible.builtin.command:
-    argv: [timeout, "900", php, "{{ intent.checkout.path }}/apps/cli/orbit", node:converge, "{{ fleet_base_node.id | string }}", --base, --json]
-  changed_when: true
