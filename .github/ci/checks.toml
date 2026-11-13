@@ -20,13 +20,13 @@ default = ["swamp/tests/ansible_inputs_test.py"]
 [[fixture]]
 file = "swamp/tests/ansible_instance_migrate_test.ts"
 after_merge = true
-reason = "117 retained cases need about 8384 declared seconds including startup, above the eight-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963. Changed cases use individually measured local times rounded up plus one second. All migration cases run after merge until their work is reduced or selection is narrowed."
-cost = 7682
+reason = "122 retained cases need about 8697 declared seconds including startup, above the eight-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963. Changed cases use individually measured local times rounded up plus one second. All migration cases run after merge until their work is reduced or selection is narrowed."
+cost = 7995
 # 159.019s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (120s); these are estimates, not completed measurements.
-slices = 117
+slices = 122
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -77,7 +77,12 @@ inputs = [
   "the exact archive tree handles outside link changes after preflight and preserves rollback" = 74 # completed, run 43005032403
   "the exact archive tree handles broken link changes after preflight and preserves rollback" = 74 # completed, run 43005032403
   "a retained default copies its unpushed commit and changed, staged, untracked, deleted and ignored files" = 75 # completed, run 43005032403
-  "an owner refuses retirement while its child is in the same retirement batch" = 9 # completed local four-worker body; rounded up plus 1s
+  "the last worktree moves into a standalone workspace and retires its owner checkout in the same batch" = 100 # local single run 49s; doubled for CI
+  "the last worktree moves into a standalone workspace and retires its owner checkout in the same batch past a prunable entry whose folder is gone" = 100 # local single run 46s; doubled for CI
+  "the owner of the last worktree still refuses retirement for sibling" = 9 # local single run 3s; doubled for CI
+  "the owner of the last worktree still refuses retirement for locked-prunable" = 9 # local single run 3s; doubled for CI
+  "the owner of the last worktree still refuses retirement for sibling-before-retire" = 95 # local single run 46s; doubled for CI
+  "the owner of the last worktree still refuses retirement for owner-change" = 9 # local single run 3s; doubled for CI
   "a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact" = 100 # completed, run 43002948719
   "a move starts with a new container: one that an earlier failed move left goes first" = 120 # completed, run 43002948719
   "a checkout on another branch than the recorded one is refused before anything changes" = 10 # completed, run 43002948719
