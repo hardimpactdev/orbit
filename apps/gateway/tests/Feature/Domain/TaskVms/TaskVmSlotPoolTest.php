@@ -7,6 +7,7 @@ use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\StartTaskVmResumeAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
+use App\Data\Tasks\StartTaskPrepData;
 use App\Data\Tasks\StartTaskPrepFixData;
 use App\Data\Tasks\TaskTurnData;
 use App\Domain\Certificates\LeafCertificateSigner;
@@ -53,15 +54,18 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskIdleSave;
 use App\Domain\Tasks\TaskIdleSaveProjection;
 use App\Domain\Tasks\TaskPrepFixIntent;
+use App\Domain\Tasks\TaskPrepIntent;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskReviewRoundIntent;
+use App\Domain\Tasks\TaskStartCommit;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTurnIntent;
 use App\Domain\Tasks\TaskTurnProjection;
 use App\Domain\Tasks\TaskVmAdmission;
 use App\Domain\Tasks\TaskVmIdleRelease;
+use App\Domain\Tasks\TaskVmReentry;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmContainers;
@@ -82,6 +86,8 @@ use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
 use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Domain\TaskVms\TaskVmState;
+use App\Http\Middleware\RequireActiveWireGuardPeer;
+use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampDispatch;
@@ -95,6 +101,7 @@ use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Jobs\TaskVms\ReleaseIdleTaskVms;
 use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
+use App\Models\AgentThread;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -110,6 +117,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -2285,4 +2293,156 @@ it('never restarts stale held siblings when the watchdog resumes a proof after a
     } finally {
         Carbon::setTestNow();
     }
+});
+
+/*
+ * The one placement rule (docs/reference/projects.md#nested-fleet-setting): task work that needs a new workspace refuses a nested-fleet
+ * Project before it records a place, an identity, a workspace, a wait or an Operation.
+ */
+describe('nested-fleet Projects', function (): void {
+    /** @return array<string, int> */
+    $rows = static fn (): array => ['task_vms' => TaskVm::query()->count(), 'instances' => Instance::query()->count(), 'nodes' => Node::query()->count(),
+        'operations' => Operation::query()->count(), 'tasks' => Task::query()->count(), 'waiting' => Task::query()->whereNotNull('capacity_wait_reason')->count()];
+    $refused = static function (Closure $admit): void {
+        expect($admit)->toThrow(function (ResourceOperationException $error): void {
+            expect($error->errorCode)->toBe('operation.kind_unavailable')->and($error->status)->toBe(503)
+                ->and($error->getMessage())->toBe('Instances of a nested-fleet Project are not available until nested-fleet hosting is built.');
+        });
+    };
+    $flag = static fn (Project $project) => DB::table('projects')->where('id', $project->id)->update(['nested_fleet' => true]);
+
+    it('refuses task provisioning of a Project flagged through the API, with or without a free place', function (int $places) use ($rows, $refused): void {
+        Queue::fake();
+        [, $project] = slotPoolHost(taskPlaces: $places);
+        slotPoolSweepWorld();
+        slotPoolClaimServices();
+        $this->withoutMiddleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class]);
+        config(['instances.nested_fleet_projects' => [$project->id]]);
+        $this->patchJson('/api/v1/projects/'.$project->id, ['nested_fleet' => true])->assertOk();
+        $group = slotPoolGroup($project->refresh());
+        $before = $rows();
+        $refused(fn () => app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40)));
+        expect($rows())->toBe($before)->and($group->refresh()->status)->toBe(TaskGroupStatus::Todo)->and($group->taskable_id)->toBeNull();
+        Queue::assertNotPushed(AdmitTaskVm::class);
+    })->with(['free place' => [2], 'full pool' => [0]]);
+
+    it('refuses a prep run before any thread, place or wait', function (int $places) use ($rows, $refused, $flag): void {
+        Queue::fake();
+        [, $project] = slotPoolHost(taskPlaces: $places);
+        slotPoolSweepWorld();
+        slotPoolClaimServices();
+        app()->instance(TaskStartCommit::class, new class implements TaskStartCommit
+        {
+            public function resolve(Project $project): string
+            {
+                return str_repeat('a', 40);
+            }
+        });
+        $group = slotPoolGroup($project);
+        $group->tasks()->create(['title' => 'Spec', 'brief' => 'Draft', 'position' => 1, 'status' => TaskStatus::Todo,
+            'deliverables' => [['id' => 'spec', 'type' => 'review', 'description' => 'The spec is right.']]]);
+        $flag($project);
+        $before = [...$rows(), 'threads' => AgentThread::query()->count()];
+        $refused(fn () => app(TaskPrepIntent::class)->start($group, new StartTaskPrepData('firewall:deny', null, null), 'test', null));
+        expect([...$rows(), 'threads' => AgentThread::query()->count()])->toBe($before);
+    })->with(['free place' => [2], 'full pool' => [0]]);
+
+    it('refuses a build or a fix after release, also while the previous VM is still being deleted', function (bool $fix, bool $releasing) use ($rows, $refused, $flag): void {
+        Queue::fake();
+        [, $project] = slotPoolHost();
+        slotPoolSweepWorld();
+        slotPoolClaimServices();
+        $group = slotPoolGroup($project);
+        $group->update(['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/1', 'watched_pr_state' => 'open',
+            'implementer_model' => 'gpt-6.1-sol', 'reviewer_model' => 'gpt-6-astra']);
+        $group->tasks()->create(['title' => 'Spec', 'brief' => 'Draft', 'position' => 1, 'status' => TaskStatus::Completed,
+            'deliverables' => [['id' => 'spec', 'type' => 'review', 'description' => 'The spec is right.']]]);
+        Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => 1,
+            'status' => OperationStatus::Succeeded, 'input' => ['command' => 'firewall:deny', 'draft' => ['thread_id' => 999]]]);
+        $head = str_repeat('a', 40);
+        app()->instance(RemoteBranchHeads::class, new readonly class($head) implements RemoteBranchHeads
+        {
+            public function __construct(private string $head) {}
+
+            public function head(Project $project, string $branch): string
+            {
+                return $this->head;
+            }
+        });
+        $previous = $releasing ? app(TaskVmSlotPool::class)->take($group) : null;
+        $previous?->update(['state' => TaskVmState::Releasing]);
+        $flag($project);
+        $before = $rows();
+        $refused(fn () => $fix
+            ? app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Apply the owner review.'), 'test', null)
+            : app(TaskBuildIntent::class)->start($group, $head, 'test', null));
+        expect($rows())->toBe($before);
+        Queue::assertNotPushed(AdmitTaskVm::class);
+    })->with([[false, false], [true, false], [false, true], [true, true]]);
+
+    it('refuses a direct re-entry capture before it takes a place', function () use ($rows, $refused, $flag): void {
+        [, $project] = slotPoolHost();
+        slotPoolSweepWorld();
+        slotPoolClaimServices();
+        $group = slotPoolGroup($project);
+        $flag($project);
+        $before = $rows();
+        $refused(fn () => DB::transaction(fn () => TaskVmReentry::capture($group, str_repeat('a', 40), continue: false)));
+        expect($rows())->toBe($before);
+    });
+
+    it('fails a waiting admission whose Project was flagged after it began to wait, without a place', function (bool $free, bool $behind) use ($rows, $flag): void {
+        Queue::fake();
+        [, $project] = slotPoolHost(taskPlaces: 1);
+        slotPoolSweepWorld();
+        slotPoolClaimServices();
+        $holder = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
+        $earlier = $behind ? app(TaskProvisionIntent::class)->start(slotPoolGroup($project), 'test', null, str_repeat('a', 40)) : null;
+        $group = slotPoolGroup($project);
+        $operation = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
+        expect($operation->status)->toBe(OperationStatus::Waiting);
+        if ($free) {
+            app(TaskVmSlotReleaseProjection::class)->record($holder, true, null);
+        }
+        // Only a Project without an Instance can change its flag; a waiting group has no workspace yet.
+        $flag($project);
+        $before = $rows();
+        app(TaskVmAdmission::class)->admit($operation->id);
+        expect($operation->refresh()->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe('operation.kind_unavailable')
+            ->and([...$rows(), 'waiting' => $before['waiting']])->toBe($before)->and($group->refresh()->capacity_wait_reason)->toBeNull()
+            ->and(TaskVm::forGroup($group))->toBeNull();
+        expect($earlier?->refresh()->status)->toBe($behind ? OperationStatus::Waiting : null);
+    })->with(['full pool' => [false, false], 'free place' => [true, false], 'behind an earlier waiter' => [false, true]]);
+
+    it('refuses a CI proof command before it claims a CI place', function () use ($rows, $refused, $flag): void {
+        Queue::fake();
+        [, $project] = slotPoolHost();
+        slotPoolSweepWorld();
+        slotPoolClaimServices();
+        $group = slotPoolGroup($project);
+        $flag($project);
+        $before = $rows();
+        $refused(fn () => app(TaskProvisionIntent::class)->admit($group, str_repeat('a', 40), 'proof.command', static fn (array $input): array => $input, 'test', null, ciPool: true));
+        expect($rows())->toBe($before);
+    });
+
+    it('refuses proof:run for a flagged proof Project before it records the proof', function () use ($rows, $refused, $flag): void {
+        $caller = slotPoolCiProofWorld(2);
+        $flag(Project::query()->findOrFail(config('proof.project')));
+        $before = $rows();
+        $refused(fn () => app(ProofRunIntent::class)->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller));
+        $refused(fn () => app(ProofRunIntent::class)->start(str_repeat('a', 40), false, 'test', null));
+        expect($rows())->toBe($before);
+    });
+
+    it('fails a proof recorded before its Project was flagged, without groups, places or children', function (bool $ci) use ($rows, $flag): void {
+        $caller = slotPoolCiProofWorld(2);
+        $intent = app(ProofRunIntent::class);
+        $proof = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $ci ? $caller : null);
+        $flag(Project::query()->findOrFail(config('proof.project')));
+        $before = $rows();
+        $intent->admit($proof->id);
+        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('operation.kind_unavailable')
+            ->and($rows())->toBe($before)->and(ProofRunSettlement::children($proof->id))->toHaveCount(0);
+    })->with(['operator' => [false], 'CI' => [true]]);
 });

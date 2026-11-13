@@ -1570,3 +1570,18 @@ describe('Route certificate producer compatibility', function (): void {
             ->and($result->stderr)->toContain('No such file or directory')->not->toMatch('/[.+*]{20}/');
     })->with(['workflow-route-create-csr', 'workflow-route-certificate-publish', 'workflow-node-role-certificate-publish']);
 });
+
+it('refuses a clone of a nested-fleet Project before it records an Instance or an Operation', function (): void {
+    $default = threadDefault($this->beast, 'tool');
+    // The flag changes only while a Project has no Instance; this fixture sets it on the recorded row to reach the shared create.
+    DB::table('projects')->where('id', $default->project_id)->update(['nested_fleet' => true]);
+    $instances = Instance::query()->count();
+    $runtimes = InstanceRuntime::query()->count();
+    $operations = Operation::query()->count();
+
+    threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login-k3j9'])
+        ->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable')
+        ->assertJsonPath('error.message', 'Instances of a nested-fleet Project are not available until nested-fleet hosting is built.');
+    expect(Instance::query()->count())->toBe($instances)->and(InstanceRuntime::query()->count())->toBe($runtimes)
+        ->and(Operation::query()->count())->toBe($operations);
+});

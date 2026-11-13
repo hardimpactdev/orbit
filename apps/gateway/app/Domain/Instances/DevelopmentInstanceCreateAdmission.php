@@ -40,6 +40,7 @@ final readonly class DevelopmentInstanceCreateAdmission
 
     public function assertProject(Project $project, Node $node): void
     {
+        InstancePlacement::assert($project);
         $this->assertDefaults($project);
         $this->assertPlacement($node);
         $this->assertSourceProfile($project);

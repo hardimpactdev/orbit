@@ -108,6 +108,7 @@ final readonly class InstanceContainer
      */
     public function reserve(Instance $instance, Node $node, ?Instance $source = null): InstanceRuntime
     {
+        InstancePlacement::assert($instance->project()->firstOrFail());
         $existing = InstanceRuntime::query()->where('instance_id', $instance->id)->first();
         if ($existing instanceof InstanceRuntime) {
             return $existing;
