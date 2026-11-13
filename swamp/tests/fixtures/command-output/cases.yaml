@@ -637,12 +637,25 @@ contexts:
       - instance-other,RUNNING
   fleet-doctor-healthy:
     fleet_ready_doctor:
-      stdout: '{"data":{"healthy":true,"checks":[]}}'
+      stdout: "{\"data\":{\"healthy\":true,\"checks\":[]}}\nHTTP 200"
+      stdout_lines: ['{"data":{"healthy":true,"checks":[]}}', HTTP 200]
       stderr: ''
   fleet-doctor-unhealthy:
     fleet_ready_doctor:
-      stdout: '{"data":{"healthy":false,"checks":[]}}'
+      stdout: "{\"data\":{\"healthy\":false,\"checks\":[]}}\nHTTP 200"
+      stdout_lines: ['{"data":{"healthy":false,"checks":[]}}', HTTP 200]
       stderr: ''
+  # Caddy's empty 502 while php-fpm restarts, and no response: curl writes `000` and its error goes to stderr.
+  fleet-doctor-empty:
+    fleet_ready_doctor:
+      stdout: "\nHTTP 502"
+      stdout_lines: ['', HTTP 502]
+      stderr: ''
+  fleet-doctor-none:
+    fleet_ready_doctor:
+      stdout: "\nHTTP 000"
+      stdout_lines: ['', HTTP 000]
+      stderr: 'curl: (7) CONNECT tunnel failed, response 503'
   doctor-healthy:
     nested_doctor:
       stdout: '{"data":{"healthy":true,"nodes":[]}}'
@@ -1592,6 +1605,21 @@ cases:
   field: ansible.builtin.assert.that
   context: fleet-doctor-unhealthy
   expected: false
+- file: tasks/instance-fleet-ready.yml
+  task: Check Doctor
+  field: vars.fleet_doctor_status
+  context: fleet-doctor-healthy
+  expected: '200'
+- file: tasks/instance-fleet-ready.yml
+  task: Check Doctor
+  field: vars.fleet_doctor_status
+  context: fleet-doctor-empty
+  expected: '502'
+- file: tasks/instance-fleet-ready.yml
+  task: Check Doctor
+  field: vars.fleet_doctor_status
+  context: fleet-doctor-none
+  expected: '000'
 - file: tasks/instance-container-phase.yml
   task: Name the newest seed
   field: ansible.builtin.set_fact.restore_seed
@@ -1625,11 +1653,7 @@ non_command_output:
   reason: Selects a public error code from Ansible failure metadata, not command output.
 - file: tasks/instance-fleet.yml
   task: Name the fleet rules
-  field: ansible.builtin.set_fact.fleet_unit_environments
-  reason: Builds drop-in paths from two fixed unit names; does not parse command output.
-- file: tasks/instance-fleet.yml
-  task: Name the fleet rules
-  field: ansible.builtin.set_fact.fleet_unit_environment
+  field: vars.fleet_unit_environment
   reason: Quotes each proxy setting of the intent for one Environment line; does not parse command output.
 - file: tasks/instance-fleet.yml
   task: Name the fleet rules

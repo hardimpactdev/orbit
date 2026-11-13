@@ -8,7 +8,7 @@ import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 const hasAnsible = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 const root = new URL("../ansible/", import.meta.url);
 const shapes = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-containers.json", import.meta.url)));
-const phases = ["check", "rules", "rules-read", "start", "reach", "ready", "refresh", "converge-node", "reset", "resume", ""];
+const phases = ["check", "rules", "rules-read", "files", "start", "reach", "ready", "refresh", "converge-node", "reset", "resume", ""];
 const guests = { gateway: "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod" };
 const names = Object.values(guests);
 const outer = ["--project", "orbit-instances-nested", "exec", "instance-9", "--"];
@@ -26,6 +26,17 @@ const dropIn = "[Service]\nEnvironment=" + Object.entries(proxy).map(([key, valu
 const environment = Object.fromEntries(Object.entries(proxy).map(([key, value]) => [`environment.${key}`, value]));
 const units = ["/etc/systemd/system/orbit-swamp-serve.service.d/50-inner-fleet-proxy.conf", "/etc/systemd/system/orbit-swamp-worker@.service.d/50-inner-fleet-proxy.conf"];
 const idmap = "both 1000 1000\nuid 2750 2750\ngid 2760 2760";
+/** The egress files of every nested container: apt and sudo and SSH sessions reach the internet only through the egress proxy. */
+const aptFile = `Acquire::http::Proxy "${proxy.HTTP_PROXY}";\nAcquire::https::Proxy "${proxy.HTTPS_PROXY}";\n`;
+const environmentFile = 'PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"\n' +
+  Object.entries(proxy).map(([key, value]) => `${key}="${value}"`).join("\n") + "\n";
+const egress = { "/etc/apt/apt.conf.d/90orbit-package-cache": aptFile, "/etc/environment": environmentFile };
+/** Each file rule in the order the rules read it: the nested Gateway's drop-ins, then the egress files of each container. */
+const fileRules: [string, string][] = [
+  ...units.map((unit): [string, string] => ["nested-gateway", unit]),
+  ...names.flatMap((name) => Object.keys(egress).map((path): [string, string] => [name, path])),
+];
+const push = (name: string, path: string) => `incus file push --create-dirs --uid 0 --gid 0 --mode 0644 - ${name}${path}`;
 
 /** The shape a fleet has after the fleet rules: the exported shape with the devices and keys the rules give each container. */
 function ruled() {
@@ -40,6 +51,7 @@ function ruled() {
   for (const name of ["nested-gateway", "nested-app-dev"]) containers[name].config["raw.idmap"] = idmap;
   for (const name of names) Object.assign(containers[name].config, environment);
   containers["nested-gateway"].files = Object.fromEntries(units.map((unit) => [unit, dropIn]));
+  for (const name of names) containers[name].files = { ...(containers[name].files ?? {}), ...egress };
   return containers;
 }
 
@@ -148,7 +160,7 @@ function assertKeyUntouched(calls: string[], output: string) {
 
 const reads = [
   ...names.map((name) => `incus query /1.0/instances/${name}`),
-  ...units.map((unit) => `incus file pull nested-gateway${unit} -`),
+  ...fileRules.map(([name, path]) => `incus file pull ${name}${path} -`),
 ];
 const startCalls = [
   "incus list --format csv --columns ns",
@@ -167,11 +179,13 @@ const startCalls = [
 ];
 /** What a start promises: the containers run and the tunnel reaches the hub; no API call. */
 const reachCalls = ["incus list --format csv --columns ns", "ping -c 1 -W 2 10.45.0.1"];
+/** The operator's API calls never use the container's proxy, and keep curl's error. */
+const api = "curl -sSk --noproxy * -m 80 -H Host: gateway.orbit -H Accept: application/json";
 const readyCalls = [
   "incus list --format csv --columns ns",
   "ping -c 1 -W 2 10.45.0.1",
-  "curl -sk -m 80 -H Host: gateway.orbit -H Accept: application/json -X POST https://10.45.0.1/api/v1/doctor -H Content-Type: application/json -d {}",
-  "curl -sk -m 80 -H Host: gateway.orbit -H Accept: application/json --fail https://10.45.0.1/api/v1/nodes",
+  `${api} -w \\nHTTP %{http_code} -X POST https://10.45.0.1/api/v1/doctor -H Content-Type: application/json -d {}`,
+  `${api} --fail https://10.45.0.1/api/v1/nodes`,
 ];
 
 Deno.test({
@@ -193,7 +207,7 @@ Deno.test({
         "incus config device set nested-app-dev checkout source=/srv/workspace path=/home/orbit/orbit shift=false",
         ...["nested-gateway", "nested-app-dev", "nested-app-prod"].flatMap((name) =>
           [...(name === "nested-app-prod" ? [] : [`raw.idmap=${idmap}`]), ...proxyKeys].map((key) => `incus config set ${name} ${key}`)),
-        ...units.map((unit) => `incus file push --create-dirs --mode 0644 - nested-gateway${unit}`),
+        ...fileRules.map(([name, path]) => push(name, path)),
         ...reads,
       ]);
       assertKeyUntouched(calls, first.output);
@@ -308,20 +322,22 @@ Deno.test({
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
       const exec = (name: string, command: string) => `incus exec ${name} -- ${command}`;
-      const api = "curl -sk -m 80 -H Host: gateway.orbit -H Accept: application/json";
       const services = ["orbit-gateway-horizon.service", "orbit-gateway-schedule.service", "orbit-agent-view.service"];
       const mounts = "home-orbit-orbit-apps-gateway-.env.mount home-orbit-orbit-apps-gateway-storage.mount home-orbit-orbit-apps-gateway-bootstrap-cache.mount";
       assertEquals(calls, [
         `test -s ${clubKey}`,
         exec("nested-gateway", `systemctl is-active ${mounts}`),
         exec("nested-app-dev", `systemctl is-active ${mounts}`),
-        "incus exec nested-gateway --user 1000 -- install -D -m 0444 /home/orbit/orbit/apps/gateway/resources/agent/frozen-manifest.json /home/orbit/orbit/apps/agent/delivery/manifest.json",
+        // The app user with its groups: `work` opens the checkout.
+        exec("nested-gateway", "runuser -u orbit -- install -D -m 0444 /home/orbit/orbit/apps/gateway/resources/agent/frozen-manifest.json /home/orbit/orbit/apps/agent/delivery/manifest.json"),
         exec("nested-gateway", "env ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg ANSIBLE_DISPLAY_FAILED_STDERR=true /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e @/opt/orbit/bootstrap/control.yml --tags grants /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml"),
-        "incus exec nested-gateway --user 1000 --cwd /home/orbit/orbit/apps/gateway -- php artisan migrate --force",
+        "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan migrate --force",
         exec("nested-gateway", `systemctl restart ${services.join(" ")}`),
         ...[...services, "orbit-swamp-serve.service", "orbit-swamp-worker@a.service", "orbit-swamp-worker@b.service"]
           .map((unit) => exec("nested-gateway", `systemctl is-active --quiet ${unit}`)),
         `${api} --fail https://10.45.0.1/api/v1/nodes`,
+        // The egress files are read (and written where they differ) before the converge, on the running fleet.
+        ...reads,
         ...names.map((name) => exec(name, "systemctl stop apt-daily.timer apt-daily-upgrade.timer")),
         ...names.map((name) => exec(name, "systemctl show --property=ActiveState --value apt-daily.service apt-daily-upgrade.service")),
         ...[1, 2, 3].flatMap((node) => [
@@ -329,7 +345,7 @@ Deno.test({
           `${api} --fail https://10.45.0.1/api/v1/operations/${900 + node}`,
         ]),
         ...readyCalls,
-        ...names.map((name) => `incus stop ${name}`),
+        ...names.map((name) => `incus stop ${name} --timeout 90`),
         "incus list --format csv --columns ns",
         ...reads,
         "incus config device add nested-app-prod apparmor-off disk source=/etc/orbit/apparmor-off path=/sys/module/apparmor/parameters/enabled readonly=true",
@@ -366,7 +382,7 @@ Deno.test({
       assert(!failed.ok);
       assertStringIncludes(failed.output, "The base converge of the nested Node app-dev (Operation 902) ended failed with node.converge_failed");
       const calls = f.calls();
-      assert(!calls.some((call) => call.includes("ansible-playbook") || call.includes("orbit-swamp")), calls.join("\n"));
+      assert(!calls.some((call) => !call.includes(" file pull ") && (call.includes("ansible-playbook") || call.includes("orbit-swamp"))), calls.join("\n"));
       assert(!calls.some((call) => call.includes("/nodes/3/converge") || call.includes("snapshot") || call.includes("incus stop")));
       assertKeyUntouched(calls, failed.output);
     } finally {
@@ -495,6 +511,8 @@ Deno.test({
       for (const name of names) {
         const want = structuredClone(live[name]);
         want.config["boot.autostart"] = "true";
+        // The live fleet was built before the egress files; they are owned rules, which the refresh writes.
+        want.files = { ...(want.files ?? {}), ...egress };
         assertEquals(state[name].devices, want.devices, name);
         assertEquals(state[name].files ?? {}, want.files ?? {}, name);
         const keys = ["raw.idmap", "boot.autostart", ...Object.keys(environment)];
@@ -508,16 +526,89 @@ Deno.test({
 });
 
 Deno.test({
-  name: "on the live fleet a refresh writes only boot.autostart, then takes base",
+  name: "on the live fleet a refresh writes the egress files before the converge, then boot.autostart, then takes base",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(withStatus("Running"), { club: true, base: true });
+    // A base converge on the live fleet runs apt and downloads the agent: it fails on a Node without the egress files.
+    f.change((state) => {
+      state.tunnel = structuredClone(tunnelUp);
+      state.egressNeeded = Object.keys(egress);
+    });
+    try {
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      const calls = f.calls();
+      const egressWrites = names.flatMap((name) => Object.keys(egress).map((path) => push(name, path)));
+      assertEquals(writes(calls).filter((call) => !/ (stop|snapshot) /.test(call)),
+        [...egressWrites, ...names.map((name) => `incus config set ${name} boot.autostart=true`)]);
+      assert(calls.indexOf(egressWrites.at(-1)!) < calls.findIndex((call) => call.includes("/converge")), calls.join("\n"));
+      for (const name of names) {
+        assertEquals(f.state().containers[name].snapshots.base.config["boot.autostart"], "true");
+        assertEquals(f.state().containers[name].snapshots.base.files["/etc/environment"], environmentFile);
+      }
+      // The egress files keep the fleet's names and networks off the proxy: a nested Node's own calls to the nested Gateway.
+      for (const line of environmentFile.split("\n").filter((value) => /^no_proxy=/i.test(value))) {
+        for (const local of [".orbit", "10.45.0.1", "10.45.0.0/24", "10.232.2.0/24"]) assertStringIncludes(line, local);
+      }
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(withStatus("Running"), { club: true, base: true });
+    f.change((state) => {
+      state.tunnel = structuredClone(tunnelUp);
+      state.egressNeeded = ["/etc/apt/apt.conf.d/missing-in-this-case"];
+    });
+    try {
+      const failed = f.run("refresh");
+      assert(!failed.ok);
+      assertStringIncludes(failed.output, "Check the base converge of gateway");
+      assertStringIncludes(failed.output, "The base converge of the nested Node gateway (Operation 901) ended failed with node.converge_failed");
+      assert(!f.calls().some((call) => /^incus (snapshot|stop) /.test(call)));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "readiness reads a healthy Doctor on the first poll; an empty, an error or no response fails with what the last poll got",
   ignore: !hasAnsible,
   fn() {
     const f = fixture(withStatus("Running"), { club: true, base: true });
     f.change((state) => state.tunnel = structuredClone(tunnelUp));
     try {
-      const refreshed = f.run("refresh");
-      assert(refreshed.ok, refreshed.output);
-      assertEquals(writes(f.calls()).filter((call) => !/ (stop|snapshot) /.test(call)), names.map((name) => `incus config set ${name} boot.autostart=true`));
-      for (const name of names) assertEquals(f.state().containers[name].snapshots.base.config["boot.autostart"], "true");
+      const ready = f.run("resume");
+      assert(ready.ok, ready.output);
+      assertEquals(f.state().doctorCalls, 1);
+      // A running fleet: the start only reads, and readiness asks Doctor once.
+      // Every API call bypasses the container's proxy: without it the fixture answers as the proxy did live (503, exit 7).
+      assert(f.calls().filter((call) => call.startsWith("curl ")).every((call) => call.startsWith(api)));
+      const late = ["-e", "fleet_ready_seconds=2", "-e", "fleet_ready_delay=1"];
+      f.change((state) => state.doctorResponse = { status: 502, body: "" });
+      const empty = f.run("resume", late);
+      assert(!empty.ok);
+      assertStringIncludes(empty.output, "Readiness check 'doctor' failed after 2 s: HTTP 502: (empty body)");
+      const body = '{"message":"Server Error","trace":"' + "x".repeat(400) + '"}';
+      f.change((state) => state.doctorResponse = { status: 500, body });
+      const error = f.run("resume", late);
+      assert(!error.ok);
+      assertStringIncludes(error.output, `Readiness check 'doctor' failed after 2 s: HTTP 500: ${body.slice(0, 120)}`);
+      assert(!error.output.includes(body.slice(0, 301)), "the detail holds at most 300 characters of the body");
+      f.change((state) => {
+        delete state.doctorResponse;
+        state.curlError = "curl: (28) Operation timed out after 80001 milliseconds with 0 bytes received";
+      });
+      const silent = f.run("resume", late);
+      assert(!silent.ok);
+      assertStringIncludes(silent.output, "Readiness check 'doctor' failed after 2 s: no response: curl: (28) Operation timed out");
     } finally {
       f.cleanup();
     }

@@ -1,0 +1,12 @@
+---
+# Write the fleet files that differ (`fleet_drift` of instance-fleet-rules-read.yml), each with its whole content, root-owned, mode 0644.
+# The rules write them with the fleet stopped; the refresh writes them on the running fleet before the base converge, which needs the
+# egress files. A file is read by a process when it starts, so a write on a running container changes no process that runs.
+- name: Write the fleet files
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '60'] + fleet_incus + ['file', 'push', '--create-dirs', '--uid', '0', '--gid', '0', '--mode', '0644', '-', item.container ~ item.name] }}"
+    stdin: "{{ item.want }}"
+    stdin_add_newline: false
+  loop: "{{ fleet_drift | selectattr('kind', 'eq', 'file') | list }}"
+  loop_control: { label: "{{ item.container }}{{ item.name }}" }
+  changed_when: true

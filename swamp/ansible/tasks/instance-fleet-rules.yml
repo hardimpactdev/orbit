@@ -56,14 +56,7 @@
       loop: "{{ fleet_drift | selectattr('kind', 'eq', 'config') | selectattr('class', 'in', ['owned', 'build']) | list }}"
       loop_control: { label: "{{ item.container }} {{ item.name }}" }
       changed_when: true
-    - name: Write the unit environments
-      ansible.builtin.command:
-        argv: "{{ ['timeout', '60'] + fleet_incus + ['file', 'push', '--create-dirs', '--mode', '0644', '-', item.container ~ item.name] }}"
-        stdin: "{{ fleet_unit_environment }}"
-        stdin_add_newline: false
-      loop: "{{ fleet_drift | selectattr('kind', 'eq', 'unit') | list }}"
-      loop_control: { label: "{{ item.container }} {{ item.name }}" }
-      changed_when: true
+    - { name: Write the fleet files, ansible.builtin.import_tasks: instance-fleet-files.yml }
     - { name: Read the fleet rules again, ansible.builtin.include_tasks: instance-fleet-rules-read.yml }
 
 - name: Check the fleet rules

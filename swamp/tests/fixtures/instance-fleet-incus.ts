@@ -133,6 +133,12 @@ if (command[0] === "incus") {
     rest = rest.slice(rest.indexOf("--") + 1);
     state.execs ??= [];
     state.execs.push([name, ...rest]);
+    // The checkout is `agent:work` 2770; `orbit` writes into it only with its group `work`, which `runuser` gives and
+    // `incus exec --user 1000` does not (uid 1000 with group 0).
+    if (inner.includes("--user")) fail("install: cannot create directory '/home/orbit/orbit/apps/agent/delivery': Permission denied");
+    const asOrbit = rest[0] === "runuser" && rest[1] === "-u" && rest[2] === "orbit" && rest[3] === "--";
+    if ((rest[0] === "install" || rest[0] === "php") && !asOrbit) fail(`${rest[0]} as root: the app user runs it`);
+    if (asOrbit) rest = rest.slice(4);
     if (rest[0] === "wg" && rest[1] === "show") done(state.hubKey);
     // Links in a nested container's own disk, by path.
     if (rest[0] === "readlink") {
@@ -205,21 +211,43 @@ if (command[0] === "ping") {
   Deno.exit(tunnelUp() ? 0 : 1);
 }
 if (command[0] === "curl") {
-  if (!tunnelUp()) {
+  // The Instance container's environment sends every address but the egress proxy's through it, and the proxy cannot reach the tunnel.
+  if (!(command.includes("--noproxy") && command[command.indexOf("--noproxy") + 1] === "*")) {
+    if (command.some((value) => value.startsWith("-") && !value.startsWith("--") && value.includes("S"))) console.error("curl: (7) CONNECT tunnel failed, response 503");
     save();
     Deno.exit(7);
   }
+  // `curlError`: a Doctor call that gets no response, such as a timeout.
+  if (state.curlError && command.some((value) => value.endsWith("/doctor"))) {
+    console.error(state.curlError);
+    save();
+    Deno.exit(28);
+  }
+  if (!tunnelUp()) {
+    console.error("curl: (7) Failed to connect to 10.45.0.1 port 443 after 3 ms: Could not connect to server");
+    save();
+    Deno.exit(7);
+  }
+  // `-w '\nHTTP %{http_code}'`: the status on a last line of its own.
+  const status = command.includes("-w") ? (code: number) => `\nHTTP ${code}` : () => "";
+  const respond = (code: number, body: string): never => {
+    Deno.stdout.writeSync(new TextEncoder().encode(body + status(code)));
+    save();
+    Deno.exit(0);
+  };
   const url = command.find((value) => value.startsWith("https://"))!;
   const method = command.includes("-X") ? command[command.indexOf("-X") + 1] : "GET";
   const path = url.slice(url.indexOf("/api/v1/") + "/api/v1".length);
   if (method === "POST" && path === "/doctor") {
     state.doctorCalls = (state.doctorCalls ?? 0) + 1;
+    // `doctorResponse`: a raw status and body, such as an empty 502 from Caddy while php-fpm restarts.
+    if (state.doctorResponse) respond(state.doctorResponse.status, state.doctorResponse.body);
     if (state.schemaBehind && !state.restartedAfterMigrate) {
-      done({ data: { healthy: false, checks: [{ code: "gateway.schema_behind", node: "gateway" }] } });
+      respond(200, JSON.stringify({ data: { healthy: false, checks: [{ code: "gateway.schema_behind", node: "gateway" }] } }));
     }
-    done(state.doctorCalls > (state.doctorUnhealthy ?? 0)
+    respond(200, JSON.stringify(state.doctorCalls > (state.doctorUnhealthy ?? 0)
       ? { data: { healthy: true, checks: [] } }
-      : { data: { healthy: false, checks: [{ code: "node.agent_view_stale", node: "app-dev" }] } });
+      : { data: { healthy: false, checks: [{ code: "node.agent_view_stale", node: "app-dev" }] } }));
   }
   // `agentsOffline`: the reads left in which the agent of app-prod is still offline (after a restart); -1 keeps it offline.
   if (method === "GET" && path === "/nodes") {
@@ -232,7 +260,10 @@ if (command[0] === "curl") {
     if (command.at(-1) !== '{"base":true}') fail("A refresh converges the base");
     state.operations ??= [];
     const node = Number(converge[1]);
-    state.operations.push({ node, status: state.convergeStatus?.[node] ?? "succeeded" });
+    // `egressNeeded`: a base converge runs apt and downloads the agent, so it fails on a Node without the egress files.
+    const guest = containers[["nested-gateway", "nested-app-dev", "nested-app-prod"][node - 1]];
+    const egress = !state.egressNeeded || state.egressNeeded.every((path: string) => (guest.files ?? {})[path]?.includes("10.253.0.1:3128"));
+    state.operations.push({ node, status: state.convergeStatus?.[node] ?? (egress ? "succeeded" : "failed") });
     done({ data: { id: 900 + state.operations.length, status: "pending" } });
   }
   const operation = /^\/operations\/(\d+)$/.exec(path);

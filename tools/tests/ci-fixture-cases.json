@@ -123,7 +123,7 @@
     ]
   },
   "swamp/tests/ansible_instance_fleet_test.ts": {
-    "source_sha256": "c10efd779a3171bd8f0eeab83e89b762dcba41bcc22cdbca015b6bca430713a2",
+    "source_sha256": "77078bc5dcf92a9c2ee0f569239390594c16a236aa7fc26baef1b27c8d8322c3",
     "cases": [
       "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
       "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
@@ -135,7 +135,9 @@
       "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts",
       "a live fleet with a foreign difference is refused by the check and by the rules before any change",
       "a fleet built from the rules has the live shape, with boot.autostart true",
-      "on the live fleet a refresh writes only boot.autostart, then takes base",
+      "on the live fleet a refresh writes the egress files before the converge, then boot.autostart, then takes base",
+      "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base",
+      "readiness reads a healthy Doctor on the first poll; an empty, an error or no response fails with what the last poll got",
       "a refresh after the checkout moved migrates and restarts the nested Gateway before its only Doctor wait, and passes",
       "a refresh waits for the three agents after the restart before it converges, and names the agent that stays offline",
       "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore"
@@ -673,10 +675,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 \u2192 v5.12.0",
-      "exact script output: v5.42.0 \u2192 v5.43.0",
-      "exact script output: v5.49.0 \u2192 v5.50.0",
-      "exact script output: v5.50.0 \u2192 v5.50.1",
+      "exact script output: v5.11.0 → v5.12.0",
+      "exact script output: v5.42.0 → v5.43.0",
+      "exact script output: v5.49.0 → v5.50.0",
+      "exact script output: v5.50.0 → v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
