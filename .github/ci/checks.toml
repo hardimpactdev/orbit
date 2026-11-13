@@ -185,13 +185,18 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 2447
+cost = 2309
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
-after_merge_cases = ["a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing"]
+after_merge_cases = [
+  "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
+  # 144.1s on PR run 43421256788 and cut at the 180s unit ceiling on main run 43423841440 (job 131880584016): two converges of a
+  # switched-on host do not fit a 150-second lane. The Main full set runs it with its own ceiling.
+  "only a switched-on host prepares the nested project, its profile and the nesting modules",
+]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (141s); these are estimates, not completed measurements.
-# 51 slices give each of the 51 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 51
+# 50 slices give each of the 50 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 50
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -261,7 +266,6 @@ inputs = [
   "a normal host intent runs the exact tasks, Incus command lines and host files of main" = 67 # ESTIMATE: local 31s x 2.1, rounded up, plus 1s; no hosted measurement yet
   "a switched-on host with a short subuid range refuses before any nesting change" = 4 # ESTIMATE: local 1s x 2.1, rounded up, plus 1s; no hosted measurement yet
   "a switched-on host with a short subgid range refuses before any nesting change" = 4 # ESTIMATE: local 1s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "only a switched-on host prepares the nested project, its profile and the nesting modules" = 138 # ESTIMATE: local 65s x 2.1, rounded up, plus 1s; no hosted measurement yet
   "the nested clone probe refuses a profile with a raw.lxc key before it starts" = 52 # ESTIMATE: local 24s x 2.1, rounded up, plus 1s; no hosted measurement yet
   "the nested clone probe refuses a profile with security.privileged before it starts" = 52 # ESTIMATE: local 24s x 2.1, rounded up, plus 1s; no hosted measurement yet
   "the nested clone probe refuses a profile with a host disk before it starts" = 52 # ESTIMATE: local 24s x 2.1, rounded up, plus 1s; no hosted measurement yet
