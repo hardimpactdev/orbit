@@ -1,0 +1,67 @@
+sequenceDiagram
+  %% Container runtime (docs/reference/development-containers.md#a-stopped-nested-fleet-clone-starts): `instance:wake` of a clone of a nested-fleet default starts the stopped copy and its inner fleet. A nested-fleet clone never sleeps, so this is its only Orbit start after its create.
+  %% status: draft
+  %% command: instance:wake
+  %% kind: instance.start
+  autonumber
+  %% lane CL icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CL as Caller<br/>orbit · task flow
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>Instance container
+  CL->>GW: instance:wake INSTANCE
+  %%> Command:
+  %%> - `orbit instance:wake INSTANCE`
+  %%> Callers:
+  %%> - the command, after a host reboot, an OOM kill or a stop by hand left the copy stopped
+  %%> - planned: the task flow before it uses a task's copy
+  %%> Requirements:
+  %%> - the caller is the Instance's Node or has node access to it
+  Note over GW: Start or join the start<br/>one per Instance
+  %%> When:
+  %%> - an active development clone of a nested-fleet default, on a Node with the nested-fleet switch on
+  %%> Result:
+  %%> - the wake admits `instance.start` instead of `instance.wake`; an Idempotency-Key keys the start
+  %%> - an open start of the Instance is joined; any other Operation on the Instance refuses it with `operation.target_busy`
+  %%> On failure:
+  %%> - a nested-fleet default: `instance.sleep_unsupported`; it starts only through its deployment
+  %%> - other lifecycle work: `instance.lifecycle_busy`; no run starts
+  GW->>SW: Start run, full intent<br/>operation-instance-start
+  %%> What it does:
+  %%> - the run's one read of the Club key; without one the start fails before its run with `instance.nested_club_key_missing`
+  GW-->>CL: 202 Accepted<br/>Operation ID
+  SW->>N: Start the container<br/>Ansible · tags start
+  %%> What it does:
+  %%> - the start guard: `boot.autostart=false`, the egress gates of every bridge NIC
+  %%> - `incus start`, then the Club key into the container's /run (tmpfs) on stdin, the same script as the create's `clone-club-key`
+  %%> - waits until each desired-running unit is active
+  %%> Why:
+  %%> - no seed or snapshot holds the key, so every start delivers it before the fleet checks
+  SW->>N: Start the inner fleet<br/>Ansible · fleet check, resume
+  %%> What it does:
+  %%> - the create's `clone-fleet`: the fleet rules, the three nested containers, the tunnel `wg-nested`
+  %%> - waits for Doctor over the tunnel and the three agents
+  %%> - records its own seconds as `fleet_seconds`
+  alt the run passes
+    %% path: main
+    SW-->>GW: Run succeeded<br/>terminal result
+    Note over GW: Record running
+    %%> Result:
+    %%> - the runtime's `power_state` is `running`
+    %%> - `nested_fleet_club_key` says what the start did with the key; `fleet_seconds` the fleet's time
+  else a step fails
+    %% path: failed
+    SW--xGW: Run failed<br/>failed step, error_code
+    %%> Result:
+    %%> - a fleet failure names why in the failure's detail, redacted
+    %%> - the container may run with a fleet that is not ready; `power_state` stays as it was
+    %%> Retry:
+    %%> - the same command; each step leaves what already runs as it is
+  end
+  loop until terminal
+    CL->>GW: operation:show TASK
+    GW-->>CL: Status and result
+  end

@@ -9,6 +9,7 @@ covers:
   - packages/php-sdk/src/Requests/Instances/WakeInstanceRequest.php
   - swamp/ansible/tasks/instance-container-power.yml
   - swamp/workflows/workflow-operation-instance-wake.yaml
+  - swamp/workflows/workflow-operation-instance-start.yaml
 ---
 
 Wake one sleeping development container Instance. A visit to its Route does the same, so you rarely need this command. [Sleep and wake](/reference/development-containers#sleep-and-wake) explains the lifecycle.
@@ -34,9 +35,19 @@ Waking an Instance that is awake changes nothing and also succeeds. A failed wak
 
 The API is `POST /api/v1/instances/{instance}/wake`; it starts an `instance.wake` Operation. The MCP tool is `instance-wake`.
 
+## A stopped nested-fleet clone
+
+A clone of a nested-fleet default never sleeps. A host reboot, an out-of-memory kill or a stop by hand can still leave it stopped, and its container does not start at boot. For such a clone, this command starts an `instance.start` Operation instead of a wake. Orbit starts the container through the same checks as a deployment's start, puts the nested Gateway's Club key into the container's `/run`, and then starts the inner fleet as the clone's create does: the nested containers, the operator tunnel `wg-nested`, and a wait for Doctor and the three agents. The result gives `power_state`, `nested_fleet_club_key` (what the start did with the key) and `fleet_seconds` (the time of the fleet start). A start of a copy that runs changes nothing that already runs. [A stopped nested-fleet clone starts](/reference/development-containers#a-stopped-nested-fleet-clone-starts) has the details.
+
+A nested-fleet default does not take this path: it starts only through its deployment.
+
 ## How it works
 
 <div className="flow-at" data-chart="instance/wake"></div>
+
+For a nested-fleet clone:
+
+<div className="flow-at" data-chart="instance/start"></div>
 
 ## Errors
 
@@ -44,7 +55,10 @@ The API is `POST /api/v1/instances/{instance}/wake`; it starts an `instance.wake
 | --- | --- |
 | `instance.id_invalid` | The Instance ID is not a positive number. |
 | `operation.kind_unavailable` | The Instance has no container. |
-| `instance.sleep_unsupported` | The Instance is not a development Instance, or runs a nested fleet. |
+| `instance.sleep_unsupported` | The Instance is not a development Instance, or it is a nested-fleet default, which starts only through its deployment. |
+| `instance.start_unsupported` | The start of a nested-fleet clone was called for another Instance. |
+| `instance.nested_club_key_missing` | The start of a nested-fleet clone found no Club key on the Gateway. Its inner fleet cannot become ready, so the run did not start. |
+| `instance.container_fleet_check_failed`, `instance.container_fleet_resume_failed` | The inner fleet of a nested-fleet clone did not start or did not become ready. The failure's detail says why. |
 | `instance.lifecycle_busy`, `operation.target_busy` | Other lifecycle work runs on the Instance. |
 | `instance.container_start_failed` | The container or one of its units did not start, or the asleep marker could not be removed. |
 | `instance.web_unready` | FrankenPHP gave no answer within about 30 seconds. The marker stays. |

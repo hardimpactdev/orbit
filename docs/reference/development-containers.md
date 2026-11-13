@@ -823,7 +823,7 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 
 | Part | State |
 | --- | --- |
-| [`instance:sleep`](/cli/instance/sleep) and [`instance:wake`](/cli/instance/wake) | Built for development clones. A default and a nested-fleet Instance do not sleep |
+| [`instance:sleep`](/cli/instance/sleep) and [`instance:wake`](/cli/instance/wake) | Built for development clones. A default and a nested-fleet Instance do not sleep. A wake of a nested-fleet clone is its [start](#a-stopped-nested-fleet-clone-starts) |
 | A Route visit wakes the Instance | Built |
 | Sleep after an idle hour | Planned; see below |
 | The wake renews the Gateway's T3 session when it ends within 7 days or ended while the Instance slept | Built |
@@ -1401,6 +1401,17 @@ The workspace phase runs after the fleet is ready. When it checks out a branch a
 | Fleet start to a healthy Doctor | 31 to 55 s, measured; 54 to 90 s cold, before the fleet rules were in `base` | The first and second inner fleet experiments |
 | Whole create of a nested-fleet clone with the fleet step | Not measured | |
 
+### A stopped nested-fleet clone starts
+
+A nested-fleet clone does not sleep, and its container does not start at boot (`boot.autostart=false`). A host reboot, an out-of-memory kill or a stop by hand leaves it stopped. A start by hand with `incus start` gives it no Club key and no tunnel `wg-nested`. So [`instance:wake`](/cli/instance/wake) of such a clone starts an `instance.start` Operation instead of a wake. The [start chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/start.mmd) has the steps:
+
+1. The Gateway admits it only for an active development clone whose runtime keeps a fleet (`InstancePlacement::keepsFleet`). The request's Idempotency-Key keys the start; a second call joins the open start. The run reads the Club key once at its start. Without a key the fleet's Swamp cannot start and Doctor cannot pass, so the run fails before any change with `instance.nested_club_key_missing`.
+2. `Start the container` runs the `start` part of `instance-container.yml`, as a deployment does. It keeps `boot.autostart=false`, checks the egress gates of every bridge NIC, starts the container, and delivers the [Club key](#the-club-key-of-the-nested-gateway) into its `/run`.
+3. `Start the inner fleet` runs the [fleet step](#the-fleet-step)'s check and resume, as the clone's create does: the fleet rules, the nested containers, the tunnel and the Doctor wait. It records its time as `fleet_seconds`.
+4. A success records `power_state` `running`. The result also gives `nested_fleet_club_key`.
+
+Each step leaves what already runs as it is, so a start of a running copy only checks it. A nested-fleet default does not take this path: a wake refuses it with `instance.sleep_unsupported`, and only its deployment starts it. The run budget is 1,200 seconds; a clone's fleet start took 91 seconds (Operation 20180).
+
 ### Reset
 
 A reset restores `base` of the three nested containers, then waits for the same Doctor check. `agent` runs it. A reset command is planned. Restore of all three: 7 to 8 s, measured; Doctor healthy 33 s after, measured. On a directory pool a restore copies back only the files that changed since `base`, so its time grows with the change. The proof's limit is 45 seconds.
@@ -1428,7 +1439,7 @@ Gap: which refusal comes first on a full Node for nested-fleet clones, and its e
 
 ### The fleet step
 
-Six phase task files keep the fleet of a nested-fleet Instance. The deployment of a nested-fleet default calls the check, the start, the refresh and the resume through the tags `fleet_check`, `fleet_start`, `fleet_refresh` and `fleet_resume` of `instance-container.yml`. The create of its clone calls the check and the resume ([A clone starts its fleet](#a-clone-starts-its-fleet)). No flow calls the rules or the reset alone yet.
+Six phase task files keep the fleet of a nested-fleet Instance. The deployment of a nested-fleet default calls the check, the start, the refresh and the resume through the tags `fleet_check`, `fleet_start`, `fleet_refresh` and `fleet_resume` of `instance-container.yml`. The create of its clone, and the [start of a stopped clone](#a-stopped-nested-fleet-clone-starts), call the check and the resume ([A clone starts its fleet](#a-clone-starts-its-fleet)). No flow calls the rules or the reset alone yet.
 
 Each phase runs on the Node and reaches the inner Incus with `incus exec` into the Instance container. Their input is `intent.container` and `intent.fleet`; the header of `swamp/ansible/tasks/instance-fleet.yml` defines it. The Gateway fills `intent.fleet` (`NestedFleetIntent`) from the fleet constants of task VMs, with the commit of the old seed, for the deployment of the default and the create of its clone.
 
