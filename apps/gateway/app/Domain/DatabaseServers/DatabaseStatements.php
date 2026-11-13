@@ -112,6 +112,40 @@ final readonly class DatabaseStatements
     }
 
     /**
+     * instance:restore on PostgreSQL. `check` refuses a planned database that is gone or closed, naming it; it opens nothing.
+     * `clear` checks again and deletes, in one transaction, only the fence journal rows whose OID and name match a planned
+     * database. Each follows the admin password line on stdin.
+     *
+     * @param  list<string>  $databases
+     * @return array{check: string, clear: string}
+     */
+    public function restore(array $databases): array
+    {
+        foreach ($databases as $name) {
+            if (preg_match(self::NAME, $name) !== 1) {
+                $this->invalid();
+            }
+        }
+        if ($databases === []) {
+            $this->invalid();
+        }
+        $names = $this->list($databases);
+        $check = "DO \$orbit\$ DECLARE missing text; closed text; BEGIN\n"
+            ."SELECT string_agg(n, ', ' ORDER BY n) INTO missing FROM unnest(ARRAY[{$names}]::text[]) AS n WHERE NOT EXISTS (SELECT FROM pg_database d WHERE d.datname = n);\n"
+            ."IF missing IS NOT NULL THEN RAISE EXCEPTION 'instance.restore_database_missing: %', missing; END IF;\n"
+            ."SELECT string_agg(datname::text, ', ' ORDER BY datname) INTO closed FROM pg_database WHERE datname IN ({$names}) AND NOT datallowconn;\n"
+            ."IF closed IS NOT NULL THEN RAISE EXCEPTION 'instance.restore_database_closed: %', closed; END IF;\n"
+            ."END \$orbit\$;\n";
+        // The journal may not exist on a server that never fenced; the DELETE is planned only when it does.
+        $clear = "BEGIN;\n".$check
+            ."DO \$orbit\$ BEGIN IF to_regclass('orbit_admin.database_removal_fences') IS NOT NULL THEN\n"
+            ."DELETE FROM orbit_admin.database_removal_fences j USING pg_database d WHERE d.oid = j.oid AND d.datname = j.datname AND j.datname IN ({$names});\n"
+            ."END IF; END \$orbit\$;\nCOMMIT;\n";
+
+        return ['check' => $check, 'clear' => $clear];
+    }
+
+    /**
      * database:create. `create` carries the owner's password (or its SCRAM verifier, or its ACL hash) and refuses a
      * foreign name by itself; `login` is the owner check. Both go Gateway → vault → stdin behind a password line.
      *

@@ -1,0 +1,138 @@
+id: 6f0b7f0e-4d63-4c0a-9a43-2f6a1d7c5e21
+name: operation-instance-restore
+description: instance:restore from 209; checks the planned databases, republishes the same Route through Route create, then clears this removal's fence journal rows.
+vaults:
+- orbit-control-inputs
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      const: instance.restore
+    intent:
+      type: object
+    # Names only: per server the check and clear batches, each the admin password line and one SQL batch.
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^instance-restore-[1-9][0-9]*-[1-9][0-9]*-(check|clear)$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: restore
+  labels:
+    role: swamp
+  steps:
+    # Read-only: each planned database exists and accepts connections. A gone or closed database fails the run and the
+    # message names it; restore opens nothing.
+  - name: Check the databases
+    labels:
+      role: swamp
+    forEach:
+      item: server
+      in: ${{ inputs.intent.servers }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-restore-ssh-" + string(self.server.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "instance-restore-ssh-" + string(self.server.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ self.server.ssh_execution.target.user }}
+          port: ${{ self.server.ssh_execution.target.port }}
+          identityFile: ${{ self.server.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ self.server.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ self.server.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: ${{ ["timeout", "60"] + self.server.admin_client }}
+        stdin: ${{ vault.get(inputs.execution_secrets["server_" + string(self.server.server_id) + "_check"].vault, inputs.execution_secrets["server_" + string(self.server.server_id) + "_check"].key) }}
+        timeoutSec: 70
+    # The Route create children unchanged, with the same Route, targets and domain; it writes the awake marker again.
+  - name: Republish the Route
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: Check the databases
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-create
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        parent_run_id: ${{ run.id }}
+        kind: route.create
+        intent: ${{ inputs.intent.route_create }}
+        execution_secrets: ${{ inputs.intent.route_secrets }}
+    # One transaction per server: check again, then delete only the journal rows whose OID and name match a planned database.
+  - name: Clear the fence journal
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: Republish the Route
+      condition:
+        type: succeeded
+    forEach:
+      item: server
+      in: ${{ inputs.intent.servers }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-restore-ssh-" + string(self.server.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "instance-restore-ssh-" + string(self.server.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ self.server.ssh_execution.target.user }}
+          port: ${{ self.server.ssh_execution.target.port }}
+          identityFile: ${{ self.server.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ self.server.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ self.server.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: ${{ ["timeout", "60"] + self.server.admin_client }}
+        stdin: ${{ vault.get(inputs.execution_secrets["server_" + string(self.server.server_id) + "_clear"].vault, inputs.execution_secrets["server_" + string(self.server.server_id) + "_clear"].key) }}
+        timeoutSec: 70

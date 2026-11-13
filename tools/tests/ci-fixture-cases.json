@@ -2383,5 +2383,13 @@
       "no workflow expression holds a `}}` that ends it before its end",
       "a map or string closed with `}}` inside an expression is found, and `} }}` passes"
     ]
+  },
+  "swamp/tests/instance_restore_test.ts": {
+    "source_sha256": "04bdd5f454be20b2e205364897b721e42c32d69f60cb6e4e6b0a84757efa4a4a",
+    "cases": [
+      "the step names are the chart's",
+      "each server's database steps reach its Node with its own batch",
+      "the Route is republished by the Route create workflow, only after the database check, with its own secrets"
+    ]
   }
 }

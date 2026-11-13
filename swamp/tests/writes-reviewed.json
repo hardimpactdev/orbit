@@ -383,6 +383,9 @@
    "Check work is pushed": "idempotent",
    "Read container removal": "read-only"
   },
+  "operation-instance-restore": {
+   "Check the databases": "read-only"
+  },
   "operation-instance-rollback": {
    "Read current back": "read-only"
   },

@@ -7,6 +7,7 @@ namespace App\Domain\Instances;
 use App\Actions\DatabaseConnections\PrepareOwnedDatabaseDestructionAction;
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
@@ -192,6 +193,10 @@ final readonly class DirectInstanceDestroyIntent
             ->where('target_type', 'instance')->whereIn('target_id', array_column($members, 'instance_id'))
             ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
             throw new ResourceOperationException('operation.target_busy', 'A removal root already owns this Instance.', 409);
+        }
+        // A restore holds the Instance from its start until its run has ended, timed-out runs included.
+        if (Operation::query()->where('kind', 'instance.restore')->where('lock_key', OperationStore::lockKey('instance', ValidatedData::integer($input['instance_id'])))->exists()) {
+            throw new ResourceOperationException('operation.target_busy', 'A restore owns this Instance.', 409);
         }
     }
 

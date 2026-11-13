@@ -54,7 +54,7 @@ it('waits then refuses each protected kind family and active status after ten mi
 
     Sleep::assertSlept(fn (CarbonInterval $duration): bool => $duration->totalSeconds === 5.0, 120);
     expect($blocker->refresh()->status->value)->toBe($status);
-})->with(['instance.create', 'instance.deploy', 'instance.deploy_production', 'instance.deploy.preview', 'instance.migrate', 'instance.clone', 'instance.destroy', 'conn.setup', 'process.restart'])
+})->with(['instance.create', 'instance.deploy', 'instance.deploy_production', 'instance.deploy.preview', 'instance.migrate', 'instance.clone', 'instance.destroy', 'instance.restore', 'conn.setup', 'process.restart'])
     ->with(['queued', 'running', 'waiting']);
 
 it('proceeds on the next poll after each added lifecycle kind settles', function (string $kind, string $status): void {
@@ -69,7 +69,7 @@ it('proceeds on the next poll after each added lifecycle kind settles', function
     $command->assertSuccessful()->run();
 
     Sleep::assertSequence([Sleep::for(5)->seconds()]);
-})->with(['instance.migrate', 'instance.clone', 'instance.destroy'])->with(['queued', 'running', 'waiting']);
+})->with(['instance.migrate', 'instance.clone', 'instance.destroy', 'instance.restore'])->with(['queued', 'running', 'waiting']);
 
 it('reports the remaining blocker IDs from the final poll', function (): void {
     /** @var TestCase $this */

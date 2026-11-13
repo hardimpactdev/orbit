@@ -75,3 +75,5 @@ Receipt creation and attachment deletion commit in one transaction. If either wr
 | `operation.target_busy` | 409 | Another Operation holds the Instance lock. Nothing is deleted and no new receipt is created. |
 
 Destroy removes this Instance's entire ACL and container, including its proxy units. Same-Node Docker bridge tuples follow the existing database/mail host reconciliation policy. Remote detach uses the shared bridge withdrawal builder and retains endpoints still used on the Node.
+
+[`instance:restore`](/cli/instance/restore) keeps every Node service target record of the Instance: a failed removal never deleted them.

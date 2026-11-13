@@ -122,4 +122,21 @@ The schema permits abandonment only from failed removal while its members still 
 
 Live members have neither `row_deleted_at` nor `abandoned_at`. Destroy admission, the Instance relation, Instance JSON and site rendering use this one rule. A later destroy captures a new removal identity and inventory.
 
-This schema change adds no command or production path that abandons a removal. Existing removing, failed and completed records keep their meaning. The migration preserves existing rows and triggers. It is forward-only: rollback refuses because the previous schema cannot represent abandoned history.
+`instance:restore` is the one command that abandons a removal; see [restore a failed removal](#restore-a-failed-removal). Existing removing, failed and completed records keep their meaning. The migration preserves existing rows and triggers. It is forward-only: rollback refuses because the previous schema cannot represent abandoned history.
+
+## Restore a failed removal
+
+[`instance:restore`](/cli/instance/restore) undoes a failed removal of a host development Instance when nothing of it was deleted. A removal that withdrew the Route and then failed at its databases leaves this state: the Instance `removing`, the Route `retiring`, the checkout and databases intact.
+
+The Gateway refuses before any change in these cases:
+
+- a removal run has not ended. A timed-out run with no proven end refuses too; restore never settles it.
+- a step that deletes data ran. These are the source, container, Processes, teardown and SQLite steps.
+- a run has no record that it skipped such a step that the removal planned.
+- the removal saved a Schedule or a SQLite file.
+- the Route, its target or the reported checkout changed.
+
+The run checks that each planned database exists and accepts connections. Restore settles no fence: a database that the removal closed and nobody opened again refuses with `instance.restore_database_closed`. The run then republishes the same Route through the Route create workflow, with the same Route ID and domain. Last, it deletes the fence journal rows whose OID and name match a planned database, in one server transaction that checks again that each is open. The Gateway then records, in one transaction, the members and removal `abandoned`, the Instance `active` and the Route `active`.
+
+A restore holds the Instance's Operation lock and the Route's publication Nodes like Route create. `instance:destroy` refuses while a restore holds the Instance, and a restore refuses while a destroy runs. A failed restore leaves the failed removal as it was.
+

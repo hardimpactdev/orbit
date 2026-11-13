@@ -15,12 +15,14 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\Instances\RestoreInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceMailRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Saloon\Http\Request;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -145,6 +147,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:register',
         'instance:release:list',
         'instance:rename',
+        'instance:restore',
         'instance:rollback',
         'instance:setup',
         'instance:setup-step:create',
@@ -1317,6 +1320,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             'message' => 'The current path is not a supported Git checkout or worktree.',
         ],
         'instance:rename' => [['instance' => '1', '--branch' => 't3code/login'], ...$profileMissing],
+        'instance:restore' => [['instance' => '1'], ...$profileMissing],
         'instance:setup' => [['instance' => '1'], ...$profileMissing],
         'instance:setup-step:create' => [['name' => 'install-php', '--project' => '1', '--command' => 'true'], ...$profileMissing],
         'instance:setup-step:destroy' => [['name' => 'install-php', '--project' => '1', '--yes' => true], ...$profileMissing],
@@ -1653,3 +1657,45 @@ it('preserves the typed mail Operation receipt and request correlation at the SD
         ->and($mock->getLastPendingRequest()?->headers()->get('Idempotency-Key'))->toBe('mail-repair-proof')
         ->and($request->resolveEndpoint())->toBe('/api/v1/instances/501/mail')->and($request->body()->all())->toBe([]);
 });
+
+it('renders the final restore Operation in JSON and preserves the retry key', function (): void {
+    $home = sys_get_temp_dir().'/orbit-restore-operation-'.bin2hex(random_bytes(8));
+    config(['orbit.home' => $home]);
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(name: 'test', url: 'https://gateway.test', caPath: '/unused/root.pem'));
+    $final = ['data' => [
+        'id' => 42, 'kind' => 'instance.restore', 'target_type' => 'instance', 'target_id' => 17,
+        'input' => ['instance_id' => 17], 'status' => 'succeeded', 'sequence' => 5,
+        'current_step' => null, 'failed_step' => null, 'error_code' => null,
+        'result' => ['outcome' => 'succeeded', 'instance_id' => 17, 'restored' => true],
+        'cancel_requested' => false, 'attempts' => 1, 'triggered_by' => 'operator',
+        'created_at' => '2026-10-28T10:00:00+00:00', 'started_at' => '2026-10-28T10:00:01+00:00',
+        'finished_at' => '2026-10-28T10:00:02+00:00', 'poll_after_seconds' => null,
+    ], 'meta' => []];
+    $mock = MockClient::global([
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['url' => null, 'key' => null, 'channel' => 'orbit'], 'meta' => []]),
+        RestoreInstanceRequest::class => MockResponse::make($final, 202),
+        ShowOperationRequest::class => MockResponse::make($final),
+    ]);
+    try {
+        $exit = Artisan::call('instance:restore', ['instance' => '17', '--json' => true, '--idempotency-key' => 'restore-proof']);
+        $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($exit)->toBe(0)->and($output['kind'])->toBe('instance.restore')
+            ->and($output['status'])->toBe('succeeded')->and($output['result']['restored'])->toBeTrue();
+        $mock->assertSent(fn (Request $request): bool => $request instanceof RestoreInstanceRequest && $request->headers()->get('Idempotency-Key') === 'restore-proof');
+    } finally {
+        MockClient::destroyGlobal();
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
+it('refuses missing and invalid IDs as structured errors without transport', function (array $input): void {
+    $mock = MockClient::global([]);
+    try {
+        $exit = Artisan::call('instance:restore', [...$input, '--json' => true]);
+        $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($exit)->toBe(1)->and($output['error']['code'])->toBe('instance.id_invalid');
+        $mock->assertNothingSent();
+    } finally {
+        MockClient::destroyGlobal();
+    }
+})->with([[[]], [['instance' => '0']], [['instance' => 'garbage']]]);
