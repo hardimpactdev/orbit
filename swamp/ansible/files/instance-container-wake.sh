@@ -107,7 +107,8 @@ take_requests() {
     done
 }
 
-# Every request first, so a second wake never waits for a library check. Then one check per resumed container, after its page
+# Every request first, so a wake that arrives during a resume does not wait for a library check; one that arrives during a check waits
+# for it (at most 5 s), and if it is then older than 1 s the wake's workflow wakes that Instance. Then one check per resumed container, after its page
 # answers: the visitor does not wait for it. Requests that arrived meanwhile go first again.
 take_requests
 while (( ${#pending[@]} > 0 )); do
