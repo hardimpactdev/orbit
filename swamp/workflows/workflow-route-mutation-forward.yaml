@@ -199,10 +199,11 @@ jobs:
             }}
         execution_secrets: '${{ has(self.part.secret_field) ? {"material": inputs.execution_secrets[self.part.secret_field]} : {} }}'
     allowFailure: true
+  # Keep the live read, merge and activation even when admitted states are equal.
   - name: forward_prepare_dns
     forEach:
       item: part
-      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.prepared.dns != null && (p.before.dns == null || inputs.intent.route_mutations.artifacts.dns[p.before.dns].digest != inputs.intent.route_mutations.artifacts.dns[p.prepared.dns].digest || inputs.intent.route_mutations.artifacts.dns[p.before.dns].records != inputs.intent.route_mutations.artifacts.dns[p.prepared.dns].records)) }}
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.prepared.dns != null) }}
     guard: ${{ steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
     dependsOn:
     - {step: forward_prepare_certificates, condition: {type: always}}
@@ -353,6 +354,7 @@ jobs:
             }}
         execution_secrets: {}
     allowFailure: true
+  # Prepared DNS already succeeded under the failure guard; intervening children change no DNS.
   - name: forward_dns
     forEach:
       item: part
@@ -540,8 +542,7 @@ jobs:
           forward_live_certificates: "${{ size(inputs.intent.route_mutations.forward.certificates.filter(item,inputs.intent.route_mutations.forward.certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope)) }}"
           forward_live_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes && (inputs.kind != "instance.destroy" || p.after.caddy != p.withdrawn.caddy)))
             }}
-          forward_dns: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null && (inputs.kind != "instance.destroy" || p.after.dns != p.prepared.dns)))
-            }}
+          forward_dns: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null && (p.prepared.dns == null || inputs.intent.route_mutations.artifacts.dns[p.prepared.dns].digest != inputs.intent.route_mutations.artifacts.dns[p.after.dns].digest || inputs.intent.route_mutations.artifacts.dns[p.prepared.dns].records != inputs.intent.route_mutations.artifacts.dns[p.after.dns].records))) }}
           forward_cleanup: ${{ size(inputs.intent.route_mutations.forward.cleanup) }}
           forward_retire_lan: ${{ size(inputs.intent.route_mutations.forward.retire_lan) }}
           forward_retire_ingress: ${{ size(inputs.intent.route_mutations.forward.retire_ingress) }}

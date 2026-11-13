@@ -891,4 +891,6 @@ Native Cluster Router admission captures Caddy recipe candidates through the sam
 
 Site rendering uses only live Instance removal members. Abandoned history does not retain the unavailable site from a previous removal.
 
-Forward Route mutations skip a private DNS publication when its admitted records and catalog are equal to the preceding stage. Preparation compares `before` with `prepared`; final publication compares `prepared` with `after`. This skips the child workflow before any Node read, file write or dnsmasq restart. A change to either records or catalog retains the existing live three-way merge, validation and publication. The DNS grace and restoration rules stay unchanged.
+Forward Route mutations always publish prepared private DNS through the existing live read, three-way merge, validation and service activation. They skip only the final DNS child when its records and catalog equal the prepared publication: the first child has already established that set, and the intervening steps change no DNS. Failure guards and required contribution counts still require every child that must run.
+
+This removes one DNS child per DNS Node from a same-Node move, while retaining the first child's existing repair and readiness behavior. The DNS grace still precedes withdrawal when the first publication changes an answer, even if the final publication is omitted. Restoration and withdrawal keep their existing order.

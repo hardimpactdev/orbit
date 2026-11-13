@@ -755,7 +755,7 @@ The container Schedule fixture checks timer installation and advisory activation
 
 Private Node-runtime fixtures use the shipped conversion and fetch helper with a fake Vite+ command; network downloads are tested separately in an owned fixture Instance.
 
-DNS equality fixtures evaluate the workflow's actual `forEach` expressions with the pinned Swamp CEL compiler. They prove an unchanged stage dispatches no child and that a change to either records or catalog still dispatches. Keep control evaluation timings separate from live child workflow timings; release proof measures the end-to-end saving.
+DNS publication fixtures evaluate the shipped selectors, guards and contribution counts with the pinned Swamp CEL evaluator on public intents captured through the real Gateway builders. They retain the first live publication, omit only an identical final publication, and exercise the real merge and terminal result for drift, mixed Nodes and failed children. The previous Gateway's intent needs no added field. Keep child-count evidence separate from live timing; release proof measures the migrate Route step against its recorded baseline.
 
 The Caddy candidate fixtures execute each changed writer with invalid and valid candidates. They keep every path and stand-in under a private temporary directory, run Ansible without facts or privilege, preserve relative-import directories and prove invalid input leaves live bytes unchanged with no reload.
 
