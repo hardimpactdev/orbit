@@ -48,6 +48,7 @@ sequenceDiagram
   %%> - a throwaway container of the server's image on the server's Docker network, read-only, no capabilities
   %%> - it logs in as the owner over TCP at the server container's address, never its trusted loopback
   %%> - the password is the first stdin line
+  %%> - no client command from the dump runs: psql reads Orbit's own `\restrict <random key>` first (the dump's own pg_dump pair is dropped); mysql runs with `--skip-commands --skip-system-command`
   %%> What it does, in order:
   %%> - counts the tables; more than 0 refuses with `database.not_empty`
   %%> - streams the file (gunzip for `.sql.gz`) into the client; the first error stops it

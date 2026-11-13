@@ -54,6 +54,7 @@ sequenceDiagram
       %%> How:
       %%> - Swamp reaches the host over SSH from 209 with the official `@swamp/ssh` behavior; the SSH identity comes from the `swamp` role
       %%> - stdin is one vault value: the password as the first line, then the statement (Q-DBAUTH); SQLite has no password line
+      %%> - the client runs no client command from the statement: psql gets it as `-c`, mysql runs with `--skip-commands --skip-system-command`
       %%> Where it runs:
       %%> - on a Database server: one `docker exec -i` into its container on Node 12, as the connection's own user, never root
       %%> - on SQLite: `sqlite3 -safe` on the file's Node, as the file's owner; it cannot attach, write other files or run shell commands

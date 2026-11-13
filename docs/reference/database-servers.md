@@ -96,7 +96,9 @@ To move a database onto a managed PostgreSQL server, dump it with a `pg_dump -Fc
 
 Managed Database servers serve clients inside the Orbit network only. All three drivers publish one explicit IPv4 Docker binding on the Node's WireGuard IP and a second on its LAN IP when present. Publication requires RFC 1918 private IPv4 addresses. Orbit never binds `0.0.0.0`, an IPv6 wildcard, or the Node's public address. Services also has the public interface 85.9.217.155; that address must never appear in a Database server's bindings.
 
-The private networks are the trust boundary. Clients that can reach those private addresses have network access to the ports. Ports published by Docker bypass UFW. Orbit adds no database port firewall, iptables chain, UFW hook, Docker service drop-in or PostgreSQL source rules. PostgreSQL keeps the image's stock `pg_hba.conf` defaults and SCRAM password authentication. Operators must keep these private addresses unreachable from the public internet.
+The private networks are the trust boundary. Clients that can reach those private addresses have network access to the ports. Ports published by Docker bypass UFW. Orbit adds no database port firewall, iptables chain, UFW hook, Docker service drop-in or PostgreSQL source rules. Operators must keep these private addresses unreachable from the public internet.
+
+PostgreSQL keeps the image's stock `pg_hba.conf`: SCRAM password authentication over the network, but trust for the socket and the loopback inside the container. There a login needs no correct password, so Orbit chooses every login's user itself, and no client runs a client command from a caller's SQL or dump; see [Client commands](/reference/database-connections#client-commands).
 
 Docker starts a server's container at boot, and it can do that before the WireGuard tunnel or the LAN address is up. Every managed Linux Node allows binds to an address it does not hold yet, through its [kernel policy](/reference/node-provisioning#kernel-policy), so the publication succeeds and serves as soon as the address appears. Without it, the bind failed with `cannot assign requested address` and Docker left the container stopped.
 
