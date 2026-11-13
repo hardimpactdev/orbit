@@ -668,6 +668,7 @@ A clone starts with its default's settings. The seed snapshot holds the default'
 - **The clone's own keys.** Orbit writes them from the clone's render.
 - **The default's connection keys.** The clone never copies them.
 - **Copies of the default's credentials.** The clone drops them.
+- **Values that point at the default's own site.** The clone points them at its own.
 
 The clone's own keys are the keys of its own database under `DB` and of its own [Valkey user](#a-clones-valkey-user), with `<PREFIX>_PREFIX` and `HORIZON_PREFIX`. `APP_URL` names the clone's Route, and the mail keys Orbit renders are its own too. A connection key that the clone's connection does not use goes.
 
@@ -675,9 +676,17 @@ The default's connection keys are `<PREFIX>_CONNECTION`, `_HOST`, `_PORT`, `_DAT
 
 A copy of a credential is a key whose value equals the default's database name, user name or password under an attached prefix, or its Reverb secret. A Redis database number is no credential. A key whose value contains such a password, for example `DATABASE_URL`, is a copy too, and so is a comment line that holds one. The check runs inside the clone, against the copied file.
 
-Keys of the render that the default's file lacks are added. `APP_KEY` comes from the default's file, because the cloned database holds data encrypted with it. When the default has no `.env` in its seed, the render is the file, as for any new Instance. A create that an earlier Gateway release admitted carries no key names; its clone also gets the render as the file.
+A value points at the default's own site when one of its items is the domain of the default's Route without a web root. A Route with a web root serves other content, so its domain stays. An item is the whole value, or one part of a list split at commas, semicolons or white space before any `?` or `#`. It is the host alone, or the host with a scheme or `//`, a leading `.` or `*.`, a port, and a path, query or fragment.
 
-Only key names leave the container. The Gateway sends the names of the three groups with the render. The Operation result names the keys the clone copied, `environment.copied`, and the keys it dropped, `environment.dropped`. No value enters an argument, a result or a log.
+The clone puts its own Route host in place of that host and keeps the rest of the item, so `https://<default host>:5173` becomes `https://<clone host>:5173`. The two hosts can differ in form, for example `site.test` and `feature.site-website.test`. A host inside another name, a path, a query or a user part (`user@host`) is no item and stays, and so does a `${APP_URL}` reference, which already follows the clone's `APP_URL`. A key whose value holds a copy of a credential is dropped before this step.
+
+`VITE_APP_URL` in the file then names the clone's Route, as the `vite` preset sets it on its Process unit. The unit's value wins over the file for that Vite process; PHP and other Processes read the file. `INERTIA_SSR_HOT_URL` lives only on the PHP unit and points at the container's own loopback; a copied loopback value is no host of the default and stays.
+
+Mail needs no rewrite. Every container has its own loopback proxies at `127.0.0.1:1025` and `2525` to the Node's one Mailpit, so the default's `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME` and `MAIL_PASSWORD`, which point at that loopback, reach the same Mailpit from the clone. Orbit renders only `MAIL_MAILER`, when the default's is `log`.
+
+Keys of the render that the default's file lacks are added. `APP_KEY` comes from the default's file, because the cloned database holds data encrypted with it. When the default has no `.env` in its seed, the render is the file, as for any new Instance. A create that an earlier Gateway release admitted carries no key names; its clone also gets the render as the file. A create admitted with key names but without the Route hosts keeps every copied value as written.
+
+Only key names leave the container. The Gateway sends the names of the three groups and the Route host of the default and of the clone with the render. The Operation result names the keys the clone copied, `environment.copied`, the keys it dropped, `environment.dropped`, and the copied keys it pointed at its own Route host, `environment.rewritten`. No `.env` value enters an argument, a result or a log.
 
 A value set by hand in the default's `.env` after its last deployment reaches clones with the next seed snapshot. A hand-set key that points at the default's other data, such as a storage bucket or a database that Orbit does not attach, is shared with the clone. Its name is in `environment.copied`.
 

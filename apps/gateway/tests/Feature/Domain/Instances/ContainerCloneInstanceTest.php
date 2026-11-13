@@ -729,6 +729,12 @@ ENV;
     app(InstanceEnvironmentStore::class)->seedForCreate($default, ['APP_NAME' => 'Default only']);
     ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'dev', 'environments' => ['development'],
         'spec' => ['runtime' => 'systemd', 'preset' => 'vp-dev', 'command' => VpDevPreset::definitionCommand()]]);
+    // The default answers on its own Routes, which need not have the clone's form.
+    foreach (['tool.test' => null, 'docs.tool.test' => 'docs'] as $routeDomain => $webRoot) {
+        $route = Route::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'provenance' => 'explicit',
+            'publication' => 'private', 'domain' => $routeDomain, 'web_root' => $webRoot, 'status' => 'pending']);
+        $default->routes()->attach($route->id, ['position' => 0]);
+    }
 
     $operation = containerCreate($project, $node, 'references');
     $clone = Instance::query()->findOrFail($operation->target_id);
@@ -752,6 +758,10 @@ ENV;
     expect($file)->toBe(collect($vault->puts)->firstWhere('key', 'instance-create-environment-input-'.$operation->id)['value']);
     // The clone's Route URL is its own; the default's file keeps the rest, APP_KEY included.
     expect($workspace['merge']['own'])->toContain('APP_URL')->not->toContain('APP_KEY');
+    // A copied value on one of the default's own Route hosts moves to the clone's Route host; a Route with a web root serves
+    // other content and stays. Only host names travel, no .env value.
+    expect($workspace['merge']['hosts'])->toBe(['from' => ['tool.test'], 'to' => $domain])
+        ->and($operation->input['environment_clone']['hosts'])->toBe($workspace['merge']['hosts']);
 });
 
 it('keeps an undefined template reference literal in the file inherited by Processes', function (): void {

@@ -64,10 +64,11 @@ final readonly class DevelopmentCreateEnvironment
      * (docs/reference/development-containers.md#the-environment-of-a-clone): `own`, the keys Orbit renders for the clone itself and
      * takes from the render; `drop`, the keys of every connection and Reverb app attached to the default, which the clone never
      * copies; `guard`, the default's credential keys, whose values the clone never copies under another name. Names only: no value leaves the Gateway here.
-     * A per-Project list of keys the clone never copies joins `drop`. An Instance with T3 that moved in has no `$source`: it keeps
-     * its own file.
+     * `hosts` maps the default's own Route domain (its Route without a web root) to the clone's, so a copied value that points at
+     * the default's site points at the clone's; a Route with a web root serves other content and stays. Route domains are no secrets. A per-Project list of keys the clone never copies joins `drop`. An Instance with
+     * T3 that moved in has no `$source`: it keeps its own file.
      *
-     * @return array{own: list<string>, drop: list<string>, guard: list<string>}
+     * @return array{own: list<string>, drop: list<string>, guard: list<string>, hosts: array{from: list<string>, to: string|null}}
      */
     public function cloneKeys(Instance $instance, ?Instance $source, ?DatabaseConnection $database = null, ?DatabaseConnectionTarget $valkey = null): array
     {
@@ -95,8 +96,10 @@ final readonly class DevelopmentCreateEnvironment
             return $keys;
         };
 
+        $from = $source === null ? null : $this->domain($source);
+
         return ['own' => $names([...array_keys($owned['values']), ...$owned['forget'], ...$this->mailKeys($instance)]),
-            'drop' => $names($drop), 'guard' => $names($guard)];
+            'drop' => $names($drop), 'guard' => $names($guard), 'hosts' => ['from' => $from === null ? [] : [$from], 'to' => $this->domain($instance)]];
     }
 
     /**

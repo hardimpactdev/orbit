@@ -141,6 +141,58 @@ def merge_environment(base, rendered, merge):
     return "".join(out), sorted(copied), sorted(dropped - copied)
 
 
+def value_span(raw):
+    """The start and end of a block's value inside its raw text: inside the quotes when they close, else the bare value."""
+    first = raw.splitlines()[0]
+    found = ENV_LINE.fullmatch(first)
+    start = found.start(2) + len(found.group(2)) - len(found.group(2).lstrip())
+    quote = raw[start : start + 1]
+    if quote in {'"', "'"}:
+        closing = closing_quote(raw[start + 1 :], quote)
+        if closing is not None:
+            return start + 1, start + 1 + closing
+    return start, start + len(re.split(r"\s+#", first[start:], maxsplit=1)[0].strip())
+
+
+def rewrite_default_hosts(text, keys, hosts):
+    """
+    In the values of the named keys, an item that is the default's own host becomes the clone's host. An item is a whole value
+    or one part of a list split at commas, semicolons or whitespace, before any `?` or `#`. It is the host alone or with a leading
+    `.` or `*.`, a scheme or `//`, a port and a path, query or fragment; the rest of the item stays. A host inside a longer name,
+    a path or a query is never an item, and a `${VAR}` reference stays as written. Returns the file and the sorted rewritten names.
+    """
+    sources = sorted({h.lower() for h in hosts.get("from") or [] if h}, key=len, reverse=True)
+    target = hosts.get("to")
+    if not target or not sources:
+        return text, []
+    item = re.compile(
+        r"((?:[A-Za-z][A-Za-z0-9+.-]*:)?//|\*?\.)?(" + "|".join(map(re.escape, sources)) + r")((?::[0-9]+)?(?:[/?#].*)?)",
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    def rewrite(value):
+        out, last = [], 0
+        for part in re.finditer(r"[^\s,;]+", value):
+            if "?" in value[: part.start()] or "#" in value[: part.start()]:
+                break
+            found = item.fullmatch(part.group(0))
+            if found and found.group(2).lower() != target.lower():
+                out.append(value[last : part.start()] + (found.group(1) or "") + target + found.group(3))
+                last = part.end()
+        return "".join(out) + value[last:]
+
+    out, rewritten = [], set()
+    for key, raw, _ in env_blocks(text):
+        if key is not None and key in keys:
+            start, end = value_span(raw)
+            changed = raw[:start] + rewrite(raw[start:end]) + raw[end:]
+            if changed != raw:
+                rewritten.add(key)
+                raw = changed
+        out.append(raw)
+    return "".join(out), sorted(rewritten)
+
+
 def phase_main(phase, raw):
     c = json.loads(raw)
     changes = []
@@ -251,8 +303,13 @@ def phase_main(phase, raw):
             else ""
         )
         # The seed copy holds the default's own file; the clone keeps it except what must be its own. Names only leave.
-        updated, copied, dropped = merge_environment(env, inputs["environment"], inputs.get("merge"))
+        merge = inputs.get("merge")
+        updated, copied, dropped = merge_environment(env, inputs["environment"], merge)
         environment_keys = {"copied": copied, "dropped": dropped}
+        # A copied value that points at the default's own site points at the clone's. Merge names without hosts come from
+        # a Gateway before them: the file stays as that release wrote it.
+        if merge is not None and "hosts" in merge:
+            updated, environment_keys["rewritten"] = rewrite_default_hosts(updated, set(copied), merge["hosts"])
         if env != updated:
             write(c["environment_file"], updated, 1000, 2760, "0640")
         # The existing Processes phase's group-write guarantee and foreign-owner cleanup.

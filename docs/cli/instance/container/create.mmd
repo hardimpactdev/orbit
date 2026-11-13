@@ -29,7 +29,7 @@ sequenceDiagram
   %%> Result:
   %%> - the Instance is reserved with its runtime record: container name, bridge address, the lowest free T3 port from 3800 and the default as clone source
   %%> - `.env` is rendered from the Project's env template; it, the placeholder model key and a repository read token go to the vault
-  %%> - the clone workspace reads one private JSON vault value with `.env`, the Process environment files and the names of the keys the clone owns, of the default's connection keys and of its credential keys; SSH stdin takes the whole value
+  %%> - the clone workspace reads one private JSON vault value with `.env`, the Process environment files and the names of the keys the clone owns, of the default's connection keys and of its credential keys, and the default's Route host with the clone's; SSH stdin takes the whole value
   %%> - a task is recorded with the full intent and `container.clone`
   %%> - a retained create retry records the Project's current development Processes in this admission transaction; changed definitions update their records, removed definitions remove theirs
   Note over GW: Commit, push copies<br/>queue start · answer 202
@@ -87,7 +87,8 @@ sequenceDiagram
     %%> What it does:
     %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
     %%> - writes `.env` for `orbit` with group `work`: the default's file from the seed, with the clone's own connection keys and `APP_URL`, without the default's connection and Reverb keys or a copy of its credentials; `APP_KEY` stays the default's, because the cloned data is encrypted with it
-    %%> - prints only the names of the copied and dropped keys; the result carries them as `environment`
+    %%> - a copied value that points at the default's Route host (its Route without a web root) points at the clone's Route host; the rest of the value stays
+    %%> - prints only the names of the copied, dropped and rewritten keys; the result carries them as `environment`
     %%> - before Process start, prepares and fetches Node as orbit in this same phase; an inherited private recipe is kept, an old store is converted once even without Processes, so a later Node consumer can install its pin
     %%> No setup steps:
     %%> - the default Instance installed the dependencies and migrated; a later lockfile change is installed in the workspace

@@ -58,7 +58,11 @@
         "environment_clone": {
             "own": [],
             "drop": [],
-            "guard": []
+            "guard": [],
+            "hosts": {
+                "from": [],
+                "to": null
+            }
         },
         "direct_provisioning": {
             "instance_id": 2,
@@ -385,7 +389,11 @@
         "environment_clone": {
             "own": [],
             "drop": [],
-            "guard": []
+            "guard": [],
+            "hosts": {
+                "from": [],
+                "to": null
+            }
         },
         "direct_provisioning": {
             "instance_id": 2,
