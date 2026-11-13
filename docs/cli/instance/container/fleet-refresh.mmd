@@ -36,7 +36,7 @@ sequenceDiagram
   SW->>F: Check the inner fleet<br/>Ansible · tags fleet_check
   %%> What it does:
   %%> - waits for the inner Incus, then compares the three nested containers with the fleet rules; it changes nothing
-  %%> - refuses `instance.container_fleet_drift` when a rule Orbit does not write differs (`raw.idmap`) or a nested container cannot be read; the result names each difference
+  %%> - refuses `instance.container_fleet_drift` when a rule Orbit does not write differs (`raw.idmap`) or a nested container cannot be read; the Operation's result `fleet_drift` names each difference
   %%> - an owned rule that differs passes: the refresh writes it
   %%> Why:
   %%> - nothing changed yet, so a refusal restores no seed

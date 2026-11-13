@@ -802,7 +802,13 @@ it('names the failed fleet step and its code, and keeps the code of the failed p
         ->and($payload['failed_step'])->toBe('Refresh the inner fleet')
         ->and($payload['started'])->toBeTrue();
     [$data, $payload] = $run('{"error_code":"instance.container_fleet_start_failed"}', ['Start the inner fleet', 'Restore the old seed']);
-    expect($data['error_code'])->toBe('instance.container_fleet_start_failed')->and($payload['failed_step'])->toBe('Start the inner fleet');
+    expect($data['error_code'])->toBe('instance.container_fleet_start_failed')->and($payload['failed_step'])->toBe('Start the inner fleet')
+        ->and($payload)->not->toHaveKey('fleet_drift');
+    // A refused check names each difference; nothing changed, so no restore ran.
+    [$data, $payload] = $run('{"error_code":"instance.container_fleet_drift","fleet_drift":["nested-gateway config raw.idmap"]}', ['Check the inner fleet']);
+    expect($data['error_code'])->toBe('instance.container_fleet_drift')
+        ->and($payload['failed_step'])->toBe('Check the inner fleet')
+        ->and($payload['fleet_drift'])->toBe(['nested-gateway config raw.idmap']);
 });
 
 it('admits one refresh per nested-fleet default to the release commit, and nothing without one', function (): void {

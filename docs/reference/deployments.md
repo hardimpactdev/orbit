@@ -625,7 +625,9 @@ The shared terminal subscriber reads Swamp's native run data and records the dep
 
 A checkout Instance with an unfinished [`instance:migrate`](/cli/instance/migrate) refuses deployment with `instance.lifecycle_busy`. A reserved container row keeps the checkout runtime until the move completes.
 
-A `default` Instance in a container deploys with the variant `container` in the same workflow. Ansible phases start the container, fetch the commit into the Node's mirror and push it in, check it out under the same refusals, take the seed snapshot and check the result. Right after the start, a nested-fleet container gets its nested Gateway's [Club key](/reference/development-containers#the-club-key-of-the-nested-gateway) into its `/run`; the Operation's result says what that start did in `nested_fleet_club_key`. Each Project command runs in the container as `orbit`, from its vault copy. [The default Instance](/reference/development-containers#the-default-instance) has the details.
+A `default` Instance in a container deploys with the variant `container` in the same workflow. Ansible phases start the container, fetch the commit into the Node's mirror and push it in, check it out under the same refusals, take the seed snapshot and check the result. Right after the start, a nested-fleet container gets its nested Gateway's [Club key](/reference/development-containers#the-club-key-of-the-nested-gateway) into its `/run`; the Operation's result says what that start did in `nested_fleet_club_key`.
+
+Before its first seed, a nested-fleet default compares its inner fleet with the [fleet rules](/reference/development-containers#fleet-rules). A refusal, `instance.container_fleet_drift`, names each difference in the result's `fleet_drift` and changes nothing. Each Project command runs in the container as `orbit`, from its vault copy. [The default Instance](/reference/development-containers#the-default-instance) has the details.
 
 When a development deploy runs, it leaves Process definitions, Route publication and PHP configuration with their existing native kinds. A pending default Route projection refuses deploy admission.
 
