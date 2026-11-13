@@ -117,6 +117,19 @@ class CloneEnvironmentMergeTest(unittest.TestCase):
         merged, _, _ = GUEST.merge_environment(base, render, {"own": ["DB_DATABASE"], "drop": ["DB_DATABASE"], "guard": ["DB_DATABASE"]})
         self.assertEqual(merged, render)
 
+    def test_an_escaped_backslash_before_the_closing_quote_hides_no_later_key(self):
+        base = 'WIN="C:\\\\"\nDB_PASSWORD=default-password-1\nDB_ALIAS=default-password-1\n'
+        merged, copied, dropped = GUEST.merge_environment(base, 'DB_PASSWORD="clone-password-9"\n', CLONE_MERGE)
+        self.assertEqual(self.parsed(merged), {"WIN": "C:\\", "DB_PASSWORD": "clone-password-9"})
+        self.assertNotIn("default-password-1", merged)
+        self.assertEqual((copied, dropped), (["WIN"], ["DB_ALIAS"]))
+
+    def test_an_unclosed_quote_takes_only_its_own_line(self):
+        base = 'BROKEN="never closed\nDB_PASSWORD=default-password-1\n'
+        merged, _, _ = GUEST.merge_environment(base, 'DB_PASSWORD="clone-password-9"\n', CLONE_MERGE)
+        self.assertNotIn("default-password-1", merged)
+        self.assertIn('DB_PASSWORD="clone-password-9"\n', merged)
+
     def test_a_multi_line_quoted_value_stays_whole(self):
         base = 'CERT="line one\nline two"\nB=2\n'
         merged, copied, _ = GUEST.merge_environment(base, "", NO_MERGE)

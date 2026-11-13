@@ -59,22 +59,37 @@ def env_blocks(text):
         raw = lines[i]
         rest = found.group(2).lstrip()
         quote = rest[:1] if rest[:1] in {'"', "'"} else ""
+        value = re.split(r"\s+#", rest, maxsplit=1)[0].strip()
         if quote:
-            body = rest[1:]
-            close = r'(?<!\\)"' if quote == '"' else "'"
-            while not re.search(close, body) and i + 1 < len(lines):
-                i += 1
-                raw += lines[i]
-                body += "\n" + lines[i].rstrip("\r\n")
-            closing = re.search(close, body)
-            value = body[: closing.start()] if closing else body
-            if quote == '"':
-                value = value.replace('\\"', '"').replace("\\\\", "\\")
-        else:
-            value = re.split(r"\s+#", rest, maxsplit=1)[0].strip()
+            body, end = rest[1:], i
+            closing = closing_quote(body, quote)
+            while closing is None and end + 1 < len(lines):
+                end += 1
+                body += "\n" + lines[end].rstrip("\r\n")
+                closing = closing_quote(body, quote)
+            # An unclosed quote takes only its own line, so no later key hides inside it.
+            if closing is not None:
+                raw = "".join(lines[i : end + 1])
+                i = end
+                value = body[:closing]
+                if quote == '"':
+                    value = re.sub(r'\\(["\\])', r"\1", value)
         blocks.append((found.group(1), raw, value))
         i += 1
     return blocks
+
+
+def closing_quote(body, quote):
+    """The index of the quote that closes a value, or None. In double quotes a backslash escapes the next character."""
+    escaped = False
+    for index, char in enumerate(body):
+        if quote == '"' and not escaped and char == "\\":
+            escaped = True
+            continue
+        if char == quote and not escaped:
+            return index
+        escaped = False
+    return None
 
 
 def merge_environment(base, rendered, merge):

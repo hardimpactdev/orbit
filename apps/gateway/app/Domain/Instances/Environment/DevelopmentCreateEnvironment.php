@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Environment;
 
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Instances\CloneValkeyKeyspace;
 use App\Domain\Instances\DevelopmentMail;
 use App\Domain\SourceControl\ApplicationDirectory;
+use App\Domain\WebSocket\WebSocketAppEnvProjection;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\Project;
+use App\Models\WebSocketAppTarget;
 
 /**
  * The `.env` of a development create, rendered by the Gateway. Admission stores the values; the run only writes the
@@ -59,8 +62,8 @@ final readonly class DevelopmentCreateEnvironment
     /**
      * The key names a clone's workspace phase needs to keep its default's `.env` from the seed copy
      * (docs/reference/development-containers.md#the-environment-of-a-clone): `own`, the keys Orbit renders for the clone itself and
-     * takes from the render; `drop`, the keys of every connection attached to the default, which the clone never copies; `guard`, the
-     * default's credential keys, whose values the clone never copies under another name. Names only: no value leaves the Gateway here.
+     * takes from the render; `drop`, the keys of every connection and Reverb app attached to the default, which the clone never
+     * copies; `guard`, the default's credential keys, whose values the clone never copies under another name. Names only: no value leaves the Gateway here.
      * A per-Project list of keys the clone never copies joins `drop`. An Instance with T3 that moved in has no `$source`: it keeps
      * its own file.
      *
@@ -71,11 +74,19 @@ final readonly class DevelopmentCreateEnvironment
         $owned = $this->owned($instance, $instance->project, $database, $valkey);
         $projection = app(DatabaseConnectionEnvProjection::class);
         $drop = $guard = [];
-        foreach ($source === null ? [] : DatabaseConnectionTarget::query()->where('instance_id', $source->id)->get() as $target) {
-            $drop = [...$drop, ...$projection->managedKeys($target->prefix)];
-            foreach (['DATABASE', 'USERNAME', 'PASSWORD'] as $suffix) {
+        foreach ($source === null ? [] : DatabaseConnectionTarget::query()->with('databaseConnection')->where('instance_id', $source->id)->get() as $target) {
+            // Laravel's `<PREFIX>_URL` overrides every other key of the connection.
+            $drop = [...$drop, ...$projection->managedKeys($target->prefix), $projection->key($target->prefix, 'URL')];
+            // A Redis database is a small index, never a credential: matching it would drop any key set to "0".
+            $suffixes = $target->databaseConnection->driver === DatabaseDriver::Redis ? ['USERNAME', 'PASSWORD'] : ['DATABASE', 'USERNAME', 'PASSWORD'];
+            foreach ($suffixes as $suffix) {
                 $guard[] = $projection->key($target->prefix, $suffix);
             }
+        }
+        if ($source !== null && WebSocketAppTarget::query()->where('instance_id', $source->id)->exists()) {
+            // The default's Reverb app stays the default's; the clone gets the template's keys.
+            $drop = [...$drop, ...WebSocketAppEnvProjection::Keys];
+            $guard[] = 'REVERB_APP_SECRET';
         }
         $names = static function (array $keys): array {
             $keys = array_values(array_unique($keys));

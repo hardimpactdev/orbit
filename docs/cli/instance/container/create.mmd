@@ -85,7 +85,7 @@ sequenceDiagram
     SW->>C: Prepare the workspace<br/>native clone-workspace
     %%> What it does:
     %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
-    %%> - writes `.env` for `orbit` with group `work`: the default's file from the seed, with the clone's own connection keys and `APP_URL`, without the default's connection keys or a copy of its credentials; `APP_KEY` stays the default's, because the cloned data is encrypted with it
+    %%> - writes `.env` for `orbit` with group `work`: the default's file from the seed, with the clone's own connection keys and `APP_URL`, without the default's connection and Reverb keys or a copy of its credentials; `APP_KEY` stays the default's, because the cloned data is encrypted with it
     %%> - prints only the names of the copied and dropped keys; the result carries them as `environment`
     %%> - before Process start, prepares and fetches Node as orbit in this same phase; an inherited private recipe is kept, an old store is converted once even without Processes, so a later Node consumer can install its pin
     %%> No setup steps:

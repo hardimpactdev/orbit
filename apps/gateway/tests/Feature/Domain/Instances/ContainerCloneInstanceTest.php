@@ -28,6 +28,7 @@ use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
+use App\Domain\WebSocket\WebSocketAppEnvProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\NativeStepFailure;
@@ -42,6 +43,8 @@ use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\ProjectDevelopmentDeployStep;
 use App\Models\Route;
+use App\Models\WebSocketApp;
+use App\Models\WebSocketAppTarget;
 use App\Support\ValidatedData;
 use Dotenv\Dotenv;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -419,13 +422,26 @@ it('sends the clone the names that merge its render into the default\'s .env of 
     };
 
     expect($workspace['merge'])->toBe($operation->input['environment_clone'])
-        ->and($workspace['merge']['drop'])->toBe($sorted([...$managed('DB'), ...$managed('REDIS')]))
-        ->and($workspace['merge']['guard'])->toBe(['DB_DATABASE', 'DB_PASSWORD', 'DB_USERNAME', 'REDIS_DATABASE', 'REDIS_PASSWORD', 'REDIS_USERNAME'])
+        ->and($workspace['merge']['drop'])->toBe($sorted([...$managed('DB'), 'DB_URL', ...$managed('REDIS'), 'REDIS_URL']))
+        // A Redis database is an index such as 0, never a credential.
+        ->and($workspace['merge']['guard'])->toBe(['DB_DATABASE', 'DB_PASSWORD', 'DB_USERNAME', 'REDIS_PASSWORD', 'REDIS_USERNAME'])
         ->and($workspace['merge']['own'])->toContain('DB_DATABASE', 'DB_PASSWORD', 'DB_USERNAME', 'DB_HOST',
             'REDIS_USERNAME', 'REDIS_PASSWORD', 'REDIS_PREFIX', 'HORIZON_PREFIX')
         ->and($workspace['merge']['own'])->not->toContain('APP_KEY', 'APP_NAME')
         ->and(json_encode($operation->input['environment_clone']))->not->toContain((string) $defaultDatabase->password)
         ->not->toContain((string) $shared->password)->not->toContain((string) $defaultDatabase->database);
+});
+
+it('never copies the default\'s Reverb app keys or a copy of its secret into a clone', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    $app = WebSocketApp::query()->create(['name' => 'tool', 'app_id' => '1001', 'key' => 'reverb-key', 'secret' => 'reverb-secret-value', 'credential_generation' => 1]);
+    WebSocketAppTarget::query()->create(['websocket_app_id' => $app->id, 'instance_id' => $default->id]);
+    $operation = containerCreate($default->project, $node, 'feature');
+
+    expect($operation->input['environment_clone']['drop'])->toContain(...WebSocketAppEnvProjection::Keys)
+        ->and($operation->input['environment_clone']['guard'])->toContain('REVERB_APP_SECRET')
+        ->and(json_encode($operation->input))->not->toContain('reverb-secret-value');
 });
 
 it('sends no merge names for a container default, which has no seed copy to keep', function (): void {

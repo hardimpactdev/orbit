@@ -671,9 +671,9 @@ A clone starts with its default's settings. The seed snapshot holds the default'
 
 The clone's own keys are the keys of its own database under `DB` and of its own [Valkey user](#a-clones-valkey-user), with `<PREFIX>_PREFIX` and `HORIZON_PREFIX`. `APP_URL` names the clone's Route, and the mail keys Orbit renders are its own too. A connection key that the clone's connection does not use goes.
 
-The default's connection keys are `<PREFIX>_CONNECTION`, `_HOST`, `_PORT`, `_DATABASE`, `_USERNAME` and `_PASSWORD` of every connection attached to the default. The clone gets its own, or none.
+The default's connection keys are `<PREFIX>_CONNECTION`, `_HOST`, `_PORT`, `_DATABASE`, `_USERNAME`, `_PASSWORD` and `_URL` of every connection attached to the default. The clone gets its own, or none. When the default has a [Reverb app](/reference/websocket-apps), its keys (`BROADCAST_CONNECTION` and `REVERB_*`) are the default's too; the clone gets the render's.
 
-A copy of a credential is a key whose value equals the default's database name, user name or password under an attached prefix. A key whose value contains such a password, for example `DATABASE_URL`, is a copy too. The check runs inside the clone, against the copied file.
+A copy of a credential is a key whose value equals the default's database name, user name or password under an attached prefix, or its Reverb secret. A Redis database number is no credential. A key whose value contains such a password, for example `DATABASE_URL`, is a copy too. The check runs inside the clone, against the copied file.
 
 Keys of the render that the default's file lacks are added. `APP_KEY` comes from the default's file, because the cloned database holds data encrypted with it. When the default has no `.env` in its seed, the render is the file, as for any new Instance.
 
