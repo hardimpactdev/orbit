@@ -158,6 +158,8 @@ The native Node workflow composes the [Orbit CLI publication](#orbit-cli) step o
 
 The internal Gateway console command `orbit:node-provision` retains the synchronous bootstrap for the first Gateway and task-VM setup. On failure, `--diagnostics` includes a redacted command-output tail, or the underlying exception messages when no command output exists: at most 40 lines and 4,000 characters. The topology harness uses it to report the prerequisite error. Role firewall intent comes from the shared Node firewall rule catalog. The agent's `firewall.rules` command checks ownership, preserves recovery SSH before enabling UFW, applies desired rules, and removes exact old rules under one firewall lock. Admission calls it over the pinned bootstrap connection; later role work uses the WireGuard connection.
 
+A [container destroy](/reference/development-containers#destroy) removes only its own UFW rules.
+
 `wireguard.project-hub` applies peer changes without restarting an active interface. The agent rejects WireGuard shell hooks before writing files. The Gateway retains peer selection, configuration rendering, and the projection lock that protects that selection.
 
 Router LAN reconciliation expands and prunes HTTPS and both DNS transport families together, using the same proposed member eligibility. A failure before membership or Cluster state commits leaves the previous state authoritative. If pruning fails after the commit, the committed state remains authoritative and the command reports cleanup failure; stale rules may remain. Restoring a preceding firewall snapshot does not roll back database state.

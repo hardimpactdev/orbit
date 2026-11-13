@@ -239,16 +239,14 @@ class RemoteAccessTest(unittest.TestCase):
                 (folder / 'state.json').write_text(json.dumps(state))
                 shared = json.dumps({'host': '10.44.0.11', 'port': 8094, 'docker': False})
                 (folder / 'bridge/endpoints/remote.json').write_text(shared)
-                (folder / 'ufw').write_text('[ 1] 8094/tcp ALLOW FWD # ' + rule['comment'] +
-                                           '\n[ 2] 8096/tcp ALLOW FWD # orbit:instance-12-node-service-10.44.0.11-8096\n')
+                (folder / 'ufw.json').write_text(json.dumps([
+                    {'spec': 'route allow in on orbitinst0 from 10.253.0.2 to 10.44.0.11 port 8094 proto tcp', 'comment': rule['comment']},
+                    {'spec': 'route allow in on orbitinst0 from 10.253.0.3 to 10.44.0.11 port 8096 proto tcp',
+                     'comment': 'orbit:instance-12-node-service-10.44.0.11-8096'}]))
                 (folder / 'bin/incus').write_text('#!/bin/sh\nexec ' + repr(deno) + ' run -A ' +
                                                 repr(str(ROOT / 'tests/fixtures/instance-container-incus.ts')) + ' "$@"\n')
-                (folder / 'bin/ufw').write_text(
-                    '#!' + sys.executable + '\nimport os,re,sys\nfrom pathlib import Path\n'
-                    'p=Path(os.environ["HOST_FIXTURE"])/"ufw"\n'
-                    'if sys.argv[1:]==["status","numbered"]: print(p.read_text())\n'
-                    'else:\n n=int(sys.argv[-1]);p.write_text("".join(line for line in p.read_text().splitlines(True)'
-                    ' if int(re.search(r"\\[\\s*(\\d+)\\]",line)[1])!=n))\n')
+                (folder / 'bin/ufw').write_text('#!/bin/sh\nexec ' + repr(deno) + ' run -A ' +
+                                              repr(str(ROOT / 'tests/fixtures/instance-container-ufw.ts')) + ' "$@"\n')
                 for command in ('incus', 'ufw'):
                     (folder / 'bin' / command).chmod(0o755)
                 if kind == 'destroy':
@@ -286,8 +284,8 @@ class RemoteAccessTest(unittest.TestCase):
                 self.assertEqual((folder / 'bridge/endpoints/remote.json').read_text(), shared)
                 self.assertFalse((folder / 'mirror.git').exists())
                 if kind == 'destroy':
-                    self.assertNotIn('instance-11-', (folder / 'ufw').read_text())
-                    self.assertIn('instance-12-', (folder / 'ufw').read_text())
+                    self.assertEqual([r['comment'] for r in json.loads((folder / 'ufw.json').read_text())],
+                                     ['orbit:instance-12-node-service-10.44.0.11-8096'])
                 else:
                     removed = json.loads((folder / 'removed-forward.json').read_text())
                     self.assertEqual({key: removed[key] for key in ('from_ip', 'to_ip', 'to_port', 'proto')},

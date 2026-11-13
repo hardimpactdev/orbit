@@ -56,15 +56,18 @@
               when: container.acl in (destroy_acls.stdout | from_json | map(attribute='name') | list)
               ansible.builtin.command: { argv: [incus, network, acl, delete, "{{ container.acl }}", --project, default], stdin: "" }
               changed_when: true
-            - name: Read the numbered firewall rules
-              ansible.builtin.command: { argv: [ufw, status, numbered], stdin: "" }
+            - name: Read the added firewall rules
+              ansible.builtin.command: { argv: [ufw, show, added], stdin: "" }
               register: destroy_firewall
               changed_when: false
-            - name: Delete only this Instance's rules in reverse order
-              ansible.builtin.command: { argv: [ufw, --force, delete, "{{ item }}"], stdin: "" }
-              loop: >-
-                {{ destroy_firewall.stdout | regex_findall('(?m)^\[\s*(\d+)\].*# ' ~ (container.firewall_prefix | regex_escape) ~ '[^\n]*$')
-                   | map('int') | sort(reverse=true) | list }}
+            # By the rule itself, not its number: another removal on the Node deletes rules at the same time and shifts the numbers.
+            - name: Delete only this Instance's rules
+              ansible.builtin.command:
+                argv: "{{ ['ufw', '--force'] + ((['route', 'delete'] + rule[2:]) if rule[1] == 'route' else (['delete'] + rule[1:])) }}"
+                stdin: ""
+              vars:
+                rule: "{{ (item | regex_replace(\" comment '.*$\", '')).split() }}"
+              loop: "{{ destroy_firewall.stdout_lines | select('search', \" comment '\" ~ (container.firewall_prefix | regex_escape)) | list }}"
               changed_when: true
             - name: Remove this Instance's pending mail activation state
               ansible.builtin.file: {path: "/var/lib/orbit/instance-mail/{{ container.name }}", state: absent}

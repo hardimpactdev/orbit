@@ -823,10 +823,10 @@
     ]
   },
   "swamp/tests/ansible_instance_container_destroy_test.ts": {
-    "source_sha256": "df37b37da0584c952d1458b161202086c3638c0a967f6e570f3f5e7dc4efd372",
+    "source_sha256": "435d8ed2e37b0340c4aa5debf91157aa6e2de84aa478b3c082b26170d7aeb69c",
     "cases": [
       "a normal destroy deletes the container over one pipelined SSH master with the shipped config",
-      "migrated container cleanup keeps retained Git while removing its container, volume, ACL, rules and mirror; a retry changes nothing"
+      "migrated container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers) and mirror; a retry changes nothing"
     ]
   },
   "swamp/tests/ansible_instance_egress_test.py": {
