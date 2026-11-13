@@ -326,6 +326,12 @@ Public addresses and names with any public answer keep their existing handling a
 
 Warnings are a generic `warnings` list of `{code, message}` records in the Operation result. Human output prints each warning; `--json` retains the list.
 
+The copy carries ignored files, so also caches that a Laravel app built at the old path. Before any Process starts, Orbit runs these commands as `orbit` in the application directory, when the container has PHP and the directory has `artisan`: `config:clear`, `route:clear`, `event:clear`, `view:clear` and `clear-compiled`.
+
+Orbit then reads the driver of the default cache store. Only for the `file` driver does it run `cache:clear`. That store lives in the workspace, and only this Instance used it. Statamic keeps its stache there, keyed by file path; a stale stache can fail the first request. `cache:clear` also deletes real data that the app keeps in that store, such as rate-limiter counts or cached tokens. The app builds them again. A store of another driver, such as Redis or a database, is a service outside the workspace, often shared, and Orbit leaves it alone.
+
+A clear that fails records `instance.migrate_cache_clear_failed` in `warnings`, with the commands that failed. The move goes on. Run `php artisan optimize:clear` in the Instance to finish it.
+
 ## Errors
 
 | Code | Meaning |

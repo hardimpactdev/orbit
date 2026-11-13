@@ -1031,7 +1031,7 @@ Development mail repair uses the Node’s existing Python prerequisite through f
 
 Container migration reuses this [development mail phase](/reference/development-containers#development-mail) after copying the workspace. It requires no Node converge.
 
-Instance migration permits untracked files during retirement and counts copied untracked files that Git does not ignore; ignored files are still copied. Local branches, stashes and tracked edits move with their Git state; owner dependencies and submodule changes still block. [Migration](/cli/instance/migrate) explains the seed and checkout consequences.
+Instance migration permits untracked files during retirement and counts copied untracked files that Git does not ignore; ignored files are still copied. A Laravel app's caches built at the old path are then cleared. Local branches, stashes and tracked edits move with their Git state; owner dependencies and submodule changes still block. [Migration](/cli/instance/migrate) explains the seed and checkout consequences.
 
 Checkout destroy admission has one [read-only SSH exception](/reference/remote-programs#remote-programs) for live Git dependencies, before Schedule withdrawal. It uses the existing Node account and identity with a short timeout. Containers and unmaterialized sources skip that read. The workflow and its source-removal command do not recheck dependencies, including on a retry. It never traverses checkout contents. A failed read of another checkout falls back to bounded, non-blocking Git pointer reads; unknown unrelated checkouts produce named Operation warnings.
 

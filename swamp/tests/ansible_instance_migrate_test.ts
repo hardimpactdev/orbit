@@ -235,7 +235,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     workspace: "/srv/workspace",
     environment_file: "/srv/workspace/.env",
     units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=orbit\n" }],
-    php: null,
+    php: null as string | null,
     processes: [] as { id: number; name: string; content: string; environment: string | null; desired: string }[],
     clone,
   };
@@ -1016,6 +1016,47 @@ Deno.test({
     }
   },
 });
+
+for (const failing of [false, true]) {
+  Deno.test({
+    name: failing
+      ? "a failed clear of the old path's caches warns and the move goes on; a store of another driver than file stays"
+      : "a moved Laravel checkout clears its config, route, event, compiled and view caches and its file cache store as orbit",
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        // PHP in the container: it records each call, names the cache store's driver and can fail `config:clear`.
+        // Beside the checkout: the Incus boundary maps paths under /tmp into the container.
+        const calls = `${f.checkout}.php-calls`;
+        const php = `${f.checkout}.php`;
+        Deno.writeTextFileSync(php, `#!/bin/sh
+if [ "$1" = -r ]; then echo "$(pwd) -r" >> '${calls}'; echo ${failing ? "redis" : "file"}; exit 0; fi
+echo "$(pwd) $*" >> '${calls}'
+[ "$2" = config:clear ] && exit ${failing ? 1 : 0}
+exit 0
+`);
+        Deno.chmodSync(php, 0o755);
+        f.container.php = php;
+        Deno.writeTextFileSync(`${f.checkout}/artisan`, "<?php\n");
+        f.write();
+        f.build();
+        const lines = Deno.readTextFileSync(calls).trim().split("\n");
+        assert(lines.every((line) => line.startsWith(`${f.rootfs}/srv/workspace `)), lines.join("\n"));
+        const tasks = ["config:clear", "route:clear", "event:clear", "view:clear", "clear-compiled"].map((task) => `artisan ${task} --no-interaction`);
+        assertEquals(lines.map((line) => line.slice(line.indexOf(" ") + 1)),
+          [...tasks, "-r", ...(failing ? [] : ["artisan cache:clear --no-interaction"])]);
+        const receipt = `${f.folder}/run/cache-clear.json`;
+        if (failing) {
+          assertEquals(JSON.parse(Deno.readTextFileSync(receipt)), {warnings: [{code: "instance.migrate_cache_clear_failed",
+            message: "Laravel caches from the old path were not all cleared: config:clear. Run php artisan optimize:clear in the Instance."}]});
+        } else assert(!exists(receipt));
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
+}
 
 Deno.test({
   name: "a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was",

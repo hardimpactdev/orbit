@@ -135,7 +135,7 @@ export function migrateResult(
     return { ready: failed === undefined, stdout: JSON.stringify(result) };
 }
 
-/** Read the public phase failure and separate retention, mail and copied-file receipts. */
+/** Read the public phase failure and separate retention, mail, copied-file and warning receipts. */
 export async function writtenFailure(folder: string): Promise<WrittenFailure | null> {
     let failure: WrittenFailure = {};
     let retained: WrittenFailure = {};
@@ -172,6 +172,13 @@ export async function writtenFailure(folder: string): Promise<WrittenFailure | n
             JSON.parse(await Deno.readTextFile(folder + "/environment-warnings.json")));
         if (parsed.success) environment = parsed.data;
     } catch { /* No environment warning receipt was written before this failure. */ }
-    const result = { ...failure, ...retained, ...mail, ...files, ...schedules, ...environment };
+    let caches: z.infer<typeof EnvironmentWarning>[] = [];
+    try {
+        const parsed = z.object({warnings: z.array(EnvironmentWarning)}).safeParse(
+            JSON.parse(await Deno.readTextFile(folder + "/cache-clear.json")));
+        if (parsed.success) caches = parsed.data.warnings;
+    } catch { /* The files phase cleared the old path's caches, or did not reach them. */ }
+    const warnings = [...(environment.warnings ?? []), ...caches];
+    const result = { ...failure, ...retained, ...mail, ...files, ...schedules, ...(warnings.length ? { warnings } : {}) };
     return Object.keys(result).length > 0 ? result : null;
 }

@@ -488,6 +488,56 @@
           'sh', migrate.checkout, container.workspace, container.environment_file] }}
   changed_when: true
 
+# The copy carried the checkout's ignored files, so also the Laravel caches built at the old path: the config, route, event and
+# compiled caches, the compiled views, and a cache store of the `file` driver, which lives in the workspace and which only this
+# Instance used (Statamic keeps its stache there, keyed by file path). They go before any Process starts and before the seed, so no
+# first request and no clone reads them. A store of another driver is a service outside the workspace, often shared, and stays.
+# A failed clear does not fail the move: the result warns, and the Instance rebuilds the caches as it runs.
+- name: Clear the Laravel caches built at the old path
+  when: phase == 'files' and container.php | default(none) is not none
+  block:
+    - name: Run the clear commands as orbit
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['sh', '-c', migrate_cache_clear, 'sh', container.php, container.environment_file | dirname] }}"
+        expand_argument_vars: false
+      vars:
+        # Prints the commands that failed; prints `skipped` without `artisan`. Config goes first, so the store's driver is read fresh.
+        # Each command boots the app and gets 60 s, so a service that does not answer at boot costs a warning, not the move.
+        migrate_cache_clear: |-
+          cd -- "$2" || exit 1
+          [ -f artisan ] || { echo skipped; exit 0; }
+          failed=
+          for task in config:clear route:clear event:clear view:clear clear-compiled; do
+            timeout 60 "$1" artisan "$task" --no-interaction >/dev/null 2>&1 || failed="$failed $task"
+          done
+          driver=$(timeout 60 "$1" -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php";
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            echo "\n", config("cache.stores." . config("cache.default") . ".driver");' 2>/dev/null) || failed="$failed cache:clear"
+          driver=$(printf '%s\n' "$driver" | tail -n 1)
+          if [ "$driver" = file ]; then
+            timeout 60 "$1" artisan cache:clear --no-interaction >/dev/null 2>&1 || failed="$failed cache:clear"
+          fi
+          echo "$failed"
+      register: migrate_cache_clear_run
+      changed_when: migrate_cache_clear_run.rc == 0 and migrate_cache_clear_run.stdout | trim != 'skipped'
+      failed_when: false
+    - name: Record a failed clear for the terminal result
+      when: migrate_cache_clear_run.rc != 0 or migrate_cache_clear_run.stdout | trim not in ['', 'skipped']
+      ansible.builtin.copy:
+        content: >-
+          {{ {'warnings': [{'code': 'instance.migrate_cache_clear_failed',
+              'message': 'Laravel caches from the old path were not all cleared: '
+                ~ ((migrate_cache_clear_run.stdout | trim) if migrate_cache_clear_run.rc == 0 else 'the clear commands did not run')
+                ~ '. Run php artisan optimize:clear in the Instance.'}]} | to_json }}
+        dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/cache-clear.json"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
 - name: Read the workspace's commit
   when: phase == 'files'
   block:
