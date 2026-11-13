@@ -341,48 +341,8 @@ Deno.test("a failed container phase keeps a Node service target refusal and the 
     assertEquals(containerFailure(target), target);
     assertEquals(containerFailure({ error_code: "instance.nested_fleet_image_unavailable" }),
         { error_code: "instance.nested_fleet_image_unavailable" });
-    // A nested-fleet start that refused or failed its Club key keeps that code.
-    for (const code of ["instance.nested_club_key_unsafe_transfer", "instance.nested_club_key_not_tmpfs", "instance.nested_club_key_delivery_failed"]) {
-        assertEquals(containerFailure({ error_code: code }), { error_code: code });
-    }
     // Every other refusal keeps the phase's own code, as on main: a normal create's Operation does not change.
     for (const raw of [{ error_code: "instance.container_network_unsafe" }, { error_code: "instance.default_seed_moved" }, {}, null, "x"]) {
         assertEquals(containerFailure(raw), null);
     }
-});
-
-Deno.test("a nested-fleet create carries what its start did with the Club key, from the run, and a normal create never names it", () => {
-    const club = {directory: "/run/orbit-club"};
-    const container: NonNullable<Parameters<typeof createResult>[1]["container"]> = {
-        launch: "succeeded",
-        workspace: { status: "succeeded", outputs: { stdout: `"msg": "orbit-commit=${commit}"` } },
-        deploy: [], processes: "succeeded", seed: "succeeded",
-    };
-    const base = { ...phases, checkout: { status: "skipped" }, setup: "skipped", processes: [], container };
-    const create = (clubKey: unknown, file: unknown, step?: Parameters<typeof createResult>[1]["club_key_file"]) =>
-        JSON.parse(createResult({ ...intent, setup_steps: [], container: { clone: null, club_key: clubKey } },
-            { ...base, club_key_file: file, container: { ...container, club_key: step as never } }).stdout);
-    assertEquals(create(club, { commit, club_key: "changed" }).club_key, "changed");
-    assertEquals(create(club, { commit, club_key: "unchanged" }).club_key, "unchanged");
-    assertEquals(create(club, { commit, club_key: "changed_serve_pending" }).club_key, "changed_serve_pending");
-    // A start that wrote nothing leaves no word; the Gateway reports `missing`.
-    assertEquals(create(club, { commit }).club_key, undefined);
-    assertEquals(create(club, null).club_key, undefined);
-    assertEquals(create(club, { commit, club_key: "delivered" }).club_key, undefined);
-    // A normal default never names it, whatever a file says.
-    assertEquals(create(undefined, { commit, club_key: "changed" }).club_key, undefined);
-
-    // A clone takes the word from its own club-key step.
-    const server = JSON.stringify({ id: "s" });
-    const clone = (step: unknown) => JSON.parse(createResult({ ...intent, setup_steps: [], container: { clone: { t3: {} }, club_key: club } },
-        { ...base, container: { ...container, deploy: [], seed: "skipped", agent: "succeeded", t3: "succeeded", register: "succeeded", server,
-            club_key: step as never } }).stdout);
-    assertEquals(clone({ status: "succeeded", outputs: { stdout: '{"phase": "club-key", "changed": true, "club_key": "changed", "completed_at": "x"}' } }).club_key, "changed");
-    assertEquals(clone({ status: "succeeded", outputs: { stdout: '{"phase": "club-key", "changed": true, "club_key": "changed_serve_pending"}' } }).club_key, "changed_serve_pending");
-    assertEquals(clone({ status: "succeeded", outputs: { stdout: '{"phase": "club-key", "changed": false, "club_key": "unchanged"}' } }).club_key, "unchanged");
-    // Only the script's own word counts, never the change flag.
-    assertEquals(clone({ status: "succeeded", outputs: { stdout: '{"phase": "club-key", "changed": true}' } }).club_key, undefined);
-    assertEquals(clone(null).club_key, undefined);
-    assertEquals(clone({ status: "failed", outputs: { stdout: '{"phase": "club-key", "club_key": "changed"}' } }).club_key, undefined);
-    assertEquals(clone({ status: "succeeded", outputs: { stdout: "not json" } }).club_key, undefined);
 });

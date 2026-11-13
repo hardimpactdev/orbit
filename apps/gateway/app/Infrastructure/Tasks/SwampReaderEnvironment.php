@@ -10,7 +10,7 @@ use Dotenv\Dotenv;
 use RuntimeException;
 use Throwable;
 
-/** Writes hold the Gateway release lock. A read needs no lock, because a write publishes by one atomic rename (NestedFleetClubKey reads it at each nested run start). */
+/** Accessed only while the Gateway release lock is held. */
 final readonly class SwampReaderEnvironment
 {
     private const array Keys = ['ORBIT_SWAMP_READ_TOKEN', 'ORBIT_SWAMP_READ_TOKEN_NAME', 'ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT'];

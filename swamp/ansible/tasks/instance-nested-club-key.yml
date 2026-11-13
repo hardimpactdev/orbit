@@ -4,8 +4,7 @@
 # ORBIT_CLUB_KEY and reaches the container only as stdin: in the module arguments of a pipelined task, which Ansible sends over the
 # SSH session and keeps in memory on the Node. Without pipelining Ansible writes the module with its arguments to ~/.ansible/tmp on
 # the Node, so the step refuses before it reads the value. The key lands in the container's /run, a tmpfs that no snapshot, seed,
-# clone copy or export holds. Without a vault copy (`club_key.available` false) the container starts without the key and the result
-# file names no `club_key`, so the Operation says `missing`.
+# clone copy or export holds. Without a vault copy (`club_key.available` false) the container starts without the key; the Operation says so.
 - name: Deliver the Club key without a file on the Node
   vars:
     ansible_pipelining: true
@@ -51,12 +50,6 @@
     - name: Require the Club key in /run
       when: club.available | default(false)
       ansible.builtin.assert:
-        that: club_write.rc == 0 and (club_write.stdout | trim) in ['changed', 'changed_serve_pending', 'unchanged']
+        that: club_write.rc == 0 and (club_write.stdout | trim) in ['changed', 'unchanged']
         fail_msg: "{{ 'instance.nested_club_key_not_tmpfs' if club_write.rc == 3 else 'instance.nested_club_key_delivery_failed' }}"
         quiet: true
-
-    # The script's own word goes into the run's result file, so the Operation reports what this start did, never what admission read.
-    - name: Record what the start did with the Club key
-      when: club.available | default(false)
-      ansible.builtin.set_fact:
-        club_key_written: "{{ club_write.stdout | trim }}"

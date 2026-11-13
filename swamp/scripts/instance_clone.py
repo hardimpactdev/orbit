@@ -64,8 +64,6 @@ def main():
     name = container["name"]
     project = ["incus", "--project", container["project"]]
     changes = []
-    # The Club key script's own word, which the club-key phase prints for the Operation's result.
-    club_outcome = None
     workspace_deadline = time.monotonic() + 115 if phase == "workspace" else None
     secret = sys.stdin.read()
 
@@ -511,11 +509,10 @@ def main():
         written = run(project + ["exec", name, "--", "sh", "-c", json.loads(sys.argv[6])["club_key"], "sh", club["directory"], club["file"],
                                  str(club["owner"]), str(club["group"]), club["tmpfiles"], club["gateway"], club["serve_unit"]], secret, check=False)
         outcome = written.stdout.strip()
-        if written.returncode or outcome not in {"changed", "changed_serve_pending", "unchanged"}:
+        if written.returncode or outcome not in {"changed", "unchanged"}:
             raise RuntimeError("instance.nested_club_key_not_tmpfs" if written.returncode == 3 else "instance.nested_club_key_delivery_failed")
-        if outcome != "unchanged":
+        if outcome == "changed":
             changes.append("club-key")
-        club_outcome = outcome
     elif phase == "workspace":
         # Admission frames the private values and the clone's key names in one vault copy for native SSH stdin.
         workspace = json.loads(secret)
@@ -602,7 +599,6 @@ def main():
             {
                 "phase": phase,
                 "changed": bool(changes),
-                **({"club_key": club_outcome} if club_outcome is not None else {}),
                 "completed_at": datetime.datetime.now(datetime.UTC).isoformat(),
             }
         )

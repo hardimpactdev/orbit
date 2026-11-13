@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Domain\Instances\NestedFleetClubKey;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\Tasks\SwampReaderEnvironment;
 use Illuminate\Console\Command;
@@ -18,6 +17,8 @@ use Throwable;
  */
 final class InstallNestedFleetClubKeyCommand extends Command
 {
+    public const string Setting = 'ORBIT_NESTED_FLEET_CLUB_API_KEY';
+
     private const int InputLimit = 4096;
 
     #[\Override]
@@ -40,10 +41,9 @@ final class InstallNestedFleetClubKeyCommand extends Command
             if (strlen($value) > self::InputLimit || preg_match('/\A[\x21\x23-\x26\x28-\x7e]{16,}\z/D', $value) !== 1) {
                 throw new RuntimeException;
             }
-            $backup = $lock->run(fn (): string => $environment->replace($environment->contents(), [NestedFleetClubKey::Setting => $value]));
-            $this->line(json_encode(['setting' => NestedFleetClubKey::Setting, 'backup' => $backup], JSON_THROW_ON_ERROR));
-            // Each run start reads the setting from the env file itself, so no configuration cache or worker reload is needed.
-            $this->info('The next nested-fleet start reads the key from the env file and delivers it. No configuration reload is needed.');
+            $backup = $lock->run(fn (): string => $environment->replace($environment->contents(), [self::Setting => $value]));
+            $this->line(json_encode(['setting' => self::Setting, 'backup' => $backup], JSON_THROW_ON_ERROR));
+            $this->info('Apply Gateway configuration with gateway:release:configure. The next nested-fleet start delivers the key.');
 
             return self::SUCCESS;
         } catch (Throwable) {

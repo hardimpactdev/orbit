@@ -6,7 +6,6 @@ namespace App\Domain\Instances\Deployment;
 
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceRuntimePowerState;
-use App\Domain\Instances\NestedFleetClubKey;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
@@ -85,11 +84,6 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 'commit' => $text($payload['commit'] ?? null, 64), 'failed_step' => $text($payload['failed_step'] ?? null, 255)];
             if (isset($payload['warnings'])) {
                 $facts['warnings'] = ValidatedData::integer($payload['warnings']);
-            }
-            $club = ValidatedData::object($locked->input['deployment'])['container'] ?? null;
-            if ($status !== 'running' && is_array($club) && isset($club['club_key'])) {
-                // What this nested-fleet start did with its Club key, from the run's own word.
-                $facts['nested_fleet_club_key'] = NestedFleetClubKey::outcome($payload['club_key'] ?? null, $data['error_code'] ?? null);
             }
             $projected = $this->direct->project($locked, $data, $status === 'running' ? [] : $facts);
             if ($terminal || $status === 'running') {

@@ -12,34 +12,8 @@ export const Step = z.object({ status: z.string(), outputs: Public.optional() })
 export function containerFailure(raw: unknown): Record<string, unknown> | null {
     const target = z.object({ error_code: z.string().regex(/^[a-z]+\.[a-z0-9_]+$/), node_service_target: Public }).safeParse(raw);
     if (target.success) return target.data;
-    const nested = z.object({ error_code: z.enum(["instance.nested_fleet_image_unavailable", ...CLUB_KEY_REFUSALS]) }).safeParse(raw);
+    const nested = z.object({ error_code: z.literal("instance.nested_fleet_image_unavailable") }).safeParse(raw);
     return nested.success ? nested.data : null;
-}
-
-/** The public codes of a nested-fleet start that refused to deliver its Club key, or failed to (docs/reference/development-containers.md#the-club-key-of-the-nested-gateway). */
-const CLUB_KEY_REFUSALS = ["instance.nested_club_key_unsafe_transfer", "instance.nested_club_key_not_tmpfs", "instance.nested_club_key_delivery_failed"] as const;
-
-/** The delivery script's words: a new key with serve restarted, a new key with serve left to start later, or the same key. */
-const CLUB_KEY_WORDS = ["changed", "changed_serve_pending", "unchanged"] as const;
-type ClubKeyWord = typeof CLUB_KEY_WORDS[number];
-
-/**
- * What a nested-fleet start of this run did with its Club key, in the delivery script's own word, or null when nothing was written.
- * A default's container phase leaves the word in the run's result file; a clone's `club-key` step prints `{"phase":"club-key",
- * "club_key":…}`. The Gateway maps the word to the Operation's `nested_fleet_club_key`.
- */
-function clubKeyWord(clone: boolean, step: Phase, file: unknown): ClubKeyWord | null {
-    if (!clone) {
-        const word = z.object({ club_key: z.enum(CLUB_KEY_WORDS) }).safeParse(file);
-        return word.success ? word.data.club_key : null;
-    }
-    if (step?.status !== "succeeded") return null;
-    try {
-        const printed = z.object({ phase: z.literal("club-key"), club_key: z.enum(CLUB_KEY_WORDS) }).safeParse(JSON.parse(String(step.outputs?.stdout ?? "")));
-        return printed.success ? printed.data.club_key : null;
-    } catch {
-        return null;
-    }
 }
 type Phase = z.infer<typeof Step> | null | undefined;
 type Phases = {
@@ -55,8 +29,6 @@ type Phases = {
     route_observation?: Record<string, unknown>;
     /** A container default's phases, which run instead of the checkout, the database and the setup. */
     container?: Container | null;
-    /** A nested-fleet default's result file from the run folder, which names what its start did with the Club key. */
-    club_key_file?: unknown;
 };
 type Container = {
     mail?: Phase;
@@ -71,8 +43,6 @@ type Container = {
     register?: string;
     /** The registration step's receipt: the T3 server and the vault keys of its sessions. */
     server?: string | null;
-    /** A nested-fleet clone's `club-key` step. */
-    club_key?: Phase;
 };
 
 /** The checkout phase prints the commit it left checked out as one `orbit-commit=<sha>` line. */
@@ -173,8 +143,6 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
         ? mailResult(container?.mail) ?? {status: "failed", reason: "instance.mail_update_failed", ports: [1025, 2525]}
         : null;
     const environment = (intent.container as {clone?: unknown} | null)?.clone != null ? cloneEnvironment(container?.workspace) : null;
-    const nested = (intent.container as {club_key?: unknown} | null | undefined)?.club_key != null;
-    const club = nested ? clubKeyWord((intent.container as {clone?: unknown}).clone != null, container?.club_key, phases.club_key_file) : null;
     const result = {
         instance_id: intent.instance_id,
         ready: failed === undefined,
@@ -185,7 +153,6 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
         ...(server ? { t3: server } : {}),
         ...(environment ? {environment} : {}),
         ...(mail ? {mail} : {}),
-        ...(club ? {club_key: club} : {}),
         ...(mail?.status === "failed" ? {warnings: [{code: "instance.mail_update_failed", step: "mail"}]} : {}),
         ...(failed
             ? {

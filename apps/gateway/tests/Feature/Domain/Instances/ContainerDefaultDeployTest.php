@@ -184,7 +184,7 @@ it('reads a container deployment\'s commit or refusal from the result file', fun
         'steps' => $file === null ? [] : ['Read the container result' => ['stdout' => $file]], 'summary' => ['failed_steps' => $failed]]]);
     $commit = str_repeat('b', 40);
 
-    expect($run('succeeded', json_encode(['commit' => $commit], JSON_THROW_ON_ERROR))[1])->toBe(['commit' => $commit, 'failed_step' => null, 'started' => true, 'club_key' => null])
+    expect($run('succeeded', json_encode(['commit' => $commit], JSON_THROW_ON_ERROR))[1])->toBe(['commit' => $commit, 'failed_step' => null, 'started' => true])
         ->and($run('failed', '{"error_code":"instance.container_start_failed"}', ['Start the container'])[1]['started'])->toBeFalse()
         ->and($run('failed', '{"error_code":"deployment.checkout_dirty"}', ['Check out in the container'])[0]['error_code'])->toBe('deployment.checkout_dirty')
         ->and($run('failed', '{"error_code":"deployment.commit_not_on_branch"}', ['Fetch into the mirror'])[0]['error_code'])->toBe('deployment.commit_not_on_branch')
