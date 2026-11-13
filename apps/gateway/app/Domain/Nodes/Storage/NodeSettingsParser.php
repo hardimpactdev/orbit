@@ -16,7 +16,7 @@ use stdClass;
 final readonly class NodeSettingsParser
 {
     /** @var list<string> */
-    private const array TOP_LEVEL_KEYS = ['apps', 'task_vms'];
+    private const array TOP_LEVEL_KEYS = ['apps', 'task_vms', 'nested_fleet'];
 
     /** @var list<string> */
     private const array NESTED_KEYS = ['path'];
@@ -44,6 +44,8 @@ final readonly class NodeSettingsParser
             apps: array_key_exists('apps', $object) ? $this->nestedApps($object['apps']) : null,
             hasTaskVms: array_key_exists('task_vms', $object),
             taskVms: array_key_exists('task_vms', $object) ? $this->nestedTaskVms($object['task_vms']) : null,
+            hasNestedFleet: array_key_exists('nested_fleet', $object),
+            nestedFleet: $this->nestedFleet(array_key_exists('nested_fleet', $object) ? $object['nested_fleet'] : false),
         );
     }
 
@@ -59,7 +61,17 @@ final readonly class NodeSettingsParser
         return new NodeSettingsData(
             apps: array_key_exists('apps', $object) ? $this->nestedApps($object['apps']) : null,
             task_vms: array_key_exists('task_vms', $object) ? $this->nestedTaskVms($object['task_vms']) : null,
+            nested_fleet: $this->nestedFleet(array_key_exists('nested_fleet', $object) ? $object['nested_fleet'] : false),
         );
+    }
+
+    private function nestedFleet(mixed $value): bool
+    {
+        if (! is_bool($value)) {
+            $this->reject('nested_fleet must be a JSON boolean.');
+        }
+
+        return $value;
     }
 
     private function nestedTaskVms(mixed $value): ?NodeTaskVmsData

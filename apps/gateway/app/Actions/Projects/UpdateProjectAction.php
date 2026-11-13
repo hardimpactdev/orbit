@@ -53,6 +53,8 @@ final readonly class UpdateProjectAction
 
     public function execute(Project $project, UpdateProjectData $data): Project
     {
+        // The flag rule runs first: before the source read and before any write.
+        $this->assertNestedFleetChange($project, $data);
         // A changed source refreshes the facts a development create needs; the read happens before any change commits.
         $facts = app(CaptureProjectSourceFactsAction::class);
         $read = $data->typeProvided || $data->sourceAccessProvided || $data->hasReconcilableChanges() ? $facts->read(
@@ -175,12 +177,42 @@ final readonly class UpdateProjectAction
     }
 
     /**
+     * The one rule for a change of the nested-fleet flag. It runs before any other Project write, so a refusal leaves the Project
+     * unchanged, and again where the flag is stored, under the update's lock.
+     */
+    private function assertNestedFleetChange(Project $project, UpdateProjectData $data): void
+    {
+        if (! $data->nestedFleetProvided) {
+            return;
+        }
+        if ($data->changesBesideNestedFleet()) {
+            throw new ResourceOperationException('project.nested_fleet_update_separate', 'Update the nested fleet setting separately from other Project settings.', 422);
+        }
+        if ($data->nestedFleet && ! $project->nested_fleet) {
+            $ids = config('instances.nested_fleet_projects');
+            if (! is_array($ids) || ! array_is_list($ids) || ! array_all($ids, static fn (mixed $id): bool => is_int($id) && $id > 0)) {
+                throw new ResourceOperationException('project.nested_fleet_projects_invalid', 'ORBIT_INSTANCES_NESTED_FLEET_PROJECTS must be a JSON list of positive integer Project IDs.', 500);
+            }
+            if (! in_array($project->id, $ids, true)) {
+                throw new ResourceOperationException('project.nested_fleet_not_allowed', 'The Project is not on the operator nested-fleet trial allow list.', 409);
+            }
+        }
+        if ($data->nestedFleet !== $project->nested_fleet && $project->instances()->exists()) {
+            throw new ResourceOperationException('project.nested_fleet_in_use', 'The Project has Instances; its nested fleet setting cannot change.', 409);
+        }
+    }
+
+    /**
      * Stores the display name and Project task settings while the caller holds the update's operation lock.
      * Routing does not reconcile sources or Routes.
      */
     private function applyProjectCommands(Project $project, UpdateProjectData $data): Project
     {
         $changes = [];
+        if ($data->nestedFleetProvided) {
+            $this->assertNestedFleetChange($project, $data);
+            $changes['nested_fleet'] = $data->nestedFleet;
+        }
         if ($data->name !== null) {
             $changes['name'] = $data->name;
         }

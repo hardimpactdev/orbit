@@ -36,6 +36,7 @@ final class UpdateProjectRequest extends FormRequest
             'root' => ['sometimes', 'required', 'string', 'max:255'],
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
             'task_workspace_routed' => ['sometimes', 'boolean:strict'],
+            'nested_fleet' => ['sometimes', 'boolean:strict'],
             'merge_check' => ['sometimes', 'nullable', 'string', 'max:255'],
         ];
     }
@@ -46,7 +47,7 @@ final class UpdateProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'merge_check'],
+                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'merge_check', 'nested_fleet'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -69,6 +70,7 @@ final class UpdateProjectRequest extends FormRequest
                 && ! $this->exists('task_check')
                 && ! $this->exists('task_workspace_routed')
                 && ! $this->exists('merge_check')
+                && ! $this->exists('nested_fleet')
             ) {
                 $validator->errors()->add('body', 'Provide at least one Project update.');
             }
@@ -129,6 +131,8 @@ final class UpdateProjectRequest extends FormRequest
             taskWorkspaceRouted: ($validated['task_workspace_routed'] ?? false) === true,
             mergeCheckProvided: array_key_exists('merge_check', $validated),
             mergeCheck: is_string($validated['merge_check'] ?? null) && trim($validated['merge_check']) !== '' ? trim($validated['merge_check']) : null,
+            nestedFleetProvided: array_key_exists('nested_fleet', $validated),
+            nestedFleet: ($validated['nested_fleet'] ?? false) === true,
             name: is_string($validated['name'] ?? null) ? $validated['name'] : null,
         );
     }

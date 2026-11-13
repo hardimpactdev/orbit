@@ -13,5 +13,8 @@ return [
     // The main Node-owned Mailpit; only its active, desired-running Docker publication enables mail.
     'mailpit' => ['process' => 'mailpit', 'port' => 1025],
 
+    // Only disposable trial Projects may record the nested-fleet flag. Malformed JSON stays null and refuses.
+    'nested_fleet_projects' => json_decode((string) (env('ORBIT_INSTANCES_NESTED_FLEET_PROJECTS') ?: '[]'), true),
+
     'container_nodes' => json_decode((string) (env('ORBIT_INSTANCES_CONTAINER_NODES') ?: '[]'), true),
 ];

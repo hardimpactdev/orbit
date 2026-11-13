@@ -32,6 +32,8 @@ final readonly class UpdateProjectData
         public bool $mergeCheckProvided = false,
         public ?string $mergeCheck = null,
         public ?string $name = null,
+        public bool $nestedFleetProvided = false,
+        public bool $nestedFleet = false,
     ) {}
 
     public function hasChanges(): bool
@@ -47,14 +49,22 @@ final readonly class UpdateProjectData
             || $this->sourceAccessProvided
             || $this->taskWorkspaceRoutedProvided
             || $this->reviewAndMergeProvided
-            || $this->mergeCheckProvided;
+            || $this->mergeCheckProvided || $this->nestedFleetProvided;
+    }
+
+    /** The nested-fleet flag travels alone, so its refusal has no other write to undo. */
+    public function changesBesideNestedFleet(): bool
+    {
+        return $this->code !== null || $this->name !== null || $this->typeProvided || $this->sourceAccessProvided
+            || $this->taskCheckProvided || $this->taskWorkspaceRoutedProvided || $this->reviewAndMergeProvided || $this->mergeCheckProvided
+            || $this->hasReconcilableChanges();
     }
 
     /** Settings that change only the Project row, under the Instance operation lock. */
     public function hasTaskSettings(): bool
     {
         return $this->name !== null || $this->taskCheckProvided || $this->taskWorkspaceRoutedProvided
-            || $this->reviewAndMergeProvided || $this->mergeCheckProvided;
+            || $this->reviewAndMergeProvided || $this->mergeCheckProvided || $this->nestedFleetProvided;
     }
 
     public function hasReconcilableChanges(): bool
@@ -80,6 +90,7 @@ final readonly class UpdateProjectData
             'task_workspace_routed' => $this->taskWorkspaceRoutedProvided ? $this->taskWorkspaceRouted : null,
             'review_and_merge' => $this->reviewAndMergeProvided ? $this->reviewAndMerge : null,
             'merge_check' => $this->mergeCheckProvided ? $this->mergeCheck : null,
+            'nested_fleet' => $this->nestedFleetProvided ? $this->nestedFleet : null,
             'provided' => [
                 $this->typeProvided,
                 $this->slugProvided,
@@ -91,6 +102,7 @@ final readonly class UpdateProjectData
                 $this->taskWorkspaceRoutedProvided,
                 $this->reviewAndMergeProvided,
                 $this->mergeCheckProvided,
+                $this->nestedFleetProvided,
             ],
         ], JSON_THROW_ON_ERROR));
     }

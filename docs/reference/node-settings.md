@@ -226,3 +226,7 @@ Moving source on a settings change would be a hidden, risky migration. So each c
 ### An existing folder converges
 
 An existing apps folder gets the managed user, group and mode 0755, as a new one does, so a rerun repairs drift. A broad `chown` of the wrong path could damage unrelated data. So the Gateway refuses obviously wrong paths at admission, and `@swamp/cfgmgmt/directory` changes only the folder itself, never its contents.
+
+## Nested fleet Instance hosting
+
+The API-only boolean `nested_fleet` records the Node hosting switch and defaults to false. An omitted member preserves its value, including a captured update that predates the member. A combined apps-path and switch update stores the switch only after storage preparation succeeds. An unrelated update preserves it. This switch and the Project flag are stored only and have no effect yet. Do not set the flag on a real Project. Hosting that reads both values follows in a later change.

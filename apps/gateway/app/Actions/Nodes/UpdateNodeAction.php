@@ -111,7 +111,7 @@ final readonly class UpdateNodeAction
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
                 'root' => $root?->value, 'user' => $account->user, 'group' => $account->group, 'settings' => $this->normalizer->stored($normalized),
                 'task_host_input_comments' => $retireComments,
-                'settings_patch' => ['apps' => $settings->hasApps, 'task_vms' => $settings->hasTaskVms],
+                'settings_patch' => ['apps' => $settings->hasApps, 'task_vms' => $settings->hasTaskVms, 'nested_fleet' => $settings->hasNestedFleet],
             ], 'operator', $requestId, expectedWriter: 'direct');
         });
 
