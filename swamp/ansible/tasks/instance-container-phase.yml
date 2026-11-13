@@ -1045,7 +1045,7 @@
             stdin: "{{ t3_added.stdout | trim }}"
           changed_when: true
 
-# Registration (docs/cli/conn/environment-renew.mmd): `agent` issues the Gateway's and Swamp's sessions and asks T3 about
+# Registration (docs/reference/development-containers.md#t3-registration-and-pairing): `agent` issues the Gateway's and Swamp's sessions and asks T3 about
 # each, inside the container. The reply goes into the run folder on the worker, 0600; the next step checks it and stores the sessions
 # in the vault. No session enters a log, an argument or the run's outputs.
 - name: Register the T3 server

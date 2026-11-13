@@ -19,7 +19,7 @@ Four parties share the work of a command. Each has one job.
 | **Swamp** | Runs the logical phases in order, with guards, `forEach`, `allowFailure` and cancellation. Calls the Gateway's mint and sign primitives and external APIs (GitHub). | Run a command on a Node, except through an Ansible phase or the measured clone exception below. |
 | **Ansible** | Does machine actions except the measured clone exception below. One Swamp step runs one tagged part of a repository playbook. The playbook reads, changes and checks in one run. | Call the Gateway, or decide the order of phases. |
 | **Case runner** | Proves the command: it runs the real CLI with `--json` against a nested fleet and checks the answer, the machine state and the Gateway records. The cases are data in `swamp/proof/<family>/<command>.cases.yaml` ([format](/reference/verification-cases)). | Change a machine, or hold logic that a case could state. |
-| **Template tests** | Test the pure Jinja templates and expressions of a playbook against fixed text: Python tests `swamp/tests/ansible_*_test.py` on the pinned Ansible engine, run by `bin/swamp-shape-gate`. | Prove the command or run on the nested fleet. |
+| **Template tests** | Test the pure Jinja templates and expressions of a playbook against fixed text: a Deno `*_test.ts` or a Python test in `swamp/tests/`, run by `bin/swamp-shape-gate`. | Prove the command or run on the nested fleet. |
 
 Python inside a framework (Ansible, its tests) is fine. New work adds no Python glue of its own: no wrapper scripts, no custom Ansible modules, and no second runner, except a measured native exception under the [Swamp shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md#use-what-swamp-provides-first-nick-2026-10-31). The shipped [Instance clone](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) uses official SSH steps with Python host and guest scripts for container, workspace and Processes, agent, T3, and sessions phases. The proof case runner in `swamp/proof/runner/` is the one runner.
 
@@ -196,7 +196,7 @@ Two things prove a port.
 
 | What | Runs | Proves |
 | --- | --- | --- |
-| Template test, `swamp/tests/ansible_<name>_test.py`, listed in `ANSIBLE_TESTS` of `bin/swamp-shape-gate` | on any machine, no fleet: `python3 -I tests/ansible_<name>_test.py` in `swamp/` | The pure Jinja templates and expressions, on the pinned Ansible engine, against fixed text: the plan for a rule, the sections a withdrawal removes, the refusals with their codes. |
+| Template test in `swamp/tests/`: a Deno `ansible_<name>_test.ts`, or a Python `ansible_<name>_test.py` listed in `ANSIBLE_TESTS` of `bin/swamp-shape-gate` | without a nested fleet: `deno test -A tests/<file>` or `python3 -I tests/<file>` in `swamp/` | The pure Jinja templates and expressions, against fixed text: the plan for a rule, the sections a withdrawal removes, the refusals with their codes. |
 | Cases file, `swamp/proof/<family>/<command>.cases.yaml` | in the task VM, against the nested fleet, with the case runner ([stage 3](/reference/command-development-pipeline#3-proof)) | The real CLI with `--json`: the answer, the machine state, the Gateway records, and that nothing else changed. |
 
 The [format of the cases file](/reference/verification-cases) lists the steps, the batches and how cases spread over the Nodes and run several at a time. Read it before you write cases.
@@ -306,7 +306,7 @@ The shape has limits. Read them before you put a decision into a template.
 - It could not state a menu choice, wait for a first line of output or collect the failures of a case.
 - The runner stays.
 - The unit scenarios ran on any machine with `localhost`. The Mac of the spike had no container runtime, so nothing ran on a throwaway container.
-- #3230 removed Molecule. Template tests are Python tests in `swamp/tests/`, run by `bin/swamp-shape-gate`.
+- #3230 removed Molecule. Template tests are Deno or Python tests in `swamp/tests/`, run by `bin/swamp-shape-gate`.
 
 ## Check all seven boundary decisions
 
@@ -350,7 +350,7 @@ Put each test where its project's CI runs it.
 | Where | What it proves |
 | --- | --- |
 | `apps/gateway/tests/Feature/<Family>/*NativeTest.php`, plus `Operations/GatewayWorkflowGrantCheckTest.php` | Admission, refusal, lock key, execution copy, the input envelope, projection of success and failure, and grant coverage for the workflow and its vault keys. |
-| `swamp/tests/ansible_<name>_test.py`, listed in `ANSIBLE_TESTS` of `bin/swamp-shape-gate` | The Jinja templates and expressions of the playbook, on fixed text, with every refusal code. Runs without a fleet. |
+| `swamp/tests/ansible_<name>_test.ts`, or `ansible_<name>_test.py` listed in `ANSIBLE_TESTS` of `bin/swamp-shape-gate` | The Jinja templates and expressions of the playbook, on fixed text, with every refusal code. Runs without a nested fleet. |
 | `swamp/proof/<family>/<command>.cases.yaml` | The command on the nested fleet, run by the case runner: the answer, the machine state, the Gateway records, idempotence ([step 5](#5-prove-it)). |
 | `swamp/extensions/behaviors/operations/<family>/*_test.ts` | Typed behaviors that stay (a result that a file cannot print). Not plans of a machine change. |
 
@@ -390,4 +390,4 @@ Each lesson replaces the rule it changes above.
   - A measured A/B of the same 50 `firewall:allow` cases chose it.
   - The speed came from spreading cases over the Nodes and running them in parallel, which the runner now does.
   - Molecule needed more lines.
-- 2026-11-13: Molecule is gone (#3230). Template tests are `swamp/tests/ansible_*_test.py`, run by `bin/swamp-shape-gate`.
+- 2026-11-13: Molecule is gone (#3230). Template tests are Deno or Python tests in `swamp/tests/`, run by `bin/swamp-shape-gate`.

@@ -209,7 +209,7 @@ jobs:
           inputs:
             run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags t3 "$ORBIT_ANSIBLE/instance-container.yml"
             env: *phase
-      # Register (docs/cli/conn/environment-renew.mmd): `agent` issues the Gateway's and Swamp's sessions; the reply waits
+      # Register (docs/reference/development-containers.md#t3-registration-and-pairing): `agent` issues the Gateway's and Swamp's sessions; the reply waits
       # in the run folder for the next step, which never lets a session into the run's outputs.
       - name: t3-sessions
         labels: {role: swamp}

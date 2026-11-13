@@ -101,7 +101,7 @@ describe('instance:rename', function (): void {
     it('says in its help that a domain is refused', function (): void {
         $domain = app(Kernel::class)->all()['instance:rename']->getDefinition()->getOption('domain')->getDescription();
 
-        expect($domain)->toBe('Always refused with operation.kind_unavailable; rename does not move the Route');
+        expect($domain)->toBe('Always refused; rename does not move the Route');
     });
 
     it('preserves HEAD refusal and correlation in JSON errors', function (): void {

@@ -30,7 +30,7 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
    - A change to the phase sequence needs a written reason in the PR. See the [ansible-phase skill](../../.agents/skills/ansible-phase/SKILL.md) for the playbook rules.
 4. **Scripts are visible and linted.**
    - The script text lives in the workflow or the behavior definition (`run: |`), or in a file that Swamp ships to the worker, never inside a TypeScript string.
-   - CI runs shellcheck (and ruff for Python) on all of it. Playbooks live in `swamp/ansible/` and pass `ansible-lint` in the `production` profile; the gate lists each playbook. Their Jinja templates and expressions have Python tests, `swamp/tests/ansible_*_test.py`, that evaluate them with the pinned Ansible engine against fixed text; the gate runs each file in its `ANSIBLE_TESTS` list.
+   - CI runs shellcheck (and ruff for Python) on all of it. Playbooks live in `swamp/ansible/` and pass `ansible-lint` in the `production` profile; the gate lists each playbook. Their Jinja templates and expressions have template tests in `swamp/tests/` that check them against fixed text: a Deno `*_test.ts`, or a Python test that the gate names in its `ANSIBLE_TESTS` list. The gate runs both.
 5. **Secrets come from Swamp vaults.**
    - The Gateway stays the source of truth. It pushes the execution copy with the native authenticated `vault.put` WebSocket request when a value changes. The value is in the frame payload, never argv; the shared Gateway helper launches no CLI.
    - Steps read `${{ vault.get('<vault>', '<key>') }}`. In `command/shell`, Swamp passes it as an environment variable. The approved Node209 worker SSH key instead uses official `@swamp/ssh` `identityFile` through native `LoadCredential`; worker-wide read is approved.
@@ -70,7 +70,7 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
 ## Checks on every PR
 
 - `swamp workflow validate` for every workflow, on the pinned runtime.
-- `ansible-lint` for every playbook, and the Python template tests in the gate's `ANSIBLE_TESTS` list (`swamp/tests/ansible_*_test.py`).
+- `ansible-lint` for every playbook, and the template tests in `swamp/tests/`: the Deno `*_test.ts` files and the Python files in the gate's `ANSIBLE_TESTS` list.
 - `deno test` for `extensions/behaviors/operations`.
 - The placement lint.
 - The Swamp-shape gate. It fails on:
