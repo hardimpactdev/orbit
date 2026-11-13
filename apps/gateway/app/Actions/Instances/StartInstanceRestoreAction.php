@@ -62,7 +62,6 @@ final readonly class StartInstanceRestoreAction
             if ($removal->members()->count() !== 1) {
                 self::refuse('unsupported', 'The removal holds other Instances.');
             }
-            $this->assertRunsEnded($removal);
             $saved = $removal->native_intent;
             if (($saved['container_destroy'] ?? null) !== null) {
                 self::refuse('unsupported', 'Restore supports only a host development Instance.');
@@ -70,6 +69,11 @@ final readonly class StartInstanceRestoreAction
             $detail = ValidatedData::object($saved['direct_destroy'] ?? []);
             $runtime = ValidatedData::object($detail['runtime'] ?? []);
             $database = ValidatedData::object($detail['database'] ?? []);
+            // The steps that delete data which this removal planned; each run must show each of them skipped.
+            $planned = ['Remove the source',
+                ...(($runtime['processes'] ?? []) !== [] ? ['Stop, remove Processes'] : []),
+                ...(array_any(RouteExecutionProof::objects($detail['teardown'] ?? []), static fn (array $row): bool => ($row['steps'] ?? []) !== []) ? ['Run teardown steps'] : [])];
+            $this->assertRunsEnded($removal, $planned);
             if (($runtime['schedules'] ?? []) !== []) {
                 self::refuse('unsupported', 'The removal already withdrew the Instance Schedules.');
             }
@@ -133,8 +137,13 @@ final readonly class StartInstanceRestoreAction
         return $candidate;
     }
 
-    /** Every run of the removal has ended, and none of them ran a step that deletes data. */
-    private function assertRunsEnded(InstanceRemoval $removal): void
+    /**
+     * Every run of the removal has ended, and none of them ran a step that deletes data. A planned step must be recorded as
+     * skipped: missing progress is no proof that it did not run.
+     *
+     * @param  list<string>  $planned
+     */
+    private function assertRunsEnded(InstanceRemoval $removal, array $planned): void
     {
         $runs = Operation::query()->where('kind', 'instance.destroy')->where('input->removal_id', $removal->id)->orderBy('id')->get();
         foreach ($runs as $run) {
@@ -144,12 +153,21 @@ final readonly class StartInstanceRestoreAction
             }
             $progress = $run->state['native_progress'] ?? [];
             $steps = is_array($progress) && is_array($progress['steps'] ?? null) ? array_values($progress['steps']) : [];
+            $seen = [];
             foreach ($steps as $step) {
                 $name = is_array($step) && is_string($step['name'] ?? null) ? $step['name'] : '';
                 foreach (self::DeletingSteps as $label) {
-                    if (($name === $label || str_starts_with($name, $label.'-')) && ($step['status'] ?? null) !== 'skipped') {
-                        self::refuse('already_removed', "The removal ran {$label}.");
+                    if ($name === $label || str_starts_with($name, $label.'-')) {
+                        if (($step['status'] ?? null) !== 'skipped') {
+                            self::refuse('already_removed', "The removal ran {$label}.");
+                        }
+                        $seen[$label] = true;
                     }
+                }
+            }
+            foreach ($planned as $label) {
+                if (! isset($seen[$label]) && isset($run->state['swamp_run_id'])) {
+                    self::refuse('state_invalid', "Removal Operation {$run->id} has no record that it skipped {$label}.");
                 }
             }
         }

@@ -21,7 +21,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - a host development Instance, not a container, in `removing`
   %%> - its live removal is `failed`, and every removal Operation has ended; a timed-out run without a native end refuses
-  %%> - the removal never ran a step that deletes data: source, container, Processes, teardown, SQLite
+  %%> - every removal run recorded each planned step that deletes data as skipped: source, Processes, teardown
   %%> - the removal saved no Schedule and no SQLite file
   %%> - its one Route is `retiring` with the same domain and targets
   %%> - the Node agent reports the checkout: same top level, origin of the Project's repository
@@ -67,6 +67,7 @@ sequenceDiagram
       SW--xGW: Run failed
       %%> Result:
       %%> - the Instance stays `removing`, the removal `failed`, the Route `retiring`
+      %%> - a site published before a later failure serves until the next run
       %%> - run `instance:restore` again, or `instance:destroy`
     end
   end

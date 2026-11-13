@@ -131,7 +131,8 @@ Live members have neither `row_deleted_at` nor `abandoned_at`. Destroy admission
 The Gateway refuses before any change in these cases:
 
 - a removal run has not ended. A timed-out run with no proven end refuses too; restore never settles it.
-- a step that deletes data ran: the source, container, Processes, teardown or SQLite step.
+- a step that deletes data ran. These are the source, container, Processes, teardown and SQLite steps.
+- a run has no record that it skipped such a step that the removal planned.
 - the removal saved a Schedule or a SQLite file.
 - the Route, its target or the reported checkout changed.
 

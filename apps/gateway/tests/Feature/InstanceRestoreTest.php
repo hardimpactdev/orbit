@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Certificates\SignDirectCertificatesAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceRestoreAction;
 use App\Domain\AgentView\AgentNodeView;
@@ -153,6 +154,15 @@ it('republishes the same Route through the Route create plan and records the Ins
     expect($next->input['removal_id'])->not->toBe($this->removal->id);
 });
 
+it('lets the Route create sign step sign the admitted leaf of a restore', function (): void {
+    $operation = ($this->restore)();
+    $operation->update(['status' => 'running', 'started_at' => now(), 'state' => [...($operation->state ?? []), 'swamp_run_id' => 'restore-run']]);
+    $leaf = ['node_id' => $this->node->id, 'scope' => 'app-instance-'.$this->instance->id, 'state' => 'current'];
+    expect(app(SignDirectCertificatesAction::class)->handle($operation->fresh(), $this->node->id, 'restore-run', [$leaf]))->toBe([]);
+    expectRestoreRefusal(fn () => app(SignDirectCertificatesAction::class)->handle($operation->fresh(), $this->node->id, 'restore-run',
+        [[...$leaf, 'scope' => 'app-instance-999']]), 'certificate.intent_mismatch');
+});
+
 it('keeps the failed removal when a database is closed and names it', function (): void {
     $operation = ($this->restore)();
     ($this->finish)($operation, 'failed', ['Check the databases-0' => ['status' => 'failed']], ['failed_step' => 'Check the databases-0',
@@ -198,6 +208,15 @@ it('refuses a removal run that has not ended, timed-out runs included', function
 })->with([
     'running' => [['status' => 'running', 'finished_at' => null]],
     'timed out, native end unproven' => [['error_code' => 'operation.timed_out', 'state' => ['native_timeout' => ['budget_seconds' => 420, 'deadline' => '2026-11-12T09:00:00Z']]]],
+]);
+
+it('refuses a removal run with no record that it skipped a planned deleting step', function (Closure $change): void {
+    $change($this);
+    expectRestoreRefusal($this->restore, 'instance.restore_state_invalid');
+})->with([
+    'no progress at all' => [fn ($test) => $test->destroy->update(['state' => ['swamp_run_id' => 'fixture-run']])],
+    'a planned Process step missing' => [fn ($test) => seedSavedIntent($test, ['direct_destroy' => ['runtime' => ['processes' => [['process_id' => 1]]]]])],
+    'a planned teardown step missing' => [fn ($test) => seedSavedIntent($test, ['direct_destroy' => ['teardown' => [['instance_id' => 1, 'steps' => [['name' => 'down']]]]]])],
 ]);
 
 it('refuses a removal that deleted data', function (string $step): void {
