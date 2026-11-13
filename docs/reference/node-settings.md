@@ -241,12 +241,12 @@ On a Node of the [build list](/reference/development-containers#the-build-list) 
 
 It creates no Instance and builds no image for nested-fleet containers. Orbit refuses each new Instance of a nested-fleet Project until that image exists ([Nested fleet setting](/reference/projects#nested-fleet-setting)). A Node with the switch off gets the same host intent and the same commands as before.
 
-Before you switch it on, give root a subordinate range in both `/etc/subuid` and `/etc/subgid` that holds the new demand. The converge checks both files before any nesting change on the host and refuses with `instance.host_unavailable` when either range is too small. It never enlarges a range, and a refused converge leaves no nesting preparation behind. The demand is:
+The converge checks root's largest subordinate range in both `/etc/subuid` and `/etc/subgid` before any nesting change on the host. It refuses with `instance.host_unavailable` when either range is smaller than the demand, and then leaves no nesting preparation behind. It never enlarges a range. The demand is:
 
 `13,172,736 + task IDs + (N + 2) × 101,000,000`
 
-`13,172,736` is the normal Instance demand. Task IDs are `(task_places + ci_places + 1) × 101,000,000` when the Node has task containers, else 0. `N` is the number of nested Instance runtimes that the Node records. The two spare maps leave room for a new nested container before the next converge.
+`13,172,736` is the normal Instance demand. Task IDs come from the task container places in `settings.task_vms.containers`, never from the task VM places: `(containers.task_places + containers.ci_places + 1) × 101,000,000`, or 0 when the Node has no `containers` block. `N` is the number of nested Instance runtimes that the Node records. The two spare maps leave room for a new nested container before the next converge.
 
-With no task containers and no nested Instances, the switch needs a range of at least 215,172,736 IDs. Add 101,000,000 for each nested Instance that you plan to run. For example, `usermod --add-subuids 1000000-301000000 --add-subgids 1000000-301000000 root` gives one range of 300,000,001 IDs; change the start to fit the Node's existing ranges. Incus reads the ranges when its daemon starts, so restart the daemon after the change, at a quiet time. The converge reads the files, not the daemon's view.
+So a Node with no `containers` block needs `13,172,736 + (N + 2) × 101,000,000` IDs: 215,172,736 with no nested Instance yet, and 101,000,000 more for each one. Incus reads the ranges when its daemon starts; the converge reads the files.
 
 Clearing the switch removes nothing: the nested project, its profile and the module file stay. Runtimes that record `orbit-instances-nested` keep their ID maps in the demand and their project in the shared-folder refresh. Only the two spare maps leave the demand.
