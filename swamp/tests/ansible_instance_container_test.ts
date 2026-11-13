@@ -1601,7 +1601,7 @@ Deno.test({
       assert(created.ok, created.output);
       assertEquals(Deno.readTextFileSync(clubFile(f)), CLUB);
       assertEquals(Deno.statSync(clubFile(f)).mode! & 0o777, 0o600);
-      assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/tmpfiles.d/orbit-club.conf`), "d /run/orbit-club 0700 1000 1000 -\n");
+      assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/tmpfiles.d/orbit-club.conf`), "d /run/orbit-club 0750 0 1000 -\n");
       assertEquals(f.state().club_key_runs, [["/run/orbit-club", "swamp-club-api-key", "1000", "1000", "/etc/tmpfiles.d/orbit-club.conf", "nested-gateway", "orbit-swamp-serve"]]);
       // A new key restarts the nested Gateway's Swamp serve, which reads the key at its start.
       assertEquals(innerCalls(f), ["list --format csv --columns s -- ^nested-gateway$", "exec nested-gateway -- systemctl reset-failed -- orbit-swamp-serve",

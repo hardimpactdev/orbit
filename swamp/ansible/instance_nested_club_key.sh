@@ -7,16 +7,21 @@ directory=$1 file=$2 owner=$3 group=$4 tmpfiles=$5 gateway=$6 unit=$7
 umask 077
 mkdir -p -- "$directory"
 [ "$(findmnt --noheadings --output FSTYPE --target "$directory")" = tmpfs ] || exit 3
-chown -- "$owner:$group" "$directory"
-chmod 0700 -- "$directory"
+# Root owns the folder, so its group (the nested Gateway's `orbit`) can read the key but plant no link to the disk in it.
+chown -- "0:$group" "$directory"
+chmod 0750 -- "$directory"
 # The folder must be there before the nested Gateway starts at boot, as its disk device's source. This line holds no secret.
-rule="d $directory 0700 $owner $group -"
+rule="d $directory 0750 0 $group -"
 [ "$(cat -- "$tmpfiles" 2>/dev/null || true)" = "$rule" ] || printf '%s\n' "$rule" > "$tmpfiles"
 next="$directory/.$file.next"
 trap 'rm -f -- "$next"' EXIT
+rm -f -- "$next"
+# noclobber: the shell creates the file itself and refuses any file or link already there.
+set -C
 cat > "$next"
+set +C
 [ -s "$next" ] || exit 4
-chown -- "$owner:$group" "$next"
+chown -h -- "$owner:$group" "$next"
 if cmp -s -- "$next" "$directory/$file"; then
   echo unchanged
   exit 0

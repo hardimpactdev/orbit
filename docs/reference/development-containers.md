@@ -1110,7 +1110,7 @@ The nested Gateway's `swamp serve` needs a Swamp Club API key. It is never the p
 | Intent | A nested-fleet container's intent has `club_key`: the folder, the owner `1000:1000`, the tmpfiles line, the nested Gateway and its serve unit. A run sets `club_key.available`. Other containers have no `club_key` |
 | Starts | The create of the default, the clone and every deploy start, right after the container starts |
 | Channel | Stdin only. The value is in no argument, intent, result, log or file on the Node |
-| Place | `/run/orbit-club/swamp-club-api-key` in the container, mode `0600`, owner `1000:1000`. `/run` is a tmpfs; the step refuses with `instance.nested_club_key_not_tmpfs` when it is not. `/etc/tmpfiles.d/orbit-club.conf` makes the empty folder at boot and holds no secret |
+| Place | `/run/orbit-club/swamp-club-api-key`, mode `0600`, owner `1000:1000`, in a folder `root:1000` mode `0750`. `/run` is a tmpfs, checked before each write. A tmpfiles line makes the empty folder at boot |
 | Nested Gateway | The disk device `club-key` binds the folder `/run/orbit-club` into nested-gateway at `/home/orbit/.config/swamp/club`, `shift=false`. `/home/orbit/.config/swamp/api-key` there is a link to `club/swamp-club-api-key`. A new value restarts its `orbit-swamp-serve` |
 | Without a value | The container starts without the key. The Operation's input says `nested_fleet_club_key: missing`; with a value it says `delivered`. Serve stays down until a later start delivers the key |
 | Other containers | No new task runs and no command changes. Their workflow steps name a key that every run has, which the step never delivers |
@@ -1118,6 +1118,10 @@ The nested Gateway's `swamp serve` needs a Swamp Club API key. It is never the p
 The step runs right after `Start the container`, before any check of the inner fleet. That covers the restart after a failed refresh too, which starts the container through the same `start` phase. A clone runs its own step, `clone-club-key`, right after `clone-container`.
 
 In Ansible the value is the module stdin of a pipelined task with `no_log`. Without pipelining, or with remote files kept, Ansible writes the module with its arguments to `~/.ansible/tmp` on the Node. So the task forces pipelining and refuses with `instance.nested_club_key_unsafe_transfer` before it reads the value when pipelining is off. A clone gets the value on the SSH stdin of `instance_clone.py club-key`. Both pass it on as the stdin of `incus exec ... sh -c`.
+
+Root owns the folder, so the key's owner cannot plant a link there that would send the key to the disk. The write refuses with `instance.nested_club_key_not_tmpfs` when `/run` is not a tmpfs.
+
+The Gateway's code does not add the `club-key` device to nested-gateway: the fleet step that builds the inner fleet does, and an existing fleet gets it by hand. Until then the key reaches the outer container's `/run` only.
 
 A container that Incus starts by itself after a host reboot has no key until Orbit starts or deploys it again. `/etc/orbit/swamp-club-api-key` is the hand-placed file that this replaces; nothing writes it.
 
