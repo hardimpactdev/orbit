@@ -52,6 +52,8 @@ beforeEach(function (): void {
 
         public bool $scheduleRemovalFails = false;
 
+        public ?Closure $onTriggerRemoval = null;
+
         private array $last = [];
 
         public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
@@ -59,6 +61,11 @@ beforeEach(function (): void {
         public function send(array $message): void
         {
             $this->messages[] = $this->last = $message;
+            if ($message['type'] === 'workflow.trigger.remove' && $this->onTriggerRemoval !== null) {
+                $callback = $this->onTriggerRemoval;
+                $this->onTriggerRemoval = null;
+                $callback();
+            }
         }
 
         public function receive(float $timeoutSeconds): array
@@ -410,3 +417,70 @@ it('keeps the normal destroy effects and final state while capturing publication
         ->and(ConnPairing::query()->exists())->toBeFalse()
         ->and($operation->refresh()->status->value)->toBe('succeeded');
 })->with(['CLI' => [false], 'Conn' => [true]]);
+
+it('refuses an outside attachment made during Schedule removal for both callers', function (bool $conn): void {
+    $instance = connRemovalClone();
+    connRemovalResources($instance);
+    $database = DatabaseConnection::query()->where('owner_instance_id', $instance->id)->sole();
+    $before = connRemovalStored();
+    $this->socket->onTriggerRemoval = function () use ($database): void {
+        DatabaseConnectionTarget::query()->create(['database_connection_id' => $database->id,
+            'instance_id' => $this->default->id, 'prefix' => 'DB', 'network' => 'private']);
+    };
+    $response = $conn ? connRemovalCall($instance->id, ['acknowledge_unsaved' => true])
+        : $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+            ->deleteJson('/api/v1/instances/'.$instance->id, ['force' => true]);
+    $response->assertConflict()->assertJsonPath('error.code', 'database.connection_attached');
+    $after = connRemovalStored();
+    $before['schedules'] = $after['schedules'];
+    $before['database_connection_targets'] = $after['database_connection_targets'];
+    expect($after)->toBe($before)
+        ->and($instance->refresh()->status)->toBe(InstanceState::Active)
+        ->and(Route::query()->where('domain', 'feature.fixture.test')->value('status'))->toBe(RouteStatus::Active)
+        ->and(DatabaseConnectionTarget::query()->where('database_connection_id', $database->id)->where('instance_id', $this->default->id)->exists())->toBeTrue()
+        ->and(Schedule::query()->where('target_id', $instance->id)->value('status')->value)->toBe('removing')
+        ->and(array_column(array_slice($this->socket->messages, -3), 'type'))->toBe(['workflow.trigger.remove', 'workflow.delete', 'vault.delete']);
+})->with(['CLI' => [false], 'Conn' => [true]]);
+
+it('refuses database identity changes made during Schedule removal without recording a delete intent', function (string $change): void {
+    $instance = connRemovalClone();
+    connRemovalResources($instance);
+    $database = DatabaseConnection::query()->where('owner_instance_id', $instance->id)->sole();
+    $before = connRemovalStored();
+    $this->socket->onTriggerRemoval = function () use ($database, $instance, $change): void {
+        if ($change === 'owner') {
+            $database->update(['owner_instance_id' => $this->default->id]);
+        } elseif ($change === 'path') {
+            $database->update(['path' => $instance->checkout_path.'/changed.sqlite']);
+        } else {
+            DatabaseConnection::query()->create(['slug' => 'late-owned-db', 'driver' => 'sqlite', 'node_id' => $instance->node_id,
+                'owner_instance_id' => $instance->id, 'path' => $instance->checkout_path.'/late.sqlite']);
+        }
+    };
+    connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertConflict()->assertJsonPath('error.code', 'database.removal_conflict');
+    $after = connRemovalStored();
+    $before['schedules'] = $after['schedules'];
+    $before['database_connections'] = $after['database_connections'];
+    expect($after)->toBe($before)->and($instance->refresh()->status)->toBe(InstanceState::Active);
+})->with(['owner', 'path', 'new database']);
+
+it('refuses a changed destructive member or runtime identity during Schedule removal', function (string $change, string $code): void {
+    $instance = connRemovalClone();
+    connRemovalResources($instance);
+    $before = connRemovalStored();
+    $this->socket->onTriggerRemoval = function () use ($instance, $change): void {
+        if ($change === 'checkout') {
+            $instance->update(['checkout_path' => '/fixture/changed-workspace']);
+        } else {
+            Schedule::query()->create(['target_type' => 'instance', 'target_id' => $instance->id, 'host_node_id' => $instance->node_id,
+                'name' => 'late', 'calendar' => '*-*-* 03:00:00', 'command' => 'true', 'timeout_seconds' => 60,
+                'desired_timer_state' => 'enabled', 'status' => 'active', 'trigger' => 'swamp']);
+        }
+    };
+    connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertConflict()->assertJsonPath('error.code', $code);
+    $after = connRemovalStored();
+    foreach (['schedules', 'instances', 'instance_runtimes'] as $table) {
+        $before[$table] = $after[$table];
+    }
+    expect($after)->toBe($before)->and($instance->refresh()->status)->toBe(InstanceState::Active);
+})->with(['checkout' => ['checkout', 'database.removal_conflict'], 'Schedule set' => ['Schedule set', 'instance.removal_conflict']]);

@@ -61,27 +61,7 @@ final readonly class DirectInstanceDestroyIntent
             throw new ResourceOperationException('instance.removal_conflict', 'The admitted removal set changed.', 409);
         }
         $node = $this->node($input);
-        $runtime = ['processes' => [], 'schedules' => []];
-        $nativeProcesses = [];
-        $teardown = [];
-        foreach ($members as $member) {
-            $instance = $this->member($member, $input, $node);
-            foreach (Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)->orderBy('id')->get() as $process) {
-                $control = ($input['container_destroy'] ?? null) === null
-                    ? $this->processes->inputFor($process, 'destroy')
-                    : ['process_id' => $process->id, 'runtime' => 'container', 'name' => $process->name];
-                $nativeProcesses[] = Arr::only($control, ['process_id', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
-                $runtime['processes'][] = Arr::only($control, ['process_id', 'runtime', 'name', 'vite']);
-            }
-            foreach (Schedule::query()->whereIn('target_type', Instance::morphTypes())->where('target_id', $instance->id)->orderBy('id')->get() as $schedule) {
-                $runtime['schedules'][] = Arr::only($this->schedules->inputFor($schedule, 'destroy', cascade: true), ['id', 'group', 'cascade']);
-            }
-            $steps = $member['run_teardown'] ? app(ProjectLifecycleStepStore::class)->ordered($instance->project, LifecyclePhase::Teardown) : [];
-            $teardown[] = ['instance_id' => $instance->id, 'checkout' => $instance->checkout_path,
-                'user' => $node->user,
-                'steps' => array_map(static fn ($step): array => ['name' => $step->name, 'timeout_seconds' => $step->timeoutSeconds,
-                    'sha256' => hash('sha256', $step->command)], $steps)];
-        }
+        [$runtime, $nativeProcesses, $teardown] = $this->runtimeInputs($input, $members, $node);
         // Withdrawal has no URL/environment writes. Its capture renders prospective sites and stages no execution copy.
         $captured = app(NativeRouteMutationInput::class)->capture($previousRoutes, [], [], [], $beforeSites,
             app(DevelopmentSiteRepository::class)->all(),
@@ -125,6 +105,20 @@ final readonly class DirectInstanceDestroyIntent
         [$routeIds, $attached] = $this->routes($input, $members, $ids);
         $direct = ValidatedData::object($input['direct_destroy']);
         $database = Arr::except(ValidatedData::object($direct['database']), ['owner_instance_id']);
+        // SQLite IMMEDIATE serializes this re-read with DatabaseConnectionTarget::save and DatabaseOwnerAdmission.
+        // No transaction is kept across the earlier Schedule RPCs.
+        $currentDatabase = $this->databases->snapshot(Instance::query()->with('node')->findOrFail(ValidatedData::integer($input['instance_id'])), $ids);
+        if ($currentDatabase != $database) {
+            throw new ResourceOperationException('database.removal_conflict', 'The prepared database removal set changed.', 409);
+        }
+        $node = $this->node($input);
+        [$runtime, $nativeProcesses, $teardown] = $this->runtimeInputs($input, $members, $node);
+        $native = ValidatedData::object($input['native_destroy']);
+        if ($node->user !== $direct['node_user'] || $runtime !== $direct['runtime'] || $teardown !== $direct['teardown']
+            || [...$runtime, 'processes' => $nativeProcesses] !== $native['native_runtime']
+            || app(ContainerInstanceDestroy::class)->capture(Instance::query()->findOrFail(ValidatedData::integer($input['instance_id']))) !== $input['container_destroy']) {
+            throw new ResourceOperationException('instance.removal_conflict', 'The prepared removal runtime changed.', 409);
+        }
         $receipt = app(RecordDatabaseOperationAction::class)->prepare('instance.destroy', 'instance',
             ValidatedData::integer($input['instance_id']), ValidatedData::integer($input['node_id']), $database, []);
         $input['direct_destroy'] = [...$direct, 'database' => [
@@ -138,7 +132,6 @@ final readonly class DirectInstanceDestroyIntent
         if ($removal->requested_instance_id !== $input['instance_id'] || $removal->inventory_digest !== $input['inventory_digest']) {
             throw new ResourceOperationException('instance.removal_conflict', 'The admitted removal set changed.', 409);
         }
-        $node = $this->node($input);
         foreach ($members as $member) {
             $instance = $this->member($member, $input, $node);
             $ownedRoutes = $attached->filter(static fn (Route $route): bool => $route->targets->contains('instance_id', $instance->id))->modelKeys();
@@ -156,6 +149,38 @@ final readonly class DirectInstanceDestroyIntent
         $removal->update(['status' => InstanceRemovalStatus::Removing, 'failed_step' => null, 'error_code' => null, 'native_intent' => $input]);
 
         return $input;
+    }
+
+    /** Recheck destructive runtime identities without reading or rendering publication again.
+     * @param  array<string,mixed>  $input
+     * @param  list<array<string,mixed>>  $members
+     * @return array{array{processes:list<array<string,mixed>>,schedules:list<array<string,mixed>>},list<array<string,mixed>>,list<array<string,mixed>>}
+     */
+    private function runtimeInputs(array $input, array $members, Node $node): array
+    {
+        $runtime = ['processes' => [], 'schedules' => []];
+        $nativeProcesses = [];
+        $teardown = [];
+        foreach ($members as $member) {
+            $instance = $this->member($member, $input, $node);
+            foreach (Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)->orderBy('id')->get() as $process) {
+                $control = ($input['container_destroy'] ?? null) === null
+                    ? $this->processes->inputFor($process, 'destroy')
+                    : ['process_id' => $process->id, 'runtime' => 'container', 'name' => $process->name];
+                $nativeProcesses[] = Arr::only($control, ['process_id', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
+                $runtime['processes'][] = Arr::only($control, ['process_id', 'runtime', 'name', 'vite']);
+            }
+            foreach (Schedule::query()->whereIn('target_type', Instance::morphTypes())->where('target_id', $instance->id)->orderBy('id')->get() as $schedule) {
+                $runtime['schedules'][] = Arr::only($this->schedules->inputFor($schedule, 'destroy', cascade: true), ['id', 'group', 'cascade']);
+            }
+            $steps = $member['run_teardown'] ? app(ProjectLifecycleStepStore::class)->ordered($instance->project, LifecyclePhase::Teardown) : [];
+            $teardown[] = ['instance_id' => $instance->id, 'checkout' => $instance->checkout_path,
+                'user' => $node->user,
+                'steps' => array_map(static fn ($step): array => ['name' => $step->name, 'timeout_seconds' => $step->timeoutSeconds,
+                    'sha256' => hash('sha256', $step->command)], $steps)];
+        }
+
+        return [$runtime, $nativeProcesses, $teardown];
     }
 
     /** @param array<string,mixed> $input
@@ -279,7 +304,10 @@ final readonly class DirectInstanceDestroyIntent
     private function member(array $member, array $input, Node $node): Instance
     {
         $instance = Instance::query()->with('project')->findOrFail(ValidatedData::integer($member['instance_id']));
-        if ($instance->project_id !== $input['project_id'] || $instance->node_id !== $node->id || ! $instance->placedOnAppDev()) {
+        if ($instance->project_id !== $input['project_id'] || $instance->node_id !== $node->id || ! $instance->placedOnAppDev()
+            || $instance->name !== $member['name'] || $instance->checkout_path !== $member['checkout_path']
+            || $instance->source_layout !== $member['source_layout'] || $instance->effectiveRoot() !== $member['root']
+            || $instance->status->value !== $member['stored_status'] || $instance->project->repository_identity !== $member['repository_identity']) {
             throw new ResourceOperationException('instance.removal_conflict', 'The removal member changed placement.', 409);
         }
 

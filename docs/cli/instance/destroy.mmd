@@ -78,6 +78,9 @@ sequenceDiagram
   %%> - no new fire starts against a checkout that is being removed
   %%> Running fire:
   %%> - a fire that already started runs to its end, within its own timeout, and is still recorded
+    %%> Admission recheck:
+    %%> - a dependency that changes while a destroy is being admitted refuses it; Schedules may already be stopped
+    %%> - re-read the database set and attachments in the short admission transaction; keep no lock across Schedule calls
   Note over GW: Record removal intent<br/>mark removing
   %%> Result:
   %%> - persist the already prepared publication without a second render in the existing intent transaction

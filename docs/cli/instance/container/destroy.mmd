@@ -46,6 +46,9 @@ sequenceDiagram
     GW->>SW: Remove Schedule triggers<br/>then workflows and secrets
     %%> Failure boundary:
     %%> - a validation refusal leaves Schedules untouched; a Schedule removal failure keeps the Instance and Route active and records no destroy Operation
+    %%> Admission recheck:
+    %%> - a dependency that changes while a destroy is being admitted refuses it; Schedules may already be stopped
+    %%> - re-read the database set and attachments in the short admission transaction; keep no lock across Schedule calls
     Note over GW: Record removal intent<br/>mark removing
     %%> Result:
     %%> - persist the prepared input without rendering or validating publication again; mark the Instance removing and the Route retiring in the existing intent transaction

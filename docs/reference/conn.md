@@ -332,7 +332,7 @@ Inherited refusals keep their codes:
 
 Infrastructure failures keep their existing codes, such as `swamp.schedule_publish_unavailable` (503). A failed Operation can have `error: null` even when `error_code` is set; Conn must use that code without assuming `error.detail` exists.
 
-An unavailable publication Node or failed Caddy render refuses removal before any Schedule effect, for Conn, the core API and the CLI.
+An unavailable publication Node or failed Caddy render refuses removal before any Schedule effect, for Conn, the core API and the CLI. A dependency that changes while a destroy is being admitted refuses it; Schedules may already be stopped.
 
 The same caller, key, Instance ID and body return the same Operation with HTTP 202, even after the Instance was deleted. Reusing the key with a changed body refuses with `operation.idempotency_conflict` (409). A missing Instance without that receipt keeps the normal 404.
 

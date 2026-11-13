@@ -18,6 +18,8 @@ The Gateway then records the selected Instance, owned resources and desired remo
 
 Every caller uses one preparation in the shared engine. It validates stored blockers, owned databases, Process and Schedule placement, every publication participant's SSH connection, and Caddy, PHP and DNS rendering before stopping Schedules. The preparation records no intent or desired state and stages no execution copy. After Schedule removal succeeds, the existing transaction records that same prepared input, marks the Instance removing and Route retiring, and admits the Operation. Publication is not rendered a second time. A Schedule removal failure still leaves the Instance and Route active and records no removal Operation.
 
+A dependency that changes while a destroy is being admitted refuses it; Schedules may already be stopped.
+
 A missing SSH pin on any publication Node, including a private DNS Node, or a Caddy render refusal therefore leaves all Schedule triggers, workflows and vault entries intact.
 
 ```bash
