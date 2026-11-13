@@ -147,6 +147,11 @@ if (family === "list") {
   const [, , , name, device, type, ...settings] = args;
   state.containers[name].added ??= {};
   state.containers[name].added[device] = { type, settings };
+} else if (family === "config" && args[1] === "set") {
+  // A local key replaces a key of the same name.
+  const [, , name, setting] = args;
+  const key = setting.slice(0, setting.indexOf("="));
+  state.containers[name].config = [...(state.containers[name].config ?? []).filter((value: string) => !value.startsWith(key + "=")), setting];
 } else if (family === "start" || family === "stop") {
   const name = args.at(-1)!;
   if (!state.containers[name]) fail("Instance not found");

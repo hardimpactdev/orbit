@@ -413,7 +413,7 @@ class CloneTest(unittest.TestCase):
         self.assertEqual(error, "")
         self.assertIn(["python3", "-c", NETWORK_CHECK.read_text(), "orbitinst0", "eth0"], calls)
 
-    def test_nested_clone_refuses_inherited_raw_keys_and_extra_devices_before_start(self):
+    def test_nested_clone_starts_only_with_exactly_the_written_config_and_devices(self):
         allowed = {
             "root": {"type": "disk", "path": "/", "pool": "orbit-instances", "size": "40GiB"},
             "eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",
@@ -423,14 +423,32 @@ class CloneTest(unittest.TestCase):
             "orbit-agent": {"type": "disk", "source": "/opt/orbit-agent", "path": "/opt/orbit-agent", "readonly": "true", "shift": "true"},
             "t3": {"type": "proxy", "listen": "tcp:10.44.0.7:3800", "connect": "tcp:10.253.0.2:3773", "nat": "true"},
         }
-        for damage in ["clean", "raw.lxc", "privileged", "extra-device", "changed-host-path", "writable-share"]:
+        # InstancePlacement::config of the nested project over the common limits, as the Gateway writes it.
+        config = {"limits.cpu": "4", "limits.memory": "12GiB", "limits.processes": "4096", "security.nesting": "true",
+                  "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true",
+                  "security.idmap.isolated": "true", "security.idmap.size": "101000000", "boot.autostart": "false"}
+        damages = {
+            "raw.lxc": ("raw.lxc", "lxc.apparmor.profile=unconfined"),
+            "privileged": ("security.privileged", "true"),
+            "kernel-modules": ("linux.kernel_modules", "overlay"),
+            "mount-intercept": ("security.syscalls.intercept.mount", "true"),
+            "bpf-intercept": ("security.syscalls.intercept.bpf", "true"),
+            "shared-idmap": ("security.idmap.isolated", "false"),
+            "idmap-size": ("security.idmap.size", "65536"),
+            "autostart": ("boot.autostart", "true"),
+            "user-key": ("user.note", "x"),
+        }
+        for damage in ["clean", *damages, "missing-isolation", "extra-device", "changed-host-path", "writable-share"]:
             def inherited(read):
-                read["expanded_config"] = {}
+                # What Incus adds itself, and the project profile's environment.
+                read["expanded_config"] = {**config, "volatile.uuid": "abc-123", "image.os": "ubuntu",
+                                           "environment.HTTP_PROXY": "http://10.253.0.1:3128"}
                 read["expanded_devices"] = copy.deepcopy(allowed)
-                if damage == "raw.lxc":
-                    read["expanded_config"]["raw.lxc"] = "lxc.apparmor.profile=unconfined"
-                elif damage == "privileged":
-                    read["expanded_config"]["security.privileged"] = "true"
+                if damage in damages:
+                    key, value = damages[damage]
+                    read["expanded_config"][key] = value
+                elif damage == "missing-isolation":
+                    del read["expanded_config"]["security.idmap.isolated"]
                 elif damage == "changed-host-path":
                     read["expanded_devices"]["orbit-runtime"]["source"] = "/fast"
                 elif damage == "extra-device":
@@ -438,14 +456,44 @@ class CloneTest(unittest.TestCase):
                 elif damage == "writable-share":
                     del read["expanded_devices"]["orbit-runtime"]["readonly"]
             with self.subTest(damage=damage):
-                calls, _, error = self.clone(inherited, overrides={"project": "orbit-instances-nested", "allowed_devices": allowed})
+                calls, _, error = self.clone(inherited, overrides={"project": "orbit-instances-nested", "allowed_devices": allowed, "config": config})
                 starts = [call for call in calls if "start" in call]
+                # The copy writes the same config that the guard admits.
+                copied = next(call for call in calls if "copy" in call)
+                self.assertEqual({copied[i + 1] for i, arg in enumerate(copied) if arg == "--config"}, {k + "=" + v for k, v in config.items()})
                 if damage == "clean":
                     self.assertEqual(error, "")
                     self.assertEqual(starts, [["incus", "--project", "orbit-instances-nested", "start", "instance-7"]])
                 else:
                     self.assertEqual(error, "instance.container_network_unsafe\n")
                     self.assertFalse(starts)
+
+    def test_nested_guard_admits_the_live_shape_of_the_first_nested_container(self):
+        # The expanded config of the first nested-fleet container on a real Node, made before `boot.autostart`; the guard's
+        # allowed config is that intent's `config`. Its next start writes `boot.autostart` first, so only that key is missing now.
+        namespace = {}
+        exec(NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0]
+             + (NETWORK_CHECK.parent / "instance_nested.py").read_text().split('if __name__ == "__main__":')[0], namespace)
+        proxy = "http://10.253.0.1:3128"
+        live = {
+            **{"environment." + key: value for key, value in {
+                "HTTP_PROXY": proxy, "HTTPS_PROXY": proxy, "http_proxy": proxy, "https_proxy": proxy,
+                "NO_PROXY": "localhost,127.0.0.1,::1,10.253.0.1", "no_proxy": "localhost,127.0.0.1,::1,10.253.0.1",
+                "NODE_USE_ENV_PROXY": "1", "VP_HOME": "/var/lib/orbit/vite-plus-home", "VP_NO_UPDATE_CHECK": "1",
+                "PATH": "/opt/orbit-runtime/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}.items()},
+            "image.architecture": "amd64", "image.os": "ubuntu", "image.release": "resolute", "image.serial": "20261111_07:42",
+            "limits.cpu": "4", "limits.memory": "12GiB", "limits.processes": "4096",
+            "security.idmap.isolated": "true", "security.idmap.size": "101000000", "security.nesting": "true",
+            "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true",
+            "volatile.base_image": "c53d38334f56", "volatile.idmap.base": "6898240", "volatile.last_state.power": "RUNNING",
+            "volatile.uuid": "17955fcf-4ca2-4b9b-b93e-3f74908cca98",
+        }
+        allowed = {"limits.cpu": "4", "limits.memory": "12GiB", "limits.processes": "4096", "security.nesting": "true",
+                   "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true",
+                   "security.idmap.isolated": "true", "security.idmap.size": "101000000", "boot.autostart": "false"}
+        check = namespace["nested_unsafe_config"]
+        self.assertEqual(check(live, allowed), "config boot.autostart")
+        self.assertEqual(check({**live, "boot.autostart": "false"}, allowed), "")
 
     def test_guest_and_node_command_names_stay_in_sync(self):
         def commands(path):

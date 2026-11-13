@@ -26,6 +26,8 @@ Preparing an `app-dev` Node for [Instance containers](/reference/development-con
 
 On a Node with nested-fleet hosting on, a failed build of the [nested-fleet image](/reference/development-containers#the-nested-fleet-image) does not fail the role. The Node records the failed task, and only the create of a nested-fleet default refuses until a later converge builds the image. A failed build of the normal image still fails the role.
 
+In the nested-fleet project the clone probe also passes the [nested start guard](/reference/development-containers#the-container), an allowlist of its config and devices.
+
 Migration retirement protects the Node's remaining checkouts: an owner with dependents or a checkout with registered descendants refuses before downtime; a linked checkout keeps independent Git recovery data and removes only its own registration. See [retirement and recovery](/cli/instance/migrate#retained-git-data).
 
 Migration carries [local Git state](/cli/instance/migrate#local-git-state), including branches, complete stash history, staging and tracked edits. It hashes every carried file, including untracked and ignored bytes, and verifies the copied state before cutover and rechecks the read-only source snapshot before retention; owner dependencies, submodule changes, active clean/smudge filters and intent-to-add still refuse.

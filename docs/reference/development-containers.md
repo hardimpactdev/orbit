@@ -1011,11 +1011,25 @@ An Instance container with a nested fleet lives in its own Incus project on the 
 | `security.idmap.isolated` | `true` | The container has its own ID range, as every Instance container |
 | `security.idmap.size` | `101000000` | The inner range below must fit inside |
 | `limits.memory` | `12GiB` | The inner fleet shares the container's memory |
+| `boot.autostart` | `false` | Incus never starts it at host boot, without the guard below |
 | `user.max_user_namespaces` | Not set to zero | The inner Incus needs user namespaces |
 
 Its project allows low-level keys (`restricted.containers.lowlevel=allow`), because `security.idmap.size` is one. So a guard runs before every start of a container in that project: the Ansible start, the native clone and the host converge's clone probe.
 
-The guard reads the effective config and devices, with the profile's. It refuses with `instance.container_network_unsafe` a container that has any `raw.*` key, sets `security.privileged`, or has a device that is not in its exact list. The list holds the root disk, the NIC, the two read-only shared folders with their own sources, and the T3 proxy of a clone. So no other host path, and never the host's Incus socket, reaches it. A container of `orbit-instances` keeps its NIC guard, with the same program and arguments as before.
+The guard reads the effective config and devices, with the profile's. It is an allowlist. It refuses a container whose config or devices differ from what Orbit writes for it. The error is `instance.container_network_unsafe`, and the log names the refused key or device.
+
+The config must be exactly the intent's own `config`, with the same values. That map holds the keys in the table above and the common limits. Create and clone write the same map, so the two cannot drift. A missing key is refused too. These keys pass as well:
+
+- `volatile.*` and `image.*`: Incus writes them itself, and Orbit writes none. The guard does not judge them, as before.
+- `environment.*`: they only set the environment of processes in the container.
+
+Any other key is refused, for example a `raw.*` key, `security.privileged`, `linux.kernel_modules`, another syscall intercept or a `user.*` key.
+
+The devices must be exactly the root disk, the NIC, the two read-only shared folders with their own sources, and the T3 proxy of a clone. So no other host path, and never the host's Incus socket, reaches it.
+
+The clone probe writes only `security.idmap.isolated=true`, so its guard admits only that key. A container of `orbit-instances` keeps its NIC guard, with the same program and arguments as before.
+
+After a host reboot, Incus restores the containers that were running, without the guard. A nested-fleet container has `boot.autostart=false`, so it stays stopped. An Orbit start of the Instance, such as its deployment, starts it again through the guard. A container made before the key existed gets it at its next start, before the guard reads it: it is the one key a start writes, and Incus applies it without a restart.
 
 ### Capacity
 

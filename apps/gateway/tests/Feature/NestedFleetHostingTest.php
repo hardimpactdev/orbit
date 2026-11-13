@@ -125,7 +125,7 @@ describe('the one placement rule', function (): void {
         expect(InstancePlacement::config('orbit-instances'))->toBe([])
             ->and(InstancePlacement::config('orbit-instances-nested'))->toBe([
                 'security.nesting' => 'true', 'security.syscalls.intercept.mknod' => 'true', 'security.syscalls.intercept.setxattr' => 'true',
-                'security.idmap.isolated' => 'true', 'security.idmap.size' => '101000000', 'limits.memory' => '12GiB',
+                'security.idmap.isolated' => 'true', 'security.idmap.size' => '101000000', 'limits.memory' => '12GiB', 'boot.autostart' => 'false',
             ]);
     });
 });

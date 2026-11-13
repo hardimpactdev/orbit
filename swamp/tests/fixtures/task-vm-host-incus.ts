@@ -333,7 +333,9 @@ if (family === "query") {
   state.instances.push({ name: args[2], project, status: "Stopped", config: {...config, "volatile.base_image": source?.fingerprint} });
 } else if (family === "copy") {
   if (!instance(action)) fail("Instance not found");
-  state.instances.push({ name, project, status: "Stopped" });
+  // As Incus copies an instance: its local config comes along, without the volatile keys.
+  const config = Object.fromEntries(Object.entries(instance(action).config ?? {}).filter(([key]) => !key.startsWith("volatile.")));
+  state.instances.push({ name, project, status: "Stopped", config });
 } else if (family === "start" || family === "stop") {
   const named = args.at(-1)!;
   if (!instance(named)) fail("Instance not found");
