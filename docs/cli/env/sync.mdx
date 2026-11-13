@@ -24,6 +24,23 @@ After the reload, Orbit restarts running Instance Processes that have `restart_o
 
 When the end check `Check the written file` fails, the file on the Node differs from the rendering. Run the command again: it writes the file again.
 
+## On a container Instance
+
+On an Instance in a container, `env:sync` does not render the whole file, unlike on a host Instance. Orbit never renders an existing container's `.env` again. The sync writes ONLY the keys of the Instance's attached connections, in place, in the `.env` inside the container: for a MySQL or PostgreSQL connection under prefix `DB`, `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME` and `DB_PASSWORD`. Run it after `database:create --instance` or `instance:database:add` on an existing container Instance. `--force` has no effect there, and `env:import` stays refused for a container.
+
+- A key the file already has gets the connection's value, also when the owner set it by hand.
+- A key the file lacks is added at the end.
+- A key whose value holds a `${...}` reference stays as the Project wrote it. The result names it under `kept`.
+- Every other line stays byte for byte, and the file keeps its owner, group, mode and ACL.
+
+The same Operation, `instance.connection_environment`, first adds the container's network paths to each attached server: the ACL egress rule, the bridge endpoint and the UFW rule. It removes no rule. When the file changed, it clears Laravel's configuration cache and restarts the Instance's own running units: its FrankenPHP unit and its running Process units. The values reach the container only through a Swamp vault copy; the Operation input and result hold key names only. The result lists the key names under `written`, `added`, `kept` and `unchanged`, and the restarted units under `restarted`.
+
+The sync is refused, and no run starts, when the Instance has no attached connection (`env.connection_missing`), when the container is stopped (`process.target_inactive`), or when lifecycle work is unfinished (`instance.lifecycle_busy`). A `.env` that is missing, a link, or holds a quoted value that never closes fails the run with `env.configuration_invalid`; the file stays as it was.
+
 ## How it works
 
 <div className="flow-at" data-chart="env/sync"></div>
+
+On a container Instance:
+
+<div className="flow-at" data-chart="env/connection-environment"></div>
