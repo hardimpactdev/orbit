@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Environment;
 
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
+use App\Domain\Instances\CloneValkeyKeyspace;
 use App\Domain\Instances\DevelopmentMail;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\Project;
 
@@ -22,11 +24,12 @@ final readonly class DevelopmentCreateEnvironment
     /**
      * The Project's environment template, then the Instance's stored values, then Orbit's defaults and, for Laravel, a new APP_KEY.
      * A retry keeps the values the first admission stored, including its APP_KEY. A clone of a container default (`$source`) takes
-     * the default's APP_KEY instead: the cloned data is encrypted with it.
+     * the default's APP_KEY instead: the cloned data is encrypted with it. A clone's own Valkey user (`$valkey`) replaces the
+     * template's keys of its prefix; for Laravel it also sets the connection and Horizon key prefixes of CloneValkeyKeyspace.
      *
      * @return list<string> the environment keys
      */
-    public function admit(Instance $instance, Project $project, ?DatabaseConnection $database = null, ?Instance $source = null): array
+    public function admit(Instance $instance, Project $project, ?DatabaseConnection $database = null, ?Instance $source = null, ?DatabaseConnectionTarget $valkey = null): array
     {
         $template = [];
         foreach ($project->environmentTemplate()->first()->entries ?? [] as $entry) {
@@ -40,6 +43,11 @@ final readonly class DevelopmentCreateEnvironment
             // The Instance's own database copy, attached under DB, replaces the template's database keys.
             $projected = app(DatabaseConnectionEnvProjection::class)->project($database, 'DB', 'wireguard', $instance->node);
             $values = [...array_diff_key($values, array_flip($projected['forget'])), ...$projected['values']];
+        }
+        if ($valkey !== null) {
+            $projected = app(DatabaseConnectionEnvProjection::class)->project($valkey->databaseConnection, $valkey->prefix, 'wireguard', $instance->node);
+            $values = [...array_diff_key($values, array_flip($projected['forget'])), ...$projected['values'],
+                ...($project->is_laravel === true ? CloneValkeyKeyspace::laravelKeys($instance, $valkey->prefix) : [])];
         }
         $values['APP_NAME'] ??= $project->name;
         $values['APP_ENV'] ??= 'development';

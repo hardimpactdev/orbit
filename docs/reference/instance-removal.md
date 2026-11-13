@@ -70,7 +70,9 @@ The Route child allows its own steps to fail, so destroy reads its ready result.
 
 Publication captures include the full site catalogs so unrelated Routes, PHP pools and DNS records remain present. Each native action has its own run and iteration identity. The Gateway does not supply an execution lock or recapture publication intent during the run.
 
-A container Instance follows the [container destroy flow](/reference/development-containers#destroy). A non-default container Instance, cloned or migrated, requires `--force`, skips work checks and teardown, and deletes the container with its Processes and owned network state. The Instance named `default` stays unavailable. Conn removes its environment and pairing records after the T3 server is gone. Destroy also deletes migration execution copies, including the remote-read credential, and the owned database’s create copies, which hold its server and owner logins. The runtime row stays until success, so its address and port stay reserved during a failed removal.
+A container Instance follows the [container destroy flow](/reference/development-containers#destroy). A non-default container Instance, cloned or migrated, requires `--force`, skips work checks and teardown, and deletes the container with its Processes and owned network state. The Instance named `default` stays unavailable. Conn removes its environment and pairing records after the T3 server is gone.
+
+Destroy also deletes migration execution copies, including the remote-read credential, and the create copies of the owned database and of the clone's own Valkey user, which hold their server and owner logins. The clone's Valkey user is deleted with its owned databases; the default's Valkey user stays. The runtime row stays until success, so its address and port stay reserved during a failed removal.
 
 Destroy removes the Instance's folder for pending mail activation from the Node, `/var/lib/orbit/instance-mail/<container>`. Its shared bridge endpoint stays for ordinary host reconciliation, as database endpoints do.
 

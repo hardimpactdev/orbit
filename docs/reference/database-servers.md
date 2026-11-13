@@ -253,7 +253,7 @@ The slug `default` is refused. A user that the server already has, and that Orbi
 
 Key patterns limit keys, not the database index. Valkey 8 has no ACL rule for an index, so a user can select any index, and its patterns apply in each one. `SCAN` and `DBSIZE` show the names and the count of all keys in an index, but no values. A user that can write can also fill the server's memory, because Orbit sets no memory limit.
 
-`--instance`, [`instance:create --database-server`](/domains/applications#database-on-a-server), and the Instance database clone refuse a `redis` server with `database.driver_unsupported`.
+`--instance`, [`instance:create --database-server`](/domains/applications#database-on-a-server), and the Instance database clone refuse a `redis` server with `database.driver_unsupported`. A container clone of a default with a Valkey target gets its own ACL user instead: see [Clone the database](/reference/development-containers#a-clones-valkey-user).
 
 ## Add a user
 

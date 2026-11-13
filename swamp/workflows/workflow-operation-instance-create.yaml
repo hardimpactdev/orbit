@@ -12,7 +12,8 @@ inputs:
     kind: {type: string, const: instance.create}
     intent: {type: object}
     # Names only: git_credential and environment, member_<Process id> for each development Process environment,
-    # server_database_create and server_database_check for an owned server database, step_<index> for each development
+    # server_database_create and server_database_check for an owned server database, server_valkey_create and
+    # server_valkey_check for a clone's own Valkey user, step_<index> for each development
     # deploy step of a container default, model_environment for a clone's placeholder model key, and process_environments for
     # a default's Process environment files or a clone's private workspace JSON (environment and processes), and club_key for
     # a nested-fleet container's Club key, which only its start step reads.
@@ -559,10 +560,48 @@ jobs:
             argv: '${{ ["timeout", "600"] + (inputs.intent.server_database == null || inputs.intent.server_database.fill == null ? [] : inputs.intent.server_database.fill) }}'
             stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.server_database == null ? inputs.execution_secrets.environment.key : inputs.execution_secrets.server_database_create.key) }}'
             timeoutSec: 610
+      # A clone of a default with a Valkey target gets its own Valkey user on the same server, beside its SQL database.
+      - name: clone-server-valkey
+        labels: {role: swamp}
+        dependsOn: []
+        guard: '${{ (inputs.intent.already_active || inputs.intent.server_valkey == null) || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: workflow
+          workflowIdOrName: operation-database-create
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.intent.server_valkey == null ? inputs.node_id : inputs.intent.server_valkey.node_id }}'
+            kind: database.create
+            intent: '${{ inputs.intent.server_valkey == null ? {} : inputs.intent.server_valkey.intent }}'
+            execution_secrets: '${{ inputs.intent.server_valkey == null ? {} : {"create": inputs.execution_secrets.server_valkey_create, "check": inputs.execution_secrets.server_valkey_check} }}'
+      - name: clone-server-valkey-check
+        labels: {role: swamp}
+        dependsOn: [{step: clone-server-valkey, condition: {type: succeeded}}]
+        guard: '${{ (inputs.intent.already_active || inputs.intent.server_valkey == null) || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-kvcheck-" + string(inputs.intent.server_valkey == null ? "none" : inputs.intent.server_valkey.intent.ssh_execution.target.host)).split(".").join("-") }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ ("ic-kvcheck-" + string(inputs.intent.server_valkey == null ? "none" : inputs.intent.server_valkey.intent.ssh_execution.target.host)).split(".").join("-") }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.server_valkey == null ? "none" : inputs.intent.server_valkey.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.server_valkey == null ? 22 : inputs.intent.server_valkey.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.server_valkey == null ? "none" : inputs.intent.server_valkey.intent.ssh_execution.identity_file }}'
+              hostKeys: '${{ inputs.intent.server_valkey == null ? [] : inputs.intent.server_valkey.intent.ssh_execution.target.host_keys }}'
+            hosts: [{name: target, address: '${{ inputs.intent.server_valkey == null ? "none" : inputs.intent.server_valkey.intent.ssh_execution.target.host }}'}]
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["timeout", "60"] + (inputs.intent.server_valkey == null ? [] : inputs.intent.server_valkey.intent.owner_client) }}'
+            stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.server_valkey == null ? inputs.execution_secrets.environment.key : inputs.execution_secrets.server_valkey_check.key) }}'
+            timeoutSec: 70
       - name: clone-workspace
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: clone-container, condition: {type: succeeded}}, {step: clone-club-key, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
+        dependsOn: [{step: clone-container, condition: {type: succeeded}}, {step: clone-club-key, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-valkey-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
         guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
@@ -759,7 +798,7 @@ jobs:
             folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
             intent: '${{ inputs.intent }}'
             checkout: '${{ "checkout" in steps ? steps.checkout : null }}'
-            database: '${{ (inputs.intent.container != null && inputs.intent.container.clone != null ? ((inputs.intent.database == null || ("clone-database-install" in steps && steps["clone-database-install"].status == "succeeded")) && (inputs.intent.server_database == null || ("clone-server-database-check" in steps && steps["clone-server-database-check"].status == "succeeded" && (inputs.intent.server_database.fill == null || ("clone-server-database-fill" in steps && steps["clone-server-database-fill"].status == "succeeded")))) ? "succeeded" : "failed") : inputs.intent.server_database == null ? ("database-install" in steps ? steps["database-install"].status : "skipped") : (inputs.intent.server_database.fill != null ? ("server-database-fill" in steps ? steps["server-database-fill"].status : "skipped") : ("server-database-check" in steps ? steps["server-database-check"].status : "skipped"))) }}'
+            database: '${{ (inputs.intent.container != null && inputs.intent.container.clone != null ? ((inputs.intent.database == null || ("clone-database-install" in steps && steps["clone-database-install"].status == "succeeded")) && (inputs.intent.server_database == null || ("clone-server-database-check" in steps && steps["clone-server-database-check"].status == "succeeded" && (inputs.intent.server_database.fill == null || ("clone-server-database-fill" in steps && steps["clone-server-database-fill"].status == "succeeded")))) && (inputs.intent.server_valkey == null || ("clone-server-valkey-check" in steps && steps["clone-server-valkey-check"].status == "succeeded")) ? "succeeded" : "failed") : inputs.intent.server_database == null ? ("database-install" in steps ? steps["database-install"].status : "skipped") : (inputs.intent.server_database.fill != null ? ("server-database-fill" in steps ? steps["server-database-fill"].status : "skipped") : ("server-database-check" in steps ? steps["server-database-check"].status : "skipped"))) }}'
             setup: '${{ "setup" in steps ? steps.setup.status : "skipped" }}'
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
             route: '${{ (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-route" in steps ? steps["clone-route"].status : "skipped") : ("route" in steps ? steps.route.status : "skipped")) }}'

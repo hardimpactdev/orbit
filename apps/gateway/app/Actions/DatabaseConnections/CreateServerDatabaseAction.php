@@ -12,6 +12,7 @@ use App\Domain\DatabaseServers\DatabaseUserPrivileges;
 use App\Domain\DatabaseServers\MysqlNames;
 use App\Domain\DatabaseServers\PostgresTestDatabases;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
+use App\Domain\Instances\CloneValkeyKeyspace;
 use App\Domain\Instances\OwnedDatabaseSlug;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -116,9 +117,7 @@ final readonly class CreateServerDatabaseAction
                 }
                 DatabaseUser::query()->create([
                     'database_connection_id' => $connection->id, 'username' => $credentials['username'],
-                    'privileges' => $redis ? implode(' ', ['on', ...array_map(static fn (string $pattern): string => '~'.$pattern, $data->patterns),
-                        'resetchannels', '-@all', ...array_map(static fn (string $rule): string => '+'.$rule, $data->allow), '-@admin', '-@dangerous', '-function', '-script'])
-                        : $this->privileges->text($server->driver, $database, prefix: $test),
+                    'privileges' => $redis ? $this->valkeyPrivileges($data) : $this->privileges->text($server->driver, $database, prefix: $test),
                     'created_by' => $createdBy,
                 ]);
             }
@@ -146,6 +145,62 @@ final readonly class CreateServerDatabaseAction
         $this->assertActive($server);
 
         return $this->record($server, $connection, true, $instance, null);
+    }
+
+    /**
+     * A clone's own Valkey user on the server of its default's Valkey connection, recorded as `database:create --server` records
+     * a Valkey user but owned by the clone, and created by the clone run's `operation-database-create` child. It keeps the
+     * default user's commands and index; its keys are only the clone's own (CloneValkeyKeyspace). A retry records the same user
+     * again; `ACL SETUSER` converges.
+     */
+    public function prepareValkeyForInstance(Instance $instance, DatabaseConnection $source): PreparedDatabaseOperation
+    {
+        return DB::transaction(function () use ($instance, $source): PreparedDatabaseOperation {
+            $server = $source->server;
+            $sourceUser = $source->users()->where('username', $source->username ?? '')->first();
+            if (! $server instanceof DatabaseServer || $server->driver !== DatabaseDriver::Redis || ! $sourceUser instanceof DatabaseUser) {
+                throw new ResourceOperationException('instance.database_clone_unsupported',
+                    "The default Instance's Valkey connection [{$source->slug}] has no Orbit-made user on a Valkey server.", 422);
+            }
+            $server = DatabaseServer::query()->with(['node', 'process'])->whereKey($server->id)->lockForUpdate()->firstOrFail();
+            $this->assertActive($server);
+            app(DatabaseDestroySafety::class)->assertAcceptsCreates($server);
+            app(SwampSshExecutionInput::class)->forNode($server->node);
+            $slug = OwnedDatabaseSlug::for($instance, 'valkey');
+            $data = new CreateServerDatabaseData($slug, $server->slug, null, CloneValkeyKeyspace::patterns($instance),
+                CloneValkeyKeyspace::allow($sourceUser->privileges), $source->database === null ? null : (int) $source->database);
+            $connection = DatabaseConnection::query()->where('slug', $slug)->first();
+            if ($connection !== null) {
+                if ($connection->owner_instance_id !== $instance->id || $connection->database_server_id !== $server->id) {
+                    throw $this->slugConflict($slug);
+                }
+
+                return $this->record($server, $connection, true, $instance, $data);
+            }
+            $credentials = ['username' => $slug, 'password' => Str::random(self::PASSWORD_LENGTH), 'new' => true];
+            $this->assertRecordedNamesFree($server, '', null, $credentials);
+            try {
+                $connection = DatabaseConnection::query()->create([
+                    'slug' => $slug, 'driver' => $server->driver->value, 'node_id' => $server->node_id,
+                    'database_server_id' => $server->id, 'owner_instance_id' => $instance->id,
+                    'host' => $server->node->wireguard_ip, 'port' => $server->port, 'database' => $source->database,
+                    'username' => $credentials['username'], 'password' => $credentials['password'],
+                ]);
+            } catch (UniqueConstraintViolationException) {
+                throw $this->slugConflict($slug);
+            }
+            DatabaseUser::query()->create(['database_connection_id' => $connection->id, 'username' => $slug,
+                'privileges' => $this->valkeyPrivileges($data), 'created_by' => null]);
+
+            return $this->record($server, $connection, false, $instance, $data);
+        });
+    }
+
+    /** The rules Valkey reports for a user that `database.create` makes; Doctor compares them by token. */
+    private function valkeyPrivileges(CreateServerDatabaseData $data): string
+    {
+        return implode(' ', ['on', ...array_map(static fn (string $pattern): string => '~'.$pattern, $data->patterns),
+            'resetchannels', '-@all', ...array_map(static fn (string $rule): string => '+'.$rule, $data->allow), '-@admin', '-@dangerous', '-function', '-script']);
     }
 
     /** The database.create intent for a recorded connection; `$redis` carries the Valkey index and ACL rules. */

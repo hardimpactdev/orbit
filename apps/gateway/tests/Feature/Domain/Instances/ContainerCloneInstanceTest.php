@@ -304,6 +304,108 @@ it('starts the run with the placeholder model key in the vault and the template 
         ->and($fill[14])->toContain(' TEMPLATE ');
 });
 
+describe('a clone of a default with a Valkey target', function (): void {
+    it('gets its own Valkey user on the same server, never the default\'s user, password or keys', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $default->project->update(['is_laravel' => true]);
+        $shared = defaultValkeyTarget($default, databaseServerOn($node, 'kv', DatabaseDriver::Redis, 6379));
+        $operation = containerCreate($default->project->fresh(), $node, 'feature');
+        $clone = Instance::query()->findOrFail($operation->target_id);
+        $vault = vaultReadingSocket([]);
+
+        $own = DatabaseConnection::query()->where('owner_instance_id', $clone->id)->sole();
+        $privileges = $own->users()->sole()->privileges;
+        $values = app(InstanceEnvironmentStore::class)->values($clone);
+        $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+        $create = collect($vault->puts)->firstWhere('key', $run['execution_secrets']['server_valkey_create']['key'])['value'];
+        $prefix = 'orbit_instance_'.$clone->id.'_';
+
+        expect($own->only(['slug', 'username', 'database_server_id', 'host', 'port', 'database']))->toBe(['slug' => 'tool-feature-valkey',
+            'username' => 'tool-feature-valkey', 'database_server_id' => $shared->database_server_id, 'host' => '10.44.0.7', 'port' => 6379, 'database' => '3'])
+            ->and($own->password)->not->toBe($shared->password)
+            ->and($privileges)->toBe("on ~{$prefix}* resetchannels -@all +@read +@write +@keyspace +@connection +eval -@admin -@dangerous -function -script")
+            ->and(DatabaseConnectionTarget::query()->where('instance_id', $clone->id)->where('prefix', 'REDIS')->sole()->database_connection_id)->toBe($own->id)
+            ->and($values)->toMatchArray(['REDIS_CONNECTION' => 'redis', 'REDIS_HOST' => '10.44.0.7', 'REDIS_PORT' => '6379', 'REDIS_DATABASE' => '3',
+                'REDIS_USERNAME' => 'tool-feature-valkey', 'REDIS_PASSWORD' => $own->password,
+                'REDIS_PREFIX' => $prefix.'database_', 'HORIZON_PREFIX' => $prefix.'horizon:'])
+            ->and($values)->not->toHaveKey('QUEUE_CONNECTION')
+            ->and(containerIntentOf($operation)['firewall'])->toContain(['rule' => 'allow', 'interface_in' => 'orbitinst0', 'from_ip' => '10.253.0.3',
+                'to_ip' => '10.44.0.7', 'to_port' => '6379', 'proto' => 'tcp', 'comment' => "orbit:instance-{$clone->id}-database"])
+            ->and($run['intent']['server_valkey']['intent']['username'])->toBe('tool-feature-valkey')
+            ->and($run['intent']['server_valkey']['fill'])->toBeNull()
+            ->and($run['intent']['server_database'])->toBeNull()
+            ->and($create)->toContain('ACL SETUSER tool-feature-valkey reset on #'.hash('sha256', $own->password)." ~{$prefix}* resetchannels -@all")
+            ->and($create)->not->toContain('tool_default')->not->toContain($shared->password)->not->toContain('shared-redis')
+            ->and(json_encode($run['intent']))->not->toContain($own->password);
+    });
+
+    it('never takes FLUSHDB, which would empty the index it shares with the default', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $shared = defaultValkeyTarget($default, databaseServerOn($node, 'kv', DatabaseDriver::Redis, 6379));
+        $shared->users()->update(['privileges' => 'on ~tool_* resetchannels -@all +@read +@write +flushdb +FLUSHDB -@admin -@dangerous -function -script +flushdb']);
+        $operation = containerCreate($default->project, $node, 'feature');
+        $vault = vaultReadingSocket([]);
+        $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+        $create = collect($vault->puts)->firstWhere('key', $run['execution_secrets']['server_valkey_create']['key'])['value'];
+
+        expect(DatabaseConnection::query()->where('owner_instance_id', $operation->target_id)->sole()->users()->sole()->privileges)
+            ->toBe('on ~orbit_instance_'.$operation->target_id.'_* resetchannels -@all +@read +@write -@admin -@dangerous -function -script')
+            ->and(strtolower($create))->not->toContain('flushdb');
+    });
+
+    it('gives a Project that Orbit does not record as Laravel only the access keys', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        defaultValkeyTarget($default, databaseServerOn($node, 'kv', DatabaseDriver::Redis, 6379));
+        $clone = Instance::query()->findOrFail(containerCreate($default->project, $node, 'feature')->target_id);
+
+        expect(app(InstanceEnvironmentStore::class)->values($clone))->toHaveKeys(['REDIS_HOST', 'REDIS_USERNAME', 'REDIS_PASSWORD'])
+            ->not->toHaveKeys(['REDIS_PREFIX', 'HORIZON_PREFIX']);
+    });
+
+    it('keeps the SQL database clone and adds the Valkey user beside it', function (): void {
+        $node = containerDefaultNode();
+        databaseServerOn($node, 'pg', DatabaseDriver::Pgsql, 5432);
+        $default = Instance::query()->findOrFail(containerCreate(containerDefaultProject(), $node, 'default', 'pg')->target_id);
+        $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
+        InstanceRuntime::query()->where('instance_id', $default->id)->update(['seed_commit' => str_repeat('c', 40)]);
+        defaultValkeyTarget($default, databaseServerOn($node, 'kv', DatabaseDriver::Redis, 6379));
+        $operation = containerCreate($default->project, $node, 'feature');
+        vaultReadingSocket([]);
+        $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+
+        expect(DatabaseConnection::query()->where('owner_instance_id', $operation->target_id)->orderBy('id')->pluck('slug')->all())->toBe(['tool-feature', 'tool-feature-valkey'])
+            ->and(array_column(containerIntentOf($operation)['firewall'], 'to_port'))->toContain('5432', '6379')
+            ->and($run['intent']['server_database']['fill'])->not->toBeNull()
+            ->and($run['execution_secrets']['server_database_create']['key'])->not->toBe($run['execution_secrets']['server_valkey_create']['key']);
+    });
+
+    it('is refused when the default has two Valkey targets, no Orbit-made user, or a user with pub/sub', function (Closure $arrange): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $arrange($default, defaultValkeyTarget($default, databaseServerOn($node, 'kv', DatabaseDriver::Redis, 6379)));
+
+        expect(containerRefusal(fn () => containerCreate($default->project, $node, 'feature')))->toBe('instance.database_clone_unsupported')
+            ->and(Instance::query()->where('name', 'feature')->exists())->toBeFalse();
+    })->with([
+        'two targets' => [fn (Instance $default, DatabaseConnection $shared) => DatabaseConnectionTarget::query()->create(
+            ['instance_id' => $default->id, 'prefix' => 'CACHE_REDIS', 'database_connection_id' => $shared->id, 'network' => 'wireguard'])],
+        'no user' => [fn (Instance $default, DatabaseConnection $shared) => $shared->users()->delete()],
+        'pub/sub' => [fn (Instance $default, DatabaseConnection $shared) => $shared->users()->update(['privileges' => 'on ~app_* resetchannels -@all +@read +publish -@admin'])],
+    ]);
+});
+
+it('gives a clone of a default without a Valkey target no Valkey user', function (): void {
+    $node = containerDefaultNode();
+    $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
+
+    expect(DatabaseConnection::query()->where('driver', 'redis')->exists())->toBeFalse()
+        ->and(ValidatedData::object($operation->input['direct_provisioning'])['server_valkey'])->toBeNull()
+        ->and(app(InstanceEnvironmentStore::class)->values(Instance::query()->findOrFail($operation->target_id)))->not->toHaveKeys(['REDIS_HOST', 'REDIS_PREFIX', 'HORIZON_PREFIX']);
+});
+
 describe('the template copy of a clone\'s PostgreSQL database', function (): void {
     it('closes the default database, copies it, gives the copy to the clone\'s owner and opens the default again whatever happens', function (): void {
         $argv = DatabaseStatements::template('orbit-db-pg', 'postgres', 'tool_default', 'tool_default', 'tool_feature', 'tool_feature');
@@ -415,6 +517,18 @@ function cloneSucceeded(Operation $operation): array
             'environment_id' => 'env-feature', 'server_version' => '0.1.7', 'expires_at' => '2026-12-10T10:00:00.000Z',
             'gateway_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-gateway-1-token'],
             'swamp_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-swamp-1-token']]]];
+}
+
+/** The default's shared Valkey connection, as an operator makes and attaches it: a user over other apps' keys, index 3. */
+function defaultValkeyTarget(Instance $default, DatabaseServer $server): DatabaseConnection
+{
+    $shared = DatabaseConnection::query()->create(['slug' => 'shared-redis', 'driver' => 'redis', 'node_id' => $server->node_id,
+        'database_server_id' => $server->id, 'host' => '10.44.0.7', 'port' => 6379, 'database' => '3', 'username' => 'shared-redis', 'password' => 'default-secret']);
+    $shared->users()->create(['username' => 'shared-redis', 'created_by' => 'beast',
+        'privileges' => 'on ~tool_default_* ~other_app_* resetchannels -@all +@read +@write +@keyspace +@connection +eval -@admin -@dangerous -function -script']);
+    DatabaseConnectionTarget::query()->create(['instance_id' => $default->id, 'prefix' => 'REDIS', 'database_connection_id' => $shared->id, 'network' => 'wireguard']);
+
+    return $shared;
 }
 
 function databaseServerOn(Node $node, string $slug, DatabaseDriver $driver, int $port): DatabaseServer

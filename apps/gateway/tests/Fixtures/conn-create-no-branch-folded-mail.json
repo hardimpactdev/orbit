@@ -109,6 +109,7 @@
             "route": null,
             "database": null,
             "server_database": null,
+            "server_valkey": null,
             "container": {
                 "instance_id": 2,
                 "project": "orbit-instances",
@@ -285,6 +286,8 @@
         "clone-server-database",
         "clone-server-database-check",
         "clone-server-database-fill",
+        "clone-server-valkey",
+        "clone-server-valkey-check",
         "clone-workspace",
         "clone-agent",
         "clone-t3",
@@ -428,6 +431,7 @@
             "route": null,
             "database": null,
             "server_database": null,
+            "server_valkey": null,
             "container": {
                 "instance_id": 2,
                 "project": "orbit-instances",

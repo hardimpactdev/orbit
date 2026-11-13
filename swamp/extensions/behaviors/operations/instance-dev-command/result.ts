@@ -188,7 +188,7 @@ function containerOutcomes(
     if (clone !== null) {
         return [
             ["clone", container.launch === "succeeded", container.launch === "failed"],
-            ["database", (intent.database == null && intent.server_database == null) || phases.database === "succeeded", phases.database === "failed"],
+            ["database", (intent.database == null && intent.server_database == null && intent.server_valkey == null) || phases.database === "succeeded", phases.database === "failed"],
             ["workspace", commit !== null, container.workspace?.status === "failed"],
             ["agent", container.agent === "succeeded", container.agent === "failed"],
             ["processes", container.processes === "succeeded", container.processes === "failed"],

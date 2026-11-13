@@ -18,6 +18,7 @@ use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
@@ -245,4 +246,54 @@ it('deletes the owned server database create and destroy copies but keeps the de
         ->and(DatabaseConnection::query()->where('owner_instance_id', $clone->id)->exists())->toBeFalse();
     app(ContainerDestroyExecutionCopies::class)->remove($destroy->fresh());
     expect($default->fresh())->not->toBeNull();
+});
+
+it('deletes a clone\'s own Valkey user and its copies, never the default\'s shared user', function (): void {
+    app(ExtensionStore::class)->set('conn', true);
+    app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+    {
+        public function assertReady(): void {}
+
+        public function origin(): string
+        {
+            return 'http://10.44.0.3:8318';
+        }
+
+        public function key(): string
+        {
+            return 'placeholder-model-key';
+        }
+    });
+    $node = containerDefaultNode();
+    $process = Process::query()->forceCreate(['owner_type' => 'node', 'owner_id' => $node->id, 'name' => 'kv', 'runtime' => 'docker',
+        'runtime_config' => ['image' => 'valkey/valkey:8.1', 'ports' => [$node->wireguard_ip.':6379:6379']], 'status' => 'active']);
+    $server = DatabaseServer::query()->forceCreate(['slug' => 'kv', 'driver' => DatabaseDriver::Redis, 'node_id' => $node->id,
+        'process_id' => $process->id, 'tag' => '8.1', 'port' => 6379, 'status' => 'active', 'root_password' => 'root-secret']);
+    $defaultCreate = containerCreate(containerDefaultProject(), $node);
+    $default = Instance::query()->findOrFail($defaultCreate->target_id);
+    $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false, 'branch' => 'main', 'starting_commit' => str_repeat('c', 40)]);
+    $default->runtime()->update(['seed_commit' => str_repeat('c', 40)]);
+    $shared = DatabaseConnection::query()->create(['slug' => 'shared-redis', 'driver' => 'redis', 'node_id' => $node->id, 'database_server_id' => $server->id,
+        'host' => '10.44.0.7', 'port' => 6379, 'username' => 'shared-redis', 'password' => 'default-secret']);
+    $shared->users()->create(['username' => 'shared-redis', 'created_by' => 'beast', 'privileges' => 'on ~tool_* resetchannels -@all +@read -@admin']);
+    DatabaseConnectionTarget::query()->create(['instance_id' => $default->id, 'prefix' => 'REDIS', 'database_connection_id' => $shared->id, 'network' => 'wireguard']);
+    $create = containerCreate($default->project, $node, 'feature');
+    app(DevelopmentInstanceCreateProjection::class)->input($create);
+    $clone = Instance::query()->findOrFail($create->target_id);
+    $clone->update(['status' => InstanceState::Active, 'first_setup_pending' => false, 'branch' => 'feature', 'starting_commit' => str_repeat('c', 40)]);
+    $create->forceFill(['status' => 'succeeded', 'finished_at' => now()])->save();
+    $intent = $create->input['direct_provisioning']['server_valkey']['intent_id'];
+    expect($this->socket->values)->toHaveKeys(['database-create-intent-'.$intent, 'database-create-owner-'.$intent]);
+
+    $destroy = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    app(DevelopmentInstanceDestroyProjection::class)->input($destroy);
+    $drop = $this->socket->values['database-destroy-owned-'.$destroy->input['direct_destroy']['database']['intent_id'].'-'.$server->id.'-drop'];
+    app(DevelopmentInstanceDestroyProjection::class)->apply($destroy, destroyTerminal($destroy, 'succeeded'));
+    $deleted = collect($this->socket->messages)->where('type', 'vault.delete')->pluck('payload.key')->all();
+
+    expect($drop)->toContain("ACL DELUSER tool-feature-valkey\n")->not->toContain('shared-redis')
+        ->and($deleted)->toContain('database-create-intent-'.$intent, 'database-create-owner-'.$intent)
+        ->and(DatabaseConnection::query()->where('owner_instance_id', $clone->id)->exists())->toBeFalse()
+        ->and($shared->fresh())->not->toBeNull()
+        ->and($shared->targets()->pluck('instance_id')->all())->toBe([$default->id]);
 });
