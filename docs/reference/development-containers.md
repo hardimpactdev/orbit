@@ -885,7 +885,7 @@ A turn that runs is never cut, whatever its age. A thread that waits for the use
 
 The Gateway reads T3 with the admin session it already holds and renews for each clone: one `GET /api/orchestration/shell` per candidate, and none for a sleeping clone. It writes nothing in the container. It reads the access logs of all clones on a Node in one call to the Node agent.
 
-Each sleep is an `instance.sleep` Operation with `triggered_by` `hibernation-sweep`, and its result says `t3_turn: idle`. A run starts at most five sleeps; the next run takes the rest. `orbit:runtime-hibernator --dry-run` on the Gateway host lists every container Instance with its decision and reason, and changes nothing. `--instance=ID`, repeated, limits a run to those Instances and acts while the switch is off; `--idle-seconds=N` gives that run its own idle window.
+Each sleep is an `instance.sleep` Operation with `triggered_by` `hibernation-sweep`, and its result says `t3_turn: idle`. A run starts at most five sleeps; the next run takes the rest. `orbit:runtime-hibernator --dry-run` on the Gateway host lists every container Instance with its decision and reason, and changes nothing. `--instance=ID`, repeated, limits a run to those Instances and acts while the switch is off. `--idle-seconds=N`, at least 60 and only with `--instance`, gives that run its own idle window. A scoped run applies every rule above.
 
 **HTTP activity.** Caddy's site of a container Instance writes each request to `/data/caddy/orbit/hibernation/app-instance-<id>.log`, and the idle sleep reads the file's modification time. Caddy creates the file when it loads the site, so a new site gets a full idle window. The log rolls at 1 MiB and keeps one compressed roll. A destroy removes the log, but not a roll.
 

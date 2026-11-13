@@ -258,6 +258,37 @@ it('considers only the named Instances, with the window of the run', function ()
         ->and($other->refresh()->status->value)->toBe('active');
 });
 
+/** The proof path: a named run with a short window may only pick candidates and shorten the window; it skips no rule. */
+it('applies every never-sleep rule in a scoped run with a short window', function (string $case, string $reason): void {
+    $clone = idleClone($this, 'clone', logAge: $case === 'no_http_record' ? null : 200, taskOwned: $case === 'task');
+    $target = $case === 'default' ? $this->default : $clone;
+    $this->logs[RuntimeHibernation::accessLogPath(RuntimeHibernation::key($this->default->id))] = $this->now->getTimestamp() - 200;
+    $never = [];
+    match ($case) {
+        'default', 'task', 'no_http_record' => null,
+        'nested' => $this->project->forceFill(['nested_fleet' => true])->save(),
+        'never' => $never = [$clone->id],
+        'operation' => Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $clone->id,
+            'node_id' => $clone->node_id, 'lock_key' => OperationStore::lockKey('instance', $clone->id), 'status' => 'running', 'input' => [], 'state' => []]),
+        'keep_alive' => Process::query()->forceCreate(['owner_type' => 'instance', 'owner_id' => $clone->id, 'name' => 'queue', 'runtime' => 'systemd',
+            'working_directory' => '/srv/workspace', 'status' => 'active', 'keep_alive' => true, 'desired_state' => 'running',
+            'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'queue:work']]]),
+        'turn_runs' => $this->agent[$clone->id] = AgentActivity::read(true, null),
+        'user_waits' => $this->agent[$clone->id] = AgentActivity::read(false, $this->now->subSeconds(60)->getTimestamp()),
+        'unreadable' => $this->agent[$clone->id] = AgentActivity::unreadable(),
+    };
+
+    $decisions = idleSweep($this, $never)->run(false, [$target->id], 120);
+
+    expect(collect($decisions)->pluck('instanceId')->all())->toBe([$target->id])
+        ->and(reasonOf($decisions, $target))->toBe($reason)
+        ->and(Operation::query()->where('kind', InstanceSleep::Kind)->count())->toBe(0);
+})->with([
+    ['default', 'default'], ['nested', 'nested_fleet'], ['never', 'never_sleep'], ['operation', 'busy'], ['task', 'task'],
+    ['keep_alive', 'keep_alive'], ['turn_runs', 't3_turn_running'], ['user_waits', 't3_active'], ['unreadable', 't3_unreadable'],
+    ['no_http_record', 'http_unknown'],
+]);
+
 it('wires the Conn read of T3 and the Node agent read of the logs into the sweep', function (): void {
     expect(app(NodeFileTimes::class))->toBeInstanceOf(AgentNodeFileTimes::class)
         ->and(collect(app()->tagged(InstanceAgentActivity::class))->map(fn (object $agent): string => $agent::class)->all())

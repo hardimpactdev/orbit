@@ -101,8 +101,8 @@ it('acts on named Instances with the window of the run while the switch is off, 
     expect(sleepsAdmitted())->toBe($sleeps);
 })->with(['the run window' => ['180', 1], 'a window longer than the log age' => ['600', 0]]);
 
-it('refuses a window of its own without named Instances', function (string $options): void {
+it('refuses a window of its own without named Instances or below a minute', function (string $options): void {
     $this->artisan('orbit:runtime-hibernator '.$options)->assertExitCode(2);
 
     expect($this->reads)->toBe(0)->and(sleepsAdmitted())->toBe(0);
-})->with(['--idle-seconds=120', '--instance=7 --idle-seconds=0', '--instance=7 --idle-seconds=abc']);
+})->with(['--idle-seconds=120', '--instance=7 --idle-seconds=0', '--instance=7 --idle-seconds=59', '--instance=7 --idle-seconds=abc']);

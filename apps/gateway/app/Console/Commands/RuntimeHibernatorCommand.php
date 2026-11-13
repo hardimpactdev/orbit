@@ -13,11 +13,13 @@ use Throwable;
 
 final class RuntimeHibernatorCommand extends Command
 {
+    public const int MinimumIdleSeconds = 60;
+
     #[\Override]
     protected $signature = 'orbit:runtime-hibernator
         {--dry-run : List what the container idle sleep would do; change nothing and skip the checkout sweep}
         {--instance=* : Only these container Instances, also while the container idle sleep is off}
-        {--idle-seconds= : The idle window for this run; only with --instance}';
+        {--idle-seconds= : The idle window for this run, at least 60; only with --instance}';
 
     #[\Override]
     protected $description = 'Halt idle app-dev checkout Instance Processes, prune their reconstructable dependencies, and put idle development containers to sleep.';
@@ -28,8 +30,9 @@ final class RuntimeHibernatorCommand extends Command
         $ids = array_map(strval(...), (array) $this->option('instance'));
         $only = $ids === [] ? null : array_map(intval(...), array_values($ids));
         $idle = $this->option('idle-seconds');
-        if ($idle !== null && ($only === null || ! ctype_digit((string) $idle) || (int) $idle < 1)) {
-            $this->error('--idle-seconds needs a positive number and --instance.');
+        // A short window is for a named proof only: never "everything, a minute" by a typo.
+        if ($idle !== null && ($only === null || ! ctype_digit((string) $idle) || (int) $idle < self::MinimumIdleSeconds)) {
+            $this->error('--idle-seconds needs --instance and at least '.self::MinimumIdleSeconds.' seconds.');
 
             return self::INVALID;
         }
