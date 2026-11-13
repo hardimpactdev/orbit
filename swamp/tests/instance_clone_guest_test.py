@@ -440,7 +440,8 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         # One printed result as before: the same keys, the same changes, the commit and the environment names from the checkout.
         self.assertEqual(set(whole), {"phase", "changes", "environment", "commit"})
         self.assertEqual((whole["phase"], whole["commit"], whole["environment"]), ("workspace", self.expected, first["environment"]))
-        self.assertEqual(sorted(whole["changes"]), sorted(first["changes"] + second["changes"]))
+        # The checkout's changes come first, then the rest; the PHP settings now follow `.env` (nothing reads the order).
+        self.assertEqual(whole["changes"], first["changes"] + second["changes"])
         self.assertEqual((first["phase"], first["commit"]), ("checkout", self.expected))
         self.assertIn("checkout", first["changes"])
         self.assertIn("/srv/workspace/.env", first["changes"])
@@ -487,6 +488,12 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.fresh()
         commands = []
         with self.assertRaises(FileNotFoundError):
+            self.phase("services", self.full_container(), self.full_private(), commands)
+        # A seed copy keeps its default's mark until this Instance checks out.
+        mark = self.base / GUEST.CHECKOUT_MARK.lstrip("/")
+        mark.parent.mkdir(parents=True)
+        mark.write_text(json.dumps({"instance_id": 1, "commit": self.older}) + "\n")
+        with self.assertRaises(AssertionError):
             self.phase("services", self.full_container(), self.full_private(), commands)
         self.assertEqual(commands, [])
 

@@ -1855,7 +1855,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_guest_test.py"
-cost = 30
+cost = 40
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",

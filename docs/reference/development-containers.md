@@ -613,7 +613,7 @@ The workspace phase prepares Node and fetches a changed branch pin before starti
 
 Inside the container the workspace phase has two parts, in order. `checkout` takes the bundle's branch, writes the checkout mark and merges `.env`. `services` writes the PHP settings, file rights, Process files and web config, prepares the Node store, and starts the units. Each part is also a phase of its own for a later workflow; both read the same private vault value, and each passes on only its half.
 
-The `check` phase checks a finished clone: this Instance's checkout mark, the agent's Git identity, PHP, and each running unit, with the same `instance.container_process_inactive` refusal as the sessions phase. The create calls neither part alone and does not call `check` yet.
+The `check` phase checks a finished clone: this Instance's checkout mark, the agent's Git identity, PHP, and each running unit, with the same `instance.container_process_inactive` code as the sessions phase. It prints the dead unit's public receipt on its own output; the sessions phase keeps it in the run's private folder. The create calls neither part alone and does not call `check` yet.
 
 Conn supports an [explicit branch selection](/reference/conn#threads-in-an-orbit-project) for a clone. It prepares the Node mirror from the admitted remote source commit and checks out its bundle in the existing workspace phase. Dependencies and build still come from the default's seed; checkout runs no Project setup or deploy command again.
 

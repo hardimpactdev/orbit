@@ -1493,7 +1493,7 @@
     ]
   },
   "swamp/tests/instance_clone_guest_test.py": {
-    "source_sha256": "29e40633d41764ab362472bd80f6435d14d1d1856158a92e99c49fd924b48731",
+    "source_sha256": "4194ca0a2b928f820516144b204f46f2bb9866c543ff3b310f4527860734a2f5",
     "cases": [
       "test_a_clone_keeps_its_defaults_hand_set_keys_and_owns_its_connections",
       "test_a_dropped_key_of_the_default_goes_even_when_the_clone_does_not_own_it",

@@ -264,7 +264,7 @@ def phase_main(phase, raw):
                 if state.get('ActiveState') != 'active':
                     raise PhaseRefusal(process_failure(unit, state))
 
-    def checkout(inputs):
+    def checkout():
         """The checkout part of the workspace: the bundle's branch, this Instance's mark, and the merged `.env`. Names only leave."""
         assert root(ws + "/.git").is_dir()
         mark = root(CHECKOUT_MARK)
@@ -303,6 +303,7 @@ def phase_main(phase, raw):
                 os.replace(written, mark)
         finally:
             root(c["bundle"]).unlink(missing_ok=True)
+        inputs = json.loads(private)
         env = (
             root(c["environment_file"]).read_text()
             if root(c["environment_file"]).exists()
@@ -324,10 +325,11 @@ def phase_main(phase, raw):
             write(c["environment_file"], updated, 1000, 2760, "0640")
         return {"environment": environment_keys, "commit": checked_out["commit"]}
 
-    def services(inputs):
+    def services():
         """The rest of the workspace: PHP settings, file rights, Process files, web config, the Node store and the units."""
         # No Process starts on a branch this Instance did not check out.
         assert json.loads(root(CHECKOUT_MARK).read_text())["instance_id"] == c["instance_id"]
+        inputs = json.loads(private)
         php_settings = len(changes)
         if c["php"] is not None:
             # The same two settings as the container phase: the shared limit, and PHP Data Bridge from the runtime folder.
@@ -418,11 +420,10 @@ def phase_main(phase, raw):
     # Each part reads only its half of the one framed JSON value: `.env` and the merge names, or the Process environment files.
     workspace = None
     if phase in {"workspace", "checkout", "services"}:
-        inputs = json.loads(private)
         if phase != "services":
-            workspace = checkout(inputs)
+            workspace = checkout()
         if phase != "checkout":
-            services(inputs)
+            services()
     elif phase == "agent":
         for part in [".claude", ".t3/userdata"]:
             p = root("/home/agent") / part
