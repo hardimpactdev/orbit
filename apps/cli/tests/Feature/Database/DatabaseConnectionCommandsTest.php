@@ -21,6 +21,7 @@ use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseUserRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\DescribeDatabaseTableRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\DestroyDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\ImportDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseTablesRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\QueryDatabaseConnectionRequest;
@@ -352,6 +353,31 @@ it('refuses --instance without --server before it contacts the Gateway', functio
 
     expect($exit)->toBe(1)
         ->and($output)->toContain('database.server_required')
+        ->and($mockClient->getLastPendingRequest())->toBeNull();
+});
+
+it('imports a dump and follows the Operation to its counts', function (): void {
+    $operation = ['id' => 7, 'kind' => 'database.import', 'target_type' => 'database_connection', 'target_id' => 4, 'status' => 'succeeded', 'sequence' => 3,
+        'input' => ['driver' => 'mysql', 'file' => '/home/orbit/app.sql.gz'], 'result' => ['exit_code' => 0, 'bytes_read' => 1024, 'tables' => 37]];
+    $envelope = ['data' => $operation, 'meta' => ['request_id' => database_cli_request_id()]];
+    $mockClient = MockClient::global([ImportDatabaseConnectionRequest::class => MockResponse::make($envelope, 202),
+        ShowOperationRequest::class => MockResponse::make($envelope), ShowRealtimeRequest::class => MockResponse::make([], 503)]);
+
+    [$exit, $output] = database_cli_display('database:import', ['slug' => 'app', '--file' => '/home/orbit/app.sql.gz', '--json' => true]);
+
+    expect($exit)->toBe(0)
+        ->and(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['kind' => 'database.import', 'result' => ['exit_code' => 0, 'bytes_read' => 1024, 'tables' => 37]]);
+    $mockClient->assertSent(static fn ($request): bool => $request instanceof ImportDatabaseConnectionRequest
+        && $request->resolveEndpoint() === '/api/v1/database-connections/app/import'
+        && $request->body()->all() === ['file' => '/home/orbit/app.sql.gz']);
+});
+
+it('refuses an import without --file before it contacts the Gateway', function (): void {
+    $mockClient = MockClient::global([]);
+
+    [$exit, $output] = database_cli_display('database:import', ['slug' => 'app', '--json' => true]);
+
+    expect($exit)->toBe(1)->and($output)->toContain('database.import_file_required')
         ->and($mockClient->getLastPendingRequest())->toBeNull();
 });
 

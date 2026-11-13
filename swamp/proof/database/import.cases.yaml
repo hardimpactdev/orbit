@@ -1,0 +1,18 @@
+# Format: docs/reference/verification-cases.
+# The runner has no Database server fixture yet; every outcome is an uncovered request. Gateway Pest tests and the
+# import script test cover these boundaries locally.
+command: database:import
+chart: database/import
+target: app-dev
+sources: [gateway, app-prod]
+baseline: [operations]
+
+uncovered:
+  "path:main": "Need a MySQL and a PostgreSQL Database server fixture on app-dev with an empty owned database, and a dump file owned by the Node's SSH user, to prove a plain and a gzipped import succeed with bytes_read, exit_code 0 and the table count, and that database:tables then lists the tables."
+  "case:not-empty": "Need the same server fixture to prove a second import refuses with database.not_empty, database_state unchanged, and the table count unchanged."
+  "case:file-refused": "Need a fixture file step on app-dev to prove a symbolic link, a file of another user and a directory refuse with database.import_file_refused before any login."
+  "case:mysql-partial": "Need a MySQL server fixture and a dump that fails after its first table to prove database.import_failed with database_state partial, and the PostgreSQL twin ending empty."
+  "case:no-grant": "Need a server fixture on app-dev to prove a caller without a grant to the Gateway Node is refused with node_access.required and no Operation."
+  "case:secret-absent": "Need Operation input, result and run-log assertions to prove the owner password appears in none of them."
+
+cases: []

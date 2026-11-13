@@ -9,6 +9,7 @@ use App\Actions\DatabaseConnections\CreateDatabaseUserAction;
 use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\DatabaseConnections\DescribeDatabaseTableAction;
 use App\Actions\DatabaseConnections\DestroyDatabaseConnectionAction;
+use App\Actions\DatabaseConnections\ImportDatabaseConnectionAction;
 use App\Actions\DatabaseConnections\ListDatabaseConnectionsAction;
 use App\Actions\DatabaseConnections\ListDatabaseTablesAction;
 use App\Actions\DatabaseConnections\ListDatabaseUsersAction;
@@ -23,6 +24,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DatabaseConnections\DescribeDatabaseTableRequest;
+use App\Http\Requests\DatabaseConnections\ImportDatabaseConnectionRequest;
 use App\Http\Requests\DatabaseConnections\QueryDatabaseConnectionRequest;
 use App\Http\Requests\DatabaseConnections\StoreDatabaseConnectionRequest;
 use App\Http\Requests\DatabaseConnections\StoreDatabaseUserRequest;
@@ -146,6 +148,15 @@ final class DatabaseConnectionsController extends Controller
         QueryDatabaseConnectionAction $action,
     ): JsonResponse {
         return response()->json(['data' => OperationData::fromModel($action->execute($databaseConnection, $request->sql(), $request->write()))->toArray(), 'meta' => $this->meta($request)], 202);
+    }
+
+    #[StartsOperation('database.import')]
+    public function import(
+        ImportDatabaseConnectionRequest $request,
+        DatabaseConnection $databaseConnection,
+        ImportDatabaseConnectionAction $action,
+    ): JsonResponse {
+        return response()->json(['data' => OperationData::fromModel($action->execute($databaseConnection, $request->dumpFile()))->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[StartsOperation('database.read')]

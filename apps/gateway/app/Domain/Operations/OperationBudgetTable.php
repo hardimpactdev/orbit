@@ -19,6 +19,9 @@ final class OperationBudgetTable
         'instance.mail_update' => 120,
         // One 150 s network, file and restart phase, plus input, result and cleanup. No live sample yet.
         'instance.connection_environment' => 180,
+        // No run yet. Basis: the import step's own bound, DatabaseImport::TimeoutSeconds (3,600 s: a 2 GB dump at 1 MB/s), plus
+        // 300 s for the vault copy, the run start and the result. Replace with the 14-day p95 after the first successes.
+        'database.import' => 3900,
         // One 90 s scoped network/proxy phase, plus input/result/cleanup.
         'instance.node_service_detach' => 120,
         'instance.create' => 'run_budget_seconds',

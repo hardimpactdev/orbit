@@ -8,6 +8,7 @@ conn.pairing_create
 conn.pairing_revoke
 database.create
 database.destroy
+database.import
 database.read
 database.update
 database.write

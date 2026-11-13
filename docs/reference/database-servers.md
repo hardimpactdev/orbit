@@ -297,6 +297,10 @@ Application migrations create and alter logical publications and select their ta
 
 Swamp runs each batch as one `docker exec -i` into the server container over official SSH from Node 209. The client in the image reads the login's password from the first stdin line, and the statements follow. PostgreSQL admin batches use local trust in the container instead of a password line. No password appears in command arguments, host environment variables, Docker exec metadata or files. A [read](/reference/database-connections#inspect-a-registered-connection) of a connection on the server runs the same way, as the connection's own user inside a `READ ONLY` transaction. A [write](/reference/database-connections#direct-sql-writes) runs the same way without the read-only transaction. The observer agent runs no database actions.
 
+## Load a dump
+
+[`database:import`](/cli/database/import) loads a plain or gzipped SQL dump into an empty database on a MySQL or PostgreSQL server. It logs in as the database's owner, never as the admin, so the server's own grants hold the dump to that owner's databases. The admin password is not used.
+
 ## Remove a database
 
 `database:destroy` drops the primary database, the test database, the recorded test pool, and each user Orbit created for the connection that no other connection on the server uses. The plan comes from the records; unrecorded names are left alone. It deletes the record only after every database and unshared user is gone. A failed drop keeps the record; a repeat tolerates missing objects and finishes the remaining drops.

@@ -6,6 +6,7 @@ use App\Domain\DatabaseServers\DatabaseConnectionUpdateProjection;
 use App\Domain\DatabaseServers\DatabaseCreateProjection;
 use App\Domain\DatabaseServers\DatabaseDestroyProjection;
 use App\Domain\DatabaseServers\DatabaseDestroyRun;
+use App\Domain\DatabaseServers\DatabaseImportProjection;
 use App\Domain\DatabaseServers\DatabaseReadProjection;
 use App\Domain\DatabaseServers\DatabaseServerCloseProjection;
 use App\Domain\DatabaseServers\DatabaseServerCreateProjection;
@@ -55,6 +56,14 @@ return ['database.update' => [
     'terminal_result' => ['job' => 'write', 'step' => 'Run the statement', 'alternatives' => ['Run the statement on 209'], 'native' => true,
         'captures' => ['output' => ['job' => 'write', 'step' => 'Run the statement', 'field' => 'stdout'],
             'local_output' => ['job' => 'write', 'step' => 'Run the statement on 209', 'field' => 'stdout']]],
+], 'database.import' => [
+    'workflow' => 'operation-database-import',
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-import-intent-[1-9][0-9]*$']],
+    'projection' => DatabaseImportProjection::class,
+    'workflow_inputs' => true,
+    // The script prints one result line and ends 0 for every outcome it names; the projection reads it.
+    'terminal_result' => ['job' => 'import', 'step' => 'Load the dump', 'native' => true,
+        'captures' => ['output' => ['job' => 'import', 'step' => 'Load the dump', 'field' => 'stdout']]],
 ], 'database_server.close' => [
     'workflow' => 'operation-database-server-close',
     'projection' => DatabaseServerCloseProjection::class,

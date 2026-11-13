@@ -10,7 +10,7 @@ A Database connection is a Gateway record with an encrypted password. The `datab
 
 [Database connections](/reference/database-connections) describes the driver fields, the API, inspection, and the keys that an attachment writes. Attach a connection to an Instance with [`instance:database:add`](/cli/instance/database-add). Attachment commands take `--instance=SELECTOR`. A terminal asks for an omitted selector, and a noninteractive call without it returns `database.instance_required` before the CLI sends a request.
 
-Server create, close and destroy, managed database create and destroy, user create, and SQL writes start Operations. Their CLI commands follow the steps to completion. Use `--idempotency-key=KEY` to repeat the same start after a lost response. Registry create, update and destroy, and all reads, keep their record responses.
+Server create, close and destroy, managed database create and destroy, user create, SQL writes and imports start Operations. Their CLI commands follow the steps to completion. Use `--idempotency-key=KEY` to repeat the same start after a lost response. Registry create, update and destroy, and all reads, keep their record responses.
 
 ## Commands
 
@@ -29,6 +29,7 @@ Server create, close and destroy, managed database create and destroy, user crea
 | [`database:user:list`](/cli/database/user-list) | List the users Orbit created for a connection. |
 | [`database:destroy`](/cli/database/destroy) | Destroy one connection record. |
 | [`database:query`](/cli/database/query) | Run one SQL statement against a registered connection. |
+| [`database:import`](/cli/database/import) | Load a plain or gzipped SQL dump into an empty database on a server, as its owner. |
 | [`database:tables`](/cli/database/tables) | List tables on a registered connection. |
 | [`database:schema`](/cli/database/schema) | Show columns for every table on a registered connection. |
 | [`database:describe`](/cli/database/describe) | Show columns for one table on a registered connection. |

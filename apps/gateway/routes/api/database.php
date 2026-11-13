@@ -34,6 +34,9 @@ Route::middleware([
     Route::post('database-connections/{database_connection}/query', [DatabaseConnectionsController::class, 'query'])
         ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
         ->name('database:query');
+    Route::post('database-connections/{database_connection}/import', [DatabaseConnectionsController::class, 'import'])
+        ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
+        ->name('database:import');
     Route::get('database-connections/{database_connection}/tables', [DatabaseConnectionsController::class, 'tables'])
         ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
         ->name('database:tables');

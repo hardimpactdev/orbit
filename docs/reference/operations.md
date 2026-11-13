@@ -126,6 +126,8 @@ A `proof.command` that older code admitted has no captured budget, for example o
 
 `proof.verify` has a provisional 3,000 seconds. It has no run yet. `orbit proof` proves one command on the task VM that calls, through the workflow `proof-fleet-verify`, with no provision and no destruction. Basis: 14 cases of about 120 seconds each come to 1,680 seconds. Add the restores before the first batch, between batches and after the last, about 16 seconds each. Add a token re-mint with its readiness check and the new `base`, about 150 seconds. The sum is about 1,900 seconds. With 1.5 times margin, rounded up to five minutes, it is 3,000. A maintainer should replace the fixed row after measuring successful runs.
 
+`database.import` has a provisional 3,900 seconds: its step's own bound of 3,600 seconds, a 2 GB dump at 1 MB/s, plus 300 seconds for the vault copy, the run start and the result. A maintainer must update the fixed row after measuring successful runs.
+
 `instance.rollback` has a provisional 900 seconds, the legacy rollback deadline and its [chart](/cli/instance/rollback)'s budget. A maintainer must update the fixed row after measuring successful runs.
 
 Otherwise, the Gateway uses the longest successful run of that kind completed in the last 14 days, multiplied by 1.5 and rounded up to a minute, and at least 15 minutes. It measures `started_at` to `finished_at` on succeeded Operations with a `swamp_run_id`. With no successful history, the budget is 30 minutes.

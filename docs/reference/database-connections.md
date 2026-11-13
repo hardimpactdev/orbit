@@ -215,6 +215,14 @@ After the statement, the client prints the affected row count: `ROW_COUNT()` on 
 
 SQL writes are limited to 16,384 bytes and one statement, which admission checks. SQLite runs `sqlite3 -safe`: `ATTACH`, `VACUUM INTO` and ordinary `VACUUM`, which needs an internal attachment, fail with `database.query_failed` and leave the registered file unchanged. The same mode refuses file functions and shell commands.
 
+### Dump imports
+
+`database:import` starts `operation-database-import`, one SSH step on the Database server's Node. It runs as the Node's SSH user without sudo. The shell opens the dump file once. The open file must have exactly the admitted path, be regular and be owned by that user.
+
+The client runs in a throwaway container of the server's image on the server's Docker network. It logs in as the database's owner over TCP at the server container's own address. It never uses the server's loopback, which the PostgreSQL image trusts. The password is the first stdin line of one vault value.
+
+The step prints one result line. The Gateway records `bytes_read`, `exit_code` and `tables`; on failure also `database_state` and the client's error code and line. See [`database:import`](/cli/database/import).
+
 ### Instance-owned removal
 
 `instance:destroy` removes the databases its Instances own inside its own run; there is no separate owned-removal Operation. The Gateway records the owned set once at admission. For each Database server, the run calls the `operation-database-destroy` workflow that `database:destroy` uses, with the server's admin login from its own vault key. The official `@swamp/cfgmgmt/file` behavior removes each owned SQLite file under the Node account; the Gateway admits only paths inside the Instance checkout.

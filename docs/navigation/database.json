@@ -22,6 +22,7 @@
             "cli/database/user-list",
             "cli/database/destroy",
             "cli/database/query",
+            "cli/database/import",
             "cli/database/tables",
             "cli/database/schema",
             "cli/database/describe"
