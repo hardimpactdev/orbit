@@ -98,7 +98,7 @@ Managed Database servers serve clients inside the Orbit network only. All three 
 
 The private networks are the trust boundary. Clients that can reach those private addresses have network access to the ports. Ports published by Docker bypass UFW. Orbit adds no database port firewall, iptables chain, UFW hook, Docker service drop-in or PostgreSQL source rules. Operators must keep these private addresses unreachable from the public internet.
 
-PostgreSQL keeps the image's stock `pg_hba.conf`: SCRAM password authentication over the network, but trust for the socket and the loopback inside the container. There a login needs no correct password, so Orbit chooses every login's user itself, and no client runs a client command from a caller's SQL or dump; see [Client commands](/reference/database-connections#client-commands).
+PostgreSQL keeps the image's stock `pg_hba.conf`: SCRAM password authentication over the network, but trust for the socket and the loopback inside the container. There a login needs no correct password, so Orbit chooses every login's user itself, and no client runs a client command from a caller's SQL or dump; see [Client commands](/reference/database-connections#client-commands). A MySQL server's image needs a client of MySQL 8.4.6 or later for queries and imports; an older one fails them.
 
 Docker starts a server's container at boot, and it can do that before the WireGuard tunnel or the LAN address is up. Every managed Linux Node allows binds to an address it does not hold yet, through its [kernel policy](/reference/node-provisioning#kernel-policy), so the publication succeeds and serves as soon as the address appears. Without it, the bind failed with `cannot assign requested address` and Docker left the container stopped.
 

@@ -106,9 +106,9 @@ So the client never interprets the caller's SQL.
 
 psql gets the statement as a `-c` argument. It sends a `-c` string to the server as it is, so it runs no backslash command and expands no variable in it. The statement comes after the password line on stdin, and the shell hands it to psql. A read runs `BEGIN READ ONLY`, the timeout, the statement and `ROLLBACK`, each as its own `-c`.
 
-mysql reads the statements on stdin with `--skip-commands --skip-system-command`. So it runs none of its own commands. A client without these options refuses to start, and the run fails with `database.query_failed`.
+mysql reads the statements on stdin with `--skip-commands --skip-system-command`. So it runs none of its own commands. A client older than MySQL 8.4.6 lacks these options and refuses to start, and the run fails with `database.query_failed`.
 
-The statement is then in psql's argument list while it runs: inside the server's container, or on Node 209. Root on that host can see it. No log, Operation or result holds it. That is accepted for SQL, never for a password: the password stays the first stdin line and reaches the client in its environment.
+The statement is then in psql's argument list while it runs: inside the server's container, or on Node 209. Any local user on that host can read it for up to 30 seconds, unless `/proc` is mounted with `hidepid`. No log, Operation or result holds it. That is accepted for SQL, never for a password: the password stays the first stdin line and reaches the client in its environment.
 
 | Connection | Where it runs |
 | --- | --- |
