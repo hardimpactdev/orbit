@@ -127,8 +127,9 @@ final readonly class InstanceHostIntent
             'arc' => $taskHost === null,
             'incus' => $incus,
             'image' => InstanceImage::for($gateway),
-            // Only a switched-on Node prepares the nested-fleet project (docs/reference/node-settings.md#nested-fleet-instance-hosting).
-            ...($nested ? ['nested' => ['project' => InstancePlacement::NestedProject]] : []),
+            // Only a switched-on Node prepares the nested-fleet project and builds its image there
+            // (docs/reference/node-settings.md#nested-fleet-instance-hosting).
+            ...($nested ? ['nested' => ['project' => InstancePlacement::NestedProject, 'image' => InstanceImage::for($gateway, $incus)]] : []),
             // The shared-folder refresh restarts running containers in every project that the Node's runtimes record.
             ...($nestedRuntimes > 0 ? ['runtime_projects' => InstancePlacement::projects()] : []),
             'folders' => InstanceFolderPlan::for($folders),

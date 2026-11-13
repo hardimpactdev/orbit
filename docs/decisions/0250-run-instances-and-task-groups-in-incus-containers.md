@@ -92,7 +92,7 @@ The default Instance holds the fleet's ready copies, with each nested container 
 
 ### Users and kernel surface
 
-- **Instance containers.** Two unprivileged users, neither with sudo.
+- **Instance containers.** Two unprivileged users. Neither has sudo, except `agent` with a nested fleet.
   - The app runs as `orbit`: FrankenPHP, queue workers, development servers and every Orbit Process.
   - T3, Claude Code and Codex run as `agent`, and so do their shell commands. There is no wrapper shell and no switch between the users.
   - `orbit` cannot run the agent binaries, read `/home/agent`, see agent processes or reach the model route. A firewall rule by uid inside the container enforces the last.
@@ -100,7 +100,7 @@ The default Instance holds the fleet's ready copies, with each nested container 
   - This is the boundary against an attacker who comes in through a preview URL.
   - Root work (packages, services, runtime setup) goes through Orbit from the host. A project's system packages come from its recipe, not from the agent.
   - Without a nested fleet, `user.max_user_namespaces=0` is set inside the container, and the container has no nesting.
-- **With a nested fleet.** The container gets nesting and the keys above. `agent` joins the inner Incus admin group, with no sudo, which makes it root-equivalent inside its own container. `orbit` still gets none of it. This is the accepted risk below.
+- **With a nested fleet.** The container gets nesting and the keys above. `agent` joins the inner Incus admin group and has passwordless sudo, which makes it root inside its own container. Nothing on the host is privileged. `orbit` still gets none of it. This is the accepted risk below.
 - **Production containers.** Only `orbit`. No agent, no T3 and no model route.
 
 ### Agent engine in containers

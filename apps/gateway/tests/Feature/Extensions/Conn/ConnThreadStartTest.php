@@ -1580,8 +1580,8 @@ it('refuses a clone of a nested-fleet Project before it records an Instance or a
     $operations = Operation::query()->count();
 
     threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login-k3j9'])
-        ->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable')
-        ->assertJsonPath('error.message', 'Instances of a nested-fleet Project are not available until nested-fleet hosting is built.');
+        ->assertStatus(409)->assertJsonPath('error.code', 'instance.nested_fleet_host_unavailable')
+        ->assertJsonPath('error.message', 'The Node has not switched on nested-fleet hosting.');
     expect(Instance::query()->count())->toBe($instances)->and(InstanceRuntime::query()->count())->toBe($runtimes)
         ->and(Operation::query()->count())->toBe($operations);
 });

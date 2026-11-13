@@ -354,7 +354,7 @@ A failure keeps an existing Node's earlier recorded identity, settings and statu
 
 An `app-dev` Node on the Gateway's build list of [development containers](/reference/development-containers#the-build-list) also gets the container setup with each role converge: Incus, the project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the [egress proxy](/reference/development-containers#egress-and-dns), the container image and the two shared folders. A task VM never does, and every other `app-dev` Node installs what it did before. The Node must provide the Incus storage pool `orbit-instances`. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
 
-When the Node's [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on, the same converge first checks root's subordinate IDs for the larger demand, then also prepares the Incus project `orbit-instances-nested`, its profile, its stock image and three kernel modules. It builds no image for nested-fleet containers yet. So Orbit still refuses each new Instance of a nested-fleet Project. A Node with the switch off runs the same tasks and commands as before.
+When the Node's [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on, the same converge first checks root's subordinate IDs for the larger demand, then also prepares the Incus project `orbit-instances-nested`, its profile, its stock image and three kernel modules. After the normal image, it builds the [nested-fleet image](/reference/development-containers#the-nested-fleet-image) in that project. A Node with the switch off runs the same tasks and commands as before.
 
 ## PHP packages for production children
 

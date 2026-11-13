@@ -278,3 +278,122 @@ Deno.test({
         }
     },
 });
+
+Deno.test({
+    name: "a Node without the nested-fleet switch runs the exact command lines of the normal image",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture({ pool: "dir" });
+        try {
+            const result = await f.run();
+            assert(result.ok, result.output);
+            const calls = JSON.stringify(f.calls()).replaceAll(f.folder, "FIXTURE");
+            const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(calls))))
+                .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+            // Captured from the tasks at 2a-local 7b9e25ba02, before the nested-fleet image existed, with this same host shape.
+            assertEquals([f.calls().length, digest], [53, "8f561f588e7131982062fa610be3e27b86f7aa5bb5fe010e420c24549f050c05"]);
+            assertEquals(f.state().images.flatMap((image: {project: string; aliases: {name: string}[]}) =>
+                image.aliases.map((alias) => `${image.project}/${alias.name}`)).filter((name: string) => name.includes("orbit-instance-nested")), []);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+const aliasesOf = (state: {images: {project: string; aliases: {name: string}[]}[]}) =>
+    state.images.flatMap((image) => image.aliases.map((alias) => `${image.project}/${alias.name}`));
+
+Deno.test({
+    name: "a switched-on Node builds the nested-fleet image in its project from the verified pinned packages",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture({ pool: "dir", nested: true });
+        try {
+            const result = await f.run();
+            assert(result.ok, result.output);
+            const aliases = aliasesOf(f.state());
+            for (const alias of ["orbit-instances/orbit-instance", "orbit-instances/orbit-instance-aaaaaaaaaaaa",
+                "orbit-instances-nested/orbit-instance-nested", "orbit-instances-nested/orbit-instance-nested-aaaaaaaaaaaa"]) {
+                assert(aliases.includes(alias), JSON.stringify(aliases));
+            }
+            const nested = f.calls().filter((call) => call.includes("orbit-instances-nested"));
+            const exec = (words: string[]) => nested.filter((call) => call[0] === "exec" && words.every((word) => call.includes(word)));
+            assertEquals(nested.find((call) => call.includes("init") && call.includes("orbit-instance-build")),
+                ["--project", "orbit-instances-nested", "init", "ubuntu-26.04-instance-stock", "orbit-instance-build",
+                    "--config", "security.idmap.isolated=true", "--device", "eth0,ipv4.address=10.253.0.254"]);
+            assertEquals(exec(["apt-get", "install"]).map((call) => call.slice(call.indexOf("--yes"))), [
+                ["--yes", "--no-install-recommends", "--", "acl", "git", "nftables", "wireguard-tools", "sqlite3", "sudo"],
+                ["--yes", "--no-install-recommends", "--", "/tmp/incus-base.deb", "/tmp/incus-client.deb"],
+            ]);
+            // The service block is in place for the package scripts only, and gone before the image is published.
+            const order = nested.map((call) => call.join(" "));
+            const blocked = order.findIndex((line) => line.endsWith("--mode 0755 - orbit-instance-build/usr/sbin/policy-rc.d"));
+            const installed = order.findIndex((line) => line.includes("/tmp/incus-base.deb") && line.includes("apt-get"));
+            const unblocked = order.findIndex((line) => line.includes("rm -- /usr/sbin/policy-rc.d /tmp/incus-base.deb /tmp/incus-client.deb"));
+            const published = order.findIndex((line) => line.includes("publish orbit-instance-build"));
+            assert(blocked >= 0 && blocked < installed && installed < unblocked && unblocked < published, order.join("\n"));
+            for (const pin of f.instances.nested!.image.incus) {
+                assertEquals(Deno.readTextFileSync(`${f.folder}/debs/${pin.name}_${pin.sha256}.deb`), `fixture ${pin.name}`);
+                assert(nested.some((call) => call.join(" ") ===
+                    `file push --project orbit-instances-nested ${f.folder}/debs/${pin.name}_${pin.sha256}.deb orbit-instance-build/tmp/${pin.name}.deb`));
+            }
+            assertEquals(f.state().files["orbit-instance-build/usr/sbin/policy-rc.d"], { content: "#!/bin/sh\nexit 101\n", mode: "0755", uid: "0", gid: "0" });
+            assertEquals(f.state().files["orbit-instance-build/etc/sudoers.d/orbit-agent"],
+                { content: "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", mode: "0440", uid: "0", gid: "0" });
+            const audit = exec(["sh"]).find((call) => call.at(-1)!.includes("getent passwd ubuntu"))!.at(-1)!;
+            for (const check of ["/etc/sudoers.d/orbit-agent", "incus-admin:[^:]*:[0-9]*:agent", "visudo -cqf", "runuser -u agent -- sudo -n true",
+                "runuser -u orbit -- sudo -n true 2>/dev/null && echo orbit:sudo"]) {
+                assertStringIncludes(audit, check);
+            }
+            // The normal build audits as before: no grant at all.
+            const normalAudit = f.calls().filter((call) => call.includes("orbit-instances") && call[0] === "exec" && call.at(-1)!.includes("getent passwd ubuntu"));
+            assertEquals(normalAudit.map((call) => call.at(-1)!.includes("orbit-agent")), [false]);
+            const repeat = await f.run();
+            assert(repeat.ok, repeat.output);
+            assertStringIncludes(repeat.output, "changed=0");
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name: "a wrong pinned digest publishes no nested-fleet image and leaves no build container",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture({ pool: "dir", nested: true });
+        try {
+            const broken = structuredClone(f.instances);
+            broken.nested!.image.incus[1].sha256 = "b".repeat(64);
+            f.write(broken);
+            const result = await f.run();
+            assert(!result.ok, result.output);
+            const aliases = aliasesOf(f.state());
+            assert(aliases.includes("orbit-instances/orbit-instance"), JSON.stringify(aliases));
+            assertEquals(aliases.filter((alias) => alias.startsWith("orbit-instances-nested/orbit-instance-nested")), []);
+            assert(!f.calls().some((call) => call.includes("publish") && call.includes("orbit-instances-nested") && call.includes("orbit-instance-build")));
+            assert(!f.calls().some((call) => call.includes("apt-get") && call.includes("/tmp/incus-client.deb")));
+            assertEquals(f.state().instances, []);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name: "a hosting intent without the nested-fleet image builds only the normal image",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture({ pool: "dir", nested: true });
+        try {
+            f.write({ ...f.instances, nested: { project: f.instances.nested!.project } });
+            const result = await f.run();
+            assert(result.ok, result.output);
+            assertEquals(aliasesOf(f.state()).filter((alias) => alias.includes("orbit-instance-nested")), []);
+            // The hosting change still prepares the nested project; no image build runs there.
+            assert(!f.calls().some((call) => call.includes("orbit-instances-nested") && call.includes("orbit-instance-build")));
+        } finally {
+            f.cleanup();
+        }
+    },
+});

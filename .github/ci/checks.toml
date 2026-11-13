@@ -311,18 +311,20 @@ file = "swamp/tests/ansible_instance_host_image_test.ts"
 # The renamed first case retains its existing after-merge classification (158s hosted, run 43000765953).
 # The new full replacement case measured 70s on Beast: 148s estimated body + 6s startup exceeds the 150s lane.
 after_merge_cases = ["a new image definition takes the stable alias while retaining the old image", "the full prepared-image replacement and failure cleanup use the verified local socket despite the default remote"]
-cost = 401
-slices = 7
+cost = 759
+slices = 11
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_nested.py",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/library/**",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/artifact-fetch.yml",
   "swamp/ansible/tasks/instance-bridge-*.yml",
   "swamp/ansible/tasks/instance-egress.yml",
   "swamp/ansible/tasks/instance-folder.yml",
@@ -330,6 +332,7 @@ inputs = [
   "swamp/ansible/tasks/instance-image.yml",
   "swamp/ansible/tasks/instance-network-*.yml",
   "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-ids.yml",
   "swamp/ansible/tasks/task-container-host-prepare.yml",
   "swamp/ansible/tasks/task-container-host-system.yml",
   "swamp/ansible/transport-exit-codes.json",
@@ -341,12 +344,16 @@ inputs = [
 
 [fixture.case_costs]
   "a Node without its Instance pool is refused before anything changes" = 3 # completed body 1.403s, run 43010311414; larger completed history retained; ede21ef9 Beast 0.607s gives 3s estimate
-  "a directory pool skips the clone probe: a copy there is a full copy" = 81 # completed body 62.340s, run 43010311414; larger completed history retained; ede21ef9 Beast 26.0s gives 56s estimate
-  "an image that keeps a sudo path is never published" = 84 # completed body 64.008s, run 43010311414; larger completed history retained; ede21ef9 Beast 27.0s gives 58s estimate
+  "a directory pool skips the clone probe: a copy there is a full copy" = 88 # completed unit 93.9s less 6s startup, run 43391971168; earlier: completed body 62.340s, run 43010311414; larger completed history retained; ede21ef9 Beast 26.0s gives 56s estimate
+  "an image that keeps a sudo path is never published" = 91 # completed unit 96.7s less 6s startup, run 43391971168; earlier: completed body 64.008s, run 43010311414; larger completed history retained; ede21ef9 Beast 27.0s gives 58s estimate
   "orbit-instance-build refuses an inherited unguarded profile NIC before starting" = 69 # completed body 45.934s, run 43010311414; larger completed history retained; ede21ef9 Beast 22.0s gives 48s estimate
   "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting" = 56 # completed body 41.131s, run 43010311414; larger completed history retained; ede21ef9 Beast 17.0s gives 37s estimate
   "prepared publication clears inherited stock build ownership" = 58 # ESTIMATE: ede21ef9 Beast 27.0s * 2.1, rounded up + 1s
   "a prior prepared-image builder is refused by exact name and recipe without deletion" = 50 # ESTIMATE: ede21ef9 Beast 23.0s * 2.1, rounded up + 1s
+  "a Node without the nested-fleet switch runs the exact command lines of the normal image" = 64 # ESTIMATE: Beast 30s * 2.1, rounded up + 1s
+  "a switched-on Node builds the nested-fleet image in its project from the verified pinned packages" = 132 # ESTIMATE: Beast 62s * 2.1, rounded up + 1s; with 6s startup within the 150s lane
+  "a wrong pinned digest publishes no nested-fleet image and leaves no build container" = 77 # ESTIMATE: Beast 36s * 2.1, rounded up + 1s
+  "a hosting intent without the nested-fleet image builds only the normal image" = 71 # ESTIMATE: Beast 33s * 2.1, rounded up + 1s
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_runtime_test.ts"

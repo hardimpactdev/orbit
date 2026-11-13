@@ -182,7 +182,7 @@
     ]
   },
   "swamp/tests/ansible_instance_host_image_test.ts": {
-    "source_sha256": "9aaf5d30dca8e87b4bc1c04ab8603062408b4532ba3b061ede626216ebd5f3bc",
+    "source_sha256": "5546e12f5f216872a4599d783450db482cdb7132c91a2d51cdd408cb66ed671a",
     "cases": [
       "a new image definition takes the stable alias while retaining the old image",
       "a Node without its Instance pool is refused before anything changes",
@@ -192,7 +192,11 @@
       "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting",
       "prepared publication clears inherited stock build ownership",
       "the full prepared-image replacement and failure cleanup use the verified local socket despite the default remote",
-      "a prior prepared-image builder is refused by exact name and recipe without deletion"
+      "a prior prepared-image builder is refused by exact name and recipe without deletion",
+      "a Node without the nested-fleet switch runs the exact command lines of the normal image",
+      "a switched-on Node builds the nested-fleet image in its project from the verified pinned packages",
+      "a wrong pinned digest publishes no nested-fleet image and leaves no build container",
+      "a hosting intent without the nested-fleet image builds only the normal image"
     ]
   },
   "swamp/tests/ansible_instance_host_runtime_test.ts": {
