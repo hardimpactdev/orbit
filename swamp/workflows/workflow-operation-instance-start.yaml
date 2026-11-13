@@ -3,6 +3,7 @@ name: operation-instance-start
 description: Start a stopped nested-fleet clone, deliver its Club key, then start its inner fleet and wait for Doctor.
 queueTimeout: 10
 labels: {role: swamp}
+vaults: [orbit-control-inputs]
 inputs:
   type: object
   properties:
@@ -13,10 +14,13 @@ inputs:
     # Every admitted start carries the nested Gateway's Club key: the Gateway fails the run before its start without one.
     execution_secrets:
       type: object
-      properties:
-        club_key: {type: object, properties: {vault: {type: string}, key: {type: string}}, required: [vault, key], additionalProperties: false}
-      required: [club_key]
-      additionalProperties: false
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, enum: [nested-fleet-club-api-key]}
+        required: [vault, key]
+        additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
