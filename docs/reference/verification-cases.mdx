@@ -20,12 +20,25 @@ Every `runner batch` and direct `runner case` prepares the fleet before any case
 
 One Ansible run applies Gateway prerequisites. Another uses Node convergence's atomic checksum-verified installer on all three nested Nodes, stops the observers, discards their old host receipts, starts them, then waits for the nested Gateway to record every expected version with its binary digest and a new host fact. The wait checks every 5 seconds, up to 18 retries; each preparation is bounded at 330 seconds. Setup gets a separate 120-second budget within its 480-second transport limit. A preparation failure stops cases as infrastructure. Every base restore repeats preparation without saving a new base snapshot. Case deadlines are unchanged.
 
-The design has four aims:
+## Where the runner runs
 
-- Writing a case is quick. An agent turns the command page and chart into cases, and another agent reviews them. Different commands are written in parallel.
-- Every part of a command's flow has a case. A check lists what no case covers.
-- Cases run in batches. The fleet restores its base snapshot once per batch, and a case undoes nothing.
-- The same cases run on a developer's fleet and in CI.
+The runner runs on the outer machine: the machine that holds the three nested containers `nested-gateway`, `nested-app-dev` and `nested-app-prod`. Orbit runs it on a task VM. It drives the containers with local `incus exec`, so its user must be allowed to use that Incus. It runs the candidate CLI from the checkout that holds `runner.py`.
+
+The runner reads the facts about its own machine from its own process. It holds no constant for them and never asks which kind of machine it is on.
+
+| Fact | Source |
+| --- | --- |
+| The checkout | The path of the runner's own files. |
+| The user | The user that runs the runner. It must own the CLI home: the CLI refuses a home that another user owns. |
+| The home | The home of that user, as the operating system gives it. The `HOME` of the environment does not decide. |
+| The CLI home | `.orbit` in that home. An `ORBIT_HOME` in the runner's environment does not move it. |
+| The nested CA | `nested-ca.pem` in the CLI home. The fleet start pins it there. |
+
+On a task VM the user is `orbit` and the home is `/home/orbit`.
+
+The nested Nodes do not depend on the outer machine. On every nested Node the managed user is `orbit` with the home `/home/orbit`. The fleet start mounts the checkout at `/home/orbit/orbit` on the Gateway and on `app-dev`. A case can call the CLI from another Node. The runner then prepares that Node: it mounts the checkout there, copies the CA of the outer machine to `/home/orbit/.orbit/nested-ca.pem` and adds the CLI profile.
+
+Fleet preparation needs the pinned Ansible tools on the outer machine, and Swamp must run in the nested Gateway. The task image holds the tools in `/opt/orbit-shape-gate`. When they are not there, the runner builds them in the user's cache, which needs the internet. When that build fails with an error, preparation fails and its message names the pinned folder.
 
 ## The case file
 
@@ -125,7 +138,7 @@ The vocabulary is fixed. The first set is small and covers the `firewall` comman
 Details that a case author needs:
 
 - **`listener`** starts listeners on free ports and binds each name in `ports`. `proto` is `tcp`, `udp` or a list of both: a list uses the same port for each protocol. `family` is 4 or 6; an IPv6 listener takes IPv6 only. `block: {as: range, size: 5}` starts `size` consecutive ports (2 to 50) and binds `${range.lo}`, `${range.mid}`, `${range.hi}` and `${range.spec}`. The step fails if a port does not answer on the Node itself.
-- **`cli`** adds `--json` before an option terminator (`--`), or at the end when there is none. `forms: [json, human]` runs the call in each form, `human` without `--json`; use it only on calls that are safe to repeat, such as a refusal or a skip. Noninteractive calls use `COLUMNS=240` on both the outer VM and nested Nodes, so human text checks do not depend on the runner's terminal width. `tty` runs the call in a terminal and answers prompts, in the human form only (see below). `expect` takes:
+- **`cli`** adds `--json` before an option terminator (`--`), or at the end when there is none. `forms: [json, human]` runs the call in each form, `human` without `--json`; use it only on calls that are safe to repeat, such as a refusal or a skip. Noninteractive calls use `COLUMNS=240` on both the outer machine and nested Nodes, so human text checks do not depend on the runner's terminal width. `tty` runs the call in a terminal and answers prompts, in the human form only (see below). `expect` takes:
   - `exit`: the exit code.
   - `status`: the status of the Operation. In the JSON form it is the `status` of the document; in a human run it is read from the Operation named on the `Operation:` line.
   - `code`: an error code, read from the JSON form. A human run that has no JSON form takes the text instead: the output must contain the code.
