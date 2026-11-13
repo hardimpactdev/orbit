@@ -1119,6 +1119,73 @@ exit 0
   });
 }
 
+for (const broken of [false, true]) {
+  Deno.test({
+    name: broken
+      ? "a Git failure while listing ignored files removes no tool cache and warns, and the move goes on"
+      : "a move removes only ignored files in cache folders that name the old path",
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        const named = `phar://${f.checkout}/vendor/phpstan/phpstan/phpstan.phar/stubs/a.stub`;
+        Deno.writeTextFileSync(`${f.checkout}/.gitignore`, "vendor/\nnode_modules/\n.env\ndatabase/*.sqlite\nstorage/framework/cache/*\nstorage/logs/\n");
+        const files: Record<string, string> = {
+          "storage/framework/cache/phpstan/cache/PHPStan/a.php": named,
+          "storage/framework/cache/rector/b.php": named,
+          "storage/framework/cache/tracked.php": named,
+          "storage/framework/cache/plain/c.php": "no path here\n",
+          "storage/logs/laravel.log": named,
+          "vendor/pkg/cache/d.php": named,
+          // Untracked but not ignored, under a cache folder: a file of the work, never a build output.
+          "app/cache/e.php": named,
+          "node_modules/x/cache/f.php": named,
+          "outside/target.php": named,
+        };
+        for (const [path, content] of Object.entries(files)) {
+          Deno.mkdirSync(`${f.checkout}/${path.slice(0, path.lastIndexOf("/"))}`, { recursive: true });
+          Deno.writeTextFileSync(`${f.checkout}/${path}`, content);
+        }
+        // A link under a cache folder whose target names the path: neither the link nor its target is read or removed.
+        Deno.symlinkSync("../../../outside/target.php", `${f.checkout}/storage/framework/cache/link.php`);
+        git(f.checkout, "add", ".gitignore");
+        git(f.checkout, "add", "-f", "storage/framework/cache/tracked.php");
+        git(f.checkout, "commit", "--quiet", "-m", "caches");
+        git(f.checkout, "update-ref", "refs/remotes/origin/main", "HEAD");
+        if (broken) {
+          // A broken index makes `git ls-files` exit non-zero; the next task puts it back for the steps after.
+          const file = `${f.folder}/tasks/instance-migrate-phase.yml`;
+          const tasks = parse(Deno.readTextFileSync(file)) as Task[];
+          const at = tasks.findIndex((task) => task.name === "Remove the tool caches built at the old path");
+          const index = `${f.rootfs}/srv/workspace/.git/index`;
+          tasks.splice(at + 1, 0, { name: "Restore the index", when: "phase == 'files'", "ansible.builtin.command": { argv: ["mv", `${index}.saved`, index] } });
+          tasks.splice(at, 0, { name: "Break the index", when: "phase == 'files'",
+            "ansible.builtin.shell": { cmd: `mv '${index}' '${index}.saved' && echo broken > '${index}'` } });
+          Deno.writeTextFileSync(file, stringify(tasks));
+        }
+        f.build();
+        const kept = (path: string) => exists(`${f.rootfs}/srv/workspace/${path}`);
+        for (const path of ["storage/framework/cache/tracked.php", "storage/framework/cache/plain/c.php", "storage/logs/laravel.log", "vendor/pkg/cache/d.php",
+          "app/cache/e.php", "node_modules/x/cache/f.php", "storage/framework/cache/link.php", "outside/target.php"]) {
+          assert(kept(path), path);
+        }
+        const receipt = `${f.folder}/run/tool-cache-clear.json`;
+        if (broken) {
+          assert(kept("storage/framework/cache/phpstan/cache/PHPStan/a.php"));
+          assert(kept("storage/framework/cache/rector/b.php"));
+          assertEquals(JSON.parse(Deno.readTextFileSync(receipt)).warnings[0].code, "instance.migrate_tool_cache_clear_failed");
+        } else {
+          assert(!kept("storage/framework/cache/phpstan/cache/PHPStan/a.php"));
+          assert(!kept("storage/framework/cache/rector/b.php"));
+          assert(!exists(receipt));
+        }
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
+}
+
 Deno.test({
   name: "a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was",
   ignore: !hasAnsible,

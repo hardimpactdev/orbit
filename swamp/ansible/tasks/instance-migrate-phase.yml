@@ -488,6 +488,65 @@
           'sh', migrate.checkout, container.workspace, container.environment_file] }}
   changed_when: true
 
+# The copy also carried tool caches built at the old path, such as PHPStan's and Rector's, which then crash on a path that is gone.
+# A file goes when Git ignores it, it sits in a folder named `cache`, it is outside `vendor` and `node_modules`, and its content
+# names the old checkout. Tracked files, untracked files that Git does not ignore, and other ignored files such as logs stay.
+# It runs before the Laravel clear, which boots the app, and before any Process and the seed. Git runs as orbit, who owns the copy,
+# and trusts the workspace on its own call: `agent` has no trust on a default. A Git or read failure removes nothing more and warns.
+- name: Remove the tool caches built at the old path
+  when: phase == 'files'
+  block:
+    - name: Remove the ignored cache files that name the old path
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['python3', '-I', '-c', migrate_tool_cache_clear, container.workspace, migrate.checkout] }}"
+        expand_argument_vars: false
+      vars:
+        # Prints the number of removed files. A failed `git ls-files` exits non-zero, so it never reads as no files.
+        migrate_tool_cache_clear: |-
+          import os, re, subprocess, sys
+          workspace, old = sys.argv[1], os.fsencode(sys.argv[2])
+          listed = subprocess.run(['git', '-c', 'safe.directory=' + workspace, '-c', 'core.hooksPath=/dev/null',
+                                   '-c', 'core.fsmonitor=false', '-C', workspace, 'ls-files', '-z', '-o', '-i', '--exclude-standard'],
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+          if listed.returncode != 0:
+              sys.exit(listed.stderr.decode(errors='replace').strip() or 'git ls-files failed')
+          def names_old(path):
+              with open(path, 'rb') as file:
+                  tail = b''
+                  while chunk := file.read(1 << 20):
+                      if old in tail + chunk:
+                          return True
+                      tail = chunk[1 - len(old):] if len(old) > 1 else b''
+              return False
+          removed = 0
+          for name in listed.stdout.split(b'\0'):
+              if not re.search(rb'(^|/)cache/', name) or re.search(rb'(^|/)(vendor|node_modules)/', name):
+                  continue
+              path = os.path.join(os.fsencode(workspace), name)
+              if not os.path.islink(path) and os.path.isfile(path) and names_old(path):
+                  os.unlink(path)
+                  removed += 1
+          print(removed)
+      register: migrate_tool_cache_run
+      changed_when: migrate_tool_cache_run.rc == 0 and migrate_tool_cache_run.stdout | trim != '0'
+      failed_when: false
+    - name: Record a failed tool cache removal for the terminal result
+      when: migrate_tool_cache_run.rc != 0
+      ansible.builtin.copy:
+        content: >-
+          {{ {'warnings': [{'code': 'instance.migrate_tool_cache_clear_failed',
+              'message': 'Tool caches from the old path were not all removed: Git could not list the ignored files, or a file could'
+                ~ ' not be read or removed. Remove the ignored files under cache folders that name the old path, such as'
+                ~ ' storage/framework/cache/phpstan.'}]} | to_json }}
+        dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/tool-cache-clear.json"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
 # The copy carried the checkout's ignored files, so also the Laravel caches built at the old path: the config, route, event and
 # compiled caches, the compiled views, and a cache store of the `file` driver, which lives in the workspace and which only this
 # Instance used (Statamic keeps its stache there, keyed by file path). They go before any Process starts and before the seed, so no

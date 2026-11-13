@@ -341,3 +341,17 @@ Deno.test("a failed clear of the old path's caches warns beside the environment 
         assertEquals(result(defaultIntent, moved, workspace, null, await writtenFailure(folder)).warnings, [environment, cache]);
     } finally { Deno.removeSync(folder, {recursive:true}); }
 });
+
+Deno.test("a failed removal of the old path's tool caches warns before the Laravel clear and does not fail the move", async () => {
+    const folder = Deno.makeTempDirSync();
+    try {
+        const tool = {code: "instance.migrate_tool_cache_clear_failed", message: "Tool caches from the old path were not all removed."};
+        const cache = {code: "instance.migrate_cache_clear_failed", message: "Laravel caches from the old path were not all cleared."};
+        await Deno.writeTextFile(folder + "/tool-cache-clear.json", JSON.stringify({warnings: [tool]}));
+        const alone = result(defaultIntent, moved, workspace, null, await writtenFailure(folder));
+        assertEquals(alone.ready, true);
+        assertEquals(alone.warnings, [tool]);
+        await Deno.writeTextFile(folder + "/cache-clear.json", JSON.stringify({warnings: [cache]}));
+        assertEquals(result(defaultIntent, moved, workspace, null, await writtenFailure(folder)).warnings, [tool, cache]);
+    } finally { Deno.removeSync(folder, {recursive:true}); }
+});

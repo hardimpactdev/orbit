@@ -172,12 +172,14 @@ export async function writtenFailure(folder: string): Promise<WrittenFailure | n
             JSON.parse(await Deno.readTextFile(folder + "/environment-warnings.json")));
         if (parsed.success) environment = parsed.data;
     } catch { /* No environment warning receipt was written before this failure. */ }
-    let caches: z.infer<typeof EnvironmentWarning>[] = [];
-    try {
-        const parsed = z.object({warnings: z.array(EnvironmentWarning)}).safeParse(
-            JSON.parse(await Deno.readTextFile(folder + "/cache-clear.json")));
-        if (parsed.success) caches = parsed.data.warnings;
-    } catch { /* The files phase cleared the old path's caches, or did not reach them. */ }
+    const caches: z.infer<typeof EnvironmentWarning>[] = [];
+    for (const receipt of ["tool-cache-clear.json", "cache-clear.json"]) {
+        try {
+            const parsed = z.object({warnings: z.array(EnvironmentWarning)}).safeParse(
+                JSON.parse(await Deno.readTextFile(`${folder}/${receipt}`)));
+            if (parsed.success) caches.push(...parsed.data.warnings);
+        } catch { /* The files phase cleared the old path's caches, or did not reach them. */ }
+    }
     const warnings = [...(environment.warnings ?? []), ...caches];
     const result = { ...failure, ...retained, ...mail, ...files, ...schedules, ...(warnings.length ? { warnings } : {}) };
     return Object.keys(result).length > 0 ? result : null;
