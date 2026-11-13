@@ -87,7 +87,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: proof-verify-assigned-plan
+      behaviorName: ${{ "proof-verify-assigned-plan" }}
       methodName: execute
       inputs:
         run: |
@@ -180,7 +180,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: proof-verify-main-verdicts
+      behaviorName: ${{ "proof-verify-main-verdicts" }}
       methodName: execute
       inputs:
         run: |
@@ -222,7 +222,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: proof-verify-flagged-cases
+      behaviorName: ${{ "proof-verify-flagged-cases" }}
       methodName: execute
       inputs:
         run: |
@@ -327,7 +327,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: proof-verify-report
+      behaviorName: ${{ "proof-verify-report" }}
       methodName: execute
       inputs:
         run: |
