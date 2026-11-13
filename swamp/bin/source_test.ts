@@ -103,7 +103,6 @@ Deno.test("no workflow names a behavior by a literal and constant names are pres
         "route-lan-apply/verify-tuples": "route-lan-applied",
         "route-lan-apply/result": "route-lan-result",
         "route-mutation-forward/result": "route-mutation-phase",
-        "route-mutation-withdraw/result": "route-mutation-phase",
         "route-mutation-restore/result": "route-mutation-phase",
         "route-withdraw/result": "route-mutation-phase",
         "proof-fleet-verify/plan": "proof-verify-assigned-plan",

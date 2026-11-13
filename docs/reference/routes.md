@@ -60,7 +60,7 @@ A failure before the cutover leaves the old Route serving: a domain replacement 
 | `route.withdraw_failed` | `Withdraw the old site` |
 | `route.update_failed` | A failure outside these steps |
 
-Caddy convergence starts `operation-route-caddy` after intent commits. It reads the current public render through the bound Operation GET. Swamp validates the candidate and runs the filesystem swap and Caddy service commands locally with sudo, then reports the result. The Node agent only observes; it does not publish Caddy. The Gateway neither executes Caddy nor exposes a Caddy publication primitive. The shared `swamp.direct_writers` setting accepts only `direct` for this kind; selecting the removed writer refuses admission. Rollback is a revert PR.
+Caddy convergence starts `operation-route-caddy` after intent commits. It reads the current public render through the bound Operation GET. Swamp validates the candidate and runs the filesystem swap and Caddy service commands locally with sudo, then reports the result. The Node agent only observes; it does not publish Caddy. The Gateway neither executes Caddy nor exposes a Caddy publication primitive. Rollback is a revert PR.
 
 Route destroy and withdrawal follow the chart [`route/destroy.mmd`](/cli/route). Admission captures every Node the Route touches and renders each one's whole Caddyfile without the Route. The run removes private DNS outside the TLD and waits the DNS grace. Then each Node gets that Caddyfile and loses the Route's certificate scopes, and development pools converge. LAN tuples and public ports that no published Route needs close last.
 
@@ -439,7 +439,7 @@ Native Route parents run their captured TLS or HTTP probes inside their own work
 
 Caddy and private DNS publication use direct workflows. The direct kinds expose no `/operation-executor` run allowlist. Caddy runs locally on its exact admitted Node; private DNS retains its existing publication primitive. Residue and Instance cleanup still use the shared transports until their owning cutover. The old `/route-publications` relay URLs are removed; callers use the shared bound Operation API.
 
-The workflow uses the shared direct Operation read/result endpoints and no Gateway execution relay. The proven writers select `direct` through `ORBIT_SWAMP_DIRECT_WRITERS`; disabling one refuses admission instead of restoring the removed executor. Certificate mutations retain their current executor until their workflow uses sudo from the Node account and passes its cutover proof; verification needs no privilege change.
+The workflow uses the shared direct Operation read/result endpoints and no Gateway execution relay. Certificate mutations retain their current executor until their workflow uses sudo from the Node account and passes its cutover proof; verification needs no privilege change.
 
 When the Router and the workload share one Node, one Caddy service serves the Route and sends the request to the local runtime. It never proxies to its own HTTPS listener. A pool that mixes a local and a remote target serves the local target through an internal Unix listener.
 
@@ -883,7 +883,7 @@ Route Operations retain their admitted Instance environment owners until complet
 
 `route.caddy_converge` has one direct dispatch path. The Gateway starts the owning native workflow after intent commits. Their polled discovery entries, executor contracts and writer choices are removed. New Operations default to direct; selecting `polled` refuses admission. Rollback is a revert PR.
 
-These kinds use the shared `swamp.direct_writers` configuration and retain their recorded writer identity. The separate publication settings and their environment variables are removed. No direct kind exposes a Gateway execution contract, even for an old unstamped row. The remaining Route and Certificate kinds retain their family discovery entries until their owning native cutover.
+These kinds retain their recorded writer identity. The separate publication settings and their environment variables are removed. No direct kind exposes a Gateway execution contract, even for an old unstamped row. The remaining Route and Certificate kinds retain their family discovery entries until their owning native cutover.
 
 Complete Node Caddy builds use official cfgmgmt file application and an end check, with pinned SSH argv for validation and reload. Their native end assertion replaces the reporting shell. The Gateway records the public content version captured from the input validation in the same native history response.
 

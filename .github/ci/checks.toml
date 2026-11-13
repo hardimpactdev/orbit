@@ -3029,7 +3029,7 @@ cost = 21
 
 [[fixture]]
 file = "swamp/tests/caddy_candidate_test.py"
-cost = 28
+cost = 27
 slices = false
 inputs = [
   "swamp/ansible/library/orbit_caddy_publish.py",
@@ -3037,7 +3037,6 @@ inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/library/orbit_route_site.py",
   "swamp/ansible/tasks/caddy-publish.yml",
-  "swamp/proof/spike/shape-live",
   "swamp/ansible/tasks/gateway-swamp.yml",
   "swamp/ansible/route-create-site.yml",
   "swamp/ansible/route-withdraw.yml",
@@ -3053,7 +3052,6 @@ inputs = [
 "test_ansible_route_withdrawal" = 6
 "test_ansible_bootstrap_swamp_front" = 6
 "test_validated_inode_has_final_metadata_at_interrupted_rename" = 6
-"test_shape_live_proof_stages_validates_and_renames" = 1
 
 [[fixture]]
 file = "swamp/tests/instance_destroy_routeless_test.ts"
@@ -3102,12 +3100,11 @@ inputs = ["swamp/ansible/library/orbit_caddy_publish.py", "swamp/ansible/module_
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/routes/update-command/workflow_test.ts"
-cost = 13
+cost = 12
 inputs = ["swamp/workflows/**", "swamp/tests/fixtures/route-forward-intents.json", "swamp/extensions/behaviors/operations/routes/{mutation-command/{assets,dns},publication-command/sections,update-command/result}.ts"]
 
 [fixture.case_costs]
 "Route update workflows place every step on the swamp role and keep mutation parents small" = 1
-"the task-cancel withdrawal keeps certificate cleanup visible per scope and gates LAN retirement" = 1
 "restore keeps the observed candidate serving, then withdraws it after DNS grace" = 1
 "Route primitive and shared publication children use one209selector" = 1
 "a clone publishes its prepared Route beside workspace without waiting for app startup" = 1

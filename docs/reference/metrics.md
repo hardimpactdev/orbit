@@ -57,7 +57,7 @@ Enable the role with `orbit metrics:enable <node>`. The Node must be active. The
 
 The API returns HTTP 202 with an Operation. The CLI follows that Operation. The workflow validates a candidate Prometheus configuration with `promtool`, copies it over the live file in place, writes the Grafana password from stdin, and starts the runtime. One bounded wait each proves Prometheus `/-/ready` and a Grafana login with the stored `admin` password; curl reads that password on the Node and hides it from the process list.
 
-Then the workflow publishes exporters, certificates, the Grafana firewall allow, Gateway Caddy and private DNS. Each action has its own native step. Official cfgmgmt owns package, file, image, container removal, systemd and firewall effects; pinned official SSH handles individual commands and the password stdin.
+Then the workflow publishes exporters, certificates, the Grafana firewall allow, Gateway Caddy and private DNS. Each action has its own native step. The Gateway sends no firewall command to the Node agent. Official cfgmgmt owns package, file, image, container removal, systemd and firewall effects; pinned official SSH handles individual commands and the password stdin.
 
 A failed native step retains its history and the desired role assignment. Resume the failed native run through the normal Operation recovery path. The workflow does not hide retries, rollback journals or recovery loops. Publication failure keeps the runtime for recovery. The Gateway projects success only after the complete native workflow succeeds; failure records the shared native error code on the assignment.
 

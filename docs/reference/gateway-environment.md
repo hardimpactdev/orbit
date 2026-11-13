@@ -25,6 +25,8 @@ A setting that no code reads any more leaves the file through the `gateway` role
 - `ORBIT_TASK_VMS_UPCLOUD_PLAN`
 - `ORBIT_TASK_VMS_UPCLOUD_DISK_GB`
 
+`ORBIT_SWAMP_DIRECT_WRITERS` is also unread: it chose a writer per Operation kind, and every kind now has one writer. It is not on the list yet, because a new key changes the input of the `gateway` role's convergence. A Gateway that still has it ignores it.
+
 ## Services dependency detection
 
 The orchestrator enables read-token requests for one Services peer during deployment.

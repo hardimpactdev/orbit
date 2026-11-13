@@ -1,5 +1,5 @@
 {
- "maxUnreviewed": 216,
+ "maxUnreviewed": 211,
  "nativeDataMethods": {
   "@nckrtl/analytics-runtime#observe": "Compares supplied container observations and writes only Swamp metadata.",
   "@nckrtl/analytics-runtime#plan": "Builds runtime intents and argv as Swamp metadata without executing them.",
@@ -231,9 +231,6 @@
    "Prove the Caddy floor": "read-only",
    "Read the Caddy version": "read-only"
   },
-  "node-caddy-sites": {
-   "Validate the Caddyfile": "unreviewed"
-  },
   "node-cli-install": {
    "cli_candidate": "unreviewed",
    "cli_self_update": "unreviewed",
@@ -246,10 +243,6 @@
   "node-network-peer": {
    "Read the DNS policy": "unreviewed",
    "Read the DNS policy again": "unreviewed"
-  },
-  "node-php-runtime": {
-   "Find PHP-FPM": "read-only",
-   "Test PHP-FPM": "unreviewed"
   },
   "node-private-dns": {
    "Check the loaded catalog": "read-only",
@@ -265,9 +258,6 @@
    "Check removed directories": "idempotent",
    "Check removed files": "idempotent",
    "Read CI guests": "read-only"
-  },
-  "node-route-residue": {
-   "Test the PHP pools": "unreviewed"
   },
   "operation-analytics-enable-direct": {
    "Probe the tracking host": "read-only"
@@ -792,10 +782,6 @@
   "task-vm-image-ansible": {
    "Read the guest address": "read-only",
    "Read the guest host key": "unreviewed"
-  },
-  "task-vm-provider-power": {
-   "incus-after": "unreviewed",
-   "incus-before": "unreviewed"
   },
   "task-vm-workspace": {
    "account": "read-only",
