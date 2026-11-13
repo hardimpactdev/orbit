@@ -3,7 +3,7 @@ title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
   - apps/gateway/app/Domain/Proof/direct-operations.php
-  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,SwampConnection,SwampDispatch,SwampTerminalReadUnavailable}.php
+  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,NativeStepFailure,SwampConnection,SwampDispatch,SwampTerminalReadUnavailable,SwampTerminalOutputUnavailable}.php
   - apps/gateway/app/Jobs/Operations/ReconcileSwampOperations.php
   - apps/gateway/app/Domain/Operations/DirectOperationChildProjection.php
 ---
@@ -115,6 +115,8 @@ The shared Gateway cache stores the time of the last successful read, keyed by n
 A fire of a Schedule's own workflow is recorded as a task when its run ends, not when it starts. The job also tells each projection about its declared workflow every ten minutes, which the feed did when it connected. There is no timer on history reads of one run and no fallback to a family search.
 
 ### Reconciler
+
+A migrate with a verified terminal root but unreadable finish output supplies that history in a typed missing-output receipt. The job keeps a short grace, then records proven rollback or retains the reservation until the deadline. A network failure without verified history proves no rollback. Missing-output settlement keeps the verified root status and known failed-step diagnostics, including a cancelled root. Other diagnostic callers keep their existing root-status policy. See [migrate result recovery](/reference/operations#native-run-budgets).
 
 The reconciler reads late migrate finishes, including an uncertain start with no run binding or target hold. Shows and admissions do not settle them. See the [migrate late-settlement rules](/reference/operations#native-run-budgets).
 
