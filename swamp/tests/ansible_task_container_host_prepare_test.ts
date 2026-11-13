@@ -28,7 +28,8 @@ function local(name: string, folder: string): Task[] {
   const out: Task[] = [];
   for (const source of load(name)) {
     const task = structuredClone(source);
-    const include = task["ansible.builtin.include_tasks"] as string | undefined;
+    // The container phase includes or imports its parts; both run inline here.
+    const include = (task["ansible.builtin.include_tasks"] ?? task["ansible.builtin.import_tasks"]) as string | undefined;
     if (include?.startsWith("task-container-")) {
       out.push({
         name: task.name,
