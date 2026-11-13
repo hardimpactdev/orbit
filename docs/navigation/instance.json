@@ -10,6 +10,7 @@
           "pages": [
             "cli/instance/index",
             "cli/instance/create",
+            "cli/instance/complete",
             "cli/instance/rename",
             "cli/instance/register",
             "cli/instance/list",

@@ -717,10 +717,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 \u2192 v5.12.0",
-      "exact script output: v5.42.0 \u2192 v5.43.0",
-      "exact script output: v5.49.0 \u2192 v5.50.0",
-      "exact script output: v5.50.0 \u2192 v5.50.1",
+      "exact script output: v5.11.0 → v5.12.0",
+      "exact script output: v5.42.0 → v5.43.0",
+      "exact script output: v5.49.0 → v5.50.0",
+      "exact script output: v5.50.0 → v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -1605,7 +1605,7 @@
     ]
   },
   "swamp/tests/instance_migrate_native_faults_test.ts": {
-    "source_sha256": "845a76e0fdf74b8d811cbdeb9734ee1f7fe844a408cda1411705e1c9fe9081c6",
+    "source_sha256": "0d4fccef895c1000477c88d0d751a27164f1d60decc9584981c8a045f08d0521",
     "cases": [
       "pinned migrate failure: real native finish proves restoration, including the restore Route child after a lost root",
       "pinned migrate timeout: real native finish proves restoration, including the restore Route child after a lost root",
@@ -1998,7 +1998,7 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "8cecefac1f718325de52440a3eed83f065ed13998120539f1d13e3f116ef283c",
+    "source_sha256": "0d825fc070ce21cc1ff015b4444fd6cb5c6c05622ebe0e3cb1ea5eb117810523",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
@@ -2519,6 +2519,26 @@
       "no release while the Route is not withdrawn: a withdraw that did not hold, failed, or never ran keeps the hold to the end",
       "a retry of a removal whose Route an earlier run withdrew skips the withdraw; an intent without the mark still runs it",
       "the release says whether it happened, with the Gateway's status, and a refused or failed call never fails the run"
+    ]
+  },
+  "swamp/tests/instance_complete_workflow_test.ts": {
+    "source_sha256": "015fbefaae1bc9e91ff14e455722bdd6dce7ffa968697ba706cd4203d6817ae3",
+    "cases": [
+      "the completion's jobs and steps sit in the levels the plan names, by the pinned engine's sort",
+      "a plain clone, a clone with a database and a nested-fleet clone read only the keys they have",
+      "a plain clone starts the services when the stage ends, checks them, and is ready",
+      "a clone with a database starts the services only after the fill and the Valkey check",
+      "a nested-fleet clone starts its fleet before the services; a failed fleet names the fleet and withdraws the Route",
+      "each failure names its step and code, and a published Route is withdrawn"
+    ]
+  },
+  "swamp/tests/instance_complete_native_test.ts": {
+    "source_sha256": "f2195a77b43875193d972dc3644ac17f8e5d072e60921455218416f80258c39e",
+    "cases": [
+      "pinned complete: a normal clone with a Route runs every step and ends ready",
+      "pinned complete: a dead unit fails the check with its receipt and withdraws the Route",
+      "pinned complete: a failed Route names the Route and is withdrawn",
+      "pinned complete: a cancel during the services withdraws the Route and removes the private folder"
     ]
   }
 }

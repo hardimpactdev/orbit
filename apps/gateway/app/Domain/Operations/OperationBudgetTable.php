@@ -34,6 +34,9 @@ final class OperationBudgetTable
         // One 90 s scoped network/proxy phase, plus input/result/cleanup.
         'instance.node_service_detach' => 120,
         'instance.create' => 'run_budget_seconds',
+        // No run yet. Basis: the database fill's 600 s and the nested fleet start's 900 s, with margin for the stage, services, check
+        // and the Route beside them (docs/reference/development-containers.md#complete-a-clone). Replace with the 14-day p95.
+        'instance.complete' => 1800,
         // The removal steps, teardown timeouts, withdrawn Routes and owned databases, captured at admission.
         'instance.destroy' => 'run_budget_seconds',
         // Two database batches and one Route create; 900 s, captured at admission.

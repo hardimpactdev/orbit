@@ -773,6 +773,8 @@ Clone branch fixtures use unprivileged local Git repositories and run without an
 
 Its `checkout`, `services` and `check` cases check that each part gets only its half of the workspace value. The guest fixture runs `checkout` then `services` on a real Git workspace and compares the files, the mark, the units started and the result with the one `workspace` phase.
 
+The `instance:complete` workflow fixture runs `operation-instance-complete` on the pinned engine's levels, with the real `finish` receipt, for a plain clone, a database clone and a nested-fleet clone, and for each failure. Its native fixture runs the real workflow on the pinned Swamp binary with local stubs for the machine steps and the Route children; it needs `ORBIT_SWAMP_PROOF_BINARY`, so CI runs it after merge.
+
 The `instance:restore` workflow fixture evaluates every expression of `operation-instance-restore` against the input its projection renders. It needs no Node, database or playbook.
 
 The destroy release fixture evaluates the guard and environment of `Release the Route Nodes` and the retry guard of `Withdraw the Route`, then runs the release command with a stand-in `curl` for a granted, a refused and an unreachable call. It needs no Node or Gateway.

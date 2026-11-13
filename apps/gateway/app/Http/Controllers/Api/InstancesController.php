@@ -9,6 +9,7 @@ use App\Actions\Instances\RegisterInstanceAction;
 use App\Actions\Instances\RenameInstanceAction;
 use App\Actions\Instances\ShowInstanceAction;
 use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
+use App\Actions\Instances\StartInstanceCompleteAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceRestoreAction;
 use App\Actions\Instances\UpdateInstanceAction;
@@ -134,6 +135,18 @@ final class InstancesController extends Controller
             'data' => OperationData::fromModel($operation)->toArray(),
             'meta' => $this->meta($request),
         ], 202);
+    }
+
+    #[RequiresNodeAccess(ServingNode::InstanceOwning)]
+    #[StartsOperation('instance.complete')]
+    public function complete(Request $request, Instance $instance, StartInstanceCompleteAction $action): JsonResponse
+    {
+        if ($request->all() !== []) {
+            throw new ResourceOperationException('validation.failed', 'Instance completion takes no options or body fields.', 422);
+        }
+        $operation = $action->execute($instance, $this->caller($request), $request->attributes->getString('orbit.request_id'));
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
