@@ -25,6 +25,8 @@ Cleanup removes only temporary containers and aliases successfully created in th
 
 Prepared-image builders and clone probes follow the same rule: an existing temporary name refuses instead of being deleted. Publication clears the stock statement from prepared images. F69 supplies Node admission exclusion; there is no module/file lock, analyzer exception or automatic cleanup retry. Drain Operations admitted under old lock keys before rollout.
 
+An Instance host runs the phase once per Instance project: `orbit-instances`, and `orbit-instances-nested` when the Node's [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on. Each project gets its own stock image under the same alias. Before the clone probe starts in the nested project, the nested guard checks the probe's effective config and devices against the project's exact profile devices; a `raw.*` key, a privileged container or another device refuses before the start. The normal project's probe keeps its NIC guard unchanged.
+
 ## Adopt a pinned legacy stock image
 
 This is an explicit operator procedure, outside ordinary convergence. It does not authorize a live action. Before running it, obtain approval for the exact Node's native server name, local socket, project, stock alias, full 64-character fingerprint and retention alias. The fingerprint must come from known preparation evidence; discovering an alias is not approval to adopt its target. For Instance hosts, the project is `orbit-instances` and the stock alias is `ubuntu-26.04-instance-stock`; task-container values come from that Node's admitted host settings.

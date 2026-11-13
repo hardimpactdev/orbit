@@ -229,4 +229,24 @@ An existing apps folder gets the managed user, group and mode 0755, as a new one
 
 ## Nested fleet Instance hosting
 
-The API-only boolean `nested_fleet` records the Node hosting switch and defaults to false. An omitted member preserves its value, including a captured update that predates the member. A combined apps-path and switch update stores the switch only after storage preparation succeeds. An unrelated update preserves it. This switch is stored only and has no effect yet. The Project flag has one effect: Orbit refuses new Instances of its Project (see [Nested fleet setting](/reference/projects#nested-fleet-setting)). Do not set the flag on a real Project. Hosting that reads both values follows in a later change.
+The API-only boolean `nested_fleet` records the Node hosting switch and defaults to false. An omitted member preserves its value, including a captured update that predates the member. A combined apps-path and switch update stores the switch only after storage preparation succeeds. An unrelated update preserves it. The update only records the switch: converge the `app-dev` role afterwards.
+
+On a Node of the [build list](/reference/development-containers#the-build-list) with the switch on, the converge also prepares nested-fleet hosting:
+
+- The Incus project `orbit-instances-nested`. It uses the same pool, bridge, ACLs and stock image source as `orbit-instances`.
+- Its restrictions: those of `orbit-instances`, with isolated privilege and no virtual machines. It also allows nesting, syscall interception and low-level container keys.
+- Its default profile, with the same root disk, NIC and the two read-only shared folders.
+- The kernel modules `wireguard`, `overlay` and `br_netfilter`, loaded now and at boot.
+- A larger subordinate-ID demand, below.
+
+It creates no Instance and builds no image for nested-fleet containers. Orbit refuses each new Instance of a nested-fleet Project until that image exists ([Nested fleet setting](/reference/projects#nested-fleet-setting)). A Node with the switch off gets the same host intent and the same commands as before.
+
+The converge checks root's largest subordinate range in both `/etc/subuid` and `/etc/subgid` before any nesting change on the host. It refuses with `instance.host_unavailable` when either range is smaller than the demand, and then leaves no nesting preparation behind. It never enlarges a range. The demand is:
+
+`13,172,736 + task IDs + (N + 2) × 101,000,000`
+
+`13,172,736` is the normal Instance demand. Task IDs come from the task container places in `settings.task_vms.containers`, never from the task VM places: `(containers.task_places + containers.ci_places + 1) × 101,000,000`, or 0 when the Node has no `containers` block. `N` is the number of nested Instance runtimes that the Node records. The two spare maps leave room for a new nested container before the next converge.
+
+So a Node with no `containers` block needs `13,172,736 + (N + 2) × 101,000,000` IDs: 215,172,736 with no nested Instance yet, and 101,000,000 more for each one. Incus reads the ranges when its daemon starts; the converge reads the files.
+
+Clearing the switch removes nothing: the nested project, its profile and the module file stay. Runtimes that record `orbit-instances-nested` keep their ID maps in the demand and their project in the shared-folder refresh. Only the two spare maps leave the demand.

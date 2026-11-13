@@ -154,15 +154,28 @@
   when: folder_restart.stat.exists
   block:
     - name: Read the running containers
-      ansible.builtin.command: { argv: [incus, list, --project, "{{ instances.project }}", --format, json, status=running] }
+      ansible.builtin.command:
+        argv: >-
+          {{ ['incus', 'list']
+             + (['--all-projects'] if instances.runtime_projects is defined else ['--project', instances.project])
+             + ['--format', 'json', 'status=running'] }}
       register: folder_running
       changed_when: false
     - name: Restart them one after another
       ansible.builtin.command:
         argv: >-
-          {{ ['incus', 'exec', '--project', instances.project, item, '--', 'systemctl', 'try-restart']
+          {{ ['incus', 'exec', '--project', item.project, item.name, '--', 'systemctl', 'try-restart']
              + (['t3.service'] if folder_name == 'agent' else ['orbit-*.service']) }}
-      loop: "{{ folder_running.stdout | from_json | map(attribute='name') | list }}"
+      loop: >-
+        {%- set running = [] -%}
+        {%- for container in folder_running.stdout | from_json -%}
+          {%- set project = container.project if instances.runtime_projects is defined else instances.project -%}
+          {%- if project in instances.runtime_projects | default([instances.project]) -%}
+            {%- set _ = running.append({'project': project, 'name': container.name}) -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{ running }}
+      loop_control: { label: "{{ item.project }}/{{ item.name }}" }
       changed_when: true
     - name: Clear the restart mark
       ansible.builtin.file: { path: "{{ folder.path }}/.restart", state: absent }

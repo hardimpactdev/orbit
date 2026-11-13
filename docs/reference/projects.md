@@ -18,11 +18,24 @@ A Project records one Git repository and the defaults for running it. New Instan
 
 ## Nested fleet setting
 
-`nested_fleet` is a stored and public boolean that defaults to false. Set it through the Project update API with a JSON boolean. Do not set it on a real Project. Hosting that reads this flag and the Node switch follows in a later change.
+`nested_fleet` is a stored and public boolean that defaults to false. Set it through the Project update API with a JSON boolean. Do not set it on a real Project.
 
-Until then, the flag has one effect: Orbit refuses every new Instance of the Project with `operation.kind_unavailable` (503). One placement rule in the Gateway decides this for every path that writes an Instance. These paths are development create and its retry, Conn create, clone, register and migrate. They also include `proof:run` for the proof Project, and task work that needs a new workspace: provision, prep, build, turn, prep fix and review round, also after a wait.
+Until the image for nested-fleet containers exists, Orbit refuses every new Instance of the Project with `operation.kind_unavailable` (503). One placement rule in the Gateway decides this for every path that writes an Instance. These paths are development create and its retry, Conn create, clone, register and migrate. They also include `proof:run` for the proof Project, and task work that needs a new workspace: provision, prep, build, turn, prep fix and review round, also after a wait.
 
 A new request is refused before any record: no Instance, runtime, task place, Node identity, capacity wait or Operation. An Operation that already waited when the flag was turned on ends `failed` with the same code. A Project with the flag off is not affected.
+
+The same placement rule also says where a new Instance lives:
+
+| Project | Node | Result |
+| --- | --- | --- |
+| Flag off | Any | A container in the Incus project `orbit-instances` on a Node of the [build list](/reference/development-containers#the-build-list), else a host checkout, as before |
+| Flag on | [Nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) off | Refused with `instance.nested_fleet_host_unavailable` (409) |
+| Flag on | Switch on, but the result is not a container: the Node is not on the build list, or the Project's default Instance is a host checkout | Refused with `instance.nested_fleet_container_required` (409) |
+| Flag on | Switch on, on the build list, and a container result | A container in the Incus project `orbit-instances-nested` |
+
+Each writer calls the rule's entry for its kind. Development create, Conn create, migration and the runtime reservation can make a container. Register and the production clone make a host checkout. Task work and `proof:run` make a task workspace. Today every entry refuses a nested-fleet Project, as above.
+
+The Instance runtime records the chosen Incus project once, when Orbit reserves it. A clone takes the project that its default's runtime records. Every later step reads that record and never derives the project from the flag again. Today the refusal above comes first, so the two 409 codes and the nested result are not reachable yet; they stay when the image arrives.
 
 Change it alone: a request that sends `nested_fleet` with any other Project setting is refused with `project.nested_fleet_update_separate` (422) before any change. Turning it on requires the Project ID in the operator-set [trial allow list](/reference/gateway-environment#keys-in-the-example-file); otherwise Orbit refuses with `project.nested_fleet_not_allowed` (409). The list defaults to empty. A malformed list refuses with `project.nested_fleet_projects_invalid` (500). A changed value refuses with `project.nested_fleet_in_use` (409) while the Project has any Instance. Sending the current value is allowed, and turning it off does not require allow-list membership. An omitted member preserves its value.
 

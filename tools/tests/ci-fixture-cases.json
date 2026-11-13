@@ -121,7 +121,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "91629da1b85c04707d33538c7f2e30c3ad8908731c140b8268870aa4bc5693e4",
+    "source_sha256": "93c586e2ff40e7882a4f5d0326307041748171cc5a03c2ab6f18070a4cae744f",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -147,7 +147,23 @@
       "a copied seed with an unguarded extra local NIC refuses before the clone starts",
       "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read",
       "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish",
-      "a thirty-second Process stop succeeds"
+      "a thirty-second Process stop succeeds",
+      "nested fleet start gate: raw.lxc",
+      "nested fleet start gate: extra-device",
+      "nested fleet start gate: changed-host-path",
+      "nested fleet start gate: writable-share",
+      "nested fleet start gate: privileged",
+      "nested fleet start gate: clean",
+      "a normal host intent runs the exact tasks, Incus command lines and host files of main",
+      "a switched-on host with a short subuid range refuses before any nesting change",
+      "a switched-on host with a short subgid range refuses before any nesting change",
+      "only a switched-on host prepares the nested project, its profile and the nesting modules",
+      "the nested clone probe refuses a profile with a raw.lxc key before it starts",
+      "the nested clone probe refuses a profile with security.privileged before it starts",
+      "the nested clone probe refuses a profile with a host disk before it starts",
+      "the nested clone probe refuses a profile with an extra share key before it starts",
+      "a changed shared folder restarts running normal and nested runtimes before clearing its marker",
+      "a changed shared folder on a normal Node runs main's list and restart command lines"
     ]
   },
   "swamp/tests/ansible_instance_host_test.ts": {
@@ -1413,7 +1429,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "6c0b177613603a6210c342c13c46032417e173eab2c2f14df37253171aaeb50d",
+    "source_sha256": "d7458ef67bc0d4df021c70c972fe956e1472f4eb685094ab6207571d2fbe57bb",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1433,6 +1449,8 @@
       "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful",
       "test_clone_uses_the_admitted_common_acl_name",
       "test_clone_refuses_unsafe_effective_nics_before_start",
+      "test_normal_clone_uses_the_exact_original_checker_program_and_argv",
+      "test_nested_clone_refuses_inherited_raw_keys_and_extra_devices_before_start",
       "test_guest_and_node_command_names_stay_in_sync",
       "test_preserves_only_the_guest_command_and_exit_code",
       "test_rejects_private_or_mismatched_guest_diagnostics",
@@ -2244,7 +2262,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/ansible-input/write_test.ts": {
-    "source_sha256": "0095bb2c3ad26a5c8ef616a5c3075a0f051d8fac6eb014bf9bd4761e819f1559",
+    "source_sha256": "386a7d0de725832f0833aea85dcc4783144820243a41fedb4db04cf59e0d5a08",
     "cases": [
       "the full intent reaches a private file beyond the environment size limit",
       "an intent write refuses paths outside its run folder",
@@ -2252,7 +2270,8 @@
       "the fleet reboot finalizer reports a fixed error when private callback inputs cannot be parsed",
       "real clone commands stay below 32 KiB with a large Gateway intent",
       "real clone launch preserves stdin and cleanup works after an early container failure",
-      "workflow command and inline script templates keep 16 KiB of budget headroom"
+      "workflow command and inline script templates keep 16 KiB of budget headroom",
+      "nested clone input ships the composed pre-start policy and keeps the normal program unchanged"
     ]
   },
   "swamp/tests/caddy_publish_test.py": {

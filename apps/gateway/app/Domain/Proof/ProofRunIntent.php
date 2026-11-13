@@ -71,7 +71,7 @@ final readonly class ProofRunIntent
             ?? throw new ResourceOperationException('proof.swamp_unavailable', 'No active Swamp Node can run a proof.', 503);
         // Every executable proof needs a workspace Instance of the proof Project; a missing Project fails later, as before.
         if (($project = Project::query()->find($this->settings->projectId())) instanceof Project) {
-            InstancePlacement::assert($project);
+            InstancePlacement::taskWorkspace($project);
         }
         // The proof the CLI follows closes once, when the last of its runs has ended. Each run is an Operation of its own on its own task group.
         $proof = $this->store->create(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id,

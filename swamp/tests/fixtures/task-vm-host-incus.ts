@@ -141,11 +141,11 @@ if (family === "query") {
       state.images.find((image: {fingerprint: string}) => owned(image) && image.fingerprint === body.target).aliases.push({name: body.name});
     } else throw new Error("Unexpected image query");
   } else if (resource === "instances") {
-    const expanded = state.instances.map((row: { project: string; devices?: Record<string, Record<string, string>> }) => {
+    const expanded = state.instances.filter((row: {project: string}) => new URLSearchParams(query).get("all-projects") === "true" || row.project === project).map((row: { project: string; config?: Record<string, string>; devices?: Record<string, Record<string, string>> }) => {
       const devices = structuredClone(state.profiles[row.project]?.devices ?? {});
       // Incus replaces a whole device of the same name; it does not inherit missing local properties.
       for (const [name, device] of Object.entries(row.devices ?? {})) devices[name] = device;
-      return { ...row, expanded_devices: devices };
+      return { ...row, expanded_config: {...(state.profiles[row.project]?.config ?? {}), ...row.config}, expanded_devices: devices };
     });
     console.log(JSON.stringify(item ? expanded.find((row: {name: string}) => row.name === item) : expanded));
   } else if (resource === "profiles") {
@@ -282,6 +282,11 @@ if (family === "query") {
 } else if (family === "exec") {
   if (!instance(action)) fail("Instance not found");
   const command = args.slice(args.indexOf("--") + 1);
+  if (command[0] === "systemctl" && command[1] === "try-restart") {
+    const kind = command[2] === "t3.service" ? "agent" : "runtime";
+    state.folder_restarts ??= [];
+    state.folder_restarts.push({project, name: action, unit: command[2], marked: Deno.statSync(`${folder}/opt/orbit-${kind}/.restart`).isFile});
+  }
   if (command[0] === "sh" && command[1] === "-c" && instance(action).groups) {
     accounts(instance(action), command[2]);
   }
@@ -303,7 +308,7 @@ if (family === "query") {
 } else if (family === "list") {
   console.log(JSON.stringify(
     state.instances.filter((r: { project: string; status: string }) =>
-      r.project === project && r.status === "Running"
+      (args.includes("--all-projects") || r.project === project) && r.status === "Running"
     ),
   ));
 } else if (family === "init") {

@@ -362,7 +362,8 @@ def main():
                 ["incus", "query", f"/1.0/instances/{name}?project={container['project']}"]
             ).stdout
             checked = run(
-                ["python3", "-c", network_check, container["network"], "eth0"],
+                ["python3", "-c", network_check, container["network"], "eth0"]
+                + ([json.dumps(container["allowed_devices"])] if "allowed_devices" in container else []),
                 effective,
                 check=False,
             )

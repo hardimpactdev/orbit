@@ -6,6 +6,7 @@ namespace App\Infrastructure\Processes;
 
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Logs\LogReadLimit;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
@@ -98,12 +99,12 @@ final readonly class ContainerProcessInspection
         $runtime = $instance->runtime;
         if ($instance->id < 1 || ! Instance::isMorphType($process->owner_type) || $process->owner_id !== $instance->id
             || $process->runtime !== ProcessRuntime::Systemd || $instance->node->status !== LifecycleStatus::Active
-            || $runtime === null || $runtime->incus_project !== 'orbit-instances'
+            || $runtime === null || ! in_array($runtime->incus_project, InstancePlacement::projects(), true)
             || $runtime->container_name !== InstanceContainer::name($instance)) {
             $this->unavailable();
         }
 
-        return [InstanceContainer::name($instance), app(SystemdProcessRenderer::class)->unitName($process)];
+        return [$runtime->incus_project, InstanceContainer::name($instance), app(SystemdProcessRenderer::class)->unitName($process)];
     }
 
     /** @param list<string> $arguments */
@@ -119,7 +120,7 @@ final readonly class ContainerProcessInspection
             connectTimeout: 2, commandTimeout: 4,
         ), new RemoteCommand(
             ['timeout', '3', 'python3', '-', ...$arguments],
-            input: File::get(resource_path('processes/container-process-read.py')),
+            input: 'INSTANCE_PROJECTS = '.json_encode(InstancePlacement::projects(), JSON_THROW_ON_ERROR)."\n".File::get(resource_path('processes/container-process-read.py')),
             maxOutputBytes: $bytes, timeout: 4,
         ));
     }

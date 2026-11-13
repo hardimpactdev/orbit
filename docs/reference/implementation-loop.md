@@ -163,6 +163,8 @@ The fixture table in `.github/ci/checks.toml` maps changed inputs to files and d
 
 `bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most six shards per pull request. Each shard runs up to four units at once. A file can declare a larger slice count when its cases need finer slices.
 
+A file without its own command in the shape gate runs with Deno only while it is sliceable; `slices = false` makes the runner start it with `python3`. So register a Deno file that the gate does not list without `slices = false`. A Deno file of at most 60 seconds runs as one unit anyway.
+
 Measured container and fleet files declare costs by exact case name, with run IDs for completed measurements and explicit estimates for unmeasured cases. Their file cost equals the retained case total. Packing includes six seconds of startup per slice. Slice counts never exceed the retained case count.
 
 Container host preparation uses one case per unit. Each declared body cost uses its largest completed observation, rounded up plus one second; paired cases must not receive an equal share of the file total. Deadline cuts are censored observations, not completed measurements.

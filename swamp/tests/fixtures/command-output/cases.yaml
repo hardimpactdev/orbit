@@ -1651,7 +1651,7 @@ non_command_output:
   task: Separate package and artifact pins
   field: ansible.builtin.set_fact.deb_tools
   reason: Filters admitted artifact URLs.
-- file: tasks/task-container-host-system.yml
+- file: tasks/task-container-host-ids.yml
   task: Require a subordinate range for every container
   field: vars.have
   reason: Parses subordinate ranges from slurp file contents, not command output.

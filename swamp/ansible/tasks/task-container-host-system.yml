@@ -99,24 +99,9 @@
   loop: "{{ container_sysctls | dict2items | zip(container_sysctls_now.stdout_lines) | list }}"
   loop_control: { label: "{{ item.0.key }}" }
 
-# Each container gets an isolated ID map from root's range, which must hold `container_host.ids`; a smaller range changes nothing.
-- name: Read the subordinate IDs
-  ansible.builtin.slurp: { src: "{{ item }}" }
-  loop: [/etc/subuid, /etc/subgid]
-  register: container_subids
-
-- name: Require a subordinate range for every container
-  ansible.builtin.assert:
-    that: have | int >= need | int
-    fail_msg: "{{ container_host.fail }}: root needs {{ need }} subordinate IDs in {{ item.item }}, and its largest range has {{ have }}"
-    quiet: true
-  loop: "{{ container_subids.results }}"
-  loop_control: { label: "{{ item.item }}" }
-  vars:
-    need: "{{ container_host.ids }}"
-    have: >-
-      {{ (item.content | b64decode).splitlines() | select('match', '^root:[0-9]+:[0-9]+$') | map('split', ':') | map('last') | map('int')
-         | list | max | default(0) }}
+# Each container gets an isolated ID map from root's range (task-container-host-ids.yml); a smaller range changes nothing.
+- name: Check the subordinate IDs
+  ansible.builtin.import_tasks: task-container-host-ids.yml
 
 # One eighth of the host's memory, at least 1 GiB: the ARC took 2.6 GB of an 8 GB host and left the places short. The rule never
 # raises a cap the host already runs, such as the 2 GiB of a loop pool: a higher cap takes memory from the host's guests and services.

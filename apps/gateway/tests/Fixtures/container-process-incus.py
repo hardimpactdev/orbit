@@ -5,7 +5,7 @@ import pathlib
 import sys
 
 args = sys.argv[1:]
-assert args[:9] == ["exec", "--project", "orbit-instances", "instance-1", "--", "/usr/bin/timeout", "2", "/usr/bin/env", "-i"]
+assert args[:9] == ["exec", "--project", os.environ["PROCESS_READ_PROJECT"], "instance-1", "--", "/usr/bin/timeout", "2", "/usr/bin/env", "-i"]
 case = os.environ["PROCESS_READ_CASE"]
 if case in ("stopped", "missing-container"):
     sys.exit(1)

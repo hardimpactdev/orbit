@@ -147,7 +147,7 @@ The request answers at once with the proof Operation. The checks of the commit, 
 | `proof.admission_interrupted` | The job that admits the proof was lost before it started the runs. No case ran, and each selected case is `unrun`. Run the command again. |
 | `proof.capacity_timeout` | The proof was not admitted within 120 minutes of creation, while waiting for its turn, the working proof, a VM place or a usable base. No case ran. |
 | `proof.execution_disabled` | Cases are selected, and proof execution is switched off. The input of the proof holds the selected cases and the uncovered paths. |
-| `operation.kind_unavailable` | The proof Project has `nested_fleet` on, and nested-fleet hosting is not built yet. The request refuses before it records the proof. A proof recorded earlier fails with this code when it reaches task admission. No case ran. |
+| `operation.kind_unavailable` | The proof Project has `nested_fleet` on; the task-workspace entry of the placement rule refuses it. The request refuses before it records the proof. A proof recorded earlier fails with this code when it reaches task admission. No case ran. |
 | `proof.selection_invalid` | The selection list of the commit is malformed. The message names the line. |
 | `proof.github_unavailable` | GitHub could not be read, so the commit or its cases cannot be checked. Run the command again. |
 | `proof.swamp_unavailable` | No active Swamp Node exists to run the proof. |
