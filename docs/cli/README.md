@@ -186,7 +186,7 @@ Name a step's behavior after its target, never its run. Swamp reuses a definitio
 | Dots | A dynamic part that can hold a dot goes inside `(<name>).split(".").join("-")` |
 | Per run | `run.id` or `operation_id` only when the workflow deletes the behavior at the end |
 
-In a workflow child tree on a hot path, write each fixed `behaviorName` as a constant expression, for example `behaviorName: '${{ "ansible-input" }}'`. Swamp walks the child tree before the first step and looks up literal names; a missing definition can make each lookup scan all auto-definitions. The constant expression skips that start-time lookup and resolves to the same name before the step runs.
+In every workflow, write each fixed `behaviorName` as a constant expression, for example `behaviorName: '${{ "ansible-input" }}'`. Swamp walks the child tree before the first step and looks up literal names; a missing definition can make each lookup scan all auto-definitions. The constant expression skips that start-time lookup and resolves to the same name before the step runs.
 
 One behavior has one lock, and differing global arguments rewrite its definition. Steps that share a name take turns. A step that waits for the lock fails after 60 seconds (`SWAMP_LOCK_TIMEOUT_MS`). Swamp refuses a second type under one name, and it refuses a name with other characters when the step runs. With the dot rule, `10.44.0.2` becomes `10-44-0-2`. The run id, the index and integer ids need no wrapping.
 

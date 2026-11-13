@@ -23,7 +23,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/ansible-input'
-          behaviorName: ansible-input
+          behaviorName: ${{ "ansible-input" }}
           methodName: write
           inputs:
             intent: '${{ inputs.intent }}'
@@ -51,7 +51,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: instance-node-service-result
+          behaviorName: ${{ "instance-node-service-result" }}
           methodName: execute
           inputs:
             run: timeout 5 cat "$ORBIT_RUN/result.json"
@@ -64,7 +64,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: instance-node-service-cleanup
+          behaviorName: ${{ "instance-node-service-cleanup" }}
           methodName: execute
           inputs:
             run: timeout 5 rm -rf -- "$ORBIT_RUN"
