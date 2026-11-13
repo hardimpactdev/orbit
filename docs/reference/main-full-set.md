@@ -9,7 +9,7 @@ covers:
 
 # Main full set
 
-`Main full set` runs every shape-gate fixture after a push to main. It is independent of Required checks and releases. Its shards use only `[self-hosted, orbit-shard, sabre]`, with at most five executing shards and four workers per shard. More work creates more queued shards, rather than dropping files. Manual dispatch accepts main only.
+`Main full set` runs every shape-gate fixture after a push to main. It is independent of Required checks and releases. Its shards use only `[self-hosted, orbit-shard, sabre]`, with at most five executing shards and two workers per shard. With four workers, 20 fixture processes ran at once on Sabre and most failures were timeouts, not failing tests. More work creates more queued shards, rather than dropping files. A complete run is expected to take about 80 minutes. Manual dispatch accepts main only.
 
 The plan installs pinned PyYAML before checking its workflow policy, then reads the shared fixture list and input table. It collects current Deno registrations without running bodies, then includes every case, including PR exclusions and after-merge-only files. Saved hashes never block this run. Saved costs guide packing; new cases use the table's default estimate. A failed collector runs the whole file instead and names the collection error. Python fixtures run as files. The runner installs the pinned Ansible tools and collections and supplies the pinned Swamp and FrankenPHP binaries after checking their archive checksums. Missing dependencies fail by name.
 
