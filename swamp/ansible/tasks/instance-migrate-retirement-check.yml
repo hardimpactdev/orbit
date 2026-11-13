@@ -123,6 +123,26 @@
               else (retirement_identity.stdout | from_json).descendants }}
         retirement_changes: "{{ (retirement_status.stdout | from_json).tracked }}"
         retirement_submodules: "{{ (retirement_status.stdout | from_json).submodules }}"
+    - name: Explain unsupported Git filters or intent-to-add entries
+      when: >-
+        (retirement_status.stdout | from_json).filters | length > 0
+        or (retirement_status.stdout | from_json).intent_to_add | length > 0
+      ansible.builtin.set_fact:
+        migrate_refusal_code: >-
+          {{ 'instance.migrate_git_filter_unsupported' if (retirement_status.stdout | from_json).filters | length > 0
+             else 'instance.migrate_git_intent_to_add' }}
+        migrate_refusal_message: >-
+          {{ 'This checkout uses Git clean/smudge filters. Migrate an unfiltered checkout; keep filtered data separately.'
+             if (retirement_status.stdout | from_json).filters | length > 0
+             else 'This checkout has intent-to-add entries. Stage their contents with git add, or unstage the entries, and retry.' }}
+          All data stays in the source or retained folder. No repository-defined program is run.
+    - name: Refuse filters and intent-to-add before effects
+      ansible.builtin.assert:
+        that:
+          - (retirement_status.stdout | from_json).filters | length == 0
+          - (retirement_status.stdout | from_json).intent_to_add | length == 0
+        fail_msg: "{{ migrate_refusal_message | default('instance.migrate_retirement_blocked') }}"
+        quiet: true
     - name: Explain a blocked retirement
       when: >-
         retirement_other_worktrees | length > 0 or retirement_submodules | length > 0

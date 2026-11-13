@@ -913,6 +913,7 @@ inputs = [
 file = "swamp/tests/ansible_instance_migrate_links_test.py"
 cost = 2
 inputs = [
+  "swamp/ansible/instance_migrate_git.py",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_migrate_links.py",

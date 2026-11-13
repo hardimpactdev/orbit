@@ -76,12 +76,8 @@ class CopyLayout:
             parent = os.path.dirname(parent)
 
     def git(self, *args):
-        result = subprocess.run(
-            ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
-             '-c', 'safe.directory=' + str(self.root), '-C', str(self.root), *args],
-            env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0'},
-            check=True, capture_output=True)
-        return [name for name in result.stdout.split(b'\0') if name]
+        from instance_migrate_git import git
+        return [name for name in git(self.root, *args).split(b'\0') if name]
 
     def in_archived_tree(self, name):
         return any(name == tree or name.startswith(tree + b'/') for tree in self.archived_trees)

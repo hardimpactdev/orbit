@@ -2,11 +2,13 @@
 import json
 import os
 import runpy
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -124,6 +126,20 @@ class RetirementScopeTest(unittest.TestCase):
         result = self.check(self.child, expected="instance.migrate_retirement_blocked")
         self.assertIn(".gitmodules", result["message"])
 
+    def test_intent_to_add_refuses_the_real_retirement_preflight(self):
+        (self.child / "intent").write_text("not staged")
+        git(self.child, "add", "-N", "intent")
+        result = self.check(self.child, expected="instance.migrate_git_intent_to_add")
+        self.assertIn("intent-to-add", result["message"])
+        self.assertIn("All data stays", result["message"])
+
+    def test_a_clean_filter_refuses_the_real_retirement_preflight(self):
+        (self.child / ".gitattributes").write_text("content.txt filter=fixture\n")
+        git(self.child, "config", "filter.fixture.clean", "false")
+        result = self.check(self.child, expected="instance.migrate_git_filter_unsupported")
+        self.assertIn("clean/smudge", result["message"])
+        self.assertIn("All data stays", result["message"])
+
 
 class MigrationGitStateTest(unittest.TestCase):
     def setUp(self):
@@ -144,6 +160,9 @@ class MigrationGitStateTest(unittest.TestCase):
         self.command(self.source, 'commit', '--quiet', '-m', 'base')
         self.command(self.folder, 'clone', '--quiet', '--no-hardlinks', str(self.source), str(self.target))
         self.state = runpy.run_path(str(ROOT / 'swamp/ansible/instance_migrate_git.py'))
+        module = types.ModuleType('instance_migrate_git')
+        module.__dict__.update(self.state)
+        self.enterContext(patch.dict(sys.modules, {'instance_migrate_git': module}))
         self.prefix = self.folder / 'transfer'
         self.manifest = Path(str(self.prefix) + '.git.json')
         self.pack = Path(str(self.prefix) + '.git.pack')
@@ -343,6 +362,165 @@ class MigrationGitStateTest(unittest.TestCase):
         with self.assertRaisesRegex(self.state['GitStateError'], 'instance.migrate_git_source_changed'):
             self.state['check_source'](self.source, self.manifest)
 
+
+
+    def test_clean_checkout_records_cost_without_rewriting_source_or_destination(self):
+        original = subprocess.run
+        calls = []
+        def count(argv, *args, **kwargs):
+            if argv[0] in ('git', '/usr/bin/git'):
+                calls.append(argv)
+            return original(argv, *args, **kwargs)
+        before = self.metadata()
+        with patch.object(subprocess, 'run', count):
+            started = time.monotonic()
+            self.state['export'](self.source, self.prefix, 'main')
+            self.overlay()
+            self.state['check_source'](self.source, self.manifest)
+            result = self.state['import_state'](self.target, self.manifest, self.pack)
+            self.state['check_source'](self.source, self.manifest)
+            seconds = time.monotonic() - started
+        self.assertEqual(result, {'verified': True, 'changed': False})
+        self.assertEqual(self.metadata(), before)
+        print(f"clean Git transfer: {len(calls)} Git calls, {seconds:.3f}s", flush=True)
+
+    def test_repository_drivers_never_run_and_filters_refuse_before_export(self):
+        for kind in ('clean', 'smudge', 'textconv', 'diff', 'merge'):
+            with self.subTest(kind=kind):
+                marker = self.source / '.git' / ('executed-' + kind)
+                program = sys.executable + ' -c ' + shlex.quote(
+                    "import pathlib,sys;pathlib.Path(" + repr(str(marker)) + ").write_text('executed');"
+                    "sys.stdout.buffer.write(sys.stdin.buffer.read())")
+                attribute = 'filter=trap' if kind in ('clean', 'smudge') else 'merge=trap' if kind == 'merge' else 'diff=trap'
+                (self.source / '.gitattributes').write_text('file ' + attribute + '\n')
+                self.command(self.source, 'add', '.gitattributes')
+                key = {'clean': 'filter.trap.clean', 'smudge': 'filter.trap.smudge',
+                       'textconv': 'diff.trap.textconv', 'diff': 'diff.trap.command', 'merge': 'merge.trap.driver'}[kind]
+                self.command(self.source, 'config', key, program)
+                target_marker = self.target / '.git' / ('executed-' + kind)
+                target_program = program.replace(str(marker), str(target_marker))
+                self.command(self.target, 'config', key, target_program)
+                (self.source / 'file').write_text('a changed working value')
+                before = self.metadata()
+                self.overlay()
+                self.state['git'](self.source, 'diff', '--ext-diff', '--textconv', 'HEAD')
+                if kind in ('clean', 'smudge'):
+                    with self.assertRaisesRegex(self.state['GitStateError'], 'instance.migrate_git_filter_unsupported'):
+                        self.state['export'](self.source, self.prefix, 'main')
+                    self.assertFalse(self.manifest.exists())
+                else:
+                    self.carry()
+                self.assertFalse(marker.exists())
+                self.assertFalse(target_marker.exists())
+                self.assertEqual(self.metadata(), before)
+                self.command(self.source, 'config', '--unset', key)
+                self.command(self.target, 'config', '--unset', key)
+
+    def test_staged_removal_of_filter_attributes_cannot_bypass_preflight(self):
+        attributes = self.source / '.gitattributes'
+        attributes.write_text('file filter=fixture\n')
+        self.command(self.source, 'add', '.gitattributes')
+        self.command(self.source, 'commit', '--quiet', '-m', 'filtered base')
+        attributes.write_text('')
+        self.command(self.source, 'add', '.gitattributes')
+        before = self.metadata()
+        with self.assertRaisesRegex(self.state['GitStateError'], 'instance.migrate_git_filter_unsupported'):
+            self.state['export'](self.source, self.prefix, 'main')
+        self.assertEqual(self.metadata(), before)
+
+    def test_every_carried_untracked_and_ignored_byte_is_verified(self):
+        (self.source / 'loose').write_text('original')
+        (self.source / 'ignored').mkdir()
+        (self.source / 'ignored/file').write_text('original')
+        for name in ('loose', 'ignored/file'):
+            with self.subTest(name=name):
+                self.state['export'](self.source, self.prefix, 'main')
+                self.overlay()
+                path = self.target / name
+                metadata = path.stat()
+                path.write_text('corrupt!')
+                os.utime(path, ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
+                with self.assertRaisesRegex(self.state['GitStateError'], 'instance.migrate_git_state_mismatch'):
+                    self.state['import_state'](self.target, self.manifest, self.pack)
+                path.write_text('original')
+
+    def test_source_recheck_fences_edited_new_and_deleted_ignored_files(self):
+        (self.source / 'loose').write_text('original')
+        (self.source / 'ignored').mkdir()
+        (self.source / 'ignored/file').write_text('original')
+        for kind in ('edited-untracked', 'edited-ignored', 'new-ignored', 'deleted-ignored'):
+            with self.subTest(kind=kind):
+                self.state['export'](self.source, self.prefix, 'main')
+                if kind == 'edited-untracked':
+                    (self.source / 'loose').write_text('later value')
+                elif kind == 'edited-ignored':
+                    (self.source / 'ignored/file').write_text('later value')
+                elif kind == 'new-ignored':
+                    (self.source / 'ignored/new').write_text('later value')
+                else:
+                    (self.source / 'ignored/file').unlink()
+                with self.assertRaisesRegex(self.state['GitStateError'], 'instance.migrate_git_source_changed'):
+                    self.state['check_source'](self.source, self.manifest)
+                (self.source / 'loose').write_text('original')
+                (self.source / 'ignored/file').write_text('original')
+                (self.source / 'ignored/new').unlink(missing_ok=True)
+
+    def test_intent_to_add_is_named_before_export_or_source_writes(self):
+        (self.source / 'intent').write_text('not staged')
+        self.command(self.source, 'add', '-N', 'intent')
+        before = self.metadata()
+        self.assertEqual(self.state['guards'](self.source)['intent_to_add'], ['intent'])
+        with self.assertRaisesRegex(self.state['GitStateError'], 'instance.migrate_git_intent_to_add'):
+            self.state['export'](self.source, self.prefix, 'main')
+        self.assertFalse(self.manifest.exists())
+        self.assertFalse(self.pack.exists())
+        self.assertEqual(self.metadata(), before)
+
+    def test_wrong_staged_blob_with_identical_status_is_rejected(self):
+        (self.source / 'staged').write_text('right staged value')
+        self.command(self.source, 'add', 'staged')
+        (self.source / 'staged').write_text('working value')
+        self.state['export'](self.source, self.prefix, 'main')
+        self.overlay()
+        original = self.state['snapshot']
+        calls = 0
+        def corrupt_index(root, **options):
+            nonlocal calls
+            if root == self.target:
+                calls += 1
+                if calls == 2:
+                    wrong = self.command(self.target, 'hash-object', '-w', '--stdin', input=b'wrong staged value').strip().decode()
+                    self.command(self.target, 'update-index', '--cacheinfo', '100644', wrong, 'staged')
+                    self.assertEqual(self.command(self.source, 'status', '--porcelain'),
+                                     self.command(self.target, 'status', '--porcelain'))
+            return original(root, **options)
+        with (
+            patch.dict(self.state['import_state'].__globals__, {'snapshot': corrupt_index}),
+            self.assertRaisesRegex(self.state['GitStateError'], 'instance.migrate_git_state_mismatch'),
+        ):
+            self.state['import_state'](self.target, self.manifest, self.pack)
+        self.assertEqual(calls, 2)
+
+    def test_missing_off_branch_tree_requires_fsck_even_on_identical_snapshot(self):
+        self.command(self.source, 'checkout', '--quiet', '-b', 'off-main')
+        (self.source / 'off-main').write_text('only on another local branch')
+        self.command(self.source, 'add', '.')
+        self.command(self.source, 'commit', '--quiet', '-m', 'off main')
+        tree = self.command(self.source, 'rev-parse', 'HEAD^{tree}').strip().decode()
+        self.command(self.source, 'checkout', '--quiet', 'main')
+        self.carry()
+        unpacked = self.folder / 'unpacked'
+        unpacked.mkdir()
+        subprocess.run(['git', '-C', str(self.target), 'unpack-objects'], input=self.pack.read_bytes(),
+                       env={**self.environment, 'GIT_OBJECT_DIRECTORY': str(unpacked)}, check=True, capture_output=True)
+        objects = self.target / '.git/objects'
+        shutil.copytree(unpacked, objects, dirs_exist_ok=True)
+        for path in (objects / 'pack').iterdir():
+            path.unlink()
+        (objects / tree[:2] / tree[2:]).unlink()
+        self.assertEqual(self.state['snapshot'](self.source), self.state['snapshot'](self.target))
+        with self.assertRaisesRegex(self.state['GitStateError'], 'instance.migrate_git_objects_incomplete'):
+            self.state['import_state'](self.target, self.manifest, self.pack)
 
 
 if __name__ == "__main__":

@@ -117,6 +117,14 @@
     # Beside the mirror, on the Node's disk and readable by root only; the container's copy sits beside the workspace.
     node_archive: "{{ container.mirror | dirname }}/migrate-{{ container.instance_id }}-{{ run_id }}"
     container_archive: "/srv/.orbit-migrate-{{ run_id }}"
+    # Load the trusted release library in memory: no Node install and no script bytes in argv.
+    migrate_links_script: |
+      import sys, types
+      library = types.ModuleType("instance_migrate_git")
+      exec({{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_git.py') | to_json }}, library.__dict__)
+      sys.modules[library.__name__] = library
+      {{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py') }}
+
 
 # Cutover already made the container the runtime. Its Schedules must follow even when the later Git retirement refuses.
 - name: Publish the moved Instance's Schedules before retiring Git data
@@ -173,7 +181,7 @@
       ansible.builtin.command:
         argv: ["python3", "-", "{{ migrate.checkout }}", "--predict-copy"]
         expand_argument_vars: false
-        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py') }}"
+        stdin: "{{ migrate_links_script }}"
       register: migrate_links_read
       changed_when: false
     - name: Check the source symlink result
@@ -365,7 +373,7 @@
       ansible.builtin.command:
         argv: ["python3", "-", "{{ migrate.checkout }}", "--archive-prefix", "{{ node_archive }}"]
         expand_argument_vars: false
-        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py') }}"
+        stdin: "{{ migrate_links_script }}"
       environment:
         ORBIT_CHECKOUT: "{{ migrate.checkout }}"
       register: migrate_archive
@@ -425,7 +433,7 @@
       ansible.builtin.command:
         argv: "{{ as_orbit + ['python3', '-', container.workspace, '--old-checkout', migrate.checkout, '--rewrite'] }}"
         expand_argument_vars: false
-        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py') }}"
+        stdin: "{{ migrate_links_script }}"
       register: migrate_links_read
       changed_when: >-
         migrate_links_read.rc == 0 and (migrate_links_read.stdout | from_json).refused | length == 0

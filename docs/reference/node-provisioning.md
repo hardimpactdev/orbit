@@ -26,7 +26,7 @@ Preparing an `app-dev` Node for [Instance containers](/reference/development-con
 
 Migration retirement protects the Node's remaining checkouts: an owner with dependents or a checkout with registered descendants refuses before downtime; a linked checkout keeps independent Git recovery data and removes only its own registration. See [retirement and recovery](/cli/instance/migrate#retained-git-data).
 
-Migration carries [local Git state](/cli/instance/migrate#local-git-state), including branches, complete stash history, staging and tracked edits. It verifies the copied state before cutover and rechecks the read-only source snapshot before retention; owner dependencies and submodule changes still refuse.
+Migration carries [local Git state](/cli/instance/migrate#local-git-state), including branches, complete stash history, staging and tracked edits. It hashes every carried file, including untracked and ignored bytes, and verifies the copied state before cutover and rechecks the read-only source snapshot before retention; owner dependencies, submodule changes, active clean/smudge filters and intent-to-add still refuse.
 
 Migration carries missing directories, including empty link targets, with their modes and the existing ownership mapping. Symlink prediction runs before downtime and shares the final copied-tree resolver; [migration files and links](/cli/instance/migrate#what-moves) define the exclusions.
 

@@ -593,21 +593,13 @@ os.execv("/usr/bin/tar", ["tar", *sys.argv[1:]])
         const result = f.run("files");
 
         assertEquals(Deno.readLinkSync(link), target);
-        if (change === "absolute" || change === "relative") {
-          assert(result.ok, result.output);
-          assertEquals(Deno.readLinkSync(`${f.rootfs}/srv/workspace/public/storage`), "../alternate");
-        } else {
-          assert(!result.ok, result.output);
-          assertEquals(f.result().error_code, "instance.migrate_symlink_unsupported");
-          assertEquals(f.result().preflight_refused, false);
-          assert(f.result().error_message.includes("public/storage"), f.result().error_message);
-          assert(f.result().error_message.includes(target), f.result().error_message);
-          const restored = f.run("restore");
-          assert(restored.ok, restored.output);
-          assert(!exists(f.rootfs));
-          assert(exists(f.migrate.awake.path));
-          assertEquals(Deno.readLinkSync(link), target);
-        }
+        assert(!result.ok, result.output);
+        assertEquals(f.result().error_code, "instance.migrate_git_source_changed");
+        const restored = f.run("restore");
+        assert(restored.ok, restored.output);
+        assert(!exists(f.rootfs));
+        assert(exists(f.migrate.awake.path));
+        assertEquals(Deno.readLinkSync(link), target);
       } finally {
         f.cleanup();
       }

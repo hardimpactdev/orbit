@@ -68,15 +68,21 @@ Empty directories are copied when the Git checkout and file archive would not cr
 
 The directory scan skips `.git` metadata, does not follow directory symlinks, and does not enter tracked submodules. The existing file archive still handles selected nested repositories as before. Dependencies such as `vendor` and `node_modules` remain in the copy scope.
 
-Changes to the exported Git state or tracked-file contents make the final source snapshot differ. Migration refuses retirement and keeps the source intact; after cutover the container keeps serving. Compare and carry those later changes before any manual cleanup. Later edits to untracked or ignored contents stay in the original checkout, which retention keeps whole.
+Any change to a carried path, including a new or deleted untracked or ignored file, makes the final source snapshot differ. Migration refuses retirement and keeps the source intact; after cutover the container keeps serving. Compare and carry those later changes before any manual cleanup.
 
 ## Local Git state
 
 The files phase carries every local branch and tip, the selected HEAD, all stash entries and the complete ordered stash reflog, including duplicate messages, identities, times and timezones. A surviving stash ref with an expired reflog keeps its tip and objects without inventing log entries. Objects reachable through alternate stores become independent objects in the container.
 
+Clean/smudge filters, including Git LFS filters on tracked paths, refuse before downtime with `instance.migrate_git_filter_unsupported`. Use an unfiltered checkout and preserve any filtered data separately. Intent-to-add entries refuse with `instance.migrate_git_intent_to_add`; stage their contents or remove those index entries before retrying. Neither refusal changes source data.
+
+Git reads use a private view with controlled configuration. Repository-defined filters, diff and textconv commands, merge drivers, hooks, fsmonitor, transport helpers and other executable config are not used. Source metadata discovery and attribute queries do not run those programs.
+
 Tracked edits arrive with their working-tree bytes, deletions and renames. Staged changes stay staged: Orbit rebuilds the logical index from its entries and carries staged blobs that no commit references. It copies no source hooks, config, alternates or worktree registrations into the container.
 
-Before existing path rewrites and application starts, Orbit compares branches, HEAD, stash history, index entries, porcelain status and hashes of every changed tracked file. Both repositories pass Git object checks. A mismatch fails before cutover; restore discards the container and leaves the original Git metadata unchanged. The private source snapshot stays on the Node until retention or restore completes and is checked again immediately before retirement.
+Before existing path rewrites and application starts, Orbit compares branches, HEAD, stash history, index entries, porcelain status and hashes of every carried regular file and symlink target, including untracked and ignored paths. Both repositories pass Git object checks. A mismatch fails before cutover; restore discards the container and leaves the original Git metadata unchanged. The private source snapshot stays on the Node until retention or restore completes and is checked again immediately before retirement.
+
+Hash verification excludes only the root `.git` metadata, tracked submodule contents and filesystem sockets. Git metadata has its own checks; submodule contents and sockets do not move. Selected nested repositories still move as complete archived directories. Directory and special-file kinds are compared without opening pipes or devices.
 
 Retirement still moves the whole old checkout, including every Git metadata file and working-tree file, to the retained path. It deletes no Git data. An owner's other worktrees, registered descendants, unsafe links, changed branch or Git identity, and submodule changes still refuse.
 
@@ -339,7 +345,9 @@ Warnings are a generic `warnings` list of `{code, message}` records in the Opera
 | `instance.migrate_env_service_unreachable` | A selected environment file has an answering unsupported service endpoint, an inconclusive host probe, or an uninspectable value or a value the check cannot determine safely. Endpoint errors name the offending keys and safe host:port; syntax errors name only the file and line. Both include recovery actions. The checkout keeps serving. |
 | `instance.migrate_branch_changed` | The checkout is not on the branch that Orbit records. Check out that branch, or record the new one with [`instance:rename`](/cli/instance/rename). |
 | `instance.migrate_symlink_unsupported` | A checkout link would be broken or unsupported in the copied workspace, or points outside the checkout. The error names every path, target and reason. The preflight refusal leaves the checkout serving. The same check on the copied workspace fails the move and restores the checkout if a link changed during copying. |
-| `instance.migrate_git_state_mismatch` | The copied branch tips, HEAD, stash history, staging, status or tracked-file hashes differ. Restore keeps the source; retry after inspecting the mismatch. |
+| `instance.migrate_git_filter_unsupported` | A tracked path uses a clean/smudge filter. Move an unfiltered checkout; keep filtered data separately. Source data stays intact. |
+| `instance.migrate_git_intent_to_add` | An index entry has intent-to-add. Stage its contents or remove the entry and retry; source data stays intact. |
+| `instance.migrate_git_state_mismatch` | The copied branch tips, HEAD, stash history, staging, status or any carried file hash differs. Restore keeps the source; retry after inspecting the mismatch. |
 | `instance.migrate_git_objects_incomplete` | Git object verification failed. The source stays intact; repair its objects before retrying. |
 | `instance.migrate_git_source_changed` | The source changed after export. Before cutover restore keeps it serving; at retirement the container keeps serving and source files stay. Compare and carry the later changes before cleanup. |
 | `instance.migrate_retirement_blocked` | A checkout contains a registered descendant, is an owner with other worktrees, has changed Git identity, or has submodule changes. The error names up to 20 paths per list and each total count. Before downtime the checkout keeps serving; at the final check the container keeps serving and the checkout stays. |
