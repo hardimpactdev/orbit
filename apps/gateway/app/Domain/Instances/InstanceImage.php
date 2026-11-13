@@ -14,7 +14,8 @@ use App\Domain\TaskVms\TaskVmNestedFleet;
  *
  * A Node with nested-fleet hosting on also builds the nested-fleet variant (docs/reference/development-containers.md#the-nested-fleet-image):
  * the same image with the pinned inner Incus, `agent` in `incus-admin` with passwordless sudo, user namespaces, root's subordinate IDs,
- * the AppArmor marker, and a firewall rule that keeps `orbit` off the inner fleet's networks.
+ * the AppArmor marker, a firewall rule that keeps `orbit` off the inner fleet's networks and leaves the inner Incus's own tables alone,
+ * `zstd` for the inner fleet's archives, and a network wait that does not ask for the DNS the container never gets.
  */
 final readonly class InstanceImage
 {
@@ -22,8 +23,14 @@ final readonly class InstanceImage
 
     public const string NestedAlias = 'orbit-instance-nested';
 
-    /** The nested-fleet variant's packages beyond the normal ones: the tunnel to its fleet, the fleet's database client, and sudo. */
-    public const array NestedPackages = ['wireguard-tools', 'sqlite3', 'sudo'];
+    /** The nested-fleet variant's network wait (self::nestedFiles). */
+    public const string NestedWaitOnline = '/etc/systemd/system/systemd-networkd-wait-online.service.d/90-orbit-no-dns.conf';
+
+    /**
+     * The nested-fleet variant's packages beyond the normal ones: the tunnel to its fleet, the fleet's database client, sudo, and
+     * `zstd` for the `.tar.zst` archives of an inner fleet's containers.
+     */
+    public const array NestedPackages = ['wireguard-tools', 'sqlite3', 'sudo', 'zstd'];
 
     /** OS packages beyond the stock image: the firewall, ACLs on the workspace, and Git for the workspace repository. */
     public const array Packages = ['acl', 'git', 'nftables'];
@@ -160,6 +167,12 @@ final readonly class InstanceImage
      * The nested-fleet variant's own files: the inner Incus maps root's range and the outer `orbit` into its containers, Docker in
      * them reads the AppArmor marker, and `agent` alone has sudo. Its user namespaces stay on, so it has no limit file.
      *
+     * Two unit drop-ins. The inner Incus wants `network-online.target`, so each start after the first waits for it. Netplan's wait
+     * asks for a DNS server on eth0, which the container never gets (self::egress), so it would hold the boot for its full 120 s;
+     * this wait asks only that eth0 has a route, and gives up after 30 s. The wait stays, unlike a mask, so the inner Incus still
+     * starts after eth0 has its address. Its name sorts after netplan's `10-netplan.conf`, so its `ExecStart` wins. And a stop of
+     * nftables removes only Orbit's own table: the stock unit's `flush ruleset` would also remove the inner Incus's tables.
+     *
      * @return list<array{path: string, content: string, uid: int, gid: int, mode: string}>
      */
     private static function nestedFiles(): array
@@ -171,24 +184,30 @@ final readonly class InstanceImage
             ['path' => '/etc/subgid', 'content' => $ids, 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
             ['path' => '/etc/orbit/apparmor-off', 'content' => "N\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
             ['path' => '/etc/sudoers.d/orbit-agent', 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440'],
+            ['path' => self::NestedWaitOnline, 'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/usr/lib/systemd/systemd-networkd-wait-online --interface=eth0:routable --timeout=30\n",
+                'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+            ['path' => '/etc/systemd/system/nftables.service.d/90-orbit-own-table.conf', 'content' => "# Managed by Orbit.\n[Service]\nExecStop=\nExecStop=/usr/sbin/nft destroy table inet orbit_agent_guard\n",
+                'uid' => 0, 'gid' => 0, 'mode' => '0644'],
         ];
     }
 
     /**
      * Only `agent` reaches the model forwarder, and only root and `agent` reach T3's port; others get a reset. In the nested-fleet
-     * variant the first rule also drops `orbit`'s traffic to the inner fleet's networks.
+     * variant the first rule also drops `orbit`'s traffic to the inner fleet's networks, and the file replaces only its own table:
+     * a `flush ruleset` there would also remove the inner Incus's tables (its bridge NAT and ACLs) at each reload.
      */
     public static function firewall(string $gateway, bool $nested = false): string
     {
         $agent = InstanceHostIntent::AgentUid;
         $forwarder = InstanceHostIntent::ModelForwarderPort;
         $t3 = InstanceHostIntent::T3Port;
+        $reset = $nested ? 'destroy table inet orbit_agent_guard' : 'flush ruleset';
         $guard = $nested ? "\n        ip daddr { ".TaskVmNestedFleet::WireGuardSubnet.', '.TaskVmNestedFleet::Subnet.' } meta skuid '.InstanceHostIntent::OrbitUid.' drop' : '';
 
         return <<<NFT
             #!/usr/sbin/nft -f
             # Managed by Orbit.
-            flush ruleset
+            {$reset}
             table inet orbit_agent_guard {
                 chain output {
                     type filter hook output priority 0; policy accept;{$guard}
