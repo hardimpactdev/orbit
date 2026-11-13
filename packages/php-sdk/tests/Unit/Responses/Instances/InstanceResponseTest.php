@@ -190,7 +190,7 @@ it('transports only public attached target fields and preserves an empty target 
         'kind' => 'database', 'driver' => 'pgsql', 'id' => 14, 'name' => 'food-catalog',
         'node' => ['id' => 3, 'name' => 'services'], 'host' => '10.44.0.3', 'port' => 5434,
         'database' => 'food_catalog', 'username' => 'catalog_reader', 'prefix' => 'FOOD_CATALOG',
-        'server' => ['id' => 9, 'name' => 'catalog-postgres'],
+        'shared' => true, 'server' => ['id' => 9, 'name' => 'catalog-postgres'],
     ];
     $response = InstanceResponse::fromGatewayData(['attached_targets' => [[
         ...$target, 'password' => 'db-password-sentinel', 'vault_key' => 'vault-key-sentinel',
@@ -209,9 +209,11 @@ it('drops malformed attached targets and keeps nullable connection fields', func
     $target = [
         'kind' => 'database', 'driver' => 'sqlite', 'id' => 14, 'name' => 'local',
         'node' => null, 'host' => null, 'port' => null, 'database' => null, 'username' => null,
-        'prefix' => 'DB', 'server' => null,
+        'prefix' => 'DB', 'shared' => false, 'server' => null,
     ];
-    $response = InstanceResponse::fromGatewayData(['attached_targets' => [$target, false, ['id' => 'invalid']]], 'request-id');
+    $unmarked = [...$target, 'id' => 15];
+    unset($unmarked['shared']);
+    $response = InstanceResponse::fromGatewayData(['attached_targets' => [$target, false, ['id' => 'invalid'], $unmarked]], 'request-id');
 
     expect($response->toArray()['attached_targets'])->toBe([$target]);
 });

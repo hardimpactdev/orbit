@@ -78,6 +78,7 @@
                     "database": "hauzer",
                     "username": "hauzer",
                     "prefix": "DB",
+                    "shared": false,
                     "server": null
                 },
                 {
@@ -94,6 +95,7 @@
                     "database": "2",
                     "username": null,
                     "prefix": "REDIS",
+                    "shared": false,
                     "server": null
                 },
                 {
@@ -110,6 +112,7 @@
                     "database": "food_catalog",
                     "username": "catalog_reader",
                     "prefix": "FOOD_CATALOG",
+                    "shared": true,
                     "server": {
                         "id": 1,
                         "name": "catalog-postgres"

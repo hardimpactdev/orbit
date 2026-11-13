@@ -9,7 +9,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Models\Operation;
 
 /**
- * Sends an operation's notices (docs/reference/events.md#operation): every change on the operation's own channel,
+ * Sends an operation's notices (docs/reference/events.mdx#operation): every change on the operation's own channel,
  * and its creation and status changes on `orbit`. A notice never carries input, steps, output, or the result.
  */
 final readonly class OperationBroadcaster

@@ -23,6 +23,7 @@ final class InstanceAttachedTargetData extends Data
         public ?string $database,
         public ?string $username,
         public string $prefix,
+        public bool $shared,
         public ?DatabaseServerIdentityData $server,
     ) {}
 
@@ -46,6 +47,7 @@ final class InstanceAttachedTargetData extends Data
             database: $connection->database,
             username: $connection->username,
             prefix: $target->prefix,
+            shared: $target->shared,
             server: $server === null ? null : DatabaseServerIdentityData::fromModel($server),
         );
     }

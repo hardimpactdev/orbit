@@ -17,7 +17,7 @@ use Illuminate\Support\Collection;
 
 /**
  * Lets Caddy read a development Instance's Web roots and nothing else of its checkout, through the Node agent's
- * `instance.grant-development-caddy-access` (docs/reference/caddy.md).
+ * `instance.grant-development-caddy-access` (docs/reference/caddy-configuration.md).
  */
 final readonly class NativeDevelopmentSourceAccess implements DevelopmentSourceAccess
 {

@@ -47,7 +47,7 @@ function attachedTargetInstance(Node $node, string $name = 'default'): Instance
 }
 
 /** @param array<string, mixed> $attributes */
-function attachedTargetConnection(Instance $instance, string $prefix, array $attributes): DatabaseConnection
+function attachedTargetConnection(Instance $instance, string $prefix, array $attributes, bool $shared = false): DatabaseConnection
 {
     $connection = DatabaseConnection::query()->create([
         'slug' => strtolower($prefix), 'driver' => 'mysql', 'host' => '10.44.0.7',
@@ -56,7 +56,7 @@ function attachedTargetConnection(Instance $instance, string $prefix, array $att
     ]);
     DatabaseConnectionTarget::query()->create([
         'instance_id' => $instance->id, 'database_connection_id' => $connection->id,
-        'prefix' => $prefix, 'network' => 'wireguard',
+        'prefix' => $prefix, 'network' => 'wireguard', 'shared' => $shared,
     ]);
 
     return $connection;
@@ -90,11 +90,11 @@ it('shows a SQLite attachment without inventing an endpoint or Node', function (
         ->assertJsonPath('data.attached_targets', [
             ['kind' => 'database', 'id' => $connection->id, 'name' => 'hauzer-sqlite', 'driver' => 'sqlite',
                 'node' => null, 'host' => null, 'port' => null, 'database' => null, 'username' => null,
-                'prefix' => 'DB', 'server' => null],
+                'prefix' => 'DB', 'shared' => false, 'server' => null],
         ]);
 });
 
-it('shows only attached SQL and Redis connections with server and remote Node identities and no secrets', function (): void {
+it('shows only attached SQL and Redis connections with server and remote Node identities, the shared mark and no secrets', function (): void {
     $this->travelTo(new DateTimeImmutable('2026-11-10T12:00:00Z'));
     $node = attachedTargetNode();
     $services = attachedTargetNode('Services', '10.44.0.3');
@@ -114,7 +114,7 @@ it('shows only attached SQL and Redis connections with server and remote Node id
     $catalog = attachedTargetConnection($instance, 'FOOD_CATALOG', [
         'slug' => 'food-catalog', 'driver' => 'pgsql', 'database_server_id' => $server->id,
         'host' => '10.44.0.3', 'port' => 5434, 'database' => 'food_catalog', 'username' => 'catalog_reader',
-    ]);
+    ], shared: true);
     attachedTargetConnection($other, 'OTHER', ['slug' => 'unattached-connection-sentinel']);
     Http::preventStrayRequests();
     Process::fake();
@@ -124,14 +124,14 @@ it('shows only attached SQL and Redis connections with server and remote Node id
         ->assertJsonPath('data.attached_targets', [
             ['kind' => 'database', 'id' => $sql->id, 'name' => 'hauzer-main', 'driver' => 'mysql',
                 'node' => ['id' => $node->id, 'name' => 'beast'], 'host' => '10.44.0.7', 'port' => 3306,
-                'database' => 'hauzer', 'username' => 'hauzer', 'prefix' => 'DB', 'server' => null],
+                'database' => 'hauzer', 'username' => 'hauzer', 'prefix' => 'DB', 'shared' => false, 'server' => null],
             ['kind' => 'redis', 'id' => $redis->id, 'name' => 'hauzer-cache', 'driver' => 'redis',
                 'node' => ['id' => $node->id, 'name' => 'beast'], 'host' => '10.44.0.7', 'port' => 6379,
-                'database' => '2', 'username' => null, 'prefix' => 'REDIS', 'server' => null],
+                'database' => '2', 'username' => null, 'prefix' => 'REDIS', 'shared' => false, 'server' => null],
             ['kind' => 'database', 'id' => $catalog->id, 'name' => 'food-catalog', 'driver' => 'pgsql',
                 'node' => ['id' => $services->id, 'name' => 'Services'], 'host' => '10.44.0.3', 'port' => 5434,
                 'database' => 'food_catalog', 'username' => 'catalog_reader', 'prefix' => 'FOOD_CATALOG',
-                'server' => ['id' => $server->id, 'name' => 'catalog-postgres']],
+                'shared' => true, 'server' => ['id' => $server->id, 'name' => 'catalog-postgres']],
         ]);
 
     expect($response->getContent())->not->toContain(
@@ -205,7 +205,7 @@ it('exposes the same attached targets through the generated MCP instance-show to
     expect($result['data']['attached_targets'])->toBe([
         ['kind' => 'redis', 'id' => $connection->id, 'name' => 'cache', 'driver' => 'redis',
             'node' => ['id' => $node->id, 'name' => 'beast'], 'host' => '10.44.0.7', 'port' => 6380,
-            'database' => null, 'username' => null, 'prefix' => 'REDIS', 'server' => null],
+            'database' => null, 'username' => null, 'prefix' => 'REDIS', 'shared' => false, 'server' => null],
     ])
         ->and($body)->not->toContain('attachment-password-sentinel', 'password', 'vault', 'secret');
 });
