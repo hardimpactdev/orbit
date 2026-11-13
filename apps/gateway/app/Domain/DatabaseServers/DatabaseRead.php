@@ -70,7 +70,10 @@ final readonly class DatabaseRead
         }
     }
 
-    /** The statements after the password line: one bounded read and nothing that stays. */
+    /**
+     * What follows the password line: one bounded read and nothing that stays. For PostgreSQL that is the read alone; the
+     * client sends it with `-c` inside its own READ ONLY transaction ({@see client()}).
+     */
     public static function statements(DatabaseDriver $driver, string $mode, string $sql, string $table): string
     {
         $read = match ($mode) {
@@ -81,7 +84,7 @@ final readonly class DatabaseRead
 
         return match ($driver) {
             DatabaseDriver::Mysql => "SET SESSION max_execution_time = 30000;\nSTART TRANSACTION READ ONLY;\n{$read};\nROLLBACK;\n",
-            DatabaseDriver::Pgsql => "BEGIN READ ONLY;\nSET LOCAL statement_timeout = '30s';\n{$read};\nROLLBACK;\n",
+            DatabaseDriver::Pgsql => $read,
             default => ".timeout 10000\n{$read};\n",
         };
     }
@@ -113,21 +116,29 @@ final readonly class DatabaseRead
      */
     public static function client(DatabaseDriver $driver, bool $write = false): string
     {
-        // A write keeps psql's command tag, such as UPDATE 2: it is the affected row count.
+        // The caller's SQL never reaches a client that interprets it (docs/reference/database-connections.md#client-commands).
+        // psql sends a `-c` string to the server as it is: no backslash command and no variable. The leading space keeps
+        // psql from reading a statement that starts with a backslash as one. The password stays the first stdin line.
+        // mysql reads its stdin as client input, so it runs with its own commands, such as system and source, off; a
+        // client without these options refuses to start. A write keeps psql's command tag, such as UPDATE 2: it is the
+        // affected row count.
+        $transaction = $write ? '-c "SET statement_timeout = \'30s\'" -c " $sql"'
+            : '-c "BEGIN READ ONLY" -c "SET LOCAL statement_timeout = \'30s\'" -c " $sql" -c ROLLBACK';
+
         return 'set -o pipefail; '.($driver === DatabaseDriver::Pgsql
-            ? 'IFS= read -r PGPASSWORD && export PGPASSWORD && psql --no-psqlrc --host="$3" --port="$4" --username="$1" --dbname="$2"'.($write ? '' : ' --quiet').' --set=ON_ERROR_STOP=1 --csv --pset=null="$5"'
-            : 'IFS= read -r MYSQL_PWD && export MYSQL_PWD && mysql --protocol=TCP --host="$3" --port="$4" --user="$1" --database="$2" --xml')
+            ? 'IFS= read -r PGPASSWORD && export PGPASSWORD && sql=$(cat) && psql -X --host="$3" --port="$4" --username="$1" --dbname="$2"'.($write ? '' : ' --quiet').' --set=ON_ERROR_STOP=1 --csv --pset=null="$5" '.$transaction
+            : 'IFS= read -r MYSQL_PWD && export MYSQL_PWD && mysql --skip-commands --skip-system-command --protocol=TCP --host="$3" --port="$4" --user="$1" --database="$2" --xml')
             .' | head -c '.self::OUTPUT_LIMIT;
     }
 
-    /** The statements after the password line for a write: the statement, then its affected row count. */
+    /** What follows the password line for a write: the statement, then its affected row count. PostgreSQL: the statement alone. */
     public static function writeStatements(DatabaseDriver $driver, string $sql): string
     {
         $statement = rtrim(rtrim($sql), ';');
 
         return match ($driver) {
             DatabaseDriver::Mysql => "SET SESSION max_execution_time = 30000;\n{$statement};\nSELECT ROW_COUNT() AS row_count;\n",
-            DatabaseDriver::Pgsql => "SET statement_timeout = '30s';\n{$statement};\n",
+            DatabaseDriver::Pgsql => $statement,
             default => ".timeout 10000\n{$statement};\nSELECT changes() AS row_count;\n",
         };
     }

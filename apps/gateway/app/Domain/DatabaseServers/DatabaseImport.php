@@ -14,6 +14,12 @@ use App\Domain\Shared\ResourceOperationException;
  * that user. The client runs in a throwaway container of the server's image on the server's network and logs in as the
  * owner over TCP at the server container's own address, never its loopback, which the PostgreSQL image trusts. The password
  * comes from the first stdin line.
+ *
+ * A dump is caller text, and the client would run a client command in it. That container shares the Docker network with
+ * other servers, so the client never runs one: psql reads the dump after Orbit's own `\restrict <random key>`, which
+ * refuses every backslash command but `\unrestrict` with that key. A pg_dump plain dump has its own `\restrict` after its
+ * header comment and the matching `\unrestrict` at its end; those two lines are dropped, never others. mysql runs with its commands
+ * (such as system and source) off; a client without these options refuses to start.
  */
 final class DatabaseImport
 {
@@ -46,8 +52,14 @@ if [ "$drv" = pgsql ]; then
   cl='IFS= read -r PGPASSWORD && export PGPASSWORD && u=$1 d=$2 h=$3 && shift 3 && exec psql --no-psqlrc --host="$h" --username="$u" --dbname="$d" --no-align --tuples-only --quiet --set=ON_ERROR_STOP=1 --set=VERBOSITY=sqlstate "$@"'
   count="SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f') AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%';"
   load=(--single-transaction --file=-)
+  key=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
+  [[ $key =~ ^[0-9a-f]{48}$ ]] || say 'outcome=login_failed state=unchanged'
+  # Orbit's key first; the dump's own restrict pair is dropped, so nothing in the dump can lift the restriction.
+  fence() { printf '\\restrict %s\n' "$key"; awk 'head && /^\\restrict [A-Za-z0-9]+\r?$/ { k = $2; sub(/\r$/, "", k); head = 0; next }
+    head && !/^(--.*)?\r?$/ { head = 0 } k != "" && ($0 == "\\unrestrict " k || $0 == "\\unrestrict " k "\r") { next } { print }' head=1; }
 else
-  cl='IFS= read -r MYSQL_PWD && export MYSQL_PWD && u=$1 d=$2 h=$3 && shift 3 && exec mysql --protocol=TCP --host="$h" --user="$u" --database="$d" --batch --skip-column-names "$@"'
+  fence() { cat; }
+  cl='IFS= read -r MYSQL_PWD && export MYSQL_PWD && u=$1 d=$2 h=$3 && shift 3 && exec mysql --skip-commands --skip-system-command --protocol=TCP --host="$h" --user="$u" --database="$d" --batch --skip-column-names "$@"'
   count='SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE();'
   load=(--max-allowed-packet=1G)
 fi
@@ -58,7 +70,7 @@ run() {
 tables() { local n; n=$(printf '%s\n' "$count" | run 2>/dev/null) && [[ $n =~ ^[0-9]+$ ]] && printf '%s' "$n"; }
 before=$(tables) || say 'outcome=login_failed state=unchanged'
 [ "$before" = 0 ] || say "outcome=not_empty state=unchanged tables=$before"
-out=$({ { case "$f" in *.gz) gzip -dc <&3 ;; *) cat <&3 ;; esac | run "${load[@]}" >/dev/null; } 2>&1; printf 'rc=%s\n' "$?"; } \
+out=$({ { case "$f" in *.gz) gzip -dc <&3 ;; *) cat <&3 ;; esac | fence | run "${load[@]}" >/dev/null; } 2>&1; printf 'rc=%s\n' "$?"; } \
   | sed -n -E -e 's/^(ERROR [0-9]+ \([0-9A-Z]{5}\) at line [0-9]+).*/\1/p' -e 's/^psql:[^:]*:([0-9]+): ERROR: +([0-9A-Z]{5}).*/ERROR \2 at line \1/p' \
     -e 's/^gzip: .*/gzip failed/p' -e 's/^(rc=[0-9]+)$/\1/p')
 rc=$(printf '%s\n' "$out" | sed -n 's/^rc=//p' | tail -n 1)
