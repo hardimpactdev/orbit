@@ -186,6 +186,8 @@ T3 issues the Gateway's session for 30 days. Orbit keeps it alive; no device and
 
 Every hour the Gateway admits `conn.environment_renew` for each active Instance server whose session ends within seven days. It also admits one for a session that has ended. So a container that was stopped past the end gets a new session within an hour of its start. When a try found it stopped, the wait is up to six hours; the route below renews it at once.
 
+The hourly renewal skips a [sleeping](/reference/development-containers#sleep-and-wake) Instance. A successful `instance.wake` admits the renewal at once instead, through `InstanceLifecycleContribution::projectWake()`, when the session ends within seven days or ended during the sleep. A wake's renewal does not wait for the one-per-Node limit below: the woken server gets its session at once. A refused admission (a renewal already runs, Conn is off) is logged and never fails the wake. Devices then renew their pairings through the Gateway as below, with no new pairing by the user.
+
 One tick admits at most five renewals, the earliest end first. It admits at most one per Node at a time. A server whose last renewal failed comes after the others, so it never holds its Node's slot from them. Clones made on one day reach the margin in the same hour.
 
 #### How

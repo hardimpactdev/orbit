@@ -807,22 +807,44 @@ Names from the workspace never become arguments. Git returns them NUL-separated,
 
 ### Sleep and wake
 
-A sleeping Instance's container is stopped. It uses no memory; its disk, databases, Route, T3 history and sessions stay. Each Process unit keeps its enablement, which holds its desired state, so a wake brings back exactly what ran before. A container never prunes its dependencies: a stopped clone shares most of its blocks with the default Instance.
+A sleeping Instance's container is frozen. Its processes keep their state and memory, but the memory moves to swap: a frozen Laravel and T3 clone holds about 13 MiB of RAM and about 340 MiB of swap. Nothing boots at the wake, so a resume takes a fraction of a second. Its disk, databases, Route, T3 threads and sessions stay. A container never prunes its dependencies.
+
+Incus writes `memory.swap.max = 0` for every Instance container from `limits.memory`, so a running container never swaps: a busy one meets its limit instead of filling the swap disk. A sleep opens swap for its own cgroup only (`max`), freezes the container, and then asks the kernel to reclaim its memory. A wake writes 0 again. Pages already in swap come back when they are used. No Incus setting changes.
+
+When swap cannot take the memory (it is full), more than 32 MiB of anonymous memory stays in RAM after the reclaim. A frozen container would then hold RAM, which a sleep exists to free, so the sleep resumes the container and stops it. Its result says `sleep: stopped`; otherwise `sleep: frozen`. A stopped container keeps each Process unit's enablement, which holds its desired state, so its later boot brings back what ran before. A sleep that fails to freeze writes 0 back and removes the marker, and the container serves as before (`instance.container_freeze_failed`).
+
+The runtime's `power_state` is `stopped` for both a frozen and a stopped sleeping container. Each reader treats them alike.
+
+By hand, resume a frozen container before you stop it: `incus resume` first, then `incus stop`. A clean `incus stop` of a frozen container times out and leaves it running (Incus 7.0.2). `incus start` of a frozen container only unfreezes it.
 
 | Part | State |
 | --- | --- |
 | [`instance:sleep`](/cli/instance/sleep) and [`instance:wake`](/cli/instance/wake) | Built for development clones. A default and a nested-fleet Instance do not sleep |
 | A Route visit wakes the Instance | Built |
 | Sleep after an idle hour | Planned; see below |
-| A Conn connection or a task turn wakes the Instance; the wake renews a session that ends within 7 days | Planned |
+| The wake renews the Gateway's T3 session when it ends within 7 days or ended while the Instance slept | Built |
+| A visit gets the app without the waiting page while the container is frozen | Planned |
+| A long freeze becomes a stop | Planned |
+| A Conn connection or a task turn wakes the Instance | Planned |
 
 **The planned idle sleep.** It counts HTTP activity and T3 activity: a turn, or a client working in a thread. It never cuts a turn, and it does not ship without a T3 activity read. A running task and a desired-running keep-alive Process keep the container awake.
 
 **The Route while asleep.** The Node's Caddy site of a container Instance checks for the asleep marker, `/data/caddy/orbit/hibernation/app-instance-<id>.asleep`. Without it, Caddy serves the request as before; the check is a file test on the Node and calls nothing. With it, Caddy calls the [runtime activation endpoint](/reference/app-dev-runtime-hibernation#wake), which shows the same progress page as for a checkout Instance and starts or joins the Instance's one `instance.wake`. A request with `X-Orbit-Probe: 1` skips the check. A failed wake keeps the marker, and the Route shows the failure page with Try again.
 
-The marker lives on disk, not in `/dev/shm`: a stopped container stays stopped after a host reboot, and so does its marker. A sleep writes the marker before it stops the container.
+The marker lives on disk, not in `/dev/shm`: a host reboot loses the frozen state, but not the marker. A sleep writes the marker before it freezes the container.
 
-**The wake.** One Ansible run starts the container and waits until each running unit is active. Then it waits until FrankenPHP answers. A web unit that listens before the app is ready answers 5xx for a moment, so the run waits up to 5 more seconds for an answer below 500; an app that answers 5xx by itself is then served as it is. Then the run removes the marker, and the next request gets the app. A Project without a web unit has no web wait.
+**The wake.** One Ansible run reads the container's state and the marker:
+
+| Found | The wake |
+| --- | --- |
+| Frozen, marker | Resumes it, writes `memory.swap.max = 0`, and gives FrankenPHP 10 tries one second apart (about 20 seconds at most). It boots nothing and converges nothing. `wake: resumed` |
+| Frozen, marker; FrankenPHP silent after the resume | Stops it by force, then boots it as below: a visitor would rather wait for a boot than for ever. `wake: restarted_after_resume` |
+| Stopped, marker (after a host reboot, or a sleep that fell back to a stop) | Boots it. `wake: started` |
+| Running, marker (after a host reboot with `boot.autostart`) | No start and no resume; checks FrankenPHP and removes the marker. `wake: already_running` |
+| Running, no marker | Nothing to do. `wake: already_running`, `marker_found: false` |
+| Frozen, no marker | A defect: the wake resumes it, and its result says `marker_found: false` |
+
+The result also gives `resume_seconds` and `web_probe_seconds` for a resume. A boot starts the container and waits until each running unit is active. Then the run waits until FrankenPHP answers. A web unit that listens before the app is ready answers 5xx for a moment, so the run waits up to 5 more seconds for an answer below 500; an app that answers 5xx by itself is then served as it is. Then the run removes the marker, and the next request gets the app. A Project without a web unit has no web wait.
 
 Only then does the run wait up to 30 seconds for T3 in a clone: T3 gates the end of the Operation, not the visitor's page. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the Route shows the failure page.
 
@@ -830,7 +852,11 @@ A destroy removes the marker. A sleep refuses with `instance.sleep_route_unready
 
 The [agent development servers](#agent-development-servers) site on port 444 has no asleep check: on a sleeping clone it answers 502 until a visit to the Route wakes the Instance.
 
-**While asleep.** Schedules in the container do not run, and nothing catches up at the wake. Other Operations that need the running container refuse it, as they do today (`process.target_inactive`). A deployment of a sleeping default starts it in its own run, and a clone of a sleeping default copies its seed snapshot without a start.
+**While asleep.** Schedules in the container do not run. At the resume, systemd timers that came due during the freeze run at once. Other Operations that need the running container refuse it with `process.target_inactive` or `schedule.target_inactive`. Env, mail and Node service updates and the task workspace read `power_state`. Process and Schedule work on the Node refuses a container that is not `Running`, and Incus reports a frozen one as `Frozen`.
+
+A connection held open across a freeze meets the server's idle timeout at the resume, and clients reconnect. A default does not sleep, so a deployment or a clone of a sleeping default does not occur; a deployment's start resumes a frozen container before it converges. A destroy deletes a frozen container with `incus delete --force` and needs no wake.
+
+**Conn.** The hourly renewal skips a sleeping Instance, so it never records `conn.environment_stopped` for one. A successful wake admits the renewal at once when the Gateway's session ends within 7 days or has ended: the run issues a new session in the container without the old one. Devices then renew their own pairings through the Gateway, with no new pairing by the user.
 
 The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/sleep.mmd) and [wake](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/wake.mmd) charts have the steps.
 

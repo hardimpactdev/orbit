@@ -14,6 +14,9 @@ sequenceDiagram
   %%> When:
   %%> - each session of an active Instance's T3 server that ends within seven days, or has ended
   %%> - the route admits one at once, also past the wait below
+  %%> - a successful `instance.wake` admits one at once for its Instance (instance/wake.mmd), outside the limits below
+  %%> Skips:
+  %%> - a sleeping Instance (`power_state` `stopped`): its wake renews it
   %%> Limits:
   %%> - at most five a tick, the earliest end first; one a Node at a time
   %%> - after `conn.environment_stopped`, the server waits six hours

@@ -1,6 +1,6 @@
 ---
 title: "orbit instance:sleep"
-description: "Stop a development container Instance now. Its Route shows a wake page, and the next visit wakes it."
+description: "Freeze a development container Instance now, with its memory in swap. Its Route shows a wake page, and the next visit wakes it."
 covers:
   - apps/gateway/app/Domain/Instances/Power/**
   - apps/gateway/app/Http/Controllers/Api/InstancePowerController.php
@@ -11,9 +11,9 @@ covers:
   - swamp/workflows/workflow-operation-instance-sleep.yaml
 ---
 
-Put one development container Instance to sleep now. Orbit stops the whole container, so it uses no memory. Its disk, databases, Route, T3 history and sessions stay. [Sleep and wake](/reference/development-containers#sleep-and-wake) explains the lifecycle.
+Put one development container Instance to sleep now. Orbit freezes the whole container and moves its memory to swap, so it holds almost no RAM. Its processes, disk, databases, Route, T3 threads and sessions stay. [Sleep and wake](/reference/development-containers#sleep-and-wake) explains the lifecycle.
 
-**This command does not check T3.** If an agent turn runs in the Instance, the stop cuts it. T3 continues the turn when the Instance wakes. The result says `t3_turn: not_checked`. No idle rule puts an Instance to sleep yet: only `instance:sleep` does. A planned automatic sleep after an idle hour will check T3, and never cut a turn.
+**This command does not check T3.** If an agent turn runs in the Instance, the freeze holds it, and a model provider may drop its connection during a long sleep. T3 continues the turn when the Instance wakes. The result says `t3_turn: not_checked`. No idle rule puts an Instance to sleep yet: only `instance:sleep` does. A planned automatic sleep after an idle hour will check T3, and never cut a turn.
 
 ## Usage
 
@@ -28,11 +28,11 @@ orbit instance:sleep 42 --json
 | `--idempotency-key=KEY` | Reuse a key to retry this operation start. |
 | `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
 
-Orbit first writes the asleep marker on the Node. From then on, each request to the Route gets the wake page. Then Orbit stops the container. A visit to the Route, or [`instance:wake`](/cli/instance/wake), starts it again. The wake removes the marker as soon as the app answers, before it waits for T3.
+Orbit first writes the asleep marker on the Node. From then on, each request to the Route gets the wake page. Then Orbit lets the container's memory go to swap, freezes the container (`incus pause`) and reclaims its memory. When swap cannot take it, Orbit stops the container instead. The result says which: `sleep: frozen` or `sleep: stopped`. A visit to the Route, or [`instance:wake`](/cli/instance/wake), resumes or starts it again. The wake removes the marker as soon as the app answers, before it waits for T3.
 
 The Instance must be a development container that is not its Project's default and not a nested-fleet Instance. No other lifecycle work and no task may run in it.
 
-Sleeping an Instance that already sleeps runs again and changes nothing. A failed run leaves the container as it was; the marker may stay, and then the next visit wakes the Instance. Run the command again to retry.
+Sleeping an Instance that already sleeps runs again and changes nothing. A freeze that fails removes the marker, and the container runs as before. Run the command again to retry.
 
 The API is `POST /api/v1/instances/{instance}/sleep`; it starts an `instance.sleep` Operation. The MCP tool is `instance-sleep`.
 
@@ -50,4 +50,4 @@ The API is `POST /api/v1/instances/{instance}/sleep`; it starts an `instance.sle
 | `instance.lifecycle_busy`, `operation.target_busy` | Lifecycle work, Process work or a task runs on the Instance. |
 | `instance.sleep_route_unready` | Caddy's loaded site of the Instance has no asleep rule yet. Nothing changed. Publish the Node's Caddy sites and retry. |
 | `instance.container_asleep_failed` | The asleep marker could not be written. The container still runs. |
-| `instance.container_stop_failed` | The container did not stop. |
+| `instance.container_freeze_failed` | The container could not be frozen, or the stop after a full swap failed. The marker is gone when the container still runs. |

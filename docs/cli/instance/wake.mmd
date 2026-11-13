@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#sleep-and-wake): start a sleeping development container. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake.
+  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#sleep-and-wake): resume a sleeping development container, or start one that was stopped. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake.
   %% status: draft
   %% command: instance:wake
   %% kind: instance.wake
@@ -35,7 +35,12 @@ sequenceDiagram
   GW-->>CL: 202 Accepted<br/>Operation ID · progress page
   SW->>N: Wake the container<br/>Ansible · tags start
   %%> What it does:
-  %%> - `incus start`; nftables, T3, FrankenPHP and the enabled Process units start with the container
+  %%> - Frozen: `incus resume`, `memory.swap.max` back to 0, FrankenPHP gets 10 tries 1 s apart; nothing boots and nothing converges, `wake: resumed`
+  %%> - Frozen and FrankenPHP silent: `incus stop --force`, then the boot below, `wake: restarted_after_resume`
+  %%> - Stopped (after a host reboot or a sleep that fell back to a stop): the boot below, `wake: started`
+  %%> - Running (after a reboot with `boot.autostart`): no start and no resume, `wake: already_running`
+  %%> - a Frozen container without the marker is resumed; the result says `marker_found: false`
+  %%> - boot: `incus start`; nftables, T3, FrankenPHP and the enabled Process units start with the container
   %%> - waits until each desired-running unit is active, then until FrankenPHP answers, else `instance.web_unready`
   %%> - a 5xx answer gets up to 5 s to clear; an app that answers 5xx by itself is then served as it is
   %%> - removes the asleep marker, so Caddy sends the next request to the app
@@ -46,20 +51,21 @@ sequenceDiagram
   %%> - unit enablement holds each Process's desired state, so a stopped Process stays stopped
   %%> When:
   %%> - the marker part runs only in a start whose intent names the marker; a deployment's start has none
-  opt the Gateway session expires within 7 days
-    SW->>N: Issue the Gateway session<br/>sensitive output · vault
-    %%> When:
-    %%> - planned; until then the hourly renewal renews the session after the wake
-    %%> What it does:
-    %%> - see conn/environment-renew.mmd
-  end
   alt the run passes
     %% path: main
     SW-->>GW: Run succeeded<br/>terminal result
     Note over GW: Record awake
     %%> Result:
     %%> - the runtime's `power_state` is `running`; the Conn layer shows the T3 server awake
+    %%> - the result names the path, `marker_found`, and a resume's `resume_seconds` and `web_probe_seconds`
     %%> - the progress page loads the original path
+    opt the Gateway session ends within 7 days or has ended
+      Note over GW: Admit the renewal<br/>conn.environment_renew
+      %%> When:
+      %%> - after the wake's transaction; it never fails the wake
+      %%> What it does:
+      %%> - see conn/environment-renew.mmd; the run needs no old session, so a session that ended during the sleep renews too
+    end
   else T3 does not answer
     %% path: t3-unready
     SW--xGW: Run failed<br/>instance.t3_unready

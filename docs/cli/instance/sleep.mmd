@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#sleep-and-wake): stop a development container and leave its Route on the wake page. The hibernation sweep admits the same kind after an idle hour; the command admits it at once.
+  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#sleep-and-wake): freeze a development container with its memory in swap and leave its Route on the wake page. The hibernation sweep admits the same kind after an idle hour; the command admits it at once.
   %% status: draft
   %% command: instance:sleep
   %% kind: instance.sleep
@@ -42,23 +42,38 @@ sequenceDiagram
   %%> - checks that Caddy's loaded site of the Instance has the asleep rule, else `instance.sleep_route_unready`
   %%> - writes the asleep marker, so each request from now on gets the wake page
   %%> Why:
-  %%> - the marker comes before the stop: a request during the stop gets the wake page, not an error
-  SW->>N: Stop the container<br/>Ansible · tags stop
+  %%> - the marker comes before the freeze: a request during the freeze gets the wake page, not a hang
+  SW->>N: Freeze the container<br/>Ansible · tags freeze
   %%> What it does:
-  %%> - `incus stop` with a 30 s timeout: systemd stops T3, FrankenPHP and the Processes
-  %%> - a T3 turn that runs is cut; T3 continues it at the next wake
-  %%> - the disk, the databases, the Route, the unit states and the T3 sessions stay
+  %%> - writes `max` to the container cgroup's `memory.swap.max` (Incus writes 0), `incus pause`, then a reclaim of its memory
+  %%> - the processes and their state stay; their memory goes to swap, about 13 MiB stays in RAM
+  %%> - a frozen or stopped container stays as it is
+  %%> Why:
+  %%> - the reclaim follows the pause, so no running process pulls a page back
+  %%> - swap opens for this cgroup only and only while it sleeps: a running container never swaps
+  %%> On failure:
+  %%> - a failed swap write or pause writes 0 back and removes the marker, `instance.container_freeze_failed`; the container serves as before
+  opt more than 32 MiB of anonymous memory stays in RAM
+    SW->>N: Stop the container<br/>Ansible · resume, incus stop
+    %%> Why:
+    %%> - swap is full; a frozen container would hold RAM, which a sleep exists to free
+    %%> Result:
+    %%> - `sleep: stopped`; the next wake boots it behind the same marker
+    %%> On failure:
+    %%> - the resumed container runs: swap closes again, the marker goes, `instance.container_freeze_failed`
+  end
   alt the run passes
     %% path: main
     SW-->>GW: Run succeeded<br/>terminal result
     Note over GW: Record asleep
     %%> Result:
-    %%> - the runtime's `power_state` is `stopped`; the Conn layer shows its T3 server asleep
+    %%> - the runtime's `power_state` is `stopped` for a frozen and a stopped container; the result says `sleep: frozen` or `sleep: stopped`
+    %%> - the Conn layer shows its T3 server asleep; the hourly renewal skips it
   else a step fails
     %% path: failed
     SW--xGW: Run failed<br/>error_code
     %%> Result:
-    %%> - `power_state` stays as it was. A marker without a stop is harmless: the next request wakes the Instance, which removes it
+    %%> - `power_state` stays as it was. A marker left on a running container is harmless: the next request wakes the Instance, which removes it
     %%> Retry:
     %%> - the same command again
   end
