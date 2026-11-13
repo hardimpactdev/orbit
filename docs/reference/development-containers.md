@@ -1141,6 +1141,31 @@ The nested test Nodes reach the public internet through the Node's [egress proxy
 
 A proof restores each nested container to its `base` snapshot. On a directory pool a restore copies back the files that changed since `base`, so its time grows with the change. The limit is 45 seconds; the UpCloud spike measured 3–4 s for a restore and 21 s to take `base` again. Taking `base` stops the three nested containers first, then snapshots and starts them, because a snapshot of a running container on a directory pool is a file copy, not a consistent state.
 
+### The fleet step
+
+Four phase task files keep the fleet of a nested-fleet Instance. They are built and tested, but no flow calls them yet. Each one runs on the Node and reaches the inner Incus with `incus exec` into the Instance container. Their input is `intent.container` and `intent.fleet`; the header of `swamp/ansible/tasks/instance-fleet.yml` defines it. The Gateway fills `intent.fleet` from the fleet constants of task VMs.
+
+| Phase | Task file | What it does |
+| --- | --- | --- |
+| Rules | `instance-fleet-rules.yml` | Applies the fleet rules below to the stopped fleet, then checks them |
+| Start | `instance-fleet-start.yml` | Checks the rules, starts the three nested containers, brings up `wg-nested` with `ip` and `wg`, and waits for readiness |
+| Refresh | `instance-fleet-refresh.yml` | For the default Instance: applies the checkout to the nested Gateway, converges the base of the three nested Nodes, waits for readiness, stops the fleet and takes `base` again |
+| Reset | `instance-fleet-reset.yml` | Restores `base` on the three nested containers, then runs the start |
+
+The fleet rules:
+
+- The disk device `checkout` gives the workspace to the nested Gateway and `app-dev` with `shift=false`. An ID shift fails two levels below the host.
+- The disk device `club-key` gives the Swamp Club key file of the container to the nested Gateway with `shift=false` and `required=false`.
+- `raw.idmap` `both 1000 1000` of the inner Incus is set on the nested Gateway and `app-dev`, so the nested `orbit` and the container's `orbit` own the workspace together.
+- The AppArmor-off device is on the nested `app-dev` and `app-prod`.
+- The egress proxy settings are `environment.*` keys on the three nested containers, and a unit environment for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service` in the nested Gateway.
+
+A restore of `base` reverts devices and configuration keys. So the rules must be in `base`, and the start and the reset refuse a nested container that lacks one, with its name.
+
+Readiness is the proof's own check, from the container over `wg-nested`: every nested container runs, Doctor of the nested Gateway is healthy within a bounded wait, the three agents are online and the Gateway knows the operator with its key. A failure names the nested container or the check.
+
+The fleet step never reads, prints or copies the Club key file. Without the file, the fleet starts and is ready; only Swamp in the nested Gateway stays down.
+
 ## Git in and out
 
 A container holds no GitHub credentials. It can read public repositories through the [egress proxy](#egress-and-dns), but it cannot push. Orbit moves the Instance's branches from the Node, as it does for [task VMs](/reference/compute-drivers#git-on-a-task-vm): it fetches with a minted read token and pushes the branch into the container's repository. Publishing a branch is an Orbit operation: Swamp reads the branch out of the container and pushes it with a minted write token. The tokens never enter the container.
