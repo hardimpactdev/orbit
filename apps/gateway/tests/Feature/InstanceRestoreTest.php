@@ -163,6 +163,17 @@ it('lets the Route create sign step sign the admitted leaf of a restore', functi
         [[...$leaf, 'scope' => 'app-instance-999']]), 'certificate.intent_mismatch');
 });
 
+it('records a restored Laravel Instance, whose activation needs its Route active first', function (): void {
+    // The schema refuses an active laravel-app Instance without exactly one active Route (instances_active_route_update).
+    DB::table('projects')->where('id', $this->project->id)->update(['type' => 'laravel-app']);
+    $operation = ($this->restore)();
+    ($this->finish)($operation, 'succeeded', ['Republish the Route' => ['status' => 'succeeded']]);
+    expect($operation->fresh()->status->value)->toBe('succeeded')
+        ->and($this->instance->fresh()->status)->toBe(InstanceState::Active)
+        ->and($this->route->fresh()->status)->toBe(RouteStatus::Active)
+        ->and($this->removal->fresh()->status)->toBe(InstanceRemovalStatus::Abandoned);
+});
+
 it('keeps the failed removal when a database is closed and names it', function (): void {
     $operation = ($this->restore)();
     ($this->finish)($operation, 'failed', ['Check the databases-0' => ['status' => 'failed']], ['failed_step' => 'Check the databases-0',
