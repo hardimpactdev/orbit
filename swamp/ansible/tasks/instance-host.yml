@@ -46,6 +46,13 @@
       {%- endfor -%}
       {{ ns.out }}
 
+# A switched-on Node checks root's subordinate IDs before any nesting change to the host: the converge never enlarges them.
+- name: Require the subordinate IDs before nested-fleet preparation
+  when: instances.nested is defined
+  ansible.builtin.include_tasks: task-container-host-ids.yml
+  vars:
+    container_host: { fail: instance.host_unavailable, ids: "{{ instances.ids }}" }
+
 - name: Prepare the kernel and Incus for Instance containers
   ansible.builtin.include_tasks: task-container-host-system.yml
   vars:
@@ -54,8 +61,8 @@
       fail: instance.host_unavailable
       incus: "{{ instances.incus }}"
       ids: "{{ instances.ids }}"
-      # An Instance container runs no WireGuard, Docker or nested bridges.
-      modules: []
+      # An Instance container runs no WireGuard, Docker or nested bridges; a nested-fleet container runs all three.
+      modules: "{{ ['wireguard', 'overlay', 'br_netfilter'] if instances.nested is defined else [] }}"
       project: "{{ instances.project }}"
       network: "{{ instances.network }}"
       address: "{{ instances.address }}"
@@ -137,10 +144,17 @@
     stdin: "{{ proxy_rules | to_json }}"
   changed_when: true
 
+# A switched-on Node prepares the nested-fleet project too, on the same bridge, ACLs, pool and profile devices. Its probe starts
+# only after the nested guard checks it against the exact profile devices.
 - name: Prepare the Instance bridge, project and profile
   ansible.builtin.include_tasks: task-container-host-prepare.yml
+  loop: "{{ [instances.project] + ([instances.nested.project] if instances.nested is defined else []) }}"
+  loop_control: { loop_var: instance_project }
   vars:
-    container_host: *instance_host
+    instance_host: *instance_host
+    container_host: "{{ instance_host | combine({'project': instance_project}) }}"
+    instance_nested_project: "{{ instances.nested is defined and instance_project == instances.nested.project }}"
+    container_probe_devices: "{{ container_devices if instance_nested_project | bool else {} }}"
     container_acl_name: "{{ instances.network }}-egress"
     container_dns: false
     # Endpoint mutations use ETags; never replace the existing shared list with an admission-time snapshot.
@@ -191,7 +205,10 @@
         { type: disk, source: "{{ instances.folders.runtime.path }}", path: "{{ instances.folders.runtime.path }}", readonly: 'true', shift: 'true' }
       orbit-agent:
         { type: disk, source: "{{ instances.folders.agent.path }}", path: "{{ instances.folders.agent.path }}", readonly: 'true', shift: 'true' }
-    container_restrictions:
+    container_restrictions: >-
+      {{ instance_restrictions | combine({'restricted.containers.nesting': 'allow', 'restricted.containers.interception': 'allow',
+         'restricted.containers.lowlevel': 'allow'} if instance_nested_project | bool else {}) }}
+    instance_restrictions:
       restricted: 'true'
       restricted.networks.access: "{{ instances.network }}"
       restricted.containers.privilege: isolated

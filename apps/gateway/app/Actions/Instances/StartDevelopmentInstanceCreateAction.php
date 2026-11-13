@@ -90,6 +90,7 @@ final readonly class StartDevelopmentInstanceCreateAction
             $created = ! $instance instanceof Instance;
             // A container Instance is the Project's default, or a clone of that default ($source).
             [$container, $source] = $this->container($project, $node, $name, $instance, $data);
+            InstancePlacement::place($project, $node, $container);
 
             if ($instance instanceof Instance) {
                 $this->assertRetry($instance, $node, $root, $data->branch);
@@ -125,11 +126,11 @@ final readonly class StartDevelopmentInstanceCreateAction
                     'source_prepare_id' => (string) Str::uuid(), 'root' => $root, 'branch_override' => $data->branch,
                     'status' => InstanceState::Reserved, 'first_setup_pending' => true,
                 ]);
-                // The checkout path names the workspace inside the container, which only the Instance's id names.
+                // The runtime row first: it makes the Process records target the container, and it records the Incus project.
+                app(InstanceContainer::class)->reserve($instance, $node, $source);
+                // The checkout path names the workspace inside the container, which the Instance's id and recorded project name.
                 $instance->update(['checkout_path' => InstanceContainer::workspaceOnNode($instance)]);
-            }
-            if ($container) {
-                // The runtime row first: it makes the Process records target the container.
+            } elseif ($container) {
                 app(InstanceContainer::class)->reserve($instance, $node, $source);
             }
             if (! $instance instanceof Instance) {

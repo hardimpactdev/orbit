@@ -235,6 +235,7 @@
         network_name: "{{ container.network }}"
         network_failure: instance.container_network_unsafe
         expected_network_device: eth0
+        network_allowed_devices: "{{ container.allowed_devices | default({}) }}"
 
 - name: Start the container
   tags: [container, clone, start]

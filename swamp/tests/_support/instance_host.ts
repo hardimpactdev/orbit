@@ -105,6 +105,7 @@ function writeTasks(folder: string) {
     Deno.mkdirSync(`${folder}/tasks`, { recursive: true });
     Deno.copyFileSync(new URL("instance_bridge.py", root), `${folder}/instance_bridge.py`);
     Deno.copyFileSync(new URL("instance_network.py", root), `${folder}/instance_network.py`);
+    Deno.copyFileSync(new URL("instance_nested.py", root), `${folder}/instance_nested.py`);
     for (
         const name of [
             "instance-host.yml",
@@ -119,6 +120,7 @@ function writeTasks(folder: string) {
             "instance-vite-plus-home.yml",
             "instance-image.yml",
             "task-container-host-system.yml",
+            "task-container-host-ids.yml",
             "task-container-host-prepare.yml",
         ]
     ) {

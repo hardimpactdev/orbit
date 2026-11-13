@@ -5,6 +5,10 @@
  */
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
+import { fixture as hostFixture } from "./_support/instance_host.ts";
+
+/** The normal host transcript of main; see the case that compares it. */
+const MAIN_NORMAL_HOST = {calls: 62, tasks: 167, digest: "bcb8b155d1ed79779db39fb031203821dcc080608df96e496845afa57feee213"};
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -52,6 +56,7 @@ function fixture() {
   Deno.mkdirSync(`${folder}/tasks`);
   Deno.copyFileSync(new URL("instance_bridge.py", root), `${folder}/instance_bridge.py`);
     Deno.copyFileSync(new URL("instance_network.py", root), `${folder}/instance_network.py`);
+    Deno.copyFileSync(new URL("instance_nested.py", root), `${folder}/instance_nested.py`);
   Deno.writeTextFileSync(`${folder}/bin/curl`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-bridge-curl.ts", import.meta.url).pathname}' "$@"\n`);
   Deno.chmodSync(`${folder}/bin/curl`, 0o755);
   Deno.writeTextFileSync(`${folder}/nat.txt`, "");
@@ -1188,3 +1193,179 @@ Deno.test({
     }
   },
 });
+
+for (const damage of ["raw.lxc", "extra-device", "changed-host-path", "writable-share", "privileged", "clean"]) {
+  Deno.test({
+    name: `nested fleet start gate: ${damage}`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        assert(f.run("container").ok);
+        const state = f.state();
+        const row = state.containers["instance-7"];
+        row.status = "Stopped";
+        row.project = "orbit-instances-nested";
+        const disks = {
+          "orbit-runtime": {type: "disk", source: "/opt/orbit-runtime", path: "/opt/orbit-runtime", readonly: "true", shift: "true"},
+          "orbit-agent": {type: "disk", source: "/opt/orbit-agent", path: "/opt/orbit-agent", readonly: "true", shift: "true"},
+        };
+        Object.assign(f.container, {project: "orbit-instances-nested", allowed_devices: {
+          root: {type: "disk", path: "/", pool: "orbit-instances", size: "40GiB"},
+          eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject"},
+          ...structuredClone(disks),
+        }});
+        row.added = disks;
+        if (damage === "raw.lxc") row.inherited_config = {"raw.lxc": "lxc.apparmor.profile=unconfined"};
+        if (damage === "privileged") row.inherited_config = {"security.privileged": "true"};
+        if (damage === "extra-device") row.added.socket = {type: "disk", source: "/var/lib/incus/unix.socket", path: "/run/host-incus"};
+        if (damage === "writable-share") delete row.added["orbit-runtime"].readonly;
+        if (damage === "changed-host-path") row.added["orbit-runtime"].source = "/fast";
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+        f.write();
+        const result = f.run("start");
+        if (damage === "clean") {
+          assert(result.ok, result.output);
+          assertEquals(f.state().containers["instance-7"].status, "Running");
+        } else {
+          assert(!result.ok, result.output);
+          assertEquals(f.result(), {error_code: "instance.container_network_unsafe"});
+          assertEquals(f.state().containers["instance-7"].status, "Stopped");
+        }
+      } finally { f.cleanup(); }
+    },
+  });
+}
+
+/**
+ * What a host converge did: every Incus command line, every task that ran (ok or changed, never a skipped one or an include line)
+ * and every host file it wrote in place of a kernel module, sysctl or firewall rule. Fixture paths read FIXTURE.
+ */
+async function hostTranscript(f: Awaited<ReturnType<typeof hostFixture>>, output: string) {
+  const tasks: string[] = [];
+  let task = "";
+  for (const line of output.split("\n")) {
+    const named = line.match(/^TASK \[(.*)\] \*/);
+    if (named) task = named[1];
+    else if (/^(ok|changed): \[/.test(line) && task !== "" && tasks.at(-1) !== task) tasks.push(task);
+  }
+  const files: Record<string, string> = {};
+  for (const dir of ["modules-load", "sysctl"]) {
+    for (const entry of Deno.readDirSync(`${f.folder}/${dir}`)) files[`${dir}/${entry.name}`] = Deno.readTextFileSync(`${f.folder}/${dir}/${entry.name}`);
+  }
+  for (const entry of Deno.readDirSync(f.folder)) {
+    if (entry.name.startsWith("firewall-")) files[entry.name] = Deno.readTextFileSync(`${f.folder}/${entry.name}`);
+  }
+  const transcript = JSON.stringify({calls: f.calls(), tasks, files: Object.fromEntries(Object.entries(files).sort())}).replaceAll(f.folder, "FIXTURE");
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(transcript))))
+    .map((x) => x.toString(16).padStart(2, "0")).join("");
+  return {calls: f.calls().length, tasks: tasks.length, digest, transcript};
+}
+
+Deno.test({
+  name: "a normal host intent runs the exact tasks, Incus command lines and host files of main",
+  ignore: !hasAnsible,
+  async fn() {
+    // A real Node's shape: a ZFS pool, so the clone probe runs too.
+    const f = await hostFixture({pool: "zfs"});
+    try {
+      const result = await f.run();
+      assert(result.ok, result.output);
+      const seen = await hostTranscript(f, result.output);
+      if (Deno.env.get("ORBIT_PRINT_HOST_TRANSCRIPT")) console.log(JSON.stringify(seen));
+      // Captured by this same case from the tasks of origin/main 77f6bf5c22 (2a-local 7b9e25ba02 changes no task).
+      assertEquals({calls: seen.calls, tasks: seen.tasks, digest: seen.digest}, MAIN_NORMAL_HOST);
+      assertEquals(f.state().projects.map((row: {name: string}) => row.name), ["orbit-instances"]);
+      assert(!f.has("modules-load/orbit-instances.conf"));
+    } finally { f.cleanup(); }
+  },
+});
+
+for (const file of ["subuid", "subgid"]) {
+  Deno.test({
+    name: `a switched-on host with a short ${file} range refuses before any nesting change`,
+    ignore: !hasAnsible,
+    async fn() {
+      const f = await hostFixture({pool: "zfs"});
+      try {
+        // Room for the normal Instances only: 13,172,736 IDs, short of 13,172,736 + 2 x 101,000,000.
+        Deno.writeTextFileSync(`${f.folder}/${file}`, "root:1000000:13172736\n");
+        f.write({...f.instances, ids: 201 * 65536 + 2 * 101000000, nested: {project: "orbit-instances-nested"}});
+        const result = await f.run();
+        assert(!result.ok, result.output);
+        assert(result.output.includes(`instance.host_unavailable: root needs 215172736 subordinate IDs in ${f.folder}/${file}, and its largest range has 13172736`), result.output);
+        assertEquals([...Deno.readDirSync(`${f.folder}/modules-load`)], []);
+        assertEquals([...Deno.readDirSync(`${f.folder}/sysctl`)], []);
+        assertEquals(f.state().projects, []);
+        // Only the read-only pool query ran.
+        assertEquals(f.calls().map((args) => args.slice(0, 2)), [["query", "--"]]);
+      } finally { f.cleanup(); }
+    },
+  });
+}
+
+Deno.test({
+  name: "only a switched-on host prepares the nested project, its profile and the nesting modules",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await hostFixture({pool: "zfs"});
+    try {
+      f.write({...f.instances, ids: 201 * 65536 + 2 * 101000000, nested: {project: "orbit-instances-nested"}});
+      const result = await f.run();
+      assert(result.ok, result.output);
+      const state = f.state();
+      assertEquals(state.projects.map((row: {name: string}) => row.name), ["orbit-instances", "orbit-instances-nested"]);
+      const config = (name: string) => state.projects.find((row: {name: string}) => row.name === name).config;
+      for (const key of ["restricted.containers.nesting", "restricted.containers.interception", "restricted.containers.lowlevel"]) {
+        assert(!(key in config("orbit-instances")), key);
+        assertEquals(config("orbit-instances-nested")[key], "allow");
+      }
+      for (const key of ["restricted", "restricted.networks.access", "restricted.containers.privilege", "restricted.devices.disk", "restricted.devices.proxy", "limits.virtual-machines"]) {
+        assertEquals(config("orbit-instances-nested")[key], config("orbit-instances")[key], key);
+      }
+      assertEquals(state.profiles["orbit-instances-nested"].devices, state.profiles["orbit-instances"].devices);
+      assertEquals(Object.keys(state.profiles["orbit-instances-nested"].devices).sort(), ["eth0", "orbit-agent", "orbit-runtime", "root"]);
+      assertEquals(state.profiles["orbit-instances-nested"].devices["orbit-runtime"].readonly, "true");
+      assertEquals(Deno.readTextFileSync(`${f.folder}/modules-load/orbit-instances.conf`), "wireguard\noverlay\nbr_netfilter\n");
+      // The probe ran in both projects and left nothing behind.
+      for (const project of ["orbit-instances", "orbit-instances-nested"]) {
+        assert(f.calls().some((args) => args.join(" ") === `--project ${project} start orbit-clone-probe-copy`), project);
+      }
+      assertEquals(state.instances, []);
+      const again = await f.run();
+      assert(again.ok, again.output);
+    } finally { f.cleanup(); }
+  },
+});
+
+for (const damage of ["raw.lxc", "privileged", "host-disk", "extra-share-key"]) {
+  Deno.test({
+    name: `the nested clone probe refuses a ${damage} profile before it starts`,
+    ignore: !hasAnsible,
+    async fn() {
+      const f = await hostFixture({pool: "zfs"});
+      try {
+        f.write({...f.instances, ids: 201 * 65536 + 2 * 101000000, nested: {project: "orbit-instances-nested"}});
+        // A nested project left by an earlier converge, whose profile drifted: profile convergence keeps extra keys and devices.
+        const state = f.state();
+        state.projects.push({name: "orbit-instances-nested", config: {"features.images": "true", "features.profiles": "true", "features.networks": "false"}});
+        const runtime = `${f.instances.folders.runtime.path}`;
+        state.profiles["orbit-instances-nested"] = {description: "", config: {
+          ...(damage === "raw.lxc" ? {"raw.lxc": "lxc.apparmor.profile=unconfined"} : {}),
+          ...(damage === "privileged" ? {"security.privileged": "true"} : {}),
+        }, devices: {
+          ...(damage === "host-disk" ? {socket: {type: "disk", source: "/var/lib/incus/unix.socket", path: "/run/host-incus"}} : {}),
+          // Profile convergence rewrites the keys it owns, so a drifted share keeps only keys it does not own.
+          ...(damage === "extra-share-key" ? {"orbit-runtime": {type: "disk", source: runtime, path: runtime, propagation: "shared"}} : {}),
+        }};
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+        const result = await f.run();
+        assert(!result.ok, result.output);
+        assert(result.output.includes("instance.container_network_unsafe"), result.output);
+        assert(f.calls().some((args) => args.join(" ") === "--project orbit-instances start orbit-clone-probe-copy"));
+        assert(!f.calls().some((args) => args.join(" ") === "--project orbit-instances-nested start orbit-clone-probe-copy"), result.output);
+        assertEquals(f.state().instances, []);
+      } finally { f.cleanup(); }
+    },
+  });
+}

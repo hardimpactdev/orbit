@@ -67,7 +67,7 @@ final readonly class RegisterInstanceAction
             throw $this->unavailable();
         }
         $project = Project::query()->findOrFail($data->projectId);
-        InstancePlacement::assert($project);
+        InstancePlacement::checkout($project);
         $name = DefaultInstanceName::resolve($project, $data->instanceName ?? basename($data->sourcePath));
         if (strlen($name) > 63 || preg_match('/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/D', $name) !== 1) {
             throw new ResourceOperationException('instance.name_invalid', 'The Instance name must be a lowercase DNS label.', 422);
@@ -93,7 +93,7 @@ final readonly class RegisterInstanceAction
         }
 
         $result = DB::transaction(function () use ($caller, $project, $name, $root, $data, $requestId, $facts, $protectEnvironment): Operation|Instance {
-            InstancePlacement::assert(Project::query()->findOrFail($project->id));
+            InstancePlacement::checkout(Project::query()->findOrFail($project->id));
             $instance = Instance::query()->where('node_id', $caller->id)->where('checkout_path', $data->sourcePath)->first();
             if ($instance !== null && ($instance->project_id !== $project->id || $instance->name !== $name
                 || $instance->registration_request_id === null

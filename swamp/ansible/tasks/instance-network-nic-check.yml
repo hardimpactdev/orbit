@@ -3,13 +3,12 @@
 - name: Check the effective NIC gates on the Instance bridge
   tags: [always]
   ansible.builtin.command:
-    argv:
-      - python3
-      - -c
-      - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_network.py') }}"
-      - "{{ network_name }}"
-      - "{{ expected_network_device | default('') }}"
+    argv: "{{ ['python3', '-c', network_check_source, network_name, expected_network_device | default('')] + ([network_allowed_devices | to_json] if network_nested else []) }}"
     stdin: "{{ network_container | to_json }}"
+  vars:
+    network_nested: "{{ network_allowed_devices is defined and network_allowed_devices | length > 0 }}"
+    network_plain_source: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_network.py') }}"
+    network_check_source: "{{ network_plain_source.split('if __name__ == \"__main__\":')[0] ~ lookup('ansible.builtin.file', playbook_dir ~ '/instance_nested.py') if network_nested else network_plain_source }}"
   register: network_nic_check
   changed_when: false
   failed_when: false

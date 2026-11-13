@@ -73,7 +73,7 @@ final readonly class TaskProvisionIntent
      */
     public function capture(Task $group, string $commit, bool $ci = false): array
     {
-        InstancePlacement::assert($group->project()->firstOrFail());
+        InstancePlacement::taskWorkspace($group->project()->firstOrFail());
         $slot = $this->slots->take($group, proof: $ci);
         $branch = TaskWorkspaceName::for($group);
         $claim = $this->runs->claim($slot, $branch, $commit);

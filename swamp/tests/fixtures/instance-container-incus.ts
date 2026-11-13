@@ -66,7 +66,7 @@ if (args[0] === "query") {
       }
       Object.assign(devices, container.added ?? {});
       console.log(JSON.stringify({ name: parts[1], status: container.status, query, devices: container.added ?? {},
-        expanded_devices: devices, config: { "volatile.uuid": container.uuid } }));
+        expanded_devices: devices, expanded_config: {...Object.fromEntries((container.config ?? []).map((value: string) => { const split = value.indexOf("="); return [value.slice(0, split), value.slice(split + 1)]; })), ...(container.inherited_config ?? {})}, config: { "volatile.uuid": container.uuid } }));
     }
   } else fail(`Unexpected query ${route}`);
   Deno.exit(0);

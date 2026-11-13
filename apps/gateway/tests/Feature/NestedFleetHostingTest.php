@@ -1,0 +1,246 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Data\Nodes\NodeTaskVmsData;
+use App\Domain\Instances\BaselineNormalInstanceContainer;
+use App\Domain\Instances\BaselineNormalInstanceHostIntent;
+use App\Domain\Instances\ContainerInstanceDestroy;
+use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstancePlacement;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WireGuard\Ipv4Subnet;
+use App\Http\Middleware\RequireActiveWireGuardPeer;
+use App\Http\Middleware\RequireNodeAccess;
+use App\Models\Instance;
+use App\Models\InstanceRuntime;
+use App\Models\Node;
+use App\Models\Project;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
+use Tests\Support\SwampNodeFixture;
+
+uses(LazilyRefreshDatabase::class);
+require_once __DIR__.'/Domain/Instances/ContainerInstanceHelpers.php';
+require_once __DIR__.'/../Fixtures/BaselineNormalInstanceHostIntent.php';
+beforeEach(function (): void {
+    Queue::fake();
+    $this->withoutMiddleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class]);
+});
+
+function nestedSwitch(Node $node, bool $on): Node
+{
+    $node->update(['settings' => [...$node->settings, 'nested_fleet' => $on]]);
+
+    return $node->refresh();
+}
+
+/**
+ * An Instance whose runtime records the nested project, as the image change will create one: the blanket refusal blocks reserve()
+ * today, and the database keeps a recorded project from changing. So the row is the one reserve() makes, with the nested project.
+ */
+function recordedNestedInstance(Project $project, Node $node, string $name = 'default', ?Instance $source = null): Instance
+{
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'checkout_path' => '/test/'.$project->slug.'/'.$name]);
+    $flag = $project->nested_fleet;
+    $project->update(['nested_fleet' => false]);
+    DB::beginTransaction();
+    $row = app(InstanceContainer::class)->reserve($instance, $node, $source)->getAttributes();
+    DB::rollBack();
+    $project->update(['nested_fleet' => $flag]);
+    unset($row['id']);
+    InstanceRuntime::query()->create([...$row, 'incus_project' => InstancePlacement::NestedProject]);
+
+    return $instance->refresh();
+}
+
+/** Task VM host settings with VM places and two task and one CI container place. @return array<string, mixed> */
+function taskVms(int $taskPlaces, int $ciPlaces): array
+{
+    return NodeTaskVmsData::validated(['cidr' => '10.252.10.0/24', 'task_places' => $taskPlaces, 'ci_places' => $ciPlaces,
+        'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 2, 'ci_places' => 1]], Ipv4Subnet::from('10.44.0.0/24'))->toArray();
+}
+
+function otherProject(string $slug, bool $nested = false): Project
+{
+    return Project::query()->create(['name' => $slug, 'slug' => $slug, 'type' => 'node-package', 'repository_url' => 'https://github.com/nckrtl/'.$slug.'.git',
+        'default_branch' => 'main', 'root' => '.', 'is_laravel' => false, 'source_facts_captured_at' => now(), 'nested_fleet' => $nested]);
+}
+
+function placementRefusal(Closure $decide): string
+{
+    try {
+        return (string) $decide();
+    } catch (ResourceOperationException $error) {
+        return $error->errorCode.' '.$error->status;
+    }
+}
+
+describe('the one placement rule', function (): void {
+    it('places a normal Project as before and a nested-fleet Project only in a container of the nested project on a switched-on Node', function (): void {
+        $listed = nestedSwitch(containerDefaultNode(), true);
+        $off = containerDefaultNode('off', '10.44.0.8');
+        $unlisted = nestedSwitch(containerDefaultNode('unlisted', '10.44.0.9', false), true);
+        $normal = containerDefaultProject();
+        $nested = otherProject('nested', true);
+
+        expect(InstancePlacement::place($normal, $listed, true))->toBe('orbit-instances')
+            ->and(InstancePlacement::place($normal, $off, true))->toBe('orbit-instances')
+            ->and(InstancePlacement::place($normal, $unlisted, false))->toBeNull()
+            ->and(placementRefusal(fn () => InstancePlacement::place($nested, $off, true)))->toBe('instance.nested_fleet_host_unavailable 409')
+            ->and(placementRefusal(fn () => InstancePlacement::place($nested, $unlisted, true)))->toBe('instance.nested_fleet_container_required 409')
+            ->and(placementRefusal(fn () => InstancePlacement::place($nested, $listed, false)))->toBe('instance.nested_fleet_container_required 409')
+            ->and(InstancePlacement::place($nested, $listed, true))->toBe('orbit-instances-nested');
+    });
+
+    it('refuses a nested-fleet Project at every entry until the image exists and passes a normal Project', function (string $entry): void {
+        $project = containerDefaultProject();
+        InstancePlacement::{$entry}($project);
+        $project->update(['nested_fleet' => true]);
+        expect(placementRefusal(fn () => InstancePlacement::{$entry}($project)))->toBe('operation.kind_unavailable 503');
+    })->with(['assert', 'checkout', 'taskWorkspace']);
+
+    it('gives the nested project its six container keys and the normal project none', function (): void {
+        expect(InstancePlacement::config('orbit-instances'))->toBe([])
+            ->and(InstancePlacement::config('orbit-instances-nested'))->toBe([
+                'security.nesting' => 'true', 'security.syscalls.intercept.mknod' => 'true', 'security.syscalls.intercept.setxattr' => 'true',
+                'security.idmap.isolated' => 'true', 'security.idmap.size' => '101000000', 'limits.memory' => '12GiB',
+            ]);
+    });
+});
+
+describe('the recorded Incus project', function (): void {
+    it('records the normal project at reservation, and a clone records its default\'s project', function (): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        $default = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/default']);
+        expect(app(InstanceContainer::class)->reserve($default, $node)->incus_project)->toBe('orbit-instances');
+
+        $nestedDefault = recordedNestedInstance(otherProject('other'), $node);
+        $clone = Instance::query()->create(['project_id' => $nestedDefault->project_id, 'node_id' => $node->id, 'name' => 'feature', 'checkout_path' => '/test/feature']);
+        expect(app(InstanceContainer::class)->reserve($clone, $node, $nestedDefault)->incus_project)->toBe('orbit-instances-nested');
+    });
+
+    it('names the workspace, the destroy target and the intent after the recorded project, not the Project flag', function (): void {
+        $node = containerDefaultNode();
+        $instance = recordedNestedInstance(containerDefaultProject(), $node);
+        expect($instance->project->nested_fleet)->toBeFalse()
+            ->and(InstanceContainer::workspaceOnNode($instance))->toBe('/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances-nested_instance-'.$instance->id.'/rootfs/srv/workspace')
+            ->and(app(ContainerInstanceDestroy::class)->capture($instance)['project'])->toBe('orbit-instances-nested')
+            ->and(app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail())['project'])->toBe('orbit-instances-nested');
+    });
+
+    it('gives a recorded nested container its keys and its exact device list for the start guard', function (bool $clone): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        $instance = recordedNestedInstance($project, $node);
+        if ($clone) {
+            $instance->runtime()->firstOrFail()->update(['seed_commit' => str_repeat('a', 40)]);
+            $instance = recordedNestedInstance($project, $node, 'feature', $instance);
+        }
+        $runtime = $instance->runtime()->firstOrFail();
+        $intent = app(InstanceContainer::class)->intent($instance, $runtime);
+        expect($intent['config'])->toMatchArray(InstancePlacement::config('orbit-instances-nested'))
+            ->and($intent['config'])->not->toHaveKeys(['raw.lxc', 'raw.idmap', 'security.privileged'])
+            ->and($intent['image'])->toBe('orbit-instance')
+            ->and($intent['allowed_devices'])->toBe([
+                'root' => ['type' => 'disk', 'path' => '/', 'pool' => 'orbit-instances', 'size' => '40GiB'],
+                'eth0' => ['type' => 'nic', 'name' => 'eth0', 'network' => 'orbitinst0', 'ipv4.address' => $runtime->bridge_address,
+                    'security.port_isolation' => 'true', 'security.acls' => 'orbitinst0-proxy,'.$runtime->container_name,
+                    'security.acls.default.egress.action' => 'reject', 'security.acls.default.ingress.action' => 'reject'],
+                'orbit-runtime' => ['type' => 'disk', 'source' => '/opt/orbit-runtime', 'path' => '/opt/orbit-runtime', 'readonly' => 'true', 'shift' => 'true'],
+                'orbit-agent' => ['type' => 'disk', 'source' => '/opt/orbit-agent', 'path' => '/opt/orbit-agent', 'readonly' => 'true', 'shift' => 'true'],
+                ...($clone ? ['t3' => ['type' => 'proxy', 'listen' => 'tcp:10.44.0.7:'.$runtime->t3_port, 'connect' => 'tcp:'.$runtime->bridge_address.':3773', 'nat' => 'true']] : []),
+            ]);
+    })->with([false, true]);
+});
+
+describe('a normal Node and a normal Instance stay byte-identical to main', function (): void {
+    it('keeps the full host intent of a normal Node with the switch absent or off', function (string $switch, bool $taskContainers): void {
+        $this->freezeTime();
+        $node = containerDefaultNode();
+        $settings = [...$node->settings, 't3' => ['connection_id' => 'fixture']];
+        if ($taskContainers) {
+            $settings['task_vms'] = taskVms(1, 1);
+        }
+        if ($switch === 'off') {
+            $settings['nested_fleet'] = false;
+        }
+        $node->update(['settings' => $settings]);
+        // A normal Instance runtime on the Node changes nothing either.
+        app(InstanceContainer::class)->reserve(Instance::query()->create(['project_id' => containerDefaultProject()->id, 'node_id' => $node->id,
+            'name' => 'default', 'checkout_path' => '/test/default']), $node->refresh());
+        $expected = app(BaselineNormalInstanceHostIntent::class)->for($node);
+        $actual = app(InstanceHostIntent::class)->for($node);
+        expect(json_encode($actual, JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
+            ->and($actual)->not->toHaveKeys(['nested', 'runtime_projects']);
+    })->with(['absent', 'off'])->with([false, true]);
+
+    it('keeps the full default and clone intents of a normal Instance', function (bool $clone): void {
+        $this->freezeTime();
+        $node = containerDefaultNode();
+        nestedSwitch($node, true);
+        $project = containerDefaultProject();
+        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/default']);
+        $containers = app(InstanceContainer::class);
+        $runtime = $containers->reserve($instance, $node);
+        if ($clone) {
+            $runtime->update(['seed_commit' => str_repeat('a', 40)]);
+            $source = $instance;
+            $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'feature', 'checkout_path' => '/test/feature']);
+            $runtime = $containers->reserve($instance, $node, $source);
+        }
+        expect(json_encode($containers->intent($instance, $runtime), JSON_THROW_ON_ERROR))
+            ->toBe(json_encode(app(BaselineNormalInstanceContainer::class)->intent($instance, $runtime), JSON_THROW_ON_ERROR));
+    })->with([false, true]);
+
+    it('admits a normal default create with the same runtime, workspace path and captured container intent', function (): void {
+        SwampNodeFixture::ensure();
+        $this->freezeTime();
+        $node = nestedSwitch(containerDefaultNode(), true);
+        $operation = containerCreate(containerDefaultProject(), $node);
+        $instance = Instance::query()->sole();
+        $runtime = InstanceRuntime::query()->sole();
+        // The create path adds its `steps` beside the container intent.
+        $captured = containerIntentOf($operation);
+        unset($captured['steps']);
+        expect($runtime->incus_project)->toBe('orbit-instances')
+            ->and($instance->checkout_path)->toBe('/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-'.$instance->id.'/rootfs/srv/workspace')
+            ->and(json_encode($captured, JSON_THROW_ON_ERROR))
+            ->toBe(json_encode(app(BaselineNormalInstanceContainer::class)->intent($instance, $runtime), JSON_THROW_ON_ERROR));
+    });
+});
+
+describe('a switched-on Node', function (): void {
+    it('prepares the nested project and keeps two spare maps; recorded nested runtimes add one each, on their Node only', function (): void {
+        $node = nestedSwitch(containerDefaultNode(), true);
+        $other = nestedSwitch(containerDefaultNode('shark', '10.44.0.8'), true);
+        $host = app(InstanceHostIntent::class)->for($node);
+        expect($host['nested'])->toBe(['project' => 'orbit-instances-nested'])
+            ->and($host['project'])->toBe('orbit-instances')
+            ->and($host['ids'])->toBe(13_172_736 + 2 * 101_000_000)
+            ->and($host)->not->toHaveKey('runtime_projects');
+        recordedNestedInstance(containerDefaultProject(), $node);
+        recordedNestedInstance(otherProject('second'), $node);
+        expect(app(InstanceHostIntent::class)->for($node)['ids'])->toBe(13_172_736 + 4 * 101_000_000)
+            ->and(app(InstanceHostIntent::class)->for($other)['ids'])->toBe(13_172_736 + 2 * 101_000_000);
+    });
+
+    it('counts task container places from settings.task_vms.containers, never the VM places', function (): void {
+        $node = containerDefaultNode();
+        $node->update(['settings' => [...$node->settings, 'nested_fleet' => true,
+            'task_vms' => taskVms(7, 5)]]);
+        expect(app(InstanceHostIntent::class)->for($node->refresh())['ids'])->toBe(13_172_736 + (2 + 1 + 1) * 101_000_000 + 2 * 101_000_000);
+    });
+
+    it('keeps recorded nested runtimes in the ID demand and the folder refresh after the switch is off', function (): void {
+        $node = nestedSwitch(containerDefaultNode(), true);
+        recordedNestedInstance(containerDefaultProject(), $node);
+        $host = app(InstanceHostIntent::class)->for(nestedSwitch($node, false));
+        expect($host)->not->toHaveKey('nested')
+            ->and($host['runtime_projects'])->toBe(['orbit-instances', 'orbit-instances-nested'])
+            ->and($host['ids'])->toBe(13_172_736 + 101_000_000);
+    });
+});

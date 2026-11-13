@@ -48,7 +48,7 @@ final readonly class StartInstanceCloneAction
         if (($replay = $this->idempotency->replay('instance.clone')) !== null) {
             return $replay;
         }
-        InstancePlacement::assert($candidate->project);
+        InstancePlacement::checkout($candidate->project);
         InstanceContainer::assertCheckout($candidate);
 
         return DB::transaction(function () use ($candidate, $data, $caller, $requestId): Operation {

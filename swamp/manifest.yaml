@@ -139,6 +139,7 @@ additionalFiles:
   - ansible/task-vm-host.yml
   - ansible/tasks/task-vm-host-prepare.yml
   - ansible/tasks/task-container-host-system.yml
+  - ansible/tasks/task-container-host-ids.yml
   - ansible/tasks/instance-folder.yml
   - ansible/tasks/instance-vite-plus-home.yml
   - ansible/tasks/instance-egress.yml
@@ -157,6 +158,7 @@ additionalFiles:
   - ansible/tasks/instance-bridge-rules.yml
   - ansible/instance_bridge.py
   - ansible/instance_network.py
+  - ansible/instance_nested.py
   - ansible/tasks/instance-bridge-refresh.yml
   - ansible/tasks/instance-image.yml
   - ansible/library/orbit_incus_images.py

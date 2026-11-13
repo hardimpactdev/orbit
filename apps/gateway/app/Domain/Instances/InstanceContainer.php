@@ -69,12 +69,15 @@ final readonly class InstanceContainer
     }
 
     /**
-     * The workspace's path on the Node, inside the container's root filesystem. It keeps the Instance's checkout path unique on its
-     * Node; Orbit never works in it from the Node.
+     * The workspace's path on the Node, inside the container's root filesystem, in the Incus project its runtime records. It keeps
+     * the Instance's checkout path unique on its Node; Orbit never works in it from the Node. An Instance without a runtime has no
+     * container: its path names the normal project and only ever fails a comparison with a real checkout path.
      */
     public static function workspaceOnNode(Instance $instance): string
     {
-        return '/var/lib/incus/storage-pools/'.InstanceHostIntent::Pool.'/containers/'.InstanceHostIntent::Project.'_'.self::name($instance)
+        $project = $instance->runtime()->value('incus_project');
+
+        return '/var/lib/incus/storage-pools/'.InstanceHostIntent::Pool.'/containers/'.(is_string($project) ? $project : InstanceHostIntent::Project).'_'.self::name($instance)
             .'/rootfs'.InstanceHostIntent::Workspace;
     }
 
@@ -113,6 +116,9 @@ final readonly class InstanceContainer
         if ($existing instanceof InstanceRuntime) {
             return $existing;
         }
+        // The one placement decision, recorded once; a clone lives in the project its default's runtime records.
+        $placed = InstancePlacement::place($instance->project()->firstOrFail(), $node, true);
+        $incusProject = $source === null ? $placed : $source->runtime()->firstOrFail()->incus_project;
         $folders = $this->folders();
         $bridge = Node::query()->whereKey($node->id)->value('instance_bridge');
         if (! is_string($bridge)) {
@@ -140,7 +146,7 @@ final readonly class InstanceContainer
         $plan = InstanceFolderPlan::for($folders);
 
         return InstanceRuntime::query()->create([
-            'instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => InstanceHostIntent::Project,
+            'instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => $incusProject,
             'container_name' => self::name($instance), 'bridge_address' => $address, 't3_port' => $port,
             'runtime_version' => $plan['runtime']['version'], 'agent_version' => $plan['agent']['version'],
             'clone_source_instance_id' => $source?->id, 'power_state' => InstanceRuntimePowerState::Stopped,
@@ -187,11 +193,13 @@ final readonly class InstanceContainer
         return [
             'instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
             'config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096',
+                ...InstancePlacement::config($runtime->incus_project),
                 ...(! array_any($nodeServices, static fn (array $target): bool => ! $target['docker']) && ! isset($clone['proxy_environment']) ? []
                     : array_combine(array_map(static fn (string $key): string => 'environment.'.$key, ['NO_PROXY', 'no_proxy']),
                         array_values(InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices))))],
             'root_disk_pool' => InstanceHostIntent::Pool, 'root_disk_size' => '40GiB',
             'image' => self::Image, 'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
+            ...($runtime->incus_project === InstancePlacement::NestedProject ? ['allowed_devices' => $this->allowedDevices($instance, $runtime)] : []),
             'acl' => $runtime->container_name, 'nic_acl' => InstanceHostIntent::NicAcl,
             'bridge_cidr' => ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')),
             'bridge_admitted_at' => $admittedAt,
@@ -232,6 +240,28 @@ final readonly class InstanceContainer
             'clone' => $clone,
             // The Project's development Processes; a deployment's new seed restarts the running ones on the new commit.
             'processes' => app(ContainerProcesses::class)->units($instance),
+        ];
+    }
+
+    /**
+     * The exact effective devices that the start guard of a nested-fleet container permits: its root disk, NIC, the two read-only
+     * shared folders and a clone's T3 proxy (docs/reference/development-containers.md#the-container).
+     *
+     * @return array<string, array<string, string>>
+     */
+    private function allowedDevices(Instance $instance, InstanceRuntime $runtime): array
+    {
+        return [
+            'root' => ['type' => 'disk', 'path' => '/', 'pool' => InstanceHostIntent::Pool, 'size' => '40GiB'],
+            'eth0' => ['type' => 'nic', 'name' => 'eth0', 'network' => InstanceHostIntent::Network,
+                'ipv4.address' => $runtime->bridge_address, 'security.port_isolation' => 'true',
+                'security.acls' => InstanceHostIntent::NicAcl.','.$runtime->container_name,
+                'security.acls.default.egress.action' => 'reject', 'security.acls.default.ingress.action' => 'reject'],
+            'orbit-runtime' => ['type' => 'disk', 'source' => InstanceHostIntent::RuntimeFolder, 'path' => InstanceHostIntent::RuntimeFolder, 'readonly' => 'true', 'shift' => 'true'],
+            'orbit-agent' => ['type' => 'disk', 'source' => InstanceHostIntent::AgentFolder, 'path' => InstanceHostIntent::AgentFolder, 'readonly' => 'true', 'shift' => 'true'],
+            ...($runtime->t3_port === null ? [] : [self::T3Device => ['type' => 'proxy',
+                'listen' => 'tcp:'.ValidatedData::string($instance->node->wireguard_ip).':'.$runtime->t3_port,
+                'connect' => 'tcp:'.$runtime->bridge_address.':'.InstanceHostIntent::T3Port, 'nat' => 'true']]),
         ];
     }
 

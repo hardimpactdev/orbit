@@ -380,7 +380,8 @@ describe('the container PHP runtime development SSR origin', function (): void {
             expect($reads)->toHaveCount($production ? 2 : 3);
             $targetReads = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'from "instance_node_service_targets"'));
             expect($targetReads)->toHaveCount(1);
-            expect(DB::getQueryLog())->toHaveCount($production ? 16 : 19);
+            // A vp-dev Process path check reads the runtime's recorded Incus project once (InstanceContainer::workspaceOnNode).
+            expect(DB::getQueryLog())->toHaveCount(($production ? 16 : 19) + ($vpDev ? 1 : 0));
         } finally {
             DB::disableQueryLog();
             DB::flushQueryLog();

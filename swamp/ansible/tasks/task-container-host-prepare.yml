@@ -260,6 +260,7 @@
             network_name: "{{ container_host.network }}"
             network_failure: instance.container_network_unsafe
             expected_network_device: eth0
+            network_allowed_devices: "{{ container_probe_devices | default({}) }}"
     - name: Start and stop the clone probe copy once
       ansible.builtin.command: { argv: "{{ probe + item }}" }
       loop:

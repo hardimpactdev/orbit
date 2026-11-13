@@ -49,7 +49,7 @@ final readonly class TaskVmAdmission
     {
         try {
             return DB::transaction(function () use ($group, $kind, $capture, $caller, $requestId): Operation {
-                InstancePlacement::assert($group->project()->firstOrFail());
+                InstancePlacement::taskWorkspace($group->project()->firstOrFail());
                 if (TaskVm::forGroup($group) === null) {
                     app(TaskVmSlotPool::class)->assertServes($group);
                     if (self::queue()->exists()) {
@@ -122,7 +122,7 @@ final readonly class TaskVmAdmission
                     return;
                 }
                 $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
-                InstancePlacement::assert($group->project()->firstOrFail());
+                InstancePlacement::taskWorkspace($group->project()->firstOrFail());
                 if (TaskVm::forGroup($group) === null) {
                     app(TaskVmSlotPool::class)->assertServes($group);
                 }
