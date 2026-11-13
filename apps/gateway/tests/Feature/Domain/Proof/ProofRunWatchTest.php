@@ -48,11 +48,11 @@ function watchAged(Operation $operation, int $createdSecondsAgo, ?int $updatedSe
 }
 
 /** A proof.run as the admission left it: running, with the run list still empty. */
-function watchProof(Node $node, int $ageSeconds): Operation
+function watchProof(Node $node, int $ageSeconds, OperationStatus $status = OperationStatus::Running): Operation
 {
     $proof = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
         'input' => ['commit' => WATCH_SHA, 'all' => false, 'cases' => [], 'uncovered' => [['path' => 'a', 'reason' => 'b']], 'runs' => []],
-        'state' => [], 'status' => OperationStatus::Running, 'sequence' => 2, 'attempts' => 0]);
+        'state' => [], 'status' => $status, 'sequence' => 2, 'attempts' => 0]);
 
     return watchAged($proof, $ageSeconds);
 }
@@ -75,6 +75,17 @@ it('ends a proof that has no run once its request is gone, with a clear code, in
     $proof->refresh();
     expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.admission_interrupted')->and($proof->state['native_failure']['detail'])->toBe(ProofRunWatch::Lost)
         ->and($proof->result)->toBe(['commit' => WATCH_SHA, 'outcome' => 'failed', 'cases' => [], 'uncovered' => [['path' => 'a', 'reason' => 'b']], 'receipt_url' => null]);
+});
+
+it('ends a waiting proof that is past its admission budget, and leaves a younger one waiting', function (): void {
+    $node = watchNode();
+    $lost = watchProof($node, ProofRunWatch::AdmissionSeconds + 30, OperationStatus::Waiting);
+    $young = watchProof($node, 600, OperationStatus::Waiting);
+
+    expect(app(ProofRunWatch::class)->sweep())->toBe(1);
+
+    expect($lost->refresh()->status)->toBe(OperationStatus::Failed)->and($lost->error_code)->toBe('proof.admission_interrupted')
+        ->and($young->refresh()->status)->toBe(OperationStatus::Waiting);
 });
 
 it('leaves a proof alone while its request may still be admitting', function (): void {

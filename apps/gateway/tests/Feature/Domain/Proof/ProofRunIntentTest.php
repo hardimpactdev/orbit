@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\CancelOperationAction;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubComparisonStatus;
 use App\Domain\GitHub\GitHubReview;
@@ -654,7 +655,7 @@ it('keeps authenticated CI proofs waiting without children until capacity or a c
     $caller = Node::query()->where('name', 'swamp')->firstOrFail();
     $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
     $proof = proofAdmitted(caller: $caller);
-    expect($proof->status)->toBe(OperationStatus::Running)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
+    expect($proof->status)->toBe(OperationStatus::Waiting)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
         ->and(ProofRunSettlement::children($proof->id))->toHaveCount(0);
     $proof->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
     app(ProofRunIntent::class)->admit($proof->id);
@@ -780,10 +781,49 @@ function proofOverBudget(int $busy): Operation
 it('waits for another CI place rather than plan a shard past the longest shard budget', function (): void {
     $proof = proofOverBudget(busy: 1);
 
-    expect($proof->status)->toBe(OperationStatus::Running)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
+    expect($proof->status)->toBe(OperationStatus::Waiting)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)->and($proof->started_at)->toBeNull()
         ->and($proof->state['capacity_wait_reason'])->toContain('Waiting for more CI places')
         ->and(ProofRunSettlement::children($proof->id))->toHaveCount(0)->and(Task::query()->count())->toBe(0);
     Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->operationId === $proof->id);
+});
+
+it('reads waiting with the wait text and no start time while held, and the status filter finds it', function (): void {
+    proofWorldWithoutCapacity();
+    $caller = Node::query()->where('name', 'swamp')->firstOrFail();
+    $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+    $proof = proofAdmitted(caller: $caller);
+
+    expect($proof->status)->toBe(OperationStatus::Waiting)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
+        ->and($proof->started_at)->toBeNull()->and($proof->finished_at)->toBeNull()
+        ->and(Operation::query()->where('kind', 'proof.run')->where('status', OperationStatus::Waiting)->pluck('id')->all())->toBe([$proof->id])
+        ->and(Operation::query()->where('kind', 'proof.run')->where('status', OperationStatus::Running)->exists())->toBeFalse();
+});
+
+it('admits a waiting proof from its retry job, and no other status', function (): void {
+    proofWorld(proofSource());
+    Queue::fake();
+    $waiting = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
+    $waiting->update(['status' => OperationStatus::Waiting, 'current_step' => ProofRunIntent::WaitStep]);
+    $queued = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
+    $queued->update(['status' => OperationStatus::Queued]);
+
+    app(ProofRunIntent::class)->admit($waiting->id);
+    app(ProofRunIntent::class)->admit($queued->id);
+
+    expect($waiting->refresh()->input)->toHaveKey('cases')->and($queued->refresh()->input)->not->toHaveKey('cases');
+});
+
+it('cancels a waiting proof, and its retry job then leaves it cancelled', function (): void {
+    proofWorldWithoutCapacity();
+    $caller = Node::query()->where('name', 'swamp')->firstOrFail();
+    $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+    $proof = proofAdmitted(caller: $caller);
+    expect($proof->status)->toBe(OperationStatus::Waiting);
+
+    app(CancelOperationAction::class)->execute($proof);
+    app(ProofRunIntent::class)->admit($proof->id);
+
+    expect($proof->refresh()->status)->toBe(OperationStatus::Cancelled)->and($proof->finished_at)->not->toBeNull()->and($proof->current_step)->toBeNull();
 });
 
 it('plans past the longest shard budget when every usable CI place is free, because no place can come to wait for', function (): void {

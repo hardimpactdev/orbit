@@ -54,6 +54,17 @@ it('pages with the cursor and the same filters until next_cursor is null', funct
     expect($last->json('data'))->toHaveCount(25)->and($last->json('meta.next_cursor'))->toBeNull();
 });
 
+it('finds a held proof by the waiting filter and polls it at the default pace', function (): void {
+    $proof = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => 1, 'node_id' => Node::query()->value('id'),
+        'input' => ['commit' => str_repeat('a', 40), 'runs' => []], 'status' => OperationStatus::Waiting,
+        'current_step' => 'Waiting for proof Operation 7 to finish.']);
+
+    $page = operation_page('?status=waiting')->assertOk();
+
+    expect(array_column($page->json('data'), 'id'))->toBe([$proof->id])
+        ->and($page->json('data.0.status'))->toBe('waiting')->and($page->json('data.0.poll_after_seconds'))->toBe(2);
+});
+
 it('refuses a limit or cursor out of form', function (string $query, string $field): void {
     operation_page($query)->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')
         ->assertJsonPath("error.details.{$field}", fn (mixed $messages): bool => $messages !== null);
