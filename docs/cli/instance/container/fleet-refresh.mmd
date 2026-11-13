@@ -59,8 +59,12 @@ sequenceDiagram
   %%> - changes no device or configuration key: on a running fleet it only reads
   %%> Why:
   %%> - the checkout just moved under the running nested Gateway; until the refresh migrates and restarts it, its Doctor cannot be healthy
+  %%> - it takes the hub's key only when it is a WireGuard key: just after a boot, `wg` prints `(none)` with exit 0 until `wg-quick` has set the key
+  %%> On failure:
+  %%> - no key within 60 s: the step says the nested Gateway's WireGuard key was not ready, and sets no peer
   SW->>F: Refresh the inner fleet<br/>Ansible · tags fleet_refresh
   %%> What it does:
+  %%> - first waits until the state mounts of the nested Gateway and app-dev are active (60 s): just after a start a mount can still be activating
   %%> - places the agent delivery, reloads the grants, migrates the nested Gateway and restarts its services; the delivery and the migrate run as `orbit` with its groups (`runuser`), as `work` opens the checkout
   %%> - waits until the three agents are online (300 s), writes the fleet files that differ on the running fleet (the egress proxy of apt and of sudo and SSH sessions, and the nested Gateway's Swamp proxy drop-ins), converges the base of the three nested Nodes one by one, then waits for readiness once: Doctor healthy, three agents, the operator
   %%> - every API call goes from the container over `wg-nested`, never through the container's egress proxy; a failed Doctor wait names the last status and body, or curl's error

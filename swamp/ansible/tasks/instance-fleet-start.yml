@@ -53,15 +53,29 @@
     that: fleet_key.rc == 0
     fail_msg: "The Instance container has no operator key at {{ fleet_operator_key }}"
     quiet: true
-# The hub comes up with the nested Gateway's own wg-quick unit, a few seconds after its start.
-- name: Read the hub key
-  ansible.builtin.command:
-    argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'wg', 'show', 'orbit', 'public-key'] }}"
-  register: fleet_hub_key
-  changed_when: false
-  until: fleet_hub_key.rc == 0 and fleet_hub_key.stdout | trim | length > 0
-  retries: 12
-  delay: "{{ fleet_ready_delay }}"
+# The hub comes up with the nested Gateway's own wg-quick unit, a few seconds after its start. wg-quick makes the interface before it
+# sets its private key; in between, `wg show` prints `(none)` with exit 0. So only a WireGuard key counts as read.
+- name: Read the hub key when it is a key
+  vars:
+    # A WireGuard public key: 32 bytes in base64.
+    fleet_wireguard_key: '^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$'
+  block:
+    - name: Read the hub key
+      ansible.builtin.command:
+        argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'wg', 'show', 'orbit', 'public-key'] }}"
+      register: fleet_hub_key
+      changed_when: false
+      failed_when: false
+      until: fleet_hub_key.rc == 0 and fleet_hub_key.stdout | trim is match(fleet_wireguard_key)
+      retries: "{{ ((fleet_boot_seconds | int) / ([fleet_ready_delay | int, 1] | max)) | round(0, 'ceil') | int }}"
+      delay: "{{ fleet_ready_delay }}"
+    - name: Check the hub key
+      ansible.builtin.assert:
+        that: fleet_hub_key.rc == 0 and fleet_hub_key.stdout | trim is match(fleet_wireguard_key)
+        fail_msg: >-
+          The nested Gateway's WireGuard key was not ready after {{ fleet_boot_seconds }} s; the last read got
+          {{ (fleet_hub_key.stdout | trim or fleet_hub_key.stderr | default('', true) | trim or ('exit ' ~ fleet_hub_key.rc)) | truncate(200) }}
+        quiet: true
 - name: Read the operator tunnel
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['wg', 'show', fleet_tunnel] }}" }
   register: fleet_tunnel_read

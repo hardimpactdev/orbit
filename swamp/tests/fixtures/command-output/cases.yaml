@@ -613,6 +613,18 @@ contexts:
   restore-no-seed:
     restore_snapshots:
       stdout: '[{"name":"before-migrate","created_at":"2026-11-13T13:00:00Z"}]'
+  fleet-hub-key-none:
+    fleet_hub_key:
+      rc: 0
+      stdout: "(none)\n"
+  fleet-hub-key-absent:
+    fleet_hub_key:
+      rc: 1
+      stdout: ''
+  fleet-hub-key:
+    fleet_hub_key:
+      rc: 0
+      stdout: "HUBKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"
   fleet-list:
     fleet_names: [nested-gateway, nested-app-dev, nested-app-prod]
     fleet_ready_list:
@@ -1573,6 +1585,36 @@ cases:
   expected:
   - nested-gateway
   - nested-app-prod
+- file: tasks/instance-fleet-start.yml
+  task: Read the hub key
+  field: until
+  context: fleet-hub-key-none
+  expected: false
+- file: tasks/instance-fleet-start.yml
+  task: Read the hub key
+  field: until
+  context: fleet-hub-key-absent
+  expected: false
+- file: tasks/instance-fleet-start.yml
+  task: Read the hub key
+  field: until
+  context: fleet-hub-key
+  expected: true
+- file: tasks/instance-fleet-start.yml
+  task: Check the hub key
+  field: ansible.builtin.assert.that
+  context: fleet-hub-key-none
+  expected: false
+- file: tasks/instance-fleet-start.yml
+  task: Check the hub key
+  field: ansible.builtin.assert.that
+  context: fleet-hub-key-absent
+  expected: false
+- file: tasks/instance-fleet-start.yml
+  task: Check the hub key
+  field: ansible.builtin.assert.that
+  context: fleet-hub-key
+  expected: true
 - file: tasks/instance-fleet-start.yml
   task: Start the nested containers
   field: loop

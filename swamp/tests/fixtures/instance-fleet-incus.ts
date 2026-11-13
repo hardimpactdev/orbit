@@ -139,7 +139,14 @@ if (command[0] === "incus") {
     const asOrbit = rest[0] === "runuser" && rest[1] === "-u" && rest[2] === "orbit" && rest[3] === "--";
     if ((rest[0] === "install" || rest[0] === "php") && !asOrbit) fail(`${rest[0]} as root: the app user runs it`);
     if (asOrbit) rest = rest.slice(4);
-    if (rest[0] === "wg" && rest[1] === "show") done(state.hubKey);
+    // wg-quick makes the interface before it sets its private key; a read in between prints `(none)` with exit 0.
+    if (rest[0] === "wg" && rest[1] === "show") {
+      if ((state.hubKeyNone ?? 0) > 0) {
+        state.hubKeyNone -= 1;
+        done("(none)");
+      }
+      done(state.hubKey);
+    }
     // Links in a nested container's own disk, by path.
     if (rest[0] === "readlink") {
       const target = container(name).links?.[rest[1]];
@@ -153,8 +160,13 @@ if (command[0] === "incus") {
     }
     if (rest[0] === "systemctl" && rest[1] === "is-active") {
       const units = rest.slice(rest[2] === "--quiet" ? 3 : 2);
-      const inactive = units.filter((unit) => (state.inactive ?? []).includes(unit));
-      if (rest[2] !== "--quiet") console.log(units.map((unit) => inactive.includes(unit) ? "inactive" : "active").join("\n"));
+      // Right after a start a mount can still be `activating` for `activating` more reads.
+      const activating = (state.activating ?? 0) > 0;
+      if (activating) state.activating -= 1;
+      const inactive = activating ? units : units.filter((unit) => (state.inactive ?? []).includes(unit));
+      if (rest[2] !== "--quiet") {
+        console.log(units.map((unit) => !inactive.includes(unit) ? "active" : activating ? "activating" : "inactive").join("\n"));
+      }
       save();
       Deno.exit(inactive.length > 0 ? 3 : 0);
     }
@@ -179,6 +191,8 @@ if (command[0] === "wg" && command[1] === "set") {
   if (!tunnel) fail("Unable to modify interface: No such device");
   const option = (name: string) => command[command.indexOf(name) + 1];
   if (!state.outer.files[option("private-key")]) fail("No such file or directory");
+  // wg refuses a peer that is not a WireGuard key, `(none)` among them (Operation 19987).
+  if (!/^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$/.test(option("peer"))) fail(`Key is not the correct length or format: \`${option("peer")}'`);
   Object.assign(tunnel!, { key: option("private-key"), port: option("listen-port"), peer: option("peer"), endpoint: option("endpoint"), allowed: option("allowed-ips") });
   done();
 }
