@@ -80,6 +80,7 @@ function fixture() {
   Deno.writeTextFileSync(`${folder}/tasks/instance-container-phase.yml`,
     stringify(tasks).replaceAll("/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`));
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml",
+    "tasks/instance-container-power.yml",
     "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
@@ -825,6 +826,127 @@ Deno.test({
       assert(f.run("stop").ok);
       assert(!f.run("process", { ORBIT_PROCESS_ACTION: "restart" }).ok);
       assertEquals(f.result(), { error_code: "process.target_inactive" });
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+/** A sleeping container behind its asleep marker, and the calls of the start that follows. */
+function asleep(f: ReturnType<typeof fixture>, container: Partial<{ web: number[]; t3: boolean }>) {
+  const marker = `${f.folder}/hibernation/app-instance-7.asleep`;
+  Deno.mkdirSync(`${f.folder}/hibernation`, { recursive: true });
+  assert(f.run("container").ok);
+  assert(f.run("stop").ok);
+  Deno.writeTextFileSync(marker, "");
+  const state = f.state();
+  state.containers["instance-7"] = { ...state.containers["instance-7"], ...container };
+  Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+  const before = Deno.readTextFileSync(`${f.folder}/calls`).split("\n").length;
+  const webChecks = () => Deno.readTextFileSync(`${f.folder}/calls`).split("\n").slice(before - 1)
+    .filter((line) => line.includes("http://127.0.0.1:8080/")).length;
+  const present = () => { try { return Deno.statSync(marker).isFile; } catch { return false; } };
+  return { marker, webChecks, present };
+}
+
+Deno.test({
+  name: "a deployment's start and restore-start (no marker in the intent) do no web wait and no marker work",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const sleeping = asleep(f, { web: [200] });
+      // The deploy and the nested-fleet restore run the same `start` part with an intent that names no marker.
+      const result = f.run("start");
+      assert(result.ok, result.output);
+      assert(sleeping.present());
+      assertEquals(sleeping.webChecks(), 0);
+      assert(/Mark the woken Instance awake.*\n.*skipping/.test(result.output), result.output);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a wake's start removes the marker once the app answers, waits a short time through 5xx, and keeps it when the web unit never answers",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      // A web unit that listens before the app: two 5xx answers, then the app. The marker stays until the app answers.
+      let sleeping = asleep(f, { web: [502, 503, 200] });
+      Object.assign(f.intent, { marker: sleeping.marker, web: { port: 8080, ready_seconds: 3, settle_seconds: 4 } });
+      f.write();
+      const woken = f.run("start");
+      assert(woken.ok, woken.output);
+      assert(!sleeping.present());
+      assertEquals(sleeping.webChecks(), 3);
+
+      // An app that answers 500 by itself is served as it is once the settle time ends.
+      sleeping = asleep(f, { web: [500] });
+      const broken = f.run("start");
+      assert(broken.ok, broken.output);
+      assert(!sleeping.present());
+      // The first answer, then the settle wait's first try and its 4 retries.
+      assertEquals(sleeping.webChecks(), 6);
+
+      // No answer at all keeps the marker.
+      sleeping = asleep(f, {});
+      const state = f.state();
+      delete state.containers["instance-7"].web;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const silent = f.run("start");
+      assert(!silent.ok, silent.output);
+      assertEquals(f.result(), { error_code: "instance.web_unready" });
+      assert(sleeping.present());
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a wake's start removes the marker before the T3 wait: a silent T3 fails the wake while the site serves",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      (f.container as Record<string, unknown>).clone = { t3: { internal_port: 3773, ready_seconds: 1, unit: "t3.service" } };
+      let sleeping = asleep(f, { web: [200], t3: false });
+      Object.assign(f.intent, { marker: sleeping.marker, web: { port: 8080, ready_seconds: 3, settle_seconds: 4 } });
+      f.write();
+      const silent = f.run("start");
+      assert(!silent.ok, silent.output);
+      assertEquals(f.result(), { error_code: "instance.t3_unready" });
+      assert(!sleeping.present());
+
+      sleeping = asleep(f, { web: [200], t3: true });
+      const woken = f.run("start");
+      assert(woken.ok, woken.output);
+      assert(!sleeping.present());
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a wake's start of a Project without a web unit removes the marker without a web wait",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.units = [];
+      (f.container as Record<string, unknown>).web_config = null;
+      f.write();
+      const sleeping = asleep(f, {});
+      Object.assign(f.intent, { marker: sleeping.marker, web: { port: 8080, ready_seconds: 3, settle_seconds: 4 } });
+      f.write();
+      const woken = f.run("start");
+      assert(woken.ok, woken.output);
+      assert(!sleeping.present());
+      assertEquals(sleeping.webChecks(), 0);
     } finally {
       f.cleanup();
     }

@@ -15,7 +15,14 @@ final readonly class RuntimeActivationPage
 
     public const string STATE_FAILED = 'failed';
 
-    public const int POLL_INTERVAL_SECONDS = 1;
+    /** The page polls its path four times a second, so the app loads within 250 ms of its wake. */
+    public const int POLL_INTERVAL_MS = 250;
+
+    /** HTTP's Retry-After takes whole seconds; a client without the page's script asks again after one. */
+    public const int RETRY_AFTER_SECONDS = 1;
+
+    /** The second line shows when a wake takes longer than this. */
+    public const int SLOW_AFTER_SECONDS = 10;
 
     private const string MARK_PATH = 'M50 25C77.6143 25 100 36.1929 100 50C99.9996 63.8069 77.614 75 50 75C22.386 75 0.000366987 63.8069 0 50C0 36.1929 22.3858 25 50 25ZM49.7764 32.0107C32.7857 32.0108 15.7344 38.9923 15.7344 46.9102C15.7346 54.8279 28.3485 61.2461 49.5654 61.2461C70.7823 61.2461 83.3962 54.8279 83.3965 46.9102C83.3965 38.9923 66.7672 32.0107 49.7764 32.0107Z';
 
@@ -60,7 +67,8 @@ final readonly class RuntimeActivationPage
                 'refreshUri' => $uri,
                 'retryUri' => $this->retryUri($uri),
                 'scriptNonce' => $scriptNonce,
-                'pollIntervalMs' => self::POLL_INTERVAL_SECONDS * 1000,
+                'pollIntervalMs' => self::POLL_INTERVAL_MS,
+                'slowAfterSeconds' => self::SLOW_AFTER_SECONDS,
                 'activationStateHeader' => self::ACTIVATION_STATE_HEADER,
                 'pendingState' => self::STATE_PENDING,
                 'keyframes' => $this->keyframes(),
@@ -78,7 +86,7 @@ final readonly class RuntimeActivationPage
             ->header('X-Robots-Tag', 'noindex, nofollow');
 
         if (! $failed) {
-            $response->header('Retry-After', (string) self::POLL_INTERVAL_SECONDS);
+            $response->header('Retry-After', (string) self::RETRY_AFTER_SECONDS);
         }
 
         return $response;

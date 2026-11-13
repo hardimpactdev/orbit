@@ -218,7 +218,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 3559
+cost = 3742
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -229,8 +229,8 @@ after_merge_cases = [
 # Each retained case cost is the 90th percentile of its completed hosted PR times across the runs listed in
 # docs/reference/implementation-loop.md (2026-11-13), rounded up plus one second; startup is added per slice.
 # Cases with fewer than five hosted runs keep an estimate. The 190-second shard deadline is the headroom above p90.
-# 62 slices give each of the 62 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 62
+# 66 slices give each of the 66 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 66
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -270,6 +270,10 @@ inputs = [
   "a new Process that does not start fails the deployment's processes phase, which names its unit" = 97 # ESTIMATE: local 32s x 3, plus 1s
   "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file" = 126 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 78.4-131.6s
   "a Process's start, stop and restart change its unit in the container" = 99 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 64.5-98.4s
+  "a deployment's start and restore-start (no marker in the intent) do no web wait and no marker work" = 25 # ESTIMATE: local 11s x 2.1, rounded up, plus 1s
+  "a wake's start removes the marker once the app answers, waits a short time through 5xx, and keeps it when the web unit never answers" = 83 # ESTIMATE: local 39s x 2.1, rounded up, plus 1s
+  "a wake's start removes the marker before the T3 wait: a silent T3 fails the wake while the site serves" = 50 # ESTIMATE: local 23s x 2.1, rounded up, plus 1s
+  "a wake's start of a Project without a web unit removes the marker without a web wait" = 25 # ESTIMATE: local 11s x 2.1, rounded up, plus 1s
   "a clone runs its own Process units: the default's units and folders from the seed go, and its own start" = 116 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 70.1-118.2s
   "a clone's first boot starts no unit of the default and the clone has its own machine-id" = 117 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 85.6-118.1s
   "the workspace stays writable for its group before and after the deploy steps, whoever installed last" = 77 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 44.7-76.6s
@@ -998,7 +1002,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_power_test.ts"
-cost = 9
+cost = 4
 # Local Deno case times on Beast rounded up by one second; not CI measurements.
 slices = 1
 inputs = [
@@ -1014,9 +1018,8 @@ inputs = [
 ]
 
 [fixture.case_costs]
-  "each sleep and wake step runs its charted part with the shipped Ansible settings" = 1
+  "each sleep and wake step runs its charted part with the shipped Ansible settings; the wake is one playbook" = 1
   "a sleep writes the marker once Caddy's loaded site has the check, and refuses without changing anything when it lacks it" = 3
-  "a wake removes the marker after T3 answers in a clone, keeps it when T3 stays silent, and needs no T3 in a default" = 5
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_egress_test.py"

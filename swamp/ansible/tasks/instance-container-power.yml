@@ -1,5 +1,6 @@
 ---
-# The parts of instance-container-power.yml. `power` is `asleep` (before a sleep's stop) or `awake` (after a wake's start).
+# The asleep marker's tasks. `power` is `asleep` (instance-container-power.yml, before a sleep's stop) or `awake` (the end of a wake's
+# `start` part of instance-container.yml, which includes this file when its intent names the marker).
 
 # Caddy's site of a container Instance checks the marker only once a publish of the Node's sites rendered the check. A marker without
 # the check would leave the Route proxying to a stopped container, so the sleep refuses before it changes anything.
@@ -32,9 +33,53 @@
     group: "{{ marker_group }}"
     mode: "0644"
 
-# The start part waited for every desired-running unit. A clone's T3 answers on its environment endpoint once it serves.
+# A wake's start (instance-container.yml, `start` with the marker in the intent) waited for every desired-running unit. FrankenPHP
+# then answers once it listens: `intent.web.ready_seconds` tries 1 s apart, each bounded by curl's own 2 s. Only no answer at all
+# refuses the wake. A Project without a web unit has nothing to wait for.
+- name: Wait for the web unit to answer
+  when: power == 'awake' and container.web_config | default(none) is not none
+  ansible.builtin.command:
+    argv: &web_probe >-
+      {{ ['incus', 'exec', '--project', container.project, container.name, '--',
+          'curl', '--silent', '--output', '/dev/null', '--write-out', '%{http_code}', '--max-time', '2',
+          'http://127.0.0.1:' ~ intent.web.port ~ '/'] }}
+  register: web_ready
+  until: web_ready.rc == 0 and web_ready.stdout | int > 0
+  retries: "{{ intent.web.ready_seconds }}"
+  delay: 1
+  changed_when: false
+  failed_when: false
+
+- name: Refuse a wake whose web unit did not answer
+  when: power == 'awake' and container.web_config | default(none) is not none
+  ansible.builtin.assert:
+    that: [web_ready.rc == 0, web_ready.stdout | int > 0]
+    fail_msg: instance.web_unready
+    quiet: true
+
+# A web unit that listens before the app is ready answers 5xx for a moment: the visitor keeps the waiting page through it, up to
+# `intent.web.settle_seconds`. An app that answers 5xx by itself (maintenance mode, an error on `/`) is then served as it is.
+- name: Wait for the app behind the web unit
+  when: power == 'awake' and container.web_config | default(none) is not none and web_ready.stdout | int >= 500
+  ansible.builtin.command:
+    argv: *web_probe
+  register: app_ready
+  until: app_ready.rc == 0 and app_ready.stdout | int > 0 and app_ready.stdout | int < 500
+  retries: "{{ intent.web.settle_seconds }}"
+  delay: 1
+  changed_when: false
+  failed_when: false
+
+# Caddy sends the next request to the app. The visitor does not wait for T3.
+- name: Remove the asleep marker
+  when: power == 'awake'
+  ansible.builtin.file:
+    path: "{{ marker }}"
+    state: absent
+
+# T3 gates only the end of the wake: a clone whose T3 stays silent ends failed while its site already serves.
 - name: Wait for T3
-  when: power == 'awake' and container.clone is not none
+  when: power == 'awake' and container.clone | default(none) is not none
   ansible.builtin.command:
     argv: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', '/home/agent', '--env', 'HOME=/home/agent', container.name,
@@ -49,15 +94,8 @@
   failed_when: false
 
 - name: Refuse a wake whose T3 did not answer
-  when: power == 'awake' and container.clone is not none
+  when: power == 'awake' and container.clone | default(none) is not none
   ansible.builtin.assert:
     that: [t3_ready.rc == 0]
     fail_msg: instance.t3_unready
     quiet: true
-
-# After T3 and the Processes run: Caddy sends the next request to the app.
-- name: Remove the asleep marker
-  when: power == 'awake'
-  ansible.builtin.file:
-    path: "{{ marker }}"
-    state: absent

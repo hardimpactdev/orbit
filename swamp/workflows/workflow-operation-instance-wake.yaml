@@ -1,6 +1,6 @@
 id: 2d0e5e38-2784-42df-9092-377969d45ad9
 name: operation-instance-wake
-description: Start a sleeping development container, wait for its units and T3, then remove its asleep marker.
+description: Start a sleeping development container, remove its asleep marker once the app answers, then wait for T3.
 queueTimeout: 10
 labels: {role: swamp}
 inputs:
@@ -28,7 +28,7 @@ jobs:
           inputs:
             intent: '${{ inputs.intent }}'
             path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
-      - name: Start the container
+      - name: Wake the container
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: input, condition: {type: succeeded}}]
@@ -38,26 +38,7 @@ jobs:
           behaviorName: '${{ "instance-wake-start-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
-            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start "$ORBIT_ANSIBLE/instance-container.yml"
-            env:
-              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-              ANSIBLE_FORCE_COLOR: '0'
-              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
-              ORBIT_RUN_ID: '${{ run.id }}'
-              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
-              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
-              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
-      - name: Mark the Instance awake
-        labels: {role: swamp}
-        writes: true
-        dependsOn: [{step: Start the container, condition: {type: succeeded}}]
-        task:
-          type: behavior
-          behaviorType: command/shell
-          behaviorName: '${{ "instance-wake-awake-" + string(inputs.node_id) }}'
-          methodName: execute
-          inputs:
-            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags awake "$ORBIT_ANSIBLE/instance-container-power.yml"
+            run: timeout 240 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start "$ORBIT_ANSIBLE/instance-container.yml"
             env:
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ANSIBLE_FORCE_COLOR: '0'
@@ -68,7 +49,7 @@ jobs:
               ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
       - name: result
         labels: {role: swamp}
-        dependsOn: [{step: Mark the Instance awake, condition: {type: always}}]
+        dependsOn: [{step: Wake the container, condition: {type: always}}]
         task:
           type: behavior
           behaviorType: command/shell

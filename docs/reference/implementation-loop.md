@@ -767,7 +767,7 @@ Clone branch fixtures use unprivileged local Git repositories and run without an
 
 The `instance:restore` workflow fixture evaluates every expression of `operation-instance-restore` against the input its projection renders. It needs no Node, database or playbook.
 
-The container fixture cases that deliver the Club key of a nested fleet carry estimated costs (local time × 2.1, rounded up, plus one second) until a hosted run measures them. The table marks each one `ESTIMATE`. The container fixture file is at its slice limit: a new case there splits a slice over its budget, so new Club key checks extend an existing case.
+The container fixture cases that deliver the Club key of a nested fleet carry estimated costs (local time × 2.1, rounded up, plus one second) until a hosted run measures them. The table marks each one `ESTIMATE`. The container fixture gives each retained case its own slice, 66 since the four cases of a wake's start (the web wait, the marker and the T3 wait), which also carry estimates. A new case there raises the slice count with it.
 
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise. The Ansible structure test also checks parsed command argument types before module validation can coerce them.
 

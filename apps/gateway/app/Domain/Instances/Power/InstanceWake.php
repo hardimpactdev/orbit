@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Power;
 
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -27,6 +28,24 @@ final readonly class InstanceWake extends InstancePower
     }
 
     protected function refuse(Instance $instance, InstanceRuntime $runtime): void {}
+
+    /**
+     * FrankenPHP's port in the container, how long the wake waits for it to answer, and how long a 5xx answer may last before the
+     * wake serves the app as it is: the marker goes once the app answers.
+     */
+    protected function intent(): array
+    {
+        return ['web' => ['port' => InstanceContainer::WebPort, 'ready_seconds' => 30, 'settle_seconds' => 5]];
+    }
+
+    /**
+     * A wake whose T3 stayed silent fails after the marker went: the container runs and its site serves the app, so the runtime
+     * records `running` (docs/reference/development-containers.md#sleep-and-wake).
+     */
+    protected function reached(Operation $operation): bool
+    {
+        return parent::reached($operation) || $operation->error_code === 'instance.t3_unready';
+    }
 
     protected function open(Instance $instance): ?Operation
     {

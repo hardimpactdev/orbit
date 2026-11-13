@@ -789,7 +789,13 @@ A sleeping Instance's container is stopped. It uses no memory; its disk, databas
 
 **The Route while asleep.** The Node's Caddy site of a container Instance checks for the asleep marker, `/data/caddy/orbit/hibernation/app-instance-<id>.asleep`. Without it, Caddy serves the request as before; the check is a file test on the Node and calls nothing. With it, Caddy calls the [runtime activation endpoint](/reference/app-dev-runtime-hibernation#wake), which shows the same progress page as for a checkout Instance and starts or joins the Instance's one `instance.wake`. A request with `X-Orbit-Probe: 1` skips the check. A failed wake keeps the marker, and the Route shows the failure page with Try again.
 
-The marker lives on disk, not in `/dev/shm`: a stopped container stays stopped after a host reboot, and so does its marker. A sleep writes the marker before it stops the container, and a wake removes it after T3 and the Processes run. A destroy removes the marker. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
+The marker lives on disk, not in `/dev/shm`: a stopped container stays stopped after a host reboot, and so does its marker. A sleep writes the marker before it stops the container.
+
+**The wake.** One Ansible run starts the container and waits until each running unit is active. Then it waits until FrankenPHP answers. A web unit that listens before the app is ready answers 5xx for a moment, so the run waits up to 5 more seconds for an answer below 500; an app that answers 5xx by itself is then served as it is. Then the run removes the marker, and the next request gets the app. A Project without a web unit has no web wait.
+
+Only then does the run wait up to 30 seconds for T3 in a clone: T3 gates the end of the Operation, not the visitor's page. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the Route shows the failure page.
+
+A destroy removes the marker. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
 
 The [agent development servers](#agent-development-servers) site on port 444 has no asleep check: on a sleeping clone it answers 502 until a visit to the Route wakes the Instance.
 
@@ -1448,7 +1454,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.migrate_process_binary_unavailable` | 409 | A moved Process needs an unavailable PHP version or executable path. The error names the Process and path; the checkout keeps serving |
 | `instance.migrate_<step>_failed` | 502 | A step of a move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before |
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
-| `instance.t3_unready` | 502 | The T3 server did not answer within 30 seconds of its first start in a clone |
+| `instance.t3_unready` | 502 | The T3 server did not answer within 30 seconds of its first start in a clone, or of a wake. After a wake, the app already serves |
+| `instance.web_unready` | 502 | FrankenPHP gave no answer within 30 seconds of a wake. The asleep marker stays |
 | `instance.clone_in_flight` | 409 | The refresh of a nested-fleet default while the create of a clone of it is open. The next release tries again |
 | `instance.fleet_key_on_disk` | 502 | The seed of a nested-fleet default found the Club key as a file on the container's disk. The run's first seed refuses before it changes anything |
 | `instance.fleet_seed_missing` | 502 | A failed refresh found no seed to restore. The default stays as the run left it |

@@ -809,6 +809,18 @@
   retries: 10
   delay: 1
 
+# A wake's start (only its intent names the asleep marker; a deployment's start and restore-start have none) ends in the same run:
+# once the web unit answers it removes the marker, then waits for T3 (docs/reference/development-containers.md#sleep-and-wake).
+- name: Mark the woken Instance awake
+  tags: [start]
+  when: phase == 'start' and intent.marker is defined
+  ansible.builtin.include_tasks:
+    file: tasks/instance-container-power.yml
+    apply: {tags: [always]}
+  vars:
+    power: awake
+    marker: "{{ intent.marker }}"
+
 # Only migration holds cutover for a stable Process. Create, deploy, start and direct process.* keep their own checks.
 - name: Check each moved running Process before cutover
   tags: [processes]
