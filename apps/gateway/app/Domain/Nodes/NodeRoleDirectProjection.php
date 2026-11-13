@@ -21,6 +21,14 @@ use Illuminate\Support\Facades\DB;
 /** Role assignment and footprint state only. The original native root owns every effect. */
 final readonly class NodeRoleDirectProjection implements DirectOperationProjection, NativeOperationProjection
 {
+    /**
+     * The run's steps that only read the Node. A run that fails at one of them has changed nothing on the Node,
+     * because every later step depends on them. Keep this list in step with `operation-node-role-add`.
+     *
+     * @var list<string>
+     */
+    private const array StepsBeforeNodeChange = ['Read the OS release', 'Require supported Ubuntu'];
+
     public function native(Operation $operation): bool
     {
         return true;
@@ -92,8 +100,9 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
                         ['node_id' => $operation->node_id, 'artifacts' => $entries], ['footprint_proven' => false], $applied);
                 }
             } else {
-                $assignment->markConvergenceFailed(ValidatedData::string($result['failed_step'] ?? 'operation'),
-                    ValidatedData::string($result['error_code'] ?? 'node_role.convergence_failed'));
+                $failedStep = ValidatedData::string($result['failed_step'] ?? 'operation');
+                $assignment->markConvergenceFailed($failedStep, ValidatedData::string($result['error_code'] ?? 'node_role.convergence_failed'),
+                    nodeUntouched: $data['status'] === 'failed' && in_array($failedStep, self::StepsBeforeNodeChange, true));
             }
             app(RecordEventBroadcaster::class)->broadcast(RecordEventType::NodeUpdated, $assignment->node_id,
                 NodeData::fromModel($assignment->node->refresh())->toArray());

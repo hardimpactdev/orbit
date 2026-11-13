@@ -648,6 +648,7 @@ jobs:
   dependsOn:
   - {job: analytics, condition: &analytics_settled {type: or, conditions: [{type: completed}, {type: skipped}]}}
   - {job: readiness, condition: *analytics_settled}
+  - {job: phase_1, condition: {type: succeeded}}
   steps:
   - name: Remove init containers
     labels: {role: swamp}
