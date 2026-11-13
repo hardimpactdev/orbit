@@ -8,6 +8,8 @@ use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
+use Illuminate\Queue\CallQueuedClosure;
+use Illuminate\Support\Facades\Queue;
 
 /** A read connection that serve can close while it sits idle: it still looks open, and the next send fails. */
 function staleSocket(): WebSocketClient
@@ -80,13 +82,30 @@ function readHistory(): array
 
 afterEach(fn () => app(SwampConnection::class)->release());
 
-it('keeps one connection for reads that follow each other', function (): void {
+it('keeps one connection for two reads inside one queue job', function (): void {
     $socket = staleSocket();
 
-    readHistory();
-    readHistory();
+    Queue::connection('sync')->push(CallQueuedClosure::create(static function (): void {
+        readHistory();
+        readHistory();
+    }));
 
     expect($socket->connects)->toBe(1)->and($socket->sends)->toBe(2);
+});
+
+it('closes the earlier job socket before the next job starts in the same process', function (): void {
+    $socket = staleSocket();
+    Queue::connection('sync')->push(CallQueuedClosure::create(static function (): void {
+        readHistory();
+    }));
+    $socket->stale = true;
+
+    Queue::connection('sync')->push(CallQueuedClosure::create(static function (): void {
+        expect(app(WebSocketClient::class)->isConnected())->toBeFalse();
+        expect(readHistory()['data'])->toBe(['ok' => true]);
+    }));
+
+    expect($socket->connects)->toBe(2)->and($socket->sends)->toBe(2);
 });
 
 it('reads on a new connection when the kept one was closed while idle', function (): void {

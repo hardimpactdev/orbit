@@ -8,12 +8,21 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
+use App\Infrastructure\Swamp\SwampConnection;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\ServiceProvider;
 use Psr\Log\LoggerInterface;
 
 final class OperationsServiceProvider extends ServiceProvider
 {
+    public function boot(): void
+    {
+        Queue::before(static function (): void {
+            app(SwampConnection::class)->release();
+        });
+    }
+
     public function register(): void
     {
         $this->app->singleton(OperationKinds::class);

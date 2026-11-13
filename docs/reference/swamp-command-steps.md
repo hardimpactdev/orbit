@@ -5,6 +5,7 @@ covers:
   - apps/gateway/app/Domain/Proof/direct-operations.php
   - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,NativeStepFailure,SwampConnection,SwampDispatch,SwampTerminalReadUnavailable,SwampTerminalOutputUnavailable}.php
   - apps/gateway/app/Jobs/Operations/ReconcileSwampOperations.php
+  - apps/gateway/app/Providers/Domains/OperationsServiceProvider.php
   - apps/gateway/app/Domain/Operations/DirectOperationChildProjection.php
 ---
 
@@ -75,7 +76,7 @@ A successful run requires its public JSON object; a kind without a result step d
 
 Missing, mismatched or unreadable history leaves the Operation unchanged and raises `swamp.terminal_result_unavailable`; it never triggers resubmission. When Serve cannot be read at all (the connection fails, Serve rate-limits the request, or no reply comes), the queued projection retries with exponential backoff and equal jitter (30–60 seconds initially, capped at 300 seconds) until the kind's run deadline. A missing, mismatched or still-running history is not retried.
 
-Queued projection explicitly fails on permanent or unexpected errors, including a stale binding or missing Operation; unlimited attempts apply only to the delayed transport retry, never automatic exception retries. Direct invocation still raises the error. Terminal reads reuse the admission connection owner's endpoint-and-authority matching across jobs in each PHP process. A failed request drops the connection; replies still match the exact request ID.
+Queued projection explicitly fails on permanent or unexpected errors, including a stale binding or missing Operation; unlimited attempts apply only to the delayed transport retry, never automatic exception retries. Direct invocation still raises the error. Terminal reads reuse the admission connection owner's endpoint-and-authority matching within one job. A failed request drops the connection; replies still match the exact request ID.
 
 ### Read Swamp's run data instead of a result step
 
@@ -146,7 +147,11 @@ The pass has no retry, backoff or per-Operation job. Only one pass runs at a tim
 
 ### Kept read connection
 
-Each PHP process keeps one read connection to serve and reuses it across jobs. Serve can close that connection while it sits idle, and PHP cannot see this before the connection is used. The first read on a kept connection then fails on a dead socket.
+Before each queue job, the Gateway closes the kept Swamp read connection from earlier work in that PHP process. Reads within one job still share one connection. A job never starts a read on an earlier job's idle socket. This applies to every queue, including the operations worker that runs starts, reconciliation and scheduled-result projection.
+
+Each reading job now opens its own connection. A burst of scheduled-result jobs can exceed serve's shared 50-handshake limit per fixed minute. One worker serializes these jobs but does not limit their rate; the existing handshake retry and connect deadline still apply. There is no new throttle.
+
+This boundary does not change the 15-second connect budget, 30-second reply budget or retry rule below. Short PHP HTTP requests and one-shot commands release their sockets when they end. The long-running native event observer uses its own connection and keeps receiving events and answering pings.
 
 When a read fails on a kept connection, the Gateway drops it and sends the same read once on a new connection. Every read in this file is idempotent. A read that fails on a new connection is final. The error keeps the exception that caused it as its previous exception, so the Gateway log names the cause. A reply that does not match its request is never sent again.
 
