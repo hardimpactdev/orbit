@@ -28,7 +28,7 @@ orbit instance:sleep 42 --json
 | `--idempotency-key=KEY` | Reuse a key to retry this operation start. |
 | `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
 
-Orbit first writes the asleep marker on the Node. From then on, each request to the Route gets the wake page. Then Orbit stops the container. A visit to the Route, or [`instance:wake`](/cli/instance/wake), starts it again.
+Orbit first writes the asleep marker on the Node. From then on, each request to the Route gets the wake page. Then Orbit stops the container. A visit to the Route, or [`instance:wake`](/cli/instance/wake), starts it again. The wake removes the marker as soon as the app answers, before it waits for T3.
 
 The Instance must be a development container that is not its Project's default and not a nested-fleet Instance. No other lifecycle work and no task may run in it.
 

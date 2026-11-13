@@ -26,7 +26,8 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Sleep and wake of a development container (docs/reference/development-containers.md#sleep-and-wake). The sleep stops the whole
- * container behind the asleep marker; the wake starts it and removes the marker. Each terminal success records `power_state`.
+ * container behind the asleep marker; the wake starts it and removes the marker. Each terminal success records `power_state`, and so
+ * does a wake that ends after the container started and its site serves.
  */
 abstract readonly class InstancePower implements DirectOperationProjection
 {
@@ -41,6 +42,18 @@ abstract readonly class InstancePower implements DirectOperationProjection
     protected function result(): array
     {
         return ['power_state' => $this->powerState()->value];
+    }
+
+    /** @return array<string, array<string, int>> The kind's own intent beside the container and the marker. */
+    protected function intent(): array
+    {
+        return [];
+    }
+
+    /** Whether the ended Operation leaves the container in this kind's power state: a success always does. */
+    protected function reached(Operation $operation): bool
+    {
+        return $operation->status === OperationStatus::Succeeded;
     }
 
     /** The asleep marker on the Instance's Node; Caddy's site of a container Instance reads it. */
@@ -76,7 +89,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
             $this->refuse($instance, $runtime);
 
             return app(StartOperationAction::class)->execute($this->kind(), 'instance', $instance->id, $instance->node_id,
-                ['container' => app(InstanceContainer::class)->intent($instance, $runtime), 'marker' => self::markerPath($instance)],
+                ['container' => app(InstanceContainer::class)->intent($instance, $runtime), 'marker' => self::markerPath($instance), ...$this->intent()],
                 $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
         });
     }
@@ -111,7 +124,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
             $operation = app(DirectOperation::class)->project($operation,
                 [...$data, 'error_code' => $succeeded ? null : ($phase['error_code'] ?? $data['error_code'] ?? null)],
                 $succeeded ? $this->result() : array_intersect_key($phase, ['error_code' => true]));
-            if ($operation->status === OperationStatus::Succeeded) {
+            if ($this->reached($operation)) {
                 InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => $this->powerState()]);
             }
 

@@ -1,4 +1,5 @@
-/** The asleep marker parts of a container's sleep and wake, run by real Ansible against the Incus fixture, and the shipped step expressions. */
+/** The asleep marker part of a container's sleep, run by real Ansible against the Incus fixture, and the shipped sleep and wake step expressions.
+ * A wake's marker work runs in its `start` part: ansible_instance_container_test.ts. */
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
@@ -11,14 +12,14 @@ const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn
 const shipped = new URL("../ansible/", import.meta.url).pathname.replace(/\/$/, "");
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 
-Deno.test("each sleep and wake step runs its charted part with the shipped Ansible settings", () => {
+Deno.test("each sleep and wake step runs its charted part with the shipped Ansible settings; the wake is one playbook", () => {
     const context = { inputs: { node_id: 9, intent: {} }, steps: { input: { status: "succeeded", outputs: { assets: shipped } } }, run: { id: runId } };
     const evaluate = (value: string) => value.startsWith("${{") ? String(cel.evaluate(value.slice(3, -2).trim(), context)) : value;
     for (const [kind, parts] of [["sleep", [["Mark the Route asleep", "--tags asleep", "instance-container-power.yml"], ["Stop the container", "--tags stop", "instance-container.yml"]]],
-        ["wake", [["Start the container", "--tags start", "instance-container.yml"], ["Mark the Instance awake", "--tags awake", "instance-container-power.yml"]]]] as const) {
+        ["wake", [["Wake the container", "--tags start", "instance-container.yml"]]]] as const) {
         const all = steps(kind);
-        assertEquals(all.map((step) => step.name), ["input", parts[0][0], parts[1][0], "result", "cleanup"]);
-        assertEquals(all[2].dependsOn?.[0].step, parts[0][0]);
+        assertEquals(all.map((step) => step.name), ["input", ...parts.map((part) => part[0]), "result", "cleanup"]);
+        assertEquals(all[parts.length + 1].dependsOn?.[0].step, parts.at(-1)![0]);
         for (const [name, tags, playbook] of parts) {
             const step = all.find((candidate) => candidate.name === name)!;
             assert(step.task.inputs.run!.includes(`${tags} "$ORBIT_ANSIBLE/${playbook}"`), name);
@@ -38,7 +39,7 @@ const group = new TextDecoder().decode(new Deno.Command("id", { args: ["-gn"] })
 
 /** One part of instance-container-power.yml with a Caddy admin answer and, for a clone, a T3 that serves or not (the fixture's T3). */
 async function part(
-    tag: "asleep" | "awake",
+    tag: "asleep",
     options: { caddy?: string; t3?: boolean; clone?: boolean; marker?: boolean },
 ): Promise<{ ok: boolean; output: string; result: Record<string, unknown>; marker: boolean }> {
     const folder = Deno.makeTempDirSync();
@@ -95,20 +96,4 @@ Deno.test({ name: "a sleep writes the marker once Caddy's loaded site has the ch
     assert(!unready.ok, unready.output);
     assertEquals(unready.result, { error_code: "instance.sleep_route_unready" });
     assert(!unready.marker);
-} });
-
-Deno.test({ name: "a wake removes the marker after T3 answers in a clone, keeps it when T3 stays silent, and needs no T3 in a default", ignore: !available, async fn() {
-    const clone = await part("awake", { t3: true, marker: true });
-    assert(clone.ok, clone.output);
-    assertEquals(clone.result, {});
-    assert(!clone.marker);
-
-    const silent = await part("awake", { t3: false, marker: true });
-    assert(!silent.ok, silent.output);
-    assertEquals(silent.result, { error_code: "instance.t3_unready" });
-    assert(silent.marker);
-
-    const defaultWake = await part("awake", { clone: false, marker: true });
-    assert(defaultWake.ok, defaultWake.output);
-    assert(!defaultWake.marker);
 } });

@@ -1,9 +1,8 @@
 ---
-# The asleep marker of a development container (docs/reference/development-containers.md#sleep-and-wake). One tagged part per Swamp
-# phase; the container's own stop and start are the `stop` and `start` parts of instance-container.yml.
+# The asleep marker of a development container before a sleep (docs/reference/development-containers.md#sleep-and-wake). The
+# container's own stop is the `stop` part of instance-container.yml; a wake's `start` part there removes the marker itself.
 #   asleep: check that Caddy's loaded site of the Instance has the asleep check, then write the marker, before the stop.
-#   awake: after the start, wait for T3 in a clone, then remove the marker.
-# Each part writes `result.json` in the run folder: `{}`, or the public error code of its refusal.
+# It writes `result.json` in the run folder: `{}`, or the public error code of its refusal.
 - name: Pin the Node and address it
   hosts: localhost
   connection: local
@@ -20,7 +19,7 @@
     - name: Address the Node
       ansible.builtin.import_tasks: tasks/address-node.yml
 
-- name: Mark the container asleep or awake
+- name: Mark the container asleep
   hosts: container_node
   gather_facts: false
   become: true

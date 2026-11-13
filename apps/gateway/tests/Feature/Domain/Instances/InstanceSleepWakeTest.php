@@ -130,8 +130,26 @@ it('keeps the power state after a failed sleep or wake, with the phase error cod
         ->and($clone->runtime()->firstOrFail()->power_state->value)->toBe($state);
 })->with([
     ['sleep', 'running', 'instance.sleep_route_unready'],
-    ['wake', 'stopped', 'instance.t3_unready'],
+    ['wake', 'stopped', 'instance.container_start_failed'],
+    ['wake', 'stopped', 'instance.web_unready'],
 ]);
+
+/** The wake removed the marker once the app answered; only T3 stayed silent. */
+it('records a wake whose T3 stayed silent as failed but running, because the container runs and its site serves', function (): void {
+    $clone = sleepingClone();
+    $clone->runtime()->update(['power_state' => 'stopped']);
+    powerRun(app(InstanceSleep::class)->start($clone, null, null), 'succeeded');
+
+    $wake = app(InstanceWake::class)->start($clone, null, null);
+    expect($wake->input['web'])->toBe(['port' => InstanceContainer::WebPort, 'ready_seconds' => 30, 'settle_seconds' => 5])
+        ->and($wake->input['marker'])->toBe(InstanceWake::markerPath($clone));
+
+    $operation = powerRun($wake, 'failed', ['error_code' => 'instance.t3_unready']);
+
+    expect($operation->status->value)->toBe('failed')
+        ->and($operation->error_code)->toBe('instance.t3_unready')
+        ->and($clone->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Running);
+});
 
 it('admits one wake per Instance, which a second caller joins, and records it awake', function (): void {
     $clone = sleepingClone();
@@ -166,7 +184,8 @@ it('starts one wake from Route visits behind the asleep marker, shows the failur
     $clone->runtime()->update(['power_state' => 'stopped']);
     powerRun(app(InstanceSleep::class)->start($clone, null, null), 'succeeded');
 
-    activationPoll($clone, '/dashboard')->assertStatus(401)->assertHeader('X-Orbit-Runtime-Activation-State', 'pending');
+    activationPoll($clone, '/dashboard')->assertStatus(401)->assertHeader('X-Orbit-Runtime-Activation-State', 'pending')
+        ->assertHeader('Retry-After', '1')->assertSee('Waking '.$clone->project->name.'…')->assertSee('This takes a few seconds.');
     activationPoll($clone, '/dashboard')->assertStatus(401)->assertHeader('X-Orbit-Runtime-Activation-State', 'pending');
 
     $wakes = Operation::query()->where('kind', InstanceWake::Kind)->get();
@@ -175,7 +194,7 @@ it('starts one wake from Route visits behind the asleep marker, shows the failur
     powerRun($wakes->sole(), 'failed', ['error_code' => 'instance.container_start_failed']);
 
     activationPoll($clone, '/dashboard')->assertStatus(503)->assertHeader('X-Orbit-Runtime-Activation-State', 'failed')
-        ->assertSee('instance.container_start_failed');
+        ->assertSee('The wake failed (instance.container_start_failed). Try again.')->assertSee('Try again')->assertDontSee('Waking');
     expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1);
 
     activationPoll($clone, '/dashboard?orbit-wake-retry=1')->assertStatus(401);

@@ -345,6 +345,15 @@ if (family === "list") {
   // T3 in the container: its well-known document once started, sessions it issues and knows, and the project it adds.
   if (command[0] === "curl") {
     const url = command.at(-1)!;
+    // FrankenPHP on the web port: `web` lists the status of each answer in turn and keeps its last; none means it does not listen.
+    if (url.startsWith("http://127.0.0.1:8080/")) {
+      const web: number[] = state.containers[name].web ?? [];
+      if (web.length === 0) Deno.exit(7);
+      const status = web.length > 1 ? web.shift()! : web[0];
+      save();
+      Deno.stdout.writeSync(new TextEncoder().encode(String(status)));
+      Deno.exit(0);
+    }
     if (!state.containers[name].t3) Deno.exit(7);
     if (url.endsWith("/.well-known/t3/environment")) {
       console.log(JSON.stringify({ environmentId: `env-${name}`, label: "t3", serverVersion: "0.1.7" }));

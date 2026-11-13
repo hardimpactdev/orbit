@@ -170,6 +170,21 @@ describe('host-checkout Vite wake', function (): void {
         assertRecordedWakePort($instance);
     })->with(['vite.check-listener', 'vite.select-port', 'vite.set-traffic', 'process.control', 'process.status']);
 
+    it('says in words that the Instance wakes, polls every 250 ms and keeps the status, headers and failure page', function (): void {
+        [$instance, $state] = hibernatedViteCheckout();
+        // The recorded port is taken, so the wake that the first poll starts fails and the next poll gets the failure page.
+        $state->busy = true;
+
+        $page = viteWakePoll($instance)->assertUnauthorized()->assertHeader('Retry-After', '1')
+            ->assertHeader('X-Orbit-Runtime-Activation-State', 'pending')
+            ->assertSee('<p class="status">Waking Wake fixture…</p>', false)
+            ->assertSee('<p class="slow">This takes a few seconds.</p>', false);
+        expect($page->getContent())->toContain('const intervalMs = 250;', 'animation: orbit-slow 0s linear 10s forwards;');
+
+        viteWakePoll($instance)->assertServiceUnavailable()->assertHeader('X-Orbit-Runtime-Activation-State', 'failed')
+            ->assertSee('The recorded port 5173 is not available')->assertHeaderMissing('Retry-After')->assertSee('Try again')->assertDontSee('Waking');
+    });
+
     it('removes the explicit retry flag from subsequent page polls', function (): void {
         [$instance, $state] = hibernatedViteCheckout();
         $state->busy = true;
