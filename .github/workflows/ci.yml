@@ -367,6 +367,8 @@ jobs:
 
   docs:
     name: Docs build
+    outputs:
+      body_sha256: ${{ steps.docs-body.outputs.sha256 }}
     permissions:
       contents: read
       pull-requests: read
@@ -399,6 +401,7 @@ jobs:
           composer docs-build
           composer docs-lint
       - name: Require documentation updates or visible PR acknowledgements
+        id: docs-body
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -417,6 +420,9 @@ jobs:
           Path(os.environ['RUNNER_TEMP'], 'docs-impact-pr-body.txt').write_text(pr['body'] or '')
           PYTHON
           bin/docs-impact --gate --base HEAD^1 --pr-body-file "$RUNNER_TEMP/docs-impact-pr-body.txt"
+          digest=$(sha256sum "$RUNNER_TEMP/docs-impact-pr-body.txt" | cut -d' ' -f1)
+          echo "Docs body SHA256: $digest"
+          echo "sha256=$digest" >> "$GITHUB_OUTPUT"
       - name: Run the complete Docs Pest suite
         working-directory: apps/docs
         env:
@@ -468,6 +474,10 @@ jobs:
 
   web:
     name: Web build
+    outputs:
+      artifact_id: ${{ steps.web-artifact.outputs.artifact-id }}
+      artifact_digest: ${{ steps.web-artifact.outputs.artifact-digest }}
+      artifact_attempt: ${{ steps.web-attempt.outputs.attempt }}
     needs: changes
     if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['web']) != 'false' }}
     runs-on: ubuntu-26.04
@@ -500,15 +510,20 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Build
         run: bun run build && test -s dist/index.html && test -s dist/version.json
+      - name: Record web build attempt
+        id: web-attempt
+        run: echo "attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
       - name: Publish web build
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        id: web-artifact
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: web-dist-${{ github.sha }}
+          name: ${{ github.event_name == 'pull_request' && format('web-pr-{0}-{1}', github.run_id, github.run_attempt) || format('web-dist-{0}', github.sha) }}
           path: apps/web/dist
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
 
   pi:
     name: Pi check, test and build
@@ -583,11 +598,16 @@ jobs:
 
   changes:
     name: Select build inputs
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     outputs:
-      fixture_shards: ${{ steps.units.outputs.fixture_shards }}
-      fixture_capacity: ${{ steps.units.outputs.fixture_capacity }}
+      reuse: ${{ steps.reuse.outputs.reuse }}
+      fixture_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.fixture_shards }}
+      fixture_capacity: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.fixture_capacity }}
       jobs: ${{ steps.plan.outputs.jobs }}
       swamp_checks: ${{ steps.plan.outputs.swamp_checks }}
       gateway_release: ${{ steps.plan.outputs.gateway_release }}
@@ -599,7 +619,32 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Verify a green PR tree for main
+        id: reuse
+        if: github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 bin/ci-tree-receipt attempt "$RUNNER_TEMP/reused-web"
+      - name: Publish the verified web build for main
+        if: steps.reuse.outputs.reuse == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-dist-${{ github.sha }}
+          path: ${{ runner.temp }}/reused-web
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+      - name: Keep main tree evidence
+        if: steps.reuse.outputs.reuse == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: main-tree-receipt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/main-tree-receipt.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Check CI scope and import fixtures
+        if: steps.reuse.outputs.reuse != 'true'
         run: |
           python3 -m unittest discover -s tools -p 'test_ci_*.py'
           python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'
@@ -609,20 +654,33 @@ jobs:
         id: plan
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+          REUSE: ${{ steps.reuse.outputs.reuse }}
           MAIN: ${{ github.ref == 'refs/heads/main' }}
         run: |
+          if [ "$REUSE" = true ]; then
+            python3 - <<'PYTHON'
+          import json, os, runpy
+          jobs = runpy.run_path('bin/ci-build-plan')['JOBS']
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('jobs=' + json.dumps(dict.fromkeys(jobs, False)) + '\n')
+              output.write('gateway_release=true\nproof_run=false\nswamp_checks={}\n')
+          PYTHON
+            exit 0
+          fi
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
           args=()
           if [ "$MAIN" = true ]; then args+=(--main); fi
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then args+=(--pull-request); fi
           python3 bin/ci-build-plan --base "$BASE" --head "${{ github.event.pull_request.head.sha || github.sha }}" "${args[@]}" --proof-cases --proof-selection-output proof-selection.json --swamp-base --github-output "$GITHUB_OUTPUT"
       - name: Select fixture units
+        if: steps.reuse.outputs.reuse != 'true'
         id: units
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: bin/ci-units plan --base "$BASE" --head "$HEAD" --github-output "$GITHUB_OUTPUT" --plan-json ci-fixture-plan.json
       - name: Publish fixture plan
+        if: steps.reuse.outputs.reuse != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-fixture-plan
@@ -630,6 +688,7 @@ jobs:
           retention-days: 7
           if-no-files-found: error
       - name: Publish runner case selection
+        if: steps.reuse.outputs.reuse != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: proof-selection-${{ github.event.pull_request.head.sha || github.sha }}
@@ -840,6 +899,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Require builds, static checks and Gateway, CLI and SDK tests
         env:
@@ -872,6 +932,23 @@ jobs:
           import runpy
           runpy.run_path('bin/ci-delivery')['validate'](needs)
           PYTHON
+
+      - name: Record tested PR tree and release artifact
+        if: github.event_name == 'pull_request'
+        env:
+          DOCS_BODY_SHA256: ${{ needs.docs.outputs.body_sha256 }}
+          WEB_ID: ${{ needs.web.outputs.artifact_id }}
+          WEB_DIGEST: ${{ needs.web.outputs.artifact_digest }}
+          WEB_ATTEMPT: ${{ needs.web.outputs.artifact_attempt }}
+        run: python3 bin/ci-tree-receipt record "$RUNNER_TEMP/receipt.json"
+      - name: Publish tested PR tree evidence
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-tree-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/receipt.json
+          if-no-files-found: error
+          retention-days: 14
 
   delivery:
     name: Main delivery checks
@@ -920,7 +997,7 @@ jobs:
   fixture-report:
     name: Main fixture report
     needs: [changes, fixtures]
-    if: always() && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
+    if: always() && needs.changes.outputs.reuse != 'true' && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     permissions:

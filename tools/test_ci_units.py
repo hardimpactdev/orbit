@@ -766,7 +766,7 @@ class WorkflowTest(unittest.TestCase):
                      'bin/ci-units run', "if: steps.tools.outputs.php == 'true'", 'shape-gate-requirements.txt']:
             self.assertIn(text, block)
         self.assertNotIn('self-hosted', block)
-        self.assertIn('fixture_shards: ${{ steps.units.outputs.fixture_shards }}', source)
+        self.assertIn("fixture_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.fixture_shards }}", source)
         self.assertIn('bin/ci-units plan --base "$BASE" --head "$HEAD" --github-output "$GITHUB_OUTPUT"', source)
 
     def test_required_stays_red_when_whole_file_capacity_is_exceeded(self):

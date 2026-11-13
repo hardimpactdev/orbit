@@ -1,5 +1,6 @@
 """Keep fast required CI gates while slow jobs are paused."""
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -8,6 +9,12 @@ SOURCE = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
 
 
 class RequiredGateTest(unittest.TestCase):
+    def test_local_fixture_times_are_never_committed(self):
+        paths = subprocess.check_output([
+            'git', 'ls-files', '-z', '--', 'ci-unit-times.json', '**/ci-unit-times.json',
+        ], cwd=ROOT, text=True, timeout=10).strip('\0')
+        self.assertEqual(paths, '', 'ci-unit-times.json: this is a local run output; remove it')
+
     def test_main_push_dispatches_cli_release_after_delivery_without_a_variable_gate(self):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
         block = caller.split('  cli-release:\n', 1)[1]
@@ -59,8 +66,12 @@ class RequiredGateTest(unittest.TestCase):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
         for source in [caller.split('  changes:\n')[1].split('\n  swamp:\n')[0]]:
             self.assertIn("MAIN: ${{ github.ref == 'refs/heads/main' }}", source)
-        publish = caller.split('      - name: Publish web build\n')[1].split('\n')[0]
-        self.assertEqual(publish, "        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'")
+        import yaml
+        steps = yaml.safe_load(caller)['jobs']['web']['steps']
+        publish = next(s for s in steps if s.get('id') == 'web-artifact')
+        self.assertEqual(publish['if'], "github.event_name == 'pull_request' || github.ref == 'refs/heads/main'")
+        self.assertIn("format('web-dist-{0}', github.sha)", publish['with']['name'])
+        self.assertIn("format('web-pr-{0}-{1}', github.run_id, github.run_attempt)", publish['with']['name'])
 
     def test_slow_jobs_are_absent_from_required_ci(self):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()

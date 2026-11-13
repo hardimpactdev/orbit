@@ -1,0 +1,216 @@
+#!/usr/bin/env python3
+"""Reuse only a green PR's actual tested tree and digest-bound web build on main."""
+import argparse
+import hashlib
+import io
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import stat
+import subprocess
+import time
+import zipfile
+
+WORKFLOW = '.github/workflows/ci.yml'
+LIMIT = 128 * 1024 * 1024
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def sha256(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def git(value):
+    return subprocess.check_output(['git', 'rev-parse', value], text=True, timeout=5).strip()
+
+
+class GitHub:
+    def __init__(self, repository):
+        self.repository = repository
+        # Leave runner time for checkout and artifact upload. Failure uses normal CI.
+        self.deadline = time.monotonic() + 25
+
+    def raw(self, path):
+        left = self.deadline - time.monotonic()
+        require(left > 0, 'Receipt API budget exceeded')
+        return subprocess.check_output(['gh', 'api', f'repos/{self.repository}/{path}'],
+                                       timeout=min(left, 10))
+
+    def one(self, path):
+        return json.loads(self.raw(path))
+
+    def rows(self, path, key=None):
+        result = []
+        for page in range(1, 11):
+            data = self.one(path + ('&' if '?' in path else '?') + f'per_page=100&page={page}')
+            rows = data if key is None else data[key]
+            result.extend(rows)
+            if len(rows) < 100:
+                return result
+        raise ValueError('Too many CI evidence records')
+
+
+def checkout_sha(log):
+    hits = re.findall(r'git log -1 --format=%H\r?\n[^\n]*?Z ([0-9a-f]{40})\s*\n', log)
+    require(len(hits) == 1, 'Missing or ambiguous actual checkout SHA')
+    return hits[0]
+
+
+def artifact_bytes(api, artifact, run_id):
+    require(artifact.get('workflow_run', {}).get('id') == run_id, 'Artifact belongs to another run')
+    require(not artifact.get('expired'), 'Artifact expired')
+    require(0 < artifact['size_in_bytes'] <= LIMIT, 'Artifact size is invalid')
+    require(re.fullmatch(r'sha256:[0-9a-f]{64}', artifact.get('digest') or ''), 'Artifact has no SHA256 digest')
+    archive = api.raw(f"actions/artifacts/{artifact['id']}/zip")
+    require(len(archive) <= LIMIT and 'sha256:' + sha256(archive) == artifact['digest'], 'Artifact digest mismatch')
+    return archive
+
+
+def files(archive):
+    with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+        entries = bundle.infolist()
+        require(len(entries) <= 20000 and sum(e.file_size for e in entries) <= LIMIT, 'Expanded artifact too large')
+        seen = set()
+        for entry in entries:
+            path = PurePosixPath(entry.filename)
+            require(not path.is_absolute() and '..' not in path.parts and '\\' not in entry.filename,
+                    'Unsafe artifact path')
+            require(not stat.S_ISLNK(entry.external_attr >> 16), 'Artifact contains a symlink')
+            require(entry.filename not in seen, 'Duplicate artifact path')
+            seen.add(entry.filename)
+            if not entry.is_dir():
+                yield entry.filename, bundle.read(entry)
+
+
+def latest_jobs(rows):
+    latest = {}
+    for row in rows:
+        old = latest.get(row['name'])
+        if old is None or (row['run_attempt'], row['id']) > (old['run_attempt'], old['id']):
+            latest[row['name']] = row
+    return latest
+
+
+def trusted_pr_run(run, repository, workflow_id, head):
+    return (run.get('event') == 'pull_request' and run.get('head_sha') == head
+            and (run.get('repository') or {}).get('full_name') == repository
+            and (run.get('head_repository') or {}).get('full_name') == repository
+            and run.get('workflow_id') == workflow_id and run.get('path') == WORKFLOW)
+
+
+def verify(api, merged_sha, merged_tree):
+    workflow = api.one('actions/workflows/ci.yml')
+    require(workflow['path'] == WORKFLOW, 'Wrong workflow identity')
+    prs = [p for p in api.rows(f'commits/{merged_sha}/pulls')
+           if p.get('merged_at') and p.get('merge_commit_sha') == merged_sha
+           and p.get('base', {}).get('ref') == 'main'
+           and (p.get('base', {}).get('repo') or {}).get('full_name') == api.repository
+           and (p.get('head', {}).get('repo') or {}).get('full_name') == api.repository]
+    require(len(prs) == 1, 'No unique same-repository merged PR')
+    pr = api.one(f"pulls/{prs[0]['number']}")
+    head = pr['head']['sha']
+    require(pr.get('merged_at') and pr['merge_commit_sha'] == merged_sha, 'PR merge changed')
+    runs = [r for r in api.rows(f'actions/workflows/ci.yml/runs?event=pull_request&head_sha={head}', 'workflow_runs')
+            if trusted_pr_run(r, api.repository, workflow['id'], head)]
+    require(bool(runs), 'No trusted PR CI run')
+    run = max(runs, key=lambda r: r['id'])
+    require(run['created_at'] <= pr['merged_at'], 'PR run started after merge')
+    jobs = latest_jobs(api.rows(f"actions/runs/{run['id']}/jobs?filter=all", 'jobs'))
+    for name in ('Required checks', 'Select build inputs', 'Docs build', 'Web build'):
+        job = jobs.get(name, {})
+        require(job.get('status') == 'completed' and job.get('conclusion') == 'success'
+                and job.get('head_sha') == head and job.get('completed_at', '') <= pr['merged_at'],
+                f'{name} is not green before merge on the final PR head')
+    gate = jobs['Required checks']
+    artifacts = api.rows(f"actions/runs/{run['id']}/artifacts", 'artifacts')
+    name = f"ci-tree-{run['id']}-{gate['run_attempt']}"
+    receipts = [a for a in artifacts if a['name'] == name]
+    require(len(receipts) == 1, 'No unique receipt for the latest Required attempt')
+    require(gate['started_at'] <= receipts[0]['created_at'] <= gate['completed_at'], 'Receipt not published by this Required execution')
+    receipt_files = dict(files(artifact_bytes(api, receipts[0], run['id'])))
+    require(set(receipt_files) == {'receipt.json'}, 'Unexpected receipt files')
+    receipt = json.loads(receipt_files['receipt.json'])
+    require(receipt['repository'] == api.repository and receipt['pr'] == pr['number']
+            and receipt['head'] == head and receipt['run'] == run['id']
+            and receipt['attempt'] == gate['run_attempt'], 'Receipt identity mismatch')
+    require(receipt['body_sha256'] == sha256((pr['body'] or '').encode()), 'PR body changed since Docs passed')
+    # The immutable job checkout log, not a claim in the PR or artifact, decides the tree.
+    logs = {name: api.raw(f"actions/jobs/{jobs[name]['id']}/logs").decode()
+            for name in ('Select build inputs', 'Docs build', 'Web build', 'Required checks')}
+    tested = checkout_sha(logs['Select build inputs'])
+    require(all(checkout_sha(log) == tested for log in logs.values()), 'Jobs tested different checkouts')
+    commit = api.one(f'git/commits/{tested}')
+    require(len(commit['parents']) == 2 and commit['parents'][1]['sha'] == head, 'Not the final PR merge checkout')
+    require(commit['tree']['sha'] == merged_tree and receipt['tree'] == merged_tree
+            and receipt['tested_commit'] == tested, 'Tested tree differs from merged tree')
+    require(re.findall(r'Z Docs body SHA256: ([0-9a-f]{64})\r?$', logs['Docs build'], re.M)
+            == [receipt['body_sha256']], 'Docs body evidence does not match receipt')
+    web = api.one(f"actions/artifacts/{int(receipt['web_id'])}")
+    require(web['name'] == f"web-pr-{run['id']}-{receipt['web_attempt']}"
+            and web['digest'] == 'sha256:' + receipt['web_digest'], 'Web artifact identity or digest changed')
+    require(jobs['Web build']['started_at'] <= web['created_at'] <= jobs['Web build']['completed_at'],
+            'Web artifact not published by the green Web execution')
+    archive = artifact_bytes(api, web, run['id'])
+    web_files = dict(files(archive))
+    require(bool(web_files.get('index.html')) and bool(web_files.get('version.json')), 'Incomplete web build')
+    return receipt | {'merged_commit': merged_sha, 'source_url': run['html_url'],
+                      'source_artifact_digest': web['digest']}, web_files
+
+
+def record(path):
+    require(os.environ['GITHUB_EVENT_NAME'] == 'pull_request', 'Only PR Required records test evidence')
+    event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+    body_hash = os.environ['DOCS_BODY_SHA256']
+    digest = os.environ['WEB_DIGEST']
+    require(re.fullmatch('[0-9a-f]{64}', body_hash) and re.fullmatch('[0-9a-f]{64}', digest), 'Missing job evidence')
+    receipt = dict(repository=os.environ['GITHUB_REPOSITORY'], pr=event['number'],
+                   head=event['pull_request']['head']['sha'], run=int(os.environ['GITHUB_RUN_ID']),
+                   attempt=int(os.environ['GITHUB_RUN_ATTEMPT']), tested_commit=git('HEAD'), tree=git('HEAD^{tree}'),
+                   body_sha256=body_hash, web_id=int(os.environ['WEB_ID']), web_digest=digest,
+                   web_attempt=int(os.environ['WEB_ATTEMPT']))
+    path.write_text(json.dumps(receipt, sort_keys=True) + '\n')
+
+
+def attempt(destination):
+    started = time.monotonic()
+    require(os.environ['GITHUB_EVENT_NAME'] in ('push', 'workflow_dispatch')
+            and os.environ['GITHUB_REF'] == 'refs/heads/main', 'Reuse runs only from main CI')
+    try:
+        require(git('HEAD') == os.environ['GITHUB_SHA'], 'Main checkout does not match this run')
+        receipt, web = verify(GitHub(os.environ['GITHUB_REPOSITORY']), os.environ['GITHUB_SHA'], git('HEAD^{tree}'))
+        destination.mkdir(parents=True, exist_ok=False)
+        for name, data in web.items():
+            target = destination / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+    except Exception as error:
+        # Reuse is optional. Unexpected API shapes also take the normal checks.
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+            summary.write(f'Normal main CI after {time.monotonic() - started:.2f}s: {error}\n')
+        print(f'Normal main CI: {error}')
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write('reuse=false\n')
+        return
+    Path(os.environ['RUNNER_TEMP'], 'main-tree-receipt.json').write_text(json.dumps(receipt, sort_keys=True) + '\n')
+    with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+        summary.write(f"Receipt verification and extraction: {time.monotonic() - started:.2f}s. "
+                      f"Reused PR #{receipt['pr']} [CI]({receipt['source_url']}), tested commit `{receipt['tested_commit']}`, "
+                      f"tree `{receipt['tree']}`, artifact `{receipt['web_id']}` digest `{receipt['source_artifact_digest']}`.\n")
+    with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+        output.write('reuse=true\n')
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=['record', 'attempt'])
+    parser.add_argument('path', type=Path)
+    args = parser.parse_args()
+    if args.command == 'record':
+        record(args.path)
+    else:
+        attempt(args.path)
