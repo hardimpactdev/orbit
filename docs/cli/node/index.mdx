@@ -108,4 +108,4 @@ Role addition returns one queued Operation for every mutable role. `node:role:ad
 
 Task VM host settings include `pool_size` for a new loop-backed ZFS pool. Existing pools keep their size. See [task VM host settings](/reference/node-settings#configure-a-task-vm-host).
 
-The API-only `nested_fleet` boolean stores a per-Node hosting switch. It defaults off, and omitted updates preserve it through storage preparation. The switch is stored only and has no effect yet. The Project flag only refuses new Instances of its Project; do not set it on a real Project. Hosting that reads them follows in a later change. See [Node settings](/reference/node-settings#nested-fleet-instance-hosting).
+The API-only `nested_fleet` boolean is the Node's nested-fleet hosting switch. It defaults off, and omitted updates preserve it through storage preparation. On a Node of the build list, the next `app-dev` converge with the switch on prepares the nesting-capable Incus project. Provision root's subordinate IDs first; [Node settings](/reference/node-settings#nested-fleet-instance-hosting) has the numbers. Instances of a nested-fleet Project stay refused until their image exists.

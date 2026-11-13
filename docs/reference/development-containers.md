@@ -20,7 +20,8 @@ covers:
 | --- | --- |
 | Records, Node preparation, egress and DNS | Built |
 | Default create and deploy, clone, forced non-default destroy, checkout migration | Built on the build-list Nodes |
-| Task containers, nested-fleet parity, sleep/wake and production containers | Planned |
+| Nested-fleet placement, host preparation, start guards and recorded-project readers | Built on build-list Nodes whose switch is on; Instances of a nested-fleet Project stay refused until their image exists |
+| Task containers, the nested fleet itself, sleep/wake and production containers | Planned |
 | Dedicated workspace volumes and explicit package workspace links | [Draft specification](#workspace-volumes-draft); not implemented or proved |
 
 Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
@@ -126,7 +127,7 @@ The Node must meet the host requirements of ADR 0250: current kernel, SCTP off a
 
 ## Inside a container
 
-Every Instance container, default or clone, has the same limits: 4 CPUs, 8 GiB of memory, 4,096 processes and a 40 GiB root disk on the `orbit-instances` ZFS pool.
+Every Instance container, default or clone, has 4 CPUs, 4,096 processes and a 40 GiB root disk on the `orbit-instances` ZFS pool. It has 8 GiB of memory, or 12 GiB in the [nested-fleet project](#nested-fleet).
 
 Clone phases stage their release's helpers and intent once in a private folder for the run. Later phases run them by path. This keeps scripts off the SSH command and avoids its size limit. The repository credential stays on stdin. Cleanup removes the folder on success or failure, including a failed first launch.
 
@@ -990,21 +991,35 @@ Migration checks executable availability before downtime and requires moved runn
 
 A Project setting turns on a nested fleet. Its Instance containers then run a fleet of Incus containers nested inside them. Orbit uses it for its command proofs: a Gateway, an `app-dev` and an `app-prod` Node. Other Projects leave it off and keep the kernel surface of [Inside a container](#inside-a-container).
 
-Nested-fleet hosting is not built yet. Until it is, the Project setting `nested_fleet` has one effect: Orbit refuses every new Instance of the Project with `operation.kind_unavailable` (503), before any record. One placement rule in the Gateway makes this decision for every path that writes an Instance or its runtime. [Nested fleet setting](/reference/projects#nested-fleet-setting) lists the paths. The rest of this section describes the target design.
+Built: placement, host preparation, the start guards and the readers below. Not built: the image for nested-fleet containers and the fleet itself. Until that image exists, Orbit refuses every new Instance of a nested-fleet Project with `operation.kind_unavailable` (503), before any record. One placement rule in the Gateway makes this decision for every path that writes an Instance or its runtime, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
 
 ### The container
 
-An Instance container with a nested fleet lives in its own Incus project on the Node, which allows what the fleet needs. `orbit-instances` keeps refusing it. It changes these settings:
+An Instance container with a nested fleet lives in its own Incus project on the Node, `orbit-instances-nested`, which allows what the fleet needs. `orbit-instances` keeps refusing it. A Node prepares that project, its profile and three kernel modules only when it is on the build list and its [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on. It shares the pool, the bridge, the ACLs and the egress proxy with `orbit-instances`. The container is unprivileged and sets these keys:
 
 | Key | Value | Why |
 | --- | --- | --- |
 | `security.nesting` | `true` | The inner Incus and Docker run in it |
 | `security.syscalls.intercept.mknod` | `true` | The inner Incus makes device nodes for its containers |
 | `security.syscalls.intercept.setxattr` | `true` | The inner Incus and Docker set trusted extended attributes |
+| `security.idmap.isolated` | `true` | The container has its own ID range, as every Instance container |
 | `security.idmap.size` | `101000000` | The inner range below must fit inside |
+| `limits.memory` | `12GiB` | The inner fleet shares the container's memory |
 | `user.max_user_namespaces` | Not set to zero | The inner Incus needs user namespaces |
 
-Its project allows low-level keys (`restricted.containers.lowlevel=allow`), because `security.idmap.size` is one. So the create flow refuses a container with any `raw.*` key, and with any device beyond its root disk, NIC, the shared folders and the T3 proxy. No host path, and never the host's Incus socket, reaches it.
+Its project allows low-level keys (`restricted.containers.lowlevel=allow`), because `security.idmap.size` is one. So a guard runs before every start of a container in that project: the Ansible start, the native clone and the host converge's clone probe.
+
+The guard reads the effective config and devices, with the profile's. It refuses with `instance.container_network_unsafe` a container that has any `raw.*` key, sets `security.privileged`, or has a device that is not in its exact list. The list holds the root disk, the NIC, the two read-only shared folders with their own sources, and the T3 proxy of a clone. So no other host path, and never the host's Incus socket, reaches it. A container of `orbit-instances` keeps its NIC guard, with the same program and arguments as before.
+
+### Capacity
+
+Nested and normal Instances share the Node's address pool, T3 ports and storage pool. A `/24` bridge has 252 Instance addresses, `.2` to `.253`: the bridge takes `.1` and the image build `.254`. Each non-default Instance also takes one of the 200 T3 ports, `3800` to `3999`. Every root disk is 40 GiB on the `orbit-instances` pool.
+
+At reservation, the placement rule refuses first, then a full bridge, then a full T3 port range; the last two refuse with `instance.host_unavailable` (409). So one Project with a default and 200 clones runs out of T3 ports first, and many Projects with defaults can run out of addresses first. Free pool space and the [subordinate-ID demand](/reference/node-settings#nested-fleet-instance-hosting), which the converge checks, can limit a Node earlier.
+
+### Readers of the recorded project
+
+Each runtime records its Incus project once. Every step that reaches the container reads that record: create, deploy, clone, destroy, Processes, Schedules, mail, Node services, migration and T3 setup. The shared-folder refresh restarts running containers in every project that the Node's runtimes record, before it clears the folder's restart mark, also after the switch is off. With no nested runtime, it runs the same command as before.
 
 ### The fleet
 
@@ -1124,7 +1139,9 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `conn.environment_asleep` | 409 | A pairing with a sleeping Instance's T3 server |
 | `node.instance_bridge_exhausted` | 409 | No `/24` of the fleet range is free for a Node's Instance bridge |
 | `instance.container_nodes_invalid` | 500 | `ORBIT_INSTANCES_CONTAINER_NODES` is not a JSON list of Node ids |
-| `instance.host_unavailable` | 409 | A build-list Node cannot be prepared: it lacks the pool `orbit-instances` or enough subordinate IDs, or the recipe has no pin for it |
+| `instance.host_unavailable` | 409 | A build-list Node cannot be prepared: it lacks the pool `orbit-instances` or enough subordinate IDs, or the recipe has no pin for it. |
+| `instance.nested_fleet_host_unavailable` | 409 | A new nested-fleet Instance on a Node whose nested-fleet switch is off. Not reachable yet |
+| `instance.nested_fleet_container_required` | 409 | A new nested-fleet Instance would not be a container: the Node is off the build list, or the default is a host checkout. Not reachable yet |
 | `instance.host_unavailable` | 409 | A container default cannot be placed: the Node has no bridge, the bridge is full, or the runtime folder lacks the Project's PHP build |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
@@ -1133,7 +1150,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.bridge_command_timeout` | 502 | A Docker/NAT read exhausted the helper’s remaining budget, or an Incus request timed out |
 | `instance.bridge_state_unresolved` | 502 | A bounded ACL readback could not determine the result after a timeout or ambiguous write; retry convergence |
 | `instance.container_endpoint_unresolved` | 502 | A local Docker endpoint has no unique exact DNAT mapping; the phase refuses before probing or downtime |
-| `instance.container_network_unsafe` | 502 | The container NIC has no effective ACL or lacks its default egress reject. Orbit refuses to start it |
+| `instance.container_network_unsafe` | 502 | The NIC has no effective ACL or no default egress reject. In the nested-fleet project, also a `raw.*` key, privilege or an unlisted device. Orbit does not start it |
 | `instance.container_<phase>_failed` | 502 | A phase of a container default's create or deployment failed without a refusal, such as `instance.container_start_failed` |
 
 ## Why it works this way

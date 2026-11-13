@@ -123,6 +123,8 @@ The container's system manager owns `orbit-schedule-<uuid>.timer` and `.service`
 
 Automatic fires create no Operation. The service journal and observed latest-run status are their record. `schedule:list` and `schedule:show` retain the stored desired state and report an inactive timer for a stopped container. `schedule:logs` reads the container journal through the bounded, redacted reader; a stopped container refuses with `schedule.target_inactive` without waking. Old host journal entries remain on the Node but are not combined with the container snapshot. Schedule follow remains unsupported.
 
+A container Schedule run executes in the Incus project that the Instance runtime records, `orbit-instances` or `orbit-instances-nested`. The run workflow admits only these two names and uses the captured value; it never derives the project from the Project setting.
+
 Clones do not inherit ad hoc Schedules. Before a copied container boots, Orbit strips inherited Schedule unit files, timer activation links and private Schedule scripts. Development Schedule definitions and new container Schedule mutations are separate work.
 
 ### Why the timer lives in the container
