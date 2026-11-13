@@ -104,7 +104,7 @@ final readonly class SignDirectCertificatesAction
             'route.create', 'route.destroy', 'instance.clone' => $restoring
                 ? ['route_lifecycle.route_mutations.restore.certificates']
                 : ['route_lifecycle.preparation.certificates', 'route_lifecycle.route_mutations.forward.certificates'],
-            'instance.register', 'instance.create', 'instance.restore' => $restoring ? [] : ['route_lifecycle.preparation.certificates', 'route_lifecycle.route_mutations.forward.certificates'],
+            'instance.register', 'instance.create', 'instance.complete', 'instance.restore' => $restoring ? [] : ['route_lifecycle.preparation.certificates', 'route_lifecycle.route_mutations.forward.certificates'],
             // The task workspace's Route admission sits under `route`, beside the VM's own execution copies.
             'tasks.provision' => $restoring ? [] : ['route.route_lifecycle.preparation.certificates', 'route.route_lifecycle.route_mutations.forward.certificates'],
             // route.update and route.target_set never restore; they sign only their plan's leaves.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Operations;
 
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
+use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
@@ -40,6 +41,8 @@ final readonly class CancelOperationAction
                 $recovery = is_array($container = $provisioning['container'] ?? null)
                     && ($provisioning['already_active'] ?? false) !== true
                     ? app(DevelopmentInstanceCreateProjection::class)->recovery($operation, ValidatedData::object($container)) : null;
+                // A completion cancelled before its run keeps the clone for a retry, as a cancelled run does.
+                $recovery = $operation->kind === 'instance.complete' ? InstanceCompleteProjection::cancelledBeforeRun($operation) : $recovery;
                 $this->store->change($operation, ['cancel_requested_at' => $operation->cancel_requested_at ?? now(),
                     'status' => OperationStatus::Cancelled, 'finished_at' => now(), 'error_code' => null,
                     'current_step' => null, 'failed_step' => null, 'lock_key' => null,

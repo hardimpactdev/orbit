@@ -15,7 +15,7 @@ use Illuminate\Support\Sleep;
 final readonly class WaitForGatewayReleaseIdleAction
 {
     /** SQL LIKE patterns: Instance lifecycle work, all deploy variants, and every Conn and Process kind. */
-    public const array BlockingKindPatterns = ['instance.node_service_detach', 'instance.mail_update', 'instance.sleep', 'instance.wake', 'instance.start', 'instance.connection_environment', 'instance.create', 'instance.deploy%', 'instance.migrate', 'instance.clone', 'instance.destroy', 'instance.restore', 'conn.%', 'process.%'];
+    public const array BlockingKindPatterns = ['instance.node_service_detach', 'instance.mail_update', 'instance.sleep', 'instance.wake', 'instance.start', 'instance.connection_environment', 'instance.create', 'instance.complete', 'instance.deploy%', 'instance.migrate', 'instance.clone', 'instance.destroy', 'instance.restore', 'conn.%', 'process.%'];
 
     public const int WaitSeconds = 600;
 

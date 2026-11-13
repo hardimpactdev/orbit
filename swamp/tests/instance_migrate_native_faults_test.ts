@@ -45,7 +45,7 @@ async function nativeFixture(mode: Mode, clone = false) {
     assert(initialized.ok, initialized.stderr + initialized.stdout);
     const models = `${folder}/extensions/models`;
     Deno.mkdirSync(models, { recursive: true });
-    for (const name of ["assets.ts", "migrate_result.ts", "result.ts"]) {
+    for (const name of ["assets.ts", "complete_result.ts", "migrate_result.ts", "result.ts"]) {
         Deno.copyFileSync(
             new URL(
                 `../extensions/behaviors/operations/instance-dev-command/${name}`,

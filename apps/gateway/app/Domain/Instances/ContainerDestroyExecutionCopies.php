@@ -17,13 +17,13 @@ final readonly class ContainerDestroyExecutionCopies
     {
         $keys = [];
         foreach (Operation::query()->where('target_type', 'instance')->where('target_id', $destroy->target_id)
-            ->whereIn('kind', ['instance.create', 'instance.destroy', 'instance.deploy', 'instance.migrate'])->get() as $operation) {
+            ->whereIn('kind', ['instance.create', 'instance.complete', 'instance.destroy', 'instance.deploy', 'instance.migrate'])->get() as $operation) {
             $keys = [...$keys, ...$this->references($operation->input), ...$this->references($operation->result ?? [])];
             // These run-start copies are deterministic, rather than persisted in the public Operation input.
             foreach (['instance-git-operation-', 'instance-git-credential-'] as $prefix) {
                 $keys[] = $prefix.$operation->id;
             }
-            if ($operation->kind === 'instance.create') {
+            if (in_array($operation->kind, ['instance.create', 'instance.complete'], true)) {
                 foreach (['server_database', 'server_valkey'] as $child) {
                     $server = ValidatedData::object(ValidatedData::object($operation->input['direct_provisioning'] ?? [])[$child] ?? []);
                     if (isset($server['intent_id'])) {
@@ -32,9 +32,14 @@ final readonly class ContainerDestroyExecutionCopies
                         $keys[] = 'database-create-owner-'.$intent;
                     }
                 }
+            }
+            if ($operation->kind === 'instance.create') {
                 foreach (['instance-create-environment-input-', 'instance-create-environment-testing-', 'instance-create-model-', 'instance-create-processes-'] as $prefix) {
                     $keys[] = $prefix.$operation->id;
                 }
+            }
+            if ($operation->kind === 'instance.complete') {
+                $keys[] = 'instance-complete-processes-'.$operation->id;
             }
             if ($operation->kind === 'instance.migrate') {
                 foreach (['instance-migrate-model-', 'instance-migrate-processes-', 'instance-migrate-source-'] as $prefix) {

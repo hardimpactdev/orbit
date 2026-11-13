@@ -73,6 +73,7 @@ Route::middleware([
     Route::post('instances/{instance}/migrate', [InstanceMigrationsController::class, 'store'])
         ->whereNumber('instance')
         ->name('instance:migrate');
+    Route::post('instances/{instance}/complete', [InstancesController::class, 'complete'])->whereNumber('instance')->name('instance:complete');
     Route::post('instances/{instance}/restore', [InstancesController::class, 'restore'])->whereNumber('instance')->name('instance:restore');
     Route::delete('instances/{instance}', [InstancesController::class, 'destroy'])
         ->whereNumber('instance')

@@ -43,6 +43,20 @@ final readonly class InstanceLifecycleContributions
         }
     }
 
+    /** A clone's T3 server is registered when there is a contribution and each one holds it. */
+    public function registered(Instance $instance): bool
+    {
+        $present = false;
+        foreach ($this->contributions as $contribution) {
+            $present = true;
+            if (! $contribution->registered($instance)) {
+                return false;
+            }
+        }
+
+        return $present;
+    }
+
     /** @param array<string, mixed> $server */
     public function projectCreate(Instance $instance, array $server): void
     {

@@ -791,6 +791,29 @@ When an admitted Project Process fails with `instance.container_process_inactive
 
 A deployment of the default can replace the admitted seed before the copy. The copy then refuses with `instance.default_seed_moved`, and the same command takes the new seed. A clone already copied does not need its seed: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them.
 
+### Complete a clone
+
+[`instance:complete`](/cli/instance/complete) is the second Operation of a clone create, kind `instance.complete` ([ADR 0256](/decisions/0256-a-clone-create-is-two-operations)). It does the part of a create that the user does not wait for: the clone's database, a nested fleet, the Processes, the Route and a check. The `checkout` and `T3` parts stay in the create. A clone is fully set up when its `status` is `active`, and only a succeeded completion makes it so.
+
+The Gateway admits it for a container clone that is `source_resolved`, has its starting commit and has a registered T3 server; it takes the Instance lock. Anything else refuses with `instance.complete_unavailable` and changes nothing. The input is the create's admitted database plan and Processes, and a Route publication captured again from the current site catalog. The run has its own private folder and its own vault copy of the workspace value, so it never reads the create's folder.
+
+The run's levels, from [Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md):
+
+| Job | Steps by level |
+| --- | --- |
+| `input` | the intent |
+| `complete` | stage the folder, and the database starts · the Valkey user, the database check, the fleet start · the fill · `clone-services` · `clone-check` |
+| `publication` | the CSRs · the Route create child |
+| `result` | `finish` and the private-folder cleanup · `withdraw-route` on failure, and the run-folder cleanup · `accepted` |
+
+`clone-services` runs the `services` part of the workspace phase: PHP settings, file rights, Process files, web config, the Node store and the units. It refuses when the checkout mark names another Instance. It writes no tracked file, so the user's work in the checkout stays as it is. `clone-check` runs the `check` phase. A dead unit gives `instance.container_process_inactive`; the phase prints its `process_failure` receipt as its output, and the step keeps that output, because the step accepts the phase's refusal exit and `finish` reads the receipt from it.
+
+Success turns the Route `active`, then the Instance `active` with `provisioning_step=active` and `first_setup_pending=false`, in one transaction. A failed or cancelled run withdraws a Route that it published, and keeps the clone `source_resolved` with `failed_step` and `error_code`. The runtime stays `running` and the Conn environment stays registered, so the user keeps the thread. The result's `recovery.retry.command` is `instance:complete`; `instance:destroy` removes the clone as for a failed create.
+
+The completion holds the Route publication Nodes for the whole run, like a create. The budget is 1,800 seconds: the 600-second fill and the 900-second fleet start with margin.
+
+Today the create still runs every step itself and makes the clone `active`. The create hands over to the completion in a later change, so no clone reaches this kind in normal use yet: an `active` clone refuses with `instance.complete_unavailable`.
+
 ### Clone the database
 
 The database family clones every database, whether the server is on the Instance's Node or on another Node. The clone lands on the default's server, unless `instance:create --database-server` names another one.

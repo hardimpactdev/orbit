@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { CompletePhases, completeResult } from "./complete_result.ts";
 import { MigratePhases, migrateResult, writtenFailure } from "./migrate_result.ts";
 import { containerFailure, createResult, fleetFailure, Step } from "./result.ts";
 const ObjectValue = z.record(z.string(), z.unknown());
@@ -28,7 +29,7 @@ async function resultFile(folder: string): Promise<unknown> {
 
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.13.2",
+    version: "2026.11.14.1",
     resources: {
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
     },
@@ -120,6 +121,24 @@ export const behavior = {
                     }
                 }
                 await ctx.writeResource("result", "create", value);
+                return value;
+            },
+        },
+        complete_result: {
+            description: "Map the steps of a clone completion to one public terminal receipt",
+            arguments: z.object({
+                intent: ObjectValue,
+                folder: z.string().regex(/^\/tmp\/orbit-ansible-[A-Za-z0-9-]+$/),
+                ...CompletePhases.shape,
+            }),
+            execute: async (
+                args: { intent: Record<string, unknown>; folder: string } & z.input<typeof CompletePhases>,
+                ctx: Context,
+            ) => {
+                // A failed fleet step keeps no output; the fleet phase writes its code and why into the run's result file.
+                const fleetFile = args.fleet === "failed" ? await resultFile(args.folder) : null;
+                const value = completeResult(args.intent, CompletePhases.parse(args), fleetFile);
+                await ctx.writeResource("result", "complete", value);
                 return value;
             },
         },

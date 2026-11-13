@@ -129,7 +129,7 @@ final readonly class NativeDevelopmentInstanceInput
      * @param  array<string,mixed>  $admitted
      * @return array<string,mixed>
      */
-    private function serverDatabase(Operation $operation, array $admitted): array
+    public function serverDatabase(Operation $operation, array $admitted): array
     {
         $view = new Operation;
         $view->forceFill(['id' => $operation->id, 'status' => $operation->status, 'kind' => 'database.create', 'target_type' => 'database_server',
