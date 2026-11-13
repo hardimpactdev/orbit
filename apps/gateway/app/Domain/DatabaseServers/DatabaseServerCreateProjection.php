@@ -39,8 +39,8 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
             // The admin password is the first stdin line of the login check, followed by its statement (Q-DBAUTH).
             $login = $server->driver === DatabaseDriver::Redis ? "PING\n" : "SELECT 1;\n";
             $secrets['login'] = $copy->executionCopy('orbit-control-inputs', $secrets['login']['key'], "{$server->root_password}\n{$login}");
-            // `docker run --env-file /dev/stdin` reads the first-start password; a later start reads a blank line.
-            $start = $initialize ? DatabaseServerProcess::passwordVariable($server)."={$server->root_password}\n" : "\n";
+            // `docker run --env-file /dev/stdin` reads the first-start variables; a later start reads a blank line.
+            $start = $initialize ? DatabaseServerProcess::firstStartEnvFile($server, $server->root_password) : "\n";
             $secrets['start'] = $copy->executionCopy('orbit-control-inputs', $secrets['start']['key'], $start);
             if (isset($secrets['acl'])) {
                 $secrets['acl'] = $copy->executionCopy($secrets['acl']['vault'], $secrets['acl']['key'], ValkeyAcl::file($server));

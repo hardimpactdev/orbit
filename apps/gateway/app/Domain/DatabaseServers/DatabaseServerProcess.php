@@ -37,6 +37,12 @@ final readonly class DatabaseServerProcess
 
     public const string VALKEY_ACL_FILE = '/data/users.acl';
 
+    /**
+     * initdb's default trusts the socket and the loopback for every user, so a client in the container would log in as
+     * anyone without a password. The first start sets SCRAM for both; every Orbit login gives its password.
+     */
+    public const string POSTGRES_INITDB_ARGS = '--auth-local=scram-sha-256 --auth-host=scram-sha-256';
+
     public static function data(
         DatabaseServer $server,
         Node $node,
@@ -51,7 +57,7 @@ final readonly class DatabaseServerProcess
             command: [$server->driver === DatabaseDriver::Pgsql ? 'postgres' : 'mysqld'],
             image: ($server->driver === DatabaseDriver::Pgsql ? 'postgres:' : 'mysql:').$server->tag,
             workingDirectory: null,
-            environment: [self::passwordVariable($server) => $rootPassword],
+            environment: self::firstStartEnvironment($server, $rootPassword),
             // Bind each private address explicitly; Docker publication bypasses UFW.
             ports: self::publishedPorts($node, $server->port, $server->driver === DatabaseDriver::Pgsql ? 5432 : self::CONTAINER_PORT),
             volumes: [[
@@ -131,6 +137,28 @@ final readonly class DatabaseServerProcess
         $environment = $process->runtime_config['environment'] ?? null;
 
         return is_array($environment) && (array_key_exists(self::ROOT_PASSWORD_VARIABLE, $environment) || array_key_exists('POSTGRES_PASSWORD', $environment));
+    }
+
+    /**
+     * The variables of a MySQL or PostgreSQL server's first start, which initializes the data directory.
+     *
+     * @return array<string, string>
+     */
+    public static function firstStartEnvironment(DatabaseServer $server, #[SensitiveParameter] string $rootPassword): array
+    {
+        return [self::passwordVariable($server) => $rootPassword,
+            ...($server->driver === DatabaseDriver::Pgsql ? ['POSTGRES_INITDB_ARGS' => self::POSTGRES_INITDB_ARGS] : [])];
+    }
+
+    /** The first start's variables as `docker run --env-file /dev/stdin` reads them, one `NAME=value` line each. */
+    public static function firstStartEnvFile(DatabaseServer $server, #[SensitiveParameter] string $rootPassword): string
+    {
+        $lines = '';
+        foreach (self::firstStartEnvironment($server, $rootPassword) as $name => $value) {
+            $lines .= "{$name}={$value}\n";
+        }
+
+        return $lines;
     }
 
     public static function passwordVariable(DatabaseServer $server): string

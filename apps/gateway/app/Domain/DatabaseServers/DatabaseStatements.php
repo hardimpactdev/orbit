@@ -251,22 +251,6 @@ final readonly class DatabaseStatements
     }
 
     /**
-     * The owner's client argv for the login check, over TCP so the password itself is proven.
-     *
-     * @return list<string>
-     */
-    public static function ownerClient(DatabaseDriver $driver, string $container, string $login, string $user, string $database): array
-    {
-        return match ($driver) {
-            DatabaseDriver::Pgsql => ['docker', 'exec', '-i', '--env-file', $login, $container, 'psql', '--no-psqlrc', '--host=127.0.0.1', "--username={$user}",
-                "--dbname={$database}", '--no-align', '--tuples-only', '--quiet', '--set=ON_ERROR_STOP=1'],
-            DatabaseDriver::Redis => ['docker', 'exec', '-i', '--env-file', $login, $container, 'valkey-cli', '--user', $user, '--no-auth-warning'],
-            default => ['docker', 'exec', '-i', '--env-file', $login, $container, 'mysql', '--protocol=TCP', '--host=127.0.0.1', "--user={$user}",
-                '--batch', '--skip-column-names'],
-        };
-    }
-
-    /**
      * A container clone's PostgreSQL database (docs/reference/development-containers.md#clone-the-database): a template copy of the
      * default's database on the same server, inside the server's container, with the admin login from the first stdin line.
      * PostgreSQL copies only from a database without sessions, so the run closes the default database to new connections and ends
@@ -346,23 +330,6 @@ final readonly class DatabaseStatements
         $variable = strtok($client, ' ');
 
         return ['docker', 'exec', '-i', $container, 'sh', '-c', "IFS= read -r {$variable} && export {$client}", 'sh', $user, $database];
-    }
-
-    /**
-     * The admin client argv for one `docker exec -i` with the statement on stdin. MySQL and Valkey read the admin login
-     * from the env file a step writes with cfgmgmt/file; PostgreSQL uses local trust inside the container.
-     *
-     * @return list<string>
-     */
-    public static function client(DatabaseDriver $driver, string $container, string $login): array
-    {
-        return match ($driver) {
-            DatabaseDriver::Pgsql => ['docker', 'exec', '-i', $container, 'psql', '--no-psqlrc', '--username=postgres', '--dbname=postgres',
-                '--no-align', '--tuples-only', '--quiet', '--set=ON_ERROR_STOP=1'],
-            DatabaseDriver::Redis => ['docker', 'exec', '-i', '--env-file', $login, $container, 'valkey-cli', '--user', 'default', '--no-auth-warning'],
-            default => ['docker', 'exec', '-i', '--env-file', $login, $container, 'mysql', '--protocol=TCP', '--host=127.0.0.1', '--user=root',
-                '--batch', '--skip-column-names'],
-        };
     }
 
     /** @param list<string> $names */
