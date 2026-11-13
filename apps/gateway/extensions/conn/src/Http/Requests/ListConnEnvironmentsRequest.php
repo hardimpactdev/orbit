@@ -11,13 +11,16 @@ final class ListConnEnvironmentsRequest extends FormRequest
     /** @return array<string,list<string>> */
     public function rules(): array
     {
-        return ['include' => ['sometimes', 'string', 'in:git']];
+        return ['include' => ['sometimes']];
     }
 
     /** @return array<string,mixed> */
     public function validationData(): array
     {
-        return $this->query();
+        // Preserve ignored include values, including arrays and strings the request stack trims.
+        parse_str($this->server->getString('QUERY_STRING'), $query);
+
+        return array_key_exists('include', $query) ? ['include' => $query['include']] : [];
     }
 
     public function includeGit(): bool

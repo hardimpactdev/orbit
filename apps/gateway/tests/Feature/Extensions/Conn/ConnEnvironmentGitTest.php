@@ -3,14 +3,20 @@
 declare(strict_types=1);
 
 use App\Domain\Extensions\ExtensionStore;
+use App\Http\Mcp\ApiDispatcher;
+use App\Http\Mcp\ApiOperationTool;
+use App\Http\Mcp\ToolManifest;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Laravel\Mcp\Request as McpRequest;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 uses(LazilyRefreshDatabase::class);
@@ -97,7 +103,39 @@ it('keeps the existing Node access filter for Git requests', function (): void {
         ->getJson('/api/v1/conn/environments?include=git')->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
 });
 
-it('rejects an unsupported include', function (): void {
+it('ignores unknown include values exactly as the existing list does', function (string $query): void {
+    connGitServer('instance-server', true);
     $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
-        ->getJson('/api/v1/conn/environments?include=everything')->assertUnprocessable();
+        ->withHeader('X-Orbit-Request-Id', 'e439a946-a2a9-402d-b6cd-4cde4f962152');
+    $before = $this->getJson('/api/v1/conn/environments')->assertOk()->getContent();
+    $after = $this->getJson('/api/v1/conn/environments?'.$query)->assertOk()->getContent();
+    expect($after)->toBe($before);
+})->with(['other word' => ['include=everything'], 'empty' => ['include='], 'array' => ['include[]=git'],
+    'number' => ['include=1'], 'padded git' => ['include=%20git%20']]);
+
+it('keeps the default response byte identical to the existing list contract', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-13T00:00:00Z'));
+    $server = connGitServer('instance-server', true);
+    $requestId = 'e439a946-a2a9-402d-b6cd-4cde4f962152';
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+        ->withHeader('X-Orbit-Request-Id', $requestId)->getJson('/api/v1/conn/environments')->assertOk();
+    $expected = ['data' => [[
+        'environment_id' => 'instance-server', 'label' => 'instance-server', 'url' => 'http://10.44.0.7:3800',
+        'server_version' => null, 'registered_by' => 'fixture-host', 'registered_at' => '2026-11-13T00:00:00+00:00',
+        'admin_session_expires_at' => '2026-11-14T00:00:00+00:00', 'status' => 'registered',
+        'cleanup_pending' => false, 'cleanup_version' => 0, 'instance_id' => $server->instance_id,
+        'project_id' => $server->instance->project_id, 'project_name' => 'instance-server', 'project_slug' => 'instance-server',
+        'instance_name' => 'feature', 'node_name' => 'fixture-host', 'instance_url' => null, 'power_state' => 'stopped',
+    ]], 'meta' => ['request_id' => $requestId]];
+    expect($response->getContent())->toBe(json_encode($expected, JSON_THROW_ON_ERROR));
+});
+
+it('exposes the Git include through the generated list tool at the same API boundary', function (): void {
+    connGitServer('instance-server', true);
+    $definition = collect(ToolManifest::default()->definitions())->firstWhere('name', 'conn-environment-list');
+    $tool = new ApiOperationTool($definition, app(ApiDispatcher::class));
+    $caller = HttpRequest::create('/mcp', 'POST', server: ['REMOTE_ADDR' => $this->phone->wireguard_ip]);
+    $response = $tool->handle(new McpRequest(['include' => 'git']), $caller);
+    $data = json_decode((string) $response->content(), true, flags: JSON_THROW_ON_ERROR);
+    expect($data['data'][0]['git'])->toBe(['state' => 'unknown', 'reason' => 'not_observed']);
 });

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Data;
 
 use Carbon\CarbonImmutable;
+use Orbit\Extensions\Conn\Domain\ConnInstanceGitState;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -40,6 +41,7 @@ final class ConnEnvironmentData extends Data
     public static function fromModel(ConnEnvironment $environment, bool $includeGit = false): self
     {
         $environment->loadMissing(['node', 'instance.runtime', 'instance.project', 'instance.node', 'instance.routes']);
+        $instance = $environment->instance;
 
         return new self(
             environmentId: $environment->environment_id,
@@ -61,9 +63,8 @@ final class ConnEnvironmentData extends Data
             nodeName: $environment->instance?->node->name,
             instanceUrl: $environment->instance?->url(),
             powerState: $environment->instance?->runtime?->power_state->value,
-            // Only orbit-agent may collect Git facts; no container observations exist yet.
-            git: $includeGit && $environment->instance_id !== null
-                ? ['state' => 'unknown', 'reason' => 'not_observed'] : new Optional,
+            git: $includeGit && $instance !== null
+                ? app(ConnInstanceGitState::class)->forInstance($instance) : new Optional,
         );
     }
 }
