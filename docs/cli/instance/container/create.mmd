@@ -103,6 +103,7 @@ sequenceDiagram
     %%> When: after the copy, the Club key, the fleet start and the database steps
     %%> What it does:
     %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
+    %%> - after the checkout it checks the branch and commit, then writes the root-owned mark `/var/lib/orbit/workspace-checkout` with the Instance id and commit; when the mark already names this Instance, a retry skips the fetch and checkout, so the branch never moves and the result's commit stays the mark's
     %%> - writes `.env` for `orbit` with group `work`: the default's file from the seed, with the clone's own connection keys, the keys of the connections it shares with its default and `APP_URL`, without the default's other connection and Reverb keys or a copy of its credentials; `APP_KEY` stays the default's, because the cloned data is encrypted with it
     %%> - a copied value that points at the default's Route host (its Route without a web root) points at the clone's Route host; the rest of the value stays
     %%> - prints only the names of the copied, dropped, rewritten and shared keys; the result carries them as `environment`
@@ -127,7 +128,7 @@ sequenceDiagram
     %%> Why its own lock: the clone steps share one Swamp lock; agent and T3 take `ic-clone-t3-…`, so they run beside the workspace
     end
     SW->>C: Register the T3 server<br/>native clone-register
-    %%> When: the join; the sessions check waits for T3 and the workspace, because it checks the branch, the commit and every Process unit
+    %%> When: the join; the sessions check waits for T3 and the workspace, because it checks the branch, the checkout mark and every Process unit
     %%> On a failed workspace: no sessions check, no registration; the container stop below still runs
     %%> What it does:
     %%> - see conn/environment-renew.mmd: the sessions go to the vault, and the step checks the environment id and scopes
@@ -175,6 +176,7 @@ sequenceDiagram
     Note over GW: Record the failure
     %%> Retry:
     %%> - run the same command again; it resumes on the same container and database
+    %%> - a resume never moves a branch this Instance checked out: commits on it stay
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show TASK
