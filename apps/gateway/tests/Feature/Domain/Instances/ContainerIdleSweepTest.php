@@ -16,6 +16,7 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\ProjectType;
 use App\Infrastructure\Instances\AgentNodeFileTimes;
 use App\Models\Instance;
+use App\Models\InstanceNodeServiceTarget;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
@@ -76,18 +77,28 @@ beforeEach(function (): void {
 
 afterEach(fn () => CarbonImmutable::setTestNow());
 
-/** A running development clone whose access log is `$logAge` seconds old (null: no log yet). */
-function idleClone(object $test, string $name, ?int $logAge = 7_200, bool $taskOwned = false): Instance
+/** A running development clone whose access log is `$logAge` seconds old (null: no log) and whose watch began `$watchAge` seconds ago (null: never). */
+function idleClone(object $test, string $name, ?int $logAge = 7_200, bool $taskOwned = false, ?int $watchAge = 7_200): Instance
 {
     $owner = $taskOwned ? Task::query()->forceCreate(['project_id' => $test->project->id, 'title' => 'task', 'brief' => 'Fixture task.', 'status' => 'running'])->id : null;
     $clone = Instance::query()->forceCreate(['node_id' => $test->node->id, 'project_id' => $test->project->id, 'name' => $name, 'task_workspace_owner_id' => $owner,
         'checkout_path' => '/workspace/'.$name, 'root' => 'public', 'status' => 'active', 'first_setup_pending' => false, 'source_is_laravel' => true]);
-    app(InstanceContainer::class)->reserve($clone, $test->node, $test->default)->update(['power_state' => 'running']);
+    app(InstanceContainer::class)->reserve($clone, $test->node, $test->default)->update(['power_state' => 'running',
+        'idle_watch_started_at' => $watchAge === null ? null : $test->now->subSeconds($watchAge)]);
     if ($logAge !== null) {
         $test->logs[RuntimeHibernation::accessLogPath(RuntimeHibernation::key($clone->id))] = $test->now->getTimestamp() - $logAge;
     }
 
     return $clone->refresh();
+}
+
+/** The Instance uses a Node service, as 606 and 608 use PowerSync on another Node. */
+function attachNodeService(Instance $clone): void
+{
+    $process = Process::query()->forceCreate(['owner_type' => 'node', 'owner_id' => $clone->node_id, 'name' => 'powersync', 'runtime' => 'docker',
+        'working_directory' => '/srv', 'status' => 'active', 'runtime_config' => ['image' => 'journeyapps/powersync-service']]);
+    InstanceNodeServiceTarget::query()->create(['instance_id' => $clone->id, 'process_id' => $process->id, 'node_id' => $clone->node_id,
+        'protocol' => 'tcp', 'port' => 8096, 'host_env_key' => 'POWERSYNC_HOST', 'port_env_key' => 'POWERSYNC_PORT']);
 }
 
 /** @param list<int> $neverSleep */
@@ -154,6 +165,7 @@ it('keeps awake an Instance that must never sleep, before any read of the Node o
         'keep_alive' => Process::query()->forceCreate(['owner_type' => 'instance', 'owner_id' => $clone->id, 'name' => 'queue', 'runtime' => 'systemd',
             'working_directory' => '/srv/workspace', 'status' => 'active', 'keep_alive' => true, 'desired_state' => 'running',
             'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'queue:work']]]),
+        'node_service' => attachNodeService($clone),
     };
 
     $decisions = idleSweep($this, $never)->run(false);
@@ -164,7 +176,7 @@ it('keeps awake an Instance that must never sleep, before any read of the Node o
         ->and($this->reads)->toBe(0);
 })->with([
     ['production', 'not_development'], ['nested', 'nested_fleet'], ['never', 'never_sleep'], ['asleep', 'asleep'], ['operation', 'busy'], ['process_operation', 'busy'],
-    ['lifecycle', 'busy'], ['task', 'task'], ['keep_alive', 'keep_alive'],
+    ['lifecycle', 'busy'], ['task', 'task'], ['keep_alive', 'keep_alive'], ['node_service', 'node_service'],
 ]);
 
 it('lets a stopped keep-alive Process not hold the container awake', function (): void {
@@ -176,8 +188,8 @@ it('lets a stopped keep-alive Process not hold the container awake', function ()
     expect(reasonOf(idleSweep($this)->run(true), $clone))->toBe('sleep');
 });
 
-it('keeps awake an Instance without a full idle window of HTTP record, and reads no T3 for it', function (?int $logAge, bool $nodeAnswers, string $reason): void {
-    $clone = idleClone($this, 'clone', $logAge);
+it('keeps awake an Instance without a full window of HTTP evidence', function (?int $logAge, ?int $watchAge, bool $nodeAnswers, string $reason): void {
+    $clone = idleClone($this, 'clone', $logAge, watchAge: $watchAge);
     if (! $nodeAnswers) {
         $this->logs = null;
     }
@@ -185,13 +197,69 @@ it('keeps awake an Instance without a full idle window of HTTP record, and reads
     $decisions = idleSweep($this)->run(false);
 
     expect(reasonOf($decisions, $clone))->toBe($reason)
-        ->and($this->agentReads)->toBe([])
         ->and(Operation::query()->count())->toBe(0);
 })->with([
-    'no access log yet' => [null, true, 'http_unknown'],
-    'log younger than the window' => [IdleWindow - 1, true, 'http_active'],
-    'the Node does not answer' => [7_200, false, 'http_unreadable'],
+    // A log written before the watch began says nothing about the time since: the old file of a migrated Instance.
+    'an old log, never watched' => [86_400, null, true, 'watch_starting'],
+    'an old log, watched for less than the window' => [86_400, IdleWindow - 1, true, 'watching'],
+    'no log, watched for less than the window' => [null, IdleWindow - 1, true, 'watching'],
+    'a log younger than the window' => [IdleWindow - 1, 7_200, true, 'http_active'],
+    'the Node does not answer' => [7_200, 7_200, false, 'http_unreadable'],
 ]);
+
+it('starts the watch in an acting run only, and lets a clone without a Route sleep after one watched window', function (): void {
+    $clone = idleClone($this, 'routeless', logAge: null, watchAge: null);
+
+    expect(reasonOf(idleSweep($this)->run(true), $clone))->toBe('watch_starting')
+        ->and($clone->runtime()->firstOrFail()->idle_watch_started_at)->toBeNull();
+
+    expect(reasonOf(idleSweep($this)->run(false), $clone))->toBe('watch_starting')
+        ->and($clone->runtime()->firstOrFail()->idle_watch_started_at?->getTimestamp())->toBe($this->now->getTimestamp());
+
+    // A second acting run keeps the first start.
+    CarbonImmutable::setTestNow($this->now->addSeconds(IdleWindow - 1));
+    expect(reasonOf(idleSweep($this)->run(false, now: CarbonImmutable::now()), $clone))->toBe('watching')
+        ->and($clone->runtime()->firstOrFail()->idle_watch_started_at?->getTimestamp())->toBe($this->now->getTimestamp());
+
+    expect(reasonOf(idleSweep($this)->run(false, now: $this->now->addSeconds(IdleWindow)), $clone))->toBe('sleep');
+});
+
+it('starts no watch for an Instance it could not read or that must never sleep', function (string $case, string $reason): void {
+    $clone = idleClone($this, 'clone', watchAge: null);
+    $case === 'node silent' ? $this->logs = null : $clone->runtime()->update(['power_state' => 'stopped']);
+
+    expect(reasonOf(idleSweep($this)->run(false), $clone))->toBe($reason)
+        ->and($clone->runtime()->firstOrFail()->idle_watch_started_at)->toBeNull();
+})->with([['node silent', 'http_unreadable'], ['asleep', 'asleep']]);
+
+it('keeps the watch and the wake rules in a scoped run with a short window', function (?int $wokeAgo, int $watchAge, string $reason): void {
+    $clone = idleClone($this, 'clone', logAge: 7_200, watchAge: $watchAge);
+    if ($wokeAgo !== null) {
+        Operation::query()->create(['kind' => 'instance.wake', 'target_type' => 'instance', 'target_id' => $clone->id, 'node_id' => $clone->node_id,
+            'status' => 'succeeded', 'input' => [], 'state' => [], 'finished_at' => $this->now->subSeconds($wokeAgo)]);
+    }
+
+    expect(reasonOf(idleSweep($this)->run(false, [$clone->id], 120), $clone))->toBe($reason);
+})->with([
+    'watched for less than the short window' => [null, 60, 'watching'],
+    'woken within the short window' => [60, 7_200, 'woke_recently'],
+    'neither' => [7_200, 7_200, 'sleep'],
+]);
+
+it('gives each decision the evidence it used', function (): void {
+    $clone = idleClone($this, 'clone', logAge: 7_000, watchAge: 9_000);
+    $this->agent[$clone->id] = AgentActivity::read(false, $this->now->subSeconds(5_000)->getTimestamp());
+    Operation::query()->create(['kind' => 'instance.wake', 'target_type' => 'instance', 'target_id' => $clone->id, 'node_id' => $clone->node_id,
+        'status' => 'succeeded', 'input' => [], 'state' => [], 'finished_at' => $this->now->subSeconds(8_000)]);
+
+    $decision = collect(idleSweep($this)->run(true))->firstWhere('instanceId', $clone->id);
+
+    expect($decision->decision)->toBe('sleep')
+        ->and($decision->watchStartedAt)->toBe($this->now->getTimestamp() - 9_000)
+        ->and($decision->lastHttpAt)->toBe($this->now->getTimestamp() - 7_000)
+        ->and($decision->t3?->lastActivityUnix)->toBe($this->now->getTimestamp() - 5_000)
+        ->and($decision->lastWakeAt)->toBe($this->now->getTimestamp() - 8_000);
+});
 
 it('reads the access logs of a Node in one call', function (): void {
     idleClone($this, 'one');
@@ -260,12 +328,13 @@ it('considers only the named Instances, with the window of the run', function ()
 
 /** The proof path: a named run with a short window may only pick candidates and shorten the window; it skips no rule. */
 it('applies every never-sleep rule in a scoped run with a short window', function (string $case, string $reason): void {
-    $clone = idleClone($this, 'clone', logAge: $case === 'no_http_record' ? null : 200, taskOwned: $case === 'task');
+    $clone = idleClone($this, 'clone', logAge: 200, taskOwned: $case === 'task', watchAge: $case === 'never_watched' ? null : 7_200);
     $target = $case === 'default' ? $this->default : $clone;
     $this->logs[RuntimeHibernation::accessLogPath(RuntimeHibernation::key($this->default->id))] = $this->now->getTimestamp() - 200;
     $never = [];
     match ($case) {
-        'default', 'task', 'no_http_record' => null,
+        'default', 'task', 'never_watched' => null,
+        'node_service' => attachNodeService($clone),
         'nested' => $this->project->forceFill(['nested_fleet' => true])->save(),
         'never' => $never = [$clone->id],
         'operation' => Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $clone->id,
@@ -286,7 +355,7 @@ it('applies every never-sleep rule in a scoped run with a short window', functio
 })->with([
     ['default', 'default'], ['nested', 'nested_fleet'], ['never', 'never_sleep'], ['operation', 'busy'], ['task', 'task'],
     ['keep_alive', 'keep_alive'], ['turn_runs', 't3_turn_running'], ['user_waits', 't3_active'], ['unreadable', 't3_unreadable'],
-    ['no_http_record', 'http_unknown'],
+    ['never_watched', 'watch_starting'], ['node_service', 'node_service'],
 ]);
 
 it('wires the Conn read of T3 and the Node agent read of the logs into the sweep', function (): void {

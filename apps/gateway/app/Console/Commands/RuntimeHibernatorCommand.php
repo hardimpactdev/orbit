@@ -6,6 +6,8 @@ namespace App\Console\Commands;
 
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Domain\Hibernation\HibernationException;
+use App\Domain\Instances\Power\AgentActivity;
+use App\Domain\Instances\Power\ContainerIdleDecision;
 use App\Domain\Instances\Power\ContainerIdleSweep;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Config;
@@ -62,13 +64,31 @@ final class RuntimeHibernatorCommand extends Command
 
                 return self::FAILURE;
             }
-            $this->table(['Instance', 'Name', 'Decision', 'Reason', 'Operation'], array_map(static fn ($decision): array => [
-                $decision->instanceId, $decision->name, $decision->decision, $decision->reason, $decision->operationId ?? '',
-            ], $decisions));
+            $this->table(['Instance', 'Name', 'Decision', 'Reason', 'Watched since', 'Last HTTP', 'Last T3', 'Last wake', 'Operation'],
+                array_map(static fn (ContainerIdleDecision $decision): array => [
+                    $decision->instanceId, $decision->name, $decision->decision, $decision->reason, self::time($decision->watchStartedAt),
+                    self::time($decision->lastHttpAt), self::agent($decision->t3), self::time($decision->lastWakeAt), $decision->operationId ?? '',
+                ], $decisions));
             $sleeps = count(array_filter($decisions, static fn ($decision): bool => $decision->decision === 'sleep'));
             $this->info(($acts ? 'Put' : 'Would put')." [{$sleeps}] idle development containers to sleep.");
         }
 
         return $failed ? self::FAILURE : self::SUCCESS;
+    }
+
+    /** A time of the evidence in UTC to the second, or `-` when the sweep did not read one or found none. */
+    private static function time(?int $unix): string
+    {
+        return $unix === null ? '-' : gmdate('Y-m-d\\TH:i:s\\Z', $unix);
+    }
+
+    private static function agent(?AgentActivity $t3): string
+    {
+        return match (true) {
+            $t3 === null => '-',
+            ! $t3->readable => 'unreadable',
+            $t3->turnRuns => 'turn running',
+            default => self::time($t3->lastActivityUnix),
+        };
     }
 }
