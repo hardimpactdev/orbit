@@ -1432,3 +1432,96 @@ describe('a connection the default shares with its clones', function (): void {
             ->and(DatabaseConnectionTarget::query()->where('database_connection_id', $catalogue->id)->pluck('instance_id')->all())->toBe([$default->id]);
     });
 });
+
+/** A seeded container default with the given development definitions, as its finished create leaves it. */
+function seededDefaultWith(Node $node, array $definitions): Instance
+{
+    $project = containerDefaultProject();
+    foreach ($definitions as $name => $spec) {
+        ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => $name, 'environments' => ['development'], 'spec' => $spec]);
+    }
+    $default = Instance::query()->findOrFail(containerCreate($project, $node)->target_id);
+    $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
+    $default->processes()->update(['status' => 'active']);
+    InstanceRuntime::query()->where('instance_id', $default->id)->firstOrFail()
+        ->update(['seed_commit' => str_repeat('c', 40), 'power_state' => InstanceRuntimePowerState::Running]);
+
+    return $default->refresh();
+}
+
+describe('a Process that is stopped on the default', function (): void {
+    it('is recorded in the clone with the default\'s intent: stopped only when stopped on purpose', function (string $desired, string $status, string $expected): void {
+        $node = containerDefaultNode();
+        $default = seededDefaultWith($node, ['worker' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'node', 'worker.js']]]);
+        $default->processes()->update(['desired_state' => $desired, 'status' => $status]);
+
+        $operation = containerCreate($default->project, $node, 'feature');
+
+        $own = Process::query()->where('owner_id', $operation->target_id)->sole();
+        expect($own->desired_state->value)->toBe($expected)
+            ->and(array_column(containerIntentOf($operation)['processes'], 'desired'))->toBe([$expected]);
+    })->with([
+        'stopped on the default' => ['stopped', 'active', 'stopped'],
+        'running on the default' => ['running', 'active', 'running'],
+        'failed on the default, still desired running' => ['running', 'failed', 'running'],
+    ]);
+
+    it('stays stopped beside a dev-server preset on the same port, which still runs', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefaultWith($node, [
+            'dev' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'vp', 'run', 'dev', '--', '--host=0.0.0.0']],
+            'vp-dev' => ['runtime' => 'systemd', 'preset' => 'vp-dev', 'command' => VpDevPreset::definitionCommand()],
+        ]);
+        $default->processes()->where('name', 'dev')->update(['desired_state' => 'stopped']);
+
+        $operation = containerCreate($default->project, $node, 'feature');
+
+        $own = Process::query()->where('owner_id', $operation->target_id)->orderBy('name')->get();
+        $units = collect(containerIntentOf($operation)['processes'])->mapWithKeys(static fn (array $unit): array => [$unit['name'] => $unit['desired']]);
+        expect($own->map(static fn (Process $process): array => [$process->name, $process->desired_state->value])->all())
+            ->toBe([['dev', 'stopped'], ['vp-dev', 'running']])
+            ->and($units->all())->toBe([
+                "orbit-process-{$own[0]->id}-dev.service" => 'stopped',
+                "orbit-process-{$own[1]->id}-vp-dev.service" => 'running',
+            ]);
+    });
+
+    it('stays stopped when a failed clone is created again', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefaultWith($node, ['worker' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'node', 'worker.js']]]);
+        $default->processes()->update(['desired_state' => 'stopped']);
+        $operation = containerCreate($default->project, $node, 'feature');
+        $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'failure-run']])->save();
+        app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
+            'status' => 'failed', 'run_id' => 'failure-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+            'error_code' => 'instance.create_workspace_failed', 'result' => ['instance_id' => $operation->target_id, 'ready' => false, 'failed_step' => 'workspace'],
+        ]);
+
+        $retry = containerCreate($default->project, $node, 'feature');
+
+        expect($retry->target_id)->toBe($operation->target_id)
+            ->and(Process::query()->where('owner_id', $retry->target_id)->sole()->desired_state->value)->toBe('stopped')
+            ->and(array_column(containerIntentOf($retry)['processes'], 'desired'))->toBe(['stopped']);
+    });
+
+    it('is named in the create result; a clone whose Processes all run names none', function (string $desired, array $expected): void {
+        $node = containerDefaultNode();
+        $default = seededDefaultWith($node, [
+            'queue' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'node', 'queue.js']],
+            'worker' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'node', 'worker.js']],
+        ]);
+        $default->processes()->where('name', 'worker')->update(['desired_state' => $desired]);
+        $operation = containerCreate($default->project, $node, 'feature');
+        $operation->forceFill(['status' => 'running', 'finished_at' => null, 'error_code' => null, 'result' => null, 'state' => ['swamp_run_id' => 'run-1']])->save();
+        vaultReadingSocket(['nckrtl-instance-t3-model-register-session-gateway-1-token' => 'gateway-session-value']);
+
+        app(DevelopmentInstanceCreateProjection::class)->apply($operation->refresh(), cloneSucceeded($operation));
+
+        expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded)
+            ->and($operation->result['processes_stopped'])->toBe($expected)
+            ->and(Process::query()->where('owner_id', $operation->target_id)->pluck('status')->map->value->unique()->all())->toBe(['active']);
+    })->with([
+        'one stopped on the default' => ['stopped', ['worker']],
+        'all running on the default' => ['running', []],
+    ]);
+});
