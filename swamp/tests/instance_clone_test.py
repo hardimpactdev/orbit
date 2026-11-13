@@ -778,6 +778,77 @@ console.log(created.stdout);
         self.assertEqual((code, guest, error), (1, [], "instance.clone_phase_invalid\n"))
 
 
+class WorkspacePartsPhaseTest(unittest.TestCase):
+    """`checkout`, `services` and `check`: each reads its half of the one framed vault value and calls one guest phase."""
+
+    VALUE = {"environment": "KEY=private-env\n", "processes": {"/etc/orbit/processes/1/a.env": "QUEUE=private-q\n"},
+             "merge": {"own": ["DB_DATABASE"], "drop": [], "guard": []}}
+    EVIDENCE = {"error_code": "instance.container_process_inactive", "process_failure": {"unit": "orbit-process-1.service"}}
+
+    def phase(self, phase, fail=False):
+        account = pwd.getpwuid(os.getuid())
+        calls = []
+
+        def command(argv, **kwargs):
+            calls.append((argv, kwargs.get("input")))
+            member = argv[argv.index("python3") + 3] if "python3" in argv else None
+            if member is not None and fail:
+                return subprocess.CompletedProcess(argv, 1, json.dumps(self.EVIDENCE), "instance.container_process_inactive\n")
+            if member in {"checkout", "workspace"}:
+                return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "changes": [], "environment": {}, "commit": "first"}), "")
+            if member is not None:
+                return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "changes": []}), "")
+            return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
+
+        container = {"name": "instance-proof", "project": "orbit-instances", "mirror": "/private/mirror", "branch": "proof", "php": None}
+        output, error = io.StringIO(), io.StringIO()
+        code = 0
+        with tempfile.TemporaryDirectory() as folder, (
+            patch("sys.argv", [str(SCRIPT), json.dumps(container), "guest", NETWORK_CHECK.read_text(), account.pw_name, folder,
+                               json.dumps({"node": "node-helper-source"}), phase])
+        ), patch("sys.stdin", io.StringIO(json.dumps(self.VALUE) if phase != "check" else "")), patch("subprocess.run", command), \
+                patch("os.chown"), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+            try:
+                runpy.run_path(str(SCRIPT), run_name="__main__")
+            except SystemExit as result:
+                code = result.code
+            left = list(Path(folder).iterdir())
+        guest = [(argv[argv.index("python3") + 3], json.loads(content) if content else content) for argv, content in calls if "python3" in argv]
+        pushed = [argv[-1] for argv, _ in calls if "file" in argv and "push" in argv]
+        self.assertNotIn("private", error.getvalue())
+        self.assertEqual(left, [])
+        return code, guest, pushed, output.getvalue(), error.getvalue()
+
+    def test_checkout_pushes_the_bundle_and_passes_only_the_env_half(self):
+        code, guest, pushed, output, _ = self.phase("checkout")
+        self.assertEqual(code, 0)
+        self.assertEqual(guest, [("checkout", {"environment": self.VALUE["environment"], "merge": self.VALUE["merge"]})])
+        self.assertEqual(len(pushed), 1)
+        self.assertTrue(pushed[0].startswith("instance-proof/tmp/orbit-workspace-"))
+        self.assertTrue(output.startswith("orbit-commit=first\n"))
+        self.assertNotIn("private", output)
+
+    def test_services_install_the_node_helper_and_pass_only_the_process_files(self):
+        code, guest, pushed, output, _ = self.phase("services")
+        self.assertEqual(code, 0)
+        self.assertEqual(guest, [("services", {"processes": self.VALUE["processes"]})])
+        self.assertEqual(pushed, ["instance-proof/usr/local/libexec/orbit-instance-node-runtime.py"])
+        self.assertEqual(json.loads(output), {"phase": "services", "changes": []})
+
+    def test_workspace_still_passes_the_whole_value_in_one_guest_call(self):
+        code, guest, pushed, output, _ = self.phase("workspace")
+        self.assertEqual(code, 0)
+        self.assertEqual(guest, [("workspace", self.VALUE)])
+        self.assertEqual(len(pushed), 2)
+        self.assertTrue(output.startswith("orbit-commit=first\n"))
+
+    def test_check_reads_no_private_input_and_passes_a_dead_units_code_and_receipt(self):
+        code, guest, pushed, output, error = self.phase("check")
+        self.assertEqual((code, guest, pushed, json.loads(output)), (0, [("check", "")], [], {"phase": "check", "changes": []}))
+        code, _, _, output, error = self.phase("check", fail=True)
+        self.assertEqual((code, json.loads(output), error), (1, self.EVIDENCE, "instance.container_process_inactive\n"))
+
+
 class ClubKeyPhaseTest(unittest.TestCase):
     """A nested-fleet clone's Club key: SSH stdin of the `club-key` phase reaches only the delivery script's stdin."""
 
