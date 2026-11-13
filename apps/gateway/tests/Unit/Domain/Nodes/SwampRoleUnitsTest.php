@@ -57,3 +57,18 @@ it('gives serve and each worker their own temp directory, so a root run can not 
     expect($units['worker'])->toContain("StateDirectory=orbit-swamp-worker/%i orbit-swamp-worker/%i/tmp\n", ' TMPDIR=/var/lib/orbit-swamp-worker/%i/tmp ')
         ->and($units['serve'])->toContain("StateDirectory=orbit-swamp-serve orbit-swamp-serve/tmp\n", ' TMPDIR=/var/lib/orbit-swamp-serve/tmp ');
 });
+
+it('gives each worker its own SSH control folder at the shared path, so a worker restart can not cut a peer step that used its master', function (): void {
+    $worker = SwampRoleUnits::for('orbit', 209)['worker'];
+
+    // @swamp/ssh keeps control sockets under $XDG_RUNTIME_DIR/swamp-ssh/<behavior>; each worker sees its own folder there.
+    expect($worker)->toContain("RuntimeDirectory=orbit-swamp-ssh/%i\nRuntimeDirectoryMode=0700\nBindPaths=/run/orbit-swamp-ssh/%i:/tmp/swamp-ssh\n")
+        ->toContain(' XDG_RUNTIME_DIR=/tmp ')
+        ->toContain(' TMPDIR=/var/lib/orbit-swamp-worker/%i/tmp ');
+
+    // OpenSSH binds "<ControlPath>.<16 random chars>" first and a Unix socket path holds 107 bytes. The longest live behavior
+    // name has 55 characters; under the worker TMPDIR such a socket would not fit.
+    $socket = fn (string $base): int => strlen($base.'/swamp-ssh/'.str_repeat('x', 55).'/'.str_repeat('0', 12).'.sock.'.str_repeat('r', 16));
+    expect($socket('/tmp'))->toBeLessThanOrEqual(107)
+        ->and($socket('/var/lib/orbit-swamp-worker/a/tmp'))->toBeGreaterThan(107);
+});

@@ -31,7 +31,7 @@ The role also runs Swamp's workers on its Node. Official `@swamp/cfgmgmt` steps 
 
 Steps that run on the swamp Node select its workers by label, `labels: {role: swamp}`, not by the token name `orbit-node-209`. Steps for one effect Node select `labels: {node: "<id>"}`; every Node worker carries its `node` label. Any number of workers can carry a label, so a worker drains and restarts while another takes its steps, and no step names a token.
 
-Serve and each worker run with their own `TMPDIR` in their state directory, `/var/lib/orbit-swamp-serve/tmp` and `/var/lib/orbit-swamp-worker/<instance>/tmp`. Deno places the compiled Swamp start cache there, so a root run using `/tmp` does not replace the units' caches.
+Serve and each worker run with their own `TMPDIR` in their state directory, `/var/lib/orbit-swamp-serve/tmp` and `/var/lib/orbit-swamp-worker/<instance>/tmp`. Deno places the compiled Swamp start cache there, so a root run using `/tmp` does not replace the units' caches. Each worker also sees its own `/tmp/swamp-ssh`: a bind mount of `/run/orbit-swamp-ssh/<instance>`, with `XDG_RUNTIME_DIR=/tmp`. `@swamp/ssh` keeps its SSH control sockets there, so a worker never uses an SSH master that another worker started, and a renewal restart of one worker cannot cut a step on another. The path keeps its short length on purpose: OpenSSH binds the socket path plus 17 characters first, which must fit in 107 bytes, and a socket under the worker `TMPDIR` would not fit for long behavior names. Run folders such as `/tmp/orbit-ansible-<run>` stay in the shared `/tmp`, because the steps of one run can go to different workers.
 
 ### Serve and grants
 

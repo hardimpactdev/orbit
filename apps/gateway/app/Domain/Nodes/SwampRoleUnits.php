@@ -29,6 +29,16 @@ final class SwampRoleUnits
 
     private const string WorkerHome = '/var/lib/orbit-swamp-worker/%i';
 
+    /**
+     * Each worker's own `/tmp/swamp-ssh`. `@swamp/ssh` keeps its SSH control sockets in `$XDG_RUNTIME_DIR/swamp-ssh`, else in
+     * `$TMPDIR/swamp-ssh`, else in `/tmp/swamp-ssh`. When all workers shared `/tmp/swamp-ssh`, a worker reused a master that another
+     * worker had started, and a renewal restart of that worker cut the step with exit 255. OpenSSH binds `<ControlPath>.<16 chars>`
+     * first, so a socket path may have 90 bytes at most: a longer base folder than `/tmp/swamp-ssh` breaks long behavior names, and the
+     * worker `TMPDIR` is far too long. `XDG_RUNTIME_DIR=/tmp` keeps the path as it is; a bind mount of this runtime folder gives each
+     * worker its own folder at that path. The rest of `/tmp` stays shared, because the steps of one run go to different workers.
+     */
+    private const string WorkerSshControl = 'orbit-swamp-ssh/%i';
+
     /** The compiled binary keeps its start cache in TMPDIR, separate from root runs in /tmp. */
     private const string ServeTemp = '/var/lib/orbit-swamp-serve/tmp';
 
@@ -52,13 +62,15 @@ final class SwampRoleUnits
     private static function worker(string $user, int $nodeId): string
     {
         $home = self::WorkerHome;
+        $control = self::WorkerSshControl;
 
         return "[Unit]\nDescription=Orbit swamp role worker %i\nAfter=network-online.target\n"
             ."Wants=network-online.target\nStartLimitIntervalSec=300\nStartLimitBurst=5\n\n"
             ."[Service]\nType=exec\nUser={$user}\nStateDirectory=orbit-swamp-worker/%i orbit-swamp-worker/%i/tmp\n"
+            ."RuntimeDirectory={$control}\nRuntimeDirectoryMode=0700\nBindPaths=/run/{$control}:/tmp/swamp-ssh\n"
             ."WorkingDirectory={$home}\n"
             ."Environment=HOME={$home} SWAMP_HOME={$home}/home SWAMP_CONFIG_DIR={$home}/config"
-            ." TMPDIR={$home}/tmp SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1\n"
+            ." TMPDIR={$home}/tmp XDG_RUNTIME_DIR=/tmp SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1\n"
             .'ExecStart=/usr/local/bin/swamp worker connect ws://127.0.0.1:'.self::Port.' --token-file='.self::Credentials.'/%i/enrollment.token'
             .' --server-token-file='.self::Credentials."/%i/server.token --cache-dir={$home}/cache"
             .' --concurrency '.self::WorkerConcurrency." --label role=swamp --label node={$nodeId}\n"
