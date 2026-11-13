@@ -23,12 +23,12 @@ final readonly class RecordDatabaseOperationAction
      * @param  array<string, array<string, mixed>>  $commands
      * @param  array<string, mixed>  $projection
      */
-    public function execute(string $kind, string $targetType, int $targetId, int $nodeId, array $input, #[SensitiveParameter] array $commands, array $projection = []): Operation
+    public function execute(string $kind, string $targetType, int $targetId, int $nodeId, array $input, #[SensitiveParameter] array $commands, array $projection = [], ?string $lockKey = null): Operation
     {
-        return DB::transaction(fn (): Operation => $this->start($this->prepare($kind, $targetType, $targetId, $nodeId, $input, $commands, $projection)));
+        return DB::transaction(fn (): Operation => $this->start($this->prepare($kind, $targetType, $targetId, $nodeId, $input, $commands, $projection), $lockKey));
     }
 
-    public function start(PreparedDatabaseOperation $prepared): Operation
+    public function start(PreparedDatabaseOperation $prepared, ?string $lockKey = null): Operation
     {
         $definition = app(DirectOperation::class)->definition($prepared->kind);
         if ($definition === null) {
@@ -44,7 +44,7 @@ final readonly class RecordDatabaseOperationAction
         }
 
         return $this->operations->execute($prepared->kind, $prepared->targetType, $prepared->targetId, $prepared->nodeId,
-            $input, 'operator', request()->attributes->getString('orbit.request_id'));
+            $input, 'operator', request()->attributes->getString('orbit.request_id'), lockKey: $lockKey);
     }
 
     /** @param array<string, mixed> $input

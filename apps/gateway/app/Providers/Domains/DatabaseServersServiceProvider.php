@@ -8,7 +8,7 @@ use App\Actions\DatabaseServers\PurgeDatabaseExecutionIntentsAction;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\DatabaseServers\DatabaseIntentSource;
 use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
-use App\Domain\DatabaseServers\PostgresConnectionUpdateHook;
+use App\Domain\DatabaseServers\ManagedSqlConnectionUpdateHook;
 use App\Domain\DatabaseServers\ValkeyConnectionUpdateHook;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Processes\ProcessRemovalGuard;
@@ -29,7 +29,7 @@ final class DatabaseServersServiceProvider extends ServiceProvider
     {
         $this->app->tag([DatabaseIntentSource::class], OperationSecretSource::class);
         $this->app->tag([ValkeyConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);
-        $this->app->tag([PostgresConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);
+        $this->app->tag([ManagedSqlConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);
         $this->app->tag([DatabaseServerProcessOwnership::class], ProcessRemovalGuard::class);
 
     }

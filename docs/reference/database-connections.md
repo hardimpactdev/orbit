@@ -127,7 +127,7 @@ Unknown tables fail the Operation with `database.table_missing`. Every other exe
 
 On a `redis` server, the same request with `patterns`, `allow`, and an optional numeric `database` creates a [Valkey ACL user](/reference/database-servers#create-an-acl-user-on-a-valkey-server) named after the slug and records a `redis` connection that logs in as that user. `patterns` and `allow` are lists of strings. A MySQL or PostgreSQL server refuses them with `validation.failed`, and a `redis` server refuses `instance_id` with `database.driver_unsupported`.
 
-A managed Valkey connection's driver, Node, address, port, username, and password cannot change through `database:update`. It returns `database.server_connection_managed` (409). The database index can change. Create another connection to move clients to a different user.
+A managed MySQL or PostgreSQL connection's driver, Node, address, port, database, username, and password cannot change through `database:update`; a new name there would reach another database or account. It returns `database.server_connection_managed` (409). A managed Valkey connection's driver, Node, address, port, username, and password cannot change through `database:update`. It returns `database.server_connection_managed` (409). The database index can change. Create another connection to move clients to a different user.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
@@ -137,6 +137,7 @@ A managed Valkey connection's driver, Node, address, port, username, and passwor
 | `database.server_inactive` | 409 | The server is not active yet. |
 | `database.slug_conflict` | 409 | Another connection has the slug. |
 | `database.name_conflict` | 409 | The server already has a database or user with the derived name. |
+| `database.user_reserved` | 422 | The derived user name is the server's admin login or a system role, such as `root` or `postgres`. |
 | `database.driver_unsupported` | 422 | `instance_id` names an Instance, but the server is a `redis` server. |
 | `database.acl_rules_invalid` | 422 | Valkey refused a key pattern or a rule. |
 | `database.server_command_failed` | 502 | The server could not create the database or user. |

@@ -15,6 +15,8 @@ Schedule log streams use POST, PUT and DELETE under `/api/v1/schedules/{schedule
 
 `database:server:update` is PATCH `/api/v1/database-servers/{database_server}`. It requires JSON `{"require_password":true}`; the generated schema fixes this field to true. The operation receipt keeps kind `database_server.close`. See [Database servers](/reference/database-servers#close-an-adopted-server).
 
+`database:user:create` is POST `/api/v1/database-connections/{database_connection}/users`. Its description in `bin/docs-openapi` names the ownership refusals `database.user_reserved` and `database.name_conflict`; [Add a user](/reference/database-servers#add-a-user) owns them.
+
 Task agent JSON and SSE reads return recorded Gateway snapshots. `kind` is `snapshot`, `cursor` is null, and `after_sequence` never requests Pi deltas. `archived` means a saved snapshot exists; a later turn can replace it. Output updates when each turn ends, including children of a running parent. See [Read a thread](/reference/tasks#read-a-thread).
 
 The task page reads Swamp history through `GET /api/v1/tasks/{task}/swamp-runs`. Its response uses typed run and step schemas; [Swamp run output](/reference/tasks#swamp-run-output) defines availability, bounds, and group matching.

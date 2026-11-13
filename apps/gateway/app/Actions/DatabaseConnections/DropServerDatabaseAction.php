@@ -8,6 +8,7 @@ use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseDestroySafety;
 use App\Domain\DatabaseServers\DatabaseStatements;
+use App\Domain\DatabaseServers\DatabaseUserPrivileges;
 use App\Domain\DatabaseServers\PostgresTestDatabases;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\Shared\ResourceOperationException;
@@ -24,7 +25,7 @@ use Illuminate\Support\Facades\DB;
 /** Admission records identities only. Swamp owns every probe, statement and effect. */
 final readonly class DropServerDatabaseAction
 {
-    public function __construct(private RecordDatabaseOperationAction $operations) {}
+    public function __construct(private RecordDatabaseOperationAction $operations, private DatabaseUserPrivileges $privileges) {}
 
     public function execute(DatabaseConnection $connection): Operation
     {
@@ -128,7 +129,11 @@ final readonly class DropServerDatabaseAction
             $users = array_diff($users, $this->usernames($other));
         }
 
-        return array_values(array_diff(array_unique($users), ['', 'default']));
+        // The server's admin login and system roles are never a connection's to drop, even when an old record names one.
+        $driver = $connection->server?->driver;
+
+        return array_values(array_filter(array_diff(array_unique($users), ['', 'default']),
+            fn (string $user): bool => $driver === null || ! $this->privileges->reserved($driver, $user)));
     }
 
     /** @return list<string> */

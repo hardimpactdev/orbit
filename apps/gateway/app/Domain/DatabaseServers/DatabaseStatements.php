@@ -155,13 +155,8 @@ final readonly class DatabaseStatements
         // An existing database the owner holds no full grant on belongs to someone else.
         $grant = "d.Db=REPLACE(s.SCHEMA_NAME,'_','\\\\_')";
         $foreign = "SELECT 1 FROM information_schema.SCHEMATA s WHERE s.SCHEMA_NAME IN ({$names}) AND NOT EXISTS (SELECT 1 FROM mysql.db d WHERE d.User='{$user}' AND d.Host='%' AND {$grant} AND d.Create_priv='Y')";
-        // A name the server holds for someone else stops the batch before any change: the prepared statement reads a
-        // table that does not exist. The marker line names the refusal for the Gateway.
-        $guard = "SELECT 'database.name_conflict' FROM DUAL WHERE EXISTS ({$foreign});\n"
-            ."SET @orbit_guard = IF(EXISTS ({$foreign}), 'SELECT 1 FROM orbit_name_conflict.refused', 'DO 0');\n"
-            ."PREPARE orbit_guard FROM @orbit_guard;\nEXECUTE orbit_guard;\nDEALLOCATE PREPARE orbit_guard;\n";
 
-        return ['login' => "SELECT CURRENT_USER();\n", 'owner_password' => $password, 'create' => $guard.$create];
+        return ['login' => "SELECT CURRENT_USER();\n", 'owner_password' => $password, 'create' => self::mysqlGuard($foreign).$create];
     }
 
     /**
@@ -187,7 +182,12 @@ final readonly class DatabaseStatements
             $grant = '`'.str_replace('_', '\\_', $database).'`.*';
             $privilege = $input['read_only'] ? 'SELECT' : 'ALL PRIVILEGES';
 
-            return ['wal' => "SELECT 1;\n", 'apply' => "CREATE USER IF NOT EXISTS {$account} IDENTIFIED BY {$secret};\nALTER USER {$account} IDENTIFIED BY {$secret};\n"
+            // An account of this name that the connection did not record (any host) belongs to someone else: the batch
+            // prints the refusal for the Gateway and stops before any change, as create() does.
+            $foreign = "SELECT 1 FROM mysql.user WHERE User='{$user}'";
+            $guard = $input['known_user'] ? '' : self::mysqlGuard($foreign);
+
+            return ['wal' => "SELECT 1;\n", 'apply' => $guard."CREATE USER IF NOT EXISTS {$account} IDENTIFIED BY {$secret};\nALTER USER {$account} IDENTIFIED BY {$secret};\n"
                 ."GRANT SELECT ON {$grant} TO {$account};\nREVOKE ALL PRIVILEGES ON {$grant} FROM {$account};\nGRANT {$privilege} ON {$grant} TO {$account};\n",
                 'check' => "SELECT CURRENT_USER();\nSHOW GRANTS;\n"];
         }
@@ -380,6 +380,18 @@ final readonly class DatabaseStatements
             ." UNION ALL SELECT TRIGGER_SCHEMA FROM information_schema.TRIGGERS WHERE DEFINER IN ({$definers}) AND TRIGGER_SCHEMA NOT IN ({$names})"
             ." UNION ALL SELECT EVENT_SCHEMA FROM information_schema.EVENTS WHERE DEFINER IN ({$definers}) AND EVENT_SCHEMA NOT IN ({$names})"
             ." UNION ALL SELECT TABLE_SCHEMA FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_SCHEMA IN ({$names}) AND TABLE_SCHEMA<>REFERENCED_TABLE_SCHEMA";
+    }
+
+    /**
+     * Stops a MySQL batch before any change when `$foreign` finds a row: a name the server holds for someone else. The
+     * marker line names the refusal for the Gateway. The stop statement fails on any server ("Subquery returns more
+     * than 1 row"), so no table or grant a user can create lets the batch go on.
+     */
+    private static function mysqlGuard(string $foreign): string
+    {
+        return "SELECT 'database.name_conflict' FROM DUAL WHERE EXISTS ({$foreign});\n"
+            ."SET @orbit_guard = IF(EXISTS ({$foreign}), 'DO (SELECT 1 UNION ALL SELECT 2)', 'DO 0');\n"
+            ."PREPARE orbit_guard FROM @orbit_guard;\nEXECUTE orbit_guard;\nDEALLOCATE PREPARE orbit_guard;\n";
     }
 
     private function invalid(): never

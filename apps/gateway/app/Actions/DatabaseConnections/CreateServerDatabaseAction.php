@@ -325,6 +325,10 @@ final readonly class CreateServerDatabaseAction
             }
         }
 
+        if ($credentials['new'] && $this->privileges->reserved($server->driver, $credentials['username'])) {
+            throw $this->privileges->reservedError($credentials['username']);
+        }
+
         if ($credentials['new'] && (DatabaseConnection::query()->where('database_server_id', $server->id)->where('username', $credentials['username'])->exists()
             || DatabaseUser::query()->where('username', $credentials['username'])->whereIn('database_connection_id', $connections->pluck('id'))->exists())) {
             throw $this->nameConflict($server, $credentials['username']);
