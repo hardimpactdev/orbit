@@ -28,7 +28,7 @@ final readonly class TaskCopyLifecycle
             return;
         }
         [$instance, $group] = $owned;
-        if ($operation->status === OperationStatus::Succeeded) {
+        if (self::ready($operation)) {
             if ($group->status === TaskGroupStatus::Reserved) {
                 $group->update(['status' => TaskGroupStatus::Running, 'started_at' => $group->started_at ?? now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
             }
@@ -41,6 +41,16 @@ final readonly class TaskCopyLifecycle
         if ($operation->error_code !== 'operation.timed_out') {
             DestroyTaskCopy::dispatch($instance->id);
         }
+    }
+
+    /**
+     * Whether the copy is ready for its task: the one place that decides it. Today the create Operation succeeded; for a nested-fleet
+     * copy that includes its fleet step, which a create runs before it can succeed. When the create splits into a first workflow (usable)
+     * and a second one (Processes, Route, database copy), this reads the field that names "fully set up" instead. Read no step names here.
+     */
+    public static function ready(Operation $operation): bool
+    {
+        return $operation->status === OperationStatus::Succeeded;
     }
 
     /**

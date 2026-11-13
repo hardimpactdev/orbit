@@ -262,7 +262,7 @@ describe('the end of the copy\'s create', function (): void {
         $operation = runningOperation(startCopy($group));
         $normal = runningOperation(containerCreate($default->project, $default->node, 'feature'));
         $failed = ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-            'error_code' => 'instance.create_fleet_failed', 'result' => ['ready' => false, 'failed_step' => 'fleet']];
+            'error_code' => 'instance.create_failed', 'result' => ['ready' => false]];
 
         app(DevelopmentInstanceCreateProjection::class)->apply($operation, [...$failed, 'result' => [...$failed['result'], 'instance_id' => $operation->target_id]]);
         app(DevelopmentInstanceCreateProjection::class)->apply($normal, [...$failed, 'result' => [...$failed['result'], 'instance_id' => $normal->target_id]]);

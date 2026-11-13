@@ -148,6 +148,8 @@ Operation shows return recorded state without remote reads, expiry or projection
 
 Instance migration settles [deferred Schedule fires](/reference/schedules#checkout-migration) in the transaction that first marks its Operation terminal. It locks the Instance, then queues each fire against the recorded runtime or explicitly fails it if admission remains closed.
 
+An `instance.create` moves the task that owns its Instance, a [task copy](/reference/tasks#task-copy), in the same transaction that first marks it terminal. So every end counts: a run's report, a start that Swamp refuses, a cancel before the run, an expired budget. A create of an Instance that no task owns changes no task.
+
 The submission boundary records whether a native start was sent or explicitly refused; proven no-start outcomes, including failed execution-copy preparation, free a new runtime reservation.
 
 A deleted Instance never prevents the Operation from becoming terminal; its waiting Schedule fires fail with `schedule.target_unavailable`, even if their Schedule was also deleted. An unverified runtime keeps its reservation; a projected rollback removes it. Expiry settles fires immediately without changing the migration’s timeout result. Migration-specific late-result recovery can update that result as described below; later receipts, stale hold release and recovery cannot replay a settled fire.
