@@ -1495,7 +1495,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "655b0a886c43d470f1f88dae4c6aa242646dadf2ff0879e677eee69ae50b5fca",
+    "source_sha256": "ff9a277b6757aff5e51256c84f3ca9469fe3c94edeb342139280d37fdb9ac3bb",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1509,6 +1509,8 @@
       "test_unreachable_frozen_commit_fails_without_using_current_tip",
       "test_schedule_cleanup_listing_error_refuses_before_clone_boot",
       "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
+      "test_boot_files_reach_the_copy_before_its_first_start_and_before_the_node_services_apply",
+      "test_a_running_copy_and_a_clone_without_boot_files_push_none",
       "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement",
       "test_clone_of_a_default_with_a_node_service_target_strips_it_on_the_first_try_and_on_a_retry",
       "test_clone_target_failure_receipt_keeps_public_identity_and_bounds_tool_output",

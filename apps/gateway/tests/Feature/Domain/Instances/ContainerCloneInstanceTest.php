@@ -194,6 +194,7 @@ describe('a clone of the container default', function (): void {
             ->and($clone['t3'])->toMatchArray(['port' => 3800, 'listen' => '10.44.0.7', 'device' => 't3', 'internal_port' => 3773,
                 'url' => 'http://10.44.0.7:3800', 'label' => 'tool / feature', 'title' => 'tool'])
             ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json'])
+            ->and($clone)->not->toHaveKey('boot_files')
             ->and($clone['files'][0]['content'])->toBe("# Managed by Orbit.\nORBIT_INSTANCE_ID={$id}\nORBIT_INSTANCE=feature\nORBIT_PROJECT=tool\nORBIT_PROJECT_ID={$default->project_id}\nORBIT_PROJECT_NAME=\"tool\"\nORBIT_NODE={$node->name}\nORBIT_URL=\n")
             ->and($clone['files'][1]['content'])->toContain('base_url = "http://10.253.0.1:8319/v1"')
             ->and($clone['files'][2])->toBe(['path' => '/home/agent/.claude.json', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]])

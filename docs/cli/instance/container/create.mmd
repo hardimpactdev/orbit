@@ -49,6 +49,7 @@ sequenceDiagram
     %%> - the copy gets its own bridge address and ACL, and the proxy device `t3`: NAT from the Node's WireGuard address and the T3 port to T3's port 3773
     %%> - the container's ACL lets the Node's Caddy reach port 8080, WireGuard peers reach port 3773, and the container reach its database server's port
     %%> - UFW: a route rule admits WireGuard peers to T3, below a deny for the task VM range; a rule admits the container to its database server's port
+    %%> - a default with a remote Node service target: writes the base `NO_PROXY` files into the stopped copy before its first start, so units start without the default's hosts
     %%> - starts the copy: nftables, `hidepid` and the image's units start; T3 does not, because `/etc/orbit/instance` does not exist yet
     %%> Mail:
     %%> - the same launch applies the exact SMTP path before the four root-owned mail units; no separate mail playbook or step

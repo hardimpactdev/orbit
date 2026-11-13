@@ -118,8 +118,9 @@ class BranchSelectionTest(unittest.TestCase):
 
 
 class CloneTest(unittest.TestCase):
-    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None):
+    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None):
         calls = []
+        self.inputs = {}
         real_run = subprocess.run
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder) / "rootfs"
@@ -153,11 +154,12 @@ class CloneTest(unittest.TestCase):
                 },
             }
             container.update(overrides or {})
-            read = None
+            read = existing
 
             def command(argv, **kwargs):
                 nonlocal read
                 calls.append(argv)
+                self.inputs[id(argv)] = kwargs.get("input")
                 if real_git and argv[0] in {"git", "timeout"}:
                     return real_run(argv, **kwargs)
                 if argv[:2] == ["python3", "-c"]:
@@ -286,6 +288,55 @@ class CloneTest(unittest.TestCase):
         self.assertLess(calls.index(files), calls.index(start))
         check = next(i for i, call in enumerate(calls) if call[:2] == ["python3", "-c"])
         self.assertLess(check, calls.index(start))
+
+    BOOT_FILES = [
+        {"path": "/etc/systemd/system.conf.d/99-orbit-node-services.conf", "uid": 0, "gid": 0, "mode": "0644",
+         "content": "# Managed by Orbit: attached Node service.\n[Manager]\nDefaultEnvironment=NO_PROXY=a no_proxy=a\n"},
+        {"path": "/etc/profile.d/99-orbit-node-services.sh", "uid": 0, "gid": 0, "mode": "0644",
+         "content": "# Managed by Orbit: attached Node service.\nexport NO_PROXY=a no_proxy=a\n"},
+    ]
+
+    def clone_with(self, clone, **kwargs):
+        overrides = kwargs.pop("overrides", {})
+        return self.clone(overrides={**overrides, "clone": {"source": "instance-1", "snapshot": "seed", "t3": {"device": "t3"}, **clone}},
+                          **kwargs)
+
+    @staticmethod
+    def pushes(calls):
+        return [call for call in calls if call[3:5] == ["file", "push"] and call[-1].startswith("instance-7/etc/")
+                and "99-orbit-node-services" in call[-1]]
+
+    def test_boot_files_reach_the_copy_before_its_first_start_and_before_the_node_services_apply(self):
+        calls, _, error = self.clone_with({"boot_files": self.BOOT_FILES}, overrides={"node_services": [{"port": 3308}]})
+        self.assertEqual(error, "")
+        pushes = self.pushes(calls)
+        self.assertEqual([call[-1] for call in pushes], ["instance-7" + item["path"] for item in self.BOOT_FILES])
+        for call in pushes:
+            self.assertEqual(call[3:12], ["file", "push", "--create-dirs", "--uid", "0", "--gid", "0", "--mode", "0644"])
+        # The exact rendered content goes in as the push's input.
+        self.assertEqual([self.inputs[id(call)] for call in pushes], [item["content"] for item in self.BOOT_FILES])
+        copy = next(i for i, call in enumerate(calls) if "copy" in call)
+        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+        apply = next(i for i, c in enumerate(calls) if c[:2] == ["python3", "-c"] and c[2] == 'print(\'{"status":"unchanged"}\')')
+        self.assertTrue(all(copy < calls.index(call) < start < apply for call in pushes))
+
+    def test_a_running_copy_and_a_clone_without_boot_files_push_none(self):
+        running = {"status": "Running", "devices": {"t3": {}}, "config": {"volatile.uuid": "abc-123"},
+                   "expanded_devices": {"eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",
+                                                 "security.acls": "orbitinst0-proxy,instance-7",
+                                                 "security.acls.default.egress.action": "reject",
+                                                 "security.acls.default.ingress.action": "reject"}}}
+        for case, clone, existing in (("retry on a running copy", {"boot_files": self.BOOT_FILES}, running),
+                                      ("normal clone", {}, None),
+                                      # An intent admitted by the previous Gateway release: the files are in clone.files,
+                                      # which the agent phase writes, and the key is absent.
+                                      ("old intent", {"files": self.BOOT_FILES}, None)):
+            with self.subTest(case=case):
+                calls, _, error = self.clone_with(clone, existing=existing)
+                self.assertEqual(error, "")
+                self.assertEqual(self.pushes(calls), [])
+                started = ["incus", "--project", "orbit-instances", "start", "instance-7"] in calls
+                self.assertEqual(started, existing is None)
 
     def test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement(self):
         _, _, error = self.clone(overrides={'node_services': [{'port': 3308}]},

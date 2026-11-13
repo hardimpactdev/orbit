@@ -763,7 +763,7 @@ The migration mail fixture also checks the phase order: copy first, bounded mail
 
 The destroy dependency fixture uses real Git in private temporary directories, runs unprivileged and launches no Ansible playbooks. It covers confirmed dependents, moved and prunable worktrees, unreadable candidates, malformed rows and named target failures without scanning checkout contents. Gateway tests bind a deterministic remote-program fake by default and prove an admission refusal leaves serving records untouched. Inventory and named cost keys are collected together.
 
-Clone branch fixtures use unprivileged local Git repositories and run without an Ansible playbook. Their registered case names and conservative costs change together in `tools/tests/ci-fixture-cases.json` and `.github/ci/checks.toml`; collect names with `bin/ci-units collect --file swamp/tests/instance_clone_test.py`.
+Clone branch fixtures use unprivileged local Git repositories and run without an Ansible playbook. Their registered case names and conservative costs change together in `tools/tests/ci-fixture-cases.json` and `.github/ci/checks.toml`; collect names with `bin/ci-units collect --file swamp/tests/instance_clone_test.py`. The same file runs the real `container` phase of `instance_clone.py` with a fake `incus`, so a case can check the order of the pushes, the start and the Node services apply.
 
 The `instance:restore` workflow fixture evaluates every expression of `operation-instance-restore` against the input its projection renders. It needs no Node, database or playbook.
 
