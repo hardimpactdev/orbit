@@ -72,7 +72,9 @@ beforeEach(function (): void {
     $this->ssh = new class implements SshExecutor
     {
         /** @var array<string, mixed> */
-        public array $answer = ['state' => 'unknown', 'reason' => 'stopped'];
+        public array $answer = ['state' => 'clean', 'baseline' => 'none', 'head' => 'main', 'modified' => ['count' => 0, 'names' => []],
+            'untracked' => ['count' => 0, 'names' => []], 'stashes' => ['count' => 0, 'names' => []],
+            'commits' => ['count' => 0, 'branch_count' => 0, 'branches' => []]];
 
         public int $calls = 0;
 
@@ -233,6 +235,25 @@ describe('a task start on the copy path', function (): void {
         }],
     ]);
 
+    it('is refused by name and leaves nothing when the default\'s container does not run, whatever its record says', function (array $answer): void {
+        $default = copySource();
+        $group = copyGroup($default->project);
+        $this->ssh->answer = $answer;
+        $before = copyRows();
+
+        expect(copyRefusal(fn () => startCopy($group)))->toBe('tasks.copy_source_unavailable 409')
+            ->and($default->runtime->refresh()->power_state)->toBe(InstanceRuntimePowerState::Running)
+            ->and(copyRows())->toBe($before)
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Todo)
+            ->and($this->ssh->calls)->toBe(1);
+    })->with([
+        // As Project 79's default on 2026-11-13: stopped by hand, its record still running.
+        'stopped' => [['state' => 'unknown', 'reason' => 'stopped']],
+        'asleep' => [['state' => 'unknown', 'reason' => 'asleep']],
+        'unreachable' => [['state' => 'unknown', 'reason' => 'unreachable']],
+        'silent' => [['state' => 'unknown', 'reason' => 'timeout']],
+    ]);
+
     it('holds at most the Gateway\'s number of copies on the Node, failing copies included', function (): void {
         $default = copySource();
         startCopy(copyGroup($default->project));
@@ -365,6 +386,7 @@ describe('a cancel of a group that owns a copy', function (): void {
     it('records a stopped copy as unknown and still admits its destroy', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
+        $this->ssh->answer = ['state' => 'unknown', 'reason' => 'stopped'];
 
         $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
 
