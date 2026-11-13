@@ -1920,7 +1920,7 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "083f536068b66ca96a0dc2624c532d696a3f7a64784f19cc6f340e3273376c00",
+    "source_sha256": "8bf7586f735dab4b5f54c7bbfd63fc4a32cd2443fa4764966fcf1d0393983c53",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
@@ -1936,7 +1936,8 @@
       "guarded withdrawal resolves the same child when cleanup is needed and stays deferred during parent preflight",
       "a normal clone create runs agent and T3 beside the workspace, and sessions waits for both",
       "a clone whose workspace fails while T3 runs registers nothing and stops the container",
-      "a clone whose T3 or database phase fails registers nothing, stops the container and names that phase"
+      "a clone whose T3 or database phase fails registers nothing, stops the container and names that phase",
+      "a nested-fleet clone runs agent and T3 beside its fleet start; only the workspace waits for the fleet"
     ]
   },
   "swamp/tests/workflow_placement_test.ts": {

@@ -432,3 +432,13 @@ Deno.test("a clone whose T3 or database phase fails registers nothing, stops the
   assertEquals(JSON.parse(String(failedDatabase.finish.outputs!.stdout)).failed_step, "database");
   assertEquals(failedDatabase["stop-container"].status, "succeeded");
 });
+
+Deno.test("a nested-fleet clone runs agent and T3 beside its fleet start; only the workspace waits for the fleet", () => {
+  const outcomes = { ...cloneOutcomes(), "clone-fleet": { duration: 40 } };
+  const ran = runCreate({ ...cloneIntent, fleet: { seed: "e".repeat(40) } }, outcomes);
+  assertEquals(ran["clone-fleet"].status, "succeeded");
+  assertEquals(ran["clone-t3"].end < ran["clone-fleet"].end, true, "T3 waits for the fleet");
+  assertEquals(ran["clone-workspace"].start, ran["clone-fleet"].end);
+  assertEquals(ran["clone-sessions"].start, ran["clone-workspace"].end);
+  assertEquals(ran.finish.outputs!.ready, true);
+});
