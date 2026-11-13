@@ -28,7 +28,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-release'
-      behaviorName: fleet-release-root
+      behaviorName: ${{ "fleet-release-root" }}
       methodName: prepare
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -73,7 +73,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-release'
-      behaviorName: fleet-release-root
+      behaviorName: ${{ "fleet-release-root" }}
       methodName: finish
       inputs:
         operation_id: ${{ inputs.operation_id }}

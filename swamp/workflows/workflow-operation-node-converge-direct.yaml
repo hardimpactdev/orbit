@@ -56,7 +56,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/ansible-input'
-          behaviorName: ansible-input
+          behaviorName: ${{ "ansible-input" }}
           methodName: write
           inputs:
             intent: '${{ inputs.intent }}'
@@ -79,7 +79,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: node-converge-write-agent_verifier
+          behaviorName: ${{ "node-converge-write-agent_verifier" }}
           methodName: execute
           inputs:
             run: "umask 077\nprintf %s \"$ORBIT_VALUE\" > \"$ORBIT_FILE\""
@@ -105,7 +105,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: node-converge-write-metrics_password
+          behaviorName: ${{ "node-converge-write-metrics_password" }}
           methodName: execute
           inputs:
             run: "umask 077\nprintf %s \"$ORBIT_VALUE\" > \"$ORBIT_FILE\""
@@ -131,7 +131,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: node-converge-write-websocket_environment
+          behaviorName: ${{ "node-converge-write-websocket_environment" }}
           methodName: execute
           inputs:
             run: "umask 077\nprintf %s \"$ORBIT_VALUE\" > \"$ORBIT_FILE\""
@@ -157,7 +157,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: node-converge-write-analytics_environment
+          behaviorName: ${{ "node-converge-write-analytics_environment" }}
           methodName: execute
           inputs:
             run: "umask 077\nprintf %s \"$ORBIT_VALUE\" > \"$ORBIT_FILE\""
@@ -183,7 +183,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/ansible-input'
-          behaviorName: ansible-input
+          behaviorName: ${{ "ansible-input" }}
           methodName: convergeInput
           inputs:
             folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
@@ -205,7 +205,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: node-converge-converge-input
+          behaviorName: ${{ "node-converge-converge-input" }}
           methodName: execute
           inputs:
             run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags input \"$ORBIT_ANSIBLE/operation-node-converge.yml\" > \"$ORBIT_RUN/input.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/input-meta.json\"\nexit \"$code\""
@@ -231,7 +231,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: node-converge-converge-agent
+          behaviorName: ${{ "node-converge-converge-agent" }}
           methodName: execute
           inputs:
             run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags agent \"$ORBIT_ANSIBLE/operation-node-converge.yml\" > \"$ORBIT_RUN/agent.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/agent-meta.json\"\nexit \"$code\""
@@ -257,7 +257,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: node-converge-converge-software
+          behaviorName: ${{ "node-converge-converge-software" }}
           methodName: execute
           inputs:
             run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags software \"$ORBIT_ANSIBLE/operation-node-converge.yml\" > \"$ORBIT_RUN/software.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/software-meta.json\"\nexit \"$code\""
@@ -283,7 +283,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: node-converge-converge-roles
+          behaviorName: ${{ "node-converge-converge-roles" }}
           methodName: execute
           inputs:
             run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags roles \"$ORBIT_ANSIBLE/$ORBIT_PLAYBOOK\" > \"$ORBIT_RUN/roles.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/roles-meta.json\"\nexit \"$code\""
@@ -310,7 +310,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: node-converge-converge-tools
+          behaviorName: ${{ "node-converge-converge-tools" }}
           methodName: execute
           inputs:
             run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags tools \"$ORBIT_ANSIBLE/operation-node-converge.yml\" > \"$ORBIT_RUN/tools.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/tools-meta.json\"\nexit \"$code\""
@@ -336,7 +336,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: node-converge-converge-network
+          behaviorName: ${{ "node-converge-converge-network" }}
           methodName: execute
           inputs:
             run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags network \"$ORBIT_ANSIBLE/operation-node-converge.yml\" > \"$ORBIT_RUN/network.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/network-meta.json\"\nexit \"$code\""
@@ -362,7 +362,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: node-converge-converge-check
+          behaviorName: ${{ "node-converge-converge-check" }}
           methodName: execute
           inputs:
             run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags check \"$ORBIT_ANSIBLE/operation-node-converge.yml\" > \"$ORBIT_RUN/check.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/check-meta.json\"\nexit \"$code\""
@@ -388,7 +388,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/ansible-input'
-          behaviorName: node-converge-result
+          behaviorName: ${{ "node-converge-result" }}
           methodName: convergeResult
           inputs:
             folder: '${{ "/tmp/orbit-ansible-" + run.id }}'

@@ -16,7 +16,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: swamp-datastore-watch
+          behaviorName: ${{ "swamp-datastore-watch" }}
           methodName: execute
           inputs:
             # Read-only: file counts per datastore directory, auto-definitions per type (grant records are type swamp/grant),

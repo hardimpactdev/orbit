@@ -88,7 +88,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/caddy-public-input'
-      behaviorName: input-caddy-public-input
+      behaviorName: ${{ "input-caddy-public-input" }}
       methodName: prepare
       inputs: {publication: '${{ inputs.intent.caddy_publication }}'}
   - name: Check the connection
