@@ -12,6 +12,7 @@ use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
@@ -34,7 +35,9 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Swamp\NativeRunProgress;
 use App\Infrastructure\Swamp\SwampDispatch;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseExecutionIntent;
@@ -48,6 +51,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
@@ -674,7 +678,7 @@ function connCompletingClone(string $name = 'feature', string $status = 'running
     $completion = Operation::query()->create(['kind' => 'instance.complete', 'target_type' => 'instance', 'target_id' => $instance->id,
         'node_id' => $instance->node_id, 'lock_key' => $terminal ? null : OperationStore::lockKey('instance', $instance->id),
         'input' => ['instance_id' => $instance->id, 'direct_provisioning' => ['container' => ['processes' => []]]],
-        'state' => $status === 'running' ? ['swamp_run_id' => 'complete-'.$name] : [], 'status' => $status, 'sequence' => 1,
+        'state' => $status === 'running' ? ['swamp_run_id' => (string) Str::uuid()] : [], 'status' => $status, 'sequence' => 1,
         'attempts' => $status === 'queued' ? 0 : 1, 'started_at' => now()->subSeconds(2), 'finished_at' => $terminal ? now() : null]);
     if ($terminal) {
         $instance->update(['failed_step' => 'check', 'error_code' => 'instance.container_process_inactive']);
@@ -821,6 +825,29 @@ describe('a removal while the clone\'s completion runs', function (): void {
         connRemovalCall($waiting->id, ['acknowledge_unsaved' => true], 'remove-slow')->assertAccepted()->assertJsonPath('data.status', 'waiting');
 
         connRemovalCall($failed->id, ['acknowledge_unsaved' => true], 'remove-broken')->assertAccepted()->assertJsonPath('data.status', 'queued');
+    });
+
+    it('holds the completion\'s cancel while its database fill runs, then cancels it and runs the removal', function (): void {
+        [$instance, $completion] = connCompletingClone();
+        $run = $completion->state['swamp_run_id'];
+        app(NativeRunProgress::class)->apply($completion->id, $run, ['kind' => 'step_started', 'stepId' => 'server-database-fill', 'jobId' => 'complete', 'seq' => 1]);
+
+        $removal = Operation::query()->findOrFail(connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()
+            ->assertJsonPath('data.status', 'waiting')->json('data.id'));
+
+        $completion->refresh();
+        expect($completion->status)->toBe(OperationStatus::Running)
+            ->and($completion->cancel_requested_at)->not->toBeNull()
+            ->and(collect($this->socket->messages)->pluck('type')->all())->not->toContain('workflow.cancel')
+            ->and(app(NativeRunCancellation::class)->awaitsForwarding($completion))->toBeFalse();
+
+        app(NativeRunProgress::class)->apply($completion->id, $run, ['kind' => 'step_completed', 'stepId' => 'server-database-fill', 'jobId' => 'complete', 'seq' => 2]);
+        // The fill has ended: the cancel goes to Swamp now, through the reconciler that the step's end dispatched.
+        expect(app(NativeRunCancellation::class)->awaitsForwarding($completion->refresh()))->toBeTrue();
+        Queue::assertPushed(ReconcileSwampOperations::class);
+
+        connCompletionEnds($completion);
+        expect($removal->refresh()->status)->toBe(OperationStatus::Queued);
     });
 
     it('reads the workspace of a clone whose completion runs, as for any running container', function (): void {

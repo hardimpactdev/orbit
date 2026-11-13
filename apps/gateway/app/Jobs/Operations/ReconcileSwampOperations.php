@@ -242,6 +242,11 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
     /** Asks Swamp to cancel the run and records the confirmation, unless the request was recorded again while Swamp answered. */
     private function forwardCancel(Operation $operation, CancelSwampRun $cancel, OperationStore $store): void
     {
+        // The reads of this pass can take a while: a database copy that started since then holds the cancel again.
+        $operation->refresh();
+        if (! app(NativeRunCancellation::class)->awaitsForwarding($operation)) {
+            return;
+        }
         $requested = $operation->state['native_cancel_requested_at'] ?? null;
         $cancel->execute($operation);
         DB::transaction(function () use ($operation, $store, $requested): void {

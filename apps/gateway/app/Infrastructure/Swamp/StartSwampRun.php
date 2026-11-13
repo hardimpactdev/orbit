@@ -8,6 +8,7 @@ use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationStartRefusal;
+use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationBroadcaster;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -161,6 +162,10 @@ final readonly class StartSwampRun
                 app(DirectOperation::class)->assertRun($operation, $runId);
             }
             app(OperationStore::class)->change($operation, ['dispatched_at' => now(), 'state' => [...($operation->state ?? []), 'swamp_run_id' => $runId]]);
+            // A cancel that arrived while the start was in flight goes on with the run's id, through the one forward rule.
+            if ($operation->cancel_requested_at !== null) {
+                app(NativeRunCancellation::class)->request($operation);
+            }
         });
     }
 

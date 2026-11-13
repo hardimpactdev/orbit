@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Swamp;
 
+use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationStore;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
@@ -73,6 +75,10 @@ final readonly class NativeRunProgress
                 'state' => $state, 'current_step' => $current['step'] ?? null,
                 'failed_step' => is_array($failure) && is_string($failure['failed_step'] ?? null) ? $failure['failed_step'] : null,
             ]);
+            // A cancel that waited for the database copy goes to Swamp now, not at the next minute pass.
+            if ($operation->cancel_requested_at !== null && NativeRunCancellation::endsCopy($operation, $event)) {
+                ReconcileSwampOperations::dispatch()->afterCommit();
+            }
         });
     }
 

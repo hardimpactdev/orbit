@@ -139,6 +139,7 @@ Operation reads do not request terminal history or expire Operations. The event 
 - An unbound Operation marked `swamp.start_uncertain` gets the exact lookup of its start. A timed-out Operation that holds its target gets the same lookup until binding or hold expiry.
 - An unsettled migrate gets this lookup even without a target hold. Its first expiry fixes its recovery limit.
 - A recorded cancel that Swamp has not confirmed is forwarded for up to an hour. Cancels go after the reads and stop 150 seconds into the pass.
+- A cancel waits for the end of the run's database fill step. That end asks for a pass at once, and the pass checks the rule again before it sends ([Cancel an operation](/reference/operations#cancel-an-operation)).
 - A timed-out Operation whose run nothing proves ended frees its target after an hour.
 
 An open Operation whose kind has no registry entry is outside these reads. The same pass settles it.
