@@ -26,7 +26,12 @@ class MigrationLinksTest(unittest.TestCase):
         (self.root / 'storage/app/public').mkdir(parents=True)
 
     def plan(self, root=None, *args):
-        result = subprocess.run([sys.executable, '-I', str(PLANNER), str(root or self.root), *args], capture_output=True, text=True, check=True)
+        library = PLANNER.with_name('instance_migrate_git.py').read_text()
+        script = ("import sys, types\nmodule = types.ModuleType('instance_migrate_git')\n"
+                  + "exec(" + repr(library) + ", module.__dict__)\nsys.modules[module.__name__] = module\n"
+                  + PLANNER.read_text())
+        result = subprocess.run([sys.executable, '-I', '-', str(root or self.root), *args],
+                                input=script, capture_output=True, text=True, check=True)
         return json.loads(result.stdout)
 
     def test_rewrites_absolute_storage_and_local_package_links_without_changing_source(self):
@@ -354,6 +359,10 @@ class MigrationLinksTest(unittest.TestCase):
         sealed.chmod(0o111)
         self.addCleanup(sealed.chmod, 0o755)
         module = runpy.run_path(str(PLANNER))
+        import types
+        library = types.ModuleType('instance_migrate_git')
+        library.__dict__.update(runpy.run_path(str(PLANNER.with_name('instance_migrate_git.py'))))
+        self.enterContext(patch.dict(sys.modules, {'instance_migrate_git': library}))
         with patch('os.walk', return_value=iter(walked)):
             layout = module['CopyLayout'](self.root)
         prefix = str(self.root.parent / 'overlay')

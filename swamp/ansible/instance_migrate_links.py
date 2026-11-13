@@ -16,11 +16,12 @@ class CopyLayout:
     """The existing Git file overlay plus directories that it would not create."""
     def __init__(self, root):
         self.root = root
-        self.files = self.git('diff', '--name-only', '-z', '--diff-filter=d', 'HEAD')
+        self.files = self.git('diff', '--no-renames', '--name-only', '-z', '--diff-filter=d', 'HEAD')
         self.untracked = self.git('ls-files', '-z', '--others')
         self.files += self.untracked
         self.counted = self.git('ls-files', '--others', '--exclude-standard', '-z')
-        self.deleted = set(self.git('diff', '--name-only', '-z', '--diff-filter=D', 'HEAD'))
+        self.deleted = {name for name in self.git('diff', '--no-renames', '--name-only', '-z', '--diff-filter=D', 'HEAD')
+                        if not os.path.lexists(root / os.fsdecode(name))}
         entries = self.git('ls-tree', '-rz', '--full-tree', 'HEAD')
         self.tracked = set()
         self.gitlinks = set()
@@ -75,12 +76,8 @@ class CopyLayout:
             parent = os.path.dirname(parent)
 
     def git(self, *args):
-        result = subprocess.run(
-            ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
-             '-c', 'safe.directory=' + str(self.root), '-C', str(self.root), *args],
-            env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0'},
-            check=True, capture_output=True)
-        return [name for name in result.stdout.split(b'\0') if name]
+        from instance_migrate_git import git
+        return [name for name in git(self.root, *args).split(b'\0') if name]
 
     def in_archived_tree(self, name):
         return any(name == tree or name.startswith(tree + b'/') for tree in self.archived_trees)

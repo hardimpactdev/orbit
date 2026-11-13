@@ -4,6 +4,7 @@ sidebarTitle: "instance:migrate"
 description: "Move a development checkout Instance into an Instance container. A temporary command: it goes when the last checkout Instance has moved."
 covers:
   - swamp/ansible/library/orbit_migrate_env.py
+  - swamp/ansible/instance_migrate_git.py
   - swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts
   - swamp/ansible/tasks/instance-migrate-process-ready.yml
   - apps/gateway/app/Domain/Instances/ContainerProcesses.php
@@ -37,7 +38,7 @@ The command moves one checkout Instance into an [Instance container](/reference/
 
 In a terminal, the CLI asks to confirm that the Instance goes down during the move and that its checkout leaves the live path after it, with No selected. Declining, Ctrl-C or end of input ends with `input.cancelled` and starts no move.
 
-Orbit first resolves the same source credential as deploy and reads the Project's default branch once, before stopping any Process or changing the Node. The remote read has a 30-second limit; a slow successful read within that limit passes. `source.read_timed_out` says “Could not reach the source in 30 s”; `source.head_unavailable` reports other remote-read failures. The checkout keeps serving on refusal. `gh_cli` Projects keep their existing local-copy migration and skip this App preflight. The Instance's local branch need not exist on the remote; the existing unpushed-commit retirement check still applies. Git authentication refusal reports `source.github_app_denied` with the App and repository, while network and missing-ref failures keep `source.head_unavailable`. Public repositories remain readable anonymously. See [source credential errors](/reference/github-app#instance-source-credentials).
+Orbit first resolves the same source credential as deploy and reads the Project's default branch once, before stopping any Process or changing the Node. The remote read has a 30-second limit; a slow successful read within that limit passes. `source.read_timed_out` says “Could not reach the source in 30 s”; `source.head_unavailable` reports other remote-read failures. The checkout keeps serving on refusal. `gh_cli` Projects keep their existing local-copy migration and skip this App preflight. The Instance's local branches and commits need not exist on the remote; migration carries them from the checkout. Git authentication refusal reports `source.github_app_denied` with the App and repository, while network and missing-ref failures keep `source.head_unavailable`. Public repositories remain readable anonymously. See [source credential errors](/reference/github-app#instance-source-credentials).
 
 The whole-run budget is 5,700 seconds. It covers the declared workflow timeouts, including Node preparation, restoration and cleanup, rounded up to five minutes, plus 600 seconds for admission and settlement.
 
@@ -73,9 +74,23 @@ Empty directories are copied when the Git checkout and file archive would not cr
 
 The directory scan skips `.git` metadata, does not follow directory symlinks, and does not enter tracked submodules. The existing file archive still handles selected nested repositories as before. Dependencies such as `vendor` and `node_modules` remain in the copy scope.
 
-A file created or changed in the old checkout after the copy stays in the retained checkout, as ignored files do today; migration quiesces its Processes before the copy, and retention keeps everything.
+Any change to a carried path, including a new or deleted untracked or ignored file, makes the final source snapshot differ. Migration refuses retirement and keeps the source intact; after cutover the container keeps serving. Compare and carry those later changes before any manual cleanup.
 
-The container does not receive the index’s staging state, stashes, or branches that no Instance has checked out. Retirement moves the whole old checkout to a retained path, including all Git metadata and work-tree files. It deletes no Git data. An owner repository with stashes refuses preflight; a linked checkout leaves them in the owner's store.
+## Local Git state
+
+The files phase carries every local branch and tip, the selected HEAD, all stash entries and the complete ordered stash reflog, including duplicate messages, identities, times and timezones. A surviving stash ref with an expired reflog keeps its tip and objects without inventing log entries. Objects reachable through alternate stores become independent objects in the container.
+
+Clean/smudge filters, including Git LFS filters on tracked paths, refuse before downtime with `instance.migrate_git_filter_unsupported`. Use an unfiltered checkout and preserve any filtered data separately. Intent-to-add entries refuse with `instance.migrate_git_intent_to_add`; stage their contents or remove those index entries before retrying. Neither refusal changes source data.
+
+Git reads use a private view with controlled configuration. Repository-defined filters, diff and textconv commands, merge drivers, hooks, fsmonitor, transport helpers and other executable config are not used. Source metadata discovery and attribute queries do not run those programs.
+
+Tracked edits arrive with their working-tree bytes, deletions and renames. Staged changes stay staged: Orbit rebuilds the logical index from its entries and carries staged blobs that no commit references. It copies no source hooks, config, alternates or worktree registrations into the container.
+
+Before existing path rewrites and application starts, Orbit compares branches, HEAD, stash history, index entries, porcelain status and hashes of every carried regular file and symlink target, including untracked and ignored paths. Both repositories pass Git object checks. A mismatch fails before cutover; restore discards the container and leaves the original Git metadata unchanged. The private source snapshot stays on the Node until retention or restore completes and is checked again immediately before retirement.
+
+Hash verification excludes only the root `.git` metadata, tracked submodule contents and filesystem sockets. Git metadata has its own checks; submodule contents and sockets do not move. Selected nested repositories still move as complete archived directories. Directory and special-file kinds are compared without opening pipes or devices.
+
+Retirement still moves the whole old checkout, including every Git metadata file and working-tree file, to the retained path. It deletes no Git data. An owner's other worktrees, registered descendants, unsafe links, changed branch or Git identity, and submodule changes still refuse.
 
 ## Retained Git data
 
@@ -241,7 +256,7 @@ Only after all data is saved and no surviving worktree uses a retained Git direc
 - **Processes.** Ordinary systemd Processes keep their ids and desired states. The `vp-dev` preset also moves; Docker Processes and other presets cannot move. Finish pending Process operations, removals and previous runtime cleanup first.
 - **Routes.** The Instance has no Route beside its own.
 - **Symlinks.** Links must resolve within the checkout. Links into `.git` must name [metadata created by the new repository](/reference/development-containers#migration-symlinks); other Git metadata targets refuse before downtime. Orbit checks dependency package links but skips installed package contents, as the [symlink rule](/reference/development-containers#migration-symlinks) defines. Orbit checks before creating the container and again before stopping host writers. It refuses broken links and external targets before downtime with `instance.migrate_symlink_unsupported`, naming every path and target. Resolve the intended data source before retrying; Orbit does not run project setup to repair links.
-- **Retirement.** Every checkout scheduled for retirement has no staged or unstaged changes to tracked files. An owner also has no other registered worktree. Any registered worktree physically inside the checkout blocks its rename, including a descendant of a linked checkout. Orbit checks before downtime and again before moving the checkout to retention. `instance.migrate_retirement_blocked` names the checkout, other worktree paths and changed files, with total counts and the first 20 entries of each list. Ordinary untracked files, ignored or not, do not block. Submodule changes, including untracked submodule files, still refuse: the parent archive cannot preserve them. A linked checkout checks only its own branch or detached HEAD for commits unreachable from all remote-tracking refs. Other branches and all stashes stay in the owner's store and do not block it. An owner checks every local branch and detached HEAD, and refuses any stash. `instance.migrate_unpushed_commits` names every affected branch (or detached HEAD) and its commit count; `instance.migrate_stashes_present` names the stash count. Orbit reads the local remote-tracking refs without fetching. Orbit never stashes, pushes, prunes or removes blockers for you.
+- **Retirement.** An owner must have no other registered worktree, and no retiring checkout may contain a registered descendant. Submodule changes, including untracked submodule files, still refuse because the parent archive cannot preserve them. Ordinary tracked edits, staging, local branches and stashes are carried. All source data stays in the checkout or retained folder on refusal; move other worktrees first, preserve submodule work separately, repair identity or links, or return to the recorded branch before retrying.
 
 Orbit checks service hosts only when an environment selector names that service. A bare host or host/port declaration is not selection evidence. The cache selector uses CACHE_STORE, falling back to CACHE_DRIVER only when CACHE_STORE is absent; broadcasting uses BROADCAST_CONNECTION with the same fallback to BROADCAST_DRIVER. SESSION_DRIVER, QUEUE_CONNECTION, DB_CONNECTION and MAIL_MAILER select their corresponding service. REDIS_CLIENT selects a client library, not service use. Redis and Memcached host, port, password and URL declarations alone do not select a service. Database connection overrides count only for a selected database-backed cache, session or queue.
 
@@ -255,7 +270,7 @@ The `vp-dev` preset keeps its id, preset identity, assigned Vite port and runnin
 
 Orbit accepts the unversioned catalogue command, preset version `1`, and the surveyed Node command that unsets the two Vite certificate variables and runs the Node account’s Vite+ binary on the assigned port. A custom command beside the preset refuses. Missing, reserved or conflicting recorded ports, duplicate `vp-dev` Processes, unknown preset versions and external paths refuse before downtime, naming the Process and reason.
 
-A default checkout that is retained can copy uncommitted files. A checkout scheduled for retirement must pass every retirement check.
+Every moving checkout can carry uncommitted tracked files and staging state. Extra owner worktrees and the other retirement guards still apply.
 
 Orbit prepares the container and probes every attached target before downtime. If a target is unreachable, the checkout keeps serving, its files stay untouched, and its host Processes keep their states.
 
@@ -337,9 +352,12 @@ Warnings are a generic `warnings` list of `{code, message}` records in the Opera
 | `instance.migrate_env_service_unreachable` | A selected environment file has an answering unsupported service endpoint, an inconclusive host probe, or an uninspectable value or a value the check cannot determine safely. Endpoint errors name the offending keys and safe host:port; syntax errors name only the file and line. Both include recovery actions. The checkout keeps serving. |
 | `instance.migrate_branch_changed` | The checkout is not on the branch that Orbit records. Check out that branch, or record the new one with [`instance:rename`](/cli/instance/rename). |
 | `instance.migrate_symlink_unsupported` | A checkout link would be broken or unsupported in the copied workspace, or points outside the checkout. The error names every path, target and reason. The preflight refusal leaves the checkout serving. The same check on the copied workspace fails the move and restores the checkout if a link changed during copying. |
-| `instance.migrate_retirement_blocked` | A checkout contains a registered descendant, is an owner with other worktrees, has changed Git identity, or has tracked or submodule changes. The error names up to 20 paths per list and each total count. Before downtime the checkout keeps serving; at the final check the container keeps serving and the checkout stays. |
-| `instance.migrate_unpushed_commits` | A linked checkout's own HEAD, or an owner's local branches or detached HEAD, has commits unreachable from every local remote-tracking ref. The error names each branch or detached HEAD and its commit count. The source stays untouched. |
-| `instance.migrate_stashes_present` | An owner scheduled for retirement has stashes. The error names the count; linked checkouts leave shared stashes with the owner. |
+| `instance.migrate_git_filter_unsupported` | A tracked path uses a clean/smudge filter. Move an unfiltered checkout; keep filtered data separately. Source data stays intact. |
+| `instance.migrate_git_intent_to_add` | An index entry has intent-to-add. Stage its contents or remove the entry and retry; source data stays intact. |
+| `instance.migrate_git_state_mismatch` | The copied branch tips, HEAD, stash history, staging, status or any carried file hash differs. Restore keeps the source; retry after inspecting the mismatch. |
+| `instance.migrate_git_objects_incomplete` | Git object verification failed. The source stays intact; repair its objects before retrying. |
+| `instance.migrate_git_source_changed` | The source changed after export. Before cutover restore keeps it serving; at retirement the container keeps serving and source files stay. Compare and carry the later changes before cleanup. |
+| `instance.migrate_retirement_blocked` | A checkout contains a registered descendant, is an owner with other worktrees, has changed Git identity, or has submodule changes. The error names up to 20 paths per list and each total count. Before downtime the checkout keeps serving; at the final check the container keeps serving and the checkout stays. |
 | `schedule.container_trigger_unsupported` | A named Schedule uses a native workflow with fixed placement. Only registered Node timers move. |
 | `schedule.container_state_unsupported` | A named Schedule is not active on this Node or has an unfinished Operation. |
 | `schedule.container_account_unsupported` | A named Schedule’s recorded host account is unavailable. Container execution maps explicitly to `orbit`. |

@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
-  - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
+  - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts}
   - apps/gateway/{config/instances.php,database/migrations/2027_02_03_000000_create_instance_runtimes.php,resources/instances/{notes/**,frankenphp.Caddyfile}}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
@@ -715,7 +715,7 @@ The [sleep](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/c
 
 ### Migrate a checkout Instance
 
-Before downtime, migration resolves the [deploy credential](/reference/github-app#instance-source-credentials) and makes one read of the Project's default branch with a 30-second limit. The Instance's local branch need not be pushed; its existing retirement checks still apply. Projects using `gh_cli` skip this App preflight. An unreadable source or timeout leaves the checkout serving. The local checkout still supplies the migration's mirror and files. The Git URL rewrite is quoted in `argv` so YAML cannot turn it into a mapping.
+Before downtime, migration resolves the [deploy credential](/reference/github-app#instance-source-credentials) and makes one read of the Project's default branch with a 30-second limit. Local branches, commits, stashes and tracked edits are carried; the other retirement guards still apply. Projects using `gh_cli` skip this App preflight. An unreadable source or timeout leaves the checkout serving. The local checkout still supplies the migration's mirror and files. The Git URL rewrite is quoted in `argv` so YAML cannot turn it into a mapping.
 
 [`orbit instance:migrate INSTANCE`](/cli/instance/migrate) moves one existing checkout Instance into a container on its Node, with its code. A linked worktree can move first while its owner remains an active host checkout on the same Node. Migration starts from the stock image and copies its own workspace; it consumes no default seed. The owner moves after its last dependent leaves. The command is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
 
@@ -762,8 +762,8 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
 | Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
 | While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
-| Retirement check | Checks identity before downtime and retention. Linked checkouts protect their HEAD; owners protect all branches and stashes. Tracked changes and owner dependencies block; untracked files pass |
-| Branch | The mirror fetches the recorded branch locally. A linked checkout refuses its own unpushed HEAD; an owner checks every local branch and detached HEAD |
+| Retirement check | Checks identity before downtime and retention. Carries local branches, stash history, staging and all copied file bytes. Active clean/smudge filters, intent-to-add, submodule changes, owner dependencies and registered descendants still block |
+| Branch | The mirror fetches the recorded branch locally; the files phase imports every local branch tip and complete stash history into independent Git metadata |
 | Files | One archive carries changed, untracked and ignored files and missing directories. Added directories keep their modes; ownership maps to `orbit`/`work`. Deleted tracked files are removed |
 | `.env` | Copied as it is. The checkout's path in it becomes `/srv/workspace`, and the Gateway rewrites its stored values the same way |
 | Database server | The NIC ACL and the Node's firewall rule to every attached target. The container phase checks every port from inside before quiesce, else `instance.database_unreachable`, with zero downtime |
@@ -1103,9 +1103,12 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node. Also when the Project's default runs on another Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
 | `instance.migrate_unsupported` | 409 | `instance:migrate` of an Instance that is not an active development checkout on a Node of the build list |
-| `instance.migrate_retirement_blocked` | 409 | Owner dependencies, registered descendants, changed Git identity or tracked changes block retirement. Names 20 paths and total counts |
-| `instance.migrate_unpushed_commits` | 409 | A linked checkout's own HEAD, or an owner's branches or detached HEAD, has unpushed commits. Names each protected ref and count |
-| `instance.migrate_stashes_present` | 409 | An owner has stashes. Linked checkouts leave shared stashes in the owner's store |
+| `instance.migrate_retirement_blocked` | 409 | Owner dependencies, registered descendants, changed Git identity or submodule changes block retirement. Names 20 paths and total counts |
+| `instance.migrate_git_filter_unsupported` | 409 | A tracked path uses a clean/smudge filter; use an unfiltered checkout without changing source data |
+| `instance.migrate_git_intent_to_add` | 409 | Stage the intent-to-add contents or remove those index entries before retrying |
+| `instance.migrate_git_state_mismatch` | 409 | The copied Git state or any carried file hash differs; restore keeps the source intact |
+| `instance.migrate_git_objects_incomplete` | 409 | Git object verification failed; repair the source objects before retrying |
+| `instance.migrate_git_source_changed` | 409 | The source changed after export; source data stays intact, and a retirement refusal leaves the container serving |
 | `instance.migrate_branch_changed` | 409 | The checkout is not on the branch that Orbit records for the Instance |
 | `instance.database_unreachable` | 502 | The new container of a move could not reach the Instance's database server |
 | `instance.migrate_process_binary_unavailable` | 409 | A moved Process needs an unavailable PHP version or executable path. The error names the Process and path; the checkout keeps serving |

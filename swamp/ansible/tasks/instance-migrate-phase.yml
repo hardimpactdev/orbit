@@ -117,6 +117,14 @@
     # Beside the mirror, on the Node's disk and readable by root only; the container's copy sits beside the workspace.
     node_archive: "{{ container.mirror | dirname }}/migrate-{{ container.instance_id }}-{{ run_id }}"
     container_archive: "/srv/.orbit-migrate-{{ run_id }}"
+    # Load the trusted release library in memory: no Node install and no script bytes in argv.
+    migrate_links_script: |
+      import sys, types
+      library = types.ModuleType("instance_migrate_git")
+      exec({{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_git.py') | to_json }}, library.__dict__)
+      sys.modules[library.__name__] = library
+      {{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py') }}
+
 
 # Cutover already made the container the runtime. Its Schedules must follow even when the later Git retirement refuses.
 - name: Publish the moved Instance's Schedules before retiring Git data
@@ -143,6 +151,13 @@
       register: checkout_branch
       changed_when: false
       failed_when: false
+    - name: Explain a changed branch
+      when: checkout_branch.rc != 0 or checkout_branch.stdout | trim != migrate.branch
+      ansible.builtin.set_fact:
+        migrate_refusal_code: instance.migrate_branch_changed
+        migrate_refusal_message: >-
+          The checkout is no longer on recorded branch {{ migrate.branch }}.
+          All data stays in the source or retained folder. Return to the recorded branch and retry.
     - name: Refuse another branch
       ansible.builtin.assert:
         that: checkout_branch.rc == 0 and checkout_branch.stdout | trim == migrate.branch
@@ -164,9 +179,9 @@
   block:
     - name: Read checkout symlinks
       ansible.builtin.command:
-        argv: ["python3", "-", "{{ migrate.checkout }}", "--predict-copy"]
+        argv: ["python3", "-I", "-", "{{ migrate.checkout }}", "--predict-copy"]
         expand_argument_vars: false
-        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py') }}"
+        stdin: "{{ migrate_links_script }}"
       register: migrate_links_read
       changed_when: false
     - name: Check the source symlink result
@@ -340,11 +355,25 @@
 - name: Copy the checkout's files into the workspace
   when: phase == 'files'
   block:
+    - name: Export local Git state without changing the source
+      ansible.builtin.command:
+        argv: [python3, "-I", '-', "{{ migrate.checkout }}", export, "{{ node_archive }}", "--branch", "{{ migrate.branch }}"]
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_git.py') }}"
+      register: migrate_git_export
+      no_log: true
+      changed_when: true
+      failed_when: false
+    - name: Require a complete Git export
+      ansible.builtin.assert:
+        that: migrate_git_export.rc == 0
+        fail_msg: >-
+          {{ (migrate_git_export.stdout | default('{}', true) | from_json).error_code | default('instance.migrate_git_state_mismatch') }}
+        quiet: true
     - name: Archive the file overlay and directories absent from the Git checkout
       ansible.builtin.command:
-        argv: ["python3", "-", "{{ migrate.checkout }}", "--archive-prefix", "{{ node_archive }}"]
+        argv: ["python3", "-I", "-", "{{ migrate.checkout }}", "--archive-prefix", "{{ node_archive }}"]
         expand_argument_vars: false
-        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py') }}"
+        stdin: "{{ migrate_links_script }}"
       environment:
         ORBIT_CHECKOUT: "{{ migrate.checkout }}"
       register: migrate_archive
@@ -352,7 +381,7 @@
       changed_when: true
     - name: Count archived untracked leaves that Git does not ignore
       ansible.builtin.command:
-        argv: [python3, '-', "{{ node_archive }}.tar", "{{ node_archive }}.counted"]
+        argv: [python3, "-I", '-', "{{ node_archive }}.tar", "{{ node_archive }}.counted"]
         stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_files.py') }}"
       register: migrate_untracked_count
       changed_when: false
@@ -362,7 +391,7 @@
         argv: >-
           {{ incus_project + ['file', 'push', '--uid', '1000', '--gid', '2760', '--mode', '0640',
               node_archive ~ item, container.name ~ container_archive ~ item] }}
-      loop: [".tar", ".deleted"]
+      loop: [".tar", ".deleted", ".git.pack", ".git.json"]
       changed_when: true
     - name: Extract the archive in the workspace
       ansible.builtin.command:
@@ -372,12 +401,39 @@
       ansible.builtin.command:
         argv: "{{ as_orbit + ['sh', '-c', 'xargs -0 rm -f -- < \"$1\"', 'sh', container_archive ~ '.deleted'] }}"
       changed_when: true
+    - name: Recheck the source snapshot before verifying the copy
+      ansible.builtin.command:
+        argv: [python3, "-I", '-', "{{ migrate.checkout }}", check-source, "{{ node_archive }}.git.json"]
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_git.py') }}"
+      register: migrate_git_source
+      no_log: true
+      changed_when: false
+      failed_when: false
+    - name: Require the exported source to remain unchanged
+      ansible.builtin.assert:
+        that: migrate_git_source.rc == 0
+        fail_msg: instance.migrate_git_source_changed
+        quiet: true
+    - name: Import and verify all local Git state before path rewrites
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['python3', '-I', '-', container.workspace, 'import', container_archive ~ '.git.json', container_archive ~ '.git.pack'] }}"
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_git.py') }}"
+      register: migrate_git_import
+      no_log: true
+      changed_when: migrate_git_import.rc == 0 and (migrate_git_import.stdout | from_json).changed
+      failed_when: false
+    - name: Require an identical and complete copied Git state
+      ansible.builtin.assert:
+        that: migrate_git_import.rc == 0
+        fail_msg: >-
+          {{ (migrate_git_import.stdout | default('{}', true) | from_json).error_code | default('instance.migrate_git_state_mismatch') }}
+        quiet: true
     # Inspect and rewrite the actual copy, including bundle-only links. No link name or target crosses Incus's JSON argv.
     - name: Check and rewrite links inside the copied workspace
       ansible.builtin.command:
-        argv: "{{ as_orbit + ['python3', '-', container.workspace, '--old-checkout', migrate.checkout, '--rewrite'] }}"
+        argv: "{{ as_orbit + ['python3', '-I', '-', container.workspace, '--old-checkout', migrate.checkout, '--rewrite'] }}"
         expand_argument_vars: false
-        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py') }}"
+        stdin: "{{ migrate_links_script }}"
       register: migrate_links_read
       changed_when: >-
         migrate_links_read.rc == 0 and (migrate_links_read.stdout | from_json).refused | length == 0
@@ -391,7 +447,7 @@
     - name: Restore the added directories' exact modes including special bits
       ansible.builtin.command:
         argv: >-
-          {{ as_orbit + ['python3', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py'),
+          {{ as_orbit + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_migrate_links.py'),
               container.workspace, '--restore-directories'] }}
         expand_argument_vars: false
         stdin: "{{ (migrate_archive.stdout | from_json).directory_modes }}"
@@ -400,12 +456,12 @@
   always:
     - name: Remove the archive on the Node
       ansible.builtin.file: { path: "{{ node_archive }}{{ item }}", state: absent }
-      loop: [".tar", ".list", ".untracked", ".counted", ".deleted"]
+      loop: [".tar", ".list", ".untracked", ".counted", ".deleted", ".git.pack"]
     - name: Remove the archive in the container
       ansible.builtin.command:
         argv: >-
           {{ as_root + ['rm', '-f', '--', container_archive ~ '.tar',
-              container_archive ~ '.deleted'] }}
+              container_archive ~ '.deleted', container_archive ~ '.git.pack', container_archive ~ '.git.json'] }}
       changed_when: false
       failed_when: false
 
@@ -457,3 +513,10 @@
   when: migrate_commit is defined
   ansible.builtin.debug:
     msg: "orbit-commit={{ migrate_commit }}"
+
+- name: Remove the private source snapshot after retention or restore
+  when: phase in ['retire', 'restore']
+  ansible.builtin.file:
+    path: "{{ node_archive }}.git.json"
+    state: absent
+  changed_when: false

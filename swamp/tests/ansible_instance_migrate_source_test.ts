@@ -128,11 +128,12 @@ sys.exit(result.returncode)
     const source = phase.find(task => task.name === "Check remote deployment access before any Node change");
     assert(source);
     await Deno.copyFile(new URL("../ansible/tasks/instance-migrate-retirement-check.yml", import.meta.url), `${folder}/retirement.yml`);
+    await Deno.copyFile(new URL("../ansible/instance_migrate_git.py", import.meta.url), `${folder}/instance_migrate_git.py`);
     const plays = [{hosts: "localhost", connection: "local", gather_facts: false,
       vars: {ansible_python_interpreter: "python3", phase: "container", retired: {path: `${folder}/checkout`},
         migrate: {checkout: `${folder}/checkout`, branch: "never-pushed", source: {repository: "https://github.com/owner/repo.git", branch: "main"}}},
       tasks: [source, {"ansible.builtin.include_tasks": {file: `${folder}/retirement.yml`}},
-        {"ansible.builtin.assert": {that: ["retirement_unpushed | length == 0", "migrate.branch == 'never-pushed'", "migrate.source.branch == 'main'"]}},
+        {"ansible.builtin.assert": {that: ["retirement_other_worktrees | length == 0", "retirement_submodules | length == 0", "migrate.branch == 'never-pushed'", "migrate.source.branch == 'main'"]}},
         {"ansible.builtin.command": {argv: ["git", "-c", "core.hooksPath=/dev/null", "clone", "--quiet", "--no-hardlinks", "--branch", "{{ migrate.branch }}", "{{ migrate.checkout }}", `${folder}/workspace`]}, changed_when: false},
       ]}];
     await Deno.writeTextFile(`${folder}/play.yml`, stringify(plays));

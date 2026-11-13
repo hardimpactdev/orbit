@@ -54,7 +54,8 @@ sequenceDiagram
   %%> - before any Node change, checks the recorded branch and every planned retirement; a refusal leaves prior resources untouched
   %%> - predicts symlinks against the copied layout before creating the container, using the same resolver as the final copied-tree check; it skips `.git` and installed package contents during link inspection; broken links or targets outside the checkout refuse with `instance.migrate_symlink_unsupported`, naming every path and target
   %%> - permits only guaranteed generated Git metadata targets during prediction; source-only metadata such as `.git/local-only` refuses before downtime with the link path
-  %%> - retirement preflight refuses tracked staged or unstaged changes, other worktrees of an owner repository or registered descendants of any retiring checkout, unpushed commits in a linked checkout's own HEAD, or any unpushed local branch/detached HEAD or stash in an owner repository, with their existing named errors; ordinary untracked files, ignored or not, do not block; submodule changes, including untracked submodule files, still refuse because the parent archive cannot preserve them; it reads local refs only
+  %%> - retirement preflight refuses other worktrees of an owner repository, registered descendants, changed Git identity and submodule changes; local branches, stashes and staged or unstaged tracked edits are carried; every refusal keeps all data in the source or retained folder
+  %%> - refuses active clean/smudge filters and intent-to-add entries before effects with named recovery messages; Git work commands use private metadata views with controlled config, so no repository-defined program runs
   %%> - checks service hosts selected by cache, session, queue, broadcasting, database or mail drivers (never by Redis client or endpoint declarations alone) in the primary application `.env`, each Process working-directory `.env` inside the checkout, and environment files named by its Processes or Schedules before any target or container change; attached services require an exact endpoint from the shared container access plan; unsupported endpoints refuse with `instance.migrate_env_service_unreachable`, naming the file, key and host:port without credentials; unreadable syntax names only the file and line, and file read failures name only the path
   %%> - selected SMTP on 127.0.0.1 or localhost, port 1025 or 2525, is satisfied by the same admitted main Mailpit endpoint used by the mail phase; absent mail explains the missing forwarder, and direct ::1 refuses because listeners are IPv4 only; both selector checks read the source before the copy and mailer rule
   %%> - deletes a container that an earlier failed move left, then creates and starts the new container through the shared container phase; discard leaves shared bridge endpoint rules for host reconciliation
@@ -77,14 +78,17 @@ sequenceDiagram
   %%> - records that quiesce began, so a failure before it never restarts host units or rewrites the awake marker
   SW->>C: Build the workspace<br/>Ansible · tags workspace
   %%> What it does:
-  %%> - pushes the branch in as a bundle and checks it out in a standalone repository in `/srv/workspace`
+  %%> - pushes the selected branch as the workspace base in a standalone repository in `/srv/workspace`; the files phase carries the rest of the local Git state
   %%> - the container gets independent Git metadata, whether the source is an owner or a linked worktree
   SW->>C: Copy the files<br/>Ansible · tags files
   %%> What it does:
+  %%> - exports all local branch tips, the complete ordered stash reflog and index entries without changing source metadata; packs every reachable branch, stash-parent and staged object, including alternates
+  %%> - imports objects, installs branch refs atomically and rebuilds the stash reflog and staging state; copies no source hooks, config, alternates or worktree registrations
   %%> - copies every file that differs from the commit, every untracked file and every ignored file, `.env` among them, plus missing directories including empty ignored trees; the result counts untracked files that Git does not ignore, expanding selected nested repositories to archived leaf entries, without paths or contents
   %%> - untracked files enter the default's seed and every clone, as ignored build output already does; a later branch tracking those paths can refuse checkout in a clone or deploy; forgotten credentials travel into the seed like `.env`
   %%> - restores added directories' exact modes after the shared file-mode rule, including setgid and sticky bits; ownership remains orbit/work; restoration runs as orbit with the manifest on stdin, opens every component as a directory without following links, and refuses absolute paths or parent traversal
   %%> - removes the tracked files that the checkout deleted, and rewrites the checkout's path in `.env` to `/srv/workspace`
+  %%> - before path rewrites or application starts, compares branch refs, selected HEAD, exact stash reflog, index, porcelain status and hashes of every carried file, including untracked and ignored paths, on both sides; git fsck proves object completeness; a mismatch fails before cutover and restore discards the container
   %%> - checks the exact copied tree inside the container, maps old-checkout targets into the workspace and rewrites absolute internal links there; broken or external links fail with the same code before any Process starts, relative links keep their targets, and source links never change
   %%> - a non-default Instance gets the proxy device that publishes its T3 port
   opt Node runs the main Mailpit
@@ -117,7 +121,7 @@ sequenceDiagram
     %%> - activates carried container timers with Persistent=false and the recorded desired state; removes their host pairs at retirement
     %%> - a Schedule activation or host-unit cleanup failure is advisory after cutover: record id, name, not_activated and cause, keep the container serving and succeed migration
     %%> - removes the old host Process units and their environment folders
-    %%> - repeats canonical git-dir/common-dir and registration identity checks and the retirement preflight; a new blocker leaves the container serving and the checkout intact
+    %%> - rechecks the source snapshot, canonical Git identity, registrations and retirement guards immediately before retaining it; any changed, new or deleted carried path refuses retirement and keeps every source file
     %%> - atomically moves each old checkout under `<checkout>.orbit-retired-git/<sha256 of original path>`; the retained root is beside the migrating Instance's checkout
     %%> - keeps every tracked, untracked and ignored file; for a linked worktree, copies the common objects/refs/reflogs and its index and private metadata into an independent .git, materializes alternates, and verifies recovery before removing only its identity-matched, now-missing owner registration
     %%> - records `retained_git_path` and `retained_git_at` on the Instance; `instance:show` and the Instance API expose them

@@ -26,7 +26,7 @@ Preparing an `app-dev` Node for [Instance containers](/reference/development-con
 
 Migration retirement protects the Node's remaining checkouts: an owner with dependents or a checkout with registered descendants refuses before downtime; a linked checkout keeps independent Git recovery data and removes only its own registration. See [retirement and recovery](/cli/instance/migrate#retained-git-data).
 
-Linked worktree retirement checks only its own HEAD for unpushed commits; shared stashes stay with the owner. The [retirement rules](/cli/instance/migrate#before-you-start) define the checks for the owner's whole store.
+Migration carries [local Git state](/cli/instance/migrate#local-git-state), including branches, complete stash history, staging and tracked edits. It hashes every carried file, including untracked and ignored bytes, and verifies the copied state before cutover and rechecks the read-only source snapshot before retention; owner dependencies, submodule changes, active clean/smudge filters and intent-to-add still refuse.
 
 Migration carries missing directories, including empty link targets, with their modes and the existing ownership mapping. Symlink prediction runs before downtime and shares the final copied-tree resolver; [migration files and links](/cli/instance/migrate#what-moves) define the exclusions.
 
@@ -1021,7 +1021,7 @@ Development mail repair uses the Node’s existing Python prerequisite through f
 
 Container migration reuses this [development mail phase](/reference/development-containers#development-mail) after copying the workspace. It requires no Node converge.
 
-Instance migration permits untracked files during retirement and counts copied untracked files that Git does not ignore; ignored files are still copied. Tracked changes, other worktrees, unpushed commits and stashes still block; [migration](/cli/instance/migrate) explains the seed and checkout consequences.
+Instance migration permits untracked files during retirement and counts copied untracked files that Git does not ignore; ignored files are still copied. Local branches, stashes and tracked edits move with their Git state; owner dependencies and submodule changes still block. [Migration](/cli/instance/migrate) explains the seed and checkout consequences.
 
 Checkout destroy admission has one [read-only SSH exception](/reference/remote-programs#remote-programs) for live Git dependencies, before Schedule withdrawal. It uses the existing Node account and identity with a short timeout. Containers and unmaterialized sources skip that read. The workflow and its source-removal command do not recheck dependencies, including on a retry. It never traverses checkout contents. A failed read of another checkout falls back to bounded, non-blocking Git pointer reads; unknown unrelated checkouts produce named Operation warnings.
 
