@@ -8,6 +8,7 @@ import json
 import os
 import pwd
 import runpy
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -117,10 +118,17 @@ class BranchSelectionTest(unittest.TestCase):
 
 
 class CloneTest(unittest.TestCase):
-    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None):
+    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None):
         calls = []
         real_run = subprocess.run
         with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "rootfs"
+            for path, content in (rootfs or {}).items():
+                (root / path).parent.mkdir(parents=True, exist_ok=True)
+                if content.startswith("->"):
+                    (root / path).symlink_to(content[2:])
+                else:
+                    (root / path).write_text(content)
             container = {
                 "mail": mail,
                 "name": "instance-7",
@@ -155,6 +163,34 @@ class CloneTest(unittest.TestCase):
                 if argv[:2] == ["python3", "-c"]:
                     return real_run(argv, **kwargs)
                 output, status = "", 0
+                if rootfs is not None and argv[:2] == ["incus", "query"] and "/files?" in argv[2]:
+                    # The copy's files as Incus lists them, read from a real root file system.
+                    directory = root / argv[2].split("&path=", 1)[1].lstrip("/")
+                    if not directory.is_dir():
+                        return subprocess.CompletedProcess(argv, 1, "", "Error: Not Found")
+                    return subprocess.CompletedProcess(argv, 0, json.dumps(sorted(p.name for p in directory.iterdir())), "")
+                if rootfs is not None and argv[3:5] == ["file", "delete"]:
+                    # As Incus 7.0.2 (pkg/sftp 1.13.11): --force stats the path, following a link inside the container, so a
+                    # dangling link fails with "file does not exist"; a plain delete unlinks. Every path is tried.
+                    errors = []
+                    for target in argv[5:]:
+                        if target.startswith("-"):
+                            continue
+                        path = target[target.index("/"):]
+                        resolved = path
+                        for _ in range(40):
+                            if not (root / resolved.lstrip("/")).is_symlink():
+                                break
+                            link = os.readlink(root / resolved.lstrip("/"))
+                            resolved = link if link.startswith("/") else resolved.rsplit("/", 1)[0] + "/" + link
+                        local = root / path.lstrip("/")
+                        if ("--force" in argv and not os.path.lexists(root / resolved.lstrip("/"))) or not os.path.lexists(local):
+                            errors.append("Error: file does not exist")
+                        elif local.is_dir() and not local.is_symlink():
+                            shutil.rmtree(local)
+                        else:
+                            local.unlink()
+                    return subprocess.CompletedProcess(argv, 1 if errors else 0, "", "\n".join(errors))
                 if argv[:2] == ["incus", "query"]:
                     if "snapshots?" in argv[2]:
                         output = json.dumps([{"name": "seed"}])
@@ -232,7 +268,13 @@ class CloneTest(unittest.TestCase):
         self.assertEqual(nic["security.acls.default.ingress.action"], "reject")
         start = ["incus", "--project", "orbit-instances", "start", "instance-7"]
         self.assertIn(start, calls)
-        deleted = next(call for call in calls if 'delete' in call and '--force' in call)
+        links = next(call for call in calls if call[3:5] == ['file', 'delete'] and '--force' not in call)
+        files = next(call for call in calls if call[3:5] == ['file', 'delete'] and '--force' in call)
+        # Every enablement link goes in its own plain delete, before its unit file goes.
+        self.assertTrue(all('.target.wants/' in path for path in links[5:]))
+        self.assertFalse(any('.target.wants/' in path for path in files))
+        self.assertLess(calls.index(links), calls.index(files))
+        deleted = links + files
         self.assertIn('instance-7/etc/systemd/system/sockets.target.wants/orbit-mail-1025.socket', deleted)
         self.assertIn('instance-7/etc/systemd/system/sockets.target.wants/orbit-mail-2525.socket', deleted)
         self.assertNotIn('instance-7/etc/systemd/system/sockets.target.wants/project.socket', deleted)
@@ -241,7 +283,7 @@ class CloneTest(unittest.TestCase):
                      "orbit/schedules/default.sh", "orbit/schedules/default.complete"]:
             self.assertIn("instance-7/etc/" + path, deleted)
         self.assertNotIn("instance-7/etc/systemd/system/timers.target.wants/project.timer", deleted)
-        self.assertLess(calls.index(deleted), calls.index(start))
+        self.assertLess(calls.index(files), calls.index(start))
         check = next(i for i, call in enumerate(calls) if call[:2] == ["python3", "-c"])
         self.assertLess(check, calls.index(start))
 
@@ -256,6 +298,33 @@ class CloneTest(unittest.TestCase):
         start = calls.index(['incus', '--project', 'orbit-instances', 'start', 'instance-7'])
         apply = next(i for i, c in enumerate(calls) if c[:2] == ['python3', '-c'] and c[2] == 'print(\'{"status":"unchanged"}\')')
         self.assertLess(start, apply)
+
+    def test_clone_of_a_default_with_a_node_service_target_strips_it_on_the_first_try_and_on_a_retry(self):
+        system = "etc/systemd/system/"
+        seed = {system + "orbit-node-service-3308.service": "[Service]\n",
+                system + "orbit-node-service-3308.socket": "[Socket]\n",
+                system + "sockets.target.wants/orbit-node-service-3308.socket": "->/etc/systemd/system/orbit-node-service-3308.socket",
+                system + "sockets.target.wants/orbit-mail-1025.socket": "->/etc/systemd/system/orbit-mail-1025.socket",
+                system + "orbit-mail-1025.socket": "[Socket]\n",
+                system + "multi-user.target.wants/orbit-frankenphp.service": "->/etc/systemd/system/orbit-frankenphp.service",
+                system + "orbit-frankenphp.service": "[Service]\n"}
+        # A retry: the failed clone already removed the unit files, so the socket link dangles.
+        retry = {path: content for path, content in seed.items() if not path.endswith("orbit-node-service-3308.socket") or ".wants/" in path}
+        retry.pop(system + "orbit-node-service-3308.service")
+        for case, files in (("first", seed), ("retry", retry)):
+            with self.subTest(case=case):
+                calls, _, error = self.clone(overrides={"node_services": [{"port": 3308}]}, rootfs=files)
+                self.assertEqual(error, "")
+                deletes = [c[5:] for c in calls if c[3:5] == ["file", "delete"]]
+                removed = [path for paths in deletes for path in paths if not path.startswith("-")]
+                for path in ("sockets.target.wants/orbit-node-service-3308.socket", "multi-user.target.wants/orbit-frankenphp.service",
+                             "sockets.target.wants/orbit-mail-1025.socket"):
+                    self.assertIn("instance-7/" + system + path, removed)
+                if case == "first":
+                    self.assertIn("instance-7/" + system + "orbit-node-service-3308.socket", removed)
+                    self.assertIn("instance-7/" + system + "orbit-node-service-3308.service", removed)
+                self.assertNotIn("instance-7/" + system + "orbit-frankenphp.service", removed)
+                self.assertIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
 
     def test_clone_target_failure_receipt_keeps_public_identity_and_bounds_tool_output(self):
         target = {"id": 7, "process_id": 19, "process_name": "fixture-db", "port": 3308}
