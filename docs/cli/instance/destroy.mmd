@@ -63,13 +63,13 @@ sequenceDiagram
   %%> - multiple owning Routes, a foreign Project, wrong targets or unsafe placement still refuse
   %%> Publication validation:
   %%> - prepare every participant connection and its SSH pin, Caddyfile, shared PHP configuration and private DNS state before any Schedule effect
-  %%> - all stored blockers and the run budget pass here; the preparation records no intent, changes no status and stages no execution copy
+  %%> - the dry run uses the same pure preparation as admission, records no intent, changes no status, stages no copy and takes no Route hold
   %%> Captures:
   %%> - the source: path, owner, origin, branch, linked worktrees
   %%> - what Instance 42 owns: Processes, Schedules, Route, SQLite files, server databases
   %%> - the Project teardown steps
   %%> Result:
-  %%> - the validated complete set remains in memory until Schedule removal succeeds
+  %%> - discard every prepared result; admission builds its intent fresh after Schedule removal
   GW->>SW: Remove Schedule triggers<br/>workflow trigger removal
   %%> What it does:
   %%> - removes the native Swamp schedule trigger of each Schedule of Instance 42
@@ -78,12 +78,12 @@ sequenceDiagram
   %%> - no new fire starts against a checkout that is being removed
   %%> Running fire:
   %%> - a fire that already started runs to its end, within its own timeout, and is still recorded
-    %%> Admission recheck:
-    %%> - a dependency that changes while a destroy is being admitted refuses it; Schedules may already be stopped
-    %%> - re-read the database set and attachments in the short admission transaction; keep no lock across Schedule calls
+    %%> Fresh admission:
+    %%> - if a fact changes after the dry run, admission uses its current value and may refuse; Schedules may already be stopped
+    %%> - build all publication, participant, database, member, runtime, Route and root facts fresh in the admission transaction; keep no lock across Schedule calls
   Note over GW: Record removal intent<br/>mark removing
   %%> Result:
-  %%> - persist the already prepared publication without a second render in the existing intent transaction
+  %%> - run the same preparation again inside the existing admission transaction and record only this fresh result
   %%> - record the Operation and mark the Instance removing and Route retiring only after Schedule removal succeeds
   %%> On Schedule failure:
   %%> - keep the Instance and Route active; record no destroy Operation, as before

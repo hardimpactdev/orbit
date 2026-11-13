@@ -36,22 +36,22 @@ sequenceDiagram
     %%> - `instance.container_destroy_force_required`
   else forced clone
     %% path: admitted
-    Note over GW: Validate publication<br/>all stored participants
+    Note over GW: Dry run preparation<br/>discard its result
     %%> Result:
     %%> - capture the clone's container identity, Route, Processes and owned databases
-    %%> - all callers prepare the complete removal once: every publication Node, SSH pin, Caddyfile, PHP configuration and DNS state must pass before any Schedule effect
-    %%> - this preparation changes no desired state, records no intent and stages no execution copy
+    %%> - all callers try the same pure preparation that admission uses; discard its result before any Schedule effect
+    %%> - the dry run checks publication Nodes, SSH pins, Caddy, PHP and DNS; it changes no state, records no intent, stages no copy and takes no Route hold
     %%> - keep its runtime row, address and T3 port reserved until terminal success
     %%> - Conn refuses new pairings while the Instance is removing
     GW->>SW: Remove Schedule triggers<br/>then workflows and secrets
     %%> Failure boundary:
     %%> - a validation refusal leaves Schedules untouched; a Schedule removal failure keeps the Instance and Route active and records no destroy Operation
-    %%> Admission recheck:
-    %%> - a dependency that changes while a destroy is being admitted refuses it; Schedules may already be stopped
-    %%> - re-read the database set and attachments in the short admission transaction; keep no lock across Schedule calls
+    %%> Fresh admission:
+    %%> - if a fact changes after the dry run, admission uses its current value and may refuse; Schedules may already be stopped
+    %%> - build all publication, participant, database, member, runtime, Route and root facts fresh in the admission transaction; keep no lock across Schedule calls
     Note over GW: Record removal intent<br/>mark removing
     %%> Result:
-    %%> - persist the prepared input without rendering or validating publication again; mark the Instance removing and the Route retiring in the existing intent transaction
+    %%> - call the same preparation again inside the admission transaction; record only this fresh intent, then mark the Instance removing and the Route retiring
     GW->>SW: Start run, full intent<br/>operation-instance-destroy
     GW-->>CLI: 202 Accepted<br/>Operation ID
     opt clone has a Route

@@ -16,11 +16,11 @@ covers:
 
 The Gateway then records the selected Instance, owned resources and desired removal state. All effects run from control Node209 through official SSH with its approved identity and the targets' full stored host pins. The Gateway projects the admitted records after the bound native terminal result; workflow steps do not read intent or send phase callbacks to the Gateway. The PHP provisioner, source-removal executor, phase checkpoint methods and callback runner are deleted. Shared source classification and native source inspection remain pure inputs to the native workflows.
 
-Every caller uses one preparation in the shared engine. It validates stored blockers, owned databases, Process and Schedule placement, every publication participant's SSH connection, and Caddy, PHP and DNS rendering before stopping Schedules. The preparation records no intent or desired state and stages no execution copy. After Schedule removal succeeds, the existing transaction records that same prepared input, marks the Instance removing and Route retiring, and admits the Operation. Publication is not rendered a second time. A Schedule removal failure still leaves the Instance and Route active and records no removal Operation.
+Every caller first tries the same pure preparation that admission uses: stored blockers, database ownership and attachments, members, runtime, Routes, publication participants, SSH connections, and Caddy, PHP and DNS rendering. This dry run records no intent or status, stages no execution copy and takes no Route hold. Its result is discarded. A refusal here leaves Schedules, the Instance and its Route active, with no Operation.
 
-A dependency that changes while a destroy is being admitted refuses it; Schedules may already be stopped.
+After Schedule removal, the existing admission transaction runs the preparation again and records only this fresh result. No fact or result from the dry run feeds admission. A Schedule removal failure still leaves the Instance and Route active and records no removal Operation.
 
-A missing SSH pin on any publication Node, including a private DNS Node, or a Caddy render refusal therefore leaves all Schedule triggers, workflows and vault entries intact.
+If a fact changes after the dry run, admission uses its current value and may refuse; Schedules may already be stopped.
 
 ```bash
 orbit instance:destroy <instance> [--yes] [--force] [--json]
