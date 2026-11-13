@@ -1,6 +1,7 @@
 """The nested fleet as the runner sees it: shell on a Node and the real `orbit` CLI. Tests replace this class."""
 import json
 import os
+import pwd
 import runpy
 import select
 import subprocess
@@ -15,11 +16,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tools/swamp-proof-guest'))
 import terminal  # noqa: E402
 
-# The candidate CLI of the checkout this runner runs from, with the profile `nested` that the fleet start adds on the outer VM.
+# The candidate CLI of the checkout this runner runs from, with the profile `nested` that the fleet start adds on the outer machine.
 ORBIT = ['php', str(Path(__file__).resolve().parents[3] / 'apps/cli/orbit')]
 # Fixed columns keep human text assertions independent of the runner's terminal (including wide Node tables).
 COLUMNS = '240'
-CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit', 'COLUMNS': COLUMNS}
+# The nested Nodes: the managed user is `orbit` with this home on every Node, whatever the outer machine is.
 NODE_HOME = '/home/orbit'
 NODE_USER = '1000'   # the managed user `orbit` of a Node
 # The tested checkout, where the nested Nodes see it (the fleet start mounts it on the Gateway and the app-dev Node; a case that runs the CLI
@@ -28,8 +29,7 @@ CHECKOUT = Path(__file__).resolve().parents[3]
 NODE_CHECKOUT = NODE_HOME + '/orbit'
 NODE_ORBIT = ['php', NODE_CHECKOUT + '/apps/cli/orbit']
 NESTED_GATEWAY = '10.45.0.1'   # the hub address of the nested Gateway on the nested network
-OUTER_CA = NODE_HOME + '/.orbit/nested-ca.pem'   # the nested CA, which the fleet start pins on the outer VM (the outer user is `orbit` too)
-NESTED_CA = OUTER_CA                              # and the path where a Node keeps its copy
+NESTED_CA = NODE_HOME + '/.orbit/nested-ca.pem'   # where a Node keeps its copy of the nested CA
 PROFILE = 'nested'
 ROLES = ('gateway', 'app-dev', 'app-prod')
 SKIPPED_INTERFACES = ('lo', 'orbit', 'docker0')
@@ -38,6 +38,29 @@ GUEST_PREFIX = 'nested-'
 
 class FleetError(Exception):
     pass
+
+
+# The outer machine is the machine this runner runs on and that holds the nested containers. Its facts come from this
+# process alone: the user that runs it. Nothing here asks which kind of machine it is.
+def outer_home():
+    """The home of the user that runs the runner, as the operating system gives it (`HOME` can name another user's home after `sudo`)."""
+    return pwd.getpwuid(os.getuid()).pw_dir
+
+
+def outer_orbit_home():
+    """The CLI home: where the CLI keeps its profiles and where the fleet start pins the nested CA. It is always in the user's home; the
+    environment of the runner does not move it, because the fleet start does not read that environment."""
+    return outer_home() + '/.orbit'
+
+
+def outer_ca():
+    """The nested CA that the fleet start pins on the outer machine."""
+    return outer_orbit_home() + '/nested-ca.pem'
+
+
+def cli_env():
+    """The whole environment of a CLI call on the outer machine. The CLI refuses a home that another user owns, so the home is the runner's own."""
+    return {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': outer_home(), 'ORBIT_HOME': outer_orbit_home(), 'COLUMNS': COLUMNS}
 
 
 class Fleet:
@@ -64,7 +87,7 @@ class Fleet:
         if node:
             completed = self.incus_exec(node, [*NODE_ORBIT, *words], timeout)
         else:
-            completed = subprocess.run([*ORBIT, *words], capture_output=True, text=True, timeout=timeout, env=CLI_ENV, cwd='/',
+            completed = subprocess.run([*ORBIT, *words], capture_output=True, text=True, timeout=timeout, env=cli_env(), cwd='/',
                                        stdin=subprocess.DEVNULL)
         try:
             parsed = json.loads(completed.stdout) if form == 'json' else None
@@ -76,7 +99,7 @@ class Fleet:
     def operations(self, kind=None, target_type=None, target_id=None):
         """The operation:list API applies these filters before selecting the newest page. The CLI has no generic target filters."""
         query = urlencode({key: value for key, value in {'kind': kind, 'target_type': target_type, 'target_id': target_id}.items() if value is not None})
-        done = subprocess.run(['curl', '--silent', '--show-error', '--fail-with-body', '--max-time', '60', '--cacert', OUTER_CA,
+        done = subprocess.run(['curl', '--silent', '--show-error', '--fail-with-body', '--max-time', '60', '--cacert', outer_ca(),
                                f'https://{NESTED_GATEWAY}/api/v1/operations?{query}'],
                               capture_output=True, text=True, timeout=65, stdin=subprocess.DEVNULL)
         try:
@@ -92,7 +115,7 @@ class Fleet:
 
     def prepare_cli_callers(self, items):
         """Prepare each required caller once, before any case can take a Node lock.
-        The outer VM supplies the default and gateway caller; only other Nodes need preparation."""
+        The outer machine supplies the default and gateway caller; only other Nodes need preparation."""
         callers = {step.args.get('as') for step in items if step.name == 'cli'} - {None, 'gateway'}
         for node in sorted(callers):
             if node not in self.nodes:
@@ -116,7 +139,7 @@ class Fleet:
         if self.incus_exec(node, ['grep', '-q', f'"{PROFILE}"', NODE_HOME + '/.orbit/config.json']).returncode == 0:
             return
         self.must(['incus', 'exec', guest, '--user', NODE_USER, '--', 'install', '-d', '-m', '0700', NODE_HOME + '/.orbit'], f'{node}: cannot make the CLI home')
-        self.must(['incus', 'file', 'push', OUTER_CA, f'{guest}{NESTED_CA}', '--uid', NODE_USER, '--gid', NODE_USER, '--mode', '0644'],
+        self.must(['incus', 'file', 'push', outer_ca(), f'{guest}{NESTED_CA}', '--uid', NODE_USER, '--gid', NODE_USER, '--mode', '0644'],
                   f'{node}: cannot give the nested CA')
         added = self.incus_exec(node, [*NODE_ORBIT, 'gateway:add', NESTED_GATEWAY, f'--name={PROFILE}', '--use', '--accept-ca-change', f'--ca={NESTED_CA}', '--json'], 120)
         if added.returncode != 0:
@@ -135,13 +158,13 @@ class Fleet:
     def cli_background(self, args):
         """Start the CLI in its own session and return a handle. The Gateway keeps the Operation when the handle stops the CLI."""
         process = subprocess.Popen([*ORBIT, *args], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                   env=CLI_ENV, cwd='/', start_new_session=True)
+                                   env=cli_env(), cwd='/', start_new_session=True)
         return Background(process)
 
     def cli_tty(self, args, script, timeout=120):
         """Run the CLI in a terminal and answer its prompts (see terminal.py)."""
         started = time.time()
-        done = terminal.drive([*ORBIT, *args], script, {**CLI_ENV, 'TERM': 'xterm-256color'}, timeout)
+        done = terminal.drive([*ORBIT, *args], script, {**cli_env(), 'TERM': 'xterm-256color'}, timeout)
         return {'rc': done['rc'], 'json': None, 'stdout': done['text'], 'stderr': '', 'secs': round(time.time() - started, 2), 'args': ['orbit', *args]}
 
 
@@ -209,6 +232,24 @@ def listed_node_ids():
     return {node['name']: node['id'] for node in listed['json']['nodes']}
 
 
+def proof_controller():
+    """The task image's pinned Ansible controller and collections paths, as the shape gate gives them. No observer is built here.
+    A tool that is missing is a `FleetError` that names the path, and not a bare `[Errno 2]`."""
+    shape = runpy.run_path(str(CHECKOUT / 'bin/swamp-shape-gate'))
+    tools = shape['default_tools']()
+    pinned = shape['SYSTEM_TOOLS'] / shape['venv_name']()
+    try:
+        controller = shape['tool_path'](tools)
+    except (OSError, subprocess.CalledProcessError) as error:
+        # The caller keeps only the end of a message, so the path that an operator must fill comes last.
+        raise FleetError(f'cannot prepare the proof controller: building the Ansible tools in {tools} failed ({str(error)[-60:]}); '
+                         f'the pinned tools are not in {pinned}') from error
+    for program in ('ansible-galaxy', 'ansible-playbook'):
+        if not os.access(controller / program, os.X_OK):
+            raise FleetError(f'cannot prepare the proof controller: {controller / program} is missing or not executable')
+    return controller, shape['collections_path'](tools)
+
+
 def prepare_observers():
     pinned = json.loads((CHECKOUT / 'apps/gateway/resources/agent/frozen-manifest.json').read_bytes())
     # The guest's prerequisites are restored from base, but the checkout owns the callbacks, vault key patterns and proof release. Prepare through that
@@ -219,11 +260,7 @@ def prepare_observers():
                 '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml',
                 NODE_CHECKOUT + '/swamp/ansible/proof-gateway.yml'],
                'cannot prepare the nested Gateway prerequisites from the tested checkout', timeout=190)
-    # Reuse the task image's pinned Ansible controller and collections paths, as the shape gate does. No observer is built here.
-    shape = runpy.run_path(str(CHECKOUT / 'bin/swamp-shape-gate'))
-    tools = shape['default_tools']()
-    controller = shape['tool_path'](tools)
-    collections = shape['collections_path'](tools)
+    controller, collections = proof_controller()
     Fleet.must([str(controller / 'ansible-galaxy'), 'collection', 'install', '-r', str(CHECKOUT / 'swamp/ansible/requirements.yml'),
                 '-p', str(collections)], 'cannot prepare the proof controller collections')
     Fleet.must(['env', 'ANSIBLE_CONFIG=' + str(CHECKOUT / 'swamp/ansible/ansible.cfg'),
