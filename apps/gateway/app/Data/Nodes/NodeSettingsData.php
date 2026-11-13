@@ -11,6 +11,7 @@ final class NodeSettingsData extends Data
     public function __construct(
         public ?NodeStorageAppsData $apps = null,
         public ?NodeTaskVmsData $task_vms = null,
+        public bool $nested_fleet = false,
     ) {}
 
     public function appsPath(): ?string
@@ -22,6 +23,6 @@ final class NodeSettingsData extends Data
 
     public function isEmpty(): bool
     {
-        return $this->appsPath() === null && $this->task_vms === null;
+        return $this->appsPath() === null && $this->task_vms === null && ! $this->nested_fleet;
     }
 }

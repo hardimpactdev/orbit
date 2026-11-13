@@ -181,6 +181,21 @@ final readonly class UpdateProjectAction
     private function applyProjectCommands(Project $project, UpdateProjectData $data): Project
     {
         $changes = [];
+        if ($data->nestedFleetProvided) {
+            if ($data->nestedFleet && ! $project->nested_fleet) {
+                $ids = config('instances.nested_fleet_projects');
+                if (! is_array($ids) || ! array_is_list($ids) || ! array_all($ids, static fn (mixed $id): bool => is_int($id) && $id > 0)) {
+                    throw new ResourceOperationException('project.nested_fleet_projects_invalid', 'ORBIT_INSTANCES_NESTED_FLEET_PROJECTS must be a JSON list of positive integer Project IDs.', 500);
+                }
+                if (! in_array($project->id, $ids, true)) {
+                    throw new ResourceOperationException('project.nested_fleet_not_allowed', 'The Project is not on the operator nested-fleet trial allow list.', 409);
+                }
+            }
+            if ($data->nestedFleet !== $project->nested_fleet && $project->instances()->exists()) {
+                throw new ResourceOperationException('project.nested_fleet_in_use', 'The Project has Instances; its nested fleet setting cannot change.', 409);
+            }
+            $changes['nested_fleet'] = $data->nestedFleet;
+        }
         if ($data->name !== null) {
             $changes['name'] = $data->name;
         }

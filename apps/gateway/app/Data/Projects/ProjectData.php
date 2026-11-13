@@ -31,6 +31,7 @@ final class ProjectData extends Data
         public ?string $phpVersion = null,
         public ?bool $isLaravel = null,
         public bool $maintenance = false,
+        public bool $nestedFleet = false,
     ) {}
 
     public static function fromModel(Project $project): self
@@ -52,6 +53,7 @@ final class ProjectData extends Data
             phpVersion: $project->php_version,
             isLaravel: $project->is_laravel,
             maintenance: $project->maintenance,
+            nestedFleet: $project->nested_fleet,
         );
     }
 }

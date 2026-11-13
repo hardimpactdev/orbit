@@ -19,6 +19,7 @@ final readonly class NodeSettingsNormalizer
         $normalized = new NodeSettingsData(
             apps: $this->nested($settings->appsPath()),
             task_vms: $settings->task_vms,
+            nested_fleet: $settings->nested_fleet,
         );
 
         return $normalized->isEmpty() ? null : $normalized;
@@ -36,7 +37,8 @@ final readonly class NodeSettingsNormalizer
         return array_filter([
             'apps' => $normalized->appsPath() === null ? null : ['path' => $normalized->appsPath()],
             'task_vms' => $normalized->task_vms?->toArray(),
-        ], static fn (?array $member): bool => $member !== null);
+            'nested_fleet' => $normalized->nested_fleet ? true : null,
+        ], static fn (array|bool|null $member): bool => $member !== null);
     }
 
     /**
@@ -66,6 +68,11 @@ final readonly class NodeSettingsNormalizer
             }
         }
 
+        unset($result['nested_fleet']);
+        if ($normalized?->nested_fleet) {
+            $result['nested_fleet'] = true;
+        }
+
         unset($result['task_vms']);
         if ($normalized?->task_vms !== null) {
             $result['task_vms'] = $normalized->task_vms->toArray();
@@ -83,6 +90,7 @@ final readonly class NodeSettingsNormalizer
         return $this->normalize(new NodeSettingsData(
             apps: $this->nestedFromStored($value['apps'] ?? null),
             task_vms: is_array($value['task_vms'] ?? null) ? NodeTaskVmsData::from($value['task_vms']) : null,
+            nested_fleet: ($value['nested_fleet'] ?? false) === true,
         ));
     }
 
