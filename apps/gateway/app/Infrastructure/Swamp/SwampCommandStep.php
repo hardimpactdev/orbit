@@ -150,10 +150,18 @@ final readonly class SwampCommandStep
             return app(ExpireOperationAction::class)->execute($operation);
         }
         if ($operation->kind === 'instance.migrate') {
+            try {
+                $result = $this->terminalOutput($run, $selector, requireOutput: true);
+            } catch (ResourceOperationException $exception) {
+                if ($exception->errorCode !== 'swamp.terminal_result_unavailable') {
+                    throw $exception;
+                }
+                throw new SwampTerminalOutputUnavailable($run, $exception);
+            }
             $projected = $direct->projection($operation)->apply($operation, [
                 'run_id' => $runId, 'status' => $run['status'], 'native_run' => $run,
                 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
-                'result' => $this->terminalOutput($run, $selector),
+                'result' => $result,
                 'failure' => app(NativeStepFailure::class)->fromRun($run, $operation),
             ]);
             $this->fillStepTimes($projected, $runId, $run);
@@ -540,7 +548,7 @@ final readonly class SwampCommandStep
      * @param  array{job:string,step:string,alternatives?:list<string>,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}  $selector
      * @return array<string,mixed>
      */
-    private function terminalOutput(array $run, array $selector): array
+    private function terminalOutput(array $run, array $selector, bool $requireOutput = false): array
     {
         $stdout = null;
         $selected = null;
@@ -591,7 +599,7 @@ final readonly class SwampCommandStep
             }
         } elseif ($run['status'] === 'succeeded') {
             throw $this->unavailable();
-        } elseif ($selected === 'succeeded' && isset($selector['data'])) {
+        } elseif ($selected === 'succeeded' && (isset($selector['data']) || $requireOutput)) {
             // A reporting step that succeeded wrote its output, also in a failed run. A read that misses it is read again.
             throw new SwampTerminalReadUnavailable;
         }
@@ -621,6 +629,10 @@ final readonly class SwampCommandStep
                     }
                 }
             }
+        }
+
+        if ($requireOutput && $selected === 'succeeded' && $result === []) {
+            throw new SwampTerminalReadUnavailable;
         }
 
         return $result;

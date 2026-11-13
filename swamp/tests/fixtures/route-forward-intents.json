@@ -1,0 +1,732 @@
+{
+  "provenance": {
+    "gateway_commit": "718d7b891f642fa57e24746d1db0983ca5d3d58e",
+    "capture": "Real Laravel fixture records and InstanceMigrationRoute::before/capture for same_node; NativeRouteMutationInput::capture for replacement, with the same real renderers and NativeRoutePublicationArtifacts. Two active VPN Nodes; no live Node or Operation execution. Only public route_mutations are retained.",
+    "same_node": "A checkout migrates into a container on its original Node, domain and target address unchanged.",
+    "replacement": "The old Route domain and new replacement domain are staged together, then the old domain leaves; both DNS stages change."
+  },
+  "same_node": {
+    "schema_version": 2,
+    "artifacts": {
+      "caddy": [
+        {
+          "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n\n# orbit: app-dev app-instance-1\nhttps://default.tool.test {\n    bind 10.44.0.7\n    tls /etc/caddy/orbit-certificates/app-instance-1/current/cert.pem /etc/caddy/orbit-certificates/app-instance-1/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    not file {\n        root /dev/shm/orbit/hibernation\n        try_files /app-instance-1.awake\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/1\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-1.log\n}\nhandle {\n    root * /home/orbit/apps/tool/default/public\nencode zstd gzip\nphp_fastcgi unix//run/php/orbit-app-instance-1.sock\nfile_server\n}\n}\n",
+          "version": "584ac90ac859483c9e3d91b0190809f4",
+          "listen_addresses": [
+            "10.44.0.7"
+          ],
+          "unserved": false,
+          "had_served_groups": true
+        },
+        {
+          "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n\n# orbit: app-dev app-instance-1\nhttps://default.tool.test {\n    bind 10.44.0.7\n    tls /etc/caddy/orbit-certificates/app-instance-1/current/cert.pem /etc/caddy/orbit-certificates/app-instance-1/current/key.pem\n    reverse_proxy 10.253.0.2:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n",
+          "version": "8f6e36a5730902089f83d5bcf4a4cc3a",
+          "listen_addresses": [
+            "10.44.0.7"
+          ],
+          "unserved": false,
+          "had_served_groups": true
+        },
+        {
+          "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+          "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+          "listen_addresses": [],
+          "unserved": true,
+          "had_served_groups": false
+        }
+      ],
+      "php": [
+        {
+          "configurations": {
+            "8.5": "[orbit-app-instance-1]\nuser = orbit\ngroup = __ORBIT_NODE_GROUP__\nlisten = /run/php/orbit-app-instance-1.sock\nlisten.owner = orbit\nlisten.group = caddy\nlisten.mode = 0660\npm = ondemand\npm.max_children = 10\npm.process_idle_timeout = 10s\npm.max_requests = 500\nchdir = /home/orbit/apps/tool/default\ncatch_workers_output = yes\nclear_env = no\nenv[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin\nphp_admin_value[opcache.validate_timestamps] = 1\nphp_admin_value[opcache.revalidate_freq] = 0\n"
+          },
+          "account_user": "orbit"
+        },
+        {
+          "configurations": {},
+          "account_user": "orbit"
+        }
+      ],
+      "dns": [
+        {
+          "node_id": 3,
+          "records": "# Managed by Orbit.\n\n",
+          "catalog": "{}\n",
+          "digest": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+        },
+        {
+          "node_id": 4,
+          "records": "# Managed by Orbit.\n\n",
+          "catalog": "{}\n",
+          "digest": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+        }
+      ]
+    },
+    "forward": {
+      "routes": [
+        {
+          "route_id": 1,
+          "domain": "default.tool.test",
+          "node_ids": [
+            2,
+            3,
+            4
+          ],
+          "certificate_scopes": []
+        }
+      ],
+      "certificates": [],
+      "url_writes": [],
+      "publications": [
+        {
+          "index": 0,
+          "node_id": 2,
+          "user": "orbit",
+          "serves_routes": true,
+          "control_node_id": 1,
+          "host_keys": [
+            "ssh-ed25519 fixture-public-key"
+          ],
+          "connection": {
+            "nodeHost": "10.44.0.7",
+            "nodeUser": "orbit",
+            "nodePort": 22,
+            "nodeIdentityFile": "/etc/orbit/swamp-role-worker/ssh-identity",
+            "become": true
+          },
+          "prepared": {
+            "caddy": 1,
+            "php": 1,
+            "dns": null
+          },
+          "withdrawn": {
+            "caddy": 1,
+            "php": 1,
+            "dns": null
+          },
+          "after": {
+            "caddy": 1,
+            "php": 1,
+            "dns": null
+          },
+          "before": {
+            "caddy": 0,
+            "php": 0,
+            "dns": null
+          },
+          "direction": "forward"
+        },
+        {
+          "index": 1,
+          "node_id": 3,
+          "user": "orbit",
+          "serves_routes": false,
+          "control_node_id": 1,
+          "host_keys": [
+            "ssh-ed25519 fixture-public-key"
+          ],
+          "connection": {
+            "nodeHost": "10.44.0.3",
+            "nodeUser": "orbit",
+            "nodePort": 22,
+            "nodeIdentityFile": "/etc/orbit/swamp-role-worker/ssh-identity",
+            "become": true
+          },
+          "prepared": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 0
+          },
+          "withdrawn": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 0
+          },
+          "after": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 0
+          },
+          "before": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 0
+          },
+          "direction": "forward"
+        },
+        {
+          "index": 2,
+          "node_id": 4,
+          "user": "orbit",
+          "serves_routes": false,
+          "control_node_id": 1,
+          "host_keys": [
+            "ssh-ed25519 fixture-public-key"
+          ],
+          "connection": {
+            "nodeHost": "10.44.0.4",
+            "nodeUser": "orbit",
+            "nodePort": 22,
+            "nodeIdentityFile": "/etc/orbit/swamp-role-worker/ssh-identity",
+            "become": true
+          },
+          "prepared": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 1
+          },
+          "withdrawn": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 1
+          },
+          "after": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 1
+          },
+          "before": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 1
+          },
+          "direction": "forward"
+        }
+      ],
+      "prepare_certificates": [],
+      "cleanup": [],
+      "retire_lan": [],
+      "lan": [],
+      "retire_ingress": [],
+      "ingress": []
+    },
+    "restore": {
+      "routes": [
+        {
+          "route_id": 1,
+          "domain": "default.tool.test",
+          "node_ids": [
+            2,
+            3,
+            4
+          ],
+          "certificate_scopes": []
+        }
+      ],
+      "certificates": [],
+      "url_writes": [],
+      "publications": [
+        {
+          "index": 0,
+          "node_id": 2,
+          "user": "orbit",
+          "serves_routes": true,
+          "control_node_id": 1,
+          "host_keys": [
+            "ssh-ed25519 fixture-public-key"
+          ],
+          "connection": {
+            "nodeHost": "10.44.0.7",
+            "nodeUser": "orbit",
+            "nodePort": 22,
+            "nodeIdentityFile": "/etc/orbit/swamp-role-worker/ssh-identity",
+            "become": true
+          },
+          "prepared": {
+            "caddy": 1,
+            "php": 1,
+            "dns": null
+          },
+          "withdrawn": {
+            "caddy": 1,
+            "php": 1,
+            "dns": null
+          },
+          "after": {
+            "caddy": 1,
+            "php": 1,
+            "dns": null
+          },
+          "before": {
+            "caddy": 0,
+            "php": 0,
+            "dns": null
+          },
+          "direction": "restore"
+        },
+        {
+          "index": 1,
+          "node_id": 3,
+          "user": "orbit",
+          "serves_routes": false,
+          "control_node_id": 1,
+          "host_keys": [
+            "ssh-ed25519 fixture-public-key"
+          ],
+          "connection": {
+            "nodeHost": "10.44.0.3",
+            "nodeUser": "orbit",
+            "nodePort": 22,
+            "nodeIdentityFile": "/etc/orbit/swamp-role-worker/ssh-identity",
+            "become": true
+          },
+          "prepared": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 0
+          },
+          "withdrawn": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 0
+          },
+          "after": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 0
+          },
+          "before": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 0
+          },
+          "direction": "restore"
+        },
+        {
+          "index": 2,
+          "node_id": 4,
+          "user": "orbit",
+          "serves_routes": false,
+          "control_node_id": 1,
+          "host_keys": [
+            "ssh-ed25519 fixture-public-key"
+          ],
+          "connection": {
+            "nodeHost": "10.44.0.4",
+            "nodeUser": "orbit",
+            "nodePort": 22,
+            "nodeIdentityFile": "/etc/orbit/swamp-role-worker/ssh-identity",
+            "become": true
+          },
+          "prepared": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 1
+          },
+          "withdrawn": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 1
+          },
+          "after": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 1
+          },
+          "before": {
+            "caddy": 2,
+            "php": 1,
+            "dns": 1
+          },
+          "direction": "restore"
+        }
+      ],
+      "cleanup": [],
+      "retire_lan": [],
+      "lan": [],
+      "retire_ingress": [],
+      "ingress": []
+    }
+  },
+  "replacement": {
+    "schema_version": 2,
+    "artifacts": {
+      "caddy": [
+        {
+          "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n\n# orbit: app-dev app-instance-1\nhttps://default.tool.test {\n    bind 10.44.0.7\n    tls /etc/caddy/orbit-certificates/app-instance-1/current/cert.pem /etc/caddy/orbit-certificates/app-instance-1/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    not file {\n        root /dev/shm/orbit/hibernation\n        try_files /app-instance-1.awake\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/1\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-1.log\n}\nhandle {\n    root * /home/orbit/apps/tool/default/public\nencode zstd gzip\nphp_fastcgi unix//run/php/orbit-app-instance-1.sock\nfile_server\n}\n}\n",
+          "version": "584ac90ac859483c9e3d91b0190809f4",
+          "listen_addresses": [
+            "10.44.0.7"
+          ],
+          "unserved": false,
+          "had_served_groups": true
+        },
+        {
+          "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n\n# orbit: app-dev app-instance-1\nhttps://default.tool.test {\n    bind 10.44.0.7\n    tls /etc/caddy/orbit-certificates/app-instance-1/current/cert.pem /etc/caddy/orbit-certificates/app-instance-1/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    not file {\n        root /dev/shm/orbit/hibernation\n        try_files /app-instance-1.awake\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/1\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-1.log\n}\nhandle {\n    root * /home/orbit/apps/tool/default/public\nencode zstd gzip\nphp_fastcgi unix//run/php/orbit-app-instance-1.sock\nfile_server\n}\n}\n\n# orbit: app-dev app-instance-1\nhttps://replacement.tool.test {\n    bind 10.44.0.7\n    tls /etc/caddy/orbit-certificates/app-instance-1/current/cert.pem /etc/caddy/orbit-certificates/app-instance-1/current/key.pem\n    reverse_proxy 10.253.0.2:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n",
+          "version": "7557e78b14ae1794bd624e98bbcb5f9d",
+          "listen_addresses": [
+            "10.44.0.7"
+          ],
+          "unserved": false,
+          "had_served_groups": true
+        },
+        {
+          "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n\n# orbit: app-dev app-instance-1\nhttps://replacement.tool.test {\n    bind 10.44.0.7\n    tls /etc/caddy/orbit-certificates/app-instance-1/current/cert.pem /etc/caddy/orbit-certificates/app-instance-1/current/key.pem\n    reverse_proxy 10.253.0.2:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n",
+          "version": "4fa65a6e74cf06973733e0456beb310c",
+          "listen_addresses": [
+            "10.44.0.7"
+          ],
+          "unserved": false,
+          "had_served_groups": true
+        },
+        {
+          "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+          "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+          "listen_addresses": [],
+          "unserved": true,
+          "had_served_groups": false
+        }
+      ],
+      "php": [
+        {
+          "configurations": {
+            "8.5": "[orbit-app-instance-1]\nuser = orbit\ngroup = __ORBIT_NODE_GROUP__\nlisten = /run/php/orbit-app-instance-1.sock\nlisten.owner = orbit\nlisten.group = caddy\nlisten.mode = 0660\npm = ondemand\npm.max_children = 10\npm.process_idle_timeout = 10s\npm.max_requests = 500\nchdir = /home/orbit/apps/tool/default\ncatch_workers_output = yes\nclear_env = no\nenv[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin\nphp_admin_value[opcache.validate_timestamps] = 1\nphp_admin_value[opcache.revalidate_freq] = 0\n"
+          },
+          "account_user": "orbit"
+        },
+        {
+          "configurations": {},
+          "account_user": "orbit"
+        }
+      ],
+      "dns": [
+        {
+          "node_id": 3,
+          "records": "# Managed by Orbit.\nhost-record=default.tool.test,10.44.0.7\n",
+          "catalog": "{\"records\":{\"default.tool.test\":\"10.44.0.7\"}}\n",
+          "digest": "3e4def530f7900ebdabc81941e3e432961105201c33a60a42e694984b6456e5b"
+        },
+        {
+          "node_id": 3,
+          "records": "# Managed by Orbit.\nhost-record=default.tool.test,10.44.0.7\nhost-record=replacement.tool.test,10.44.0.7\n",
+          "catalog": "{\"records\":{\"default.tool.test\":\"10.44.0.7\",\"replacement.tool.test\":\"10.44.0.7\"}}\n",
+          "digest": "98df753cec912eb1ea9ed351a82c93a4c4db9fe2cc09af61897882899dcd257e"
+        },
+        {
+          "node_id": 3,
+          "records": "# Managed by Orbit.\nhost-record=replacement.tool.test,10.44.0.7\n",
+          "catalog": "{\"records\":{\"replacement.tool.test\":\"10.44.0.7\"}}\n",
+          "digest": "9ddc48e65c8b0a3c473585d8cede247ca55e768ba7e338b866736a6319d786fb"
+        },
+        {
+          "node_id": 4,
+          "records": "# Managed by Orbit.\nhost-record=default.tool.test,10.44.0.7\n",
+          "catalog": "{\"records\":{\"default.tool.test\":\"10.44.0.7\"}}\n",
+          "digest": "3e4def530f7900ebdabc81941e3e432961105201c33a60a42e694984b6456e5b"
+        },
+        {
+          "node_id": 4,
+          "records": "# Managed by Orbit.\nhost-record=default.tool.test,10.44.0.7\nhost-record=replacement.tool.test,10.44.0.7\n",
+          "catalog": "{\"records\":{\"default.tool.test\":\"10.44.0.7\",\"replacement.tool.test\":\"10.44.0.7\"}}\n",
+          "digest": "98df753cec912eb1ea9ed351a82c93a4c4db9fe2cc09af61897882899dcd257e"
+        },
+        {
+          "node_id": 4,
+          "records": "# Managed by Orbit.\nhost-record=replacement.tool.test,10.44.0.7\n",
+          "catalog": "{\"records\":{\"replacement.tool.test\":\"10.44.0.7\"}}\n",
+          "digest": "9ddc48e65c8b0a3c473585d8cede247ca55e768ba7e338b866736a6319d786fb"
+        }
+      ]
+    },
+    "forward": {
+      "routes": [
+        {
+          "route_id": 1,
+          "domain": "replacement.tool.test",
+          "node_ids": [
+            2,
+            3,
+            4
+          ],
+          "certificate_scopes": [
+            {
+              "node_id": 2,
+              "scope": "app-instance-1"
+            }
+          ]
+        }
+      ],
+      "certificates": [
+        {
+          "node_id": 2,
+          "user": "orbit",
+          "scope": "app-instance-1",
+          "agent_sha256": "bdea47122857fc91744c5121856bff82dc6d3153339f539ce3ce07185eb6b9aa",
+          "domain": "replacement.tool.test",
+          "version": "2077631f5d221335",
+          "root_hash": "d0c7b231ec5bbb593eced7ce3db4c5efe0a283bbc9fc07f5290069bb9f243974"
+        }
+      ],
+      "url_writes": [],
+      "publications": [
+        {
+          "index": 0,
+          "node_id": 2,
+          "user": "orbit",
+          "serves_routes": true,
+          "control_node_id": 1,
+          "host_keys": [
+            "ssh-ed25519 fixture-public-key"
+          ],
+          "connection": {
+            "nodeHost": "10.44.0.7",
+            "nodeUser": "orbit",
+            "nodePort": 22,
+            "nodeIdentityFile": "/etc/orbit/swamp-role-worker/ssh-identity",
+            "become": true
+          },
+          "prepared": {
+            "caddy": 1,
+            "php": 0,
+            "dns": null
+          },
+          "withdrawn": {
+            "caddy": 2,
+            "php": 1,
+            "dns": null
+          },
+          "after": {
+            "caddy": 2,
+            "php": 1,
+            "dns": null
+          },
+          "before": {
+            "caddy": 0,
+            "php": 0,
+            "dns": null
+          },
+          "direction": "forward"
+        },
+        {
+          "index": 1,
+          "node_id": 3,
+          "user": "orbit",
+          "serves_routes": false,
+          "control_node_id": 1,
+          "host_keys": [
+            "ssh-ed25519 fixture-public-key"
+          ],
+          "connection": {
+            "nodeHost": "10.44.0.3",
+            "nodeUser": "orbit",
+            "nodePort": 22,
+            "nodeIdentityFile": "/etc/orbit/swamp-role-worker/ssh-identity",
+            "become": true
+          },
+          "prepared": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 1
+          },
+          "withdrawn": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 2
+          },
+          "after": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 2
+          },
+          "before": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 0
+          },
+          "direction": "forward"
+        },
+        {
+          "index": 2,
+          "node_id": 4,
+          "user": "orbit",
+          "serves_routes": false,
+          "control_node_id": 1,
+          "host_keys": [
+            "ssh-ed25519 fixture-public-key"
+          ],
+          "connection": {
+            "nodeHost": "10.44.0.4",
+            "nodeUser": "orbit",
+            "nodePort": 22,
+            "nodeIdentityFile": "/etc/orbit/swamp-role-worker/ssh-identity",
+            "become": true
+          },
+          "prepared": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 4
+          },
+          "withdrawn": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 5
+          },
+          "after": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 5
+          },
+          "before": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 3
+          },
+          "direction": "forward"
+        }
+      ],
+      "prepare_certificates": [
+        {
+          "node_id": 2,
+          "user": "orbit",
+          "scope": "app-instance-1",
+          "agent_sha256": "bdea47122857fc91744c5121856bff82dc6d3153339f539ce3ce07185eb6b9aa",
+          "domain": "replacement.tool.test",
+          "version": "2077631f5d221335",
+          "root_hash": "d0c7b231ec5bbb593eced7ce3db4c5efe0a283bbc9fc07f5290069bb9f243974"
+        }
+      ],
+      "cleanup": [],
+      "retire_lan": [],
+      "lan": [],
+      "retire_ingress": [],
+      "ingress": []
+    },
+    "restore": {
+      "routes": [
+        {
+          "route_id": 1,
+          "domain": "default.tool.test",
+          "node_ids": [
+            2,
+            3,
+            4
+          ],
+          "certificate_scopes": []
+        }
+      ],
+      "certificates": [],
+      "url_writes": [],
+      "publications": [
+        {
+          "index": 0,
+          "node_id": 2,
+          "user": "orbit",
+          "serves_routes": true,
+          "control_node_id": 1,
+          "host_keys": [
+            "ssh-ed25519 fixture-public-key"
+          ],
+          "connection": {
+            "nodeHost": "10.44.0.7",
+            "nodeUser": "orbit",
+            "nodePort": 22,
+            "nodeIdentityFile": "/etc/orbit/swamp-role-worker/ssh-identity",
+            "become": true
+          },
+          "prepared": {
+            "caddy": 1,
+            "php": 0,
+            "dns": null
+          },
+          "withdrawn": {
+            "caddy": 2,
+            "php": 1,
+            "dns": null
+          },
+          "after": {
+            "caddy": 2,
+            "php": 1,
+            "dns": null
+          },
+          "before": {
+            "caddy": 0,
+            "php": 0,
+            "dns": null
+          },
+          "direction": "restore"
+        },
+        {
+          "index": 1,
+          "node_id": 3,
+          "user": "orbit",
+          "serves_routes": false,
+          "control_node_id": 1,
+          "host_keys": [
+            "ssh-ed25519 fixture-public-key"
+          ],
+          "connection": {
+            "nodeHost": "10.44.0.3",
+            "nodeUser": "orbit",
+            "nodePort": 22,
+            "nodeIdentityFile": "/etc/orbit/swamp-role-worker/ssh-identity",
+            "become": true
+          },
+          "prepared": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 1
+          },
+          "withdrawn": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 2
+          },
+          "after": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 2
+          },
+          "before": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 0
+          },
+          "direction": "restore"
+        },
+        {
+          "index": 2,
+          "node_id": 4,
+          "user": "orbit",
+          "serves_routes": false,
+          "control_node_id": 1,
+          "host_keys": [
+            "ssh-ed25519 fixture-public-key"
+          ],
+          "connection": {
+            "nodeHost": "10.44.0.4",
+            "nodeUser": "orbit",
+            "nodePort": 22,
+            "nodeIdentityFile": "/etc/orbit/swamp-role-worker/ssh-identity",
+            "become": true
+          },
+          "prepared": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 4
+          },
+          "withdrawn": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 5
+          },
+          "after": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 5
+          },
+          "before": {
+            "caddy": 3,
+            "php": 1,
+            "dns": 3
+          },
+          "direction": "restore"
+        }
+      ],
+      "cleanup": [],
+      "retire_lan": [],
+      "lan": [],
+      "retire_ingress": [],
+      "ingress": []
+    }
+  }
+}

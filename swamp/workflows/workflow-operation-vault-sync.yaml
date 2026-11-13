@@ -108,7 +108,7 @@ jobs:
         intent: ${{ inputs.intent }}
         env:
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key) }}
-      behaviorName: vault-sync-inputs
+      behaviorName: ${{ "vault-sync-inputs" }}
   - name: workspace
     labels:
       role: swamp
@@ -135,7 +135,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-sync-session-file
+      behaviorName: ${{ "vault-sync-session-file" }}
       methodName: execute
       inputs:
         run: timeout 30 install -m 0600 /dev/null "$BITWARDENCLI_APPDATA_DIR/session"
@@ -212,7 +212,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
-      behaviorName: vault-sync-session
+      behaviorName: ${{ "vault-sync-session" }}
       methodName: session
       inputs:
         directory: ${{ steps.workspace.outputs.stdout.trim() }}
@@ -260,7 +260,7 @@ jobs:
           ORBIT_COLLECTION: ${{ inputs.intent.collection_id }}
           ORBIT_OUTPUT: ${{ steps.workspace.outputs.stdout.trim() + "/inventory" }}
         timeout: 60000
-      behaviorName: vault-sync-read-inventory
+      behaviorName: ${{ "vault-sync-read-inventory" }}
     dependsOn:
     - step: sync
       condition:
@@ -271,7 +271,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
-      behaviorName: vault-sync-public-inventory
+      behaviorName: ${{ "vault-sync-public-inventory" }}
       methodName: inventory
       inputs:
         directory: ${{ steps.workspace.outputs.stdout.trim() }}
@@ -300,7 +300,7 @@ jobs:
           ORBIT_COLLECTION: ${{ inputs.intent.collection_id }}
           ORBIT_OUTPUT: ${{ steps.workspace.outputs.stdout.trim() + "/trash" }}
         timeout: 60000
-      behaviorName: vault-sync-read-trash
+      behaviorName: ${{ "vault-sync-read-trash" }}
     dependsOn:
     - step: inventory
       condition:
@@ -311,7 +311,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
-      behaviorName: vault-sync-public-trash
+      behaviorName: ${{ "vault-sync-public-trash" }}
       methodName: inventory
       inputs:
         directory: ${{ steps.workspace.outputs.stdout.trim() }}

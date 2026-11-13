@@ -165,6 +165,8 @@ Measured container and fleet files declare costs by exact case name, with run ID
 
 Container host preparation uses one case per unit. Each declared body cost uses its largest completed observation, rounded up plus one second; paired cases must not receive an equal share of the file total. Deadline cuts are censored observations, not completed measurements.
 
+Each fixture unit has its own child subreaper. It reaps adopted children while the session leader runs, so exited grandchildren do not remain zombies until the unit ends. The leader alone decides success or failure. Deadlines and cancellation still kill and reap the unit’s remaining descendants before temporary files are removed.
+
 Direct input matches take priority when work exceeds that limit, then fixture table order decides admission. A file runs with all its slices or is deferred whole; the plan names deferred units, their cases and unmapped Swamp paths in its summary. A file that cannot fit even an otherwise empty six-shard plan, or contains a unit above the lane budget, makes Required checks fail; admitted files still run. Unmapped paths select the table’s default checks.
 
 Migration remains after-merge-only: its declared work needs twelve shards, above the six-shard limit. The host ACL file also exceeds a lane, and the host build-list file needs an isolated measurement before admission. The FrankenPHP proxy fixture needs the pinned binary through `ORBIT_FRANKENPHP`, which hosted fixture setup does not install. Their table entries explain these coverage gaps. The measured container file remains eligible.
@@ -756,6 +758,8 @@ The destroy guard is admission only. Tests pin the workflow to its pre-guard mai
 The container Schedule fixture checks timer installation and advisory activation with three Ansible launches. It executes the journal module directly for byte and transport limits. Its declared cost includes startup; inventory and case costs change together.
 
 Private Node-runtime fixtures use the shipped conversion and fetch helper with a fake Vite+ command; network downloads are tested separately in an owned fixture Instance.
+
+DNS publication fixtures evaluate the shipped selectors, guards and contribution counts with the pinned Swamp CEL evaluator on public intents captured through the real Gateway builders. They retain the first live publication, omit only an identical final publication, and exercise the real merge and terminal result for drift, mixed Nodes and failed children. The previous Gateway's intent needs no added field. Keep child-count evidence separate from live timing; release proof measures the migrate Route step against its recorded baseline.
 
 The Caddy candidate fixtures execute each changed writer with invalid and valid candidates. They keep every path and stand-in under a private temporary directory, run Ansible without facts or privilege, preserve relative-import directories and prove invalid input leaves live bytes unchanged with no reload.
 

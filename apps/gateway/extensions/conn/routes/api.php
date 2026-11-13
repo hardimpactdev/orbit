@@ -8,6 +8,7 @@ use App\Http\Middleware\RequireEnabledExtension;
 use App\Http\Middleware\RequireNodeAccess;
 use Illuminate\Support\Facades\Route;
 use Orbit\Extensions\Conn\Http\Controllers\ConnEnvironmentsController;
+use Orbit\Extensions\Conn\Http\Controllers\ConnInstancesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnNodesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnOperationsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnPairingsController;
@@ -45,6 +46,7 @@ Route::middleware([
         Route::get('projects/{project}/instances/check', [ConnProjectsController::class, 'checkInstanceName'])
             ->withoutMiddleware(RecordCommandActivity::class)->whereNumber('project')->name('conn:instance:name:check');
         Route::post('projects/{project}/instances', [ConnProjectsController::class, 'createInstance'])->whereNumber('project')->name('conn:instance:create');
+        Route::post('instances/{instance_id}/destroy', [ConnInstancesController::class, 'destroy'])->whereNumber('instance_id')->name('conn:instance:destroy');
         Route::get('environments', [ConnEnvironmentsController::class, 'index'])->name('conn:environment:list');
         Route::post('environments/{environment}/sessions/cleanup', [ConnEnvironmentsController::class, 'cleanup'])->name('conn:environment:cleanup');
         Route::get('environments/{environment}/pairings', [ConnPairingsController::class, 'index'])->name('conn:pairing:list');

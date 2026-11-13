@@ -219,4 +219,6 @@ SQL writes are limited to 16,384 bytes and one statement, which admission checks
 
 `instance:destroy` removes the databases its Instances own inside its own run; there is no separate owned-removal Operation. The Gateway records the owned set once at admission. For each Database server, the run calls the `operation-database-destroy` workflow that `database:destroy` uses, with the server's admin login from its own vault key. The official `@swamp/cfgmgmt/file` behavior removes each owned SQLite file under the Node account; the Gateway admits only paths inside the Instance checkout.
 
+Conn uses the same read-only ownership and attachment checks before calling Instance removal. This pre-check records no database intent and changes no database or Schedule.
+
 The Gateway deletes the owned connection records only after the whole Instance removal succeeds. Failure or cancellation keeps them. Attached databases outside the owned set still block admission.

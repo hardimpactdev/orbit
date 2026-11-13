@@ -19,9 +19,10 @@ final readonly class NativeStepFailure
     /** @param array<string, mixed> $run
      * @return array{failed_step:string,detail:string,stderr_recorded:bool}|null
      */
-    public function fromRun(array $run, Operation $operation): ?array
+    public function fromRun(array $run, Operation $operation, bool $includeCancelled = false): ?array
     {
-        if (! in_array($run['status'] ?? null, ['failed', 'interrupted'], true)) {
+        if (! in_array($run['status'] ?? null, ['failed', 'interrupted'], true)
+            && ! ($includeCancelled && ($run['status'] ?? null) === 'cancelled')) {
             return null;
         }
         $candidates = [];
