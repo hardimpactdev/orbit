@@ -178,7 +178,7 @@ A kind needs this guard when its execution input is built or its execution code 
 | `conn.*` | Preserves the existing guard for checkout and session setup across a switch. |
 | `process.*` | Preserves the existing guard for Process unit, definition and control work, excluding read-only journal and state requests. |
 
-The three lifecycle kinds above are the current addition. Other qualifying kinds remain outside this guard pending a separate change:
+Other qualifying kinds remain outside this guard pending a separate change:
 
 | Not covered yet | Reason it also qualifies |
 | --- | --- |
