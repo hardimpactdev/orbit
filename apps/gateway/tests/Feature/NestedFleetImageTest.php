@@ -66,8 +66,8 @@ it('builds the nested-fleet variant with the pinned inner Incus, agent authority
         ->and($nested['incus'])->toBe(array_values(array_filter($incus['packages'], fn (array $package): bool => $package['name'] !== 'incus')))
         ->and($nested['prepare'])->toBe($normal['prepare']."usermod --append --groups incus-admin agent\n")
         ->and($files)->not->toHaveKey('/etc/sysctl.d/90-orbit-no-userns.conf')
-        ->and($files['/etc/subuid'])->toBe(['path' => '/etc/subuid', 'content' => "root:1000000:100000000\nroot:1000:1\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'])
-        ->and($files['/etc/subgid']['content'])->toBe("root:1000000:100000000\nroot:1000:1\n")
+        ->and($files['/etc/subuid'])->toBe(['path' => '/etc/subuid', 'content' => "root:1000000:100000000\nroot:1000:1\nroot:2750:1\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'])
+        ->and($files['/etc/subgid']['content'])->toBe("root:1000000:100000000\nroot:1000:1\nroot:2760:1\n")
         ->and($files['/etc/orbit/apparmor-off']['content'])->toBe("N\n")
         ->and($files['/etc/sudoers.d/orbit-agent'])->toBe(['path' => '/etc/sudoers.d/orbit-agent', 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440'])
         // The network wait asks only for a route on eth0: the DNS that netplan's wait asks for never comes, and held each start for 120 s.
