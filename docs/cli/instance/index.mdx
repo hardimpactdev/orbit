@@ -112,6 +112,6 @@ Conn can also [create a thread clone on a selected branch](/reference/conn#threa
 
 Repair development mail with [`instance:mail:update`](/cli/instance/mail-update).
 
-A checkout can record an explicit [Node service target](/cli/instance/node-service-attach) before migration. For a running container, [detach](/cli/instance/node-service-detach) withdraws its scoped loopback access before removing the record. The environment file and Node Process stay unchanged.
+A checkout can record an explicit [Node service target](/cli/instance/node-service-attach) before migration. For a running container, [detach](/cli/instance/node-service-detach) withdraws its scoped loopback access before removing the record. The environment file and Node Process stay unchanged. A clone of a container default takes a copy of the default's targets, and its new `.env` holds their host and port.
 
 Migration reports named environment warnings in human output and retains their `code` and `message` in the Operation result. See [migration warnings](/cli/instance/migrate#warnings).

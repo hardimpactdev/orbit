@@ -18,6 +18,8 @@ The Gateway owns the environment configuration of every Instance. It stores each
 
 [Node service target records](/reference/processes-and-schedules#node-service-target-records) reserve explicit host and port key names per Instance. During create and migration, the container reaches an attached Node service at the same host and port named in `.env`, with a proxy on `127.0.0.1:<port>` for IPv4 loopback.
 
+A development create, and so a clone, writes each recorded target into the new `.env`: `127.0.0.1` for a same-Node target or the service Node's WireGuard address for a remote one under the host key, and the published port under the port key. This value replaces a literal value from `.env.example`, because that value names another endpoint. A whole-value `${VAR}` reference that the Project wrote for the key stays as written. Orbit writes no database name, user or password for a Node service. Attach, detach and migration change no environment values.
+
 A remote Docker Node Process target uses its real private WireGuard address and published TCP port, so a URL keeps the exact value already written in `.env`. Only that selected host joins the container's managed `NO_PROXY` and `no_proxy` for Incus execution sessions, newly started systemd Processes and login shells. Detach removes it. Recording, applying or removing a target leaves both stored environment values and the `.env` file unchanged.
 
 [Migration](/cli/instance/migrate) preflight admits a selected Node service on loopback (`127.0.0.1` or `localhost`) or a Node address only when its endpoint matches an attached target. The loopback path requires the target's exact recorded host key, port key and published port. A selected Node service without that match still refuses migration.

@@ -28,6 +28,7 @@ sequenceDiagram
   %%> Result:
   %%> - the Instance is reserved with its runtime record: container name, bridge address, the lowest free T3 port from 3800 and the default as clone source
   %%> - `.env` is rendered from the Project's env template; it, the placeholder model key and a repository read token go to the vault
+  %%> - the clone takes a copy of each of the default's Node service targets; `.env` gets each target's host and port under its keys, never a database name or credential
   %%> - the clone workspace reads one private JSON vault value with `.env` and the Process environment files; SSH stdin takes the whole value
   %%> - a task is recorded with the full intent and `container.clone`
   %%> - a retained create retry records the Project's current development Processes in this admission transaction; changed definitions update their records, removed definitions remove theirs

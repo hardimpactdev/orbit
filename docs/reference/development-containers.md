@@ -1267,7 +1267,7 @@ The same-Node socket proxy runs with a dynamic unprivileged user; its unit files
 
 Orbit waits up to three seconds per target for unit readiness and both connections, polling every 50 ms. The probe’s systemd reads and loopback connect share that deadline. A nonblocking peek at the probe’s client detects EOF or a reset between kernel samples. Refusals retain the [reason and unit states](/reference/processes-and-schedules#node-service-target-records) in the Operation. A missing forwarding connection refuses rather than accepting a listener backlog. Target failures are fatal, unlike advisory development mail.
 
-Pending activation remains after failure, so a later attempt reloads and probes again. Clone attachment records remain independent; inherited target units and enable links are removed before boot. Existing environment files stay unchanged.
+Pending activation remains after failure, so a later attempt reloads and probes again. A clone takes a copy of each of its default's attachment records at admission. The target units and enable links it copied from the default are removed before boot, and its own Node service phase installs them again. Existing environment files stay unchanged.
 
 
 Attached-target admission and migration require an active, desired-running Process. Attached targets refuse a stop or publication change until detached. Node intent capture accepts a stopped Process when its recorded publication remains. Detach can withdraw those records. Full host reconciliation still needs live Docker DNAT for every recorded Docker endpoint, as it does for database targets: restart a stopped target before that reconciliation. This feature changes no shared bridge-helper policy.
