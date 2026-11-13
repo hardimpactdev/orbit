@@ -210,7 +210,6 @@ inputs = [
   "swamp/ansible/tasks/instance-network-nic-check.yml",
   "swamp/ansible/tasks/instance-host.yml",
   "swamp/ansible/tasks/instance-folder.yml",
-  "swamp/ansible/tasks/task-container-host-*.yml",
   "swamp/tests/_support/instance_host.ts",
   "swamp/tests/fixtures/instance-bridge-curl.ts",
   "swamp/tests/fixtures/instance-container-incus.ts",
