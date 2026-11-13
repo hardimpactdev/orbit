@@ -189,7 +189,7 @@ A Route that Orbit creates or replaces as part of another action sends no `route
 | `operation.updated` | `orbit` | An operation starts, ends, or a cancel is requested. | The same fields |
 | `operation.updated` | `private-operation.{id}` | The operation or one of its steps changes. | The same fields |
 
-`id` is the operation ID. These events are notices: they never carry input, steps, output, or the result. On its own channel, an operation sends at most one output change per second, and every status and step change at once. A client drops an event whose `sequence` is not greater than the one it has read, and reads the operation with `after_sequence` for the rest. [Follow an operation over Reverb](/reference/operations#follow-an-operation-over-reverb) describes the order.
+`id` is the operation ID. A change that is neither a status change nor a cancel request goes only to the operation's own channel. These events are notices: they never carry input, steps, output, or the result. On its own channel, an operation sends at most one output change per second, and every status and step change at once. A client drops an event whose `sequence` is not greater than the one it has read, and reads the operation with `after_sequence` for the rest. [Follow an operation over Reverb](/reference/operations#follow-an-operation-over-reverb) describes the order.
 
 ### Deploy step output
 

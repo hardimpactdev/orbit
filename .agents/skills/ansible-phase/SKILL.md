@@ -16,9 +16,9 @@ The `node.role_add` flow provides these shared parts:
 - the `@nckrtl/ansible-input` behavior, which writes the admitted intent to a run file and ships the playbooks to the worker. It is TypeScript growth (F15); its reason is that Swamp has no other way to hand a whole object to a command;
 - the `swamp/ansible/` folder with the playbooks and the input builder, which writes the inventory, the vars and `known_hosts`;
 - the pinned `ansible-core` and collections in the `swamp` role ([role prerequisites](../../../docs/reference/node-provisioning.md#role-prerequisites));
-- Jinja templates in `swamp/ansible/templates/` for a decision that is more than a `when` (see [Decisions as templates](#decisions-as-templates)), each with a Molecule `unit` scenario under `swamp/proof/molecule/<command>/molecule/unit`;
+- Jinja templates in `swamp/ansible/templates/` for a decision that is more than a `when` (see [Decisions as templates](#decisions-as-templates)), each with a template test in `swamp/tests/`: a Deno `*_test.ts`, or a Python test listed in `ANSIBLE_TESTS` of `bin/swamp-shape-gate`;
 - the `result.json` file in the run folder and a small result step that prints it (see [Layout and contract](#layout-and-contract));
-- `ansible-lint` in the `production` profile and the shape gate's acceptance of `ansible-playbook` phase commands. Run both before a push with `bin/swamp-shape-gate`; CI runs the same script. The gate lists each playbook by name and runs the `unit` cases.
+- `ansible-lint` in the `production` profile and the shape gate's acceptance of `ansible-playbook` phase commands. Run both before a push with `bin/swamp-shape-gate`; CI runs the same script. The gate lists each playbook by name and runs the template tests.
 
 ## Layout and contract
 
@@ -54,7 +54,7 @@ A Jinja decision template is read with `lookup('ansible.builtin.template', 'name
 - Do not change a list that the loop filter reads. Test inside the body.
 - `ansible.utils.ipaddr` does network containment. It needs `netaddr`, pinned in `requirements.txt`, and the collection, pinned in `requirements.yml`.
 - An empty template result is `null`, not `''`. Test `x is none`, or compare a list.
-- Test the template with a `unit` scenario (cases as data, fixed text in, JSON out, every refusal code), and run it on any machine: `molecule test -s unit`. Port the cases of the TypeScript test that it replaces.
+- Test the template with a template test (fixed text in, the result out, every refusal code), and run it without a nested fleet: `deno test -A tests/<file>` or `python3 -I tests/<file>` in `swamp/`. Port the cases of the TypeScript test that it replaces.
 - The template is a limit, not a goal. If it grows beyond what one reviewer can hold in mind, or needs recursion over arbitrary JSON, take it to the orchestrator before you build more.
 
 ## Pitfalls from the trial
@@ -101,7 +101,7 @@ A Jinja decision template is read with `lookup('ansible.builtin.template', 'name
 
 Two things prove a command. The [porting guide](../../../docs/swamp/porting.md#5-prove-it) has the layout.
 
-1. **`unit`:** run `molecule test -s unit` on any machine. It proves the templates on fixed text.
+1. **Template test:** run it in `swamp/` without a nested fleet. It proves the templates on fixed text.
 2. **Cases file:** in the nested fleet of your task VM (stage 2 of the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx)), the case runner runs `swamp/proof/<family>/<command>.cases.yaml` against the real CLI, `php apps/cli/orbit <command> --json`. Follow [verifying-commands](../verifying-commands/SKILL.md).
 3. **Idempotence:** run the command twice. The second run is `succeeded` with its skip reason and changes nothing on the Node. A phase run directly (`ansible-playbook -i inventory.yml -e @vars.yml --tags <phase> <playbook>` from the run folder) must report zero `changed` on a second run.
 4. **Negative:** break the effect and check that only that case fails.

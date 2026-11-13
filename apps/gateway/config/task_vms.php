@@ -14,7 +14,7 @@ $projectIds = static fn (string $key): mixed => json_decode((string) (env($key) 
 
 return [
     'enabled' => (bool) env('ORBIT_TASK_VMS_ENABLED', false),
-    // Lets normal placement take task container places (docs/reference/task-containers.md#placement-before-the-switch).
+    // Lets normal placement take task container places (docs/reference/old-paths.md#off-in-the-live-fleet).
     'container_placement' => (bool) env('ORBIT_TASK_VMS_CONTAINER_PLACEMENT', false),
     'dev_cluster_id' => env('ORBIT_TASK_VMS_DEV_CLUSTER_ID'),
     'wireguard_range' => env('ORBIT_TASK_VMS_WIREGUARD_RANGE') ?: '10.44.0.128/25',

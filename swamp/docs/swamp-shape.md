@@ -26,11 +26,11 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
    - Decided by Nick, 2026-11-07. Before that, an Ansible phase was the approved exception (2026-11-03); it is now the default. Run each logical phase as one placed `command/shell` step that runs one tagged part of a repository playbook on the Swamp Node, against the intent file. The playbook reads, changes and checks the machine in one run. A read, a plan or an end check is a task in the playbook, not a Swamp step. The chart shows one step per phase.
    - Swamp keeps what is not machine work: the logical phases and their order (`dependsOn`, `guard`, `forEach`, `allowFailure`), the two Gateway calls a step may make (mint and sign), external API calls (GitHub), cancellation, and the `input`, result and `cleanup` steps of the run folder.
    - A native step that acts on a machine (`@swamp/ssh exec`, an official `cfgmgmt` behavior) is the exception. The PR names the measured numbers that justify it: Swamp steps, end-to-end time and per-phase time of both forms. Several reads and changes on one machine, and any work that repeats per Node, belong in a phase.
-   - Use a typed TypeScript behavior only for a typed, schema-validated result that a file cannot print. A plan of a machine change is not one: it is a pure Jinja template in the playbook with its own Molecule `unit` cases (see the [porting guide](../../docs/swamp/porting.md)).
+   - Use a typed TypeScript behavior only for a typed, schema-validated result that a file cannot print. A plan of a machine change is not one: it is a pure Jinja template in the playbook with its own template test (see the [porting guide](../../docs/swamp/porting.md)).
    - A change to the phase sequence needs a written reason in the PR. See the [ansible-phase skill](../../.agents/skills/ansible-phase/SKILL.md) for the playbook rules.
 4. **Scripts are visible and linted.**
    - The script text lives in the workflow or the behavior definition (`run: |`), or in a file that Swamp ships to the worker, never inside a TypeScript string.
-   - CI runs shellcheck (and ruff for Python) on all of it. Playbooks live in `swamp/ansible/` and pass `ansible-lint` in the `production` profile; the gate lists each playbook. Their Jinja templates (`swamp/ansible/templates/`) have Molecule `unit` cases that the gate runs.
+   - CI runs shellcheck (and ruff for Python) on all of it. Playbooks live in `swamp/ansible/` and pass `ansible-lint` in the `production` profile; the gate lists each playbook. Their Jinja templates and expressions have template tests in `swamp/tests/` that check them against fixed text: a Deno `*_test.ts`, or a Python test that the gate names in its `ANSIBLE_TESTS` list. The gate runs both.
 5. **Secrets come from Swamp vaults.**
    - The Gateway stays the source of truth. It pushes the execution copy with the native authenticated `vault.put` WebSocket request when a value changes. The value is in the frame payload, never argv; the shared Gateway helper launches no CLI.
    - Steps read `${{ vault.get('<vault>', '<key>') }}`. In `command/shell`, Swamp passes it as an environment variable. The approved Node209 worker SSH key instead uses official `@swamp/ssh` `identityFile` through native `LoadCredential`; worker-wide read is approved.
@@ -70,7 +70,7 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
 ## Checks on every PR
 
 - `swamp workflow validate` for every workflow, on the pinned runtime.
-- `ansible-lint` for every playbook, and the Molecule `unit` cases of every template under `swamp/ansible/templates/`.
+- `ansible-lint` for every playbook, and the template tests in `swamp/tests/`: the Deno `*_test.ts` files and the Python files in the gate's `ANSIBLE_TESTS` list.
 - `deno test` for `extensions/behaviors/operations`.
 - The placement lint.
 - The Swamp-shape gate. It fails on:

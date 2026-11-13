@@ -38,6 +38,7 @@ Attached targets
     Database: hauzer
     User: hauzer
     Prefix: DB
+    Shared: no
     Server: —
   hauzer-cache (1) · redis (redis)
     Node: beast (1)
@@ -45,6 +46,7 @@ Attached targets
     Database: 2
     User: —
     Prefix: REDIS
+    Shared: no
     Server: —
   food-catalog (3) · database (pgsql)
     Node: Services (2)
@@ -52,6 +54,7 @@ Attached targets
     Database: food_catalog
     User: catalog_reader
     Prefix: FOOD_CATALOG
+    Shared: yes
     Server: catalog-postgres (1)
  ┌────┬───────────┬─────────┬─────────┬────────────────┬────────┐
  │ ID │ NAME      │ RUNTIME │ DESIRED │ RUNTIME STATUS │ STATUS │

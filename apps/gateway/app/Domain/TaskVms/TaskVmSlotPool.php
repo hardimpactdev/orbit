@@ -28,7 +28,7 @@ use App\Support\ValidatedData;
  *
  * A host with a `containers` side has container places beside its VM places. Normal placement takes them only while
  * `task_vms.container_placement` is on, and only on a host with a container base; the row records the runtime of its
- * place (docs/reference/task-containers.md#placement-before-the-switch).
+ * place (docs/reference/old-paths.md#off-in-the-live-fleet).
  */
 final readonly class TaskVmSlotPool
 {

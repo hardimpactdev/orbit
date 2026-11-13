@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * A slot is a fixed, reused task VM `<host>-tvm-<number>` (docs/cli/task/vm-slot-enrol.mmd). Its row keeps its number and its network
+ * A slot is a fixed, reused task VM `<host>-tvm-<number>` (docs/reference/old-paths.md#off-in-the-live-fleet). Its row keeps its number and its network
  * identity, encrypted: the WireGuard key, the SSH host key and the agent secret, made once and written again by every enrol.
  */
 return new class extends Migration

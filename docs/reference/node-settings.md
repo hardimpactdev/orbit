@@ -122,7 +122,7 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 
 ### Task container fields
 
-The optional `containers` object gives a host task container places beside its task VM places. A host without it runs only task VMs.
+The optional `containers` object gives a host task container places beside its task VM places. A host without it runs only task VMs. Task places are 0 on every host in the live fleet ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)).
 
 ```json
 {

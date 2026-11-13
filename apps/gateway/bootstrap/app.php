@@ -86,7 +86,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // Runs that finished in Swamp are read once a minute and projected; Swamp's commit feed needs a v3 datastore.
         GatewaySchedule::job($schedule, new PollSwampScheduledResults)->everyMinute()
             ->when(static fn (): bool => GatewayQueueRedis::configured() && app(SwampScheduledResults::class)->enabled());
-        // Stage 6: every task VM host brings its image and seed up to date once a day. The release trigger is in the release projection.
+        // Stage 6: a task VM host without an operator hold brings its image and seed up to date once a day; the live fleet holds every
+        // host (docs/reference/old-paths.md#off-in-the-live-fleet). The release trigger is in the release projection.
         // A host with a refresh open returns it, so a repeat starts nothing.
         GatewaySchedule::job($schedule, new RefreshTaskVmImages)->dailyAt('03:20')
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);

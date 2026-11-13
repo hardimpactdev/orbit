@@ -8,7 +8,7 @@ use Orbit\Sdk\Responses\Nodes\NodeIdentityResponse;
 use SensitiveParameter;
 
 /**
- * @phpstan-type AttachedTargetRecord array{kind: string, driver: string, id: int, name: string, node: array{id: int, name: string}|null, host: string|null, port: int|null, database: string|null, username: string|null, prefix: string, server: array{id: int, name: string}|null}
+ * @phpstan-type AttachedTargetRecord array{kind: string, driver: string, id: int, name: string, node: array{id: int, name: string}|null, host: string|null, port: int|null, database: string|null, username: string|null, prefix: string, shared: bool, server: array{id: int, name: string}|null}
  */
 final readonly class InstanceAttachedTargetResponse
 {
@@ -24,6 +24,7 @@ final readonly class InstanceAttachedTargetResponse
         public ?string $database,
         public ?string $username,
         public string $prefix,
+        public bool $shared,
         public ?array $server,
     ) {}
 
@@ -35,7 +36,8 @@ final readonly class InstanceAttachedTargetResponse
             || ! is_int($data['id'] ?? null)
             || $data['id'] < 1
             || ! is_string($data['name'] ?? null)
-            || ! is_string($data['prefix'] ?? null)) {
+            || ! is_string($data['prefix'] ?? null)
+            || ! is_bool($data['shared'] ?? null)) {
             return null;
         }
 
@@ -52,6 +54,7 @@ final readonly class InstanceAttachedTargetResponse
             database: is_string($data['database'] ?? null) ? $data['database'] : null,
             username: is_string($data['username'] ?? null) ? $data['username'] : null,
             prefix: $data['prefix'],
+            shared: $data['shared'],
             server: is_array($server) && is_int($server['id'] ?? null) && is_string($server['name'] ?? null)
                 ? ['id' => $server['id'], 'name' => $server['name']] : null,
         );
@@ -71,6 +74,7 @@ final readonly class InstanceAttachedTargetResponse
             'database' => $this->database,
             'username' => $this->username,
             'prefix' => $this->prefix,
+            'shared' => $this->shared,
             'server' => $this->server,
         ];
     }

@@ -17,7 +17,7 @@ final class RenameInstanceCommand extends GatewayCommand
     protected $signature = 'instance:rename
         {instance : Numeric Instance ID}
         {--branch= : Branch already checked out on the Node}
-        {--domain= : New domain for the Instance Route}
+        {--domain= : Always refused; rename does not move the Route}
         {--json : Return machine-readable JSON}';
 
     #[\Override]

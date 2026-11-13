@@ -225,6 +225,7 @@ Instance records, including `GET /api/v1/instances/{instance}` and the MCP `inst
 | `host`, `port` | Recorded connection endpoint, as migrate uses it for network grants and probes; null for SQLite |
 | `database`, `username` | Recorded database or Redis index and user, or null when absent |
 | `prefix` | Environment prefix of this attachment |
+| `shared` | `true` when the attachment is marked shared, so a container clone keeps it; see [instance:database:add](/cli/instance/database-add) |
 | `server` | Managed Database server's `id` and `name` (slug), or null |
 
 Each entry is one connection attachment. The server is its related identity, not an extra attachment. Passwords, secrets and vault keys are excluded.

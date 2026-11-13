@@ -44,7 +44,7 @@ The container flows keep the kinds of today's Instance flows. Their charts sit o
 | Put an idle Instance to sleep | [instance/sleep.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/sleep.mmd) |
 | Wake an Instance | [instance/wake.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/wake.mmd) |
 | Refresh a nested-fleet default after a release | [container/fleet-refresh.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd) |
-| Register and renew the T3 server | [conn/environment-renew.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) |
+| Renew the T3 server's session | [conn/environment-renew.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) |
 | Start a thread in an Orbit Project | [container/thread.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/thread.mmd) |
 | Move a checkout Instance into a container | [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) |
 
@@ -699,7 +699,7 @@ A web-serving Project without a PHP version refuses with `project.source_default
 
 Two lines then run at the same time. The workspace line writes the `.env` and starts the Processes. The agent line writes the agent settings, the note links and `/etc/orbit/instance`, then starts T3 and adds the T3 project at `/srv/workspace`. The agent line never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs. The agent line therefore does not wait for the workspace.
 
-The sessions check waits for both lines, because it checks the branch, the checkout mark and every Process unit. Last, Orbit registers the T3 server. The Route publishes in its own job. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
+The sessions check waits for both lines, because it checks the branch, the checkout mark and every Process unit. Last, Orbit registers the T3 server ([T3 registration](#t3-registration-and-pairing)). The Route publishes in its own job. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
 
 A clone starts at the commit of the default's newest seed snapshot, with its dependencies installed. It copies no development deploy commands to the execution vault and runs no deploy step. Its branch is the matching origin branch, fetched on the Node, or a new branch at the seed's commit.
 
@@ -1011,7 +1011,7 @@ In the Gateway:
 2. It reads the Gateway session from the vault into its encrypted record. The vault copy stays, as a pairing's credential does.
 3. The server's Node is the container's Node, and the record names the Instance ([Instance servers](/reference/conn#instance-servers)).
 
-The container cannot call the Gateway, so registration never comes from inside it. Orbit renews the Gateway's session from outside, in an hourly tick ([Renewal of an Instance server](/reference/conn#renewal-of-an-instance-server)). A container started after its session ended gets a new one within the hour, or within six hours when a try found it stopped. The [registration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) has the steps.
+The container cannot call the Gateway, so registration never comes from inside it. Orbit renews the Gateway's session from outside, in an hourly tick ([Renewal of an Instance server](/reference/conn#renewal-of-an-instance-server)). A container started after its session ended gets a new one within the hour, or within six hours when a try found it stopped. The [renewal chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) has the steps.
 
 A device pairs as with any T3 server: [`conn:pairing:create`](/reference/conn#pairing-and-revocation), with node access to the container's Node. Pairing with a sleeping Instance's server refuses with `conn.environment_asleep`; the device wakes it first. T3 prints a pairing token to its journal at each start; only root and `agent` can read it, and that is accepted.
 

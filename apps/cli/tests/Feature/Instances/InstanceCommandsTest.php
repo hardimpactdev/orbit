@@ -98,6 +98,12 @@ describe('instance:rename', function (): void {
         'empty domain with branch' => [['instance' => 3, '--domain' => '', '--branch' => 't3code/login'], 'validation.failed'],
     ]);
 
+    it('says in its help that a domain is refused', function (): void {
+        $domain = app(Kernel::class)->all()['instance:rename']->getDefinition()->getOption('domain')->getDescription();
+
+        expect($domain)->toBe('Always refused; rename does not move the Route');
+    });
+
     it('preserves HEAD refusal and correlation in JSON errors', function (): void {
         MockClient::global([RenameInstanceRequest::class => MockResponse::make([
             'error' => ['code' => 'instance.branch_not_checked_out', 'message' => 'HEAD is not on the requested branch.', 'details' => [], 'request_id' => 'a6cc838a-e4a2-42fb-b2e6-ffabbe9c0d07'],
@@ -680,12 +686,12 @@ describe('instance:show', function (): void {
             'kind' => 'database', 'driver' => 'pgsql', 'id' => 14, 'name' => 'food-catalog',
             'node' => ['id' => 3, 'name' => 'services'], 'host' => '10.44.0.3', 'port' => 5434,
             'database' => 'food_catalog', 'username' => 'catalog_reader', 'prefix' => 'FOOD_CATALOG',
-            'server' => ['id' => 9, 'name' => 'catalog-postgres'],
+            'shared' => true, 'server' => ['id' => 9, 'name' => 'catalog-postgres'],
         ];
         $redis = [
             'kind' => 'redis', 'driver' => 'redis', 'id' => 15, 'name' => 'cache',
             'node' => ['id' => 2, 'name' => 'beast'], 'host' => '10.44.0.2', 'port' => 6379,
-            'database' => null, 'username' => null, 'prefix' => 'REDIS', 'server' => null,
+            'database' => null, 'username' => null, 'prefix' => 'REDIS', 'shared' => false, 'server' => null,
         ];
         $payload = [...instance_payload(), 'attached_targets' => [
             [...$sql, 'password' => 'attachment-password-sentinel', 'vault_key' => 'attachment-vault-sentinel'],
@@ -699,7 +705,7 @@ describe('instance:show', function (): void {
         if ($json) {
             expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['attached_targets'])->toBe([$sql, $redis]);
         } else {
-            expect(instance_source_text($output))->toContain('Attached targets', 'pgsql', 'food-catalog', 'services', '10.44.0.3:5434', 'food_catalog', 'catalog_reader', 'FOOD_CATALOG', 'catalog-postgres', 'redis', 'cache', 'beast', '10.44.0.2:6379');
+            expect(instance_source_text($output))->toContain('Attached targets', 'pgsql', 'food-catalog', 'services', '10.44.0.3:5434', 'food_catalog', 'catalog_reader', 'FOOD_CATALOG', 'Shared', 'yes', 'no', 'catalog-postgres', 'redis', 'cache', 'beast', '10.44.0.2:6379');
         }
     })->with([false, true]);
 

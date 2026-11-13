@@ -226,7 +226,7 @@ final readonly class UpdateNodeAction
 
     /**
      * A host keeps the container side its live task containers run on: their project, bridge and bridge network
-     * (docs/reference/task-containers.md#add-containers-to-a-host). Its places may change.
+     * (docs/reference/old-paths.md#off-in-the-live-fleet). Its places may change.
      */
     private function keepLiveContainers(Node $node, ?NodeTaskVmsData $previous, ?NodeTaskVmsData $next): void
     {

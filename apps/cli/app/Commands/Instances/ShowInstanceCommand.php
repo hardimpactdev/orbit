@@ -104,6 +104,7 @@ final class ShowInstanceCommand extends GatewayCommand
                     'Database' => $target->database,
                     'User' => $target->username,
                     'Prefix' => $target->prefix,
+                    'Shared' => $target->shared ? 'yes' : 'no',
                     'Server' => $target->server === null ? null : "{$target->server['name']} ({$target->server['id']})",
                 ],
             ];

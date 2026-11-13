@@ -15,7 +15,7 @@ orbit instance:rename <instance> [--branch=BRANCH] [--domain=HOST] [--json]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--branch=BRANCH` | none | Record this local branch. Symbolic `HEAD` must already name it. |
-| `--domain=HOST` | none | Refused with `operation.kind_unavailable`, also when `--branch` is supplied; Route replacement is not available through rename. |
+| `--domain=HOST` | none | Refused with `operation.kind_unavailable`, also when `--branch` is supplied; Route replacement is not available through rename. The option's help says the same. |
 | `--json` | off | Return the recorded Instance JSON, or an error, without prompts or progress. |
 
 Supply at least one of `--branch` and `--domain`, and neither empty; otherwise the CLI refuses with `validation.failed` and sends no request. The command needs no `--yes` or `--force`. In a terminal, an omitted Instance is chosen from an interactive list; a noninteractive or `--json` call without it is refused with `instance.id_invalid` and sends no request, and so is a value that is not a positive integer.
