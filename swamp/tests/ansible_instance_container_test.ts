@@ -1712,14 +1712,13 @@ Deno.test({
   },
 });
 
-/** The `fleet` of a nested-fleet default's deployment intent (NestedFleetIntent), with the commit of its old seed. */
-const fleetIntent = (seed: string | null) => ({
+/** The `fleet` of a nested-fleet default's deployment intent (NestedFleetIntent). */
+const fleetIntent = () => ({
   guests: { gateway: "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod" },
   layout: { gateway: { address: "10.232.2.11" }, "app-dev": { address: "10.232.2.12" }, "app-prod": { address: "10.232.2.13" } },
   operator: { address: "10.45.0.10", hub: "10.45.0.1", network: "10.45.0.0/24" },
   checkout: { path: "/home/orbit/orbit" },
   proxy: { HTTP_PROXY: "http://10.253.0.1:3128", NO_PROXY: "localhost" },
-  seed,
 });
 
 Deno.test({
@@ -1735,7 +1734,7 @@ Deno.test({
         Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-${name}.yml`,
           `- name: Mark the phase\n  ansible.builtin.debug: { msg: "fleet phase ${name} ran" }\n`);
       }
-      f.intent.fleet = fleetIntent(commit);
+      f.intent.fleet = fleetIntent();
       f.write();
       for (const name of ["start", "refresh"]) {
         const ran = f.run(`fleet_${name}`);
@@ -1759,9 +1758,14 @@ Deno.test({
       Deno.mkdirSync(`${f.folder}/containers/instance-7/etc/orbit`, { recursive: true });
       Deno.writeTextFileSync(key, "placeholder");
       Deno.chmodSync(key, 0o600);
+      const prepared = (f.state().node_seed_calls ?? []).length;
+      const stopped = stops();
       const refused = f.run("seed");
       assert(!refused.ok);
       assertEquals(f.result(), { error_code: "instance.fleet_key_on_disk" });
+      // Refused before the seed changes anything: no Node-store preparation, no Process stop.
+      assertEquals((f.state().node_seed_calls ?? []).length, prepared);
+      assertEquals(stops(), stopped);
       assert(!refused.output.includes("placeholder"), "the key's content never reaches the output");
       assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${commit}`]);
       // A normal default with the same file seeds as before, and takes no new snapshot at the same commit.
@@ -1777,32 +1781,37 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a failed nested-fleet deployment restores the old seed with the container stopped, and refuses a seed that is gone",
+  name: "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
       for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
-      const old = git(f.source, "rev-parse", "HEAD");
-      f.intent.fleet = fleetIntent(old);
+      f.intent.fleet = fleetIntent();
       f.write();
+      // The run's first seed is the newest, whatever its name and its place in Incus's list.
+      const state = f.state();
+      const kept = "seed-" + "a".repeat(40);
+      const older = "seed-" + "f".repeat(40);
+      state.containers["instance-7"].snapshots = [kept, older];
+      state.containers["instance-7"].created_at = { [older]: "2026-11-13T09:53:00Z", [kept]: "2026-11-13T12:40:00Z" };
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
       assertEquals(f.state().containers["instance-7"].status, "Running");
       const restored = f.run("fleet_restore");
       assert(restored.ok, restored.output);
-      assertEquals(f.state().containers["instance-7"].restored, [`seed-${old}`]);
+      assertEquals(f.state().containers["instance-7"].restored, [kept]);
       assertEquals(f.state().containers["instance-7"].status, "Stopped");
       // The workflow starts it again through `start`.
       assert(f.run("start").ok);
       assertEquals(f.state().containers["instance-7"].status, "Running");
 
-      for (const seed of ["f".repeat(40), null]) {
-        f.intent.fleet = fleetIntent(seed);
-        f.write();
-        assert(!f.run("fleet_restore").ok);
-        assertEquals(f.result(), { error_code: "instance.fleet_seed_missing" });
-        assertEquals(f.state().containers["instance-7"].restored, [`seed-${old}`]);
-        assertEquals(f.state().containers["instance-7"].status, "Running");
-      }
+      const none = f.state();
+      none.containers["instance-7"].snapshots = ["before-migrate"];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(none));
+      assert(!f.run("fleet_restore").ok);
+      assertEquals(f.result(), { error_code: "instance.fleet_seed_missing" });
+      assertEquals(f.state().containers["instance-7"].restored, [kept]);
+      assertEquals(f.state().containers["instance-7"].status, "Running");
     } finally {
       f.cleanup();
     }

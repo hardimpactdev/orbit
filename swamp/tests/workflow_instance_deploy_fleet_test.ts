@@ -37,7 +37,7 @@ const passed = {
     "Install the Processes": "succeeded",
 };
 const failed = { ...passed, "Check out in the container": "failed" };
-const fleetSteps = ["Start the inner fleet", "Refresh the inner fleet"];
+const fleetSteps = ["Keep the current seed", "Start the inner fleet", "Refresh the inner fleet"];
 const restoreSteps = ["Restore the old seed", "Start on the old seed"];
 
 Deno.test("a normal container deployment skips every fleet step, after success and after a failure", () => {
@@ -54,7 +54,7 @@ Deno.test("a normal container deployment skips every fleet step, after success a
     ]);
 });
 
-Deno.test("a nested-fleet default starts and refreshes its fleet before the seed, and restores nothing when every step passes", () => {
+Deno.test("a nested-fleet default first keeps its current seed, refreshes its fleet before the last seed, and restores nothing when every step passes", () => {
     for (const name of fleetSteps) assertEquals(skips(name, nested, passed), false, name);
     for (const name of restoreSteps) assertEquals(skips(name, nested, { ...passed, "Check the container": "succeeded" }), true, name);
     assertEquals(step("Start the inner fleet").dependsOn, [{ step: "Install the Processes", condition: { type: "succeeded" } }]);
@@ -63,6 +63,14 @@ Deno.test("a nested-fleet default starts and refreshes its fleet before the seed
     assert(step("Refresh the inner fleet").task.inputs.run!.includes("--tags fleet_refresh "));
     const names = deploy.map((s) => s.name);
     assert(names.indexOf("Install the Processes") < names.indexOf("Start the inner fleet"));
+    // The run first keeps the default as it is, fleet included, so a restore never goes back past the fleet.
+    assertEquals(step("Keep the current seed").dependsOn, [{ step: "Start the container", condition: { type: "succeeded" } }]);
+    assert(step("Keep the current seed").task.inputs.run!.includes("--tags seed "));
+    assertEquals(step("Fetch into the mirror").dependsOn, [
+        { step: "Start the container", condition: { type: "succeeded" } },
+        { step: "Keep the current seed", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } },
+    ]);
+    assert(names.indexOf("Keep the current seed") < names.indexOf("Fetch into the mirror"));
     assert(names.indexOf("Refresh the inner fleet") < names.indexOf("Take the seed snapshot"));
 });
 
@@ -74,12 +82,12 @@ Deno.test("a nested-fleet deployment that failed after its checkout restores the
     }
     // Without the intent file there is nothing to run the restore with; a failed start or fetch changed nothing in the container.
     assertEquals(skips("Restore the old seed", nested, { "Write the container intent": "failed" }), true);
-    for (const unchanged of ["Start the container", "Fetch into the mirror"]) {
+    for (const unchanged of ["Start the container", "Keep the current seed", "Fetch into the mirror"]) {
         assertEquals(skips("Restore the old seed", nested, { ...passed, [unchanged]: "failed" }), true, unchanged);
     }
     assertEquals(skips("Restore the old seed", nested, { ...passed, "Run dev deploy steps-0": "failed" }), false);
-    const before = ["Start the container", "Fetch into the mirror", "Check out in the container", "Run dev deploy steps",
-        "Install the Processes", ...fleetSteps, "Take the seed snapshot", "Check the container"];
+    const before = ["Start the container", "Keep the current seed", "Fetch into the mirror", "Check out in the container", "Run dev deploy steps",
+        "Install the Processes", "Start the inner fleet", "Refresh the inner fleet", "Take the seed snapshot", "Check the container"];
     assertEquals(step("Restore the old seed").dependsOn, before.map((name) => ({ step: name, condition: { type: "always" } })));
     assertEquals(step("Start on the old seed").dependsOn, [{ step: "Restore the old seed", condition: { type: "succeeded" } }]);
     assert(step("Read the container result").dependsOn!.some((d) => d.step === "Start on the old seed" && d.condition.type === "always"));

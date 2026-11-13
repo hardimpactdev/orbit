@@ -26,9 +26,21 @@ final readonly class NestedFleetRefresh
 
     public function __construct(private StartInstanceDeployAction $deploy) {}
 
-    /** @return array<string, string> `<project>/<instance> on <node>` => `operation:<id>` or the refusal code; empty when no default keeps a fleet */
-    public function admitAll(string $commit): array
+    /** Whether the operator turned the release refresh on (`ORBIT_INSTANCES_NESTED_FLEET_REFRESH`); off by default. */
+    public static function enabled(): bool
     {
+        return config('instances.nested_fleet_refresh') === true;
+    }
+
+    /**
+     * @return array<string, string>|null `<project>/<instance> on <node>` => `operation:<id>` or the refusal code; empty when no default
+     *                                    keeps a fleet; null when the refresh is off, which admits and reads nothing
+     */
+    public function admitAll(string $commit): ?array
+    {
+        if (! self::enabled()) {
+            return null;
+        }
         $results = [];
         foreach ($this->defaults() as $instance) {
             $label = $instance->project->slug.'/'.$instance->name.' on '.$instance->node->name;

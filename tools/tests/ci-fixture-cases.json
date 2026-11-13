@@ -133,7 +133,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "dd2178f24d0a3df33add77c2e527f6445af48bb3e54e5f374cf9a73335b7dd40",
+    "source_sha256": "3b54a6e412b397d65a68e88776b2fa4c63b44161cc84af90f98753a9ffbec122",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -195,7 +195,7 @@
       "a nested-fleet start refuses a /run that is not a tmpfs, before it reads the value",
       "a normal container's create and deploy start run no Club key task and no Club key command",
       "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk",
-      "a failed nested-fleet deployment restores the old seed with the container stopped, and refuses a seed that is gone"
+      "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left"
     ]
   },
   "swamp/tests/ansible_instance_host_test.ts": {
@@ -2358,23 +2358,11 @@
     ]
   },
   "swamp/tests/workflow_instance_deploy_fleet_test.ts": {
-    "source_sha256": "95dc611e0a46adb5b29570d4d7dbaaa2c812a8de4ddec65c1abfa88afbd0d18d",
+    "source_sha256": "268224e80901813903222f1a42d40d3b9bc2876d743e1b13b0a4a4c5cc5bfe5a",
     "cases": [
       "a normal container deployment skips every fleet step, after success and after a failure",
-      "a nested-fleet default starts and refreshes its fleet before the seed, and restores nothing when every step passes",
+      "a nested-fleet default first keeps its current seed, refreshes its fleet before the last seed, and restores nothing when every step passes",
       "a nested-fleet deployment that failed after its checkout restores the old seed, starts through start and keeps the failed phase's result"
-    ]
-  },
-  "swamp/tests/ansible_instance_fleet_test.ts": {
-    "source_sha256": "d5bb31bfd879baae3d12aafb0980be5146628355ccc7be46fa41bd123e0732b6",
-    "cases": [
-      "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
-      "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and waits for readiness; a rerun only reads",
-      "a start that fails names the nested container, and a readiness timeout names the check",
-      "a fleet without its rules is refused with the container and the rule, before any start",
-      "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules",
-      "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units",
-      "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused"
     ]
   }
 }

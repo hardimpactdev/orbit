@@ -5,7 +5,8 @@
 #   create of the default: `container`, `workspace`, `processes`, `seed`, and `stop` after a failure.
 #   create of a clone: `clone`, `workspace`, `agent`, `processes`, `t3`, `register`, and `stop` after a failure.
 #   deploy: `start`, `fetch`, `checkout`, `processes`, `seed`, `check`. A nested-fleet default (its intent has `fleet`) adds
-#     `fleet_start` and `fleet_refresh` before `seed`, and after a failure `fleet_restore`, then `start` again.
+#     `seed` right after `start`, `fleet_start` and `fleet_refresh` before the last `seed`, and after a failure `fleet_restore`,
+#     then `start` again.
 #   process: `process`, for one Process's start, stop, restart, status or logs (ORBIT_PROCESS_ACTION).
 # The Project's deploy commands are not here: Swamp runs each one in the container from its vault copy, as `orbit`.
 # Git runs on the Node with a read token in a 0600 file; the container gets the branch as a bundle and never a token. The intent is

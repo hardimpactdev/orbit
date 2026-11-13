@@ -28,6 +28,11 @@ final class RefreshNestedFleetsCommand extends Command
             return self::INVALID;
         }
         $results = $refresh->admitAll($commit);
+        if ($results === null) {
+            $this->line('The nested-fleet refresh is off (ORBIT_INSTANCES_NESTED_FLEET_REFRESH): nothing to refresh.');
+
+            return self::SUCCESS;
+        }
         if ($results === []) {
             $this->line('No nested-fleet default on a switched-on Node: nothing to refresh.');
         }

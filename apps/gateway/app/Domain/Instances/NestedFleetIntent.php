@@ -17,12 +17,12 @@ use App\Support\ValidatedData;
  * The `fleet` part of a deployment intent of a nested-fleet default (docs/reference/development-containers.md#refresh-after-a-release),
  * the input of swamp/ansible/tasks/instance-fleet.yml. Only a default whose runtime keeps a fleet (InstancePlacement::keepsFleet) gets
  * one; every other deployment gets none and runs as before. The fleet's names and addresses are the task VM fleet's own
- * (TaskVmNestedFleet); `seed` is the commit of the seed that a failed refresh restores.
+ * (TaskVmNestedFleet). A failed refresh restores the seed the run took first, so the intent names none.
  */
 final readonly class NestedFleetIntent
 {
-    /** Seconds that the fleet steps add to a deployment's run budget: start 600, refresh 3,600, restore 150 and the start after it 120. */
-    public const int RunSeconds = 4470;
+    /** Seconds that the fleet steps add to a deployment's run budget: the first seed 120, start 600, refresh 3,600, restore 150 and the start after it 120. */
+    public const int RunSeconds = 4590;
 
     /** @return array<string, mixed>|null */
     public function forDeployment(Instance $instance, InstanceRuntime $runtime): ?array
@@ -42,7 +42,6 @@ final readonly class NestedFleetIntent
             'checkout' => ['path' => TaskVmNestedFleet::CheckoutPath],
             'proxy' => ['HTTP_PROXY' => $proxy, 'HTTPS_PROXY' => $proxy, 'http_proxy' => $proxy, 'https_proxy' => $proxy,
                 'NO_PROXY' => $local, 'no_proxy' => $local],
-            'seed' => $runtime->seed_commit,
         ];
     }
 

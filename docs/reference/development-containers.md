@@ -1157,11 +1157,13 @@ Two users share the outer container, and only one of them reaches the fleet.
 
 ### Refresh after a release
 
-After each Gateway release, Orbit deploys each nested-fleet default to the release commit. The deployment is `instance.deploy` with three more steps, which only an intent with `fleet` runs: it starts the inner fleet, refreshes it, and takes the seed snapshot again. The [refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd) has the steps. An `instance:deploy` of the default runs the same flow.
+After each Gateway release, Orbit deploys each nested-fleet default to the release commit. The deployment is `instance.deploy` with more steps, which only an intent with `fleet` runs. It first takes the seed of the default as it is, fleet included. Then it starts the inner fleet, refreshes it, and takes the seed snapshot again. The [refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd) has the steps. An `instance:deploy` of the default runs the same flow.
 
 A default gets `fleet` when its runtime is in `orbit-instances-nested`, its Project has `nested_fleet` on and its Node's switch is on (`InstancePlacement::keepsFleet`). Every other deployment runs the same steps and calls as before.
 
 The release step "Admit nested-fleet refresh" runs `instances:refresh-nested-fleets --commit <release>` from the new release. It admits one deployment per nested-fleet default. With none, it prints one line and admits nothing.
+
+The Gateway setting [`ORBIT_INSTANCES_NESTED_FLEET_REFRESH`](/reference/gateway-environment) turns the step on. It is off by default; while it is off, the step prints one line and admits nothing. An operator turns it on only when the Club key lives off the default's disk and a safety snapshot of the default exists.
 
 The run deploys the release commit itself. A commit missing from the Project's repository refuses the admission with `project.source_unavailable`. A commit off the Project's branch fails the fetch with `deployment.commit_not_on_branch`, and the old seed stays. The trial Project's repository is a hand-kept copy of `main`, so its release runbook pushes the release commit there before the release. The Orbit Project itself needs no such step.
 
@@ -1170,7 +1172,7 @@ The run deploys the release commit itself. A commit missing from the Project's r
 | Best effort | The release step allows failure, and nothing in the release waits for the run. A refusal or a failed run leaves the release live |
 | No refresh during a copy | A clone copy reads the seed that a refresh replaces. While a clone's create is open, the admission refuses with `instance.clone_in_flight` |
 | One run at a time | An open deployment of the default holds its Instance lock. A second admission refuses with `operation.target_busy` |
-| The old seed stays | A step that fails from the checkout on restores the seed that the admission recorded, then starts the default. Clones keep copying the old seed |
+| The fleet stays | A step that fails from the checkout on restores the newest seed: the one the run took first, or a newer one. A restore never goes back past the fleet |
 | A failure names its step | The Operation names the first failed step and its code, such as `instance.container_fleet_refresh_failed` |
 | An update, not a rebuild | The image variant's tools change only with a new image |
 | The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Cancel an open refresh before the next release |
@@ -1181,6 +1183,7 @@ What stops during a refresh:
 
 - The outer container keeps running. Its Processes stop only for the seed snapshot: under 1 s on ZFS, plus their stop and start.
 - The inner fleet runs from its start until the refresh stops it to retake `base`. It stays stopped after the run; a clone starts its own copy.
+- The run's first seed stops the Processes as briefly as the last one.
 - After a failure, the outer container stops for the restore (at most 30 s for the stop) and starts again.
 
 | Step | Time | Source |
@@ -1191,7 +1194,7 @@ What stops during a refresh:
 | Retake `base` (stop and three snapshots) | 94 s, measured | The second experiment |
 | Seed snapshot of the outer container | Under 1 s on ZFS, measured | The ADR 0250 spike |
 
-Each step has a bound: 600 s to start the fleet, 3,600 s to refresh it, 150 s to restore and 120 s to start again. The run budget grows by their sum.
+Each step has a bound: 120 s for the first seed, 600 s to start the fleet, 3,600 s to refresh it, 150 s to restore and 120 s to start again. The run budget grows by their sum.
 
 ### A clone starts its fleet
 
@@ -1321,8 +1324,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
 | `instance.t3_unready` | 502 | The T3 server did not answer within 30 seconds of its first start in a clone |
 | `instance.clone_in_flight` | 409 | The refresh of a nested-fleet default while the create of a clone of it is open. The next release tries again |
-| `instance.fleet_key_on_disk` | 502 | The seed of a nested-fleet default found the Club key as a file on the container's disk. No seed is taken; the old seed is restored |
-| `instance.fleet_seed_missing` | 502 | A failed refresh found no old seed to restore. The default stays as the run left it |
+| `instance.fleet_key_on_disk` | 502 | The seed of a nested-fleet default found the Club key as a file on the container's disk. The run's first seed refuses before it changes anything |
+| `instance.fleet_seed_missing` | 502 | A failed refresh found no seed to restore. The default stays as the run left it |
 | `instance.default_seed_moved` | 409 | A deployment of the default replaced the seed that a clone's create admitted, before the copy. The step's report names it; run the same command again |
 | `instance.container_process_inactive` | 502 | A required unit is inactive when a clone records its sessions. The Operation names the unit and records its states, exit status and restart count |
 | `instance.create_register_failed` | 502 | A clone's registration step failed: T3 refused a session, or the Gateway's lacks its scopes. The step's report names the `conn.*` code |

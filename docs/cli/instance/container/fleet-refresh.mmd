@@ -18,6 +18,7 @@ sequenceDiagram
   %%> Started by:
   %%> - the release step "Admit nested-fleet refresh", after the Gateway is verified and Horizon runs: `instances:refresh-nested-fleets --commit`
   %%> When:
+  %%> - only while the Gateway setting `ORBIT_INSTANCES_NESTED_FLEET_REFRESH` is on; off, the step prints one line and admits nothing
   %%> - one deployment per nested-fleet default whose runtime is in `orbit-instances-nested` on a Node with the nested-fleet switch on
   %%> - none exists: the step prints one line and admits nothing
   %%> - a clone of the default is being created: refused, `instance.clone_in_flight`; the next release tries again
@@ -27,11 +28,17 @@ sequenceDiagram
   %%> - best effort: the step allows failure and nothing waits for it; the release stays live
   GW->>SW: Start run, full intent<br/>instance-deploy-direct
   %%> What it does:
-  %%> - the intent carries `fleet` (NestedFleetIntent): the fleet's names, the operator, the checkout path, the egress proxy and the commit of the old seed
+  %%> - the intent carries `fleet` (NestedFleetIntent): the fleet's names, the operator, the checkout path and the egress proxy
   %%> - the run budget grows by the fleet steps' bounds
   SW->>N: Start the container<br/>Ansible · tags start
   %%> What it does:
   %%> - the one start of a container; the Club key is delivered there, outside the container's disk
+  SW->>N: Keep the current seed<br/>Ansible · tags seed
+  %%> What it does:
+  %%> - retakes `seed-COMMIT` of the default as it is, fleet included, before the run changes anything
+  %%> - refuses `instance.fleet_key_on_disk` first when the Club key path is a file on the container's disk; the key is never read
+  %%> Why:
+  %%> - a failed refresh then restores a seed that holds the fleet, never one from before it
   SW->>N: Fetch into the mirror<br/>Ansible · tags fetch
   SW->>C: Check out in the container<br/>Ansible · tags checkout
   %%> What it does:
@@ -60,8 +67,8 @@ sequenceDiagram
   else a step fails from the checkout on
     SW->>N: Restore the old seed<br/>Ansible · tags fleet_restore
     %%> What it does:
-    %%> - stops the container and restores `seed-OLD`, the seed the Gateway recorded at admission
-    %%> - refuses `instance.fleet_seed_missing` when that seed is gone
+    %%> - stops the container and restores its newest seed by creation time: the one "Keep the current seed" took, or a newer one
+    %%> - refuses `instance.fleet_seed_missing` when no seed is left
     SW->>N: Start on the old seed<br/>Ansible · tags start
     %%> What it does:
     %%> - starts it through `start`, so the start delivers what every start delivers

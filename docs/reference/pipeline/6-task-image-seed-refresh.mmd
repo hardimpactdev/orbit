@@ -22,6 +22,9 @@ sequenceDiagram
   %%> Why:
   %%> - each Node keeps its own seed; nothing is copied between Nodes
   loop each switched-on Node
+    SW->>N: Keep the current seed<br/>before any change
+    %%> Why:
+    %%> - a failure then restores a seed that holds the fleet
     SW->>C: Deploy the release commit<br/>fetch · checkout · deploy steps
     %%> What it does:
     %%> - the same steps as every container default deployment
@@ -41,7 +44,7 @@ sequenceDiagram
     %%> Result:
     %%> - one slow Node does not hold the others; existing clones keep their fleet
   else a step fails on a Node
-    SW->>N: Restore the old seed<br/>then start the default
+    SW->>N: Restore the newest seed<br/>then start the default
     SW--xGW: Node not refreshed<br/>failed step
     Note over GW: Keep the old seed<br/>next release retries
     %%> Result:

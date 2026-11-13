@@ -95,6 +95,11 @@ sequenceDiagram
     SW->>N: Start the container<br/>Ansible · tags start
     %%> What it does:
     %%> - starts a stopped default container; see docs/cli/instance/container/deploy-default.mmd
+    opt nested-fleet default
+      SW->>N: Keep the current seed<br/>Ansible · tags seed
+      %%> What it does:
+      %%> - retakes the seed of the default as it is, fleet included, so a failed refresh never restores a seed from before the fleet
+    end
     SW->>N: Fetch into the mirror<br/>Ansible · tags fetch
     %%> What it does:
     %%> - fetches into the Node's mirror with the read token and pushes the branch into the container as a bundle
@@ -124,7 +129,7 @@ sequenceDiagram
       SW->>N: Restore the old seed<br/>Ansible · fleet_restore
       SW->>N: Start on the old seed<br/>Ansible · tags start
       %%> What it does:
-      %%> - puts the default back on the seed it had and starts it; the failed phase's result stays the run's result
+      %%> - puts the default back on its newest seed and starts it; the failed phase's result stays the run's result
     end
     Note over SW: Read the container result<br/>result file
     %%> Returns:

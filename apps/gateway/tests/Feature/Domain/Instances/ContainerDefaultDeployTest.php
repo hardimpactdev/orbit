@@ -712,7 +712,6 @@ function nestedFleetDefault(bool $flag = true, bool $switch = true, string $incu
     $instance = deployDefault(container: true, incusProject: $incusProject);
     $instance->project->forceFill(['nested_fleet' => $flag, 'repository_identity' => GitRepositoryIdentity::derive($instance->project->repository_url)])->save();
     $instance->node->update(['settings' => [...($instance->node->settings ?? []), 'nested_fleet' => $switch]]);
-    $instance->runtime()->update(['seed_commit' => str_repeat('e', 40)]);
 
     return $instance->refresh();
 }
@@ -732,7 +731,6 @@ it('gives only a nested-fleet default on a switched-on Node the fleet of its dep
             'proxy' => ['HTTP_PROXY' => 'http://10.253.0.1:3128', 'HTTPS_PROXY' => 'http://10.253.0.1:3128', 'http_proxy' => 'http://10.253.0.1:3128',
                 'https_proxy' => 'http://10.253.0.1:3128', 'NO_PROXY' => 'localhost,127.0.0.1,.orbit,10.45.0.0/24,10.232.2.0/24',
                 'no_proxy' => 'localhost,127.0.0.1,.orbit,10.45.0.0/24,10.232.2.0/24'],
-            'seed' => str_repeat('e', 40),
         ]);
     }
 })->with([
@@ -769,7 +767,6 @@ it('hands the fleet to the run of a nested-fleet default and widens its budget',
     $intent = ValidatedData::object(app(DevelopmentDeployInput::class)->workflowInput($operation)['intent']);
 
     expect($intent['fleet'])->toBe($operation->input['deployment']['fleet'])
-        ->and($intent['fleet']['seed'])->toBe(str_repeat('e', 40))
         ->and($operation->input['run_budget_seconds'])->toBe(900 + 300 + NestedFleetIntent::RunSeconds);
 });
 
@@ -788,7 +785,7 @@ it('refuses the refresh of a nested-fleet default while a clone of it is being c
     if ($refused) {
         expect($snapshot)->toThrow(fn (ResourceOperationException $error) => expect([$error->errorCode, $error->status])->toBe(['instance.clone_in_flight', 409]));
     } else {
-        expect($snapshot()['fleet']['seed'])->toBe(str_repeat('e', 40));
+        expect($snapshot()['fleet']['checkout'])->toBe(['path' => '/home/orbit/orbit']);
     }
 })->with([
     'running copy' => ['running', true],
@@ -810,6 +807,7 @@ it('names the failed fleet step and its code, and keeps the code of the failed p
 
 it('admits one refresh per nested-fleet default to the release commit, and nothing without one', function (): void {
     Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
     expect(app(NestedFleetRefresh::class)->admitAll(str_repeat('a', 40)))->toBe([]);
     $this->artisan('instances:refresh-nested-fleets', ['--commit' => str_repeat('a', 40)])
         ->expectsOutput('No nested-fleet default on a switched-on Node: nothing to refresh.')->assertExitCode(0);
@@ -830,6 +828,7 @@ it('admits one refresh per nested-fleet default to the release commit, and nothi
 
 it('reports a refused refresh and still ends the release step with success', function (): void {
     Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
     nestedFleetDefault();
     $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()
         ->andThrow(new ResourceOperationException('deployment.commit_unavailable', 'The commit is not in the repository.', 409));
@@ -842,9 +841,26 @@ it('reports a refused refresh and still ends the release step with success', fun
 
 it('reports an admission that fails with any other error as one line, and still ends with success', function (): void {
     Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
     nestedFleetDefault();
     $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andThrow(new RuntimeException('network'));
 
     $this->artisan('instances:refresh-nested-fleets', ['--commit' => str_repeat('a', 40)])
         ->expectsOutput('tool/default on beast: '.NestedFleetRefresh::AdmissionFailed)->assertExitCode(0);
+});
+
+it('admits and reads nothing while the nested-fleet refresh is off, and admits once it is on', function (): void {
+    Queue::fake();
+    nestedFleetDefault();
+    config(['instances.nested_fleet_refresh' => false]);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead(str_repeat('a', 40)));
+
+    expect(app(NestedFleetRefresh::class)->admitAll(str_repeat('a', 40)))->toBeNull();
+    $this->artisan('instances:refresh-nested-fleets', ['--commit' => str_repeat('a', 40)])
+        ->expectsOutput('The nested-fleet refresh is off (ORBIT_INSTANCES_NESTED_FLEET_REFRESH): nothing to refresh.')->assertExitCode(0);
+    expect(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(0);
+
+    config(['instances.nested_fleet_refresh' => true]);
+    $this->artisan('instances:refresh-nested-fleets', ['--commit' => str_repeat('a', 40)])->assertExitCode(0);
+    expect(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(1);
 });
