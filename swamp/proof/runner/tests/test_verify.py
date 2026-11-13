@@ -8,6 +8,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import yaml
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fleet as fleet_module
@@ -177,7 +179,7 @@ class FleetPreparationTest(unittest.TestCase):
                 patch.object(fleet_module, 'discover', side_effect=lambda: calls.append('discover') or 'fleet'):
             fleet_module.prepare_observers()
 
-        self.assertEqual(calls[0], ['incus', 'exec', 'nested-gateway', '--', 'timeout', '110', 'env',
+        self.assertEqual(calls[0], ['incus', 'exec', 'nested-gateway', '--', 'timeout', '180', 'env',
                                    'ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg',
                                    '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml',
                                    '/home/orbit/orbit/swamp/ansible/proof-gateway.yml'])
@@ -187,6 +189,19 @@ class FleetPreparationTest(unittest.TestCase):
         self.assertEqual(json.loads(calls[2][calls[2].index('-e') + 1])['proof_observer_release'],
                          json.loads((fleet_module.CHECKOUT / 'apps/gateway/resources/agent/frozen-manifest.json').read_bytes()))
         self.assertEqual(calls[3], 'discover')
+
+    def test_gateway_preparation_deadlines_allow_readiness_then_authenticated_reload(self):
+        tasks = yaml.safe_load((PROOF.parent / 'ansible/tasks/gateway-swamp-grants.yml').read_text())
+        wait = next(task['ansible.builtin.wait_for']['timeout'] for task in tasks if 'ansible.builtin.wait_for' in task)
+        reload = next(task['ansible.builtin.command']['argv'] for task in tasks if task.get('register') == 'current_control_reload')
+        with patch.object(fleet_module.subprocess, 'run') as run, patch.object(fleet_module, 'discover'):
+            run.return_value.returncode = 0
+            fleet_module.prepare_observers()
+        gateway = run.call_args_list[0]
+        argv = gateway.args[0]
+        command_budget = int(argv[argv.index('timeout') + 1])
+        self.assertGreaterEqual(command_budget, wait + int(reload[1]) + 30)
+        self.assertGreaterEqual(gateway.kwargs['timeout'], command_budget + 10)
 
     def test_preparation_has_one_hard_budget_including_discovery(self):
         done = type('Done', (), {'stdout': '{"app-dev": {"node_id": 1}}'})()

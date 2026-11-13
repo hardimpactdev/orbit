@@ -214,11 +214,11 @@ def prepare_observers():
     # The guest's prerequisites are restored from base, but the checkout owns the callbacks, vault key patterns and proof release. Prepare through that
     # checkout's Ansible play before even the discovery CLI runs. A failed reload must stop the proof, including on a later retry
     # whose grant files already match the checkout.
-    Fleet.must(['incus', 'exec', GUEST_PREFIX + 'gateway', '--', 'timeout', '110', 'env',
+    Fleet.must(['incus', 'exec', GUEST_PREFIX + 'gateway', '--', 'timeout', '180', 'env',
                 'ANSIBLE_CONFIG=' + NODE_CHECKOUT + '/swamp/ansible/ansible.cfg',
                 '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml',
                 NODE_CHECKOUT + '/swamp/ansible/proof-gateway.yml'],
-               'cannot prepare the nested Gateway prerequisites from the tested checkout')
+               'cannot prepare the nested Gateway prerequisites from the tested checkout', timeout=190)
     # Reuse the task image's pinned Ansible controller and collections paths, as the shape gate does. No observer is built here.
     shape = runpy.run_path(str(CHECKOUT / 'bin/swamp-shape-gate'))
     tools = shape['default_tools']()

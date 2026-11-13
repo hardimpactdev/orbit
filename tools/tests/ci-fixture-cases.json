@@ -675,7 +675,7 @@
     ]
   },
   "swamp/tests/ansible_gateway_swamp_grants_test.py": {
-    "source_sha256": "e65082ef2239b950247725ae95fba5250f4ce825d5471fd1daeec5d025e9272f",
+    "source_sha256": "aa4810516b7fa7a14ca9bad67a08ac6a5936d54116da5f6f7710b757e75105cc",
     "cases": [
       "test_proof_release_setup_repairs_a_restored_gateway_and_is_idempotent",
       "test_restored_grants_are_replaced_from_the_candidate_and_a_failed_reload_is_retried",
