@@ -1,0 +1,26 @@
+sequenceDiagram
+  %% Target design: docs/reference/task-instance-workspace.md. Internal child phases only; no public container task admission.
+  %% status: draft
+  %% command: internal task Instance workspace phase
+  %% kind: tasks.instance_workspace
+  autonumber
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant SW as Swamp<br/>parent task flow
+  participant N as Node<br/>Instance runtime
+  SW->>N: Run workspace phase
+  %%> Inputs:
+  %%> - recorded Incus project and name, expected branch and head, snapshot identity and phase
+  %%> - preflight returns the checkout identity; later calls must match it
+  %%> Phases:
+  %%> - preflight, before, after, receipt, export or discard
+  %%> - Ansible runs workspace commands as agent in /srv/workspace; Incus stdin is closed
+  alt target or evidence differs
+    N-->>SW: Refuse the phase
+    %%> A missing project, replaced checkout, different candidate or stale receipt refuses. Retain evidence for diagnosis.
+  else phase succeeds
+    N-->>SW: Return bound evidence
+    %%> Snapshot trees use a temporary index. Export leaves a verified bundle in Node-owned scratch for its caller.
+  end
+  Note over SW: Remove worker scratch
+  %%> Native cleanup follows success or failure. The parent discards guest snapshots only after all work that uses them has stopped, and removes the exported Node scratch after use.

@@ -1,0 +1,30 @@
+# Internal child-phase specification, not a public CLI runner cases file.
+# No current proof-runner selector admits these phases. Live proof is deferred.
+contract: task-instance-workspace-v1
+cases:
+  - id: evidence-and-bounded-receipt
+    path: main
+    fails_today: true
+    local: Capture real Git trees with staged and untracked files, a spaced path and a symlink; compare exact tree and untouched real index. Read a bound receipt and refuse oversized or wrong-candidate receipts.
+  - id: immutable-snapshots-and-discard
+    path: main
+    fails_today: true
+    local: Capture before and after evidence without changing the real index or worktree. Include force-added ignored paths in both snapshots. Repeats keep the original evidence. Discard only snapshot scratch, then repeat without changes.
+  - id: snapshot-and-candidate-binding
+    path: target-or-evidence-differs
+    fails_today: true
+    local: Refuse a wrong original digest or candidate before consuming evidence. Leave the checkout and real index unchanged.
+  - id: isolated-checkout-trust
+    path: main
+    fails_today: true
+    local: Exercise the Git different-owner check through the actual phase with isolated global/system config and trust only the exact checkout.
+  - id: recorded-runtime-and-identity
+    path: target-or-evidence-differs
+    fails_today: true
+    local: Use an alternate Incus project; refuse missing or invalid project and a replaced checkout identity. Require agent, fixed workspace and closed stdin in the transport shim.
+  - id: verified-node-export
+    path: main
+    fails_today: true
+    local: Export a real branch bundle, import it locally and compare head/tree. Refuse a wrong candidate; remove partial scratch on a corrupt transfer.
+uncovered:
+  - Run these phases through the real transport on the supplied disposable normal Instance, including alternate project and exported bundle head/tree verification. No live operation is authorized by this specification.
