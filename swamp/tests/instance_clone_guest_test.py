@@ -148,6 +148,85 @@ class CloneEnvironmentMergeTest(unittest.TestCase):
         self.assertEqual(copied, ["B", "CERT"])
 
 
+HOSTS = {"from": ["horizon-new-dawn.test", "old.horizon-new-dawn.test"], "to": "walk-q.horizon-new-dawn-website.test"}
+
+
+class CloneDefaultHostRewriteTest(unittest.TestCase):
+    def key(self, line):
+        return GUEST.env_blocks(line)[0][0]
+
+    def rewrite(self, line):
+        return GUEST.rewrite_default_hosts(line, {self.key(line)}, HOSTS)
+
+    def test_a_value_that_points_at_the_defaults_own_site_points_at_the_clones(self):
+        cases = {
+            # The live defect: the default's literal URL.
+            'VITE_APP_URL="https://horizon-new-dawn.test"\n': 'VITE_APP_URL="https://walk-q.horizon-new-dawn-website.test"\n',
+            "A=https://horizon-new-dawn.test/build/?v=1\n": "A=https://walk-q.horizon-new-dawn-website.test/build/?v=1\n",
+            "A=HTTP://Horizon-New-Dawn.test\n": "A=HTTP://walk-q.horizon-new-dawn-website.test\n",
+            "A=horizon-new-dawn.test\n": "A=walk-q.horizon-new-dawn-website.test\n",
+            "A='horizon-new-dawn.test:5173'\n": "A='walk-q.horizon-new-dawn-website.test:5173'\n",
+            "A=wss://horizon-new-dawn.test:8080/app\n": "A=wss://walk-q.horizon-new-dawn-website.test:8080/app\n",
+            "A=//horizon-new-dawn.test\n": "A=//walk-q.horizon-new-dawn-website.test\n",
+            "SESSION_DOMAIN=.horizon-new-dawn.test\n": "SESSION_DOMAIN=.walk-q.horizon-new-dawn-website.test\n",
+            "A=*.horizon-new-dawn.test\n": "A=*.walk-q.horizon-new-dawn-website.test\n",
+            # Every Route of the default counts.
+            "A=old.horizon-new-dawn.test\n": "A=walk-q.horizon-new-dawn-website.test\n",
+            # A list keeps its other items and its separators.
+            'SANCTUM_STATEFUL_DOMAINS="localhost,horizon-new-dawn.test:443, 127.0.0.1"\n':
+                'SANCTUM_STATEFUL_DOMAINS="localhost,walk-q.horizon-new-dawn-website.test:443, 127.0.0.1"\n',
+            "CORS=https://app.example.com;https://horizon-new-dawn.test\n": "CORS=https://app.example.com;https://walk-q.horizon-new-dawn-website.test\n",
+            "A=horizon-new-dawn.test # the default's host\n": "A=walk-q.horizon-new-dawn-website.test # the default's host\n",
+            "export A = horizon-new-dawn.test\n": "export A = walk-q.horizon-new-dawn-website.test\n",
+        }
+        for line, expected in cases.items():
+            with self.subTest(line=line):
+                self.assertEqual(self.rewrite(line), (expected, [self.key(line)]))
+
+    def test_a_value_that_only_contains_the_defaults_host_stays(self):
+        for line in (
+            # A reference already follows APP_URL.
+            'VITE_APP_URL="${APP_URL}"\n',
+            "A=${APP_URL}/api\n",
+            # Third-party URLs and names that contain the same text.
+            "A=https://horizon-new-dawn.test.cdn.example.com\n",
+            "A=https://cdn.example.com/horizon-new-dawn.test/app.js\n",
+            "A=https://login.example.com/?return=https://horizon-new-dawn.test\n",
+            "A=https://login.example.com/?sites=a,horizon-new-dawn.test\n",
+            "A=https://x.example.com/#horizon-new-dawn.test\n",
+            "A=my-horizon-new-dawn.test\n",
+            "A=sub.horizon-new-dawn.test\n",
+            "A=horizon-new-dawn.testing\n",
+            "A=user@horizon-new-dawn.test\n",
+            "A=https://user@horizon-new-dawn.test\n",
+            'A="https://example.com/\\"horizon-new-dawn.test"\n',
+            # Another host, the clone's own host and a comment line.
+            "A=https://horizon-new-dawn-website.test\n",
+            "A=https://walk-q.horizon-new-dawn-website.test\n",
+            "# A=https://horizon-new-dawn.test\n",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(self.rewrite(line), (line, []))
+
+    def test_only_copied_keys_change_and_names_are_all_that_is_reported(self):
+        text = "APP_URL=https://horizon-new-dawn.test\nVITE_APP_URL=https://horizon-new-dawn.test\nB=2\n"
+        self.assertEqual(GUEST.rewrite_default_hosts(text, {"VITE_APP_URL", "B"}, HOSTS),
+                         ("APP_URL=https://horizon-new-dawn.test\nVITE_APP_URL=https://walk-q.horizon-new-dawn-website.test\nB=2\n",
+                          ["VITE_APP_URL"]))
+
+    def test_a_multi_line_value_and_crlf_lines_keep_their_form(self):
+        text = 'CERT="horizon-new-dawn.test\nline two"\r\nA=horizon-new-dawn.test\r\n'
+        self.assertEqual(GUEST.rewrite_default_hosts(text, {"CERT", "A"}, HOSTS),
+                         ('CERT="walk-q.horizon-new-dawn-website.test\nline two"\r\nA=walk-q.horizon-new-dawn-website.test\r\n',
+                          ["A", "CERT"]))
+
+    def test_without_a_clone_host_or_a_default_host_nothing_changes(self):
+        line = "A=https://horizon-new-dawn.test\n"
+        for hosts in ({"from": ["horizon-new-dawn.test"], "to": None}, {"from": [], "to": "x.test"}):
+            with self.subTest(hosts=hosts):
+                self.assertEqual(GUEST.rewrite_default_hosts(line, {"A"}, hosts), (line, []))
+
+
 class CloneGuestTest(unittest.TestCase):
     def test_sessions_check_only_loopback_t3_and_reject_http_and_scope_failures(self):
         container = {
@@ -519,12 +598,13 @@ class CloneGuestTest(unittest.TestCase):
             self.assertFalse((base / "etc/orbit/php").exists())
             self.assertEqual(helper_timeouts, [75])
 
-    def test_workspace_without_merge_names_writes_the_render_as_before(self):
+    def run_workspace(self, base_env, inputs):
+        """The workspace phase on a seed file; returns the written file and the printed environment names."""
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)
             (base / "srv/workspace/.git").mkdir(parents=True)
             env = base / "srv/workspace/.env"
-            env.write_text(DEFAULT_ENV)
+            env.write_text(base_env)
             container = {
                 "workspace": "/srv/workspace",
                 "branch": "proof",
@@ -548,12 +628,43 @@ class CloneGuestTest(unittest.TestCase):
                 patch.object(GUEST.subprocess, "run", command),
                 patch.object(GUEST.os, "walk", return_value=[]),
                 patch.object(GUEST.os, "chown"),
-                patch.object(GUEST.sys, "stdin", io.StringIO(json.dumps({"environment": CLONE_RENDER}))),
+                patch.object(GUEST.sys, "stdin", io.StringIO(json.dumps(inputs))),
                 contextlib.redirect_stdout(output),
             ):
                 GUEST.phase_main("workspace", json.dumps(container))
-            self.assertEqual(env.read_text(), CLONE_RENDER)
-            self.assertEqual(json.loads(output.getvalue())["environment"], {"copied": [], "dropped": []})
+            return env.read_text(), json.loads(output.getvalue())["environment"]
+
+    def test_workspace_without_merge_names_writes_the_render_as_before(self):
+        written, names = self.run_workspace(DEFAULT_ENV, {"environment": CLONE_RENDER})
+        self.assertEqual(written, CLONE_RENDER)
+        self.assertEqual(names, {"copied": [], "dropped": []})
+
+    def test_workspace_rewrites_copied_values_that_point_at_the_defaults_site_and_names_them(self):
+        seed = DEFAULT_ENV + "VITE_HMR_HOST=default.site.test\nSANCTUM_STATEFUL_DOMAINS=localhost,default.site.test\n"
+        hosts = {"from": ["default.site.test"], "to": "feature.site.test"}
+        written, names = self.run_workspace(seed, {"environment": CLONE_RENDER, "merge": {**CLONE_MERGE, "hosts": hosts}})
+        expected, _, _ = GUEST.merge_environment(seed, CLONE_RENDER, CLONE_MERGE)
+        expected = expected.replace("VITE_HMR_HOST=default.", "VITE_HMR_HOST=feature.").replace(",default.", ",feature.")
+        self.assertEqual(written, expected)
+        self.assertEqual(names["rewritten"], ["SANCTUM_STATEFUL_DOMAINS", "VITE_HMR_HOST"])
+        self.assertNotIn("site.test", json.dumps(names))
+
+    def test_workspace_of_a_default_without_such_keys_writes_what_release_2000_wrote(self):
+        hosts = {"from": ["default.site.test"], "to": "feature.site.test"}
+        before = self.run_workspace(DEFAULT_ENV, {"environment": CLONE_RENDER, "merge": CLONE_MERGE})
+        after = self.run_workspace(DEFAULT_ENV, {"environment": CLONE_RENDER, "merge": {**CLONE_MERGE, "hosts": hosts}})
+        # Release 2000's file, byte for byte; only the empty `rewritten` list is new.
+        self.assertEqual(after[0], before[0])
+        self.assertEqual(after[0], GUEST.merge_environment(DEFAULT_ENV, CLONE_RENDER, CLONE_MERGE)[0])
+        self.assertEqual(after[1], {**before[1], "rewritten": []})
+
+    def test_workspace_of_a_create_admitted_before_hosts_keeps_the_defaults_url(self):
+        # Merge names from release 2000's Gateway: no `hosts`, so the file and the names are that release's.
+        seed = DEFAULT_ENV + "VITE_HMR_HOST=default.site.test\n"
+        written, names = self.run_workspace(seed, {"environment": CLONE_RENDER, "merge": CLONE_MERGE})
+        self.assertEqual(written, GUEST.merge_environment(seed, CLONE_RENDER, CLONE_MERGE)[0])
+        self.assertIn("VITE_HMR_HOST=default.site.test\n", written)
+        self.assertEqual(set(names), {"copied", "dropped"})
 
     def test_php_workspace_writes_the_shared_php_settings_and_restarts_running_units(
         self,
