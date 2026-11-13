@@ -703,7 +703,6 @@
   "swamp-credential-monitor": {
    "access": "read-only",
    "certificate": "read-only",
-   "club": "read-only",
    "enrollment": "read-only"
   },
   "swamp-datastore-watch": {

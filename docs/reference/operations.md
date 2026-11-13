@@ -61,19 +61,20 @@ A key is filed once two fires at least 10 minutes apart report it. The first lat
 
 ## Swamp credential expiry alerts
 
-The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the swamp role's workers. It is alert only: it reads expiry metadata and changes no credential or grant. Four plain command steps run as `orbit`, with no serve token and no `sudo`, and read these sources:
+The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the swamp role's workers. It is alert only: it reads expiry metadata and changes no credential or grant. Three plain command steps run as `orbit`, with no serve token and no `sudo`, and read these sources:
 
 - `swamp access token list` and `swamp worker token list`, read locally from the serve datastore;
-- `swamp auth token list --collective nckrtl`, for club tokens; a token with no `expiresAt` is reported as `no_expiry`;
 - `openssl x509 -enddate` for the `swamp.orbit` certificate.
 
-The `check` step, the `credential_report` method of `@nckrtl/node-worker-assets`, classifies their output without reading anything itself. Each credential gets one class: `ok` (more than 72 hours left), `within_72h`, `within_6h`, `expired` or `no_expiry`. Revoked and disabled tokens are skipped. The check stops alerting on a credential one week after it expired. The step publishes only the alerts, at most 200, soonest expiry first.
+The `check` step, the `credential_report` method of `@nckrtl/node-worker-assets`, classifies their output without reading anything itself. Each credential gets one class: `ok` (more than 72 hours left), `within_72h`, `within_6h`, `expired` or `no_expiry`, for a token with no `expiresAt`. Revoked tokens are skipped. The check stops alerting on a credential one week after it expired. The step publishes only the alerts, at most 200, soonest expiry first.
 
 | Result | Alert reason |
 | --- | --- |
 | A credential is `within_72h`, `within_6h` or `expired` | The class |
 | The `orbit-node-209-access` or `orbit-node-209` token is not listed | `missing` |
 | A native list fails, times out or changes shape | The run fails |
+
+Club tokens are not checked. Their list needs a personal Swamp Club account, and a Node holds only a service key. Their expiry is watched in the Swamp Club account itself.
 
 The Gateway reads the `alerts` output of the `check` step through the shared scheduled-result reader. It sends event `swamp.credential_expiring` through the [signed release webhook](/reference/gateway-recovery#webhook) with each credential's kind, name, reason, expiry and hours left. Each credential, expiry and reason alerts once after a delivered webhook. While a condition holds, every run reports it again, so an undelivered alert is retried by the next run. A condition that clears and returns alerts again.
 
