@@ -2,7 +2,7 @@
 
 A nested-fleet container starts only when its effective config and devices are exactly what Orbit writes for it. The allowed
 config is the intent's own `container.config`, the map that create and clone write with `--config`, so the two cannot drift.
-Incus writes `volatile.*` and `image.*` itself; `environment.*` keys only set the environment of processes in the container, and
+Incus writes `volatile.*` and `image.*` itself and Orbit writes none, so the guard does not judge them; `environment.*` keys only set the environment of processes in the container, and
 come from both the intent and the project's profile. Every other key must be in the allowed config with the same value, and
 every allowed key must be set: a missing `security.idmap.isolated` would fall back to the shared map.
 """

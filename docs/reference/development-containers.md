@@ -1018,7 +1018,7 @@ The guard reads the effective config and devices, with the profile's. It is an a
 
 The config must be exactly the intent's own `config`, with the same values. That map holds the keys in the table above and the common limits. Create and clone write the same map, so the two cannot drift. A missing key is refused too. These keys pass as well:
 
-- `volatile.*` and `image.*`: Incus writes them itself.
+- `volatile.*` and `image.*`: Incus writes them itself, and Orbit writes none. The guard does not judge them, as before.
 - `environment.*`: they only set the environment of processes in the container.
 
 Any other key is refused, for example a `raw.*` key, `security.privileged`, `linux.kernel_modules`, another syscall intercept or a `user.*` key.
