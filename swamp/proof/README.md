@@ -10,4 +10,6 @@ The target nested fleet inside a task VM is a Gateway that also runs Swamp, `app
 
 Cases are written in `swamp/proof/<family>/<command>.cases.yaml` and run by the shared runner in [`runner/`](runner/runner.py) ([format](../../docs/reference/verification-cases.mdx)). A case calls the real candidate CLI, checks the real effect and prints a verdict. The first file is [`firewall/allow.cases.yaml`](firewall/allow.cases.yaml): a real `firewall:allow` opens real traffic. `orbit proof:run` selects a command with [`selection.txt`](selection.txt) and runs its cases file; a command without one is uncovered.
 
+The runner runs on the outer machine that holds the nested containers; Orbit runs it on a task VM. It reads the user and the user's home from its own process, not from constants. See [Where the runner runs](../../docs/reference/verification-cases.mdx#where-the-runner-runs).
+
 A cases file may spread its cases over the three Nodes and run them several at a time with `runner batch`; see [Several cases at a time](../../docs/reference/verification-cases.mdx#several-cases-at-a-time).

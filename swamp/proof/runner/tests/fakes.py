@@ -1,7 +1,10 @@
 """A fake nested fleet: a UFW table per Node, listeners, traffic that follows the table, and a few CLI commands."""
+import contextlib
 import json
 import re
 import subprocess
+from types import SimpleNamespace
+from unittest.mock import patch
 
 BRIDGE = {'gateway': '10.232.2.10', 'app-dev': '10.232.2.11', 'app-prod': '10.232.2.12'}
 BRIDGE6 = {'gateway': 'fd00:232::10', 'app-dev': 'fd00:232::11', 'app-prod': 'fd00:232::12'}
@@ -10,6 +13,15 @@ NODE_IDS = {'gateway': 209, 'app-dev': 211, 'app-prod': 212}
 
 def completed(code=0, out='', err=''):
     return subprocess.CompletedProcess([], code, out, err)
+
+
+@contextlib.contextmanager
+def outer_machine(home):
+    """The runner as the user whose home the operating system gives as `home`. A task VM is `/home/orbit`; an Instance container is
+    `/home/agent`. The process of the test never decides."""
+    import fleet
+    with patch.object(fleet.pwd, 'getpwuid', return_value=SimpleNamespace(pw_dir=home)):
+        yield
 
 
 class FakeBackground:
