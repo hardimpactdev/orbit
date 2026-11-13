@@ -1,0 +1,72 @@
+sequenceDiagram
+  %% Target design: restore a host development Instance whose removal failed after its Route withdrawal; no fence settlement, no new publish path.
+  %% Tightened: refusals at admission; the run checks the databases, republishes through Route create, then clears this removal's journal rows.
+  %% status: draft
+  %% command: instance:restore
+  %% kind: instance.restore
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as Target Nodes<br/>reached over ssh
+  CLI->>GW: instance:restore 42
+  %%> Command:
+  %%> - `orbit instance:restore 42`
+  %%> - syntax: `instance:restore <instance> [--json]`
+  Note over GW: Check the failed removal
+  %%> Requirements:
+  %%> - a host development Instance, not a container, in `removing`
+  %%> - its live removal is `failed`, and every removal Operation has ended; a timed-out run without a native end refuses
+  %%> - the removal never ran a step that deletes data: source, container, Processes, teardown, SQLite
+  %%> - the removal saved no Schedule and no SQLite file
+  %%> - its one Route is `retiring` with the same domain and targets
+  %%> - the Node agent reports the checkout: same top level, origin of the Project's repository
+  %%> - no other Operation holds the Instance or its Route
+  alt a check fails
+    %% path: refused
+    GW--xCLI: Refused<br/>instance.restore_*
+    %%> Result:
+    %%> - nothing changes; no Operation starts
+  else the removal can be undone
+    %% path: main
+    GW->>SW: Start the restore run<br/>operation-instance-restore
+    %%> Captures:
+    %%> - the database names the removal planned, per server
+    %%> - the Route create plan for the same Route, targets and domain
+    %%> - holds the publication Nodes, as Route create does
+    GW-->>CLI: 202 Accepted
+    %%> Result:
+    %%> - the CLI follows the instance.restore Operation
+    SW->>N: Check the databases<br/>admin client · read-only
+    %%> What it does:
+    %%> - each planned database exists and accepts connections
+    %%> On failure:
+    %%> - `instance.restore_database_closed` or `instance.restore_database_missing` names the databases; this command opens nothing
+    SW->>N: Republish the Route<br/>operation-route-create
+    %%> What it does:
+    %%> - the Route create children unchanged: CSR, sign, site, TLS probe
+    %%> - writes the awake marker again
+    SW->>N: Clear the fence journal<br/>admin client · one transaction
+    %%> What it does:
+    %%> - checks again that every planned database is open
+    %%> - deletes only the journal rows whose OID and name match a planned database
+    alt the run succeeds
+      %% path: restored
+      SW-->>GW: Run succeeded
+      Note over GW: Record restored<br/>one transaction
+      %%> Result:
+      %%> - Instance `active`, removal and members `abandoned`, Route `active` and published
+      %%> - the destroy Operation keeps its failure
+      GW-->>CLI: Instance restored
+    else a step fails
+      %% path: failed
+      SW--xGW: Run failed
+      %%> Result:
+      %%> - the Instance stays `removing`, the removal `failed`, the Route `retiring`
+      %%> - run `instance:restore` again, or `instance:destroy`
+    end
+  end

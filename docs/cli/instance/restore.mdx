@@ -1,0 +1,53 @@
+---
+title: "orbit instance:restore"
+sidebarTitle: "instance:restore"
+description: "Return a host development Instance to active after its removal failed, and serve its Route again."
+---
+
+```bash
+orbit instance:restore <instance> [--idempotency-key=KEY] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Positive numeric Instance ID. An omitted ID uses the [finite record selector](/reference/cli-ux#prompt-selection) in a terminal. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--idempotency-key=KEY` | generated | Reuse an [Operation start](/reference/operations#start-an-operation). |
+| `--json` | off | Print the final Operation as [JSON](/reference/cli-ux#input-and-output-modes). |
+
+Use it when `instance:destroy` failed after it withdrew the Route, and you want to keep the Instance. It works only on a host development Instance (not a container) whose removal failed and whose data is still there. See [Instance removal](/reference/instance-removal#restore-a-failed-removal).
+
+The Gateway refuses before any change when:
+
+- the Instance is not `removing`, or its removal did not fail;
+- a removal run has not ended, including a timed-out run with no proven end;
+- the removal ran a step that deletes data, or saved a Schedule or a SQLite file;
+- the Route is not the one `retiring` Route the removal withdrew;
+- the Node agent does not report the checkout with its recorded path and the Project's repository;
+- another Operation holds the Instance or its Route.
+
+The run first checks that every database the removal planned exists and accepts connections. A closed database stops the run with `instance.restore_database_closed`, and the message names it. The command never opens a database. Then the run publishes the same Route through the [Route create](/cli/route/create) steps. Last, it clears the fence journal rows of those databases on their server. After that, one Gateway transaction marks the Instance `active`, the removal `abandoned` and the Route `active`.
+
+A failed run changes no record: the Instance stays `removing` and the Route `retiring`. Run `instance:restore` again, or `instance:destroy`. A later destroy starts a new removal. A repeat after success is refused with `instance.restore_state_invalid`, because the Instance is active.
+
+## How it works
+
+<div className="flow-at" data-chart="instance/restore"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The ID is missing or is not a positive integer, and the CLI cannot prompt. |
+| `instance.restore_unsupported` | The Instance is a container or production Instance, or its removal saved a Schedule, a SQLite file or a database server that is not PostgreSQL. |
+| `instance.restore_state_invalid` | The Instance is not `removing` with a failed removal, or a removal run has not ended. |
+| `instance.restore_already_removed` | The removal ran a step that deletes data, or the Route or its target changed. |
+| `instance.restore_source_changed` | The Node agent does not report the checkout with its recorded path and repository, or has not reported it recently. |
+| `instance.restore_busy` | Another Operation holds the Instance or its Route. |
+| `instance.restore_database_closed` | A planned database does not accept connections. The message names it. |
+| `instance.restore_database_missing` | A planned database is gone. The message names it. |
+| `instance.restore_publication_failed` | The Route publication or its TLS probe failed. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |

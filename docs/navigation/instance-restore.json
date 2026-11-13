@@ -1,0 +1,17 @@
+{
+  "navigation": [
+    {
+      "tab": "CLI",
+      "group": "Applications",
+      "order": 2,
+      "pages": [
+        {
+          "group": "instance",
+          "pages": [
+            "cli/instance/restore"
+          ]
+        }
+      ]
+    }
+  ]
+}
