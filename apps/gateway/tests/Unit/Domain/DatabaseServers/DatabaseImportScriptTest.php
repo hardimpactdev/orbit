@@ -66,7 +66,9 @@ it('loads a plain and a gzipped dump as the owner on MySQL and PostgreSQL', func
     expect($run['exit'])->toBe(0)
         ->and($run['line'])->toBe('orbit-import outcome=ok state=done exit=0 bytes='.filesize($file).' tables=37')
         ->and(DatabaseImport::outcome($run['line']))->toBe(['error_code' => null, 'result' => ['exit_code' => 0, 'bytes_read' => filesize($file), 'tables' => 37]])
-        ->and(file_get_contents($this->dir.'/state/loaded'))->toBe($this->dump)
+        // psql reads Orbit's own restriction first, so no backslash command in the dump runs; mysql loads the dump as is.
+        ->and(file_get_contents($this->dir.'/state/loaded'))->toMatch($driver === DatabaseDriver::Pgsql
+            ? '/\A\\\\restrict [0-9a-f]{48}\n'.preg_quote($this->dump, '/').'\z/' : '/\A'.preg_quote($this->dump, '/').'\z/')
         // Count, load, count: each login gets the password as its first stdin line, never as an argument.
         ->and(file($this->dir.'/state/passwords', FILE_IGNORE_NEW_LINES))->toBe([IMPORT_SECRET, IMPORT_SECRET, IMPORT_SECRET])
         ->and(file_get_contents($this->dir.'/state/argv'))->not->toContain(IMPORT_SECRET);
@@ -76,6 +78,7 @@ it('loads a plain and a gzipped dump as the owner on MySQL and PostgreSQL', func
     expect($load)->toContain('run --rm -i --pull=never --network bridge --read-only --tmpfs /tmp --cap-drop ALL')
         ->and($load)->not->toContain('container:')->and($load)->not->toContain('127.0.0.1')
         ->and($load)->toContain('--user 65534:65534 --entrypoint sh')
+        ->and(str_contains($load, '--skip-commands --skip-system-command'))->toBe($driver === DatabaseDriver::Mysql)
         ->and(str_ends_with(trim($load), 'sh shop_owner shop 172.17.0.9 '.($driver === DatabaseDriver::Pgsql ? '--single-transaction --file=-' : '--max-allowed-packet=1G')))->toBeTrue();
 })->with([
     'mysql plain' => [DatabaseDriver::Mysql, false], 'mysql gzip' => [DatabaseDriver::Mysql, true],
@@ -161,3 +164,23 @@ it('leaves the state unknown when the run ends without its result line', functio
 it('keeps dot parts, links in the name and other characters out at the Gateway', function (string $path): void {
     expect(fn () => DatabaseImport::path($path))->toThrow(ResourceOperationException::class);
 })->with(['shop.sql', '/a/../b.sql', '/a/./b.sql', '/a//b.sql', '/a/b.sql.zip', "/a/b\n.sql", '/a/$(x).sql']);
+
+it('keeps the dump from lifting the restriction: its own pg_dump pair goes, every other backslash command stays refused', function (): void {
+    $dump = "--\n-- PostgreSQL database dump\n--\n\n\\restrict Abc123\n\nCREATE TABLE users (id int);\n\\! touch /tmp/owned\n"
+        ."\\unrestrict wrong\nCOPY users (id) FROM stdin;\n\\unrestrict Abc124\n\\.\n\\unrestrict Abc123\n";
+    file_put_contents($file = $this->dir.'/dumps/shop.sql', $dump);
+    $run = runImport($this->dir, DatabaseDriver::Pgsql, $file);
+    $loaded = (string) file_get_contents($this->dir.'/state/loaded');
+
+    expect($run['line'])->toStartWith('orbit-import outcome=ok')
+        ->and($loaded)->toMatch('/\A\\\\restrict [0-9a-f]{48}\n--\n/')
+        ->and($loaded)->not->toContain('\\restrict Abc123')->and($loaded)->not->toContain("\\unrestrict Abc123\n")
+        ->and($loaded)->toContain("\\! touch /tmp/owned\n\\unrestrict wrong\n")->and($loaded)->toContain("\\unrestrict Abc124\n");
+});
+
+it('keeps a restrict line that is not in the header', function (): void {
+    file_put_contents($file = $this->dir.'/dumps/shop.sql', "CREATE TABLE users (id int);\n\\restrict Abc123\n\\unrestrict Abc123\n");
+    runImport($this->dir, DatabaseDriver::Pgsql, $file);
+
+    expect((string) file_get_contents($this->dir.'/state/loaded'))->toContain("\\restrict Abc123\n\\unrestrict Abc123\n");
+});

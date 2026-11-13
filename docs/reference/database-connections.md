@@ -96,7 +96,19 @@ MySQL and PostgreSQL reads accept one SELECT, WITH, SHOW, EXPLAIN or DESCRIBE st
 
 `write: true` starts a `database.write` Operation whose result holds the affected `row_count` and `truncated`, without result rows. Read queries return `columns`, at most 500 `rows`, `row_count`, and `truncated` when rows or bytes exceed the output bound. Values are text, and SQL NULL is `null`. A query without rows on MySQL returns no `columns`. For a read, `row_count` counts returned rows. The Gateway removes the stored password and credential-shaped text before it saves the result.
 
-One `@swamp/ssh` step from Node 209 runs one client. The client reads the password from the first stdin line and the statement after it, never from argv or a file. Its output stops at 64 KiB, and it has 30 seconds.
+One `@swamp/ssh` step from Node 209 runs one client. The client reads the password from the first stdin line, never from argv or a file. Its output stops at 64 KiB, and it has 30 seconds.
+
+### Client commands
+
+The `psql` and `mysql` clients run client commands of their own, apart from SQL. psql has backslash commands such as `\c`, which logs in again, and `\!`, which runs a shell. It also expands variables such as `:USER` and reads their values again. mysql has commands such as `system` and `source`. The PostgreSQL image trusts its loopback for every user, so `\c <database> postgres` from a query would act as the superuser. A shell command would run in the server's container, or on Node 209 for a registered external database.
+
+So the client never interprets the caller's SQL.
+
+psql gets the statement as a `-c` argument. It sends a `-c` string to the server as it is, so it runs no backslash command and expands no variable in it. The statement comes after the password line on stdin, and the shell hands it to psql. A read runs `BEGIN READ ONLY`, the timeout, the statement and `ROLLBACK`, each as its own `-c`.
+
+mysql reads the statements on stdin with `--skip-commands --skip-system-command`. So it runs none of its own commands. A client older than MySQL 8.4.6 lacks these options and refuses to start, and the run fails with `database.query_failed`.
+
+The statement is then in psql's argument list while it runs: inside the server's container, or on Node 209. Any local user on that host can read it for up to 30 seconds, unless `/proc` is mounted with `hidepid`. No log, Operation or result holds it. That is accepted for SQL, never for a password: the password stays the first stdin line and reaches the client in its environment.
 
 | Connection | Where it runs |
 | --- | --- |
@@ -203,13 +215,13 @@ Each driver's own client prints the rows: XML for MySQL, which marks NULL, and C
 
 ### Secrets stay off the command line
 
-SQL and credentials travel through the run-bound private-material callback and protected standard input. They do not appear in command arguments, native output or public Operation history. Each job runs only on its admitted Node worker.
+SQL and credentials travel through the run-bound private-material callback and protected standard input. They do not appear in native output or public Operation history. A password never appears in command arguments. A query's SQL does, in psql's own argument list on the host that runs it, so psql cannot read a client command in it; see [Client commands](#client-commands). Each job runs only on its admitted Node worker.
 
 ## Direct runs
 
 ### Direct SQL writes
 
-`database:query --write` starts `operation-database-write`. A write runs where a [read](#inspect-a-registered-connection) runs, with the same client: in the Database server's container, on Node 209 for a registered external database, or with `sqlite3` on the SQLite file's Node as its owner. The client reads the password from the first stdin line and the statement after it, from one vault value. No step calls the Gateway or runs a shipped script.
+`database:query --write` starts `operation-database-write`. A write runs where a [read](#inspect-a-registered-connection) runs, with the same client: in the Database server's container, on Node 209 for a registered external database, or with `sqlite3` on the SQLite file's Node as its owner. The client reads the password from the first stdin line and the statement after it, from one vault value, and runs no [client command](#client-commands) in it. No step calls the Gateway or runs a shipped script.
 
 After the statement, the client prints the affected row count: `ROW_COUNT()` on MySQL, the command tag on PostgreSQL and `changes()` on SQLite. The shared terminal subscriber records it as `row_count`, with `truncated` when the output reached its 64 KiB bound. A failed or timed-out statement returns `database.query_failed`. Output the Gateway cannot read returns `database.write_outcome_unknown`.
 
@@ -220,6 +232,8 @@ SQL writes are limited to 16,384 bytes and one statement, which admission checks
 `database:import` starts `operation-database-import`, one SSH step on the Database server's Node. It runs as the Node's SSH user without sudo. The shell opens the dump file once. The open file must have exactly the admitted path, be regular and be owned by that user.
 
 The client runs in a throwaway container of the server's image on the server's Docker network. It logs in as the database's owner over TCP at the server container's own address. It never uses the server's loopback, which the PostgreSQL image trusts. The password is the first stdin line of one vault value.
+
+A dump is caller text too, and the client container shares the Docker network with other servers. So the client runs no client command from it. psql reads Orbit's own `\restrict <random key>` before the dump, which refuses every backslash command but `\unrestrict` with that key. A pg_dump plain dump has its own `\restrict` line after its header comment and the matching `\unrestrict` at its end; the step drops those two lines, never others. mysql runs with `--skip-commands --skip-system-command`.
 
 The step prints one result line. The Gateway records `bytes_read`, `exit_code` and `tables`; on failure also `database_state` and the client's error code and line. See [`database:import`](/cli/database/import).
 
