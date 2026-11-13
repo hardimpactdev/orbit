@@ -2982,6 +2982,9 @@ function migrationScheduleLogSocket(?string $fault = null): object
 
         private const string Run = '123e4567-e89b-42d3-a456-426614174000';
 
+        /** The process-command-assets definition id; the native key names method, spec and instance prefix. */
+        private const string Model = '9f8e7d6c-5b4a-4c3d-8e2f-1a0b9c8d7e6f';
+
         public function __construct(private ?string $fault) {}
 
         public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
@@ -3012,7 +3015,7 @@ function migrationScheduleLogSocket(?string $fault = null): object
                     'inputs' => ['kind' => 'schedule.inspect', 'intent' => ['read' => ['request' => $request]]],
                     'jobs' => [['name' => 'process', 'steps' => [['name' => 'Read Process result', 'status' => 'succeeded',
                         'outputs' => ['inspection' => ['vault' => 'orbit-control-inputs',
-                            'key' => 'nckrtl-process-command-assets-'.self::Run.'-inspection-inspection-'.$keyRequest.'-value']]]]]],
+                            'key' => 'nckrtl-process-command-assets-'.self::Model.($this->fault === 'old two segments' ? '-inspection-inspection-' : '-inspection-inspection-inspection-').$keyRequest.'-value']]]]]],
                 ]]]];
             }
             if ($type === 'vault.read-secret') {
@@ -3093,7 +3096,25 @@ describe('migrated Schedule logs', function (): void {
         'failed read' => ['failed run', 'schedule.logs_failed'],
         'different request' => ['wrong request', 'swamp.terminal_result_unavailable'],
         'different vault key' => ['wrong key', 'schedule.logs_failed'],
+        'old two-segment vault key' => ['old two segments', 'schedule.logs_failed'],
     ]);
+
+    it('still shows the stored record and marks the observation unreadable when the journal read fails', function (string $fault): void {
+        $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
+        $schedule = migrationSchedule($instance);
+        migrateEnd(migrateStart($instance), 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false, 'commit' => str_repeat('d', 40)]);
+        $instance->refresh()->update(['provisioning_step' => 'active']);
+        $schedule->forceFill(['last_run_at' => '2026-11-10 08:00:00', 'last_run_status' => 'success'])->save();
+        migrationScheduleLogSocket($fault);
+        $instance->node->accessibleNodes()->attach($instance->node_id);
+        $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
+
+        $this->getJson('/api/v1/schedules/'.$schedule->id)->assertOk()
+            ->assertJsonPath('data.id', $schedule->id)->assertJsonPath('data.command', $schedule->command)
+            ->assertJsonPath('data.timer_state', 'unreadable')
+            ->assertJsonPath('data.last_run_at', '2026-11-10T08:00:00+00:00')->assertJsonPath('data.last_run_status', 'success');
+        $this->getJson('/api/v1/schedules')->assertOk()->assertJsonPath('data.0.timer_state', 'unreadable');
+    })->with(['failed run', 'wrong key', 'wrong request']);
 });
 
 describe('migrated development Process definitions', function (): void {
