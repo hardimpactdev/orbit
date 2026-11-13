@@ -1,0 +1,318 @@
+[
+  {
+    "unit": "swamp/tests/ansible_inputs_test.py",
+    "status": "passed",
+    "seconds": 10.95,
+    "revision": null,
+    "run_id": null,
+    "declared_seconds": 24.0,
+    "source_sha256": "3b675ae68761c049ce7800ffdbfc18a5973400e69417c8c04afc14fa834a261b",
+    "cases": [
+      {
+        "name": "test_admitted_identity_and_secret_file_custody",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_metrics_container_plan_preserves_the_admitted_state",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_every_ansible_step_sends_its_failed_task_to_stderr",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_required_machine_phases_use_the_existing_ansible_entry_point",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_observations_precede_pure_composition_and_machine_application",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_chart_exposes_each_observe_compose_variables_and_apply_step",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_removal_waits_for_every_job_including_failed_and_skipped_container_cleanup",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_composed_observations_keep_literal_jinja_and_private_modes",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_tool_manager_keeps_mirrors_and_both_admitted_checksum_algorithms",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_analytics_and_swamp_resources_keep_the_admitted_pins_and_order",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_commands_and_runtime_copies_run_only_for_a_changed_pin_or_lock_and_retry_failure",
+        "status": "passed",
+        "seconds": null
+      }
+    ]
+  },
+  {
+    "unit": "swamp/tests/instance_node_service_access_test.py",
+    "status": "passed",
+    "seconds": 4.751,
+    "revision": null,
+    "run_id": null,
+    "declared_seconds": 20.0,
+    "source_sha256": "7c5e8b77e9ea492f885ed89b5b60a716e15d7d6b5f0f59768ab7655db3b35424",
+    "cases": [
+      {
+        "name": "test_real_remote_host_exact_acl_and_untranslated_bridge_endpoint",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_proxy_bypass_reaches_exec_manager_and_app_login_and_repeat_is_unchanged",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_attached_remote_probe_failure_has_public_target_identity",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_detach_removes_acl_endpoint_forward_and_all_managed_proxy_hosts",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_multiple_hosts_on_one_port_keep_distinct_rules_without_sockets",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_same_host_keeps_proxy_bypass_until_its_last_port_is_detached",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_withdrawal_retains_other_instances_applied_endpoint_without_revalidating_it",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_other_container_retains_shared_bridge_endpoint_but_not_this_containers_forward_rule",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_remote_destroy_and_failed_migrate_restore_remove_only_their_owned_path",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_previous_gateway_local_intent_has_no_new_required_fields",
+        "status": "passed",
+        "seconds": null
+      }
+    ]
+  },
+  {
+    "unit": "swamp/tests/ansible_instance_container_destroy_test.ts",
+    "status": "passed",
+    "seconds": 6.453,
+    "revision": null,
+    "run_id": null,
+    "declared_seconds": 19,
+    "source_sha256": "435d8ed2e37b0340c4aa5debf91157aa6e2de84aa478b3c082b26170d7aeb69c",
+    "cases": [
+      {
+        "name": "a normal destroy deletes the container over one pipelined SSH master with the shipped config",
+        "status": "passed",
+        "seconds": 0.0017623279999999966,
+        "started_at_ms": 1794584425650
+      },
+      {
+        "name": "migrated container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers) and mirror; a retry changes nothing",
+        "status": "passed",
+        "seconds": 6.340964075,
+        "started_at_ms": 1794584425652
+      }
+    ],
+    "startup_seconds": 0.13,
+    "registered": [
+      "a normal destroy deletes the container over one pipelined SSH master with the shipped config",
+      "migrated container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers) and mirror; a retry changes nothing"
+    ],
+    "excluded": []
+  },
+  {
+    "unit": "swamp/bin/validate-swamp-workflows_test.ts",
+    "status": "passed",
+    "seconds": 0.768,
+    "revision": null,
+    "run_id": null,
+    "declared_seconds": 10.0,
+    "source_sha256": "452425133aa49d63c3319ed9652914696c90c09c74ff931709d783acfe6f47ce",
+    "cases": [
+      {
+        "name": "validation receives only its registry-read credentials",
+        "status": "passed",
+        "seconds": 0.00011638899999999808,
+        "started_at_ms": 1794584426249
+      },
+      {
+        "name": "required validation only receives event-scoped credentials",
+        "status": "passed",
+        "seconds": 0.00010203199999999413,
+        "started_at_ms": 1794584426249
+      },
+      {
+        "name": "serve grant validation and coverage regressions remain required",
+        "status": "passed",
+        "seconds": 0.0006289839999999885,
+        "started_at_ms": 1794584426249
+      },
+      {
+        "name": "native environment is explicit and configuration is isolated",
+        "status": "passed",
+        "seconds": 0.04730537700000001,
+        "started_at_ms": 1794584426250
+      }
+    ],
+    "startup_seconds": 0.729,
+    "registered": [
+      "validation receives only its registry-read credentials",
+      "required validation only receives event-scoped credentials",
+      "serve grant validation and coverage regressions remain required",
+      "native environment is explicit and configuration is isolated"
+    ],
+    "excluded": []
+  },
+  {
+    "unit": "swamp/bin/source_test.ts",
+    "status": "passed",
+    "seconds": 0.901,
+    "revision": null,
+    "run_id": null,
+    "declared_seconds": 8.0,
+    "source_sha256": "c5cf46655c11ec8e353b5086e16e00f319e0a7ac07854d80db43a7b2e7dfffef",
+    "cases": [
+      {
+        "name": "model IDs are unique",
+        "status": "passed",
+        "seconds": 0.004221787000000006,
+        "started_at_ms": 1794584427063
+      },
+      {
+        "name": "workflow queue bounds have measured per-kind budgets",
+        "status": "passed",
+        "seconds": 0.088139063,
+        "started_at_ms": 1794584427067
+      },
+      {
+        "name": "every Ansible file ships with the ansible-input extension",
+        "status": "passed",
+        "seconds": 0.003705795999999992,
+        "started_at_ms": 1794584427156
+      },
+      {
+        "name": "runtime credentials and generated records are ignored",
+        "status": "passed",
+        "seconds": 0.005625921000000005,
+        "started_at_ms": 1794584427159
+      },
+      {
+        "name": "no workflow names a behavior by a literal and constant names are preserved",
+        "status": "passed",
+        "seconds": 0.08603540299999997,
+        "started_at_ms": 1794584427165
+      }
+    ],
+    "startup_seconds": 0.727,
+    "registered": [
+      "model IDs are unique",
+      "workflow queue bounds have measured per-kind budgets",
+      "every Ansible file ships with the ansible-input extension",
+      "runtime credentials and generated records are ignored",
+      "no workflow names a behavior by a literal and constant names are preserved"
+    ],
+    "excluded": []
+  },
+  {
+    "unit": "swamp/tests/ansible_instance_module_args_test.py",
+    "status": "passed",
+    "seconds": 1.652,
+    "revision": null,
+    "run_id": null,
+    "declared_seconds": 5.0,
+    "source_sha256": "f97bb2de4178f86d32d333eab5b592a16bd746f3d6e59f9d45ba80b4629e6fa7",
+    "cases": [
+      {
+        "name": "test_every_command_argv_element_is_a_string_after_yaml_parsing",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_every_module_call_passes_the_real_argument_spec",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_migration_pause_runs_as_a_controller_action",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_the_check_refuses_what_the_real_module_refuses",
+        "status": "passed",
+        "seconds": null
+      }
+    ]
+  },
+  {
+    "unit": "swamp/tests/ansible_command_output_test.py",
+    "status": "passed",
+    "seconds": 1.532,
+    "revision": null,
+    "run_id": null,
+    "declared_seconds": 3.0,
+    "source_sha256": "f10de64195b1b74768a7e56d851edde65035dfd6fff03be6d6ed69bb68e37ae7",
+    "cases": [
+      {
+        "name": "test_every_regex_is_exercised_or_classified_without_command_output",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_unclassified_native_regex_tests_fail_coverage",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_recorded_output_through_production_expressions",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_dpkg_installed_held_removed_and_absent",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_every_reachable_converge_task_name_is_static",
+        "status": "passed",
+        "seconds": null
+      }
+    ]
+  }
+]
