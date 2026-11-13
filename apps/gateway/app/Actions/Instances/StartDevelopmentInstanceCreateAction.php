@@ -19,6 +19,7 @@ use App\Domain\Instances\DevelopmentInstanceBranchAdmission;
 use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceNodeServiceTargets;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
@@ -198,6 +199,10 @@ final readonly class StartDevelopmentInstanceCreateAction
                 $copy = $server === null && $clone !== null ? $this->sqliteCopy($instance, $node, $clone) : null;
                 $database = $copy['intent'] ?? null;
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
+                // A clone takes its default's Node service targets before its .env and its intent read them.
+                if ($source instanceof Instance) {
+                    InstanceNodeServiceTargets::inherit($instance, $source);
+                }
                 $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? $server['connection'] ?? null, $source);
                 $input['mail_keys_set'] = app(DevelopmentCreateEnvironment::class)->mailKeys($instance);
                 // A rerun after a failed create checks the Processes its first run already started.

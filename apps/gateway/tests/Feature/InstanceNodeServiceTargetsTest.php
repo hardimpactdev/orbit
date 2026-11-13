@@ -504,7 +504,7 @@ it('refuses an owner-driven Node Process on attach and when revalidating a store
     Queue::assertNothingPushed();
 })->with(['database', 'registered service']);
 
-it('projects exact deduplicated targets into the container ACL and preserves clone noninheritance', function (): void {
+it('projects exact deduplicated targets into the container ACL and reads only the Instance own records, not its clone source records', function (): void {
     $node = containerDefaultNode();
     $project = containerDefaultProject();
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default',

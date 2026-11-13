@@ -90,6 +90,35 @@ final class InstanceNodeServiceTargets
         return $targets;
     }
 
+    /**
+     * A clone reaches the Node services of its default: it takes a copy of each of the default's records, once, before its intent.
+     * The copy holds the endpoint and the key names only, so the clone reaches no endpoint that its default cannot.
+     */
+    public static function inherit(Instance $clone, Instance $source): void
+    {
+        foreach ($source->nodeServiceTargets()->orderBy('id')->get() as $target) {
+            $clone->nodeServiceTargets()->firstOrCreate(['host_env_key' => $target->host_env_key, 'port_env_key' => $target->port_env_key],
+                $target->only(['process_id', 'node_id', 'protocol', 'port']));
+        }
+    }
+
+    /**
+     * The `.env` values of the recorded targets: each host and port under its own key names. A same-Node target is the container's
+     * loopback proxy on the same port; a remote target is the service Node's WireGuard address. No credential is in it.
+     *
+     * @return array<string, string>
+     */
+    public static function environment(Instance $instance): array
+    {
+        $values = [];
+        foreach ($instance->nodeServiceTargets()->with('node')->orderBy('id')->get() as $target) {
+            $values[$target->host_env_key] = $target->node_id === $instance->node_id ? '127.0.0.1' : ValidatedData::string($target->node->wireguard_ip);
+            $values[$target->port_env_key] = (string) $target->port;
+        }
+
+        return $values;
+    }
+
     /** Managed proxy bypass; the network policy still admits only the selected TCP ports.
      * @param  list<array{host:string,docker:bool}>  $endpoints
      * @return array{NO_PROXY:string,no_proxy:string}

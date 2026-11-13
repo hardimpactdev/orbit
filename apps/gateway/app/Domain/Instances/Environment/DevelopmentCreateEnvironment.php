@@ -6,6 +6,7 @@ namespace App\Domain\Instances\Environment;
 
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\Instances\DevelopmentMail;
+use App\Domain\Instances\InstanceNodeServiceTargets;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Models\DatabaseConnection;
 use App\Models\Instance;
@@ -20,7 +21,8 @@ final readonly class DevelopmentCreateEnvironment
     public function __construct(private InstanceEnvironmentRenderer $renderer, private InstanceEnvironmentStore $store) {}
 
     /**
-     * The Project's environment template, then the Instance's stored values, then Orbit's defaults and, for Laravel, a new APP_KEY.
+     * The Project's environment template, then the Instance's stored values, then its database and Node service keys, then Orbit's
+     * defaults and, for Laravel, a new APP_KEY.
      * A retry keeps the values the first admission stored, including its APP_KEY. A clone of a container default (`$source`) takes
      * the default's APP_KEY instead: the cloned data is encrypted with it.
      *
@@ -40,6 +42,14 @@ final readonly class DevelopmentCreateEnvironment
             // The Instance's own database copy, attached under DB, replaces the template's database keys.
             $projected = app(DatabaseConnectionEnvProjection::class)->project($database, 'DB', 'wireguard', $instance->node);
             $values = [...array_diff_key($values, array_flip($projected['forget'])), ...$projected['values']];
+        }
+        // Each attached Node service fills its own host and port keys. A literal value, from `.env.example` or stored, names
+        // another endpoint and gives way; a live `${VAR}` reference the Project wrote stays as written.
+        $references = $this->capturedReferences($instance);
+        foreach (InstanceNodeServiceTargets::environment($instance) as $key => $value) {
+            if (! isset($references[$key]) || ($values[$key] ?? null) !== '${'.$references[$key].'}') {
+                $values[$key] = $value;
+            }
         }
         $values['APP_NAME'] ??= $project->name;
         $values['APP_ENV'] ??= 'development';

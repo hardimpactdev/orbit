@@ -186,7 +186,7 @@ final readonly class InstanceContainer
         $nodeServices = InstanceNodeServiceTargets::endpoints($instance);
         $environment = [...$environment, ...InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices)];
         $access = $this->targetAccesses($instance, $runtime, $database, $mail, $nodeServices);
-        $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url);
+        $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url, $nodeServices);
         $vitePort = app(ContainerProcesses::class)->vitePort($instance);
 
         return [
@@ -293,11 +293,13 @@ final readonly class InstanceContainer
     /**
      * The part of the intent of an Instance with T3: T3's published port and the files the agent and T3 need, and for a clone the
      * default's container and seed snapshot it copies. A checkout Instance that moved in copies none. The model key is not here: it
-     * comes through the vault.
+     * comes through the vault. A clone has its default's Node service targets (`$nodeServices`), so the default's proxy bypass
+     * files it copied are written again from the clone's own targets.
      *
+     * @param  list<array{host:string,docker:bool}>  $nodeServices
      * @return array<string, mixed>
      */
-    private function clone(Instance $instance, InstanceRuntime $runtime, string $gateway, ?string $url): array
+    private function clone(Instance $instance, InstanceRuntime $runtime, string $gateway, ?string $url, array $nodeServices): array
     {
         $source = $runtime->clone_source_instance_id === null ? null
             : InstanceRuntime::query()->where('instance_id', $runtime->clone_source_instance_id)->firstOrFail();
@@ -322,9 +324,9 @@ final readonly class InstanceContainer
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
                 't3' => InstanceHostIntent::AgentFolder.'/current/agent/bin/t3', 'project_mark' => '/home/agent/.config/orbit/t3-project'],
             'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600'],
-            ...($resetProxy ? ['proxy_environment' => InstanceNodeServiceTargets::proxyEnvironment($gateway, [])] : []),
+            ...($resetProxy ? ['proxy_environment' => InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices)] : []),
             'files' => [
-                ...($resetProxy ? $this->proxyFiles($gateway) : []),
+                ...($resetProxy ? $this->proxyFiles($gateway, $nodeServices) : []),
                 ['path' => self::InstanceFile, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => "# Managed by Orbit.\n"
                     ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\n"
                     ."ORBIT_PROJECT_ID={$project->id}\nORBIT_PROJECT_NAME=".InstanceEnvironmentRenderer::quote(str_replace(["\r", "\n"], ' ', $project->name))."\n"
@@ -340,12 +342,13 @@ final readonly class InstanceContainer
         ];
     }
 
-    /** A clone has no inherited Node service attachments.
+    /** The proxy bypass files of a clone, from its own Node service targets.
+     * @param  list<array{host:string,docker:bool}>  $nodeServices
      * @return list<array{path:string,content:string,uid:int,gid:int,mode:string}>
      */
-    private function proxyFiles(string $gateway): array
+    private function proxyFiles(string $gateway, array $nodeServices): array
     {
-        $environment = InstanceNodeServiceTargets::proxyEnvironment($gateway, []);
+        $environment = InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices);
         $assignments = implode(' ', array_map(static fn (string $key, string $value): string => $key.'='.$value, array_keys($environment), $environment));
 
         return [

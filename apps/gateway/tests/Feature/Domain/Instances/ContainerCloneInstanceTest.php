@@ -34,6 +34,8 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
+use App\Models\InstanceNodeServiceTarget;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
@@ -1089,4 +1091,98 @@ it('keeps create dotenv byte-identical while the public origin belongs only to t
     expect($unit)->toContain('Environment=DEV_SERVER_ORIGIN=https://'.$domain.'/__orbit/vite',
         'Environment=ORBIT_DEV_SERVER_ORIGIN=https://'.$domain.'/__orbit/vite');
     expect($clone->environmentValues()->whereIn('env_key', ['DEV_SERVER_ORIGIN', 'ORBIT_DEV_SERVER_ORIGIN'])->count())->toBe(0);
+});
+
+/** A standalone MySQL Node Process published on the Node, attached to the default as DB_HOST / DB_PORT. */
+function defaultWithNodeService(Node $node, Instance $default, ?Node $service = null): InstanceNodeServiceTarget
+{
+    $service ??= $node;
+    $bind = $service->is($node) ? '0.0.0.0' : $service->wireguard_ip;
+    $process = Process::query()->forceCreate(['owner_type' => Node::class, 'owner_id' => $service->id, 'name' => 'servauto-mysql',
+        'runtime' => 'docker', 'runtime_config' => ['image' => 'mysql:8', 'ports' => [$bind.':3308:3306/tcp']],
+        'restart_policy' => 'unless-stopped', 'desired_state' => 'running', 'status' => 'active']);
+
+    return $default->nodeServiceTargets()->create(['process_id' => $process->id, 'node_id' => $service->id, 'protocol' => 'tcp',
+        'port' => 3308, 'host_env_key' => 'DB_HOST', 'port_env_key' => 'DB_PORT']);
+}
+
+describe('a clone of a default with a Node service target', function (): void {
+    it('inherits the target and writes its host and port, but no database name or credential', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        defaultWithNodeService($node, $default);
+        app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('d', 40), 'fixture',
+            "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE=\nDB_USERNAME=\nDB_PASSWORD=\n");
+        app(InstanceEnvironmentStore::class)->seedForCreate($default, ['DB_HOST' => '127.0.0.1', 'DB_PORT' => '3308',
+            'DB_DATABASE' => 'servauto', 'DB_USERNAME' => 'servauto', 'DB_PASSWORD' => 'default-secret']);
+
+        $operation = containerCreate($default->project, $node, 'feature');
+
+        $clone = Instance::query()->findOrFail($operation->target_id);
+        $values = Dotenv::parse(app(DevelopmentCreateEnvironment::class)->content($clone));
+        expect($clone->nodeServiceTargets()->get(['process_id', 'node_id', 'port', 'host_env_key', 'port_env_key'])->toArray())
+            ->toBe($default->nodeServiceTargets()->get(['process_id', 'node_id', 'port', 'host_env_key', 'port_env_key'])->toArray())
+            ->and($values)->toMatchArray(['DB_CONNECTION' => 'mysql', 'DB_HOST' => '127.0.0.1', 'DB_PORT' => '3308',
+                'DB_DATABASE' => '', 'DB_USERNAME' => '', 'DB_PASSWORD' => ''])
+            ->and(json_encode($operation->input))->not->toContain('default-secret')
+            ->and(array_column(containerIntentOf($operation)['node_services'], 'port'))->toBe([3308])
+            ->and(containerIntentOf($operation)['acl_rules']['egress'])->toBe([['action' => 'allow', 'destination' => '10.253.0.1/32',
+                'protocol' => 'tcp', 'destination_port' => '3308', 'state' => 'enabled', 'description' => 'Orbit Node service:3308']]);
+    });
+
+    it('keeps a live reference the Project wrote for a target key', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        defaultWithNodeService($node, $default);
+        app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('d', 40), 'fixture',
+            "MYSQL_HOST=db\nDB_HOST=\"\${MYSQL_HOST}\"\nDB_PORT=3306\n");
+
+        $clone = Instance::query()->findOrFail(containerCreate($default->project, $node, 'feature')->target_id);
+
+        $file = app(DevelopmentCreateEnvironment::class)->content($clone);
+        expect($file)->toContain('DB_HOST="${MYSQL_HOST}"')
+            ->and(Dotenv::parse($file))->toMatchArray(['MYSQL_HOST' => 'db', 'DB_PORT' => '3308']);
+    });
+
+    it('writes a remote target as the service Node WireGuard address and bypasses the proxy for it', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $remote = containerDefaultNode('services', '10.44.0.3', listed: false);
+        defaultWithNodeService($node, $default, $remote);
+
+        $operation = containerCreate($default->project, $node, 'feature');
+
+        $values = app(InstanceEnvironmentStore::class)->values(Instance::query()->findOrFail($operation->target_id));
+        $container = containerIntentOf($operation);
+        expect($values)->toMatchArray(['DB_HOST' => '10.44.0.3', 'DB_PORT' => '3308'])
+            ->and($container['clone']['proxy_environment']['NO_PROXY'])->toEndWith(',10.44.0.3')
+            ->and($container['config']['environment.NO_PROXY'])->toBe($container['clone']['proxy_environment']['NO_PROXY'])
+            ->and(collect($container['clone']['files'])->firstWhere('path', '/etc/profile.d/99-orbit-node-services.sh')['content'])->toContain(',10.44.0.3 ');
+    });
+});
+
+it('leaves a clone of a default without a Node service target as it was', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('d', 40), 'fixture', "DB_HOST=127.0.0.1\nDB_PORT=3306\n");
+
+    $operation = containerCreate($default->project, $node, 'feature');
+
+    $clone = Instance::query()->findOrFail($operation->target_id);
+    expect($clone->nodeServiceTargets()->count())->toBe(0)
+        ->and(app(InstanceEnvironmentStore::class)->values($clone))->toMatchArray(['DB_HOST' => '127.0.0.1', 'DB_PORT' => '3306'])
+        ->and(containerIntentOf($operation))->not->toHaveKey('node_services')
+        ->and(containerIntentOf($operation)['clone'])->not->toHaveKey('proxy_environment');
+});
+
+it('writes the target host and port on a create that is not a clone', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    defaultWithNodeService($node, $default);
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($default->project, str_repeat('d', 40), 'fixture', "DB_HOST=127.0.0.1\nDB_PORT=3306\n");
+    InstanceEnvironmentValue::query()->where('instance_id', $default->id)->delete();
+
+    app(DevelopmentCreateEnvironment::class)->admit($default, $default->project);
+
+    expect(app(InstanceEnvironmentStore::class)->values($default))->toMatchArray(['DB_HOST' => '127.0.0.1', 'DB_PORT' => '3308']);
 });
