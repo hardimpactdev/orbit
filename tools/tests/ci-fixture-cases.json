@@ -2364,5 +2364,17 @@
       "a nested-fleet default starts and refreshes its fleet before the seed, and restores nothing when every step passes",
       "a nested-fleet deployment that failed after its checkout restores the old seed, starts through start and keeps the failed phase's result"
     ]
+  },
+  "swamp/tests/ansible_instance_fleet_test.ts": {
+    "source_sha256": "d5bb31bfd879baae3d12aafb0980be5146628355ccc7be46fa41bd123e0732b6",
+    "cases": [
+      "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
+      "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and waits for readiness; a rerun only reads",
+      "a start that fails names the nested container, and a readiness timeout names the check",
+      "a fleet without its rules is refused with the container and the rule, before any start",
+      "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules",
+      "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units",
+      "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused"
+    ]
   }
 }
