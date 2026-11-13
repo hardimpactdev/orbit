@@ -39,7 +39,8 @@ def process_failure(unit, state):
     return {'error_code': 'instance.container_process_inactive', 'process_failure': value}
 
 
-ENV_LINE = re.compile(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)")
+# The key names phpdotenv reads (vlucas/phpdotenv EntryParser), so no key it loads hides as a non-key line.
+ENV_LINE = re.compile(r"\s*(?:export\s+)?([A-Za-z0-9_.]+)\s*=(.*)")
 
 # A credential value shorter than this is matched only as a whole value, never as a part of one.
 CONTAINED_CREDENTIAL = 8
@@ -116,7 +117,9 @@ def merge_environment(base, rendered, merge):
     out, kept, copied, dropped = [], set(), set(), set()
     for key, raw, value in base_blocks:
         if key is None:
-            out.append(raw)
+            # A comment or other line keeps no copy of a credential either, such as a commented-out password.
+            if not any(len(secret) >= CONTAINED_CREDENTIAL and secret in raw for secret in credentials):
+                out.append(raw)
         elif key in own:
             # The clone's own value takes the default's place; an own key the render lacks (a forgotten key) goes.
             if key in owned and key not in kept:

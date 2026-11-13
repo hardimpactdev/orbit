@@ -124,6 +124,13 @@ class CloneEnvironmentMergeTest(unittest.TestCase):
         self.assertNotIn("default-password-1", merged)
         self.assertEqual((copied, dropped), (["WIN"], ["DB_ALIAS"]))
 
+    def test_a_key_name_phpdotenv_reads_is_a_key_and_a_comment_keeps_no_credential(self):
+        base = "APP.ALIAS=default-password-1\n1ALIAS=default-password-1\n# DB_PASSWORD=default-password-1\n# plain note\nDB_PASSWORD=default-password-1\n"
+        merged, _, dropped = GUEST.merge_environment(base, 'DB_PASSWORD="clone-password-9"\n', CLONE_MERGE)
+        self.assertNotIn("default-password-1", merged)
+        self.assertEqual(merged, '# plain note\nDB_PASSWORD="clone-password-9"\n')
+        self.assertEqual(dropped, ["1ALIAS", "APP.ALIAS"])
+
     def test_an_unclosed_quote_takes_only_its_own_line(self):
         base = 'BROKEN="never closed\nDB_PASSWORD=default-password-1\n'
         merged, _, _ = GUEST.merge_environment(base, 'DB_PASSWORD="clone-password-9"\n', CLONE_MERGE)

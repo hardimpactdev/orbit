@@ -48,7 +48,8 @@ type Container = {
 /** The checkout phase prints the commit it left checked out as one `orbit-commit=<sha>` line. */
 const COMMIT = /orbit-commit=([0-9a-f]{40}|[0-9a-f]{64})\b/;
 
-const KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+/** The key names phpdotenv reads. */
+const KEY = /^[A-Za-z0-9_.]+$/;
 
 /**
  * A clone's workspace phase prints its JSON line with the NAMES of the keys it copied from its default's .env and the keys it
