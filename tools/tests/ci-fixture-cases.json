@@ -120,8 +120,20 @@
       "directory modes stay in the protected result and restore through the workspace owner"
     ]
   },
+  "swamp/tests/ansible_instance_fleet_test.ts": {
+    "source_sha256": "8ee52adcd69dd880181dd895f3bd0b829eda00c20c1b81b8783c78d802b1edc6",
+    "cases": [
+      "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
+      "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and waits for readiness; a rerun only reads",
+      "a start that fails names the nested container, and a readiness timeout names the check",
+      "a fleet without its rules is refused with the container and the rule, before any start",
+      "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules",
+      "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units",
+      "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused"
+    ]
+  },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "c7c3547347af84b9cc83bd81ba8e8557939e33f499581f3ab7f58ac1bb7e65ce",
+    "source_sha256": "3b54a6e412b397d65a68e88776b2fa4c63b44161cc84af90f98753a9ffbec122",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -181,7 +193,9 @@
       "a nested-fleet start refuses the key transfer by name, before it reads the value: kept remote files",
       "a nested-fleet start refuses the key transfer by name, before it reads the value: pipelining turned off",
       "a nested-fleet start refuses a /run that is not a tmpfs, before it reads the value",
-      "a normal container's create and deploy start run no Club key task and no Club key command"
+      "a normal container's create and deploy start run no Club key task and no Club key command",
+      "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk",
+      "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left"
     ]
   },
   "swamp/tests/ansible_instance_host_test.ts": {
@@ -1402,10 +1416,11 @@
     ]
   },
   "swamp/tests/gateway_release_order_test.ts": {
-    "source_sha256": "4c1a7eb375b093c963ad7454471704e428132a1246d18471fe8b22eeb92c6fa4",
+    "source_sha256": "715fd4cb90009e75ba626f51abde818013d60611f513866ef35026ae4683afce",
     "cases": [
       "refresh admission follows successful verify and the new Horizon start, tolerating admission failure only",
-      "Swamp load requires the bounded DB busy guard, including forced releases"
+      "Swamp load requires the bounded DB busy guard, including forced releases",
+      "the nested-fleet refresh is admitted beside the VM refreshes, best effort, once per release"
     ]
   },
   "swamp/tests/gateway_swamp_load_test.ts": {
@@ -2340,6 +2355,14 @@
       "a failed first publication still fails completeness and guards later work",
       "DNS grace and withdrawal order remain independent of omitting the final publication",
       "either a records-only or catalog-only final difference retains the final DNS child"
+    ]
+  },
+  "swamp/tests/workflow_instance_deploy_fleet_test.ts": {
+    "source_sha256": "268224e80901813903222f1a42d40d3b9bc2876d743e1b13b0a4a4c5cc5bfe5a",
+    "cases": [
+      "a normal container deployment skips every fleet step, after success and after a failure",
+      "a nested-fleet default first keeps its current seed, refreshes its fleet before the last seed, and restores nothing when every step passes",
+      "a nested-fleet deployment that failed after its checkout restores the old seed, starts through start and keeps the failed phase's result"
     ]
   }
 }

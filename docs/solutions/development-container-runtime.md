@@ -122,7 +122,7 @@ Beast and Shark take the dev path beside their task VMs. A task VM host on the b
 | 7 | Run a task in a clone: start, check, publish, end | |
 | 8 | The `t3` task driver: Swamp drives T3 | |
 | 9 | Attach a task to an Instance | |
-| 10 | The nested fleet | |
+| 10 | The nested fleet, parts F1 to F5 | F1 in progress |
 | 11 | Command proofs in an Instance container | |
 | — | [Parity gate](#parity-gate) | |
 | 12 | Switch task work | |
@@ -465,32 +465,37 @@ Tests: Pest for the attach admission, the ownership rules and the end without de
 
 ### PR 10: the nested fleet
 
-This PR adds the [nested fleet](/reference/development-containers#nested-fleet) as an optional feature. It reuses the nested topology of the earlier task container plan; the default Instance takes the place of the base container.
+The nested fleet comes in five parts. Each part has its own spec commit, code, tests and one live proof on a Node. [Nested fleet](/reference/development-containers#nested-fleet) owns the contract; this list owns the order of the work.
 
-- **Setting.** A Project setting turns the nested fleet on. Orbit's own Project turns it on.
-- **Node.** The `app-dev` converge adds an Incus project for nested-fleet containers. It allows nesting, interception, isolated ID maps and low-level keys.
-- **IDs.** Root's subordinate IDs on the Node hold one isolated range per nested-fleet container.
-- **Default Instance.** The create and deploy flows of a nested-fleet Project build the inner Incus, its directory pool `topology-seed`, the network `oe-nested` and the fleet once.
-- **Ready copies.** The default keeps the three nested containers stopped, each with its `base` snapshot.
-- **Clone.** A clone carries the fleet. The create flow starts its nested containers, brings up `orbit-wg-nested.service` and checks the hub handshake.
-- **Refusals.** The create flow refuses a `raw.*` key and any device beyond the root disk, the NIC, the shared folders and the T3 proxy.
-- **Fleet rules.** The AppArmor-off device on each nested container, and a fleet check that fails on any `LoadCredential` unit.
+| Part | Adds | State |
+| --- | --- | --- |
+| F1 | The Project flag and the Node switch; the placement rule; the hosting (`orbit-instances-nested`, the outer keys, the start guard); the image variant (inner Incus, WireGuard tools, pinned Ansible tools, `agent` with root) | Flags merged; placement, hosting and image in progress |
+| F2 | A workspace device that works where a shifted mount fails, two levels below the host | Planned |
+| F3 | The fleet in the default Instance with its fleet rules, the Club key, the refresh after a release, a clone that starts its fleet, and reset | The fleet step and the refresh after a release built; the Club key delivery, the clone's fleet start and reset planned |
+| F4 | The proof runner from an Instance: it reads its outer user, home and CLI home from the environment; a command for reset and one case | Planned |
+| F5 | The proof flows on a container | [PR 11](#pr-11-command-proofs-in-an-instance-container) |
 
-The PR also points the nested fleet at the Node's [egress proxy](/reference/development-containers#egress-of-the-nested-fleet), which step 2c built: the proxy settings of the nested Nodes, and the proxy's lines as egress facts of the Instance.
+Order: F1, then F2, then F3, then F4. The fleet rules go into F3's fleet step for containers, not into the task VM fleet build. No part changes the task VM path. The refresh after a release goes live on Beast first, then on Shark.
 
-Tests: Pest for the setting, the project choice, the refusals and the proxy rules; Ansible fixture tests for the inner Incus, the tunnel unit, the fleet check and the proxy settings. Live on Beast:
+Tests for F3:
 
-1. Orbit's default Instance builds with the fleet, from scratch.
-2. A clone of it starts, and `zfs get written` shows only a few MB.
-3. In the clone, each nested container shows `N` at `/sys/module/apparmor/parameters/enabled`, no unit has `LoadCredential`, and the nested hub handshake is recent.
-4. As `agent`, `incus list` shows the fleet; as `orbit`, it is refused.
-5. A container of the test Project has no nesting and `user.max_user_namespaces=0`.
-6. The PR records the clone, nested start and `base` times.
-The egress proxy checks follow.
+- Pest for the Club key delivery.
+- Pest for the refresh admission: switched-on Nodes only, best effort, and the wait for a clone copy.
+- Ansible fixture tests for the fleet rules, the refresh steps and the clone's fleet start.
 
-7. A nested Node fetches a public package through the proxy, and the proxy logs the connection.
-8. A nested Node with the proxy unset reaches nothing outside.
-9. The proxy refuses `CONNECT` to the Gateway, to `127.0.0.1` and to a `.orbit` name.
+Live on Beast, the refresh and the clone:
+
+1. A Gateway release refreshes the default's fleet, and the Operation shows each step.
+2. A clone of the new seed is ready by the Doctor check, and `zfs get written` of the clone is small.
+3. The seed snapshot holds no Club key file, and neither does `base` of the nested Gateway.
+4. A refresh made to fail at "Wait for Doctor" keeps the old seed, and a new clone still starts from it.
+Live on Beast, the fleet rules:
+
+5. In a clone, `docker run` works in both nested Nodes, no unit has `LoadCredential`, and the nested Swamp units are active.
+6. As `agent`, a reset restores `base` and Doctor is healthy; as `orbit`, the inner Incus and the fleet's subnets are refused.
+7. A nested Node fetches a public package through the proxy, and the proxy logs it with the Instance's bridge address.
+8. A container of another Project has no nesting and `user.max_user_namespaces=0`.
+9. The PR records each value that the reference marks "not measured".
 
 ### PR 11: command proofs in an Instance container
 

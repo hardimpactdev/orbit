@@ -92,6 +92,12 @@ sequenceDiagram
     %%> - the new Horizon workers consume the queued start jobs; the release waits only for admission, never for refresh completion
     %%> On failure:
     %%> - best effort: admission failure never fails the release
+    AC->>GN: Admit nested-fleet refresh<br/>artisan · verified release
+    %%> What it does:
+    %%> - after the same checks, admits one `instance.deploy` to the release commit for each nested-fleet default on a switched-on Node (instance/container/fleet-refresh.mmd)
+    %%> - with no such default it prints one line and admits nothing; it never calls the task VM refresh
+    %%> On failure:
+    %%> - best effort: a refusal or a failed admission never fails the release, and nothing waits for the refresh
     AC->>GN: Resume document cleanup<br/>best effort
     %%> Why:
     %%> - the scheduler restart paused the release cleanups; one that stays paused never fails the release

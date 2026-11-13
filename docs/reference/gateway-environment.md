@@ -197,6 +197,8 @@ The fleet-owned `instances.mailpit` configuration names the main Docker Node Pro
 
 A list that is not a JSON array, such as `{}` or `{"0":123}`, is malformed: enabling then refuses with `project.nested_fleet_projects_invalid`. See [Nested fleet setting](/reference/projects#nested-fleet-setting) for what the flag does. Removing an ID does not change its stored flag and does not prevent turning it off.
 
+`ORBIT_INSTANCES_NESTED_FLEET_REFRESH` turns on the [refresh after a release](/reference/development-containers#refresh-after-a-release), read as `instances.nested_fleet_refresh`. It defaults to off. While it is off, the release step prints one line and admits nothing. Turn it on only when the Club key lives off the default's disk and a safety snapshot of the default exists.
+
 Task VM hosts use [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list. Configure and verify each host's stored settings before removing the former `ORBIT_TASK_VMS_INCUS_HOSTS` variable with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read the environment list, including when configuration is cached.
 
 A Gateway release runs no smoke step. Remove the former `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT` and `ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT` variables from the shared env file with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read them.

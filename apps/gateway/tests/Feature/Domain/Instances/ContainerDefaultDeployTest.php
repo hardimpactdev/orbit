@@ -14,8 +14,11 @@ use App\Domain\Instances\Deployment\DevelopmentDeployInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\NestedFleetIntent;
+use App\Domain\Instances\NestedFleetRefresh;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
@@ -24,6 +27,7 @@ use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Instance;
@@ -90,7 +94,7 @@ function deployVault(): void
 }
 
 /** An active default Instance with a build step that would need the Node's Vite+ store in a checkout. */
-function deployDefault(bool $container): Instance
+function deployDefault(bool $container, string $incusProject = 'orbit-instances'): Instance
 {
     $node = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.7', 'public_ssh_host' => '10.44.0.7', 'user' => 'orbit',
@@ -108,7 +112,7 @@ function deployDefault(bool $container): Instance
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/srv/tool/default',
         'status' => InstanceState::Active]);
     if ($container) {
-        InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => 'orbit-instances',
+        InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => $incusProject,
             'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2', 'runtime_version' => 'r', 'agent_version' => 'a',
             'power_state' => InstanceRuntimePowerState::Stopped]);
     }
@@ -700,4 +704,163 @@ it('refuses a real pending routed container projection with 409 before recording
     $this->assertDatabaseHas('instances', ['id' => $instance->id, 'development_projection_pending' => true]);
     expect(Operation::query()->count())->toBe(0);
     Queue::assertNothingPushed();
+});
+
+/** Makes a container default the nested-fleet default: its Project flag, its runtime in the nested project and the Node switch. */
+function nestedFleetDefault(bool $flag = true, bool $switch = true, string $incusProject = InstancePlacement::NestedProject): Instance
+{
+    $instance = deployDefault(container: true, incusProject: $incusProject);
+    $instance->project->forceFill(['nested_fleet' => $flag, 'repository_identity' => GitRepositoryIdentity::derive($instance->project->repository_url)])->save();
+    $instance->node->update(['settings' => [...($instance->node->settings ?? []), 'nested_fleet' => $switch]]);
+
+    return $instance->refresh();
+}
+
+it('gives only a nested-fleet default on a switched-on Node the fleet of its deployment', function (bool $flag, bool $switch, string $incusProject, bool $fleet): void {
+    $instance = nestedFleetDefault($flag, $switch, $incusProject);
+
+    $snapshot = app(InstanceDeploymentIntent::class)->snapshot($instance);
+
+    expect(array_key_exists('fleet', $snapshot))->toBe($fleet);
+    if ($fleet) {
+        expect($snapshot['fleet'])->toBe([
+            'guests' => ['gateway' => 'nested-gateway', 'app-dev' => 'nested-app-dev', 'app-prod' => 'nested-app-prod'],
+            'layout' => ['gateway' => ['address' => '10.232.2.11'], 'app-dev' => ['address' => '10.232.2.12'], 'app-prod' => ['address' => '10.232.2.13']],
+            'operator' => ['address' => '10.45.0.10', 'hub' => '10.45.0.1', 'network' => '10.45.0.0/24'],
+            'checkout' => ['path' => '/home/orbit/orbit'],
+            'proxy' => ['HTTP_PROXY' => 'http://10.253.0.1:3128', 'HTTPS_PROXY' => 'http://10.253.0.1:3128', 'http_proxy' => 'http://10.253.0.1:3128',
+                'https_proxy' => 'http://10.253.0.1:3128', 'NO_PROXY' => 'localhost,127.0.0.1,.orbit,10.45.0.0/24,10.232.2.0/24',
+                'no_proxy' => 'localhost,127.0.0.1,.orbit,10.45.0.0/24,10.232.2.0/24'],
+        ]);
+    }
+})->with([
+    'nested-fleet default' => [true, true, InstancePlacement::NestedProject, true],
+    'switch off' => [true, false, InstancePlacement::NestedProject, false],
+    'flag off' => [false, true, InstancePlacement::NestedProject, false],
+    'normal project runtime' => [true, true, 'orbit-instances', false],
+    'normal Project' => [false, false, 'orbit-instances', false],
+]);
+
+it('keeps a normal container deployment\'s workflow intent and budget free of the fleet', function (): void {
+    deployVault();
+    $instance = deployDefault(container: true);
+    Queue::fake();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead(str_repeat('a', 40)));
+
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
+    $operation->update(['input' => [...$operation->input, 'architecture' => 'x86_64', 'development_runtime' => app(DevelopmentDeployInput::class)->capture($instance, false)]]);
+    $intent = ValidatedData::object(app(DevelopmentDeployInput::class)->workflowInput($operation)['intent']);
+
+    expect(array_key_exists('fleet', $intent))->toBeFalse()
+        ->and(array_key_exists('fleet', $operation->input['deployment']))->toBeFalse()
+        ->and($operation->input['run_budget_seconds'])->toBe(900 + 300);
+});
+
+it('hands the fleet to the run of a nested-fleet default and widens its budget', function (): void {
+    deployVault();
+    $instance = nestedFleetDefault();
+    Queue::fake();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead(str_repeat('a', 40)));
+
+    $operation = app(StartInstanceDeployAction::class)->pinned($instance, NestedFleetRefresh::Trigger, null, str_repeat('a', 40));
+    $operation->update(['input' => [...$operation->input, 'architecture' => 'x86_64', 'development_runtime' => app(DevelopmentDeployInput::class)->capture($instance, false)]]);
+    $intent = ValidatedData::object(app(DevelopmentDeployInput::class)->workflowInput($operation)['intent']);
+
+    expect($intent['fleet'])->toBe($operation->input['deployment']['fleet'])
+        ->and($operation->input['run_budget_seconds'])->toBe(900 + 300 + NestedFleetIntent::RunSeconds);
+});
+
+it('refuses the refresh of a nested-fleet default while a clone of it is being created', function (string $status, bool $refused): void {
+    $instance = nestedFleetDefault();
+    $clone = Instance::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+        'name' => 'feature', 'checkout_path' => '/srv/tool/feature', 'status' => InstanceState::Active]);
+    InstanceRuntime::query()->create(['instance_id' => $clone->id, 'node_id' => $clone->node_id, 'incus_project' => InstancePlacement::NestedProject,
+        'container_name' => 'instance-'.$clone->id, 'bridge_address' => '10.253.0.3', 'runtime_version' => 'r', 'agent_version' => 'a',
+        't3_port' => 3800, 'clone_source_instance_id' => $instance->id, 'power_state' => InstanceRuntimePowerState::Stopped]);
+    Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $clone->id, 'node_id' => $clone->node_id,
+        'status' => $status, 'input' => [], 'state' => [], 'sequence' => 1, 'attempts' => 0]);
+
+    $snapshot = fn (): array => app(InstanceDeploymentIntent::class)->snapshot($instance);
+
+    if ($refused) {
+        expect($snapshot)->toThrow(fn (ResourceOperationException $error) => expect([$error->errorCode, $error->status])->toBe(['instance.clone_in_flight', 409]));
+    } else {
+        expect($snapshot()['fleet']['checkout'])->toBe(['path' => '/home/orbit/orbit']);
+    }
+})->with([
+    'running copy' => ['running', true],
+    'queued copy' => ['queued', true],
+    'finished copy' => ['succeeded', false],
+]);
+
+it('names the failed fleet step and its code, and keeps the code of the failed phase after a restore', function (): void {
+    $run = static fn (string $file, array $failed): array => ContainerDeployOutcome::from(['status' => 'failed', 'result' => [
+        'steps' => ['Read the container result' => ['stdout' => $file]], 'summary' => ['failed_steps' => $failed]]]);
+
+    [$data, $payload] = $run('{"error_code":"instance.container_fleet_refresh_failed"}', ['Refresh the inner fleet']);
+    expect($data['error_code'])->toBe('instance.container_fleet_refresh_failed')
+        ->and($payload['failed_step'])->toBe('Refresh the inner fleet')
+        ->and($payload['started'])->toBeTrue();
+    [$data, $payload] = $run('{"error_code":"instance.container_fleet_start_failed"}', ['Start the inner fleet', 'Restore the old seed']);
+    expect($data['error_code'])->toBe('instance.container_fleet_start_failed')->and($payload['failed_step'])->toBe('Start the inner fleet');
+});
+
+it('admits one refresh per nested-fleet default to the release commit, and nothing without one', function (): void {
+    Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
+    expect(app(NestedFleetRefresh::class)->admitAll(str_repeat('a', 40)))->toBe([]);
+    $this->artisan('instances:refresh-nested-fleets', ['--commit' => str_repeat('a', 40)])
+        ->expectsOutput('No nested-fleet default on a switched-on Node: nothing to refresh.')->assertExitCode(0);
+
+    $instance = nestedFleetDefault();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')
+        ->with($instance->project->repository_url, ProjectSourceAccess::GitHubApp, 'main', ['.env.example', 'composer.json', 'artisan'], str_repeat('a', 40))
+        ->twice()->andReturn(deploySourceRead(str_repeat('a', 40)));
+
+    $first = app(NestedFleetRefresh::class)->admitAll(str_repeat('a', 40));
+    $operation = Operation::query()->where('kind', 'instance.deploy')->sole();
+    expect($first)->toBe(['tool/default on beast' => 'operation:'.$operation->id])
+        ->and($operation->input['commit'])->toBe(str_repeat('a', 40))
+        ->and($operation->triggered_by)->toBe(NestedFleetRefresh::Trigger)
+        ->and(app(NestedFleetRefresh::class)->admitAll(str_repeat('a', 40)))->toBe(['tool/default on beast' => 'operation.target_busy'])
+        ->and(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(1);
+});
+
+it('reports a refused refresh and still ends the release step with success', function (): void {
+    Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
+    nestedFleetDefault();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()
+        ->andThrow(new ResourceOperationException('deployment.commit_unavailable', 'The commit is not in the repository.', 409));
+
+    $this->artisan('instances:refresh-nested-fleets', ['--commit' => str_repeat('a', 40)])
+        ->expectsOutput('tool/default on beast: deployment.commit_unavailable')->assertExitCode(0);
+    expect(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(0);
+    $this->artisan('instances:refresh-nested-fleets', ['--commit' => 'main'])->assertExitCode(2);
+});
+
+it('reports an admission that fails with any other error as one line, and still ends with success', function (): void {
+    Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
+    nestedFleetDefault();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andThrow(new RuntimeException('network'));
+
+    $this->artisan('instances:refresh-nested-fleets', ['--commit' => str_repeat('a', 40)])
+        ->expectsOutput('tool/default on beast: '.NestedFleetRefresh::AdmissionFailed)->assertExitCode(0);
+});
+
+it('admits and reads nothing while the nested-fleet refresh is off, and admits once it is on', function (): void {
+    Queue::fake();
+    nestedFleetDefault();
+    config(['instances.nested_fleet_refresh' => false]);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead(str_repeat('a', 40)));
+
+    expect(app(NestedFleetRefresh::class)->admitAll(str_repeat('a', 40)))->toBeNull();
+    $this->artisan('instances:refresh-nested-fleets', ['--commit' => str_repeat('a', 40)])
+        ->expectsOutput('The nested-fleet refresh is off (ORBIT_INSTANCES_NESTED_FLEET_REFRESH): nothing to refresh.')->assertExitCode(0);
+    expect(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(0);
+
+    config(['instances.nested_fleet_refresh' => true]);
+    $this->artisan('instances:refresh-nested-fleets', ['--commit' => str_repeat('a', 40)])->assertExitCode(0);
+    expect(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(1);
 });

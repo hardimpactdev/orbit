@@ -1,0 +1,79 @@
+sequenceDiagram
+  %% Container runtime (ADR 0250 step 5, docs/reference/development-containers.md#refresh-after-a-release): after each Gateway release, the deployment of each nested-fleet default Instance to the release commit. It is `instance.deploy` with the fleet steps that only a nested-fleet default's intent runs. It refreshes the inner fleet and takes the seed that new Instances of that Project clone. For the nested-fleet path it replaces the release trigger and the daily run of docs/cli/task/vm-image-refresh.mmd, and it calls neither.
+  %% status: draft
+  %% command: none · after each Gateway release · instance:deploy on the default runs the same flow
+  %% kind: instance.deploy
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane C icon=server pill=default tone=purple
+  %% lane F icon=server pill=fleet tone=gray
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>reached over ssh
+  participant C as Container<br/>default Instance
+  participant F as Inner fleet<br/>3 containers
+  Note over GW: Admit nested-fleet refresh<br/>release commit
+  %%> Started by:
+  %%> - the release step "Admit nested-fleet refresh", after the Gateway is verified and Horizon runs: `instances:refresh-nested-fleets --commit`
+  %%> When:
+  %%> - only while the Gateway setting `ORBIT_INSTANCES_NESTED_FLEET_REFRESH` is on; off, the step prints one line and admits nothing
+  %%> - one deployment per nested-fleet default whose runtime is in `orbit-instances-nested` on a Node with the nested-fleet switch on
+  %%> - none exists: the step prints one line and admits nothing
+  %%> - a clone of the default is being created: refused, `instance.clone_in_flight`; the next release tries again
+  %%> - a deployment of the default is open: refused by the Instance lock, `operation.target_busy`
+  %%> - the release commit is missing from the Project's repository: the admission's source read refuses it, `project.source_unavailable`
+  %%> Result:
+  %%> - best effort: the step allows failure and nothing waits for it; the release stays live
+  GW->>SW: Start run, full intent<br/>instance-deploy-direct
+  %%> What it does:
+  %%> - the intent carries `fleet` (NestedFleetIntent): the fleet's names, the operator, the checkout path and the egress proxy
+  %%> - the run budget grows by the fleet steps' bounds
+  SW->>N: Start the container<br/>Ansible · tags start
+  %%> What it does:
+  %%> - the one start of a container; the Club key is delivered there, outside the container's disk
+  SW->>N: Keep the current seed<br/>Ansible · tags seed
+  %%> What it does:
+  %%> - retakes `seed-COMMIT` of the default as it is, fleet included, before the run changes anything
+  %%> - refuses `instance.fleet_key_on_disk` first when the Club key path is a file on the container's disk; the key is never read
+  %%> Why:
+  %%> - a failed refresh then restores a seed that holds the fleet, never one from before it
+  SW->>N: Fetch into the mirror<br/>Ansible · tags fetch
+  SW->>C: Check out in the container<br/>Ansible · tags checkout
+  %%> What it does:
+  %%> - checks out the release commit in `/srv/workspace`; the nested Gateway and app-dev see it through their `checkout` device
+  SW->>C: Run dev deploy steps<br/>incus exec · vault copy
+  SW->>C: Install the Processes<br/>Ansible · tags processes
+  SW->>F: Start the inner fleet<br/>Ansible · tags fleet_start
+  %%> What it does:
+  %%> - checks the fleet rules, starts the three nested containers, brings up `wg-nested` with `ip` and `wg`, and waits for Doctor and the three agents
+  SW->>F: Refresh the inner fleet<br/>Ansible · tags fleet_refresh
+  %%> What it does:
+  %%> - migrates the nested Gateway and restarts its services, converges the base of the three nested Nodes one by one, waits for Doctor
+  %%> - stops the fleet, applies the rules and retakes `base` of the three
+  %%> Why:
+  %%> - a snapshot of a running container on a directory pool is a file copy, not a consistent state
+  SW->>N: Take the seed snapshot<br/>Ansible · tags seed
+  %%> What it does:
+  %%> - refuses `instance.fleet_key_on_disk` when the Club key path is a file on the container's disk; the key is never read
+  %%> - stops the Processes, snapshots `seed-COMMIT` again even at the same commit, starts them, deletes the older seeds
+  SW->>C: Check the container<br/>Ansible · tags check
+  alt every step passes
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Record the seed commit
+    %%> Result:
+    %%> - new Instances of the Project clone the new seed; existing clones keep the fleet they have
+  else a step fails from the checkout on
+    SW->>N: Restore the old seed<br/>Ansible · tags fleet_restore
+    %%> What it does:
+    %%> - stops the container and restores its newest seed by creation time: the one "Keep the current seed" took, or a newer one
+    %%> - refuses `instance.fleet_seed_missing` when no seed is left
+    SW->>N: Start on the old seed<br/>Ansible · tags start
+    %%> What it does:
+    %%> - starts it through `start`, so the start delivers what every start delivers
+    SW--xGW: Run failed<br/>failed step
+    %%> Result:
+    %%> - the Operation names the first failed step and its code, such as `instance.container_fleet_refresh_failed`
+    %%> - the old seed stays the seed; clones keep copying it, and the next release runs again
+  end

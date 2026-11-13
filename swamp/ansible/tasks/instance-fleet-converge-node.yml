@@ -1,0 +1,32 @@
+---
+# One nested Node's base converge for the refresh (instance-fleet-refresh.yml), through the nested Gateway's API as the operator: the
+# base places the agent of the checkout's delivery pin, Orbit's files and units. The task VM refresh does the same with
+# `node:converge <id> --base` (task-vm-fleet-base-node.yml). The wait reads the Operation every 5 s, 900 s at most.
+- name: Admit the base converge of {{ fleet_node.name }}
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '90'] + fleet_curl + ['--fail', '-X', 'POST', fleet_api ~ '/nodes/' ~ fleet_node.id ~ '/converge',
+          '-H', 'Content-Type: application/json', '-d', '{"base":true}'] }}
+  register: fleet_converge
+  changed_when: true
+- name: Wait for the base converge of {{ fleet_node.name }}
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '90'] + fleet_curl + ['--fail', fleet_api ~ '/operations/' ~ (fleet_converge.stdout | from_json).data.id] }}"
+  register: fleet_converge_wait
+  changed_when: false
+  failed_when: false
+  until: >-
+    ((fleet_converge_wait.stdout | default('{}', true) | from_json).data | default({})).status | default('')
+    in ['succeeded', 'failed', 'cancelled', 'interrupted']
+  retries: 180
+  delay: "{{ fleet_ready_delay }}"
+- name: Check the base converge of {{ fleet_node.name }}
+  vars:
+    fleet_operation: "{{ (fleet_converge_wait.stdout | default('{}', true) | from_json).data | default({}) }}"
+  ansible.builtin.assert:
+    that: fleet_operation.status | default('') == 'succeeded'
+    fail_msg: >-
+      The base converge of the nested Node {{ fleet_node.name }} (Operation {{ (fleet_converge.stdout | from_json).data.id }}) ended
+      {{ fleet_operation.status | default('with no status') }}{{ (' with ' ~ fleet_operation.error_code)
+         if fleet_operation.error_code | default(none) else '' }}
+    quiet: true

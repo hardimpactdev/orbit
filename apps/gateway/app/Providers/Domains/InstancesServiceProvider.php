@@ -6,6 +6,7 @@ namespace App\Providers\Domains;
 
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Console\Commands\InstallNestedFleetClubKeyCommand;
+use App\Console\Commands\RefreshNestedFleetsCommand;
 use App\Domain\Instances\Dependencies\SwampDependencyReader;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
@@ -51,7 +52,7 @@ final class InstancesServiceProvider extends ServiceProvider
     {
         Operation::updated(static fn (Operation $operation) => app(InstanceOperationAlerts::class)->changed($operation));
         if ($this->app->runningInConsole()) {
-            $this->commands([InstallNestedFleetClubKeyCommand::class]);
+            $this->commands([InstallNestedFleetClubKeyCommand::class, RefreshNestedFleetsCommand::class]);
         }
     }
 

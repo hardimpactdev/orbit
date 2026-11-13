@@ -91,6 +91,7 @@ A Jinja decision template is read with `lookup('ansible.builtin.template', 'name
 - Local Ansible fixtures use the built-in stdout callback and write registered results to temporary fixture files. Test core-only fixtures with an empty `ANSIBLE_COLLECTIONS_PATH`: a developer's installed callback must not hide a collection dependency from the gate.
 - Give each local fixture a unique `ORBIT_RUN_ID`, stable across its phases. Private run folders do not isolate Node-side `/tmp` filenames when several fixture Nodes run on localhost.
 - Name a host differently from every group. Ansible warns when both share a name (`node` as host and as group), and a play then reads ambiguous.
+- Read a WireGuard interface with `wg show <interface>`, not `wg show <interface> dump`: the dump prints the private key into the registered result.
 - `wg syncconf` leaves a random `ListenPort` on a peer that sets none. To report a change only when the peers differ, hash `wg showconf` without its `ListenPort` line before and after.
 - The Gateway holds a placeholder for the host key of a Node it is enrolling. Pin the key the run observed for that Node, never the placeholder in the intent.
 - Check a key or an identity before the first change that depends on it. A uniqueness assertion that runs after the interface is up comes too late.

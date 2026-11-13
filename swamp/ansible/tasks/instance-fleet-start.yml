@@ -1,0 +1,104 @@
+---
+# Start the nested fleet of an Instance container: check the fleet rules, start the three nested containers, bring up the operator tunnel
+# `wg-nested`, and wait for readiness. A clone's create, the refresh of a default and the reset use it. Input: instance-fleet.yml.
+# The tunnel is made with `ip` and `wg`, never `wg-quick`, which segfaults in the Instance container. Its key is the operator key that the
+# container holds, its peer the nested Gateway's hub key. The tunnel does not outlive a stop of the container; the next start makes it.
+# Without the Club key the nested Gateway's Swamp stays down and the fleet is still ready: the `club-key` device is not required.
+- { name: Check the fleet rules, ansible.builtin.import_tasks: instance-fleet-rules.yml, vars: { fleet_rules_apply: false } }
+
+- name: Read the state of the nested containers
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['list', '--format', 'csv', '--columns', 'ns'] }}" }
+  register: fleet_start_list
+  changed_when: false
+- name: Start the nested containers
+  ansible.builtin.command: { argv: "{{ ['timeout', '120'] + fleet_incus + ['start', item] }}" }
+  loop: "{{ fleet_names | reject('in', fleet_start_list.stdout_lines | select('match', '^[^,]+,RUNNING$') | map('regex_replace', ',.*$', '') | list) | list }}"
+  register: fleet_start
+  changed_when: fleet_start.rc == 0
+  failed_when: false
+- name: Check that the nested containers started
+  vars:
+    fleet_start_failed: "{{ fleet_start.results | rejectattr('rc', 'eq', 0) | list }}"
+  ansible.builtin.assert:
+    that: fleet_start_failed | length == 0
+    fail_msg: >-
+      {{ fleet_start_failed | map(attribute='item') | join(', ') }} did not start:
+      {{ fleet_start_failed | map(attribute='stderr') | map('trim') | join('; ') | truncate(400) }}
+    quiet: true
+
+# The nested Swamp reads its key file `api-key` as a link into the folder that the `club-key` device shows. The link is in the nested
+# Gateway's own disk, so `base` keeps it; a start sets it only when it differs.
+- name: Read the Club key link of the nested Gateway
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'readlink', fleet_club_link] }}"
+  register: fleet_club_link_read
+  changed_when: false
+  failed_when: false
+- name: Link the Club key of the nested Gateway
+  when: fleet_club_link_read.stdout | trim != fleet_club_target
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'ln', '-sfnT', fleet_club_target, fleet_club_link] }}"
+  changed_when: true
+
+- name: Look for the operator key
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['test', '-s', fleet_operator_key] }}" }
+  register: fleet_key
+  changed_when: false
+  failed_when: false
+- name: Check the operator key
+  ansible.builtin.assert:
+    that: fleet_key.rc == 0
+    fail_msg: "The Instance container has no operator key at {{ fleet_operator_key }}"
+    quiet: true
+# The hub comes up with the nested Gateway's own wg-quick unit, a few seconds after its start.
+- name: Read the hub key
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'wg', 'show', 'orbit', 'public-key'] }}"
+  register: fleet_hub_key
+  changed_when: false
+  until: fleet_hub_key.rc == 0 and fleet_hub_key.stdout | trim | length > 0
+  retries: 12
+  delay: "{{ fleet_ready_delay }}"
+- name: Read the operator tunnel
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['wg', 'show', fleet_tunnel] }}" }
+  register: fleet_tunnel_read
+  changed_when: false
+  failed_when: false
+- name: Make the operator tunnel
+  when: fleet_tunnel_read.rc != 0
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['ip', 'link', 'add', fleet_tunnel, 'type', 'wireguard'] }}" }
+  changed_when: true
+- name: Set the key and the peer of the operator tunnel
+  vars:
+    fleet_peer: >-
+      {{ fleet_tunnel_read.rc == 0 and ('private key: (hidden)' in fleet_tunnel_read.stdout)
+         and ('listening port: ' ~ fleet_tunnel_port) in fleet_tunnel_read.stdout
+         and ('peer: ' ~ (fleet_hub_key.stdout | trim)) in fleet_tunnel_read.stdout
+         and ('endpoint: ' ~ intent.fleet.layout.gateway.address ~ ':' ~ fleet_hub_port) in fleet_tunnel_read.stdout
+         and ('allowed ips: ' ~ intent.fleet.operator.network) in fleet_tunnel_read.stdout }}
+  when: not fleet_peer
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '30'] + fleet_outer + ['wg', 'set', fleet_tunnel, 'private-key', fleet_operator_key, 'listen-port', fleet_tunnel_port,
+          'peer', fleet_hub_key.stdout | trim, 'endpoint', intent.fleet.layout.gateway.address ~ ':' ~ fleet_hub_port,
+          'allowed-ips', intent.fleet.operator.network, 'persistent-keepalive', '25'] }}
+  changed_when: true
+- name: Read the address of the operator tunnel
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['ip', '-j', 'addr', 'show', 'dev', fleet_tunnel] }}" }
+  register: fleet_tunnel_address
+  changed_when: false
+- name: Give the operator tunnel its address
+  vars:
+    fleet_addresses: "{{ (fleet_tunnel_address.stdout | from_json | first).addr_info | default([]) | map(attribute='local') | list }}"
+  when: intent.fleet.operator.address not in fleet_addresses
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '30'] + fleet_outer + ['ip', 'addr', 'add', intent.fleet.operator.address ~ '/' ~ intent.fleet.operator.network.split('/')[1],
+          'dev', fleet_tunnel] }}
+  changed_when: true
+- name: Bring up the operator tunnel
+  when: "'UP' not in (fleet_tunnel_address.stdout | from_json | first).flags"
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['ip', 'link', 'set', fleet_tunnel, 'up'] }}" }
+  changed_when: true
+
+- { name: Wait for readiness, ansible.builtin.import_tasks: instance-fleet-ready.yml }

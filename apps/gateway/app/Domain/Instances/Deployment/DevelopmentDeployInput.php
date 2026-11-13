@@ -64,7 +64,9 @@ final readonly class DevelopmentDeployInput
             $copies = [...$copies, ...$club['copies']];
         }
 
-        return ['intent' => [...$input, ...$runtime, 'container' => $container, 'application' => ValidatedData::object($input['deployment'])['home'],
+        return ['intent' => [...$input, ...$runtime, 'container' => $container,
+            ...(isset($intent['fleet']) ? ['fleet' => ValidatedData::object($intent['fleet'])] : []),
+            'application' => ValidatedData::object($input['deployment'])['home'],
             'account_home' => $user === 'root' ? '/root' : '/home/'.$user],
             'execution_secrets' => $copies];
     }

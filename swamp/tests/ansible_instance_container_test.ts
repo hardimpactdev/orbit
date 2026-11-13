@@ -85,6 +85,7 @@ function fixture() {
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
   Deno.copyFileSync(new URL("tasks/instance-node-runtime.yml", root), `${folder}/tasks/instance-node-runtime.yml`);
+  Deno.copyFileSync(new URL("tasks/instance-fleet.yml", root), `${folder}/tasks/instance-fleet.yml`);
   Deno.mkdirSync(`${folder}/run`);
   // The Project's repository, with one commit on main.
   const source = `${folder}/source`;
@@ -135,13 +136,16 @@ function fixture() {
     },
   };
   const control = { process_id: 41, name: "orbit-process-41-worker.service" };
+  // Top-level intent parts beside the container, such as a nested-fleet default's `fleet`.
+  const intent: Record<string, unknown> = {};
   const write = () =>
-    Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ ssh_execution, container, control }));
+    Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({ ssh_execution, container, control, ...intent }));
   write();
   return {
     folder,
     source,
     container,
+    intent,
     write,
     run(phase: string, extra: Record<string, string> = {}, options: string[] = []) {
       const done = new Deno.Command("ansible-playbook", {
@@ -1705,5 +1709,111 @@ Deno.test({
       assert(!incusCalls(f).some((call) => call.includes("findmnt")), JSON.stringify(incusCalls(f)));
       assertEquals(filesHolding(f, CLUB), []);
     } finally { f.cleanup(); }
+  },
+});
+
+/** The `fleet` of a nested-fleet default's deployment intent (NestedFleetIntent). */
+const fleetIntent = () => ({
+  guests: { gateway: "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod" },
+  layout: { gateway: { address: "10.232.2.11" }, "app-dev": { address: "10.232.2.12" }, "app-prod": { address: "10.232.2.13" } },
+  operator: { address: "10.45.0.10", hub: "10.45.0.1", network: "10.45.0.0/24" },
+  checkout: { path: "/home/orbit/orbit" },
+  proxy: { HTTP_PROXY: "http://10.253.0.1:3128", NO_PROXY: "localhost" },
+});
+
+Deno.test({
+  name: "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
+      const commit = git(f.source, "rev-parse", "HEAD");
+      // The phase files of the fleet have their own fixture (ansible_instance_fleet_test.ts); here each tag reaches its own file.
+      for (const name of ["start", "refresh"]) {
+        Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-${name}.yml`,
+          `- name: Mark the phase\n  ansible.builtin.debug: { msg: "fleet phase ${name} ran" }\n`);
+      }
+      f.intent.fleet = fleetIntent();
+      f.write();
+      for (const name of ["start", "refresh"]) {
+        const ran = f.run(`fleet_${name}`);
+        assert(ran.ok, ran.output);
+        assert(ran.output.includes(`fleet phase ${name} ran`), ran.output);
+        assert(!ran.output.includes(`fleet phase ${name === "start" ? "refresh" : "start"} ran`), ran.output);
+      }
+      // A failed fleet phase names its tag.
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-refresh.yml`,
+        `- name: Fail the phase\n  ansible.builtin.fail: { msg: "The base converge of the nested Node app-dev ended failed" }\n`);
+      assert(!f.run("fleet_refresh").ok);
+      assertEquals(f.result(), { error_code: "instance.container_fleet_refresh_failed" });
+
+      // The refresh retook the fleet's base, so the seed is taken again at the same commit.
+      const stops = () => ((f.state().systemctl ?? []) as string[][]).filter((call) => call[0] === "stop").length;
+      const before = stops();
+      assert(f.run("seed").ok);
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${commit}`]);
+      assertEquals(stops(), before + 1, "the Processes stop for a new snapshot");
+      const key = `${f.folder}/containers/instance-7/etc/orbit/swamp-club-api-key`;
+      Deno.mkdirSync(`${f.folder}/containers/instance-7/etc/orbit`, { recursive: true });
+      Deno.writeTextFileSync(key, "placeholder");
+      Deno.chmodSync(key, 0o600);
+      const prepared = (f.state().node_seed_calls ?? []).length;
+      const stopped = stops();
+      const refused = f.run("seed");
+      assert(!refused.ok);
+      assertEquals(f.result(), { error_code: "instance.fleet_key_on_disk" });
+      // Refused before the seed changes anything: no Node-store preparation, no Process stop.
+      assertEquals((f.state().node_seed_calls ?? []).length, prepared);
+      assertEquals(stops(), stopped);
+      assert(!refused.output.includes("placeholder"), "the key's content never reaches the output");
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${commit}`]);
+      // A normal default with the same file seeds as before, and takes no new snapshot at the same commit.
+      delete f.intent.fleet;
+      f.write();
+      const normal = stops();
+      assert(f.run("seed").ok);
+      assertEquals(stops(), normal);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
+      f.intent.fleet = fleetIntent();
+      f.write();
+      // The run's first seed is the newest, whatever its name and its place in Incus's list.
+      const state = f.state();
+      const kept = "seed-" + "a".repeat(40);
+      const older = "seed-" + "f".repeat(40);
+      state.containers["instance-7"].snapshots = [kept, older];
+      state.containers["instance-7"].created_at = { [older]: "2026-11-13T09:53:00Z", [kept]: "2026-11-13T12:40:00Z" };
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      assertEquals(f.state().containers["instance-7"].status, "Running");
+      const restored = f.run("fleet_restore");
+      assert(restored.ok, restored.output);
+      assertEquals(f.state().containers["instance-7"].restored, [kept]);
+      assertEquals(f.state().containers["instance-7"].status, "Stopped");
+      // The workflow starts it again through `start`.
+      assert(f.run("start").ok);
+      assertEquals(f.state().containers["instance-7"].status, "Running");
+
+      const none = f.state();
+      none.containers["instance-7"].snapshots = ["before-migrate"];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(none));
+      assert(!f.run("fleet_restore").ok);
+      assertEquals(f.result(), { error_code: "instance.fleet_seed_missing" });
+      assertEquals(f.state().containers["instance-7"].restored, [kept]);
+      assertEquals(f.state().containers["instance-7"].status, "Running");
+    } finally {
+      f.cleanup();
+    }
   },
 });

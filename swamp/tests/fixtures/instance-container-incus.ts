@@ -55,7 +55,7 @@ if (args[0] === "query") {
       }
     } else if (parts[2] === "snapshots") {
       console.log(
-        JSON.stringify(container.snapshots.map((name: string) => ({ name }))),
+        JSON.stringify(container.snapshots.map((name: string) => ({ name, created_at: container.created_at?.[name] ?? "2026-01-01T00:00:00Z" }))),
       );
     } else {
       const devices: Record<string, Record<string, string>> = { eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true"} };
@@ -186,6 +186,12 @@ if (family === "list") {
     // The snapshot's content: the root file system as it is now, never the tmpfs.
     Deno.mkdirSync(`${folder}/snapshots/${name}`, { recursive: true });
     new Deno.Command("cp", { args: ["-R", rootfs(name), `${folder}/snapshots/${name}/${snapshot}`] }).outputSync();
+    // Incus orders nothing for a reader; each snapshot carries its creation time.
+    state.clock = (state.clock ?? 0) + 1;
+    container.created_at = { ...(container.created_at ?? {}), [snapshot]: new Date(Date.UTC(2026, 10, 13, 0, 0, state.clock)).toISOString() };
+  } else if (verb === "restore") {
+    if (!container.snapshots.includes(snapshot)) fail("Snapshot not found");
+    container.restored = [...(container.restored ?? []), snapshot];
   } else {
     container.snapshots = container.snapshots.filter((s: string) => s !== snapshot);
   }

@@ -18,6 +18,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\NestedFleetClubKey;
+use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
@@ -120,7 +121,8 @@ final readonly class StartInstanceDeployAction
             // The run's budget: the deploy step timeouts plus 900 s (docs/reference/deployments.md#deploy).
             $input = ['instance_id' => $instance->id, 'deployment' => $deployment,
                 'node_id' => $instance->node_id, 'platform' => $instance->node->platform, 'architecture' => $instance->node->architecture,
-                'run_budget_seconds' => 900 + array_sum(array_map(static fn (mixed $step): int => ValidatedData::integer(ValidatedData::object($step)['timeout_seconds']), $steps)),
+                'run_budget_seconds' => 900 + array_sum(array_map(static fn (mixed $step): int => ValidatedData::integer(ValidatedData::object($step)['timeout_seconds']), $steps))
+                    + (isset($deployment['fleet']) ? NestedFleetIntent::RunSeconds : 0),
                 ...($commit === null ? [] : ['commit' => $commit])];
             if ($development) {
                 $input['development_runtime'] = app(DevelopmentDeployInput::class)->capture($instance, $deployment['needs_vp'] === true);

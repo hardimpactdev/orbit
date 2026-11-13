@@ -1,0 +1,52 @@
+---
+# The fleet rules (instance-fleet.yml) on the nested containers: apply them, then check them. Before the first start of a fleet, and in
+# the refresh before it takes `base`, the fleet is stopped and `fleet_rules_apply` is true. The start and the reset only check: a
+# restore of `base` reverts devices and configuration keys, so a `base` without a rule fails here with the container and the rule.
+# Input: instance-fleet.yml. Each change is one inner `incus` call; a rerun changes nothing.
+- { name: Name the fleet commands, ansible.builtin.import_tasks: instance-fleet.yml }
+- { name: Read the fleet rules, ansible.builtin.include_tasks: instance-fleet-rules-read.yml }
+
+- name: Apply the fleet rules
+  when: fleet_rules_apply | default(true) and fleet_drift | length > 0
+  block:
+    - name: Add the devices
+      ansible.builtin.command:
+        argv: >-
+          {{ ['timeout', '60'] + fleet_incus + ['config', 'device', 'add', item.container, item.name, item.want.type]
+             + (item.want | dict2items | rejectattr('key', 'eq', 'type') | map(attribute='key')
+                | zip(item.want | dict2items | rejectattr('key', 'eq', 'type') | map(attribute='value')) | map('join', '=') | list) }}
+      loop: "{{ fleet_drift | selectattr('kind', 'eq', 'device') | rejectattr('present') | list }}"
+      loop_control: { label: "{{ item.container }} {{ item.name }}" }
+      changed_when: true
+    - name: Set the devices
+      ansible.builtin.command:
+        argv: >-
+          {{ ['timeout', '60'] + fleet_incus + ['config', 'device', 'set', item.container, item.name]
+             + (item.want | dict2items | rejectattr('key', 'eq', 'type') | map(attribute='key')
+                | zip(item.want | dict2items | rejectattr('key', 'eq', 'type') | map(attribute='value')) | map('join', '=') | list) }}
+      loop: "{{ fleet_drift | selectattr('kind', 'eq', 'device') | selectattr('present') | list }}"
+      loop_control: { label: "{{ item.container }} {{ item.name }}" }
+      changed_when: true
+    - name: Set the configuration keys
+      ansible.builtin.command:
+        argv: "{{ ['timeout', '60'] + fleet_incus + ['config', 'set', item.container, item.name ~ '=' ~ item.want] }}"
+      loop: "{{ fleet_drift | selectattr('kind', 'eq', 'config') | list }}"
+      loop_control: { label: "{{ item.container }} {{ item.name }}" }
+      changed_when: true
+    - name: Write the unit environments
+      ansible.builtin.command:
+        argv: "{{ ['timeout', '60'] + fleet_incus + ['file', 'push', '--create-dirs', '--mode', '0644', '-', item.container ~ item.name] }}"
+        stdin: "{{ fleet_unit_environment }}"
+        stdin_add_newline: false
+      loop: "{{ fleet_drift | selectattr('kind', 'eq', 'unit') | list }}"
+      loop_control: { label: "{{ item.container }} {{ item.name }}" }
+      changed_when: true
+    - { name: Read the fleet rules again, ansible.builtin.include_tasks: instance-fleet-rules-read.yml }
+
+- name: Check the fleet rules
+  ansible.builtin.assert:
+    that: fleet_drift | length == 0
+    fail_msg: >-
+      The nested fleet lacks its rules: {{ fleet_drift | map(attribute='container') | zip(fleet_drift | map(attribute='kind'),
+      fleet_drift | map(attribute='name')) | map('join', ' ') | join(', ') }}
+    quiet: true

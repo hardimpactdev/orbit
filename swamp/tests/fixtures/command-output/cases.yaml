@@ -607,6 +607,42 @@ contexts:
         -A FORWARD -j ufw-before-forward
 
         '
+  restore-seeds:
+    restore_snapshots:
+      stdout: '[{"name":"seed-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","created_at":"2026-11-13T12:40:00.123456789Z"},{"name":"before-migrate","created_at":"2026-11-13T13:00:00Z"},{"name":"seed-ffffffffffffffffffffffffffffffffffffffff","created_at":"2026-11-13T09:53:00.5Z"}]'
+  restore-no-seed:
+    restore_snapshots:
+      stdout: '[{"name":"before-migrate","created_at":"2026-11-13T13:00:00Z"}]'
+  fleet-list:
+    fleet_names: [nested-gateway, nested-app-dev, nested-app-prod]
+    fleet_ready_list:
+      stdout_lines:
+      - nested-gateway,RUNNING
+      - nested-app-dev,STOPPED
+      - nested-app-prod,RUNNING
+  fleet-start-list:
+    fleet_names: [nested-gateway, nested-app-dev, nested-app-prod]
+    fleet_start_list:
+      stdout_lines:
+      - nested-gateway,RUNNING
+      - nested-app-dev,STOPPED
+      - nested-app-prod,RUNNING
+  fleet-stopped:
+    fleet_names: [nested-gateway, nested-app-dev, nested-app-prod]
+    fleet_stopped:
+      stdout_lines:
+      - nested-gateway,STOPPED
+      - nested-app-dev,RUNNING
+      - nested-app-prod,STOPPED
+      - instance-other,RUNNING
+  fleet-doctor-healthy:
+    fleet_ready_doctor:
+      stdout: '{"data":{"healthy":true,"checks":[]}}'
+      stderr: ''
+  fleet-doctor-unhealthy:
+    fleet_ready_doctor:
+      stdout: '{"data":{"healthy":false,"checks":[]}}'
+      stderr: ''
   doctor-healthy:
     nested_doctor:
       stdout: '{"data":{"healthy":true,"nodes":[]}}'
@@ -1502,6 +1538,55 @@ cases:
   field: changed_when
   context: ufw-deleted
   expected: true
+- file: tasks/instance-fleet-ready.yml
+  task: Check that every nested container runs
+  field: vars.fleet_running
+  context: fleet-list
+  expected:
+  - nested-gateway
+  - nested-app-prod
+- file: tasks/instance-fleet-start.yml
+  task: Start the nested containers
+  field: loop
+  context: fleet-start-list
+  expected:
+  - nested-app-dev
+- file: tasks/instance-fleet-refresh.yml
+  task: Check that the nested containers stopped
+  field: vars.fleet_still_running
+  context: fleet-stopped
+  expected:
+  - nested-app-dev
+- file: tasks/instance-fleet-ready.yml
+  task: Wait for Doctor of the nested Gateway
+  field: until
+  context: fleet-doctor-healthy
+  expected: true
+- file: tasks/instance-fleet-ready.yml
+  task: Wait for Doctor of the nested Gateway
+  field: until
+  context: fleet-doctor-unhealthy
+  expected: false
+- file: tasks/instance-fleet-ready.yml
+  task: Check Doctor
+  field: ansible.builtin.assert.that
+  context: fleet-doctor-healthy
+  expected: true
+- file: tasks/instance-fleet-ready.yml
+  task: Check Doctor
+  field: ansible.builtin.assert.that
+  context: fleet-doctor-unhealthy
+  expected: false
+- file: tasks/instance-container-phase.yml
+  task: Name the newest seed
+  field: ansible.builtin.set_fact.restore_seed
+  context: restore-seeds
+  expected: seed-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+- file: tasks/instance-container-phase.yml
+  task: Name the newest seed
+  field: ansible.builtin.set_fact.restore_seed
+  context: restore-no-seed
+  expected: ''
 non_command_output:
 - file: tasks/task-instance-workspace-phase.yml
   task: Validate the recorded workspace target
@@ -1523,6 +1608,14 @@ non_command_output:
   task: Record the public workspace refusal
   field: ansible.builtin.copy.content
   reason: Selects a public error code from Ansible failure metadata, not command output.
+- file: tasks/instance-fleet.yml
+  task: Name the fleet rules
+  field: ansible.builtin.set_fact.fleet_unit_environments
+  reason: Builds drop-in paths from two fixed unit names; does not parse command output.
+- file: tasks/instance-fleet.yml
+  task: Name the fleet rules
+  field: vars.fleet_environment
+  reason: Prefixes the proxy names of the intent with environment.; does not parse command output.
 - file: tasks/task-container-host-prepare.yml
   task: Require absolute image daemon paths
   field: ansible.builtin.assert.that[0]

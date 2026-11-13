@@ -1,0 +1,70 @@
+---
+# Readiness of the nested fleet, the proof's own check (task-nested-ready), from the Instance container over `wg-nested`: every nested
+# container runs, the tunnel reaches the hub, Doctor of the nested Gateway is healthy, the three agents are online and the Gateway knows
+# the operator with its key. The start, the refresh and the reset import it. Input: instance-fleet.yml.
+# The tunnel and Doctor waits are the tool's own `until` and `retries`, every 5 s; the Doctor wait is bounded by `fleet_ready_seconds`
+# (300 by default), each check by its own `timeout`. A failure names the check, and the nested containers or Nodes it found.
+- name: Read the state of the nested containers
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['list', '--format', 'csv', '--columns', 'ns'] }}" }
+  register: fleet_ready_list
+  changed_when: false
+- name: Check that every nested container runs
+  vars:
+    fleet_running: "{{ fleet_ready_list.stdout_lines | select('match', '^[^,]+,RUNNING$') | map('regex_replace', ',.*$', '') | list }}"
+  ansible.builtin.assert:
+    that: fleet_names | difference(fleet_running) | length == 0
+    fail_msg: "Readiness check 'running' failed: {{ fleet_names | difference(fleet_running) | join(', ') }} not running"
+    quiet: true
+
+- name: Wait for the operator tunnel
+  ansible.builtin.command: { argv: "{{ ['timeout', '10'] + fleet_outer + ['ping', '-c', '1', '-W', '2', intent.fleet.operator.hub] }}" }
+  register: fleet_ready_tunnel
+  changed_when: false
+  failed_when: false
+  until: fleet_ready_tunnel.rc == 0
+  retries: 12
+  delay: "{{ fleet_ready_delay }}"
+- name: Check the operator tunnel
+  ansible.builtin.assert:
+    that: fleet_ready_tunnel.rc == 0
+    fail_msg: "Readiness check 'tunnel' failed: {{ fleet_tunnel }} does not reach the hub {{ intent.fleet.operator.hub }}"
+    quiet: true
+
+- name: Wait for Doctor of the nested Gateway
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '90'] + fleet_curl + ['-X', 'POST', fleet_api ~ '/doctor', '-H', 'Content-Type: application/json', '-d', '{}'] }}
+  register: fleet_ready_doctor
+  changed_when: false
+  failed_when: false
+  until: fleet_ready_doctor.stdout is match('\{"data":\{"healthy":true')
+  retries: "{{ ((fleet_ready_seconds | default(300) | int) / ([fleet_ready_delay | int, 1] | max)) | round(0, 'ceil') | int }}"
+  delay: "{{ fleet_ready_delay }}"
+- name: Check Doctor
+  ansible.builtin.assert:
+    that: fleet_ready_doctor.stdout is match('\{"data":\{"healthy":true')
+    fail_msg: >-
+      Readiness check 'doctor' failed after {{ fleet_ready_seconds | default(300) }} s:
+      {{ (fleet_ready_doctor.stdout | default('', true) or fleet_ready_doctor.stderr | default('')) | truncate(400) }}
+    quiet: true
+
+- name: Read the Nodes of the nested Gateway
+  ansible.builtin.command: { argv: "{{ ['timeout', '90'] + fleet_curl + ['--fail', fleet_api ~ '/nodes'] }}" }
+  register: fleet_ready_nodes
+  changed_when: false
+- name: Check the agents
+  vars:
+    fleet_online: >-
+      {{ (fleet_ready_nodes.stdout | from_json).data | selectattr('agent', 'truthy') | selectattr('agent.state', 'eq', 'online')
+         | map(attribute='name') | list }}
+  ansible.builtin.assert:
+    that: fleet_roles | difference(fleet_online) | length == 0
+    fail_msg: "Readiness check 'agents' failed: the agent of {{ fleet_roles | difference(fleet_online) | join(', ') }} is not online"
+    quiet: true
+- name: Check the operator
+  vars:
+    fleet_operator: "{{ (fleet_ready_nodes.stdout | from_json).data | selectattr('name', 'eq', 'operator') | list }}"
+  ansible.builtin.assert:
+    that: fleet_operator | length == 1 and fleet_operator[0].wireguard_public_key | default(none) is not none
+    fail_msg: "Readiness check 'operator' failed: the nested Gateway does not know the operator and its key"
+    quiet: true
