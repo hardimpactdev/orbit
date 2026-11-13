@@ -831,3 +831,32 @@ it('reserves the service Nodes registered Database server port even for a differ
         ->assertUnprocessable()->assertJsonPath('error.code', 'instance.node_service_port_reserved');
     $this->assertDatabaseCount('instance_node_service_targets', 0);
 });
+
+it('keeps a nested-fleet container\'s inner fleet in its bypass beside a remote Node service, at create and at detach', function (): void {
+    $node = containerDefaultNode();
+    $node->update(['settings' => [...($node->settings ?? []), 'nested_fleet' => true]]);
+    $project = containerDefaultProject();
+    $project->forceFill(['nested_fleet' => true])->save();
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default',
+        'checkout_path' => '/workspace/default', 'status' => 'active', 'first_setup_pending' => false]);
+    $remote = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'fixture-shark', 'status' => 'active',
+        'platform' => 'linux', 'wireguard_ip' => '10.44.0.11', 'public_ssh_host' => '198.51.100.11', 'user' => 'orbit']));
+    $process = nodeServiceAttachmentProcess($remote, ['10.44.0.11:8094:8080/tcp']);
+    $target = $instance->nodeServiceTargets()->create(['node_id' => $remote->id, 'process_id' => $process->id,
+        'protocol' => 'tcp', 'port' => 8094, 'host_env_key' => 'SERVICE_HOST', 'port_env_key' => 'SERVICE_PORT']);
+    $policy = app(InstanceContainer::class);
+    $runtime = $policy->reserve($instance, $node->refresh());
+    $runtime->update(['seed_commit' => str_repeat('a', 40), 'power_state' => 'running']);
+    $fleet = '10.45.0.1,10.45.0.0/24,10.232.2.0/24';
+
+    $intent = $policy->intent($instance, $runtime);
+    expect($runtime->incus_project)->toBe('orbit-instances-nested')
+        ->and($intent['config']['environment.NO_PROXY'])->toBe('localhost,127.0.0.1,::1,10.253.0.1,10.44.0.11,'.$fleet)
+        ->and($intent['environment'])->toContain('NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1,10.44.0.11,'.$fleet);
+
+    // The detach drops only the Node service host: the inner fleet stays off the proxy.
+    captureNodeServiceAdmission($instance);
+    $operation = app(NodeServiceTargetOperation::class)->start($instance, $target);
+    expect($operation->input['container']['environment'])->toBe([
+        'NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1,'.$fleet, 'no_proxy=localhost,127.0.0.1,::1,10.253.0.1,'.$fleet]);
+});

@@ -184,7 +184,10 @@ final readonly class InstanceContainer
         $environment = InstanceImage::environment($gateway);
         $mail = app(DevelopmentMail::class)->forInstance($instance);
         $nodeServices = InstanceNodeServiceTargets::endpoints($instance);
-        $environment = [...$environment, ...InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices)];
+        // Only a container in the nested project holds an inner fleet; its own CLI reaches the nested Gateway without the proxy.
+        $nestedFleet = $runtime->incus_project === InstancePlacement::NestedProject;
+        $proxy = InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices, $nestedFleet, []);
+        $environment = [...$environment, ...$proxy];
         $access = $this->targetAccesses($instance, $runtime, $database, $mail, $nodeServices);
         $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url);
         ['vite' => $vitePort, 'server' => $devServerPort] = app(ContainerProcesses::class)->ports($instance);
@@ -193,9 +196,8 @@ final readonly class InstanceContainer
             'instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
             'config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096',
                 ...InstancePlacement::config($runtime->incus_project),
-                ...(! array_any($nodeServices, static fn (array $target): bool => ! $target['docker']) && ! isset($clone['proxy_environment']) ? []
-                    : array_combine(array_map(static fn (string $key): string => 'environment.'.$key, ['NO_PROXY', 'no_proxy']),
-                        array_values(InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices))))],
+                ...(! array_any($nodeServices, static fn (array $target): bool => ! $target['docker']) && ! isset($clone['proxy_environment']) && ! $nestedFleet ? []
+                    : array_combine(array_map(static fn (string $key): string => 'environment.'.$key, ['NO_PROXY', 'no_proxy']), array_values($proxy)))],
             'root_disk_pool' => InstanceHostIntent::Pool, 'root_disk_size' => '40GiB',
             // A runtime recorded in the nested-fleet project starts from the nested-fleet image; every other one from the normal image.
             'image' => $runtime->incus_project === InstancePlacement::NestedProject ? InstanceImage::NestedAlias : self::Image,
@@ -302,6 +304,7 @@ final readonly class InstanceContainer
         $source = $runtime->clone_source_instance_id === null ? null
             : InstanceRuntime::query()->where('instance_id', $runtime->clone_source_instance_id)->firstOrFail();
         $node = Node::query()->findOrFail($runtime->node_id);
+        $nestedFleet = $runtime->incus_project === InstancePlacement::NestedProject;
         $resetProxy = $source !== null && InstanceNodeServiceTarget::query()->where('instance_id', $source->instance_id)
             ->where('node_id', '!=', $source->node_id)->exists();
         $project = $instance->project;
@@ -322,11 +325,12 @@ final readonly class InstanceContainer
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
                 't3' => InstanceHostIntent::AgentFolder.'/current/agent/bin/t3', 'project_mark' => '/home/agent/.config/orbit/t3-project'],
             'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600'],
-            ...($resetProxy ? ['proxy_environment' => InstanceNodeServiceTargets::proxyEnvironment($gateway, [])] : []),
-            // The container phase writes these before a copy's first start, so its first boot reads them: the files every container
-            // needs, which a seed taken before them lacks, and the reset proxy value of a copy whose default had attached Node services.
-            // A container that a migrate builds from the image has the files already.
-            ...($source === null ? [] : ['boot_files' => [...self::bootFiles(), ...($resetProxy ? $this->proxyFiles($gateway) : [])]]),
+            // A copy of a default with a Node service elsewhere drops that host, and a nested-fleet copy keeps its inner fleet.
+            ...($resetProxy || $nestedFleet ? ['proxy_environment' => InstanceNodeServiceTargets::proxyEnvironment($gateway, [], $nestedFleet, [])] : []),
+            // The container phase writes these before a copy's first start, so its first boot, T3 included, reads them: the files every
+            // container needs, which a seed taken before them lacks, then the proxy value of a copy whose default had attached Node
+            // services or that runs a nested fleet. A container that a migrate builds from the image has the files already.
+            ...($source === null ? [] : ['boot_files' => [...self::bootFiles(), ...($resetProxy || $nestedFleet ? $this->proxyFiles($gateway, $nestedFleet) : [])]]),
             'files' => [
                 ['path' => self::InstanceFile, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => "# Managed by Orbit.\n"
                     ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\n"
@@ -362,9 +366,9 @@ final readonly class InstanceContainer
     /** A clone has no inherited Node service attachments.
      * @return list<array{path:string,content:string,uid:int,gid:int,mode:string}>
      */
-    private function proxyFiles(string $gateway): array
+    private function proxyFiles(string $gateway, bool $nestedFleet): array
     {
-        $environment = InstanceNodeServiceTargets::proxyEnvironment($gateway, []);
+        $environment = InstanceNodeServiceTargets::proxyEnvironment($gateway, [], $nestedFleet, []);
         $assignments = implode(' ', array_map(static fn (string $key, string $value): string => $key.'='.$value, array_keys($environment), $environment));
 
         return [
