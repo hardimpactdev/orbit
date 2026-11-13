@@ -8,6 +8,7 @@ use App\Data\ProjectDefinitions\ProjectDefinitionInputData;
 use App\Domain\Instances\ContainerProcessCommands;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\RequiredMountPaths;
+use App\Domain\Processes\VitePreset;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\ProjectDefinitions\DefinitionEnvironment;
 use App\Domain\ProjectDefinitions\ProcessDefinitionSpecification;
@@ -90,7 +91,7 @@ final class ProcessDefinitionRequest extends FormRequest
             'spec.environment_file' => ['sometimes', 'nullable', 'string', 'max:4096', 'regex:/\A\/(?!.*(?:^|\/)\.\.(?:\/|$))[^\x00\r\n]*\z/D'],
             'spec.required_mount_paths' => ['sometimes', 'array', 'list', 'max:64'],
             'spec.required_mount_paths.*' => ['required', 'string'],
-            'spec.preset' => ['required_with:spec.preset_version', Rule::in([VpDevPreset::NAME])],
+            'spec.preset' => ['required_with:spec.preset_version', Rule::in([VpDevPreset::NAME, VitePreset::NAME])],
             'spec.preset_version' => ['sometimes', 'integer', Rule::in([1])],
         ];
     }
@@ -157,6 +158,11 @@ final class ProcessDefinitionRequest extends FormRequest
             return;
         }
 
+        // The vite preset names the Project's own Vite; its canonical command is checked with the preset.
+        if (data_get($data, 'spec.preset') === VitePreset::NAME) {
+            return;
+        }
+
         $executable = data_get($data, 'spec.command.0');
 
         if (is_string($executable) && str_starts_with($executable, '/')) {
@@ -196,13 +202,18 @@ final class ProcessDefinitionRequest extends FormRequest
         $existingSpec = $definition instanceof ProcessDefinition ? $definition->spec : [];
         $capturedPreset = $existingSpec['preset'] ?? null;
         if (array_key_exists('preset', $spec) || $capturedPreset !== null) {
-            if (! $development || $capturedPreset !== VpDevPreset::NAME
-                || ($spec['preset'] ?? null) !== $capturedPreset
+            // A new definition may name only the vite preset; an edit keeps the preset it has. vp-dev comes only from capture.
+            $preset = $definition instanceof ProcessDefinition ? $capturedPreset : VitePreset::NAME;
+            $canonical = $preset === VitePreset::NAME ? VitePreset::definitionCommand() : VpDevPreset::definitionCommand();
+            if (! $development || $preset === null
+                || ($spec['preset'] ?? null) !== $preset
                 || ($spec['preset_version'] ?? 1) !== ($existingSpec['preset_version'] ?? 1)
-                || ($spec['command'] ?? null) !== VpDevPreset::definitionCommand()
+                || ($spec['command'] ?? null) !== $canonical
                 || (array_key_exists('preset_version', ValidatedData::object($this->inspectedData['spec'] ?? null))
                     && data_get($this->inspectedData, 'spec.preset_version') === null)) {
-                $validator->errors()->add('spec.preset', 'Only an existing captured vp-dev definition with its canonical command and preset metadata can be edited.');
+                $validator->errors()->add('spec.preset', $preset === VitePreset::NAME && ($spec['preset'] ?? null) !== VpDevPreset::NAME
+                    ? 'A vite definition must be a development-only systemd definition with the canonical vite command.'
+                    : 'Only an existing captured vp-dev definition with its canonical command and preset metadata can be edited.');
             }
             if (($spec['required_mount_paths'] ?? []) !== []) {
                 $validator->errors()->add('spec.required_mount_paths', 'The preset owns this configuration.');

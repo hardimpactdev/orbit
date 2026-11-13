@@ -86,7 +86,7 @@ it('publishes a schema-valid captured preset edit and refuses invalid commands t
         ->firstWhere('name', 'project-process-definition-update');
     $schema = $manifest->inputSchema['properties']['spec'];
     expect($schema['required'] ?? [])->not->toContain('runtime', 'command');
-    expect($schema['properties']['preset'])->toMatchArray(['type' => 'string', 'enum' => ['vp-dev']]);
+    expect($schema['properties']['preset'])->toMatchArray(['type' => 'string', 'enum' => ['vp-dev', 'vite']]);
     expect($schema['properties']['preset_version'])->toMatchArray(['type' => 'integer', 'enum' => [1]]);
     $tool = new ApiOperationTool($manifest, app(ApiDispatcher::class));
     $caller = Request::create('/mcp', 'POST', server: ['REMOTE_ADDR' => $node->wireguard_ip]);

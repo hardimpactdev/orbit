@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Processes\VitePreset;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\Shared\LifecycleStatus;
 use Illuminate\Database\Eloquent\Model;
@@ -68,6 +69,17 @@ final class Process extends Model
     public function isVpDev(): bool
     {
         return ($this->runtime_config['preset'] ?? null) === VpDevPreset::NAME;
+    }
+
+    public function isVite(): bool
+    {
+        return ($this->runtime_config['preset'] ?? null) === VitePreset::NAME;
+    }
+
+    /** A stored dev-server preset: `vp-dev` or `vite`. Orbit never guesses one from a name or command. */
+    public function isDevServerPreset(): bool
+    {
+        return $this->isVpDev() || $this->isVite();
     }
 
     /** @return array<array-key, mixed> */

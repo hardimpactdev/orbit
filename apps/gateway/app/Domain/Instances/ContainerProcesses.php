@@ -7,6 +7,7 @@ namespace App\Domain\Instances;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\Processes\VitePreset;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -121,7 +122,7 @@ final readonly class ContainerProcesses
         $config = $process->runtime_config;
         if (array_key_exists('preset', $config)) {
             $this->assertPreset($process, $instance, $port);
-            $config['command'] = VpDevPreset::command($port);
+            $config['command'] = $process->isVite() ? VitePreset::command($instance) : VpDevPreset::command($port);
             $config['environment_file'] ??= InstanceContainer::application($instance).'/.env';
         } elseif ($migrate) {
             $config['command'] = $this->migrateCommand($process, $instance);
@@ -179,25 +180,27 @@ final readonly class ContainerProcesses
     }
 
     /**
-     * The preset's port in this container's network namespace; no host listener or host port allocator is involved.
+     * The vp-dev preset's assigned port in this container's network namespace; no host listener or host port allocator is involved.
+     * It also checks the container's one dev-server preset, `vp-dev` or `vite`, against the other Processes. The `vite` preset uses its
+     * fixed port and gets no assigned port, so this returns null for it: no `/__orbit/vite` upstream and no ingress rule of its own.
      *
      * @param  Collection<int, Process>|null  $records
      */
     public function vitePort(Instance $instance, ?Collection $records = null): ?int
     {
         $records = ($records ?? $this->records([$instance->id]))->filter(static fn (Process $process): bool => $process->status !== LifecycleStatus::Removing);
-        $presets = $records->filter(static fn (Process $process): bool => $process->isVpDev())->values();
+        $presets = $records->filter(static fn (Process $process): bool => $process->isDevServerPreset())->values();
         $preset = $presets->first();
         if ($preset === null) {
             return null;
         }
-        $port = $instance->vite_port;
+        $port = $preset->isVite() ? VitePreset::Port : $instance->vite_port;
         if (! is_int($port) || $port < InstanceDevPorts::First || $port > InstanceDevPorts::Last
             || in_array($port, [InstanceContainer::WebPort, InstanceHostIntent::T3Port, $instance->ssr_port], true)) {
             $this->refuse($preset, 'port_conflict', 'its assigned Vite port is missing, invalid or reserved by a container service');
         }
         if ($presets->count() > 1) {
-            $this->refuse($preset, 'port_conflict', 'another vp-dev Process owns the same assigned port');
+            $this->refuse($preset, 'port_conflict', 'another dev-server preset Process owns the same port');
         }
         foreach ($records as $other) {
             if ($other->id === $preset->id) {
@@ -217,14 +220,14 @@ final readonly class ContainerProcesses
             }
         }
 
-        return $port;
+        return $preset->isVpDev() ? $port : null;
     }
 
     /** A preset is mapped only after its stored intent matches a supported form; never discard a custom command. */
     private function assertPreset(Process $process, Instance $instance, ?int $port): void
     {
         $config = $process->runtime_config;
-        if (! $process->isVpDev() || (array_key_exists('preset_version', $config) && $config['preset_version'] !== 1)) {
+        if (! $process->isDevServerPreset() || (array_key_exists('preset_version', $config) && $config['preset_version'] !== 1)) {
             $this->refuse($process, 'preset_unsupported', 'its preset or preset version is unsupported');
         }
         $unknown = array_diff(array_keys($config), ['preset', 'preset_version', 'command', 'environment_file', 'environment', 'restart_policy']);
@@ -233,7 +236,8 @@ final readonly class ContainerProcesses
         }
         $surveyed = ['/usr/bin/env', '-u', 'VITE_DEV_SERVER_CERT', '-u', 'VITE_DEV_SERVER_KEY',
             '/home/'.$instance->node->user.'/.vite-plus/bin/vp', 'dev', '--host=127.0.0.1', '--port='.$port, '--strictPort'];
-        if (! in_array($config['command'] ?? null, [VpDevPreset::command(), VpDevPreset::command($port), $surveyed], true)) {
+        $supported = $process->isVite() ? [VitePreset::command($instance)] : [VpDevPreset::command(), VpDevPreset::command($port), $surveyed];
+        if (! in_array($config['command'] ?? null, $supported, true)) {
             $this->refuse($process, 'command_unsupported', 'its preset has a custom command');
         }
         $this->assertWorkspacePath($process, $instance, $process->working_directory, 'working directory');

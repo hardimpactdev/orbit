@@ -13,6 +13,7 @@ use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\RequiredMountPaths;
+use App\Domain\Processes\VitePreset;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\Gateway\GatewayHorizon;
@@ -58,7 +59,7 @@ final readonly class SystemdProcessRenderer
         if ($resolveNames && $target->container !== null && $target->instance !== null && ! $target->instance->placedOnAppProd()) {
             $command = app(ContainerProcessCommands::class)->resolve($command, $target->instance->project->php_version, "Process [{$process->id}:{$process->name}]");
         }
-        $environmentFile = $process->isVpDev() ? null : ($runtimeConfig['environment_file'] ?? null);
+        $environmentFile = $process->isDevServerPreset() ? null : ($runtimeConfig['environment_file'] ?? null);
 
         if (
             $command === []
@@ -70,9 +71,12 @@ final readonly class SystemdProcessRenderer
             );
         }
 
-        $supplyDevServerOrigin = $process->isVpDev()
-            && ! array_key_exists('DEV_SERVER_ORIGIN', $this->stringMap($runtimeConfig['environment'] ?? []));
-        $environmentProjection = $this->environmentProjection($target, $managedAccount, ! $process->isVpDev(), $process->isVpDev(), $supplyDevServerOrigin);
+        $ownEnvironment = $this->stringMap($runtimeConfig['environment'] ?? []);
+        $supplyDevServerOrigin = $process->isVpDev() && ! array_key_exists('DEV_SERVER_ORIGIN', $ownEnvironment);
+        // The Process's own value wins, including an empty one.
+        $supplyAppUrl = $process->isVite() && ! array_key_exists(VitePreset::AppUrl, $ownEnvironment);
+        $environmentProjection = $this->environmentProjection($target, $managedAccount, ! $process->isDevServerPreset(), $process->isDevServerPreset(),
+            $supplyDevServerOrigin, $supplyAppUrl, ! $process->isVite());
         if ($process->isVpDev()) {
             $command = VpDevPreset::command($target->container === null ? null : $target->instance?->vite_port);
             if ($target->container === null) {
@@ -107,7 +111,7 @@ final readonly class SystemdProcessRenderer
             ...($this->managedEnvironment($process, $target) === [] ? [] : ['EnvironmentFile='.$this->environmentPath($process, $target)]),
             ...$environmentProjection['directives'],
             ...($process->isVpDev() && $target->container === null ? ['EnvironmentFile='.self::viteEnvironmentPath((int) $target->instance?->id)] : []),
-            ...($process->isVpDev() ? ['UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY'] : []),
+            ...($process->isDevServerPreset() ? ['UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY'] : []),
             'ExecStart='
                 .implode(
                     ' ',
@@ -208,7 +212,7 @@ final readonly class SystemdProcessRenderer
     }
 
     /** @return array{directives: list<string>, commandPrefix: list<string>} */
-    private function environmentProjection(ProcessTarget $target, ?ManagedUserAccount $managedAccount, bool $certificates, bool $vpDev, bool $supplyDevServerOrigin): array
+    private function environmentProjection(ProcessTarget $target, ?ManagedUserAccount $managedAccount, bool $certificates, bool $devServer, bool $supplyDevServerOrigin, bool $supplyAppUrl, bool $vitePort): array
     {
         $directives = [];
         $commandValues = [];
@@ -219,13 +223,18 @@ final readonly class SystemdProcessRenderer
                 $directives[] = 'Environment=DEV_SERVER_ORIGIN='.$this->escapeDirectivePath($origin);
                 $commandValues[] = "DEV_SERVER_ORIGIN={$origin}";
             }
+            if ($supplyAppUrl) {
+                $url = 'https://'.$target->routeDomain;
+                $directives[] = 'Environment='.VitePreset::AppUrl.'='.$this->escapeDirectivePath($url);
+                $commandValues[] = VitePreset::AppUrl.'='.$url;
+            }
             $directives[] = 'Environment=ORBIT_DEV_SERVER_ORIGIN='.$this->escapeDirectivePath($origin);
             $directives[] = 'Environment=ORBIT_DEV_SERVER_HOST='.$this->escapeDirectivePath($target->routeDomain);
             $directives[] = 'Environment=ORBIT_DEV_SERVER_PATH='.DevelopmentServerEndpoint::PATH;
             $commandValues[] = "ORBIT_DEV_SERVER_ORIGIN={$origin}";
             $commandValues[] = "ORBIT_DEV_SERVER_HOST={$target->routeDomain}";
             $commandValues[] = 'ORBIT_DEV_SERVER_PATH='.DevelopmentServerEndpoint::PATH;
-            if ($vpDev && $target->instance !== null) {
+            if ($devServer && $target->instance !== null) {
                 // Use the authoritative Routes that select the Instance's primary hostname.
                 $routes = $target->instance->routes->filter(static fn (Route $route): bool => $route->isAuthoritative())->sortBy('id');
                 // Initial create reserves its primary Route before the Instance and its site become active.
@@ -244,7 +253,8 @@ final readonly class SystemdProcessRenderer
                 }
             }
 
-            $port = $target->instance?->vite_port;
+            // The vite preset listens on its own fixed port; an assigned Vite port belongs to vp-dev.
+            $port = $vitePort ? $target->instance?->vite_port : null;
 
             if (is_int($port)) {
                 $directives[] = 'Environment=ORBIT_DEV_SERVER_PORT='.(string) $port;
