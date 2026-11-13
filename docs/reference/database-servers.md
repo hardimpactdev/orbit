@@ -319,6 +319,8 @@ The Gateway admits the recorded resource identities and starts one native Swamp 
 
 Before the first drop, Orbit checks the whole removal set. PostgreSQL sessions, replication slots (including inactive logical slots), prepared transactions, and subscriptions block removal. Dependencies of an unshared role outside the set also block it, including ownership and grants in another database or on a shared object. MySQL checks connected clients, metadata locks on the planned schemas (including transactions that use qualified table names without a default database), stored objects outside the set whose definer is a user being removed, and incoming cross-schema foreign keys. Cross-schema references between planned databases also block; remove those constraints first.
 
+`instance:destroy` reads the replication slots of its owned PostgreSQL databases before admission and refuses with `instance.database_replication_slot` while one exists, so its run never closes a database that the drop cannot remove. See [Replication slots](/reference/instance-removal#replication-slots).
+
 A blocker records `database.in_use` on the Operation and leaves databases, users, attachments, and records unchanged. Stop clients and remove or move the blocking dependencies, then retry. Orbit never force-disconnects clients. A server or transport failure after dropping starts can still interrupt removal; retain the record and repeat the same command to finish.
 
 On a Valkey server, `database:destroy` deletes the connection's ACL user with `ACL DELUSER` and runs `ACL SAVE`. The user's keys stay. A connection without a username, such as one linked by adoption, logs in as `default`, so destroying it deletes only the record.

@@ -70,6 +70,18 @@ sequenceDiagram
   %%> - the Project teardown steps
   %%> Result:
   %%> - discard every prepared result; admission builds its intent fresh after Schedule removal
+  opt owned PostgreSQL database
+    GW->>N: Read replication slots<br/>Database server Node · SSH
+    %%> Why first:
+    %%> - a slot makes the drop fail after the fence closed the database; the removal would stop half way
+    %%> What it does:
+    %%> - on each Database server's Node, one read of pg_replication_slots for every database the drop plans, with the drop's admin client and the admin password as the first protected stdin line
+    %%> - at most 5 s per server, no retry
+    %%> On refusal:
+    %%> - HTTP 409 instance.database_replication_slot names the database, server and slot; --force never overrides it; Orbit never drops a slot
+    %%> - HTTP 503 instance.database_slots_unreadable when the read fails
+    %%> - before Schedule removal and any record: the Instance, Route and holds stay as they were
+  end
   GW->>SW: Remove Schedule triggers<br/>workflow trigger removal
   %%> What it does:
   %%> - removes the native Swamp schedule trigger of each Schedule of Instance 42
