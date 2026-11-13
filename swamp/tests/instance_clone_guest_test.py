@@ -22,6 +22,21 @@ SPEC.loader.exec_module(GUEST)
 
 NO_MERGE = {"own": [], "drop": [], "guard": []}
 
+# The patched boundary below replaces subprocess.run; real Git still runs through this.
+REAL_RUN = subprocess.run
+
+
+@contextlib.contextmanager
+def checkout_mark(instance_id=9):
+    """The root-owned mark of this Instance's first checkout, at its container path under a temporary root."""
+    with tempfile.TemporaryDirectory() as folder:
+        base = Path(folder)
+        mark = base / GUEST.CHECKOUT_MARK.lstrip("/")
+        mark.parent.mkdir(parents=True)
+        mark.write_text(json.dumps({"instance_id": instance_id, "commit": "abc123"}) + "\n")
+        with patch.object(GUEST.pathlib, "Path", lambda p: base / str(p).lstrip("/")):
+            yield mark
+
 # The default's .env of the seed copy, with hand-set keys .env.example lacks. Every value is a fixture.
 DEFAULT_ENV = """APP_NAME=Lindaretel
 APP_KEY=base64:default-key
@@ -227,12 +242,136 @@ class CloneDefaultHostRewriteTest(unittest.TestCase):
                 self.assertEqual(GUEST.rewrite_default_hosts(line, {"A"}, hosts), (line, []))
 
 
+class WorkspaceCheckoutTest(unittest.TestCase):
+    """The real workspace and sessions phases on a real Git workspace; only root, systemd, T3 and the Node helper are faked."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.base = Path(folder.name)
+        self.origin = self.base / "origin"
+        self.workspace = self.base / "srv/workspace"
+        self.git(self.base, "init", "--quiet", "--initial-branch=main", str(self.origin))
+        self.commit(self.origin, "seed")
+        self.git(self.origin, "switch", "--quiet", "-c", "proof")
+        self.commit(self.origin, "older")
+        self.older = self.head(self.origin)
+        self.commit(self.origin, "fetched")
+        self.expected = self.head(self.origin)
+        self.git(self.base, "clone", "--quiet", str(self.origin), str(self.workspace))
+
+    def git(self, cwd, *args):
+        return subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", *args], cwd=cwd,
+                              check=True, capture_output=True, text=True, timeout=10,
+                              env=dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null"))
+
+    def commit(self, cwd, message):
+        (Path(cwd) / "file").write_text(message)
+        self.git(cwd, "add", "file")
+        self.git(cwd, "commit", "--quiet", "-m", message)
+
+    def head(self, cwd):
+        return self.git(cwd, "rev-parse", "HEAD").stdout.strip()
+
+    def branch(self):
+        return self.git(self.workspace, "branch", "--show-current").stdout.strip()
+
+    def seed(self, branch, commit):
+        """The seed copy: the default's workspace, on a branch of the default."""
+        self.git(self.workspace, "checkout", "--quiet", "-B", branch, commit)
+
+    def phase(self, phase):
+        container = {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
+                     "bundle": "/tmp/proof.bundle", "php": None, "environment_file": "/srv/workspace/.env",
+                     "units": [], "processes": [], "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}}}
+        if phase == "workspace":
+            # The Node pushes the mirror's branch in as a bundle before each workspace phase.
+            (self.base / "tmp").mkdir(exist_ok=True)
+            self.git(self.origin, "bundle", "create", "--quiet", str(self.base / "tmp/proof.bundle"), "refs/heads/proof")
+
+        def command(argv, **_kwargs):
+            actual = argv[4:] if argv[0] == "runuser" else argv
+            if actual[0] == "git":
+                actual = [str(self.base / "tmp/proof.bundle") if a == container["bundle"] else a for a in actual]
+                return REAL_RUN(actual, cwd=self.workspace, check=False, capture_output=True, text=True, timeout=10,
+                                      env=dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null"))
+            stdout = ""
+            if "/usr/local/libexec/orbit-instance-node-runtime.py" in actual:
+                stdout = '{"status":"unchanged"}'
+            elif actual[0] == "curl":
+                stdout = '{"environmentId":"clone-env","serverVersion":"0.1.7"}'
+            return subprocess.CompletedProcess(argv, 0, stdout, "")
+
+        connection = MagicMock()
+        connection.getresponse.side_effect = lambda: type("Reply", (io.BytesIO,), {"status": 200})(
+            json.dumps({"authenticated": True, "scopes": ["access:read", "access:write"]}).encode())
+        private = {"environment": "", "merge": NO_MERGE} if phase == "workspace" else {
+            key: {"token": "private-" + key} for key in ["gateway", "swamp"]}
+        output = io.StringIO()
+        with (
+            patch.object(GUEST.pathlib, "Path", lambda p: self.base / str(p).lstrip("/")),
+            patch.object(GUEST.subprocess, "run", command),
+            patch.object(GUEST.os, "walk", return_value=[]),
+            patch.object(GUEST.os, "chown"),
+            patch.object(GUEST.http.client, "HTTPConnection", return_value=connection),
+            patch.object(GUEST.sys, "stdin", io.StringIO(json.dumps(private))),
+            contextlib.redirect_stdout(output),
+        ):
+            GUEST.phase_main(phase, json.dumps(container))
+        return json.loads(output.getvalue())
+
+    def mark(self):
+        mark = self.base / GUEST.CHECKOUT_MARK.lstrip("/")
+        return json.loads(mark.read_text()), mark.stat().st_mode & 0o777
+
+    def test_a_first_run_on_another_branch_checks_out_the_fetched_commit_and_marks_it(self):
+        self.seed("main", self.older)
+        result = self.phase("workspace")
+        self.assertIn("checkout", result["changes"])
+        self.assertEqual(result["commit"], self.expected)
+        self.assertEqual((self.branch(), self.head(self.workspace)), ("proof", self.expected))
+        self.assertEqual(self.mark(), ({"instance_id": 9, "commit": self.expected}, 0o600))
+        self.assertFalse((self.base / "tmp/proof.bundle").exists())
+
+    def test_a_first_run_on_a_seed_branch_of_the_same_name_still_checks_out_the_fetched_commit(self):
+        # The default's own branch has the target's name but an older head; a mark of another Instance does not count.
+        self.seed("proof", self.older)
+        mark = self.base / GUEST.CHECKOUT_MARK.lstrip("/")
+        mark.parent.mkdir(parents=True)
+        mark.write_text(json.dumps({"instance_id": 1, "commit": self.older}) + "\n")
+        result = self.phase("workspace")
+        self.assertIn("checkout", result["changes"])
+        self.assertEqual(result["commit"], self.expected)
+        self.assertEqual((self.branch(), self.head(self.workspace)), ("proof", self.expected))
+        self.assertEqual(self.mark()[0], {"instance_id": 9, "commit": self.expected})
+
+    def test_a_retry_never_moves_the_branch_this_instance_checked_out(self):
+        self.seed("main", self.older)
+        self.phase("workspace")
+        # The user commits on the branch; then a late failure and a retry run the same phases again.
+        self.commit(self.workspace, "user work")
+        work = self.head(self.workspace)
+        result = self.phase("workspace")
+        self.assertNotIn("checkout", result["changes"])
+        self.assertEqual((self.branch(), self.head(self.workspace)), ("proof", work))
+        self.assertEqual(self.git(self.workspace, "log", "--format=%s", "-1").stdout.strip(), "user work")
+        # The result names the commit the workspace started at, not the user's.
+        self.assertEqual(result["commit"], self.expected)
+        self.assertEqual(self.phase("sessions")["phase"], "sessions")
+
+    def test_sessions_refuse_a_workspace_without_this_instances_mark(self):
+        self.seed("proof", self.expected)
+        with self.assertRaises(FileNotFoundError):
+            self.phase("sessions")
+
+
 class CloneGuestTest(unittest.TestCase):
     def test_sessions_check_only_loopback_t3_and_reject_http_and_scope_failures(self):
         container = {
             "workspace": "/srv/workspace",
             "branch": "feature",
             "expected_commit": "abc",
+            "instance_id": 9,
             "php": None,
             "clone": {"t3": {"internal_port": 3773}},
             "units": [],
@@ -277,6 +416,7 @@ class CloneGuestTest(unittest.TestCase):
                     ) as connect,
                     patch.object(GUEST.subprocess, "run", command),
                     patch.object(GUEST.sys, "stdin", io.StringIO(json.dumps(existing))),
+                    checkout_mark(),
                     contextlib.redirect_stdout(output),
                 ):
                     if error:
@@ -326,7 +466,8 @@ class CloneGuestTest(unittest.TestCase):
             if duration >= kwargs["timeout"]:
                 raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
             elapsed[0] += duration
-            value = '{"changes":[]}' if "exec" in argv else "abc"
+            # The guest names its first checkout's commit; the mirror's branch head ("abc") may be newer on a retry.
+            value = '{"changes":[],"commit":"first-checkout"}' if "exec" in argv else "abc"
             return subprocess.CompletedProcess(argv, 0, value, "")
 
         with tempfile.TemporaryDirectory() as folder:
@@ -375,12 +516,16 @@ class CloneGuestTest(unittest.TestCase):
             self.assertLess(calls.index(installed[0]), next(i for i, (argv, _) in enumerate(calls) if "exec" in argv))
 
             self.assertNotIn("private", output.getvalue())
+            # The result's commit is the guest's word, not the mirror's head.
+            self.assertTrue(output.getvalue().startswith("orbit-commit=first-checkout\n"))
+            self.assertNotIn('"commit"', output.getvalue())
 
     def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=False, inactive=False, state=None, desired="running", is_active=1, expected_exit=1):
         container = {
             "workspace": "/srv/workspace",
             "branch": "proof",
             "expected_commit": "abc123",
+            "instance_id": 9,
             "php": php,
             "units": [],
             "processes": [{"name": "orbit-process-vp-dev.service", "id": 19, "desired": desired}] if inactive else [],
@@ -441,6 +586,7 @@ class CloneGuestTest(unittest.TestCase):
                 io.StringIO(json.dumps(sessions) if existing else ""),
             ),
             patch.object(GUEST.http.client, "HTTPConnection", return_value=connection),
+            checkout_mark(),
             contextlib.redirect_stdout(output),
             contextlib.redirect_stderr(error),
         ):
@@ -560,6 +706,7 @@ class CloneGuestTest(unittest.TestCase):
                 "workspace": "/srv/workspace",
                 "branch": "proof",
                 "expected_commit": "abc123",
+                "instance_id": 9,
                 "bundle": "/tmp/proof.bundle",
                 "php": None,
                 "environment_file": "/srv/workspace/.env",
@@ -609,6 +756,7 @@ class CloneGuestTest(unittest.TestCase):
                 "workspace": "/srv/workspace",
                 "branch": "proof",
                 "expected_commit": "abc123",
+                "instance_id": 9,
                 "bundle": "/tmp/proof.bundle",
                 "php": None,
                 "environment_file": "/srv/workspace/.env",
@@ -705,6 +853,7 @@ class CloneGuestTest(unittest.TestCase):
                 "workspace": "/srv/workspace",
                 "branch": "proof",
                 "expected_commit": "abc123",
+                "instance_id": 9,
                 "bundle": "/tmp/proof.bundle",
                 "php": "/opt/orbit-runtime/current/php/8.5/bin/php",
                 "environment_file": "/srv/workspace/.env",
