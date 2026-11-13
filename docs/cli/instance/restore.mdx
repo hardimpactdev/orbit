@@ -41,9 +41,9 @@ A failed run changes no record: the Instance stays `removing` and the Route `ret
 | Code | Meaning |
 | --- | --- |
 | `instance.id_invalid` | The ID is missing or is not a positive integer, and the CLI cannot prompt. |
-| `instance.restore_unsupported` | The Instance is a container or production Instance, or its removal saved a Schedule, a SQLite file or a database server that is not PostgreSQL. |
+| `instance.restore_unsupported` | The Instance is a container or production Instance, its removal holds other Instances, or it saved a Schedule, a SQLite file or a database server that is not PostgreSQL. |
 | `instance.restore_state_invalid` | The Instance is not `removing` with a failed removal, a removal run has not ended, or a run has no record that it skipped a step that deletes data. |
-| `instance.restore_already_removed` | The removal ran a step that deletes data, or the Route or its target changed. |
+| `instance.restore_already_removed` | The removal ran a step that deletes data, the owned databases changed, or the Route or its target changed. |
 | `instance.restore_source_changed` | The Node agent does not report the checkout with its recorded path and repository, or has not reported it recently. |
 | `instance.restore_busy` | Another Operation holds the Instance or its Route. |
 | `instance.restore_database_closed` | A planned database does not accept connections. The message names it. |

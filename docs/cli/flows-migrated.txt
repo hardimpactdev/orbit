@@ -23,6 +23,7 @@ instance.deploy
 instance.destroy
 instance.env_import
 instance.register
+instance.restore
 instance.rollback
 instance.run_steps
 instance.sync_environment
