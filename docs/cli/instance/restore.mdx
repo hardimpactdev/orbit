@@ -30,7 +30,7 @@ The Gateway refuses before any change when:
 
 The run first checks that every database the removal planned exists and accepts connections. A closed database stops the run with `instance.restore_database_closed`, and the message names it. The command never opens a database. Then the run publishes the same Route through the [Route create](/cli/route/create) steps. Last, it clears the fence journal rows of those databases on their server. After that, one Gateway transaction marks the Instance `active`, the removal `abandoned` and the Route `active`.
 
-A failed run changes no record: the Instance stays `removing` and the Route `retiring`. If the run fails after it published the Route, the site serves until the next run. Run `instance:restore` again, or `instance:destroy`, which withdraws it again. A later destroy starts a new removal. A repeat after success is refused with `instance.restore_state_invalid`, because the Instance is active.
+A failed run changes no record: the Instance stays `removing` and the Route `retiring`. If the run fails after it published the Route, the site can serve until the next Caddy publication on that Node. Run `instance:restore` again, or `instance:destroy`, which withdraws it again. A later destroy starts a new removal. A repeat after success is refused with `instance.restore_state_invalid`, because the Instance is active.
 
 ## How it works
 
@@ -50,5 +50,6 @@ A failed run changes no record: the Instance stays `removing` and the Route `ret
 | `instance.restore_database_missing` | A planned database is gone. The message names it. |
 | `instance.restore_database_check_failed` | The database server could not be reached or the check did not finish. |
 | `instance.restore_publication_failed` | The Route publication or its TLS probe failed. |
+| `instance.restore_failed` | The run ended without a result for a named step, for example when it was interrupted. |
 | `http.404` | The Instance is unknown. |
 | `node_access.required` | The caller has no access grant to the Instance's Node. |

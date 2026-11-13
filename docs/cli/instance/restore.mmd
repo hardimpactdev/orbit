@@ -67,7 +67,7 @@ sequenceDiagram
       SW--xGW: Run failed
       %%> Result:
       %%> - the Instance stays `removing`, the removal `failed`, the Route `retiring`
-      %%> - a site published before a later failure serves until the next run
+      %%> - a site published before a later failure can serve until the next Caddy publication on that Node
       %%> - run `instance:restore` again, or `instance:destroy`
     end
   end

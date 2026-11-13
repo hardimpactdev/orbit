@@ -176,6 +176,19 @@ it('keeps the failed removal when a database is closed and names it', function (
     expect(($this->restore)()->id)->not->toBe($operation->id);
 });
 
+it('maps a failed journal clear after publication and keeps the records', function (string $detail, string $code): void {
+    $operation = ($this->restore)();
+    ($this->finish)($operation, 'failed', ['Republish the Route' => ['status' => 'succeeded'], 'Clear the fence journal-0' => ['status' => 'failed']],
+        ['failed_step' => 'Clear the fence journal-0', 'detail' => $detail, 'stderr_recorded' => false]);
+    expect($operation->fresh()->error_code)->toBe($code)
+        ->and($this->instance->fresh()->status)->toBe(InstanceState::Removing)
+        ->and($this->removal->fresh()->status)->toBe(InstanceRemovalStatus::Failed)
+        ->and($this->route->fresh()->status)->toBe(RouteStatus::Retiring);
+})->with([
+    'closed meanwhile' => ['exec failed (exit 3: ERROR:  instance.restore_database_closed: fx)', 'instance.restore_database_closed'],
+    'server unreachable' => ['ssh: connect to host 10.44.0.3 port 22: Connection refused', 'instance.restore_database_check_failed'],
+]);
+
 it('reports a failed publication and leaves the records', function (): void {
     $operation = ($this->restore)();
     ($this->finish)($operation, 'failed', ['Republish the Route' => ['status' => 'failed']],
