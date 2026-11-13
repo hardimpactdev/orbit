@@ -47,6 +47,17 @@ describe('nested-fleet Project records', function (): void {
         Queue::assertNothingPushed();
     })->with(['default empty', 'other Project']);
 
+    it('leaves every other Project field unchanged when the flag is refused', function (array $other, string $field): void {
+        $project = containerDefaultProject();
+        $before = $project->refresh()->getRawOriginal($field);
+        $this->patchJson('/api/v1/projects/'.$project->id, [...$other, 'nested_fleet' => true])
+            ->assertStatus(409)->assertJsonPath('error.code', 'project.nested_fleet_not_allowed');
+        expect($project->refresh()->getRawOriginal($field))->toBe($before)->and($project->nested_fleet)->toBeFalse();
+        $this->assertDatabaseCount('operations', 0);
+    })->with([
+        'code' => [['code' => 'NEW'], 'code'],
+    ]);
+
     it('refuses an invalid operator trial allow list', function (mixed $list): void {
         $project = containerDefaultProject();
         config(['instances.nested_fleet_projects' => $list]);
