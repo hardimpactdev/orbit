@@ -59,7 +59,7 @@ def main():
     account = sys.argv[4]
     folder = Path(sys.argv[5])
     phase = sys.argv[-1]
-    if phase not in {"container", "club-key", "workspace", "agent", "t3", "sessions", "cleanup"}:
+    if phase not in {"container", "club-key", "workspace", "t3", "sessions", "cleanup"}:
         raise ValueError("instance.clone_phase_invalid")
     name = container["name"]
     project = ["incus", "--project", container["project"]]
@@ -579,22 +579,24 @@ def main():
         finally:
             bundle.unlink(missing_ok=True)
         return
-    elif phase in {"agent", "t3", "sessions"}:
+    elif phase in {"t3", "sessions"}:
         cached = folder / "t3.json"
-        private = secret
-        if phase == "sessions":
-            private = cached.read_text() if cached.exists() else ""
-        if phase in {"t3", "sessions"}:
-            container["expected_commit"] = run(
-                [
-                    "git",
-                    "-C",
-                    container["mirror"],
-                    "rev-parse",
-                    "refs/heads/" + container["branch"],
-                ]
-            ).stdout.strip()
-        output = inside(phase, private)
+        container["expected_commit"] = run(
+            [
+                "git",
+                "-C",
+                container["mirror"],
+                "rev-parse",
+                "refs/heads/" + container["branch"],
+            ]
+        ).stdout.strip()
+        if phase == "t3":
+            # One step, two guest phases in order: the agent's files from the model key on stdin, then T3's first start, which
+            # reads no private input. The step prints only T3's receipt; a failure names its own phase.
+            inside("agent", secret)
+            output = inside("t3", "")
+        else:
+            output = inside(phase, cached.read_text() if cached.exists() else "")
         reply = output.pop("private_reply", None)
         if reply is not None and not cached.exists():
             owner = private_folder()

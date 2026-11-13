@@ -81,8 +81,7 @@ type Container = {
     deploy: string[];
     processes: string;
     seed: string;
-    /** A clone's phases: the agent's files, T3's first start and its registration. */
-    agent?: string;
+    /** A clone's phases: the T3 step (the agent's files, then T3's first start) and its registration. */
     t3?: string;
     register?: string;
     /** The registration step's receipt: the T3 server and the vault keys of its sessions. */
@@ -247,7 +246,8 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
 /**
  * A container default's phases in order: the container, the workspace with its commit, each development deploy step, the
  * Processes, the Route and the seed snapshot. A clone has no deploy step and no seed: after the copy (and a nested-fleet clone's
- * fleet) and the workspace come the agent's files, the Processes, T3, the Route and the registration, whose receipt must name the server.
+ * fleet) and the workspace come the Processes, the T3 step (the agent's files, then T3), the Route and the registration, whose receipt must
+ * name the server.
  */
 function containerOutcomes(
     intent: Record<string, unknown>,
@@ -270,7 +270,6 @@ function containerOutcomes(
             ["fleet", intent.fleet == null || container.fleet === "succeeded", container.fleet === "failed"],
             ["database", (intent.database == null && intent.server_database == null && intent.server_valkey == null) || phases.database === "succeeded", phases.database === "failed"],
             ["workspace", commit !== null, container.workspace?.status === "failed"],
-            ["agent", container.agent === "succeeded", container.agent === "failed"],
             ["processes", container.processes === "succeeded", container.processes === "failed"],
             ["t3", container.t3 === "succeeded", container.t3 === "failed"],
             route,

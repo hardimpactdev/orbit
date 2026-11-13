@@ -6,6 +6,8 @@ import { createResult } from "../extensions/behaviors/operations/instance-dev-co
 import { behavior as vpRequirements } from "../extensions/behaviors/operations/instance-vp-command/requirements.ts";
 import { vpWorkspaceSteps } from "../extensions/behaviors/operations/instance-vp-command/steps.ts";
 import { swampExpression } from "./_support/swamp_expression.ts";
+// The pinned Swamp's own level sort (Swamp 20261103.000636.0-sha.db3f6373), so the scheduler below cannot drift from the engine.
+import { TopologicalSortService } from "https://raw.githubusercontent.com/swamp-club/swamp/db3f6373207cc41235d2334f19a7901b2b84620f/src/domain/workflows/topological_sort_service.ts";
 
 /**
  * Swamp evaluates a skipped step's inputs too (docs/reference/swamp-command-steps.md), so an expression that reads a vault key or an
@@ -152,7 +154,7 @@ Deno.test("create finalization evaluates checkout, default and clone receipts wi
   const steps = {
     checkout: workspace, container: succeeded, workspace, seed: succeeded,
     "container-processes": succeeded, "clone-container": succeeded, "clone-workspace": workspace,
-    "clone-agent": succeeded, "clone-t3": { ...succeeded, outputs: { stdout: "{}" } },
+    "clone-t3": { ...succeeded, outputs: { stdout: "{}" } },
     "clone-sessions": { ...succeeded, outputs: { stdout: "{}" } },
     "clone-register": registration,
   };
@@ -214,7 +216,7 @@ Deno.test("only a clone whose intent has `fleet` starts its fleet; a normal clon
   const commit = "a".repeat(40);
   const succeeded = { status: "succeeded" };
   const registration = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-create-16210-t3-register.json", import.meta.url))).step;
-  const ran = { "clone-container": succeeded, "clone-workspace": { ...succeeded, outputs: { stdout: `orbit-commit=${commit}` } }, "clone-agent": succeeded,
+  const ran = { "clone-container": succeeded, "clone-workspace": { ...succeeded, outputs: { stdout: `orbit-commit=${commit}` } },
     "clone-t3": { ...succeeded, outputs: { stdout: "{}" } }, "clone-sessions": { ...succeeded, outputs: { stdout: "{}" } }, "clone-register": registration };
   const receipt = (intent: Record<string, unknown>, fleetStep: Record<string, unknown> | undefined) => {
     const full = { instance_id: 8, database: null, server_database: null, server_valkey: null, processes: [], setup_steps: [], route: null, ...intent };
@@ -288,16 +290,27 @@ type GraphJob = { name: string; dependsOn?: { job: string; condition: Condition 
 type Ran = { status: string; outputs?: Record<string, unknown>; start: number; end: number };
 type Outcome = { status?: string; duration?: number; outputs?: Record<string, unknown> };
 
+/**
+ * Runs the create workflow on a clock, with the pinned Swamp's own scheduling rule (execution_service.ts at db3f6373, lines 3866 and 5180):
+ * jobs and, inside each job, steps run in the depth levels of its TopologicalSortService, imported below. A level starts only when the whole
+ * level before it has ended; in a level every step starts at once unless another step holds its behavior lock. A step whose dependency
+ * condition fails or whose guard is true is skipped at once, and a job whose dependency condition fails is skipped.
+ */
 function runCreate(intent: Record<string, unknown>, outcomes: Record<string, Outcome>): Record<string, Ran> {
   const flow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as { jobs: GraphJob[] };
+  const sort = new TopologicalSortService();
+  const levels = <T extends { name: string }>(nodes: T[], deps: (node: T) => string[]): T[][] =>
+    sort.sort(nodes.map((node) => ({ name: node.name, weight: 0, dependencies: deps(node) }))).levels
+      .map((level) => level.map((name) => nodes.find((node) => node.name === name)!));
+  const jobLevels = levels(flow.jobs, (job) => (job.dependsOn ?? []).map((d) => d.job));
   const ran: Record<string, Ran> = {};
-  const running = new Map<string, { lock: string | null }>();
-  const locks = new Set<string>();
+  const locks = new Map<string, string>();
   const jobStatus: Record<string, string> = {};
   const holds = (condition: Condition, status: string): boolean =>
     condition.type === "always" || condition.type === status ||
     (condition.type === "completed" && (status === "succeeded" || status === "failed")) ||
     (condition.type === "or" && condition.conditions!.some((c) => holds(c, status)));
+  let now = 0;
   const context = () => ({
     // Swamp hands JSON integers to CEL as int, never double; `instance_id % 4` needs that.
     inputs: { intent: { ...intent, instance_id: BigInt(intent.instance_id as number) }, operation_id: 1n, node_id: 3n, kind: "instance.create" },
@@ -310,50 +323,53 @@ function runCreate(intent: Record<string, unknown>, outcomes: Record<string, Out
     const result = createResult(intent, behavior.methods.create_result.arguments.parse(values));
     return { outputs: { ready: result.ready, stdout: result.stdout } };
   };
-  let now = 0;
-  for (let rounds = 0; rounds < 1000; rounds++) {
-    let started = false;
-    for (const job of flow.jobs) {
-      if (!(job.name in jobStatus)) {
-        if (!(job.dependsOn ?? []).every((d) => d.job in jobStatus && jobStatus[d.job] !== "running")) continue;
-        jobStatus[job.name] = (job.dependsOn ?? []).every((d) => holds(d.condition, jobStatus[d.job])) ? "running" : "skipped";
-      }
-      if (jobStatus[job.name] !== "running") continue;
-      for (const step of job.steps) {
-        if (step.name in ran) continue;
-        const deps = step.dependsOn ?? [];
-        if (!deps.every((d) => d.step in ran && ran[d.step].end <= now)) continue;
-        const skip = !deps.every((d) => holds(d.condition, ran[d.step].status)) || (step.guard !== undefined && cel(step.guard) === true);
-        if (skip) {
-          ran[step.name] = { status: "skipped", start: now, end: now };
-          started = true;
-          continue;
+  const ended = (step: GraphStep) => step.name in ran && ran[step.name].end <= now;
+  for (const jobLevel of jobLevels) {
+    const jobs = jobLevel.filter((job) => {
+      const run = (job.dependsOn ?? []).every((d) => holds(d.condition, jobStatus[d.job]));
+      jobStatus[job.name] = run ? "running" : "skipped";
+      return run;
+    });
+    const stepLevels = new Map(jobs.map((job) => [job.name, levels(job.steps, (step) => (step.dependsOn ?? []).map((d) => d.step))]));
+    const at = new Map(jobs.map((job) => [job.name, 0]));
+    for (let rounds = 0; rounds < 10000; rounds++) {
+      let moved = false;
+      for (const job of jobs) {
+        const level = stepLevels.get(job.name)![at.get(job.name)!];
+        if (level === undefined) continue;
+        for (const step of level) {
+          if (step.name in ran) continue;
+          const deps = step.dependsOn ?? [];
+          if (!deps.every((d) => holds(d.condition, ran[d.step].status)) || (step.guard !== undefined && cel(step.guard) === true)) {
+            ran[step.name] = { status: "skipped", start: now, end: now };
+            moved = true;
+            continue;
+          }
+          const lock = step.task.type === "behavior" ? String(cel(step.task.behaviorName!)) : null;
+          if (lock !== null && locks.has(lock)) continue;
+          const outcome: Outcome = step.name === "finish" ? finish(step)
+            : step.task.type === "assert" ? { status: cel("${{ " + step.task.expr + " }}") === true ? "succeeded" : "failed" }
+            : outcomes[step.name] ?? {};
+          ran[step.name] = { status: outcome.status ?? "succeeded", outputs: outcome.outputs ?? { stdout: "" }, start: now, end: now + (outcome.duration ?? 1) };
+          if (lock !== null) locks.set(lock, step.name);
+          moved = true;
         }
-        const lock = step.task.type === "behavior" ? String(cel(step.task.behaviorName!)) : null;
-        if (lock !== null && locks.has(lock)) continue;
-        if (lock !== null) locks.add(lock);
-        const outcome: Outcome = step.name === "finish" ? finish(step)
-          : step.task.type === "assert" ? { status: cel("${{ " + step.task.expr + " }}") === true ? "succeeded" : "failed" }
-          : outcomes[step.name] ?? {};
-        ran[step.name] = { status: outcome.status ?? "succeeded", outputs: outcome.outputs ?? { stdout: "" }, start: now, end: now + (outcome.duration ?? 1) };
-        running.set(step.name, { lock });
-        started = true;
+        if (level.every(ended)) {
+          at.set(job.name, at.get(job.name)! + 1);
+          moved = true;
+        }
       }
-      if (job.steps.every((s) => s.name in ran && ran[s.name].end <= now)) {
-        jobStatus[job.name] = job.steps.some((s) => ran[s.name].status === "failed") ? "failed" : "succeeded";
-        started = true;
-      }
+      if (moved) continue;
+      const busy = Object.values(ran).filter((r) => r.end > now).map((r) => r.end);
+      if (busy.length === 0) break;
+      now = Math.min(...busy);
+      for (const [lock, holder] of [...locks]) if (ran[holder].end <= now) locks.delete(lock);
     }
-    if (started) continue;
-    if (running.size === 0) break;
-    now = Math.min(...[...running.keys()].map((n) => ran[n].end));
-    for (const [name, { lock }] of [...running]) {
-      if (ran[name].end > now) continue;
-      running.delete(name);
-      if (lock !== null) locks.delete(lock);
+    for (const job of jobs) {
+      assertEquals(at.get(job.name), stepLevels.get(job.name)!.length, `job ${job.name} ends`);
+      jobStatus[job.name] = job.steps.some((s) => ran[s.name]?.status === "failed") ? "failed" : "succeeded";
     }
   }
-  assertEquals(Object.values(jobStatus).filter((s) => s === "running"), [], "every job ends");
   return ran;
 }
 
@@ -362,30 +378,45 @@ const cloneIntent = {
   database: null, server_database: null, server_valkey: null, processes: [], setup_steps: [], route: null,
 };
 const commit = "b".repeat(40);
-// Durations in seconds as measured on real clone creates: workspace 4 to 7 s, agent 1.4 s, T3 4.0 s.
+// Durations in seconds from Operation 20198 (Project 69): the copy 7.9 s, the workspace 5.7 s, agent 2.3 s and T3 6.1 s, now one step.
 const cloneOutcomes = (): Record<string, Outcome> => ({
-  "clone-container": { duration: 3 },
-  "clone-workspace": { duration: 6, outputs: { stdout: `orbit-commit=${commit}\n{"phase":"workspace"}` } },
-  "clone-agent": { duration: 1.4 },
-  "clone-t3": { duration: 4, outputs: { stdout: "{}" } },
-  "clone-sessions": { outputs: { stdout: "{}" } },
+  "clone-container": { duration: 7.9 },
+  "clone-workspace": { duration: 5.7, outputs: { stdout: `orbit-commit=${commit}\n{"phase":"workspace"}` } },
+  "clone-t3": { duration: 7.2, outputs: { stdout: "{}" } },
+  "clone-sessions": { duration: 3.5, outputs: { stdout: "{}" } },
   "clone-register": JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-create-16210-t3-register.json", import.meta.url))).step,
 });
 
-Deno.test("a normal clone create runs agent and T3 beside the workspace, and sessions waits for both", () => {
+Deno.test("the workspace and T3 share one step level of the clone job in every clone shape", () => {
+  // Swamp's levels come from the static graph, so guards (database, Valkey, Club key, fleet) never move a step to another level.
+  const flow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as { jobs: GraphJob[] };
+  const clone = flow.jobs.find((job) => job.name === "clone")!;
+  const { levels } = new TopologicalSortService().sort(clone.steps.map((step) => ({
+    name: step.name, weight: 0, dependencies: (step.dependsOn ?? []).map((d) => d.step),
+  })));
+  const level = (name: string) => levels.findIndex((names) => names.includes(name));
+  assertEquals(level("clone-t3"), level("clone-workspace"));
+  assertEquals(level("clone-sessions"), level("clone-workspace") + 1);
+  assertEquals(clone.steps.some((step) => step.name === "clone-agent"), false);
+  // T3 names the fleet step for its level only: it reads nothing of the fleet, the database steps or the workspace.
+  const t3 = clone.steps.find((step) => step.name === "clone-t3")!;
+  assertEquals(JSON.stringify(t3.task).includes("fleet") || JSON.stringify(t3.task).includes("database"), false);
+});
+
+Deno.test("a normal clone starts the workspace and T3 together when the copy ends, and sessions waits for both", () => {
   const ran = runCreate(cloneIntent, cloneOutcomes());
-  // Agent and T3 start once the copy (and the Club key or its skip) ends, before the workspace ends.
   assertEquals(ran["clone-club-key"].status, "skipped");
-  assertEquals(ran["clone-agent"].start, ran["clone-container"].end);
-  assertEquals(ran["clone-agent"].start < ran["clone-workspace"].end, true, "agent waits for the workspace");
-  assertEquals(ran["clone-t3"].start < ran["clone-workspace"].end, true, "T3 waits for the workspace");
-  assertEquals(ran["clone-t3"].start, ran["clone-agent"].end);
-  // The workspace phase keeps its own lock name, so agent and T3 do not take it.
-  assertEquals(ran["clone-workspace"].start, ran["clone-container"].end);
+  assertEquals(ran["clone-fleet"].status, "skipped");
+  // The production failure before this change: the workspace started only when the agent step of the level before it ended.
+  const endedAt = (time: number) => Object.entries(ran).filter(([, r]) => r.end === time && r.end > r.start).map(([name]) => name).join(", ");
+  for (const name of ["clone-workspace", "clone-t3"]) {
+    assertEquals(ran[name].start, ran["clone-container"].end, `${name} starts when ${endedAt(ran[name].start)} ends, not when the copy ends`);
+  }
   assertEquals(ran["clone-sessions"].start, Math.max(ran["clone-workspace"].end, ran["clone-t3"].end));
-  for (const name of ["clone-agent", "clone-t3", "clone-sessions", "clone-session-copy", "clone-register", "clone-private-cleanup"]) {
+  for (const name of ["clone-t3", "clone-sessions", "clone-session-copy", "clone-register", "clone-private-cleanup"]) {
     assertEquals(ran[name].status, "succeeded", name);
   }
+  assertEquals("clone-agent" in ran, false);
   assertEquals(ran.finish.outputs!.ready, true);
   assertEquals(JSON.parse(String(ran.finish.outputs!.stdout)).commit, commit);
   assertEquals(ran["stop-container"].status, "skipped");
@@ -401,11 +432,39 @@ Deno.test("a normal clone create runs agent and T3 beside the workspace, and ses
   }
 });
 
+Deno.test("a clone with a database starts the workspace and T3 together when the database steps end", () => {
+  const outcomes = { ...cloneOutcomes(), "clone-database-snapshot": { duration: 4, outputs: { digest: { stdout: "abc -" } } }, "clone-database-install": { duration: 9 } };
+  const ran = runCreate({ ...cloneIntent, database: {} }, outcomes);
+  // The database steps start with the clone job, beside the copy.
+  assertEquals(ran["clone-database-snapshot"].start, ran["clone-input"].start);
+  const databaseEnd = Math.max(ran["clone-database-install"].end, ran["clone-database-cleanup"].end);
+  assertEquals(databaseEnd > ran["clone-container"].end, true);
+  assertEquals(ran["clone-workspace"].start, databaseEnd);
+  assertEquals(ran["clone-t3"].start, ran["clone-workspace"].start);
+  assertEquals(ran["clone-sessions"].start, Math.max(ran["clone-workspace"].end, ran["clone-t3"].end));
+  assertEquals(ran.finish.outputs!.ready, true);
+});
+
+Deno.test("a nested-fleet clone starts T3 after the fleet step, beside the workspace", () => {
+  const outcomes: Record<string, Outcome> = { ...cloneOutcomes(), "clone-fleet": { duration: 40 } };
+  const ran = runCreate({ ...cloneIntent, fleet: { seed: "e".repeat(40) } }, outcomes);
+  assertEquals(ran["clone-fleet"].status, "succeeded");
+  assertEquals(ran["clone-workspace"].start, ran["clone-fleet"].end);
+  assertEquals(ran["clone-t3"].start, ran["clone-fleet"].end);
+  assertEquals(ran["clone-sessions"].start, Math.max(ran["clone-workspace"].end, ran["clone-t3"].end));
+  assertEquals(ran.finish.outputs!.ready, true);
+  // A failed fleet start runs neither line, registers nothing and names the fleet.
+  outcomes["clone-fleet"] = { status: "failed", duration: 40 };
+  const failed = runCreate({ ...cloneIntent, fleet: { seed: "e".repeat(40) } }, outcomes);
+  for (const name of ["clone-workspace", "clone-t3", "clone-sessions", "clone-register"]) assertEquals(failed[name].status, "skipped", name);
+  assertEquals(JSON.parse(String(failed.finish.outputs!.stdout)).failed_step, "fleet");
+  assertEquals(failed["stop-container"].status, "succeeded");
+});
+
 Deno.test("a clone whose workspace fails while T3 runs registers nothing and stops the container", () => {
   const outcomes = cloneOutcomes();
-  outcomes["clone-workspace"] = { status: "failed", duration: 6 };
+  outcomes["clone-workspace"] = { status: "failed", duration: 5.7 };
   const ran = runCreate(cloneIntent, outcomes);
-  assertEquals(ran["clone-agent"].status, "succeeded");
   assertEquals(ran["clone-t3"].status, "succeeded");
   for (const name of ["clone-sessions", "clone-session-copy", "clone-register"]) assertEquals(ran[name].status, "skipped", name);
   const result = JSON.parse(String(ran.finish.outputs!.stdout));
@@ -415,32 +474,29 @@ Deno.test("a clone whose workspace fails while T3 runs registers nothing and sto
   assertEquals(ran.accepted.status, "failed");
 });
 
-Deno.test("a clone whose T3 or database phase fails registers nothing, stops the container and names that phase", () => {
-  const t3 = cloneOutcomes();
-  t3["clone-t3"] = { status: "failed", duration: 4 };
-  const failedT3 = runCreate(cloneIntent, t3);
-  assertEquals(failedT3["clone-workspace"].status, "succeeded");
-  for (const name of ["clone-sessions", "clone-register"]) assertEquals(failedT3[name].status, "skipped", name);
-  assertEquals(JSON.parse(String(failedT3.finish.outputs!.stdout)).failed_step, "t3");
-  assertEquals(failedT3["stop-container"].status, "succeeded");
-  // A database install that fails skips the workspace; agent and T3 still run beside it, and the result names the database.
-  const database = cloneOutcomes();
-  database["clone-database-install"] = { status: "failed" };
-  const failedDatabase = runCreate({ ...cloneIntent, database: {} }, database);
-  assertEquals([failedDatabase["clone-workspace"].status, failedDatabase["clone-t3"].status], ["skipped", "succeeded"]);
-  assertEquals(failedDatabase["clone-register"].status, "skipped");
-  assertEquals(JSON.parse(String(failedDatabase.finish.outputs!.stdout)).failed_step, "database");
-  assertEquals(failedDatabase["stop-container"].status, "succeeded");
+Deno.test("a clone whose T3 step fails, in its agent part or its T3 part, registers nothing, stops the container and names T3", () => {
+  // The agent part and the T3 part fail the same step; its stderr (the Operation's failure detail) names the part.
+  for (const duration of [1.1, 7.2]) {
+    const outcomes = cloneOutcomes();
+    outcomes["clone-t3"] = { status: "failed", duration };
+    const ran = runCreate(cloneIntent, outcomes);
+    assertEquals(ran["clone-workspace"].status, "succeeded");
+    for (const name of ["clone-sessions", "clone-session-copy", "clone-register"]) assertEquals(ran[name].status, "skipped", name);
+    const result = JSON.parse(String(ran.finish.outputs!.stdout));
+    assertEquals([ran.finish.outputs!.ready, result.failed_step, result.error_code], [false, "t3", "instance.t3_unready"]);
+    assertEquals(ran["stop-container"].status, "succeeded");
+    assertEquals(ran["clone-private-cleanup"].status, "succeeded");
+  }
 });
 
-Deno.test("a nested-fleet clone runs agent and T3 beside its fleet start; only the workspace waits for the fleet", () => {
-  const outcomes = { ...cloneOutcomes(), "clone-fleet": { duration: 40 } };
-  const ran = runCreate({ ...cloneIntent, fleet: { seed: "e".repeat(40) } }, outcomes);
-  assertEquals(ran["clone-fleet"].status, "succeeded");
-  assertEquals(ran["clone-t3"].end < ran["clone-fleet"].end, true, "T3 waits for the fleet");
-  assertEquals(ran["clone-workspace"].start, ran["clone-fleet"].end);
-  assertEquals(ran["clone-sessions"].start, ran["clone-workspace"].end);
-  assertEquals(ran.finish.outputs!.ready, true);
+Deno.test("a clone whose database step fails skips the workspace, registers nothing and names the database", () => {
+  const outcomes = { ...cloneOutcomes(), "clone-database-snapshot": { outputs: { digest: { stdout: "abc -" } } }, "clone-database-install": { status: "failed", duration: 9 } };
+  const ran = runCreate({ ...cloneIntent, database: {} }, outcomes);
+  assertEquals([ran["clone-workspace"].status, ran["clone-t3"].status], ["skipped", "succeeded"]);
+  assertEquals(ran["clone-database-cleanup"].status, "succeeded");
+  assertEquals(ran["clone-register"].status, "skipped");
+  assertEquals(JSON.parse(String(ran.finish.outputs!.stdout)).failed_step, "database");
+  assertEquals(ran["stop-container"].status, "succeeded");
 });
 
 Deno.test("a nested-fleet clone's start reads only the Club key, and every wake reads no key", () => {

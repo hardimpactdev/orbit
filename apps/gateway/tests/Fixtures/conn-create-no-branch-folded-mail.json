@@ -300,7 +300,6 @@
         "clone-server-valkey",
         "clone-server-valkey-check",
         "clone-workspace",
-        "clone-agent",
         "clone-t3",
         "clone-sessions",
         "clone-session-copy",

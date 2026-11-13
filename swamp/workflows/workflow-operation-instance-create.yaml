@@ -29,7 +29,8 @@ inputs:
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-  # One input predecessor; clone and publication have separate depth queues.
+  # One input predecessor. Swamp runs jobs in levels too: legacy, clone and publication share one level, each with its own step levels,
+  # so the Route never delays a container phase; the create job starts when all three have ended (swamp/docs/swamp-shape.md).
   - name: input
     steps:
       - name: input
@@ -641,39 +642,15 @@ jobs:
             hosts:
               - name: target
                 address: ${{ inputs.intent.ssh_execution.target.host }}
-      # Agent and T3 never write the workspace (T3 runs Git without optional locks), so they run beside it under their own lock name; a shared name would make Swamp
-      # run them one after another (docs/cli/instance/container/create.mmd). clone-sessions is the join.
-      - name: clone-agent
-        labels: {role: swamp}
-        writes: true
-        dependsOn: [{step: clone-container, condition: {type: succeeded}}, {step: clone-club-key, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
-        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("ic-clone-t3-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
-          methodName: exec
-          inputs:
-            hosts: name:target
-            sudo: true
-            argv: '${{ ["timeout", "120"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["agent"] }}'
-            stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, (inputs.intent.container != null && inputs.intent.container.clone != null ? inputs.execution_secrets.model_environment.key : inputs.execution_secrets.environment.key)) }}'
-            timeoutSec: 130
-          globalArgs:
-            name: ${{ ("ic-clone-t3-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
-            transport:
-              kind: ssh
-              user: ${{ inputs.intent.ssh_execution.target.user }}
-              port: ${{ inputs.intent.ssh_execution.target.port }}
-              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-            hosts:
-              - name: target
-                address: ${{ inputs.intent.ssh_execution.target.host }}
+      # One step writes the agent's files from the model key on stdin, then starts T3 (docs/cli/instance/container/create.mmd). It never
+      # writes the workspace (T3 runs Git without optional locks), so it runs beside it under its own lock name; a shared name would make
+      # Swamp run them one after another. Swamp starts a level of steps only when the whole level before it has ended
+      # (swamp/docs/swamp-shape.md), so this list puts it in the workspace's level: the deepest step it names, clone-fleet, is as deep as the
+      # deepest step the workspace names. It reads nothing of the fleet or the database steps. clone-sessions is the join.
       - name: clone-t3
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: clone-agent, condition: {type: succeeded}}]
+        dependsOn: [{step: clone-container, condition: {type: succeeded}}, {step: clone-club-key, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-fleet, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
         guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
@@ -683,9 +660,9 @@ jobs:
           inputs:
             hosts: name:target
             sudo: true
-            argv: '${{ ["timeout", "120"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["t3"] }}'
-            stdin: ''
-            timeoutSec: 130
+            argv: '${{ ["timeout", "240"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["t3"] }}'
+            stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, (inputs.intent.container != null && inputs.intent.container.clone != null ? inputs.execution_secrets.model_environment.key : inputs.execution_secrets.environment.key)) }}'
+            timeoutSec: 250
           globalArgs:
             name: ${{ ("ic-clone-t3-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
             transport:
@@ -821,7 +798,7 @@ jobs:
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
             route: '${{ (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-route" in steps ? steps["clone-route"].status : "skipped") : ("route" in steps ? steps.route.status : "skipped")) }}'
             certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ((inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route-csr-" : "route-csr-") + string(i)) in steps ? steps[(inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route-csr-" : "route-csr-") + string(i)].status : "skipped") }}'
-            container: '${{ inputs.intent.container == null ? dyn(null) : {"mail": (inputs.intent.container.clone != null ? ("clone-container" in steps ? steps["clone-container"] : null) : ("container" in steps ? steps.container : null)), "launch": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-container" in steps ? steps["clone-container"].status : "skipped") : ("container" in steps ? steps.container.status : "skipped")), "workspace": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-workspace" in steps ? steps["clone-workspace"] : null) : ("workspace" in steps ? steps.workspace : null)), "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-workspace" in steps ? steps["clone-workspace"].status : "skipped") : ("container-processes" in steps ? steps["container-processes"].status : "skipped")), "seed": "seed" in steps ? steps.seed.status : "skipped", "agent": "clone-agent" in steps ? steps["clone-agent"].status : "skipped", "t3": "clone-t3" in steps ? steps["clone-t3"].status
+            container: '${{ inputs.intent.container == null ? dyn(null) : {"mail": (inputs.intent.container.clone != null ? ("clone-container" in steps ? steps["clone-container"] : null) : ("container" in steps ? steps.container : null)), "launch": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-container" in steps ? steps["clone-container"].status : "skipped") : ("container" in steps ? steps.container.status : "skipped")), "workspace": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-workspace" in steps ? steps["clone-workspace"] : null) : ("workspace" in steps ? steps.workspace : null)), "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-workspace" in steps ? steps["clone-workspace"].status : "skipped") : ("container-processes" in steps ? steps["container-processes"].status : "skipped")), "seed": "seed" in steps ? steps.seed.status : "skipped", "t3": "clone-t3" in steps ? steps["clone-t3"].status
               : "skipped", "register": "clone-sessions" in steps && steps["clone-sessions"].status == "failed" ? "failed" : ("clone-session-copy" in steps && steps["clone-session-copy"].status == "failed" ? "failed" : ("clone-register" in steps ? steps["clone-register"].status : "skipped")), "server": "clone-register" in steps && steps["clone-register"].status == "succeeded" ? steps["clone-register"].outputs.stdout : null, "fleet": "clone-fleet" in steps ? steps["clone-fleet"].status : "skipped", "club_key": "clone-club-key" in steps && steps["clone-club-key"].status == "succeeded" ? {"status": "succeeded", "outputs": {"stdout": steps["clone-club-key"].outputs.stdout} } : dyn(null)} }}'
             t3_observation: '${{ "clone-t3" in steps && steps["clone-t3"].status == "succeeded" ? steps["clone-t3"].outputs.stdout : "" }}'
             sessions_observation: '${{ "clone-sessions" in steps && steps["clone-sessions"].status == "succeeded" ? steps["clone-sessions"].outputs.stdout : "" }}'

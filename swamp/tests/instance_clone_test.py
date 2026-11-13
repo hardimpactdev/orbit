@@ -632,7 +632,7 @@ const created = await behavior.methods.create_result.execute({
     folder, intent: {instance_id: 7, setup_steps: [], container: {clone: {}}},
     checkout: null, database: 'succeeded', setup: 'skipped', processes: [], route: 'skipped',
     container: {launch: 'succeeded', workspace: {status: 'succeeded', outputs: {stdout: 'orbit-commit=' + 'a'.repeat(40)}},
-        deploy: [], processes: 'succeeded', seed: 'skipped', agent: 'succeeded', t3: 'succeeded', register: 'failed'},
+        deploy: [], processes: 'succeeded', seed: 'skipped', t3: 'succeeded', register: 'failed'},
 }, ctx);
 console.log(JSON.stringify(JSON.parse(created.stdout)));
 """
@@ -675,6 +675,67 @@ console.log(JSON.stringify(JSON.parse(created.stdout)));
             self.invoke("PRIVATE-STDERR", phase="t3", fail="git"),
             "instance.container_t3_failed: command git exited 7\n",
         )
+
+
+class T3PhaseTest(unittest.TestCase):
+    """The `t3` phase runs the agent's guest phase with the model key on stdin, then T3's first start without it, in one call."""
+
+    KEY = "fake-model-key-5c1e"
+
+    def phase(self, phase="t3", fail=None):
+        account = pwd.getpwuid(os.getuid())
+        calls = []
+
+        def command(argv, **kwargs):
+            calls.append((argv, kwargs.get("input")))
+            member = argv[argv.index("-c") + 2] if "-c" in argv else None
+            if member is not None and member == fail:
+                return subprocess.CompletedProcess(argv, 1, "PRIVATE-STDOUT", "instance.container_" + member + "_failed: command php exited 17")
+            if member is not None:
+                return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "ready_at": "2026-11-13T21:00:00+00:00"}), "")
+            return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
+
+        container = {"name": "instance-proof", "project": "orbit-instances", "mirror": "/private/mirror", "branch": "proof", "php": None}
+        output, error = io.StringIO(), io.StringIO()
+        code = 0
+        with tempfile.TemporaryDirectory() as folder, (
+            patch("sys.argv", [str(SCRIPT), json.dumps(container), "guest", NETWORK_CHECK.read_text(), account.pw_name, folder, phase])
+        ), patch("sys.stdin", io.StringIO(self.KEY)), patch("subprocess.run", command), patch("os.chown"), \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+            try:
+                runpy.run_path(str(SCRIPT), run_name="__main__")
+            except SystemExit as result:
+                code = result.code
+        for argv, _ in calls:
+            self.assertNotIn(self.KEY, json.dumps(argv))
+        self.assertNotIn(self.KEY, output.getvalue() + error.getvalue())
+        guest = [(argv[argv.index("-c") + 2], content) for argv, content in calls if "-c" in argv]
+        return code, guest, output.getvalue(), error.getvalue()
+
+    def test_runs_agent_then_t3_and_passes_the_key_only_to_the_agent(self):
+        code, guest, output, error = self.phase()
+        self.assertEqual(code, 0)
+        self.assertEqual(guest, [("agent", self.KEY), ("t3", "")])
+        # The step prints T3's receipt alone, which the create result reads as the time T3 answered.
+        self.assertEqual(json.loads(output)["phase"], "t3")
+        self.assertEqual(error, "")
+
+    def test_a_failed_agent_part_names_the_agent_and_starts_no_t3(self):
+        code, guest, output, error = self.phase(fail="agent")
+        self.assertEqual(code, 1)
+        self.assertEqual([member for member, _ in guest], ["agent"])
+        self.assertEqual(output, "")
+        self.assertEqual(error, "instance.container_agent_failed: command php exited 17\n")
+
+    def test_a_failed_t3_part_names_t3(self):
+        code, guest, output, error = self.phase(fail="t3")
+        self.assertEqual(code, 1)
+        self.assertEqual([member for member, _ in guest], ["agent", "t3"])
+        self.assertEqual(error, "instance.container_t3_failed: command php exited 17\n")
+
+    def test_the_agent_phase_alone_is_no_longer_a_step(self):
+        code, guest, _, error = self.phase(phase="agent")
+        self.assertEqual((code, guest, error), (1, [], "instance.clone_phase_invalid\n"))
 
 
 class ClubKeyPhaseTest(unittest.TestCase):

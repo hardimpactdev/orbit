@@ -225,7 +225,6 @@ Deno.test("a clone finishes only with its registered T3 server, which the receip
         deploy: [],
         processes: "succeeded",
         seed: "skipped",
-        agent: "succeeded",
         t3: "succeeded",
         register: "succeeded",
         server,
@@ -256,13 +255,13 @@ Deno.test("a clone finishes only with its registered T3 server, which the receip
     assertEquals("environment" in create({ workspace: { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}\n{"phase":"workspace","changes":[]}\n` } } }), false);
     const failure = (changes: Partial<typeof container>) => [create(changes).failed_step, create(changes).error_code];
     assertEquals(failure({ launch: "failed", workspace: null }), ["clone", "instance.create_clone_failed"]);
-    assertEquals(failure({ agent: "failed" }), ["agent", "instance.create_agent_failed"]);
-    // T3 that never answered has its own code, and the registration after it did not run.
+    // The T3 step, whose first part writes the agent's files, has its own code, and the registration after it did not run; the
+    // Operation's failure detail names the part (instance.container_agent_failed or instance.container_t3_failed).
     assertEquals(failure({ t3: "failed", register: "skipped", server: null }), ["t3", "instance.t3_unready"]);
     assertEquals(failure({ register: "failed", server: null }), ["register", "instance.create_register_failed"]);
     // A registration without its receipt is no registration, and a failed create carries no server.
     assertEquals(failure({ server: null }), ["register", "instance.create_register_failed"]);
-    assertEquals(create({ agent: "failed" }).t3, undefined);
+    assertEquals(create({ t3: "failed", register: "skipped" }).t3, undefined);
     const databaseFailure = JSON.parse(createResult({ ...intent, container: { clone: {} }, server_database: { id: 1 } }, {
         ...phases, database: "failed", container,
     }).stdout);
@@ -319,7 +318,7 @@ Deno.test("default and clone finish workspace T3 and registration despite bounde
         for (const reason of ["instance.host_unavailable", "process.target_inactive", "instance.mail_update_failed"]) {
             const result = JSON.parse(createResult(admitted, {...phases, container: {
                 launch: "succeeded", workspace: phases.checkout, deploy: [], processes: "succeeded", seed: "succeeded",
-                agent: "succeeded", t3: "succeeded", register: "succeeded", server: '{"server_id":8}',
+                t3: "succeeded", register: "succeeded", server: '{"server_id":8}',
                 mail: {status: "succeeded", outputs: {stdout: "orbit-mail=failed:" + reason}}
             }}).stdout);
             assertEquals(result.ready, true);
@@ -379,7 +378,7 @@ Deno.test("a nested-fleet create carries what its start did with the Club key, f
     // A clone takes the word from its own club-key step.
     const server = JSON.stringify({ id: "s" });
     const clone = (step: unknown) => JSON.parse(createResult({ ...intent, setup_steps: [], container: { clone: { t3: {} }, club_key: club } },
-        { ...base, container: { ...container, deploy: [], seed: "skipped", agent: "succeeded", t3: "succeeded", register: "succeeded", server,
+        { ...base, container: { ...container, deploy: [], seed: "skipped", t3: "succeeded", register: "succeeded", server,
             club_key: step as never } }).stdout);
     assertEquals(clone({ status: "succeeded", outputs: { stdout: '{"phase": "club-key", "changed": true, "club_key": "changed", "completed_at": "x"}' } }).club_key, "changed");
     assertEquals(clone({ status: "succeeded", outputs: { stdout: '{"phase": "club-key", "changed": true, "club_key": "changed_serve_pending"}' } }).club_key, "changed_serve_pending");
@@ -396,7 +395,7 @@ Deno.test("only a nested-fleet clone runs the fleet phase; it is ready only afte
     const container: NonNullable<Parameters<typeof createResult>[1]["container"]> = {
         launch: "succeeded",
         workspace: { status: "succeeded", outputs: { stdout: `"msg": "orbit-commit=${commit}"` } },
-        deploy: [], processes: "succeeded", seed: "skipped", agent: "succeeded", t3: "succeeded", register: "succeeded", server,
+        deploy: [], processes: "succeeded", seed: "skipped", t3: "succeeded", register: "succeeded", server,
     };
     const create = (fleet: unknown, changes: Partial<typeof container>) =>
         JSON.parse(createResult({ ...intent, setup_steps: [], container: { clone: { source: "instance-1" } }, ...(fleet === undefined ? {} : { fleet }) }, {
@@ -409,7 +408,7 @@ Deno.test("only a nested-fleet clone runs the fleet phase; it is ready only afte
     for (const status of ["skipped", undefined]) {
         assertEquals([create({ guests: {} }, { fleet: status }).ready, create({ guests: {} }, { fleet: status }).failed_step], [false, "fleet"]);
     }
-    const failed = create({ guests: {} }, { fleet: "failed", workspace: null, agent: "skipped", t3: "skipped", register: "skipped", server: null });
+    const failed = create({ guests: {} }, { fleet: "failed", workspace: null, t3: "skipped", register: "skipped", server: null });
     assertEquals([failed.ready, failed.failed_step, failed.error_code], [false, "fleet", "instance.create_fleet_failed"]);
     // The run's result file gives the fleet phase's own code, its detail and its drift lines; nothing else passes.
     assertEquals(fleetFailure({ error_code: "instance.container_fleet_resume_failed", detail: "Check Doctor: HTTP 200: {}", commit: null, club_key: "changed" }),

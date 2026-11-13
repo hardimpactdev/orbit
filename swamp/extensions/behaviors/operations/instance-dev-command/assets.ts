@@ -44,7 +44,6 @@ export const behavior = {
                     deploy: z.array(z.string()),
                     processes: z.string(),
                     seed: z.string(),
-                    agent: z.string().default("skipped"),
                     t3: z.string().default("skipped"),
                     register: z.string().default("skipped"),
                     server: z.string().nullable().default(null),
@@ -72,7 +71,6 @@ export const behavior = {
                         deploy: string[];
                         processes: string;
                         seed: string;
-                        agent?: string;
                         t3?: string;
                         register?: string;
                         server?: string | null;
