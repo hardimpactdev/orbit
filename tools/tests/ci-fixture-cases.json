@@ -123,19 +123,23 @@
     ]
   },
   "swamp/tests/ansible_instance_fleet_test.ts": {
-    "source_sha256": "8ee52adcd69dd880181dd895f3bd0b829eda00c20c1b81b8783c78d802b1edc6",
+    "source_sha256": "89b6a1f07f73c3c966d32003c5b71894f5e6e915ec4e3db693f8a0366a6479a8",
     "cases": [
       "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
       "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and waits for readiness; a rerun only reads",
       "a start that fails names the nested container, and a readiness timeout names the check",
-      "a fleet without its rules is refused with the container and the rule, before any start",
+      "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written",
       "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules",
       "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units",
-      "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused"
+      "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused",
+      "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts",
+      "a live fleet with a foreign difference is refused by the check and by the rules before any change",
+      "a fleet built from the rules has the live shape, with boot.autostart true",
+      "on the live fleet a refresh writes only boot.autostart, then takes base"
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "0e1006e8c6adb23bd0ad21213b45a4a2f4ad2408d0839038c24216ff2fe11112",
+    "source_sha256": "675668e52e11da8da9fc2aa184dfcf56e349b497ba0aa3cc92072565cce4abd5",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -2364,10 +2368,11 @@
     ]
   },
   "swamp/tests/workflow_instance_deploy_fleet_test.ts": {
-    "source_sha256": "268224e80901813903222f1a42d40d3b9bc2876d743e1b13b0a4a4c5cc5bfe5a",
+    "source_sha256": "835f818ce700f46000425ac087aacff3a10f6b2c52942131e24ef58d2fa1e360",
     "cases": [
       "a normal container deployment skips every fleet step, after success and after a failure",
       "a nested-fleet default first keeps its current seed, refreshes its fleet before the last seed, and restores nothing when every step passes",
+      "a fleet that the check refuses changes nothing: every later step skips and no seed is restored",
       "a nested-fleet deployment that failed after its checkout restores the old seed, starts through start and keeps the failed phase's result"
     ]
   },
