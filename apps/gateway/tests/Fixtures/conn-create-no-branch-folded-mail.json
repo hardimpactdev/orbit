@@ -235,6 +235,36 @@
                         "gid": 2750,
                         "mode": "0600"
                     },
+                    "boot_files": [
+                        {
+                            "path": "/etc/ld.so.conf.d/zz-orbit-browser.conf",
+                            "content": "# Managed by Orbit.\n/opt/orbit-runtime/current/lib\n",
+                            "uid": 0,
+                            "gid": 0,
+                            "mode": "0644"
+                        },
+                        {
+                            "path": "/etc/fonts/fonts.conf",
+                            "content": "<?xml version=\"1.0\"?>\n<!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\">\n<!-- Managed by Orbit. -->\n<fontconfig>\n  <dir>/opt/orbit-runtime/current/fonts</dir>\n  <cachedir prefix=\"xdg\">fontconfig</cachedir>\n  <alias><family>sans-serif</family><prefer><family>DejaVu Sans</family><family>Noto Color Emoji</family></prefer></alias>\n  <alias><family>serif</family><prefer><family>DejaVu Serif</family><family>Noto Color Emoji</family></prefer></alias>\n  <alias><family>monospace</family><prefer><family>DejaVu Sans Mono</family><family>Noto Color Emoji</family></prefer></alias>\n  <alias><family>emoji</family><prefer><family>Noto Color Emoji</family></prefer></alias>\n  <alias binding=\"same\"><family>Arial</family><accept><family>Liberation Sans</family></accept></alias>\n  <alias binding=\"same\"><family>Helvetica</family><accept><family>Liberation Sans</family></accept></alias>\n  <alias binding=\"same\"><family>Times New Roman</family><accept><family>Liberation Serif</family></accept></alias>\n  <alias binding=\"same\"><family>Courier New</family><accept><family>Liberation Mono</family></accept></alias>\n</fontconfig>\n",
+                            "uid": 0,
+                            "gid": 0,
+                            "mode": "0644"
+                        },
+                        {
+                            "path": "/etc/gitconfig",
+                            "content": "# Managed by Orbit.\n[safe]\n\tdirectory = /srv/workspace\n",
+                            "uid": 0,
+                            "gid": 0,
+                            "mode": "0644"
+                        },
+                        {
+                            "path": "/etc/ld.so.cache",
+                            "content": "",
+                            "uid": 0,
+                            "gid": 0,
+                            "mode": "0644"
+                        }
+                    ],
                     "files": [
                         {
                             "path": "/etc/orbit/instance",
@@ -567,6 +597,36 @@
                         "gid": 2750,
                         "mode": "0600"
                     },
+                    "boot_files": [
+                        {
+                            "path": "/etc/ld.so.conf.d/zz-orbit-browser.conf",
+                            "content": "# Managed by Orbit.\n/opt/orbit-runtime/current/lib\n",
+                            "uid": 0,
+                            "gid": 0,
+                            "mode": "0644"
+                        },
+                        {
+                            "path": "/etc/fonts/fonts.conf",
+                            "content": "<?xml version=\"1.0\"?>\n<!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\">\n<!-- Managed by Orbit. -->\n<fontconfig>\n  <dir>/opt/orbit-runtime/current/fonts</dir>\n  <cachedir prefix=\"xdg\">fontconfig</cachedir>\n  <alias><family>sans-serif</family><prefer><family>DejaVu Sans</family><family>Noto Color Emoji</family></prefer></alias>\n  <alias><family>serif</family><prefer><family>DejaVu Serif</family><family>Noto Color Emoji</family></prefer></alias>\n  <alias><family>monospace</family><prefer><family>DejaVu Sans Mono</family><family>Noto Color Emoji</family></prefer></alias>\n  <alias><family>emoji</family><prefer><family>Noto Color Emoji</family></prefer></alias>\n  <alias binding=\"same\"><family>Arial</family><accept><family>Liberation Sans</family></accept></alias>\n  <alias binding=\"same\"><family>Helvetica</family><accept><family>Liberation Sans</family></accept></alias>\n  <alias binding=\"same\"><family>Times New Roman</family><accept><family>Liberation Serif</family></accept></alias>\n  <alias binding=\"same\"><family>Courier New</family><accept><family>Liberation Mono</family></accept></alias>\n</fontconfig>\n",
+                            "uid": 0,
+                            "gid": 0,
+                            "mode": "0644"
+                        },
+                        {
+                            "path": "/etc/gitconfig",
+                            "content": "# Managed by Orbit.\n[safe]\n\tdirectory = /srv/workspace\n",
+                            "uid": 0,
+                            "gid": 0,
+                            "mode": "0644"
+                        },
+                        {
+                            "path": "/etc/ld.so.cache",
+                            "content": "",
+                            "uid": 0,
+                            "gid": 0,
+                            "mode": "0644"
+                        }
+                    ],
                     "files": [
                         {
                             "path": "/etc/orbit/instance",

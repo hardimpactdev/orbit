@@ -406,7 +406,7 @@ The recipe pins each library and font as a Debian package of its Ubuntu snapshot
 
 A container keeps the image it was made from. The image definition marks the files that every container needs as `existing`: the linker and font configuration and `/etc/gitconfig`. The converge of the Node writes them into each existing container too. It writes them into running and stopped containers, in the Instance project and in the nested-fleet one. Nothing restarts. Each later process reads the files by itself.
 
-A clone copies its default's seed snapshot, not the default itself. A seed taken before these files existed lacks them, so a clone of it gets them only at the next converge.
+A clone copies its default's seed snapshot, not the default itself, and a seed taken before these files existed lacks them. So every clone gets the same files before its first start, with an empty linker cache that the stock `ldconfig.service` rebuilds at that start.
 
 The dynamic linker reads its cache, `/etc/ld.so.cache`:
 
@@ -752,7 +752,7 @@ Clones are built for the Nodes of the [build list](#the-build-list).
 | Conn and models | Conn is on, else `operation.kind_unavailable`. The model router has its guard, else the router's own code |
 | Runtime row | The next free bridge address, the lowest free T3 port from 3800, and the default as clone source |
 | Copy | `incus copy` of `seed-<commit>` with the clone's own address and ACL. A stopped default needs no start |
-| First start | Before it, the copy loses its `orbit-*` boot links and the default's Process units and folders, and gets its own machine-id |
+| First start | Before it, the copy loses its `orbit-*` boot links and the default's Process units and folders. It gets its own machine-id and the [shared files](#existing-containers) |
 | ACL | The Node's Caddy reaches port 8080 and ports 1024 to 65535, any WireGuard peer reaches port 3773, and the container reaches its database server's port |
 | T3 port | The proxy device `t3` in NAT mode, from the Node's WireGuard address and the T3 port to port 3773 |
 | UFW | Under the comment prefix `orbit:instance-<id>-`: a route deny from the task VM range, then a route allow to port 3773; and the rule to the database server |

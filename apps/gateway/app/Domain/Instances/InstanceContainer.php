@@ -322,9 +322,11 @@ final readonly class InstanceContainer
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
                 't3' => InstanceHostIntent::AgentFolder.'/current/agent/bin/t3', 'project_mark' => '/home/agent/.config/orbit/t3-project'],
             'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600'],
-            ...($resetProxy ? ['proxy_environment' => InstanceNodeServiceTargets::proxyEnvironment($gateway, []),
-                // The container phase writes these before the copy's first start, so its first boot reads the reset value.
-                'boot_files' => $this->proxyFiles($gateway)] : []),
+            ...($resetProxy ? ['proxy_environment' => InstanceNodeServiceTargets::proxyEnvironment($gateway, [])] : []),
+            // The container phase writes these before a copy's first start, so its first boot reads them: the files every container
+            // needs, which a seed taken before them lacks, and the reset proxy value of a copy whose default had attached Node services.
+            // A container that a migrate builds from the image has the files already.
+            ...($source === null ? [] : ['boot_files' => [...self::bootFiles(), ...($resetProxy ? $this->proxyFiles($gateway) : [])]]),
             'files' => [
                 ['path' => self::InstanceFile, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => "# Managed by Orbit.\n"
                     ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\n"
@@ -338,6 +340,22 @@ final readonly class InstanceContainer
             ],
             // The note of the Project's type, as the agents' own instructions file; it states facts about the container only.
             'links' => [['path' => '/home/agent/.claude/CLAUDE.md', 'target' => $note], ['path' => '/home/agent/.codex/AGENTS.md', 'target' => $note]],
+        ];
+    }
+
+    /**
+     * The image's files that every container needs (InstanceImage::shared) and an empty linker cache. The stock `ldconfig.service`
+     * runs at boot when the cache is empty, so the copy's first start builds a cache that knows the runtime folder's `lib`; the
+     * dynamic linker ignores an empty cache until then (docs/reference/development-containers.md#existing-containers).
+     *
+     * @return list<array{path: string, content: string, uid: int, gid: int, mode: string}>
+     */
+    private static function bootFiles(): array
+    {
+        return [
+            ...array_map(static fn (array $file): array => ['path' => $file['path'], 'content' => $file['content'], 'uid' => $file['uid'],
+                'gid' => $file['gid'], 'mode' => $file['mode']], InstanceImage::shared()),
+            ['path' => '/etc/ld.so.cache', 'content' => '', 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
         ];
     }
 
