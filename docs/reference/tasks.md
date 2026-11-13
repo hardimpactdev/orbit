@@ -236,7 +236,7 @@ The run follows its chart: `Build every argv`, `Run setup in order`, `Run the Pr
 
 A failed step stops the chain, but `Push the candidate` still runs: it shapes the result, which is then `tasks.repository_execution_unknown`, and removes the scratch files. A failed step keeps no stdout, so on a failed run the Gateway reads the result from the push step and keeps its error code. A pending handoff record is kept under one name per group, so the scheduled CI observation replaces it when it settles.
 
-A workspace is required (`409 tasks.no_workspace`). A parked VM is woken by the admission, which answers `409 tasks.vm_resuming`; repeat the call once the VM runs. A subtask outside the group returns `404`. Another open subtask returns `409 tasks.subtask_not_current`. A baseline after an implementer has started anywhere in the group returns `409 tasks.baseline_done`. Every step runs on Node 209. Official SSH reaches the admitted VM over WireGuard with the existing identity and stored host key. Plain task VMs need no Swamp binary or worker.
+A workspace is required (`409 tasks.no_workspace`). A group that owns a container Instance workspace takes the [container check path](/reference/task-instance-workspace#check-phases) instead of the steps below. A parked VM is woken by the admission, which answers `409 tasks.vm_resuming`; repeat the call once the VM runs. A subtask outside the group returns `404`. Another open subtask returns `409 tasks.subtask_not_current`. A baseline after an implementer has started anywhere in the group returns `409 tasks.baseline_done`. Every step runs on Node 209. Official SSH reaches the admitted VM over WireGuard with the existing identity and stored host key. Plain task VMs need no Swamp binary or worker.
 
 Every step on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. TypeScript on Node 209 builds each argv from the intent and shapes every output. It refuses a deliverable directory that is absolute or has a `..` segment, an overlay path that is not a canonical repository-relative file, and a `fails_on_base` command without a base commit, as `tasks.deliverable_invalid`, before any command runs.
 
@@ -1627,4 +1627,4 @@ Pi writes and reviews code inside the VM. Swamp clears the old receipt, then sen
 
 ### Internal container workspace phases
 
-[Task Instance workspace phases](/reference/task-instance-workspace) define the internal evidence and export contract. They add no container admission to the existing task commands.
+[Task Instance workspace phases](/reference/task-instance-workspace) define the internal evidence and export contract. `tasks.check` uses their [check phases](/reference/task-instance-workspace#check-phases) when a group owns a container Instance workspace. No public command creates that ownership yet.

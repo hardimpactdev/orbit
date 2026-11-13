@@ -10,11 +10,13 @@ sequenceDiagram
   %% lane SW icon=workflow pill=executes tone=green
   %% lane N icon=server pill=target tone=amber
   %% lane GH icon=server pill=target tone=purple
+  %% lane I icon=server pill=target tone=amber
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Task VM<br/>reached over ssh
   participant GH as GitHub<br/>repo · Checks
+  participant I as Instance<br/>via its Node
   CLI->>GW: task:check 7<br/> --phase=handoff
   %%> Command:
   %%> - `orbit task:check 7 --phase=handoff`
@@ -26,12 +28,25 @@ sequenceDiagram
   %%> - the task VM runs; a parked VM is woken by the admission, which records its resume, creates no Operation of this kind and answers `tasks.vm_resuming`; repeat the call once the VM runs
   %%> - subtask 7 is the current open subtask, else `tasks.subtask_not_current`
   %%> - a baseline only before any implementer started, else `tasks.baseline_done`
+  %%> - a group that owns a recorded container Instance workspace skips the task VM wake and VM ownership checks; no public command creates that ownership yet
+  %%> - that workspace needs a running runtime, else `tasks.instance_not_running`, and a recorded branch, else `tasks.no_workspace`
+  %%> - that workspace refuses a handoff that needs hosted CI (`tasks.instance_hosted_check_unavailable`) and an `@orbit/ci-caches` setup step (`tasks.instance_setup_unavailable`), before a check row exists
   %%> Result:
   %%> - check 17 recorded as running; the full intent holds the Project check, setup (baseline), deliverables (handoff), base commit and the VM's SSH target
+  %%> - a container workspace adds `workspace`: the recorded Incus project and container, the Instance branch and a new scratch ID; the SSH target is its Node
   GW->>SW: Start run, full intent<br/>operation-task-check
   %%> Inputs:
   %%> - the intent, and vault key names for the CI tokens when the Project requires handoff CI
   GW-->>CLI: 202 Accepted<br/>task #5170
+  opt recorded container Instance workspace
+    SW->>I: Check in the Instance
+    %%> What it does:
+    %%> - one child workflow runs the whole check through Ansible phases on the Instance Node; every repository command runs in the container as `agent` in `/srv/workspace`, with the agent's HOME and login shell
+    %%> - the task VM steps below are skipped; the same TypeScript rules judge the evidence, so outcomes match
+    %%> - see [task Instance workspace](/reference/task-instance-workspace#check-phases)
+    %%> Refuses:
+    %%> - a changed checkout identity or branch: `tasks.workspace_identity_changed`
+  end
   Note over SW: Build every argv
   %%> What it does:
   %%> - TypeScript on 209 builds each step's `@swamp/ssh exec` argv from the intent
@@ -78,12 +93,14 @@ sequenceDiagram
   end
   Note over SW: Read the result
   %%> What it does:
+  %%> - reads the receipt of `Push the candidate`, or of `Check in the Instance` for a container workspace
   %%> - a direct data step exposes the push producer's result JSON to a calling workflow; Swamp propagates only one level of child behavior outputs
   %%> - it keeps the complete check receipt on passed, failed and changed outcomes
   Note over SW: Check the result
   %%> What it does:
   %%> - native assert checks the push producer receipt for an execution error
   %%> - the Gateway captures that receipt in the same history read; no shell prints it again
+  %%> - a container workspace's receipt comes from `Check in the Instance` in the same shape
   opt hosted CI is pending
     Note over GW: Record scheduled CI
     %%> What it does:
