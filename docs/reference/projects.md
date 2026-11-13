@@ -252,6 +252,8 @@ A repository update recomputes the stored repository identity from `repository_u
 
 A repository change touches only `origin`. Local branches, the checked-out commit, and the recorded starting commit stay the same. Orbit never pushes. Linked worktrees share the checkout's repository and need no change. Orbit finds that repository in the path recorded at registration, or, for a worktree that Orbit created from a seed checkout, in that seed checkout.
 
+An Instance in a container keeps no `origin`. Its workspace is filled from the Node's mirror, and each create, clone and deploy fetches into that mirror from the Project's `repository_url`. So a repository change runs no checkout step for it; the next run fetches from the new URL. Instead, the Gateway fetches each container's seed commit from the proposed repository with the Project's source access. When that fails, the update returns `project.repository_preflight_failed`, names the commit and the Instance, and nothing changes.
+
 A task workspace on a task VM gets its new `origin` too. Its preflight checks the checkout but does not read the proposed repository there, because a task VM gets no token ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)). The Gateway checks the default branch in the proposed repository once instead. A parked task VM refuses the update with `project.task_vm_parked`; Orbit resumes it, and the update can run again when it is ready.
 
 Every origin check reads the `remote.origin.url` stored in the checkout. It ignores `insteadOf` rewrites on the Node.
@@ -324,7 +326,7 @@ The Gateway returns these codes for Project requests.
 | `project.slug_conflict` | Another Project has the slug. |
 | `project.update_required` | The update sends no field. |
 | `project.update_in_progress` | Another update of this Project is published but incomplete. Repeat that update to finish it. |
-| `project.repository_preflight_failed` | A checkout is missing, has another origin, or cannot reach the new URL. |
+| `project.repository_preflight_failed` | A checkout is missing, has another origin, or cannot reach the new URL; or the new repository does not hold a container's seed commit. |
 | `project.repository_origin_failed` | Orbit could not change or restore `origin` in a checkout. |
 | `route.domain_conflict` | A new generated domain for the slug belongs to another Route. |
 | `project.repository_unowned_common` | A worktree uses a repository that no Orbit checkout owns. |
