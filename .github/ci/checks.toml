@@ -185,13 +185,18 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 2447
+cost = 2270
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
-after_merge_cases = ["a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing"]
+after_merge_cases = [
+  "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
+  # 144.1s on PR run 43421256788 and cut at the 180s unit ceiling on main run 43423841440 (job 131880584016): two converges of a
+  # switched-on host do not fit a 150-second lane. The Main full set runs it with its own ceiling.
+  "only a switched-on host prepares the nested project, its profile and the nesting modules",
+]
 # Completed Deno case times rounded up by one second; startup is added per slice.
-# Unmeasured cases use the observed maximum (141s); these are estimates, not completed measurements.
-# 51 slices give each of the 51 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 51
+# Every retained case cost comes from hosted run 43424152963, one case per slice.
+# 50 slices give each of the 50 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 50
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -217,57 +222,56 @@ inputs = [
 ]
 
 [fixture.case_costs]
-  "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary" = 51 # completed local four-worker fixture, 2026-11-12
-  "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 114 # completed body 84.962s, run 43010311414; larger completed history retained
-  "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses" = 141 # completed body 86.635s, run 43010311414; larger completed history retained
-  "a start points php at the Project's PHP version, and removes the link of a Project without PHP" = 51 # completed body 36.925s, run 43010311414; larger completed history retained
-  "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes" = 62 # completed body 40.608s, run 43010311414; larger completed history retained
-  "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer" = 80 # completed body 63.478s, run 43010311414; larger completed history retained
-  "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing" = 66 # completed body 41.857s, run 43010311414; larger completed history retained
-  "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file" = 78 # completed body 77.701s, run 43010311414; larger completed history retained
-  "a Process's start, stop and restart change its unit in the container" = 73 # completed body 72.036s, run 43010311414; larger completed history retained
-  "a clone runs its own Process units: the default's units and folders from the seed go, and its own start" = 71 # completed body 70.786s, run 43010311414; larger completed history retained
-  "a clone's first boot starts no unit of the default and the clone has its own machine-id" = 109 # completed body 76.463s, run 43010311414; larger completed history retained
-  "the workspace stays writable for its group before and after the deploy steps, whoever installed last" = 69 # completed body 44.079s, run 43010311414; larger completed history retained
-  "the agent phase trusts only its workspace and preserves other Git settings on reruns" = 48 # completed body 34.351s, run 43010311414; larger completed history retained
-  "the agent can commit with its default identity and keeps each configured identity value" = 63 # completed body 40.456s, run 43010311414; larger completed history retained
-  "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes" = 37 # completed body 26.532s, run 43010311414; larger completed history retained
-  "start refuses a NIC with missing ACL before starting the container" = 30 # completed body 26.920s, run 43010311414; larger completed history retained
-  "start refuses a NIC with permissive default before starting the container" = 30 # completed body 26.712s, run 43010311414; larger completed history retained
-  "start refuses a NIC with bridge union ACL before starting the container" = 30 # completed body 26.388s, run 43010311414; larger completed history retained
-  "start refuses an unguarded extra bridge NIC beside guarded eth0" = 30 # completed body 26.910s, run 43010311414; larger completed history retained
-  "first attach adds an exact bridge endpoint, retries ETag conflicts and repeats without changes" = 35 # completed body 26.541s, run 43010311414; larger completed history retained
-  "a copied seed with an unguarded extra local NIC refuses before the clone starts" = 61 # completed body 41.636s, run 43010311414; larger completed history retained
-  "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read" = 72 # completed body 51.951s, run 43010311414; larger completed history retained
-  "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish" = 68 # completed body 46.788s, run 43010311414; larger completed history retained
-  "a thirty-second Process stop succeeds" = 93 # completed body 78.064s, run 43010311414; larger completed history retained
-  "nested fleet start gate: raw.lxc" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "nested fleet start gate: extra-device" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "nested fleet start gate: changed-host-path" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "nested fleet start gate: writable-share" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "nested fleet start gate: privileged" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "nested fleet start gate: clean" = 29 # ESTIMATE: local 13s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "nested fleet start gate: kernel-modules" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "nested fleet start gate: mount-intercept" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "nested fleet start gate: bpf-intercept" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "nested fleet start gate: shared-idmap" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "nested fleet start gate: idmap-size" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "nested fleet start gate: changed-limit" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "nested fleet start gate: user-key" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "nested fleet start gate: made-before-autostart" = 29 # ESTIMATE: local 13s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "a normal container start never writes boot.autostart" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "a nested-fleet create refuses by name, before any Incus change, while the host converge records a failed nested-fleet image build" = 80 # ESTIMATE: local 37s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "without a recorded failed build a nested-fleet create makes its container from the nested-fleet image, and a normal create never reads the record" = 30 # ESTIMATE: local 13s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "a normal host intent runs the exact tasks, Incus command lines and host files of main" = 67 # ESTIMATE: local 31s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "a switched-on host with a short subuid range refuses before any nesting change" = 4 # ESTIMATE: local 1s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "a switched-on host with a short subgid range refuses before any nesting change" = 4 # ESTIMATE: local 1s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "only a switched-on host prepares the nested project, its profile and the nesting modules" = 138 # ESTIMATE: local 65s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "the nested clone probe refuses a profile with a raw.lxc key before it starts" = 52 # ESTIMATE: local 24s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "the nested clone probe refuses a profile with security.privileged before it starts" = 52 # ESTIMATE: local 24s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "the nested clone probe refuses a profile with a host disk before it starts" = 52 # ESTIMATE: local 24s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "the nested clone probe refuses a profile with an extra share key before it starts" = 52 # ESTIMATE: local 24s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "a changed shared folder restarts running normal and nested runtimes before clearing its marker" = 18 # ESTIMATE: local 8s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "a changed shared folder on a normal Node runs main's list and restart command lines" = 18 # ESTIMATE: local 8s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary" = 69 # completed unit 73.9s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 102 # completed unit 106.3s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses" = 120 # completed unit 124.6s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a start points php at the Project's PHP version, and removes the link of a Project without PHP" = 57 # completed unit 62.0s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes" = 52 # completed unit 56.6s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer" = 95 # completed unit 99.2s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing" = 38 # completed unit 43.0s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file" = 131 # completed unit 135.1s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a Process's start, stop and restart change its unit in the container" = 62 # completed unit 66.6s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a clone runs its own Process units: the default's units and folders from the seed go, and its own start" = 70 # completed unit 74.1s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a clone's first boot starts no unit of the default and the clone has its own machine-id" = 96 # completed unit 100.4s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "the workspace stays writable for its group before and after the deploy steps, whoever installed last" = 45 # completed unit 49.7s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "the agent phase trusts only its workspace and preserves other Git settings on reruns" = 44 # completed unit 48.7s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "the agent can commit with its default identity and keeps each configured identity value" = 33 # completed unit 37.1s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes" = 40 # completed unit 44.3s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "start refuses a NIC with missing ACL before starting the container" = 33 # completed unit 38.0s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "start refuses a NIC with permissive default before starting the container" = 33 # completed unit 38.0s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "start refuses a NIC with bridge union ACL before starting the container" = 30 # completed unit 34.1s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "start refuses an unguarded extra bridge NIC beside guarded eth0" = 30 # completed unit 34.9s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "first attach adds an exact bridge endpoint, retries ETag conflicts and repeats without changes" = 40 # completed unit 44.6s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a copied seed with an unguarded extra local NIC refuses before the clone starts" = 54 # completed unit 59.0s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read" = 52 # completed unit 56.5s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish" = 41 # completed unit 46.0s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a thirty-second Process stop succeeds" = 90 # completed unit 94.6s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "nested fleet start gate: raw.lxc" = 25 # completed unit 29.4s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "nested fleet start gate: extra-device" = 13 # completed unit 17.7s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "nested fleet start gate: changed-host-path" = 22 # completed unit 26.1s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "nested fleet start gate: writable-share" = 22 # completed unit 26.2s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "nested fleet start gate: privileged" = 25 # completed unit 29.3s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "nested fleet start gate: clean" = 36 # completed unit 40.6s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "nested fleet start gate: kernel-modules" = 25 # completed unit 29.6s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "nested fleet start gate: mount-intercept" = 23 # completed unit 27.4s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "nested fleet start gate: bpf-intercept" = 19 # completed unit 23.7s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "nested fleet start gate: shared-idmap" = 18 # completed unit 22.8s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "nested fleet start gate: idmap-size" = 19 # completed unit 23.9s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "nested fleet start gate: changed-limit" = 14 # completed unit 18.4s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "nested fleet start gate: user-key" = 17 # completed unit 21.8s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "nested fleet start gate: made-before-autostart" = 37 # completed unit 41.1s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a normal container start never writes boot.autostart" = 24 # completed unit 28.2s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a nested-fleet create refuses by name, before any Incus change, while the host converge records a failed nested-fleet image build" = 126 # completed unit 131.0s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "without a recorded failed build a nested-fleet create makes its container from the nested-fleet image, and a normal create never reads the record" = 42 # completed unit 46.1s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a normal host intent runs the exact tasks, Incus command lines and host files of main" = 50 # completed unit 55.0s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a switched-on host with a short subuid range refuses before any nesting change" = 2 # completed unit 3.1s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a switched-on host with a short subgid range refuses before any nesting change" = 2 # completed unit 3.1s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "the nested clone probe refuses a profile with a raw.lxc key before it starts" = 55 # completed unit 59.5s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "the nested clone probe refuses a profile with security.privileged before it starts" = 55 # completed unit 59.9s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "the nested clone probe refuses a profile with a host disk before it starts" = 55 # completed unit 59.8s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "the nested clone probe refuses a profile with an extra share key before it starts" = 54 # completed unit 58.4s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a changed shared folder restarts running normal and nested runtimes before clearing its marker" = 17 # completed unit 21.3s less 6s startup, rounded up, plus 1s; hosted run 43424152963
+  "a changed shared folder on a normal Node runs main's list and restart command lines" = 16 # completed unit 20.5s less 6s startup, rounded up, plus 1s; hosted run 43424152963
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_test.ts"
