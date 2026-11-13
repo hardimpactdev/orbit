@@ -20,6 +20,110 @@ GUEST = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(GUEST)
 
 
+NO_MERGE = {"own": [], "drop": [], "guard": []}
+
+# The default's .env of the seed copy, with hand-set keys .env.example lacks. Every value is a fixture.
+DEFAULT_ENV = """APP_NAME=Lindaretel
+APP_KEY=base64:default-key
+APP_URL=https://default.lindaretel.test
+VITE_APP_URL="${APP_URL}"
+QUEUE_CONNECTION=redis
+
+# Hand-set service keys.
+S3_BUCKET=default-bucket
+S3_SECRET="hand set secret"
+DB_CONNECTION=mysql
+DB_HOST=10.0.0.5
+DB_DATABASE=lindaretel_default
+DB_USERNAME=lindaretel
+DB_PASSWORD=default-password-1
+DATABASE_URL=mysql://lindaretel:default-password-1@10.0.0.5/lindaretel_default
+REPORTS_DB=lindaretel_default
+REDIS_USERNAME=default-user
+REDIS_PASSWORD=default-redis-secret
+REDIS_PREFIX=default_
+"""
+
+# The Gateway's render for the clone: the template plus the clone's own keys.
+CLONE_RENDER = """APP_NAME="Laravel"
+APP_KEY="base64:template-key"
+APP_URL="https://feature.lindaretel.test"
+QUEUE_CONNECTION="database"
+DB_CONNECTION="mysql"
+DB_HOST="10.0.0.5"
+DB_DATABASE="orbit_instance_9"
+DB_USERNAME="orbit_instance_9"
+DB_PASSWORD="clone-password-9"
+REDIS_USERNAME="orbit_instance_9"
+REDIS_PASSWORD="clone-redis-9"
+REDIS_PREFIX="orbit_instance_9_database_"
+TEMPLATE_ONLY="from-example"
+"""
+
+CLONE_MERGE = {
+    "own": ["APP_URL", "DB_CONNECTION", "DB_DATABASE", "DB_HOST", "DB_PASSWORD", "DB_PORT", "DB_USERNAME",
+            "REDIS_PASSWORD", "REDIS_PREFIX", "REDIS_USERNAME"],
+    "drop": ["DB_CONNECTION", "DB_DATABASE", "DB_HOST", "DB_PASSWORD", "DB_PORT", "DB_USERNAME",
+             "REDIS_CONNECTION", "REDIS_DATABASE", "REDIS_HOST", "REDIS_PASSWORD", "REDIS_PORT", "REDIS_USERNAME"],
+    "guard": ["DB_DATABASE", "DB_PASSWORD", "DB_USERNAME", "REDIS_DATABASE", "REDIS_PASSWORD", "REDIS_USERNAME"],
+}
+
+
+class CloneEnvironmentMergeTest(unittest.TestCase):
+    def parsed(self, text):
+        return {k: v for k, _, v in GUEST.env_blocks(text) if k is not None}
+
+    def test_a_clone_keeps_its_defaults_hand_set_keys_and_owns_its_connections(self):
+        merged, copied, dropped = GUEST.merge_environment(DEFAULT_ENV, CLONE_RENDER, CLONE_MERGE)
+        values = self.parsed(merged)
+        # The default's own settings, as written, including APP_KEY and a reference.
+        self.assertEqual(values["S3_BUCKET"], "default-bucket")
+        self.assertEqual(values["S3_SECRET"], "hand set secret")
+        self.assertEqual(values["QUEUE_CONNECTION"], "redis")
+        self.assertEqual(values["APP_NAME"], "Lindaretel")
+        self.assertEqual(values["APP_KEY"], "base64:default-key")
+        self.assertIn('VITE_APP_URL="${APP_URL}"\n', merged)
+        self.assertIn("# Hand-set service keys.\n", merged)
+        # The clone's own database, Valkey user, key space and Route.
+        self.assertEqual(values["APP_URL"], "https://feature.lindaretel.test")
+        self.assertEqual({k: values[k] for k in ("DB_DATABASE", "DB_USERNAME", "DB_PASSWORD")},
+                         {"DB_DATABASE": "orbit_instance_9", "DB_USERNAME": "orbit_instance_9", "DB_PASSWORD": "clone-password-9"})
+        self.assertEqual({k: values[k] for k in ("REDIS_USERNAME", "REDIS_PASSWORD", "REDIS_PREFIX")},
+                         {"REDIS_USERNAME": "orbit_instance_9", "REDIS_PASSWORD": "clone-redis-9", "REDIS_PREFIX": "orbit_instance_9_database_"})
+        # A key the default has only through a credential is never copied under another name.
+        self.assertNotIn("DATABASE_URL", values)
+        self.assertNotIn("REPORTS_DB", values)
+        for secret in ("default-password-1", "lindaretel_default", "default-redis-secret", "default-user"):
+            self.assertNotIn(secret, merged)
+        # A key of the template that the default lacks is added.
+        self.assertEqual(values["TEMPLATE_ONLY"], "from-example")
+        self.assertEqual(copied, ["APP_KEY", "APP_NAME", "QUEUE_CONNECTION", "S3_BUCKET", "S3_SECRET", "VITE_APP_URL"])
+        self.assertEqual(dropped, ["DATABASE_URL", "REPORTS_DB"])
+        self.assertEqual(len([k for k, _, _ in GUEST.env_blocks(merged) if k == "DB_PASSWORD"]), 1)
+
+    def test_a_dropped_key_of_the_default_goes_even_when_the_clone_does_not_own_it(self):
+        merged, _, dropped = GUEST.merge_environment("REDIS_HOST=10.0.0.9\nREDIS_DATABASE=3\nKEEP=1\n", "KEEP=2\n",
+                                                     {"own": [], "drop": ["REDIS_HOST", "REDIS_DATABASE"], "guard": []})
+        self.assertEqual(merged, "KEEP=1\n")
+        self.assertEqual(dropped, ["REDIS_DATABASE", "REDIS_HOST"])
+
+    def test_without_a_seed_env_the_render_is_the_file_byte_for_byte(self):
+        for base in ("", "\n"):
+            self.assertEqual(GUEST.merge_environment(base, CLONE_RENDER, CLONE_MERGE), (CLONE_RENDER, [], []))
+
+    def test_a_default_without_hand_set_keys_gives_the_render_values(self):
+        render = 'APP_NAME="Tool"\nAPP_KEY="base64:k"\nDB_DATABASE="orbit_instance_9"\n'
+        base = 'APP_NAME="Tool"\nAPP_KEY="base64:k"\nDB_DATABASE="tool_default"\n'
+        merged, _, _ = GUEST.merge_environment(base, render, {"own": ["DB_DATABASE"], "drop": ["DB_DATABASE"], "guard": ["DB_DATABASE"]})
+        self.assertEqual(merged, render)
+
+    def test_a_multi_line_quoted_value_stays_whole(self):
+        base = 'CERT="line one\nline two"\nB=2\n'
+        merged, copied, _ = GUEST.merge_environment(base, "", NO_MERGE)
+        self.assertEqual(merged, base)
+        self.assertEqual(copied, ["B", "CERT"])
+
+
 class CloneGuestTest(unittest.TestCase):
     def test_sessions_check_only_loopback_t3_and_reject_http_and_scope_failures(self):
         container = {
@@ -98,6 +202,7 @@ class CloneGuestTest(unittest.TestCase):
         payload = {
             "environment": "KEY=private\n--orbit-run-1--\n",
             "processes": {"/etc/orbit/processes/1/env": "QUEUE=private\n"},
+            "merge": {"own": ["DB_DATABASE"], "drop": ["DB_PASSWORD"], "guard": ["DB_PASSWORD"]},
         }
         calls = []
         elapsed = [0.0]
@@ -339,7 +444,7 @@ class CloneGuestTest(unittest.TestCase):
             base = Path(folder)
             (base / "srv/workspace/.git").mkdir(parents=True)
             env = base / "srv/workspace/.env"
-            env.write_text("PRIVATE-ENV")
+            env.write_text("PRIVATE=env\n")
             container = {
                 "workspace": "/srv/workspace",
                 "branch": "proof",
@@ -370,12 +475,15 @@ class CloneGuestTest(unittest.TestCase):
                 patch.object(
                     GUEST.sys,
                     "stdin",
-                    io.StringIO(json.dumps({"environment": "PRIVATE-ENV"})),
+                    io.StringIO(json.dumps({"environment": "PRIVATE=env\n", "merge": NO_MERGE})),
                 ),
                 contextlib.redirect_stdout(output),
             ):
                 GUEST.phase_main("workspace", json.dumps(container))
             self.assertEqual(json.loads(output.getvalue())["changes"], [])
+            # The phase prints the names of the keys it kept from the default's file, never a value.
+            self.assertEqual(json.loads(output.getvalue())["environment"], {"copied": ["PRIVATE"], "dropped": []})
+            self.assertNotIn("env\\n", output.getvalue())
             self.assertFalse((base / "etc/orbit/php").exists())
             self.assertEqual(helper_timeouts, [75])
 
@@ -385,7 +493,7 @@ class CloneGuestTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)
             (base / "srv/workspace/.git").mkdir(parents=True)
-            (base / "srv/workspace/.env").write_text("PRIVATE-ENV")
+            (base / "srv/workspace/.env").write_text("PRIVATE=env\n")
             unit = {"name": "orbit-frankenphp.service", "content": "[Service]\n"}
             # The unit exists and runs with the settings of before the change.
             (base / "etc/systemd/system").mkdir(parents=True)
@@ -435,7 +543,7 @@ class CloneGuestTest(unittest.TestCase):
                     patch.object(
                         GUEST.sys,
                         "stdin",
-                        io.StringIO(json.dumps({"environment": "PRIVATE-ENV"})),
+                        io.StringIO(json.dumps({"environment": "PRIVATE=env\n", "merge": NO_MERGE})),
                     ),
                     contextlib.redirect_stdout(io.StringIO()),
                 ):

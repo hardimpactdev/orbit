@@ -48,6 +48,26 @@ type Container = {
 /** The checkout phase prints the commit it left checked out as one `orbit-commit=<sha>` line. */
 const COMMIT = /orbit-commit=([0-9a-f]{40}|[0-9a-f]{64})\b/;
 
+const KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * A clone's workspace phase prints its JSON line with the NAMES of the keys it copied from its default's .env and the keys it
+ * dropped (docs/reference/development-containers.md#the-environment-of-a-clone). Only names that are environment keys pass.
+ */
+export function cloneEnvironment(phase: Phase): {copied: string[]; dropped: string[]} | null {
+    if (phase?.status !== "succeeded") return null;
+    for (const line of String(phase.outputs?.stdout ?? "").split("\n")) {
+        let parsed: unknown;
+        try { parsed = JSON.parse(line); } catch { continue; }
+        const printed = parsed as {phase?: unknown; environment?: unknown} | null;
+        if (printed?.phase !== "workspace" || printed.environment == null) continue;
+        const names = (raw: unknown) => Array.isArray(raw) ? raw.filter((name): name is string => typeof name === "string" && KEY.test(name)) : [];
+        const value = printed.environment as {copied?: unknown; dropped?: unknown};
+        return {copied: names(value.copied), dropped: names(value.dropped)};
+    }
+    return null;
+}
+
 /** Ansible emits only this bounded public vocabulary; no file contents or Process output is decoded. */
 function mailResult(phase: Phase) {
     if (phase?.status !== "succeeded") return null;
@@ -119,6 +139,7 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
     const mail = (intent.container as {mail?: unknown} | null)?.mail != null
         ? mailResult(container?.mail) ?? {status: "failed", reason: "instance.mail_update_failed", ports: [1025, 2525]}
         : null;
+    const environment = (intent.container as {clone?: unknown} | null)?.clone != null ? cloneEnvironment(container?.workspace) : null;
     const result = {
         instance_id: intent.instance_id,
         ready: failed === undefined,
@@ -127,6 +148,7 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
         ...(container !== null && (intent.container as {clone?: unknown} | null)?.clone == null
             ? {node_pin: {status: "not_prepared", reason: "container_from_stock_image"}} : {}),
         ...(server ? { t3: server } : {}),
+        ...(environment ? {environment} : {}),
         ...(mail ? {mail} : {}),
         ...(mail?.status === "failed" ? {warnings: [{code: "instance.mail_update_failed", step: "mail"}]} : {}),
         ...(failed

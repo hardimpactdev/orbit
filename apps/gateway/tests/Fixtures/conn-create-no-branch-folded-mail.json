@@ -55,6 +55,11 @@
             "APP_KEY",
             "APP_NAME"
         ],
+        "environment_clone": {
+            "own": [],
+            "drop": [],
+            "guard": []
+        },
         "direct_provisioning": {
             "instance_id": 2,
             "project_id": 1,
@@ -377,6 +382,11 @@
             "APP_KEY",
             "APP_NAME"
         ],
+        "environment_clone": {
+            "own": [],
+            "drop": [],
+            "guard": []
+        },
         "direct_provisioning": {
             "instance_id": 2,
             "project_id": 1,

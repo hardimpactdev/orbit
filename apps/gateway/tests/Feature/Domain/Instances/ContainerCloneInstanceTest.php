@@ -7,6 +7,7 @@ use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Extensions\ExtensionStore;
@@ -397,6 +398,43 @@ describe('a clone of a default with a Valkey target', function (): void {
     ]);
 });
 
+it('sends the clone the names that merge its render into the default\'s .env of the seed copy, never a value', function (): void {
+    $node = containerDefaultNode();
+    databaseServerOn($node, 'pg', DatabaseDriver::Pgsql, 5432);
+    $default = Instance::query()->findOrFail(containerCreate(containerDefaultProject(), $node, 'default', 'pg')->target_id);
+    $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
+    $default->project->update(['is_laravel' => true]);
+    InstanceRuntime::query()->where('instance_id', $default->id)->update(['seed_commit' => str_repeat('c', 40)]);
+    $shared = defaultValkeyTarget($default, databaseServerOn($node, 'kv', DatabaseDriver::Redis, 6379));
+    $operation = containerCreate($default->project->fresh(), $node, 'feature');
+    $vault = vaultReadingSocket([]);
+    app(DevelopmentInstanceCreateProjection::class)->input($operation);
+    $workspace = json_decode(collect($vault->puts)->firstWhere('key', 'instance-create-processes-'.$operation->id)['value'], true, 512, JSON_THROW_ON_ERROR);
+    $defaultDatabase = DatabaseConnectionTarget::query()->where('instance_id', $default->id)->where('prefix', 'DB')->sole()->databaseConnection;
+    $managed = static fn (string $prefix): array => array_map(static fn (string $suffix): string => $prefix.'_'.$suffix, DatabaseConnectionEnvProjection::Suffixes);
+    $sorted = static function (array $keys): array {
+        sort($keys, SORT_STRING);
+
+        return $keys;
+    };
+
+    expect($workspace['merge'])->toBe($operation->input['environment_clone'])
+        ->and($workspace['merge']['drop'])->toBe($sorted([...$managed('DB'), ...$managed('REDIS')]))
+        ->and($workspace['merge']['guard'])->toBe(['DB_DATABASE', 'DB_PASSWORD', 'DB_USERNAME', 'REDIS_DATABASE', 'REDIS_PASSWORD', 'REDIS_USERNAME'])
+        ->and($workspace['merge']['own'])->toContain('DB_DATABASE', 'DB_PASSWORD', 'DB_USERNAME', 'DB_HOST',
+            'REDIS_USERNAME', 'REDIS_PASSWORD', 'REDIS_PREFIX', 'HORIZON_PREFIX')
+        ->and($workspace['merge']['own'])->not->toContain('APP_KEY', 'APP_NAME')
+        ->and(json_encode($operation->input['environment_clone']))->not->toContain((string) $defaultDatabase->password)
+        ->not->toContain((string) $shared->password)->not->toContain((string) $defaultDatabase->database);
+});
+
+it('sends no merge names for a container default, which has no seed copy to keep', function (): void {
+    $node = containerDefaultNode();
+    $operation = containerCreate(containerDefaultProject(), $node, 'default');
+
+    expect($operation->input)->not->toHaveKey('environment_clone');
+});
+
 it('gives a clone of a default without a Valkey target no Valkey user', function (): void {
     $node = containerDefaultNode();
     $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
@@ -679,6 +717,8 @@ ENV;
         ->not->toContain('EnvironmentFile=-/srv/workspace/.env');
     expect($file)->toContain('VITE_APP_NAME="${APP_NAME}"', 'VITE_APP_URL="${APP_URL}"');
     expect($file)->toBe(collect($vault->puts)->firstWhere('key', 'instance-create-environment-input-'.$operation->id)['value']);
+    // The clone's Route URL is its own; the default's file keeps the rest, APP_KEY included.
+    expect($workspace['merge']['own'])->toContain('APP_URL')->not->toContain('APP_KEY');
 });
 
 it('keeps an undefined template reference literal in the file inherited by Processes', function (): void {

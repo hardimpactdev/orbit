@@ -39,6 +39,89 @@ def process_failure(unit, state):
     return {'error_code': 'instance.container_process_inactive', 'process_failure': value}
 
 
+ENV_LINE = re.compile(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\s*=(.*)")
+
+# A credential value shorter than this is matched only as a whole value, never as a part of one.
+CONTAINED_CREDENTIAL = 8
+
+
+def env_blocks(text):
+    """Split a `.env` into (key or None, raw text, value) blocks; a quoted value may span lines. Raw text stays as written."""
+    blocks = []
+    lines = text.splitlines(keepends=True)
+    i = 0
+    while i < len(lines):
+        found = ENV_LINE.fullmatch(lines[i].rstrip("\r\n"))
+        if not found:
+            blocks.append((None, lines[i], None))
+            i += 1
+            continue
+        raw = lines[i]
+        rest = found.group(2).lstrip()
+        quote = rest[:1] if rest[:1] in {'"', "'"} else ""
+        if quote:
+            body = rest[1:]
+            close = r'(?<!\\)"' if quote == '"' else "'"
+            while not re.search(close, body) and i + 1 < len(lines):
+                i += 1
+                raw += lines[i]
+                body += "\n" + lines[i].rstrip("\r\n")
+            closing = re.search(close, body)
+            value = body[: closing.start()] if closing else body
+            if quote == '"':
+                value = value.replace('\\"', '"').replace("\\\\", "\\")
+        else:
+            value = re.split(r"\s+#", rest, maxsplit=1)[0].strip()
+        blocks.append((found.group(1), raw, value))
+        i += 1
+    return blocks
+
+
+def merge_environment(base, rendered, merge):
+    """
+    A clone's `.env`: its default's file from the seed copy (`base`), with the keys the clone owns taken from the Gateway's render,
+    the default's connection keys and the Project's dropped keys removed, and every other key whose value is one of the default's
+    connection credentials removed. Keys of the render that the base lacks are added. Without a base the render is the file.
+    Returns the file and the sorted names of the copied and dropped keys; never a value.
+    """
+    if base.strip() == "":
+        return rendered, [], []
+    own = set(merge["own"])
+    drop = set(merge["drop"]) - own
+    base_blocks = env_blocks(base)
+    rendered_blocks = [b for b in env_blocks(rendered) if b[0] is not None]
+    credentials = {v for k, _, v in base_blocks if k in set(merge["guard"]) and v}
+
+    def credential(value):
+        return value in credentials or any(
+            len(secret) >= CONTAINED_CREDENTIAL and secret in value for secret in credentials
+        )
+
+    owned = {k: raw for k, raw, _ in rendered_blocks if k in own}
+    out, kept, copied, dropped = [], set(), set(), set()
+    for key, raw, value in base_blocks:
+        if key is None:
+            out.append(raw)
+        elif key in own:
+            # The clone's own value takes the default's place; an own key the render lacks (a forgotten key) goes.
+            if key in owned and key not in kept:
+                out.append(owned[key] if owned[key].endswith("\n") else owned[key] + "\n")
+                kept.add(key)
+        elif key in drop or credential(value):
+            dropped.add(key)
+        else:
+            out.append(raw)
+            kept.add(key)
+            copied.add(key)
+    if out and not out[-1].endswith("\n"):
+        out[-1] += "\n"
+    for key, raw, _ in rendered_blocks:
+        if key not in kept:
+            out.append(raw if raw.endswith("\n") else raw + "\n")
+            kept.add(key)
+    return "".join(out), sorted(copied), sorted(dropped - copied)
+
+
 def phase_main(phase, raw):
     c = json.loads(raw)
     changes = []
@@ -148,7 +231,9 @@ def phase_main(phase, raw):
             if root(c["environment_file"]).exists()
             else ""
         )
-        updated = inputs["environment"]
+        # The seed copy holds the default's own file; the clone keeps it except what must be its own. Names only leave.
+        updated, copied, dropped = merge_environment(env, inputs["environment"], inputs["merge"])
+        environment_keys = {"copied": copied, "dropped": dropped}
         if env != updated:
             write(c["environment_file"], updated, 1000, 2760, "0640")
         # The existing Processes phase's group-write guarantee and foreign-owner cleanup.
@@ -405,7 +490,7 @@ def phase_main(phase, raw):
         require_units()
     else:
         raise ValueError(phase)
-    print(json.dumps({"phase": phase, "changes": changes}))
+    print(json.dumps({"phase": phase, "changes": changes, **({"environment": environment_keys} if phase == "workspace" else {})}))
 
 
 if __name__ == "__main__":
