@@ -176,6 +176,8 @@ For an unbound timed-out admission, the existing exact lookup by Operation ident
 
 This is the Gateway's budget result, not proof that the native run or its descendants stopped. At expiry the Gateway records `state.native_cancel_requested_at` once. The reconciler asks Swamp to cancel the bound run, as an operator cancel does, and records `state.native_cancel_confirmed_at` when Swamp confirms. Swamp stops the run; the Gateway only forwards the request, and each pass asks again until Swamp confirms. An Operation with no bound run has nothing to cancel.
 
+The request reads the Operation under its row lock and changes only its own keys, so step progress and a failure that land while a caller holds an older copy stay recorded.
+
 The request is a `workflow.cancel` message on the Gateway's run token. Serve authorizes it with the `run` action on the run's workflow, which the Gateway already holds to start the run. Serve's HTTP cancel endpoint needs `admin` on `access:*`, the superuser right, so the Gateway does not use it.
 
 The SSH step limits above end the steps of a run whose cancel did not arrive. Native Serve ceilings, step queue limits and phase command limits remain separate controls. The reconciler checks deadlines on every pass, on the operations queue. The reconciler arbitrates bound native terminal history before expiry; unbound admission expiry needs no native read.

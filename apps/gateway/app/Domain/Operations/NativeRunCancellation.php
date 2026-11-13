@@ -8,6 +8,7 @@ use App\Actions\Operations\ExpireOperationAction;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -27,18 +28,22 @@ final readonly class NativeRunCancellation
      */
     public function request(Operation $operation, bool $again = false): bool
     {
-        $run = $operation->state['swamp_run_id'] ?? null;
-        if (! is_string($run) || ! Str::isUuid($run) || ! DirectOperation::owns($operation)
-            || ! app(DirectOperation::class)->usesNativeTerminal($operation)
-            || (! $again && isset($operation->state['native_cancel_requested_at']))) {
-            return false;
-        }
-        $state = $operation->state ?? [];
-        unset($state['native_cancel_confirmed_at']);
-        $this->store->change($operation, ['state' => [...$state, 'native_cancel_requested_at' => now()->toISOString()]]);
-        ReconcileSwampOperations::dispatch()->afterCommit();
+        // The row as it is under the lock: a step event that landed after the caller loaded the Operation keeps its state keys.
+        return DB::transaction(function () use ($operation, $again): bool {
+            $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
+            $run = $operation->state['swamp_run_id'] ?? null;
+            if (! is_string($run) || ! Str::isUuid($run) || ! DirectOperation::owns($operation)
+                || ! app(DirectOperation::class)->usesNativeTerminal($operation)
+                || (! $again && isset($operation->state['native_cancel_requested_at']))) {
+                return false;
+            }
+            $state = $operation->state ?? [];
+            unset($state['native_cancel_confirmed_at']);
+            $this->store->change($operation, ['state' => [...$state, 'native_cancel_requested_at' => now()->toISOString()]]);
+            ReconcileSwampOperations::dispatch()->afterCommit();
 
-        return true;
+            return true;
+        });
     }
 
     /** True while the reconciler must still forward a recorded request: Swamp has not confirmed it, the window is open and the run has no recorded end. */
