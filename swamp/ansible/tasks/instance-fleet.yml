@@ -88,8 +88,8 @@
       {{ out }}
     # A nested Node's base converge runs apt and downloads the agent over SSH, where the `environment.*` keys do not reach: apt reads
     # its proxy from its own file, and sudo and SSH sessions read /etc/environment. Both name the egress proxy; /etc/environment has
-    # the same NO_PROXY, so the fleet's names and networks stay off the proxy. The apt file replaces the image's task-VM package
-    # cache, which no Instance runs.
+    # the same NO_PROXY, so the fleet's names and networks stay off the proxy. The apt file replaces the task VM package cache that
+    # the image names, which no Instance runs (a role add through the nested Gateway writes it back; the next refresh replaces it).
     fleet_egress_files:
       - path: /etc/apt/apt.conf.d/90orbit-package-cache
         content: |

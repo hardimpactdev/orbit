@@ -62,7 +62,7 @@ sequenceDiagram
   SW->>F: Refresh the inner fleet<br/>Ansible · tags fleet_refresh
   %%> What it does:
   %%> - places the agent delivery, reloads the grants, migrates the nested Gateway and restarts its services; the delivery and the migrate run as `orbit` with its groups (`runuser`), as `work` opens the checkout
-  %%> - waits until the three agents are online (300 s), writes the fleet files that differ on the running fleet (the egress proxy of apt and of sudo and SSH sessions), converges the base of the three nested Nodes one by one, then waits for readiness once: Doctor healthy, three agents, the operator
+  %%> - waits until the three agents are online (300 s), writes the fleet files that differ on the running fleet (the egress proxy of apt and of sudo and SSH sessions, and the nested Gateway's Swamp proxy drop-ins), converges the base of the three nested Nodes one by one, then waits for readiness once: Doctor healthy, three agents, the operator
   %%> - every API call goes from the container over `wg-nested`, never through the container's egress proxy; a failed Doctor wait names the last status and body, or curl's error
   %%> - stops the fleet, writes the owned rules that differ (and a build rule only where it is absent), checks every rule, and retakes `base` of the three
   %%> - at the same commit it runs the same steps; the migrate has nothing to do
