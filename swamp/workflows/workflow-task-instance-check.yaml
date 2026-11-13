@@ -158,7 +158,7 @@ jobs:
           inputs:
             intent: '${{ inputs.intent }}'
             local: '${{ steps.local.outputs.result }}'
-            steps: '${{ "committed" in steps && "outputs" in steps.committed && "commit_read" in steps.committed.outputs.evidence ? {"commit_read": {"outputs": steps.committed.outputs.evidence.commit_read}} : {} }}'
+            steps: '${{ "committed" in steps && "outputs" in steps.committed && "commit_read" in steps.committed.outputs.evidence ? {"commit_read": {"outputs": steps.committed.outputs.evidence.commit_read} } : {} }}'
       - name: pin input
         labels: {role: swamp}
         writes: true

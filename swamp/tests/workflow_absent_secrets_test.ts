@@ -5,6 +5,7 @@ import { behavior } from "../extensions/behaviors/operations/instance-dev-comman
 import { createResult } from "../extensions/behaviors/operations/instance-dev-command/result.ts";
 import { behavior as vpRequirements } from "../extensions/behaviors/operations/instance-vp-command/requirements.ts";
 import { vpWorkspaceSteps } from "../extensions/behaviors/operations/instance-vp-command/steps.ts";
+import { swampExpression } from "./_support/swamp_expression.ts";
 
 /**
  * Swamp evaluates a skipped step's inputs too (docs/reference/swamp-command-steps.md), so an expression that reads a vault key or an
@@ -163,8 +164,10 @@ Deno.test("create finalization evaluates checkout, default and clone receipts wi
     // Swamp supplies run.id independently of the admitting Gateway release.
     const run = { id: "previous-gateway-run" };
     const values = Object.fromEntries(Object.entries(expressions).map(([key, value]) => [
-      key, environment.evaluate(value.trim().slice(3, -2).trim(), { inputs: { intent }, steps: phaseSteps, run }),
+      key, environment.evaluate(swampExpression(value), { inputs: { intent }, steps: phaseSteps, run }),
     ]));
+    // A container create, normal or clone, hands the finish method an object as `container`, never a cut string.
+    assertEquals(container === null ? values.container : typeof values.container, container === null ? null : "object");
     const args = behavior.methods.create_result.arguments.parse(values);
     assertEquals(args.folder, "/tmp/orbit-ansible-previous-gateway-run");
     assertEquals(args.container === null, container === null);
@@ -178,7 +181,7 @@ Deno.test("create finalization evaluates checkout, default and clone receipts wi
   const intent = { instance_id: 8, already_active: false, container: nested, database: null, server_database: null, server_valkey: null, processes: [], setup_steps: [], route: null };
   for (const [club, word] of [[{ ...succeeded, outputs: { stdout: '{"phase": "club-key", "changed": false, "club_key": "unchanged", "completed_at": "x"}' } }, "unchanged"], [{ status: "skipped" }, undefined]] as const) {
     const values = Object.fromEntries(Object.entries(expressions).map(([key, value]) => [
-      key, environment.evaluate(value.trim().slice(3, -2).trim(), { inputs: { intent }, steps: { ...steps, "clone-club-key": club }, run: { id: "r" } }),
+      key, environment.evaluate(swampExpression(value), { inputs: { intent }, steps: { ...steps, "clone-club-key": club }, run: { id: "r" } }),
     ]));
     assertEquals(JSON.parse(createResult(intent, behavior.methods.create_result.arguments.parse(values)).stdout).club_key, word);
   }
@@ -198,7 +201,7 @@ Deno.test("deploy VP workspace reads retain step names for the capture schema", 
   };
   const schema = vpRequirements.methods.capture.arguments.shape.workspaces;
   for (const expression of expressions) for (const reads of [steps, {}] as Record<string, { outputs: { stdout: string } }>[]) {
-    const value = environment.evaluate(expression.trim().slice(3, -2).trim(), { steps: reads });
+    const value = environment.evaluate(swampExpression(expression), { steps: reads });
     assertEquals(schema.parse(value), Object.entries(reads)
       .filter(([name]) => name.startsWith("dev-vp-read-workspace-"))
       .map(([step, read]) => ({ step, stdout: read.outputs.stdout })));
@@ -212,7 +215,7 @@ Deno.test("guarded withdrawal resolves the same child when cleanup is needed and
   };
   const cleanup = workflow.jobs.flatMap((job) => job.steps).find((step) => step.name === "withdraw-route")!;
   const evaluate = (expression: string, context: Record<string, unknown> = {}) =>
-    environment.evaluate(expression.slice(3, -2).trim(), context);
+    environment.evaluate(swampExpression(expression), context);
   const context = { inputs: { intent: { already_active: false, route: {} } },
     steps: { finish: { outputs: { ready: false } }, route: { status: "succeeded" } } };
 
