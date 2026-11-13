@@ -116,7 +116,8 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                     ...$status === 'succeeded' || ($payload['seed_kept'] ?? false) === true ? ['seed_commit' => $facts['commit']] : []]);
                 // A run that kept its new seed (only the fleet start after it failed) installed the Processes of that seed.
                 app(ContainerProcesses::class)->complete($instance, ValidatedData::object($admitted['container'])['processes'] ?? [],
-                    $status === 'succeeded' || ($payload['seed_kept'] ?? false) === true, ValidatedData::nullableString($data['error_code'] ?? null));
+                    $status === 'succeeded' || ($payload['seed_kept'] ?? false) === true, ValidatedData::nullableString($data['error_code'] ?? null),
+                    inactiveUnits: ValidatedData::stringList($payload['units_inactive'] ?? []));
             } elseif ($variant === 'development' && $status === 'succeeded') {
                 $instance->update(['seed_path' => $admitted['home'], 'seed_repository' => $admitted['home'], 'seed_commit' => $facts['commit']]);
             } elseif (! InstanceDeploymentIntent::development($variant) && $facts['selected_release'] !== null && ($payload['selection_confirmed'] ?? false) === true) {

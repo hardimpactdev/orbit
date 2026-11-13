@@ -216,7 +216,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 3389
+cost = 3559
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -227,8 +227,8 @@ after_merge_cases = [
 # Each retained case cost is the 90th percentile of its completed hosted PR times across the runs listed in
 # docs/reference/implementation-loop.md (2026-11-13), rounded up plus one second; startup is added per slice.
 # Cases with fewer than five hosted runs keep an estimate. The 190-second shard deadline is the headroom above p90.
-# 60 slices give each of the 60 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 60
+# 62 slices give each of the 62 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 62
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -264,6 +264,8 @@ inputs = [
   "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes" = 68 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 36.0-71.1s
   "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer" = 91 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 56.5-95.7s
   "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing" = 70 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 42.9-72.5s
+  "a deployment's start waits only for enabled Process units; the processes phase enables, starts and waits for a new or resumed one" = 73 # ESTIMATE: local 24s x 3, plus 1s
+  "a new Process that does not start fails the deployment's processes phase, which names its unit" = 97 # ESTIMATE: local 32s x 3, plus 1s
   "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file" = 126 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 78.4-131.6s
   "a Process's start, stop and restart change its unit in the container" = 99 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 64.5-98.4s
   "a clone runs its own Process units: the default's units and folders from the seed go, and its own start" = 116 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 70.1-118.2s

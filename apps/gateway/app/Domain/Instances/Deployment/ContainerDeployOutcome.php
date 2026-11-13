@@ -47,7 +47,8 @@ final readonly class ContainerDeployOutcome
             };
             $data = [...$data, 'error_code' => $code];
             // A failed nested-fleet phase writes why into the result file: a swamp step that exits nonzero keeps no output, so this is
-            // its only record. After a restore, `restore_failure` says the restored fleet did not start too. Other phases write neither.
+            // its only record. After a restore, `restore_failure` says the restored fleet did not start too. A failed wait in `start` or
+            // `processes` names the units that did not become active.
             $detail = is_string($file['detail'] ?? null) && $file['detail'] !== '' ? $file['detail'] : null;
             if (is_string($file['restore_failure'] ?? null) && $file['restore_failure'] !== '') {
                 $native = ValidatedData::object($data['failure'] ?? [])['detail'] ?? null;
@@ -63,6 +64,10 @@ final readonly class ContainerDeployOutcome
             if ($code === 'instance.container_fleet_resume_failed' && is_string($file['commit'] ?? null)) {
                 $payload['commit'] = $file['commit'];
                 $payload['seed_kept'] = true;
+            }
+            // A unit the run saw not become active: its Process is failed; the other active ones keep running.
+            if (is_array($file['units_inactive'] ?? null)) {
+                $payload['units_inactive'] = array_values(array_filter($file['units_inactive'], is_string(...)));
             }
             // A refused nested-fleet check names each difference, as `<container> <kind> <name>`.
             if ($code === 'instance.container_fleet_drift' && is_array($file['fleet_drift'] ?? null)) {

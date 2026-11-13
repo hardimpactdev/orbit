@@ -151,7 +151,10 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
                     'status' => LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null]);
             }
             if ($record->isDirty() || ! $this->processSpecifications->matches($record, $attributes)) {
-                $record->forceFill([...$attributes, 'status' => LifecycleStatus::Provisioning])->save();
+                // A running Process keeps running its installed spec until the deployment installs the new one: it stays active,
+                // and its activation is pending (systemd_activation_hash still names the running unit).
+                $running = ! $forCreateRetry && $record->status === LifecycleStatus::Active;
+                $record->forceFill([...$attributes, ...$running ? ['systemd_activation_pending' => true] : ['status' => LifecycleStatus::Provisioning]])->save();
             }
         }
         $this->initializeContainerPresetPort($instance);

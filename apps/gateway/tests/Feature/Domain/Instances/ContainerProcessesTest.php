@@ -244,13 +244,49 @@ describe('a deployment of a container default', function (): void {
         app(InstantiateProjectRuntimeDefinitionsAction::class)->refreshForContainer($instance);
         $intent = app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail());
 
-        expect($worker->refresh()->status)->toBe(LifecycleStatus::Provisioning)
+        // The worker runs its installed spec until the deployment installs the new one: it stays active, its activation pending.
+        expect($worker->refresh()->status)->toBe(LifecycleStatus::Active)
+            ->and($worker->systemd_activation_pending)->toBeTrue()
             ->and($worker->runtime_config['command'])->toBe(['/usr/bin/env', 'node', 'worker.js', '--tries=3'])
             ->and(array_column($intent['processes'], 'name'))->toBe(["orbit-process-{$worker->id}-worker.service", 'orbit-process-'.($worker->id + 1).'-mailer.service'])
             ->and($intent['processes'][0]['environment'])->toBeNull();
 
         app(ContainerProcesses::class)->complete($instance, $intent['processes'], true, null);
-        expect(Process::query()->where('owner_id', $instance->id)->pluck('status')->all())->toBe([LifecycleStatus::Active, LifecycleStatus::Active]);
+        expect(Process::query()->where('owner_id', $instance->id)->pluck('status')->all())->toBe([LifecycleStatus::Active, LifecycleStatus::Active])
+            ->and($worker->refresh()->systemd_activation_pending)->toBeFalse();
+    });
+
+    it('keeps a changed Process that still runs active after a failed deployment, with the failed change beside it', function (): void {
+        $project = processContainerProject();
+        $operation = processContainerCreate($project, processContainerNode());
+        $instance = Instance::query()->findOrFail($operation->target_id);
+        $worker = Process::query()->where('owner_id', $instance->id)->sole();
+        $installed = hash('sha256', processContainerUnits($operation)[0]['content']);
+        $worker->forceFill(['status' => LifecycleStatus::Active, 'systemd_activation_hash' => $installed])->save();
+        ProcessDefinition::query()->where('name', 'worker')->firstOrFail()->update(['spec' => ['runtime' => 'systemd',
+            'command' => ['/usr/bin/env', 'node', 'worker.js', '--tries=3'], 'restart_policy' => 'always']]);
+        ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'mailer', 'environments' => ['development'],
+            'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'node', 'mailer.js']]]);
+        app(InstantiateProjectRuntimeDefinitionsAction::class)->refreshForContainer($instance);
+        $units = app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail())['processes'];
+        $mailer = Process::query()->where('owner_id', $instance->id)->where('name', 'mailer')->sole();
+
+        // The run failed before it installed anything: the worker's old unit runs, the new mailer has none.
+        app(ContainerProcesses::class)->complete($instance, $units, false, 'deployment.step_failed');
+        expect($worker->refresh()->only(['status', 'systemd_activation_pending', 'systemd_activation_hash', 'failed_step', 'error_code']))
+            ->toBe(['status' => LifecycleStatus::Active, 'systemd_activation_pending' => true, 'systemd_activation_hash' => $installed,
+                'failed_step' => 'container', 'error_code' => 'deployment.step_failed'])
+            ->and($mailer->refresh()->status)->toBe(LifecycleStatus::Failed);
+
+        // A unit the run saw not become active is failed, even when its record was active.
+        app(ContainerProcesses::class)->complete($instance, $units, false, 'instance.container_processes_failed', inactiveUnits: [$units[0]['name']]);
+        expect($worker->refresh()->status)->toBe(LifecycleStatus::Failed);
+
+        // The next passed deployment installs the new spec and clears the failure.
+        app(ContainerProcesses::class)->complete($instance, $units, true, null);
+        expect($worker->refresh()->only(['status', 'systemd_activation_pending', 'failed_step', 'error_code']))
+            ->toBe(['status' => LifecycleStatus::Active, 'systemd_activation_pending' => false, 'failed_step' => null, 'error_code' => null])
+            ->and($worker->systemd_activation_hash)->toBe(hash('sha256', $units[0]['content']));
     });
 
     it('leaves running Processes as they were when the deployment fails', function (): void {

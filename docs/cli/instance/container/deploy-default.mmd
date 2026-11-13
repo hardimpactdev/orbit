@@ -27,6 +27,7 @@ sequenceDiagram
   opt the default Instance is asleep
     SW->>N: Start the container<br/>incus start
   end
+  %%> - the start waits only for the units the container's boot starts: FrankenPHP and the enabled Process units; a new or newly running Process is the next step's work
   opt nested-fleet container
     SW->>C: Deliver the Club key<br/>Ansible · tags start
     %%> What it does:
@@ -47,6 +48,7 @@ sequenceDiagram
   %%> What it does:
   %%> - installs the Project's new and changed development Process definitions as `orbit-*` units, with their environment files from the vault
   %%> - restarts a changed unit and removes a former environment file
+  %%> - enables and starts each running unit and waits for it; a unit that does not become active fails with its name in the detail, and only its Process is recorded failed
   SW->>N: Take the seed snapshot<br/>Ansible · tags seed
   %%> - prepares a Node/Vite default’s private Node store as orbit before the existing snapshot stop/start boundary; this conversion itself never restarts a Process
   %%> - a converted store requires a new seed even at the same commit, so clones inherit it; older seeds remain slower but correct until the explicit deploy refreshes them
