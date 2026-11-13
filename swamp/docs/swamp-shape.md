@@ -45,6 +45,7 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
    - **Transient external errors:** in an Ansible phase, the tool's own retry: the task keywords `retries`, `until` and `delay`, or a module's own option such as `update_cache_retries` of `apt`. Never a shell loop or a script of ours. The Note states the bounds.
    - **Waiting for a state to arrive:** the same task keywords, inside a literal `timeout`: for example a wait for an Operation or Doctor of a nested Gateway, one check per `incus exec` (`swamp/ansible/task-vm-fleet-wait.yml`). The task stops at once when the guest it asks is not running. (Decided by the orchestrator, for Nick's review, 2026-11-06.)
    - **Parallelism:** `concurrency`.
+   - **Levels:** Swamp runs the jobs of a workflow, and the steps of each job, in the depth levels of their `dependsOn` graph (`execution_service.ts` and `topological_sort_service.ts` of the pinned release). A level starts only when every job or step of the level before it has ended, whatever its own dependencies, and guards never move a step to another level. Lines that must overlap start at the same depth, or run in jobs of one level.
    - **Waiting for a worker:** set `queueTimeout` on every step per PLAN F8 and the measured kind budget.
    - **Waiting for a person:** `manual_approval`.
    - **Child work:** `type: workflow`.

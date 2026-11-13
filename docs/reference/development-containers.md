@@ -146,7 +146,7 @@ Every development container has the same layout. The image and the create set it
 | `work` | gid 2760, members `agent` and `orbit` |
 | Sudo | None for either user. The image's `sudoers.d` grant is removed. The [nested-fleet image](#the-nested-fleet-image) gives `agent` alone passwordless sudo, so it is root in its own [nested-fleet](#users) container |
 | Workspace | `/srv/workspace`, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others. `core.sharedRepository=group` |
-| Git | `safe.directory=/srv/workspace` in `/etc/gitconfig`, for every user and only that path; the agent phase also writes it to `agent`'s own Git config and preserves its other Git settings |
+| Git | `safe.directory=/srv/workspace` in `/etc/gitconfig`, for every user and only that path; the agent part of the T3 step also writes it to `agent`'s own Git config and preserves its other Git settings |
 | Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped |
 | T3 unit | `User=agent`, `UMask=0007`, `PATH` from the shared folders, `Requires=nftables.service`, `ConditionPathExists=/etc/orbit/instance`. The unit file is mode 0640 |
 | `PATH` | The runtime folder's `bin` first, for units, login shells and `incus exec` sessions, so `composer` is on it |
@@ -589,7 +589,7 @@ So Composer, npm, Bun, Vite+, Git over HTTPS, curl, apt, Guzzle and Node's `fetc
 
 ## Lifecycle
 
-Lifecycle flows run from the Node with `incus`, usually through Ansible phases. The [clone flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) uses official SSH steps running shipped Python host and guest scripts for its five direct phases. Each Ansible phase selects only its own tagged tasks before Ansible evaluates their conditions; it does not walk the tasks of other phases. Migrated development Instances can carry registered legacy Schedules as [container timers](/reference/schedules#container-timers); development Schedule definitions remain unsupported.
+Lifecycle flows run from the Node with `incus`, usually through Ansible phases. The [clone flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) uses official SSH steps running shipped Python host and guest scripts for its four direct phases. Each Ansible phase selects only its own tagged tasks before Ansible evaluates their conditions; it does not walk the tasks of other phases. Migrated development Instances can carry registered legacy Schedules as [container timers](/reference/schedules#container-timers); development Schedule definitions remain unsupported.
 
 ### The default Instance
 
@@ -607,13 +607,13 @@ A converted store replaces the same-commit seed too: an immutable old snapshot c
 
 After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. It retakes the snapshot at the same commit too, so a clone gets the default's current caches and built files. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
 
-There are no development setup steps. The default Instance has them done already, so a clone needs none. A clone prepares its container in five direct command phases: container, workspace and Processes, agent, T3, and sessions.
+There are no development setup steps. The default Instance has them done already, so a clone needs none. A clone prepares its container in four direct command phases: container, workspace and Processes, T3 with the agent's files before it, and sessions.
 
 The workspace phase prepares Node and fetches a changed branch pin before starting any Process, with no separate Node-store playbook. A prepared seed keeps its existing recipe and downloaded versions. Every clone gets a private writable store, including one with no Processes, so a Process added later can install its pin. Without a recognized Node/Vite consumer, only the pin fetch is skipped. Each native step reports its timestamps through the existing Operation progress.
 
 Conn supports an [explicit branch selection](/reference/conn#threads-in-an-orbit-project) for a clone. It prepares the Node mirror from the admitted remote source commit and checks out its bundle in the existing workspace phase. Dependencies and build still come from the default's seed; checkout runs no Project setup or deploy command again.
 
-A separate job publishes the Route, certificate and DNS, so Route depth cannot delay the container job. The Route checks the TLS handshake, without waiting for the application to start. The create receipt records T3, session and Route readiness times. Workspace access and environment files stay in the container preparation.
+A separate job publishes the Route, certificate and DNS. Swamp runs jobs in levels too, but the container job and the Route job share one level and each keeps its own step levels, so the Route steps cannot delay a container phase. The Route checks the TLS handshake, without waiting for the application to start. The create receipt records T3, session and Route readiness times. Workspace access and environment files stay in the container preparation.
 
 #### What is built
 
@@ -697,7 +697,9 @@ A web-serving Project without a PHP version refuses with `project.source_default
 
 `orbit instance:create PROJECT NODE NAME` clones the default Instance. It copies the default container with `incus copy`, a ZFS clone, and clones the default database through the database family. Then it starts the container and creates the Instance's branch from the default branch.
 
-Two lines then run at the same time. The workspace line writes the `.env` and starts the Processes. The agent line writes the agent settings, the note links and `/etc/orbit/instance`, then starts T3 and adds the T3 project at `/srv/workspace`. The agent line never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs. The agent line therefore does not wait for the workspace.
+Two steps then start at the same time. The workspace step writes the `.env` and starts the Processes. The T3 step first writes the agent settings, the note links and `/etc/orbit/instance`, then starts T3 and adds the T3 project at `/srv/workspace`. The T3 step never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs. So it does not wait for the workspace.
+
+Swamp starts a level of steps only when the whole level before it has ended ([Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md)). Both steps are in the level after the copy, the Club key, the fleet start and the database steps. So both start when the copy ends, or when the last database step or the fleet start ends. A nested-fleet clone therefore starts T3 after its fleet start, beside the workspace. T3 reads nothing of the fleet or the database steps.
 
 The sessions check waits for both lines, because it checks the branch, the checkout mark and every Process unit. Last, Orbit registers the T3 server. The Route publishes in its own job. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
 
@@ -1411,7 +1413,7 @@ Each step has a bound. The check has 300 s, the first seed 120 s, the start 300 
 
 ### A clone starts its fleet
 
-A new Instance or a task of the nested-fleet Project is a ZFS clone of the default's seed, as every [clone](#create) is. The clone then starts the outer container and places the Club key. Its step `clone-fleet` runs the [fleet step](#the-fleet-step)'s check and resume. It waits for the inner Incus and checks the fleet rules. It starts the nested containers and the operator tunnel `wg-nested`. Then it waits for the same Doctor check that a proof uses: the nested Gateway is healthy and its three agents are online. Only then does the workspace phase run. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) shows the step.
+A new Instance or a task of the nested-fleet Project is a ZFS clone of the default's seed, as every [clone](#create) is. The clone then starts the outer container and places the Club key. Its step `clone-fleet` runs the [fleet step](#the-fleet-step)'s check and resume. It waits for the inner Incus and checks the fleet rules. It starts the nested containers and the operator tunnel `wg-nested`. Then it waits for the same Doctor check that a proof uses: the nested Gateway is healthy and its three agents are online. Only then do the workspace phase and T3 run. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) shows the step.
 
 The Gateway gives the create intent its `fleet` only for a clone whose runtime keeps a fleet (`InstancePlacement::keepsFleet`). Every other create has no `fleet` key and skips the step.
 
