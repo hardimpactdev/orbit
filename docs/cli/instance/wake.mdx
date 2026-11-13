@@ -7,7 +7,7 @@ covers:
   - apps/gateway/routes/api/instance-power.php
   - apps/cli/app/Commands/Instances/WakeInstanceCommand.php
   - packages/php-sdk/src/Requests/Instances/WakeInstanceRequest.php
-  - swamp/ansible/{instance-container-power.yml,tasks/instance-container-power.yml}
+  - swamp/ansible/tasks/instance-container-power.yml
   - swamp/workflows/workflow-operation-instance-wake.yaml
 ---
 
@@ -26,7 +26,7 @@ orbit instance:wake 42 --json
 | `--idempotency-key=KEY` | Reuse a key to retry this operation start. |
 | `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
 
-Orbit starts the container. T3, FrankenPHP and each Process that ran before the sleep start with it; a stopped Process stays stopped. Orbit waits until each of them runs, and in a clone until T3 answers. Then it removes the asleep marker, and the Route serves the app again.
+Orbit starts the container. T3, FrankenPHP and each Process that ran before the sleep start with it; a stopped Process stays stopped. Orbit waits until each of them runs and the app answers. An answer of 500 or above gets up to 5 more seconds to clear; after that the app is served as it is. Then it removes the asleep marker, and the Route serves the app again. In a clone, the wake then waits until T3 answers; a visitor does not wait for it.
 
 There is one wake per Instance at a time. A second caller joins the open wake and gets the same Operation.
 
@@ -44,6 +44,6 @@ Waking an Instance that is awake changes nothing and also succeeds. A failed wak
 | `operation.kind_unavailable` | The Instance has no container. |
 | `instance.sleep_unsupported` | The Instance is not a development Instance, or runs a nested fleet. |
 | `instance.lifecycle_busy`, `operation.target_busy` | Other lifecycle work runs on the Instance. |
-| `instance.container_start_failed` | The container or one of its units did not start. |
-| `instance.t3_unready` | T3 did not answer within about 30 seconds. The marker stays. |
-| `instance.container_awake_failed` | The asleep marker could not be removed. |
+| `instance.container_start_failed` | The container or one of its units did not start, or the asleep marker could not be removed. |
+| `instance.web_unready` | FrankenPHP gave no answer within about 30 seconds. The marker stays. |
+| `instance.t3_unready` | T3 did not answer within about 30 seconds. The app already serves: the marker is gone, and the Instance is recorded as running. |

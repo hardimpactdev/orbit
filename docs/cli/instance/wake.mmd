@@ -33,16 +33,19 @@ sequenceDiagram
   %%> - no container, a nested-fleet Instance or other lifecycle work starts no run
   GW->>SW: Start run, full intent<br/>operation-instance-wake
   GW-->>CL: 202 Accepted<br/>Operation ID · progress page
-  SW->>N: Start the container<br/>Ansible · tags start
+  SW->>N: Wake the container<br/>Ansible · tags start
   %%> What it does:
   %%> - `incus start`; nftables, T3, FrankenPHP and the enabled Process units start with the container
-  %%> - waits until each desired-running unit is active
-  %%> Why:
-  %%> - unit enablement holds each Process's desired state, so a stopped Process stays stopped
-  SW->>N: Mark the Instance awake<br/>Ansible · tags awake
-  %%> What it does:
-  %%> - waits up to 30 s for T3's environment endpoint in a clone, else `instance.t3_unready`
+  %%> - waits until each desired-running unit is active, then until FrankenPHP answers, else `instance.web_unready`
+  %%> - a 5xx answer gets up to 5 s to clear; an app that answers 5xx by itself is then served as it is
   %%> - removes the asleep marker, so Caddy sends the next request to the app
+  %%> - then waits up to 30 s for T3's environment endpoint in a clone, else `instance.t3_unready`
+  %%> Why:
+  %%> - one playbook: a second Ansible start costs about 4 s on the visitor's path
+  %%> - the visitor waits for the app, not for T3; T3 gates only the Operation's end
+  %%> - unit enablement holds each Process's desired state, so a stopped Process stays stopped
+  %%> When:
+  %%> - the marker part runs only in a start whose intent names the marker; a deployment's start has none
   opt the Gateway session expires within 7 days
     SW->>N: Issue the Gateway session<br/>sensitive output · vault
     %%> When:
@@ -57,7 +60,15 @@ sequenceDiagram
     %%> Result:
     %%> - the runtime's `power_state` is `running`; the Conn layer shows the T3 server awake
     %%> - the progress page loads the original path
-  else a step fails
+  else T3 does not answer
+    %% path: t3-unready
+    SW--xGW: Run failed<br/>instance.t3_unready
+    %%> Result:
+    %%> - the Operation fails; the marker is gone and the Route serves the app
+    %%> - the runtime's `power_state` is `running`, because the container runs
+    %%> Retry:
+    %%> - the same command; a start of a running container changes nothing
+  else a step fails before the app answers
     %% path: failed
     SW--xGW: Run failed<br/>failed step, error_code
     %%> Result:
