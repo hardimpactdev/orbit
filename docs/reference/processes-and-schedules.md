@@ -169,6 +169,10 @@ The derived keys always win: `PATH`, `NODE_USE_SYSTEM_CA`, `VITE_DEV_SERVER_CERT
 
 A development Process also receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY`, the paths of the Instance's certificate files under `~/.orbit/certificates/app-instance-{id}/current/`. The `vp-dev` preset does not receive them. When the Instance has a Route, it receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, and `ORBIT_DEV_SERVER_PATH` for the [development-server endpoint](/reference/routes#development-server-endpoint), and `ORBIT_DEV_SERVER_PORT` only when `vite_port` is assigned. It also receives `ORBIT_SSR_PORT` and `INERTIA_SSR_URL` when it has an [assigned SSR port](/reference/assigned-ssr-ports), with or without a Route. These derived values are not secret. The unit carries them both as `Environment=` directives and on `ExecStart` through `/usr/bin/env`.
 
+Orbit adds the generic `DEV_SERVER_ORIGIN` alias only to the `vp-dev` dev-server preset. Orbit adds it beside `ORBIT_DEV_SERVER_ORIGIN` in the unit directives and command prefix when the Process has a Route and its own environment does not supply the generic name. The Project's own value wins, including an empty value: Orbit leaves its unit and managed Process environment file unchanged. The generic name is not reserved or filtered. Ordinary Route-backed, Node and Route-less Processes keep their existing rendering and `ORBIT_*` values.
+
+For an existing container default without a supplied value, its next deployment adds the alias and rewrites and restarts only the dev-server unit for this change. An existing clone gets it only when recreated; an existing checkout preset gets it only when its unit is reinstalled. Other deployment or runtime changes retain their normal restart behavior. A release, wake or ordinary Process restart does not refresh installed units. Existing container application `.env` files are not re-rendered for this change.
+
 ## Presets
 
 A preset configures a development Instance Process. It sets the command, the runtime, the working directory, and the environment, and it refuses those options from the caller.

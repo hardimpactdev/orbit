@@ -454,29 +454,29 @@ A development systemd Process gets these values from the Route domain:
 | Variable | Value |
 | --- | --- |
 | `ORBIT_DEV_SERVER_ORIGIN` | `https://<route-domain>/__orbit/vite` |
+| `DEV_SERVER_ORIGIN` | The same address, for the `vp-dev` preset only when its own Process environment does not supply this name |
 | `ORBIT_DEV_SERVER_HOST` | The Route domain |
 | `ORBIT_DEV_SERVER_PATH` | `/__orbit/vite` |
 | `ORBIT_DEV_SERVER_PORT` | The Instance's assigned port |
 
-A checkout Instance’s Vite server binds loopback and publishes the Route origin, as below. A migrated container preset binds `0.0.0.0` so the Node can reach it:
+The `vp-dev` preset supplies `DEV_SERVER_ORIGIN` so Project configuration can read the public address without an Orbit-specific environment name. A value supplied in the Process environment wins; Orbit adds nothing in that case.
+
+`DEV_SERVER_ORIGIN` has no `VITE_` prefix, so Vite does not expose it to client code by default. [Process runtime environment](/reference/processes-and-schedules#runtime-environment) describes Project precedence and when existing units receive it. The preset supplies the host, assigned port, strict-port flag and base path: a checkout binds loopback, and a container binds `0.0.0.0` so the Node can reach it.
 
 ```js
 import { defineConfig } from 'vite'
 
-const origin = process.env.ORBIT_DEV_SERVER_ORIGIN
-const path = process.env.ORBIT_DEV_SERVER_PATH
+const origin = process.env.DEV_SERVER_ORIGIN
+const publicAddress = origin ? new URL(origin) : undefined
 
 export default defineConfig({
-    base: path ? `${path}/` : '/',
+    base: publicAddress ? `${publicAddress.pathname}/` : '/',
     server: {
-        host: '127.0.0.1',
-        port: Number(process.env.ORBIT_DEV_SERVER_PORT),
-        strictPort: true,
-        origin: origin ? new URL(origin).origin : undefined,
-        hmr: origin
+        origin: publicAddress?.origin,
+        hmr: publicAddress
             ? {
                 protocol: 'wss',
-                host: process.env.ORBIT_DEV_SERVER_HOST,
+                host: publicAddress.hostname,
                 clientPort: 443,
                 path: 'hmr',
             }
@@ -485,7 +485,7 @@ export default defineConfig({
 })
 ```
 
-Vite adds its base to the HMR path, so set `hmr.path` to `hmr`. The `vp-dev` preset sets `--base=/__orbit/vite/`. Laravel's `@vite` directive reads `public/hot`. That file must contain `ORBIT_DEV_SERVER_ORIGIN`, so the browser loads `/__orbit/vite/@vite/client` from the Route domain.
+Vite adds its base to the HMR path, so set `hmr.path` to `hmr`. The `vp-dev` preset sets `--base=/__orbit/vite/`. Laravel's `@vite` directive reads `public/hot`. That file must contain the public address from `DEV_SERVER_ORIGIN`, so the browser loads `/__orbit/vite/@vite/client` from the Route domain.
 
 ### Private network trust
 
