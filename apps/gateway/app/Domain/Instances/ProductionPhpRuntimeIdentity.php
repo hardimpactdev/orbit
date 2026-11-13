@@ -66,21 +66,6 @@ final readonly class ProductionPhpRuntimeIdentity
         );
     }
 
-    public static function isAbsent(Instance $instance): bool
-    {
-        $instance->loadMissing('project');
-
-        $associationIsAbsent = $instance->production_php_service === null
-            && $instance->production_php_pool === null
-            && $instance->production_php_socket === null;
-
-        if (! $instance->servesPhp()) {
-            return $associationIsAbsent;
-        }
-
-        return $instance->selected_php_version === null && $associationIsAbsent;
-    }
-
     public static function from(Instance $instance): self
     {
         $version = $instance->selected_php_version;

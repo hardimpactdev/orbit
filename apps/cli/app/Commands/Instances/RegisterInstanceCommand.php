@@ -30,7 +30,6 @@ final class RegisterInstanceCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'instance:register
         {--path= : Existing Git checkout or worktree; defaults to the current directory}
-        {--include-worktrees : Adopt the checkout and every linked worktree}
         {--project= : Existing numeric Project ID}
         {--name= : Optional Instance name; default, or the Project default branch name, means the default development source}
         {--root= : Relative web-root override for this Instance}
@@ -92,8 +91,7 @@ final class RegisterInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
         $registration = $this->send($connector, new RegisterInstanceRequest(
-            sourcePath: $facts->path, includeWorktrees: $this->option('include-worktrees') === true,
-            projectId: $values['projectId'], instanceName: $this->stringOption('name'), root: $values['root'],
+            sourcePath: $facts->path, projectId: $values['projectId'], instanceName: $this->stringOption('name'), root: $values['root'],
             domain: $this->stringOption('domain'), setup: $this->option('setup') === true,
             idempotencyKey: $this->stringOption('idempotency-key'),
         ), InstanceRegistrationResult::class);
@@ -164,10 +162,9 @@ final class RegisterInstanceCommand extends GatewayCommand
 
             return false;
         }
-        $scope = $this->option('include-worktrees') === true ? ' and all linked worktrees' : '';
         try {
             if ($this->commandPrompts()->run(fn (): ConfirmPrompt => new ConfirmPrompt(
-                TerminalText::safe("Transfer source [{$facts->path}]{$scope} to Orbit ownership, allowing relocation and later removal?"),
+                TerminalText::safe("Transfer source [{$facts->path}] to Orbit ownership, allowing relocation and later removal?"),
                 default: false,
             )) === true) {
                 return true;

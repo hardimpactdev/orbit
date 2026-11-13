@@ -22,11 +22,6 @@ final readonly class DnsRequester
         return new self(DnsRequesterIdentity::Unidentified, null, $sourceAddress);
     }
 
-    public function isRegistered(): bool
-    {
-        return $this->identity === DnsRequesterIdentity::Registered;
-    }
-
     public function cacheKey(): string
     {
         if ($this->identity === DnsRequesterIdentity::Registered && $this->nodeId !== null) {

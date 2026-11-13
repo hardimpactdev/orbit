@@ -18,14 +18,15 @@ The Gateway is a Laravel application, so it reads its own settings from a `.env`
 
 ## Settings no code reads
 
-A setting that no code reads any more leaves the file through the `gateway` role's convergence, never by hand. `GatewayRuntimeFiles::RetiredSettings` lists them, and the role's runtime phase removes each key from `shared/gateway.env`. Every release links that file as its `.env`. It now lists the four UpCloud task VM settings, which nothing reads since #3181 removed UpCloud:
+A setting that no code reads any more leaves the file through the `gateway` role's convergence, never by hand. `GatewayRuntimeFiles::RetiredSettings` lists them, and the role's runtime phase removes each key from `shared/gateway.env`. Every release links that file as its `.env`. It now lists these settings:
 
 - `ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE`
 - `ORBIT_TASK_VMS_UPCLOUD_MAX_VMS`
 - `ORBIT_TASK_VMS_UPCLOUD_PLAN`
 - `ORBIT_TASK_VMS_UPCLOUD_DISK_GB`
+- `ORBIT_SWAMP_DIRECT_WRITERS`
 
-`ORBIT_SWAMP_DIRECT_WRITERS` is also unread: it chose a writer per Operation kind, and every kind now has one writer. It is not on the list yet, because a new key changes the input of the `gateway` role's convergence. A Gateway that still has it ignores it.
+The four UpCloud task VM settings are unread since #3181 removed UpCloud. `ORBIT_SWAMP_DIRECT_WRITERS` chose a writer per Operation kind; every kind now has one writer.
 
 ## Services dependency detection
 

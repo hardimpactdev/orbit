@@ -40,11 +40,6 @@ enum InstanceTransferStep: string
         ];
     }
 
-    public function isAfterCutover(): bool
-    {
-        return $this->rank() >= self::Cutover->rank();
-    }
-
     public function rank(): int
     {
         $rank = array_search($this, self::ordered(), true);

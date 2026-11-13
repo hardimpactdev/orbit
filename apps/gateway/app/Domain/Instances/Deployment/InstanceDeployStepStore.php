@@ -26,13 +26,6 @@ final readonly class InstanceDeployStepStore
             ->all());
     }
 
-    /** @param list<DeploymentStep> $steps */
-    public function replaceAll(Instance $instance, array $steps): void
-    {
-        $this->assertValid($instance, $steps);
-        $this->persist($instance, $steps);
-    }
-
     public function create(
         Instance $instance,
         DeploymentStep $step,

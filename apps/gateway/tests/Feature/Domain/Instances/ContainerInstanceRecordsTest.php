@@ -116,7 +116,7 @@ describe('Instance runtimes', function (): void {
         expect($runtime?->container_name)->toBe('hauzer-feature')
             ->and($runtime?->bridge_address)->toBe('10.253.0.3')
             ->and($runtime?->t3_port)->toBe(3800)
-            ->and($runtime?->cloneSource?->is($this->default))->toBeTrue()
+            ->and($runtime?->clone_source_instance_id)->toBe($this->default->id)
             ->and($runtime?->power_state)->toBe(InstanceRuntimePowerState::Running)
             ->and($this->default->refresh()->runtime?->t3_port)->toBeNull();
     });

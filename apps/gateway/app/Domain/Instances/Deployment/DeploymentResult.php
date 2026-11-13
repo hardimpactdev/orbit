@@ -22,16 +22,6 @@ final readonly class DeploymentResult
         return new self(true, $release, $release, null, $commands, $release->commit);
     }
 
-    /**
-     * A development default deployed in its checkout. It has no release.
-     *
-     * @param  list<DeploymentCommandResult>  $commands
-     */
-    public static function checkedOut(string $commit, array $commands = []): self
-    {
-        return new self(true, null, null, null, $commands, $commit);
-    }
-
     /** @param list<DeploymentCommandResult> $commands */
     public static function failed(
         ?DeploymentRelease $release,

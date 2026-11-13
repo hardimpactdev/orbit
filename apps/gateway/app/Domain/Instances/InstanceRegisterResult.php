@@ -106,7 +106,7 @@ final readonly class InstanceRegisterResult implements DirectOperationProjection
                 }
             }
             if ($status === OperationStatus::Succeeded) {
-                RegistrationFacts::activate($instance, $facts, ValidatedData::string($operation->input['repository']), ValidatedData::nullableString($operation->input['repository_identity']));
+                RegistrationFacts::activate($instance, $facts);
                 $instance->update(['first_setup_pending' => false]);
             } else {
                 $instance->update(['status' => InstanceState::Reserved, 'failed_step' => $step ?? 'registration', 'error_code' => $code]);

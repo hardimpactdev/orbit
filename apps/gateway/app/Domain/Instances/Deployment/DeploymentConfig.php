@@ -38,13 +38,4 @@ final readonly class DeploymentConfig
             throw new InvalidArgumentException('The deployment configuration timeout total is too large.');
         }
     }
-
-    /** @return list<array{name: string, phase: string, command: string, timeout_seconds: int}> */
-    public function normalizedSteps(): array
-    {
-        return array_map(
-            static fn (DeploymentStep $step): array => $step->toArray(),
-            $this->steps,
-        );
-    }
 }

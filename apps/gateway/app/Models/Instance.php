@@ -52,23 +52,10 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $clone_completed_at
  * @property string|null $registration_original_path
  * @property string|null $registration_request_id
- * @property bool $registration_primary
- * @property bool $registration_include_worktrees
- * @property string|null $registration_repository_url
- * @property string|null $registration_repository_identity
  * @property string|null $registration_source_digest
  * @property bool $registration_detached
- * @property string|null $registration_default_branch
- * @property string|null $registration_inferred_slug
- * @property string|null $registration_inferred_root
  * @property string|null $registration_common_repository_path
- * @property list<string>|null $registration_worktree_paths
- * @property string|null $registration_relocation_state
- * @property string|null $registration_authoritative_path
  * @property string|null $registration_route_domain
- * @property string|null $registration_route_provenance
- * @property int|null $registration_source_device
- * @property int|null $registration_source_inode
  * @property Carbon|null $registration_completed_at
  * @property bool $seed_selected
  * @property string|null $seed_path
@@ -106,7 +93,6 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, Schedule> $schedules
  * @property-read InstanceRemovalMember|null $removalMember
  * @property-read InstanceRuntime|null $runtime
- * @property-read Collection<int, InstanceTransfer> $transfers
  * @property-read Collection<int, Task> $tasks
  */
 final class Instance extends Model
@@ -117,8 +103,6 @@ final class Instance extends Model
         'auto_deploy_resumed_after' => 0,
         'source_layout' => 'checkout',
         'registration_detached' => false,
-        'registration_primary' => false,
-        'registration_include_worktrees' => false,
         'status' => 'reserved',
     ];
 
@@ -168,23 +152,10 @@ final class Instance extends Model
         'clone_completed_at',
         'registration_original_path',
         'registration_request_id',
-        'registration_primary',
-        'registration_include_worktrees',
-        'registration_repository_url',
-        'registration_repository_identity',
         'registration_source_digest',
         'registration_detached',
-        'registration_default_branch',
-        'registration_inferred_slug',
-        'registration_inferred_root',
         'registration_common_repository_path',
-        'registration_worktree_paths',
-        'registration_relocation_state',
-        'registration_authoritative_path',
         'registration_route_domain',
-        'registration_route_provenance',
-        'registration_source_device',
-        'registration_source_inode',
         'registration_completed_at',
         'starting_commit',
         'seed_selected',
@@ -325,12 +296,6 @@ final class Instance extends Model
         return $this->hasOne(InstanceRuntime::class);
     }
 
-    /** @return HasMany<InstanceTransfer, $this> */
-    public function transfers(): HasMany
-    {
-        return $this->hasMany(InstanceTransfer::class);
-    }
-
     /** @return MorphMany<Task, $this> */
     public function tasks(): MorphMany
     {
@@ -394,20 +359,6 @@ final class Instance extends Model
         }
 
         return $environment;
-    }
-
-    public function configuredAppEnv(): string
-    {
-        $value = $this->environmentValues()
-            ->where('env_key', 'APP_ENV')
-            ->first()
-            ?->env_value;
-
-        if (is_string($value) && $value !== '' && $value !== '{{instance.environment}}') {
-            return $value;
-        }
-
-        return $this->defaultAppEnv();
     }
 
     public function effectiveRoot(): ?string
@@ -476,11 +427,6 @@ final class Instance extends Model
             'retained_git_at' => 'immutable_datetime',
             'clone_completed_at' => 'immutable_datetime',
             'registration_detached' => 'boolean',
-            'registration_primary' => 'boolean',
-            'registration_include_worktrees' => 'boolean',
-            'registration_worktree_paths' => 'array',
-            'registration_source_device' => 'integer',
-            'registration_source_inode' => 'integer',
             'registration_completed_at' => 'immutable_datetime',
             'runtime_definitions_captured_at' => 'immutable_datetime',
             'source_is_laravel' => 'boolean',

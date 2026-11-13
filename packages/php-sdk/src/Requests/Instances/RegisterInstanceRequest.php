@@ -22,7 +22,6 @@ final class RegisterInstanceRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         private readonly string $sourcePath,
-        private readonly bool $includeWorktrees = false,
         private readonly ?int $projectId = null,
         private readonly ?string $instanceName = null,
         private readonly ?string $root = null,
@@ -56,10 +55,6 @@ final class RegisterInstanceRequest extends GatewayRequest implements HasBody
     protected function defaultBody(): array
     {
         $body = ['source_path' => $this->sourcePath];
-
-        if ($this->includeWorktrees) {
-            $body['include_worktrees'] = true;
-        }
 
         if ($this->setup) {
             $body['setup'] = true;
