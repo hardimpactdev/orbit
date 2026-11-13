@@ -155,6 +155,8 @@ export const behavior = { type: "@fixture/route-proof", version: "2026.11.11.1",
                 instance_id: 1,
                 container: { clone: clone ? {t3: {}} : null, mail: mode.startsWith("mail-") ? {} : null },
                 route_mutations: {},
+                // The Gateway always renders migrate; source only with a repository credential.
+                migrate: {},
             },
         });
     const history = async () =>
