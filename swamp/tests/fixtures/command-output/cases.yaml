@@ -654,14 +654,19 @@ contexts:
   ufw-deleted:
     task_host_firewall_removed:
       stdout: Rule deleted
+  # Recorded `ufw show added` lines from Beast (2026-11-13), with the Instance numbers changed.
   instance-destroy-firewall:
     container: {firewall_prefix: 'orbit:instance-7-'}
     destroy_firewall:
-      stdout: "[ 1] 3800 ALLOW IN # orbit:instance-7-t3\n[ 2] 3801 ALLOW IN # orbit:instance-8-t3\n[ 3] 5432 ALLOW IN # orbit:instance-7-database\n"
+      stdout_lines: ["Added user rules (see 'ufw status' for running firewall):", "ufw route deny in on orbit out on orbitinst0 from 10.44.0.128/25 to 10.253.0.7 port 3773 proto tcp comment 'orbit:instance-7-t3-task-vms'", "ufw route allow in on orbit out on orbitinst0 to 10.253.0.7 port 3773 proto tcp comment 'orbit:instance-7-t3'", "ufw route allow in on orbit out on orbitinst0 to 10.253.0.8 port 3773 proto tcp comment 'orbit:instance-8-t3'", "ufw route allow in on orbit out on orbitinst0 to 10.253.0.70 port 3773 proto tcp comment 'orbit:instance-70-t3'", "ufw allow in on orbitinst0 from 10.253.0.7 to 10.44.0.7 port 3306 proto tcp comment 'orbit:instance-7-database'"]
   instance-destroy-firewall-absent:
     container: {firewall_prefix: 'orbit:instance-7-'}
     destroy_firewall:
-      stdout: "[ 2] 3801 ALLOW IN # orbit:instance-8-t3\n"
+      stdout_lines: ["Added user rules (see 'ufw status' for running firewall):", "ufw route allow in on orbit out on orbitinst0 to 10.253.0.8 port 3773 proto tcp comment 'orbit:instance-8-t3'", "ufw route allow in on orbit out on orbitinst0 to 10.253.0.70 port 3773 proto tcp comment 'orbit:instance-70-t3'"]
+  instance-destroy-firewall-route-rule:
+    item: "ufw route deny in on orbit out on orbitinst0 from 10.44.0.128/25 to 10.253.0.7 port 3773 proto tcp comment 'orbit:instance-7-t3-task-vms'"
+  instance-destroy-firewall-plain-rule:
+    item: "ufw allow in on orbitinst0 from 10.253.0.7 to 10.44.0.7 port 3306 proto tcp comment 'orbit:instance-7-database'"
   retirement-alone:
     retired_worktree: false
     retired_repository: true
@@ -851,15 +856,25 @@ cases:
   context: retirement-linked-descendant
   expected: ["/srv/tool/feature space/nested\ncheckout"]
 - file: instance-container-destroy.yml
-  task: Delete only this Instance's rules in reverse order
+  task: Delete only this Instance's rules
   field: loop
   context: instance-destroy-firewall
-  expected: [3, 1]
+  expected: ["ufw route deny in on orbit out on orbitinst0 from 10.44.0.128/25 to 10.253.0.7 port 3773 proto tcp comment 'orbit:instance-7-t3-task-vms'", "ufw route allow in on orbit out on orbitinst0 to 10.253.0.7 port 3773 proto tcp comment 'orbit:instance-7-t3'", "ufw allow in on orbitinst0 from 10.253.0.7 to 10.44.0.7 port 3306 proto tcp comment 'orbit:instance-7-database'"]
 - file: instance-container-destroy.yml
-  task: Delete only this Instance's rules in reverse order
+  task: Delete only this Instance's rules
   field: loop
   context: instance-destroy-firewall-absent
   expected: []
+- file: instance-container-destroy.yml
+  task: Delete only this Instance's rules
+  field: vars.rule
+  context: instance-destroy-firewall-route-rule
+  expected: [ufw, route, deny, in, 'on', orbit, out, 'on', orbitinst0, from, 10.44.0.128/25, to, 10.253.0.7, port, '3773', proto, tcp]
+- file: instance-container-destroy.yml
+  task: Delete only this Instance's rules
+  field: vars.rule
+  context: instance-destroy-firewall-plain-rule
+  expected: [ufw, allow, in, 'on', orbitinst0, from, 10.253.0.7, to, 10.44.0.7, port, '3306', proto, tcp]
 - file: ai-router-model-forwarder.yml
   task: Check that the forwarder's table dropped it
   field: ansible.builtin.assert.that

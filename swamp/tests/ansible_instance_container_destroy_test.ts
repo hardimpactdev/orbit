@@ -28,7 +28,7 @@ const available =
         .outputSync().success;
 Deno.test({
     name:
-        "migrated container cleanup keeps retained Git while removing its container, volume, ACL, rules and mirror; a retry changes nothing",
+        "migrated container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers) and mirror; a retry changes nothing",
     ignore: !available,
     fn() {
         const folder = Deno.makeTempDirSync();
@@ -92,15 +92,26 @@ Deno.test({
             );
             Deno.writeTextFileSync(
                 `${folder}/bin/ufw`,
-                `#!/bin/sh\nif [ "$1" = status ]; then cat '${folder}/ufw'; else sed -i '/orbit:instance-7-/d' '${folder}/ufw'; fi\n`,
+                `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${
+                    new URL("fixtures/instance-container-ufw.ts", import.meta.url).pathname
+                }' "$@"\n`,
             );
             for (const name of ["incus", "ufw"]) {
                 Deno.chmodSync(`${folder}/bin/${name}`, 0o755);
             }
+            const rule = (spec: string, comment: string) => ({ spec, comment });
             Deno.writeTextFileSync(
-                `${folder}/ufw`,
-                "[ 1] 3800 ALLOW IN # orbit:instance-7-t3\n[ 2] 3801 ALLOW IN # orbit:instance-8-t3\n",
+                `${folder}/ufw.json`,
+                JSON.stringify([
+                    rule("route allow in on orbit out on orbitinst0 to 10.253.0.5 port 3773 proto tcp", "orbit:instance-5-t3"),
+                    rule("route deny in on orbit out on orbitinst0 from 10.44.0.128/25 to 10.253.0.7 port 3773 proto tcp", "orbit:instance-7-t3-task-vms"),
+                    rule("route allow in on orbit out on orbitinst0 to 10.253.0.7 port 3773 proto tcp", "orbit:instance-7-t3"),
+                    rule("route allow in on orbit out on orbitinst0 to 10.253.0.8 port 3773 proto tcp", "orbit:instance-8-t3"),
+                    rule("allow in on orbitinst0 to 10.253.0.70 port 3800 proto tcp", "orbit:instance-70-t3"),
+                ]),
             );
+            // Another removal deletes instance-5's rule between this playbook's read and its first delete.
+            Deno.writeTextFileSync(`${folder}/ufw-concurrent`, "orbit:instance-5-t3");
             const smtp = {action: "allow", destination: "10.253.0.1/32", protocol: "tcp", destination_port: "1025", state: "enabled"};
             const sharedMail = JSON.stringify({host: "10.253.0.1", port: 1025, docker: true, translated: {host: "172.17.0.2", port: 1025}});
             Deno.mkdirSync(`${folder}/bridge/endpoints`, {recursive: true});
@@ -193,9 +204,10 @@ Deno.test({
             assertEquals(Deno.readTextFileSync(`${folder}/bridge/endpoints/mailpit.json`), sharedMail);
             // A concurrent destroy never withdraws another Instance's bridge endpoint. Host reconcile owns removal.
             assertEquals(state["network-acls"].find((acl: {name: string}) => acl.name === "orbitinst0-egress").egress[0].destination, "10.44.0.7/32");
+            // Only instance-7's two rules went; the shifted numbers did not take instance-8's or instance-70's.
             assertEquals(
-                Deno.readTextFileSync(`${folder}/ufw`),
-                "[ 2] 3801 ALLOW IN # orbit:instance-8-t3\n",
+                JSON.parse(Deno.readTextFileSync(`${folder}/ufw.json`)).map((r: { comment: string }) => r.comment),
+                ["orbit:instance-8-t3", "orbit:instance-70-t3"],
             );
             assertEquals(
                 JSON.parse(Deno.readTextFileSync(`${folder}/run/remove.json`)),

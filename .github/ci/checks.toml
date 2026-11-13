@@ -981,12 +981,13 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/address-node.yml",
   "swamp/tests/fixtures/instance-container-incus.ts",
+  "swamp/tests/fixtures/instance-container-ufw.ts",
   "swamp/workflows/workflow-operation-instance-destroy.yaml",
 ]
 
 [fixture.case_costs]
   "a normal destroy deletes the container over one pipelined SSH master with the shipped config" = 1
-  "migrated container cleanup keeps retained Git while removing its container, volume, ACL, rules and mirror; a retry changes nothing" = 12 # CENSORED lower bound 6.893s, run 43010311414; not a completed measurement
+  "migrated container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers) and mirror; a retry changes nothing" = 12 # CENSORED lower bound 6.893s, run 43010311414; not a completed measurement
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_egress_test.py"
@@ -3090,7 +3091,7 @@ inputs = [
 [[fixture]]
 file = "swamp/tests/instance_node_service_access_test.py"
 cost = 20
-inputs = ["swamp/ansible/instance_node_services.py", "swamp/ansible/instance-container-destroy.yml", "swamp/ansible/tasks/instance-migrate-discard.yml", "swamp/tests/fixtures/instance-container-incus.ts"]
+inputs = ["swamp/ansible/instance_node_services.py", "swamp/ansible/instance-container-destroy.yml", "swamp/ansible/tasks/instance-migrate-discard.yml", "swamp/tests/fixtures/instance-container-incus.ts", "swamp/tests/fixtures/instance-container-ufw.ts"]
 
 [[fixture]]
 file = "swamp/tests/caddy_publish_test.py"
