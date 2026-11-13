@@ -1,0 +1,55 @@
+---
+# The Club key of a nested fleet's Gateway, at every start of its container that Orbit runs, before any check of the inner fleet
+# (docs/reference/development-containers.md#the-club-key-of-the-nested-gateway). The value comes from the run's vault copy in
+# ORBIT_CLUB_KEY and reaches the container only as stdin: in the module arguments of a pipelined task, which Ansible sends over the
+# SSH session and keeps in memory on the Node. Without pipelining Ansible writes the module with its arguments to ~/.ansible/tmp on
+# the Node, so the step refuses before it reads the value. The key lands in the container's /run, a tmpfs that no snapshot, seed,
+# clone copy or export holds. Without a vault copy (`club_key.available` false) the container starts without the key; the Operation says so.
+- name: Deliver the Club key without a file on the Node
+  vars:
+    ansible_pipelining: true
+    ansible_ssh_pipelining: true
+    club: "{{ container.club_key }}"
+  block:
+    - name: Refuse a key transfer that writes the module arguments on the Node
+      ansible.builtin.assert:
+        that:
+          - ansible_pipelining | bool
+          - ansible_ssh_pipelining | bool
+          - not (lookup('ansible.builtin.config', 'DEFAULT_KEEP_REMOTE_FILES') | bool)
+          - (ansible_connection | default(lookup('ansible.builtin.config', 'DEFAULT_TRANSPORT')))
+            in ['ssh', 'ansible.builtin.ssh', 'local', 'ansible.builtin.local']
+        fail_msg: instance.nested_club_key_unsafe_transfer
+        quiet: true
+
+    - name: Read the file system of the container's /run
+      ansible.builtin.command: { argv: "{{ as_root + ['findmnt', '--noheadings', '--output', 'FSTYPE', '--target', '/run'] }}" }
+      register: club_run
+      changed_when: false
+
+    - name: Refuse a /run that a snapshot would hold
+      ansible.builtin.assert:
+        that: club_run.stdout | trim == 'tmpfs'
+        fail_msg: instance.nested_club_key_not_tmpfs
+        quiet: true
+
+    - name: Write the Club key into /run
+      when: club.available | default(false)
+      no_log: true
+      ansible.builtin.command:
+        argv: >-
+          {{ as_root + ['sh', '-c', lookup('ansible.builtin.file', 'instance_nested_club_key.sh'), 'sh', club.directory, club.file,
+             club.owner | string, club.group | string, club.tmpfiles, club.gateway, club.serve_unit] }}
+        stdin: "{{ lookup('ansible.builtin.env', 'ORBIT_CLUB_KEY') }}"
+        stdin_add_newline: false
+      register: club_write
+      failed_when: false
+      changed_when: false
+
+    # The script prints one word and never the value; the result above stays in this run's memory.
+    - name: Require the Club key in /run
+      when: club.available | default(false)
+      ansible.builtin.assert:
+        that: club_write.rc == 0 and (club_write.stdout | trim) in ['changed', 'unchanged']
+        fail_msg: "{{ 'instance.nested_club_key_not_tmpfs' if club_write.rc == 3 else 'instance.nested_club_key_delivery_failed' }}"
+        quiet: true

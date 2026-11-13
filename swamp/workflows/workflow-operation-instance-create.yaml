@@ -14,14 +14,15 @@ inputs:
     # Names only: git_credential and environment, member_<Process id> for each development Process environment,
     # server_database_create and server_database_check for an owned server database, step_<index> for each development
     # deploy step of a container default, model_environment for a clone's placeholder model key, and process_environments for
-    # a default's Process environment files or a clone's private workspace JSON (environment and processes).
+    # a default's Process environment files or a clone's private workspace JSON (environment and processes), and club_key for
+    # a nested-fleet container's Club key, which only its start step reads.
     execution_secrets:
       type: object
       additionalProperties:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-(?:input|testing)-|create-model-|create-processes-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|database-create-(?:intent|owner)-[1-9][0-9]*|development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01]))$'}
+          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-(?:input|testing)-|create-model-|create-processes-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|database-create-(?:intent|owner)-[1-9][0-9]*|development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])|nested-fleet-club-api-key)$'}
         required: [vault, key]
         additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -91,6 +92,9 @@ jobs:
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ORBIT_GIT_CREDENTIAL: '${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.execution_secrets.git_credential.key) }}'
+              # Only a nested-fleet container's start gets its Club key, from its one vault copy; Ansible passes it on stdin. Any other run
+              # names a key it always has, which Ansible never delivers (docs/reference/swamp-command-steps.md#secret-inputs).
+              ORBIT_CLUB_KEY: '${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.intent.container != null && inputs.intent.container.project == "orbit-instances-nested" && inputs.intent.container.club_key.available ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.git_credential.key) }}'
       - name: workspace
         labels: {role: swamp}
         writes: true
@@ -423,6 +427,36 @@ jobs:
             hosts:
               - name: target
                 address: ${{ inputs.intent.ssh_execution.target.host }}
+      # A nested-fleet clone gets its nested Gateway's Club key right after its start, on SSH stdin into the copy's /run
+      # (docs/reference/development-containers.md#the-club-key-of-the-nested-gateway). Any other clone skips it; its stdin names a
+      # key every clone has (docs/reference/swamp-command-steps.md#secret-inputs).
+      - name: clone-club-key
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: clone-container, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null && inputs.intent.container.project == "orbit-instances-nested" && inputs.intent.container.club_key.available) }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
+          methodName: exec
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["timeout", "60"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["club-key"] }}'
+            stdin: '${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.intent.container != null && inputs.intent.container.project == "orbit-instances-nested" && inputs.intent.container.club_key.available ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.git_credential.key) }}'
+            timeoutSec: 70
+          globalArgs:
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.ssh_execution.target.user }}
+              port: ${{ inputs.intent.ssh_execution.target.port }}
+              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.ssh_execution.target.host }}
       - name: clone-database-snapshot
         labels: {role: swamp}
         dependsOn: []
@@ -528,7 +562,7 @@ jobs:
       - name: clone-workspace
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: clone-container, condition: {type: succeeded}}, {step: clone-database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
+        dependsOn: [{step: clone-container, condition: {type: succeeded}}, {step: clone-club-key, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
         guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior

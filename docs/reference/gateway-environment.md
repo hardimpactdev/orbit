@@ -6,6 +6,7 @@ covers:
   - apps/gateway/app/Domain/Nodes/GatewayRuntimeFiles.php
   - apps/gateway/app/Actions/Tasks/*SwampReaderCredentialAction.php
   - apps/gateway/app/Console/Commands/*SwampReaderCredentialCommand.php
+  - apps/gateway/app/Console/Commands/InstallNestedFleetClubKeyCommand.php
   - apps/gateway/app/Domain/Tasks/SwampReaderCredential.php
   - apps/gateway/app/Domain/Tasks/SwampReaderAssistance.php
   - apps/gateway/app/Infrastructure/Tasks/SwampReaderEnvironment.php
@@ -55,10 +56,23 @@ The Gateway reads [Swamp run output](/reference/tasks#swamp-run-output) with the
 | `ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT` | Installed UTC expiry, written by the installer and checked hourly. |
 | `ORBIT_SWAMP_CA_PATH` | Orbit root CA file. Default `<ORBIT_HOME>/ca/root.pem`, with `ORBIT_HOME` defaulting to `$HOME/.orbit`. |
 | `ORBIT_SWAMP_PROOF_CLUB_API_KEY` | Dedicated club credential for disposable proof topologies. Keep its value in the Gateway environment. |
+| `ORBIT_NESTED_FLEET_CLUB_API_KEY` | The Swamp Club key of nested fleets' Gateways, separate from the proof key. Written by `gateway:nested-fleet-club-key:install`. Empty: a nested-fleet container starts without it. |
 
 Two provisions receive a names-only execution copy: Project 62 (`swamp-proof`), and the task group that a `proof:run` creates. Every other task, in the Orbit Project too, gets none.
 
 Proof provision writes the credential to `/home/orbit/.config/swamp/club-api-key` inside the owned Task VM, mode `0600` for `orbit`, in a `0700` directory. Three pinned official `@swamp/ssh exec` argument lists run with sudo: `install -d` makes the directory, `rm -f` drops a previous file or link, and `install … /dev/stdin` writes the token. The native parent sends the token only on SSH stdin. Run history records that the step had stdin, never the value; neither the Operation input nor its result contains it. Each step has a 10-second dispatch budget and runs under `timeout 30`. A missing credential refuses proof placement. Normal task cancellation destroys the VM and its private filesystem.
+
+### Install the nested-fleet Club key
+
+`gateway:nested-fleet-club-key:install` writes `ORBIT_NESTED_FLEET_CLUB_API_KEY` from stdin. Run it on Gateway as `orbit`. It reads one token of at least 16 printable characters without spaces or quotes; one final newline is allowed. It holds the Gateway release lock and uses the same protected env writer as the reader installer: a private mode-`0600` backup, then one atomic rename that keeps every other setting. It never prints the value or takes it as an argument. Then apply the configuration:
+
+```bash
+set +x
+<the key on stdin> | php /home/orbit/orbit/apps/gateway/artisan gateway:nested-fleet-club-key:install
+php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure
+```
+
+The next start of each nested-fleet container delivers it ([Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway)). The backup holds the old env, so keep backups under the Gateway operator's retention policy.
 
 ### Rotate the Swamp reader credential
 

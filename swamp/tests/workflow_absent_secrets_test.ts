@@ -53,12 +53,42 @@ Deno.test("a container default's create and a clone's create read their own keys
     git_credential: copy("instance-git-credential-1"), environment: copy("instance-create-environment-input-1"),
     process_environments: copy("instance-create-processes-1"),
   };
-  const intent = { container: { clone: null }, environment_testing: false, server_database: null };
+  // Every container intent names its Incus project (InstanceContainer::intent).
+  const intent = { container: { clone: null, project: "orbit-instances" }, environment_testing: false, server_database: null };
   assertEquals(failures("workflow-operation-instance-create.yaml", { execution_secrets, intent }), []);
   assertEquals(failures("workflow-operation-instance-create.yaml", {
     execution_secrets: { ...execution_secrets, model_environment: copy("instance-create-model-1") },
-    intent: { ...intent, container: { clone: {} } },
+    intent: { ...intent, container: { clone: {}, project: "orbit-instances" } },
   }), []);
+});
+
+Deno.test("a nested-fleet create and clone read the Club key copy only when the intent says it is there", () => {
+  const execution_secrets = {
+    git_credential: copy("instance-git-credential-1"), environment: copy("instance-create-environment-input-1"),
+    process_environments: copy("instance-create-processes-1"), model_environment: copy("instance-create-model-1"),
+  };
+  for (const clone of [null, {}]) {
+    for (const available of [true, false]) {
+      const club = available ? { club_key: copy("nested-fleet-club-api-key") } : {};
+      assertEquals(failures("workflow-operation-instance-create.yaml", {
+        execution_secrets: { ...execution_secrets, ...club },
+        intent: { container: { clone, project: "orbit-instances-nested", club_key: { available } }, environment_testing: false, server_database: null },
+      }), [], `clone ${clone !== null}, available ${available}`);
+    }
+  }
+});
+
+/** Each value of a Club key step: Swamp refuses a secret expression that tests `execution_secrets` with `in`. */
+Deno.test("the Club key steps read their copy with one whole vault.get and never test execution_secrets", () => {
+  for (const workflow of ["workflow-operation-instance-create.yaml", "workflow-operation-instance-deploy-direct.yaml"]) {
+    const text = Deno.readTextFileSync(new URL(`../workflows/${workflow}`, import.meta.url));
+    const lines = text.split("\n").filter((line) => line.includes("execution_secrets.club_key"));
+    assertEquals(lines.length > 0, true, workflow);
+    for (const line of lines) {
+      assertEquals(/'\$\{\{ vault\.get\(/.test(line.trim().replace(/^[A-Z_a-z]+: /, "")), true, line);
+      assertEquals(/\bin inputs\.execution_secrets/.test(line), false, line);
+    }
+  }
 });
 
 Deno.test("migration reads no new source key from an older Gateway input", () => {
@@ -82,6 +112,19 @@ Deno.test("a production and a checkout deployment read no key that only a contai
       // Every deployment carries a `production` section; a development one carries it blank.
       intent: { deployment: { variant }, production: { instance_id: 1, home: "/srv/app" } },
     }), [], variant);
+  }
+});
+
+Deno.test("a container deployment reads the Club key copy only for a nested-fleet container that has it", () => {
+  const execution_secrets = { credential: copy("development-deploy-operation-1-credential"), environment: copy("instance-environment-1"),
+    process_environments: copy("development-deploy-operation-1-processes") };
+  for (const container of [{ project: "orbit-instances" }, { project: "orbit-instances-nested", club_key: { available: false } },
+    { project: "orbit-instances-nested", club_key: { available: true } }]) {
+    const club = container.club_key?.available ? { club_key: copy("nested-fleet-club-api-key") } : {};
+    assertEquals(failures("workflow-operation-instance-deploy-direct.yaml", {
+      execution_secrets: { ...execution_secrets, ...club },
+      intent: { deployment: { variant: "container" }, container, production: { instance_id: 1, home: "/srv/app" } },
+    }), [], JSON.stringify(container));
   }
 });
 

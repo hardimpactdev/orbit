@@ -751,6 +751,8 @@ The destroy dependency fixture uses real Git in private temporary directories, r
 
 Clone branch fixtures use unprivileged local Git repositories and run without an Ansible playbook. Their registered case names and conservative costs change together in `tools/tests/ci-fixture-cases.json` and `.github/ci/checks.toml`; collect names with `bin/ci-units collect --file swamp/tests/instance_clone_test.py`.
 
+The container fixture cases that deliver the Club key of a nested fleet carry estimated costs (local time × 2.1, rounded up, plus one second) until a hosted run measures them. The table marks each one `ESTIMATE`.
+
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise. The Ansible structure test also checks parsed command argument types before module validation can coerce them.
 
 Migration copy fixtures use real Git trees and filesystem modes. They cover empty link targets, nested ignored directories, excluded Git/submodule paths and prediction before downtime. The final check inspects the copied tree and catches changes made after prediction. Tests also cover guaranteed Git metadata and refusal of metadata left behind, plus safe mode restoration with protected stdin data and directory descriptors.

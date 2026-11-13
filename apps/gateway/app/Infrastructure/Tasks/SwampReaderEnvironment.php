@@ -57,8 +57,24 @@ final readonly class SwampReaderEnvironment
             || ($values['ORBIT_SWAMP_READ_TOKEN'] ?? null) === $credential->token()) {
             throw new RuntimeException('Mint a replacement under a new name before installing it.');
         }
+
+        return $this->replace($original, array_combine(self::Keys, [$credential->token(), $credential->name, $credential->expiresAt->format('Y-m-d\TH:i:s.u\Z')]));
+    }
+
+    /**
+     * Replace or add only `$settings` in the shared env, after a private backup, in one atomic rename. Every other setting stays.
+     *
+     * @param  array<string, string>  $settings
+     */
+    public function replace(#[\SensitiveParameter] string $original, #[\SensitiveParameter] array $settings): string
+    {
+        $values = $this->values($original);
+        foreach (array_keys($settings) as $key) {
+            if (preg_match_all('/^\h*(?:export\h+)?'.preg_quote($key, '/').'\h*=/m', $original) > 1) {
+                throw new RuntimeException('The shared Gateway env has duplicate settings.');
+            }
+        }
         $updated = $original;
-        $settings = array_combine(self::Keys, [$credential->token(), $credential->name, $credential->expiresAt->format('Y-m-d\TH:i:s.u\Z')]);
         foreach ($settings as $key => $value) {
             $pattern = '/^\h*(?:export\h+)?'.preg_quote($key, '/').'\h*=[^\r\n]*(?:\r?\n|$)/m';
             $line = $key.'='.$value."\n";
@@ -69,12 +85,12 @@ final readonly class SwampReaderEnvironment
         $parsed = $this->values($updated);
         foreach ($settings as $key => $value) {
             if (($parsed[$key] ?? null) !== $value) {
-                throw new RuntimeException('The reader settings cannot be replaced safely.');
+                throw new RuntimeException('The settings cannot be replaced safely.');
             }
         }
         foreach ($values as $key => $value) {
-            if (! in_array($key, self::Keys, true) && ($parsed[$key] ?? null) !== $value) {
-                throw new RuntimeException('The reader edit would change another Gateway setting.');
+            if (! array_key_exists($key, $settings) && ($parsed[$key] ?? null) !== $value) {
+                throw new RuntimeException('The edit would change another Gateway setting.');
             }
         }
         $path = $this->layout->environmentPath();
@@ -85,7 +101,7 @@ final readonly class SwampReaderEnvironment
         try {
             $this->writePrivate($temporary, $updated);
             if (! @rename($temporary, $path)) {
-                throw new RuntimeException('Cannot publish the reader settings; the backup is retained.');
+                throw new RuntimeException('Cannot publish the settings; the backup is retained.');
             }
         } finally {
             if (is_file($temporary)) {

@@ -79,7 +79,8 @@ function fixture() {
   ) as Task[]).map((task) => transform(structuredClone(task)));
   Deno.writeTextFileSync(`${folder}/tasks/instance-container-phase.yml`,
     stringify(tasks).replaceAll("/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`));
-  for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml"]) {
+  for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml",
+    "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
@@ -142,10 +143,10 @@ function fixture() {
     source,
     container,
     write,
-    run(phase: string, extra: Record<string, string> = {}) {
+    run(phase: string, extra: Record<string, string> = {}, options: string[] = []) {
       const done = new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
-          "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/instance-container.yml`],
+          "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", ...options, `${folder}/instance-container.yml`],
         env: {
           HOST_FIXTURE: folder,
           PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
@@ -1546,3 +1547,163 @@ Deno.test({
   },
 });
 }
+
+/** A fake Club key: no real key is ever read here. */
+const CLUB = "fake-club-key-7f3a9c";
+
+/** A nested-fleet default with the Club key delivery of its intent; `available` says whether the run has the vault copy. */
+function nestedClub(f: ReturnType<typeof fixture>, available = true) {
+  nestedCreate(f);
+  Object.assign(f.container, {club_key: {directory: "/run/orbit-club", file: "swamp-club-api-key", owner: 1000, group: 1000,
+    tmpfiles: "/etc/tmpfiles.d/orbit-club.conf", gateway: "nested-gateway", serve_unit: "orbit-swamp-serve", available}});
+  f.write();
+}
+
+const clubFile = (f: ReturnType<typeof fixture>, name = "instance-7") => `${f.folder}/tmpfs/${name}/run/orbit-club/swamp-club-api-key`;
+const innerCalls = (f: ReturnType<typeof fixture>) => {
+  try {
+    return Deno.readTextFileSync(`${f.folder}/inner-calls`).trim().split("\n").filter(Boolean);
+  } catch {
+    return [];
+  }
+};
+
+/** Every file of the fixture that a later reader could open: Incus call lines, state, result, snapshots, copies and root file systems. */
+function filesHolding(f: ReturnType<typeof fixture>, value: string): string[] {
+  const found: string[] = [];
+  const walk = (path: string) => {
+    for (const entry of Deno.readDirSync(path)) {
+      const full = `${path}/${entry.name}`;
+      if (full.startsWith(`${f.folder}/tmpfs`) || full.startsWith(`${f.folder}/source`)) continue;
+      if (entry.isDirectory) walk(full);
+      else if (entry.isFile) {
+        try {
+          if (new TextDecoder().decode(Deno.readFileSync(full)).includes(value)) found.push(full.slice(f.folder.length));
+        } catch { /* unreadable */ }
+      }
+    }
+  };
+  walk(f.folder);
+  return found;
+}
+
+Deno.test({
+  name: "a nested-fleet create and deploy start deliver the Club key into /run by stdin; no call, output, result, snapshot or copy holds it",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      nestedClub(f);
+      // -vvv shows every module invocation that no_log does not hide.
+      const created = f.run("container", {ORBIT_CLUB_KEY: CLUB, ANSIBLE_VERBOSITY: "3"});
+      assert(created.ok, created.output);
+      assertEquals(Deno.readTextFileSync(clubFile(f)), CLUB);
+      assertEquals(Deno.statSync(clubFile(f)).mode! & 0o777, 0o600);
+      assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/tmpfiles.d/orbit-club.conf`), "d /run/orbit-club 0750 0 1000 -\n");
+      assertEquals(f.state().club_key_runs, [["/run/orbit-club", "swamp-club-api-key", "1000", "1000", "/etc/tmpfiles.d/orbit-club.conf", "nested-gateway", "orbit-swamp-serve"]]);
+      // A new key restarts the nested Gateway's Swamp serve, which reads the key at its start.
+      assertEquals(innerCalls(f), ["list --format csv --columns s -- ^nested-gateway$", "exec nested-gateway -- systemctl reset-failed -- orbit-swamp-serve",
+        "exec nested-gateway -- systemctl restart --no-block -- orbit-swamp-serve"]);
+      assert(!created.output.includes(CLUB), "the run's output holds the key");
+      for (const phase of ["workspace", "processes", "seed"]) assert(f.run(phase).ok, phase);
+      // The seed snapshot holds the folder's tmpfiles line, never the key; a clone copies that snapshot.
+      assert(f.state().containers["instance-7"].snapshots.length > 0);
+      const deployed = f.run("start", {ORBIT_CLUB_KEY: CLUB, ANSIBLE_VERBOSITY: "3"});
+      assert(deployed.ok, deployed.output);
+      // The same key on a running container changes nothing and restarts nothing.
+      assertEquals(innerCalls(f).length, 3);
+      assertEquals(filesHolding(f, CLUB), []);
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "a stopped nested-fleet container loses the key with its /run, and the deploy start delivers it again",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      nestedClub(f);
+      assert(f.run("container", {ORBIT_CLUB_KEY: CLUB}).ok);
+      assert(f.run("stop").ok);
+      assertThrows(() => Deno.statSync(clubFile(f)));
+      const started = f.run("start", {ORBIT_CLUB_KEY: CLUB});
+      assert(started.ok, started.output);
+      assertEquals(Deno.readTextFileSync(clubFile(f)), CLUB);
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "a nested-fleet start without the vault copy starts the container without the key",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      nestedClub(f, false);
+      // A run without the copy names another key it always has; the step never delivers it.
+      const result = f.run("container", {ORBIT_CLUB_KEY: "git-credential-fallback"});
+      assert(result.ok, result.output);
+      assertEquals(f.state().containers["instance-7"].status, "Running");
+      assertEquals(f.state().club_key_runs, undefined);
+      assertThrows(() => Deno.statSync(clubFile(f)));
+      assertEquals(filesHolding(f, "git-credential-fallback"), []);
+    } finally { f.cleanup(); }
+  },
+});
+
+const unsafeTransfers: {name: string; env: Record<string, string>; extra: string[]}[] = [
+  {name: "kept remote files", env: {ANSIBLE_KEEP_REMOTE_FILES: "1"}, extra: []},
+  {name: "pipelining turned off", env: {}, extra: ["-e", "ansible_pipelining=false"]},
+];
+for (const unsafe of unsafeTransfers) {
+  Deno.test({
+    name: `a nested-fleet start refuses the key transfer by name, before it reads the value: ${unsafe.name}`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = fixture();
+      try {
+        nestedClub(f);
+        const result = f.run("container", {ORBIT_CLUB_KEY: CLUB, ...unsafe.env}, unsafe.extra);
+        assert(!result.ok, result.output);
+        assertEquals(f.result(), {error_code: "instance.nested_club_key_unsafe_transfer"});
+        assertEquals(f.state().club_key_runs, undefined);
+        assertEquals(filesHolding(f, CLUB), []);
+      } finally { f.cleanup(); }
+    },
+  });
+}
+
+Deno.test({
+  name: "a nested-fleet start refuses a /run that is not a tmpfs, before it reads the value",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      nestedClub(f);
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify({...f.state(), run_fstype: "zfs"}));
+      const result = f.run("container", {ORBIT_CLUB_KEY: CLUB});
+      assert(!result.ok, result.output);
+      assertEquals(f.result(), {error_code: "instance.nested_club_key_not_tmpfs"});
+      assertEquals(f.state().club_key_runs, undefined);
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "a normal container's create and deploy start run no Club key task and no Club key command",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      for (const phase of ["container", "workspace", "processes", "seed", "start"]) {
+        const result = f.run(phase, {ORBIT_CLUB_KEY: CLUB});
+        assert(result.ok, `${phase}: ${result.output}`);
+        assert(!/TASK \[(Refuse a key transfer|Read the file system of the container's \/run|Write the Club key)/.test(result.output), result.output);
+      }
+      assertEquals(f.state().club_key_runs, undefined);
+      assert(!incusCalls(f).some((call) => call.includes("findmnt")), JSON.stringify(incusCalls(f)));
+      assertEquals(filesHolding(f, CLUB), []);
+    } finally { f.cleanup(); }
+  },
+});

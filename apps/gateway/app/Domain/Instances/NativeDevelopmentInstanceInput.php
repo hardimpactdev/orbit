@@ -64,7 +64,9 @@ final readonly class NativeDevelopmentInstanceInput
         // Minting writes the read token's credential line into the vault; the fetch reads it as a 0600 file.
         app(InstanceGitHubReadTokens::class)->start($operation);
 
-        return ['intent' => [...$plan, 'ssh_execution' => $input['ssh_execution'],
+        $club = NestedFleetClubKey::forRun($container === null ? null : ValidatedData::object($container));
+
+        return ['intent' => [...$plan, 'container' => $club['container'], 'ssh_execution' => $input['ssh_execution'],
             'instance_name' => $instance->name, 'name_converted_from' => $input['name_converted_from'] ?? null,
             'processes' => $processes, 'setup_steps' => $steps, 'environment_directory' => $environment->directory($instance),
             'server_database' => $server === null ? null : array_diff_key($server, ['secrets' => true]),
@@ -86,6 +88,8 @@ final readonly class NativeDevelopmentInstanceInput
                 ...($container === null ? [] : ['process_environments' => $vault->executionCopy('orbit-control-inputs', 'instance-create-processes-'.$operation->id,
                     ValidatedData::string($processEnvironments))]),
                 'git_credential' => InstanceGitHubReadTokens::credentialReference($operation),
+                // A nested-fleet container's Club key, delivered into its /run at its start.
+                ...$club['copies'],
                 'environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, $environment->content($instance)),
                 ...($testing === null ? [] : ['environment_testing' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-testing-'.$operation->id, $testing)]),
                 ...($server === null ? [] : ['server_database_create' => ValidatedData::object(ValidatedData::object($server['secrets'])['create']), 'server_database_check' => ValidatedData::object(ValidatedData::object($server['secrets'])['check'])]),

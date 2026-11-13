@@ -278,6 +278,7 @@
     "clone_steps": [
         "clone-input",
         "clone-container",
+        "clone-club-key",
         "clone-database-snapshot",
         "clone-database-install",
         "clone-database-cleanup",

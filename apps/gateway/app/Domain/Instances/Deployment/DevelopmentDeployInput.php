@@ -6,6 +6,7 @@ namespace App\Domain\Instances\Deployment;
 
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceGitHubReadTokens;
+use App\Domain\Instances\NestedFleetClubKey;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
@@ -57,6 +58,10 @@ final readonly class DevelopmentDeployInput
             // The Processes' environment files, made from the records only while they still render the admitted units.
             $copies['process_environments'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
                 'development-deploy-operation-'.$operation->id.'-processes', app(ContainerProcesses::class)->environments($instance, $container['processes'] ?? null));
+            // A nested-fleet container's Club key, delivered into its /run when the deployment starts it.
+            $club = NestedFleetClubKey::forRun($container);
+            $container = $club['container'];
+            $copies = [...$copies, ...$club['copies']];
         }
 
         return ['intent' => [...$input, ...$runtime, 'container' => $container, 'application' => ValidatedData::object($input['deployment'])['home'],

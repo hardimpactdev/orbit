@@ -273,6 +273,14 @@
   ansible.builtin.command: { argv: "{{ incus_project + ['start', container.name] }}" }
   changed_when: true
 
+# A nested-fleet container (only its intent has `club_key`) gets its nested Gateway's Club key into its /run at each start, before
+# any check of its inner fleet (docs/reference/development-containers.md#the-club-key-of-the-nested-gateway).
+- name: Deliver the nested Gateway's Club key
+  tags: [container, clone, start]
+  when: phase in ['container', 'clone', 'start'] and container.club_key is defined
+  ansible.builtin.include_tasks:
+    file: tasks/instance-nested-club-key.yml
+    apply: {tags: [always]}
 
 # `php` on every PATH in the container is the Project's static build from the runtime folder: `/usr/local/bin` is on the PATH of
 # units, login shells and `incus exec` sessions, so `composer` runs for `agent` and `orbit` alike. A Project without one has none.

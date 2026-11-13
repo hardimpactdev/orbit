@@ -75,6 +75,7 @@ additionalFiles:
   - ansible/instance-container-destroy.yml
   - ansible/instance-container.yml
   - ansible/tasks/instance-container-phase.yml
+  - ansible/tasks/instance-nested-club-key.yml
   - ansible/tasks/instance-container-handlers.yml
   - ansible/tasks/instance-container-process.yml
   - ansible/route-create-site.yml
@@ -159,6 +160,7 @@ additionalFiles:
   - ansible/instance_bridge.py
   - ansible/instance_network.py
   - ansible/instance_nested.py
+  - ansible/instance_nested_club_key.sh
   - ansible/tasks/instance-bridge-refresh.yml
   - ansible/tasks/instance-image.yml
   - ansible/library/orbit_incus_images.py

@@ -121,7 +121,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "1e58699747da7a80360b3b3384cecdd65165b9639a8383bba93d920cddaafdff",
+    "source_sha256": "c7c3547347af84b9cc83bd81ba8e8557939e33f499581f3ab7f58ac1bb7e65ce",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -174,7 +174,14 @@
       "the nested clone probe refuses a profile with a host disk before it starts",
       "the nested clone probe refuses a profile with an extra share key before it starts",
       "a changed shared folder restarts running normal and nested runtimes before clearing its marker",
-      "a changed shared folder on a normal Node runs main's list and restart command lines"
+      "a changed shared folder on a normal Node runs main's list and restart command lines",
+      "a nested-fleet create and deploy start deliver the Club key into /run by stdin; no call, output, result, snapshot or copy holds it",
+      "a stopped nested-fleet container loses the key with its /run, and the deploy start delivers it again",
+      "a nested-fleet start without the vault copy starts the container without the key",
+      "a nested-fleet start refuses the key transfer by name, before it reads the value: kept remote files",
+      "a nested-fleet start refuses the key transfer by name, before it reads the value: pipelining turned off",
+      "a nested-fleet start refuses a /run that is not a tmpfs, before it reads the value",
+      "a normal container's create and deploy start run no Club key task and no Club key command"
     ]
   },
   "swamp/tests/ansible_instance_host_test.ts": {
@@ -640,10 +647,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 → v5.12.0",
-      "exact script output: v5.42.0 → v5.43.0",
-      "exact script output: v5.49.0 → v5.50.0",
-      "exact script output: v5.50.0 → v5.50.1",
+      "exact script output: v5.11.0 \u2192 v5.12.0",
+      "exact script output: v5.42.0 \u2192 v5.43.0",
+      "exact script output: v5.49.0 \u2192 v5.50.0",
+      "exact script output: v5.50.0 \u2192 v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -1447,7 +1454,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "d7458ef67bc0d4df021c70c972fe956e1472f4eb685094ab6207571d2fbe57bb",
+    "source_sha256": "0318eb5113283dd84f880c19973439dc37b9b019adb9cc448fc53c3875fbda66",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1462,17 +1469,24 @@
       "test_schedule_cleanup_listing_error_refuses_before_clone_boot",
       "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
       "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement",
+      "test_clone_of_a_default_with_a_node_service_target_strips_it_on_the_first_try_and_on_a_retry",
       "test_clone_target_failure_receipt_keeps_public_identity_and_bounds_tool_output",
       "test_clone_launch_applies_mail_without_another_playbook",
       "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful",
       "test_clone_uses_the_admitted_common_acl_name",
       "test_clone_refuses_unsafe_effective_nics_before_start",
       "test_normal_clone_uses_the_exact_original_checker_program_and_argv",
-      "test_nested_clone_refuses_inherited_raw_keys_and_extra_devices_before_start",
+      "test_nested_clone_starts_only_with_exactly_the_written_config_and_devices",
+      "test_nested_guard_admits_the_live_shape_of_the_first_nested_container",
       "test_guest_and_node_command_names_stay_in_sync",
       "test_preserves_only_the_guest_command_and_exit_code",
       "test_rejects_private_or_mismatched_guest_diagnostics",
-      "test_node_command_failure_names_executable_and_exit_without_output"
+      "test_node_command_failure_names_executable_and_exit_without_output",
+      "test_delivers_the_key_only_as_the_scripts_stdin_after_the_tmpfs_check",
+      "test_the_same_key_changes_nothing",
+      "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value",
+      "test_names_a_failed_delivery_without_its_output",
+      "test_refuses_without_a_vault_copy_or_value_and_runs_nothing"
     ]
   },
   "swamp/tests/instance_migrate_native_faults_test.ts": {
@@ -1869,12 +1883,15 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "2136a422685e3d09900524fd138244f1f5fb5d18c9f290ea5f4be7dd102700dd",
+    "source_sha256": "0d00617833fef18ffebd4ab69cd5db157c35e2a4b3abf712aaa93e41de57f7a6",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
+      "a nested-fleet create and clone read the Club key copy only when the intent says it is there",
+      "the Club key steps read their copy with one whole vault.get and never test execution_secrets",
       "migration reads no new source key from an older Gateway input",
       "a production and a checkout deployment read no key that only a container deployment has",
+      "a container deployment reads the Club key copy only for a nested-fleet container that has it",
       "a container process:start, stop and restart read no `read` section, which only a migrated Schedule log read has",
       "create finalization evaluates checkout, default and clone receipts with Swamp's CEL types",
       "deploy VP workspace reads retain step names for the capture schema",
@@ -2281,7 +2298,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/ansible-input/write_test.ts": {
-    "source_sha256": "386a7d0de725832f0833aea85dcc4783144820243a41fedb4db04cf59e0d5a08",
+    "source_sha256": "8a8ee8b606406b1c6bf3be43d617f74239f5da02db77206e7e79ebd7a9b18ce1",
     "cases": [
       "the full intent reaches a private file beyond the environment size limit",
       "an intent write refuses paths outside its run folder",

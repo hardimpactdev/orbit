@@ -32,6 +32,8 @@ const rootfs = (name: string) => `${folder}/containers/${name}`;
 /** A container path inside its folder; other arguments stay as they are. */
 const inside = (name: string, value: string) =>
   /^\/(srv|tmp|etc|home|usr\/local)\//.test(value) ? rootfs(name) + value : value;
+/** A container's /run: a tmpfs, so it lives beside its root file system, and a stop, snapshot or copy never holds it. */
+const tmpfs = (name: string) => `${folder}/tmpfs/${name}`;
 
 if (args[0] === "query") {
   const [route, query = ""] = args.at(-1)!.slice(5).split("?");
@@ -104,6 +106,7 @@ if (family === "list") {
   state.containers[name] = { project, image: args[1], status: "Stopped", devices, config, snapshots: [], uuid: uuid(name) };
   Deno.mkdirSync(`${rootfs(name)}/srv/workspace`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/etc/systemd/system`, { recursive: true });
+  Deno.mkdirSync(`${rootfs(name)}/etc/tmpfiles.d`, { recursive: true });
   for (const home of ["agent/.codex", "agent/.config/orbit", "orbit"]) {
     Deno.mkdirSync(`${rootfs(name)}/home/${home}`, { recursive: true });
   }
@@ -156,6 +159,11 @@ if (family === "list") {
   const name = args.at(-1)!;
   if (!state.containers[name]) fail("Instance not found");
   state.containers[name].status = family === "start" ? "Running" : "Stopped";
+  if (family === "stop") {
+    try {
+      Deno.removeSync(tmpfs(name), { recursive: true });
+    } catch { /* nothing in /run */ }
+  }
   // A boot starts every unit that is enabled: a link in multi-user.target.wants.
   if (family === "start") {
     const wants = `${rootfs(name)}/etc/systemd/system/multi-user.target.wants`;
@@ -175,6 +183,9 @@ if (family === "list") {
     if (container.snapshots.includes(snapshot) && !args.includes("--reuse")) fail("Snapshot already exists");
     container.snapshots = container.snapshots.filter((s: string) => s !== snapshot);
     container.snapshots.push(snapshot);
+    // The snapshot's content: the root file system as it is now, never the tmpfs.
+    Deno.mkdirSync(`${folder}/snapshots/${name}`, { recursive: true });
+    new Deno.Command("cp", { args: ["-R", rootfs(name), `${folder}/snapshots/${name}/${snapshot}`] }).outputSync();
   } else {
     container.snapshots = container.snapshots.filter((s: string) => s !== snapshot);
   }
@@ -278,6 +289,37 @@ if (family === "list") {
     save();
     console.log(JSON.stringify({status: converted ? "converted" : "unchanged", versions: ["24.22.1"], pins: [], seed_refresh_required: state.node_seed_pending === true}));
     Deno.exit(0);
+  }
+  if (command[0] === "findmnt" && command.at(-1) === "/run") {
+    console.log(state.run_fstype ?? "tmpfs");
+    Deno.exit(0);
+  }
+  // The shipped Club key script runs for real: its /run folder in the tmpfs, its tmpfiles line in the root file system, and
+  // findmnt, chown and the inner Incus of the nested fleet as fakes that record their arguments.
+  if (command[0] === "sh" && command[1] === "-c" && command[2].startsWith("# orbit-club-key:")) {
+    const [directory, file, owner, group, tmpfiles, gateway, unit] = command.slice(4);
+    if (!directory.startsWith("/run/")) fail("The Club key folder is not under /run");
+    const bin = `${folder}/club-bin`;
+    Deno.mkdirSync(bin, { recursive: true });
+    Deno.writeTextFileSync(`${bin}/findmnt`, `#!/bin/sh\necho "$FAKE_FSTYPE"\n`);
+    Deno.writeTextFileSync(`${bin}/chown`, `#!/bin/sh\necho "$*" >> '${folder}/club-chown'\n`);
+    Deno.writeTextFileSync(`${bin}/incus`, `#!/bin/sh\necho "$*" >> '${folder}/inner-calls'\n[ "$1" = list ] && echo "$FAKE_GATEWAY"\nexit 0\n`);
+    for (const tool of ["findmnt", "chown", "incus"]) Deno.chmodSync(`${bin}/${tool}`, 0o755);
+    state.club_key_runs = [...(state.club_key_runs ?? []), command.slice(4)];
+    save();
+    const done = new Deno.Command("sh", {
+      args: ["-c", command[2], "sh", tmpfs(name) + directory, file, owner, group, rootfs(name) + tmpfiles, gateway, unit],
+      stdin: "inherit",
+      env: { PATH: `${bin}:${Deno.env.get("PATH")}`, FAKE_FSTYPE: state.run_fstype ?? "tmpfs", FAKE_GATEWAY: state.gateway_status ?? "RUNNING" },
+    }).outputSync();
+    // The script saw the tmpfs folder at its fixture path; inside the container that folder is the /run path itself.
+    try {
+      const line = rootfs(name) + tmpfiles;
+      Deno.writeTextFileSync(line, Deno.readTextFileSync(line).replaceAll(tmpfs(name), ""));
+    } catch { /* the script stopped before it wrote the line */ }
+    Deno.stdout.writeSync(done.stdout);
+    Deno.stderr.writeSync(done.stderr);
+    Deno.exit(done.code);
   }
   if (command[0] === "journalctl") {
     const unit = command[command.indexOf("--unit") + 1];

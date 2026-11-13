@@ -23,6 +23,7 @@ use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
+use App\Domain\Instances\NestedFleetClubKey;
 use App\Domain\Instances\OwnedDatabaseSlug;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -216,6 +217,11 @@ final readonly class StartDevelopmentInstanceCreateAction
                 'server_database' => $server['input'] ?? null, 'container' => $steps === null ? null
                     : $this->containerIntent($instance, $node, $steps, $source, $server['connection'] ?? null,
                         ValidatedData::string(ValidatedData::object($provisioning['resolve'])['branch']), $route?->domain)];
+            $admitted = $input['direct_provisioning']['container'];
+            if (is_array($admitted) && isset($admitted['club_key'])) {
+                // Whether this nested-fleet start gets its Club key; without it the container starts without one.
+                $input['nested_fleet_club_key'] = NestedFleetClubKey::status();
+            }
             if ($selection !== null && is_array($input['direct_provisioning']['container'])) {
                 $input['direct_provisioning']['container']['branch_selection'] = $selection->toArray();
             }
