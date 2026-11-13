@@ -15,6 +15,8 @@ The container-host phase publishes its own stock image from a stopped temporary 
 
 ## Reconcile the stock image
 
+Instance hosts prepare stock and digest-named images separately in `orbit-instances` and `orbit-instances-nested`. Each prepared image has its own stable alias. A failed build removes only a builder created by that variant; a prior builder stays for the operator.
+
 The phase selects the static local target, verifies the daemon and its archive directory, and binds stock, prepared-image and clone-probe commands to that socket. The client's default remote cannot receive their reads, writes or cleanup.
 
 When the selected stock image is healthy, it has the matching `user.orbit.stock-build` statement, no update source or auto-update, and an archive. That statement permits the healthy check; it never licenses deletion. An unmarked selected image refuses with its full fingerprint and a link to the adoption recipe below.

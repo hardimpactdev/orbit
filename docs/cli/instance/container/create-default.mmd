@@ -27,7 +27,7 @@ sequenceDiagram
   %%> - the default Instance is reserved with its runtime record and Route; it gets no T3 port
   %%> - `.env` is rendered from the Project's env template; a repository read token goes to the vault
   %%> - a retained create retry records the Project's current development Processes in this admission transaction; changed definitions update their records, removed definitions remove theirs
-  %%> - a Project with `nested_fleet` enabled refuses before reservation with `operation.kind_unavailable` (503), until the nested image variant is available
+  %%> - a nested Project needs a switched-on build-list Node and a nested container result; checkout defaults, sources and retries refuse before reservation
   Note over GW: Commit, push copies<br/>queue start · answer 202
   GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start run from queue<br/>operation-instance-create
@@ -80,7 +80,6 @@ sequenceDiagram
   else a step fails or the budget ends
     SW--xGW: Run failed<br/>failed step, error_code
     %%> What stays:
-    %%> - the reservation, runtime, and any container, workspace, owned databases, test databases and role stay until the owner acts; default destroy is unavailable
     %%> - a refused retry removes none of them; stop and Route withdrawal are attempted; failed compensation leaves its step failed
     %%> - shared service endpoint records and rules may remain until endpoint lifecycle work is live
     %%> - failed and cancelled creates, including cancellation before work starts, report retained_for_retry and the same create command with a new idempotency key; default destroy stays unavailable

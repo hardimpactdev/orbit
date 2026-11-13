@@ -116,4 +116,4 @@ Migration reports named environment warnings in human output and retains their `
 
 Nested-fleet creation requires both the Project setting and the Node hosting switch. Checkout migration into that project is unavailable. See [nested fleet](/reference/development-containers#nested-fleet).
 
-Nested create and clone currently refuse with `operation.kind_unavailable` (503). Hosting is prepared only on switched-on build-list Nodes. Each nested create or retry must resolve to a container in the nested project; a checkout default or source is refused. Its image follows separately.
+Nested create and clone use the nested image only on switched-on build-list Nodes. Each create or retry must resolve to a container in the nested project; a checkout default or source is refused before reservation. Migration remains unavailable for nested Projects.

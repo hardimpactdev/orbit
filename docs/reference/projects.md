@@ -18,7 +18,7 @@ A Project records one Git repository and the defaults for running it. New Instan
 
 ## Nested fleet setting
 
-`nested_fleet` is a stored and public boolean that defaults to false. Set it through the Project update API. A changed value refuses with `project.nested_fleet_in_use` (409) while the Project has any Instance, including a checkout. Sending the current value is allowed. Nested create, clone and checkout migration currently refuse with `operation.kind_unavailable` (503) before reservation. A Node on the build list prepares nested hosting only when its switch is on. The image variant follows separately, so create and clone still refuse.
+`nested_fleet` is a stored and public boolean that defaults to false. Set it through the Project update API. A changed value refuses with `project.nested_fleet_in_use` (409) while the Project has any Instance, including a checkout. Sending the current value is allowed. Nested create and clone require a switched-on build-list Node and a container in the nested project. Checkout defaults, sources and retries refuse before reservation. Checkout migration remains unavailable with `operation.kind_unavailable` (503).
 
 ## Project Documents
 

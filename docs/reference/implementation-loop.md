@@ -766,3 +766,5 @@ Node service endpoint fixtures run unprivileged in the existing migrate environm
 Migration endpoint fixtures use local TCP sockets and mocked resolution boundaries to distinguish explicitly refused connections, answering services, saturated backlogs, UNIX socket transports and inconclusive probes. Their warning receipts survive later phase results; inventory and retained cost totals are regenerated together.
 
 Nested Instance fixtures retain the old-host intent and normal command transcript checks in PR slices. An image case whose measured forecast exceeds a slice belongs in the named after-merge cases, with its measurement and reason in the fixture registry.
+
+The nested image build-and-rerun case has a 155-second body forecast plus startup and runs in Main full set. The cases for a bad digest and a prior builder still run on PRs.

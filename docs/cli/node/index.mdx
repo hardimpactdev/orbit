@@ -111,3 +111,5 @@ Task VM host settings include `pool_size` for a new loop-backed ZFS pool. Existi
 Nested-fleet hosting is an explicit [Node setting](/reference/node-settings#nested-fleet-instance-hosting), changed through the update API. An app-dev role does not enable it.
 
 The API-only Node switch `nested_fleet` defaults off. It gates nested host preparation and future admission; clearing it does not remove existing projects or containers. See [hosting settings](/reference/node-settings#nested-fleet-instance-hosting).
+
+An enabled host also builds the nested Instance image; clearing the switch stops future nested preparation and admission.

@@ -24,13 +24,13 @@ sequenceDiagram
   %%> - the Project's `default` Instance runs in a container on this Node, is active and has a seed snapshot, else `instance.default_missing`
   %%> - Conn is enabled, and the model router has its guard, else `operation.kind_unavailable`
   %%> - a database on a Database server clones on the default's server; another server refuses `instance.database_clone_unsupported`
+  %%> - a nested Project requires the Node hosting switch and a container in the nested project; checkout sources and retries refuse before reservation
   %%> Result:
   %%> - the Instance is reserved with its runtime record: container name, bridge address, the lowest free T3 port from 3800 and the default as clone source
   %%> - `.env` is rendered from the Project's env template; it, the placeholder model key and a repository read token go to the vault
   %%> - the clone workspace reads one private JSON vault value with `.env` and the Process environment files; SSH stdin takes the whole value
   %%> - a task is recorded with the full intent and `container.clone`
   %%> - a retained create retry records the Project's current development Processes in this admission transaction; changed definitions update their records, removed definitions remove theirs
-  %%> - a Project with `nested_fleet` enabled refuses before reservation with `operation.kind_unavailable` (503), until the nested image variant is available
   Note over GW: Commit, push copies<br/>queue start · answer 202
   GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start run from queue<br/>operation-instance-create
@@ -122,7 +122,6 @@ sequenceDiagram
     %%> - only when the run published it
     SW->>N: Attempt container stop<br/>incus stop
     %%> What stays:
-    %%> - the reservation, runtime, and any container, workspace, owned databases, test databases and role stay until the owner acts
     %%> - a refused retry removes none of them; stop and Route withdrawal are attempted; failed compensation leaves its step failed
     %%> - shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live
     %%> - failed and cancelled creates, including cancellation before work starts, report retained_for_retry, the same create command with a new idempotency key, and forced destroy

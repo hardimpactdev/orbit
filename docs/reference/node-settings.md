@@ -238,3 +238,7 @@ Only an enabled Node prepares the second Incus project, its profile and stock im
 Combined apps-path and hosting-switch updates store the switch after successful storage preparation. An omitted ownership member in an older captured update preserves the current switch.
 
 Clearing hosting does not withdraw recorded runtimes: their project scopes remain in shared-folder refresh and their occupied subordinate-ID maps remain in the converge budget. Only the two spare nested maps stop being reserved.
+
+An enabled Node also builds the digest-named nested image and publishes `orbit-instance-nested` in its nested project. Normal Nodes build only their normal image. See [the nested container](/reference/development-containers#the-container).
+
+A captured converge from before the nested image definition remains valid and skips that image build. A new converge captures the image definition.

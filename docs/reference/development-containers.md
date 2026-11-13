@@ -20,7 +20,7 @@ covers:
 | --- | --- |
 | Records, Node preparation, egress and DNS | Built |
 | Default create and deploy, clone, forced non-default destroy, checkout migration | Built on the build-list Nodes |
-| Nested-fleet records, refusals, host placement and readers | Built; nested Instance creation waits for the image variant |
+| Nested-fleet records, hosting, image and readers | Built; nested create and clone require an enabled container host |
 | Task containers, fleet build and refresh (F2–F3), nested-fleet parity, sleep/wake and production containers | Planned |
 | Dedicated workspace volumes and explicit package workspace links | [Draft specification](#workspace-volumes-draft); not implemented or proved |
 
@@ -145,7 +145,7 @@ Every development container has the same layout. The image and the create set it
 | `orbit` | uid 1000, home `/home/orbit` mode 0750, password locked. Runs the app and every Orbit Process |
 | `agent` | uid 2750, home `/home/agent` mode 0700, password locked. Runs T3, Claude Code, Codex and their shell commands. Owns the T3 state, the agent settings and the placeholder key |
 | `work` | gid 2760, members `agent` and `orbit` |
-| Sudo | None for either user |
+| Sudo | None for either user in the normal image. In the nested-fleet variant, only `agent` has passwordless sudo |
 | Workspace | `/srv/workspace`, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others. `core.sharedRepository=group` |
 | Git | `safe.directory=/srv/workspace` in each user's own Git config; the agent phase preserves its other Git settings |
 | Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped |
@@ -395,7 +395,7 @@ Each Project type has one note in the agent folder, at `notes/<note>.md`. The no
 
 When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are. It says how previews work, and how an agent's own development server becomes reachable: the port range, the address to bind and the host name to allow.
 
-It says that there is no sudo and no direct internet, how the egress proxy works, and how Git leaves the container.
+It says that only a nested-fleet agent has sudo and that there is no direct internet, how the egress proxy works, and how Git leaves the container.
 
 A note gives no instructions about the work. Instructions, skills and MCP servers come from the project's own files.
 
@@ -992,11 +992,11 @@ Migration checks executable availability before downtime and requires moved runn
 
 ## Nested fleet
 
-Status: switched-on Nodes prepare the hosting projects and guards. Nested create and clone still refuse before reservation until the image variant is delivered. The fleet lifecycle below follows separately.
+Status: nested records, hosting and the image variant are built. Create and clone require a switched-on build-list Node and a container in the nested project; checkout results refuse. Fleet build and refresh follow separately.
 
 The Project column `nested_fleet` is boolean and defaults to false. An operator sets it through the existing Project update API with `{"nested_fleet": true}`. F1 adds no CLI option. A change refuses with `project.nested_fleet_in_use` while the Project has any Instance, including a checkout. Each runtime records its Incus project. Create, clone and destroy use that record.
 
-F1A prepares placement and the host project for an inner fleet. Instance creation stays unavailable until F1B supplies its image variant. Fleet devices, automatic build, tunnel setup, refresh and the proof runner come in later cuts. The remaining sections describe that target. Orbit uses it for its command proofs: a Gateway, an `app-dev` and an `app-prod` Node. Other Projects leave it off and keep the kernel surface of [Inside a container](#inside-a-container).
+Fleet devices, automatic build, tunnel setup, refresh and the proof runner come in later cuts. The remaining sections describe that target. Orbit uses it for its command proofs: a Gateway, an `app-dev` and an `app-prod` Node. Other Projects leave it off and keep the kernel surface of [Inside a container](#inside-a-container).
 
 ### The container
 
@@ -1018,7 +1018,9 @@ An Instance container with a nested fleet lives in `orbit-instances-nested` on t
 
 Its project allows low-level keys (`restricted.containers.lowlevel=allow`), because `security.idmap.size` is one. So the create flow refuses a container with any `raw.*` key, and with any device beyond its root disk, NIC, the shared folders and the T3 proxy. No other host path, including the host's Incus socket, reaches it.
 
-The nested image variant is not available yet. Orbit refuses creating an Instance in a nested-fleet Project with `operation.kind_unavailable` (503), before reserving an Instance or runtime.
+The digest-named image variant has the stable alias `orbit-instance-nested`. It adds the recipe-pinned `incus-base` and `incus-client`, `wireguard-tools`, `sqlite3` and sudo during image build through the egress proxy. It omits `/etc/sysctl.d/90-orbit-no-userns.conf`, gives root `1000000:100000000` in both subordinate ID files, and writes `N` to `/etc/orbit/apparmor-off`. No package download is needed at Instance start.
+
+Only `agent` joins the inner `incus-admin` group and has passwordless sudo. It has root in its own container. `orbit` gets neither grant. The image firewall drops traffic from uid `orbit` to both inner fleet networks, `10.45.0.0/24` and `10.232.2.0/24`. Normal Projects keep their existing image, project and user namespace limit.
 
 ### The fleet
 
@@ -1045,7 +1047,7 @@ The agent reaches its fleet as on a task VM, with its own tunnel.
 - Its tunnel `wg-nested` runs as `orbit-wg-nested.service` with `ip` and `wg`, because `wg-quick` segfaults in the outer container under Ubuntu 26.04's AppArmor profile.
 - The candidate CLI in the workspace talks to the nested Gateway at `https://10.45.0.1`, with the `nested` profile and the nested root CA.
 - The agent runs `incus` in the container for `exec`, logs and snapshots of its nested containers.
-- `agent` is a member of the inner Incus admin group and has no sudo.
+- `agent` is a member of the inner Incus admin group and has passwordless sudo inside its own container.
 - That makes the agent root-equivalent inside its own container, never on the Node.
 - `orbit` has no access to the inner Incus.
 - The nested Gateway and `app-dev` get `/srv/workspace` as the disk device `checkout`, so an edit reaches them at once.

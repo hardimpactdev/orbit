@@ -48,6 +48,7 @@ sequenceDiagram
     end
     SW->>N: Delete the container<br/>Ansible · tags remove
     %%> What it does:
+    %%> - locate the container in its runtime's recorded Incus project, including `orbit-instances-nested`
     %%> - stops and deletes the clone, its Processes, T3 history, snapshots, storage volume and proxy device
     %%> - deleting T3 retires every session and unused pairing link; no T3 call or new vault key is needed
     %%> - removes its `instance-<id>` ACL from Incus project `default`, its owned UFW rules, its Node repository mirror and its private Node mail activation state

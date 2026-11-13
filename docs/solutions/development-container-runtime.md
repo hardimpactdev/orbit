@@ -29,7 +29,7 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | Repeated sends | Swamp relies on T3's idempotent `clientRequestId`, keyed per session, and renews the Swamp session only between turn operations. PR 8 proves it across a T3 restart |
 | Pause | An explicit pause and resume on the group. A paused group admits no Swamp turn, and the user drives from Conn |
 | Task capacity | Each Node has task and CI place counts, with the queue and two-hour wait of task places. The parity gate's peak memory sets the counts |
-| Inner Incus | `agent` joins the inner Incus admin group: root-equivalent inside its own container, with no sudo. `orbit` gets no access |
+| Inner Incus | `agent` joins the inner Incus admin group: root-equivalent inside its own container, with passwordless sudo. `orbit` gets no access |
 | Container egress | Changed by Nick, 2026-11-10. Every container and the nested test Nodes get full public internet access through the Node's [egress proxy](/reference/development-containers#egress-and-dns). Rollout step 2c built it |
 | Task Nodes before the switch | Task clones and container CI proofs run on Beast and Shark, as `app-dev` Nodes on the build list, beside their task VMs |
 | Models | Through the per-Node [forwarder](/reference/ai-router#container-model-forwarder) to the model router guard. A container holds only the placeholder key |
@@ -464,32 +464,15 @@ Tests: Pest for the attach admission, the ownership rules and the end without de
 
 ### PR 10: the nested fleet
 
-This PR adds the [nested fleet](/reference/development-containers#nested-fleet) as an optional feature. It reuses the nested topology of the earlier task container plan; the default Instance takes the place of the base container.
+PR 10 is cut into F1–F3. See the [nested fleet contract](/reference/development-containers#nested-fleet).
 
-- **Setting.** A Project setting turns the nested fleet on. Orbit's own Project turns it on.
-- **Node.** The `app-dev` converge adds an Incus project for nested-fleet containers. It allows nesting, interception, isolated ID maps and low-level keys.
-- **IDs.** Root's subordinate IDs on the Node hold one isolated range per nested-fleet container.
-- **Default Instance.** The create and deploy flows of a nested-fleet Project build the inner Incus, its directory pool `topology-seed`, the network `oe-nested` and the fleet once.
-- **Ready copies.** The default keeps the three nested containers stopped, each with its `base` snapshot.
-- **Clone.** A clone carries the fleet. The create flow starts its nested containers, brings up `orbit-wg-nested.service` and checks the hub handshake.
-- **Refusals.** The create flow refuses a `raw.*` key and any device beyond the root disk, the NIC, the shared folders and the T3 proxy.
-- **Fleet rules.** The AppArmor-off device on each nested container, and a fleet check that fails on any `LoadCredential` unit.
+**F1: container support.** A default-off Project column and update API select a separate restricted Incus project and image variant. Host convergence creates both projects. The variant has pinned Incus, WireGuard tools, subordinate IDs, and the AppArmor marker. Only `agent` gets inner Incus access and passwordless sudo. The app uid cannot reach the inner networks. Create refuses raw keys and extra devices. Clone and destroy use the recorded project. An operator imports the fleet by hand.
 
-The PR also points the nested fleet at the Node's [egress proxy](/reference/development-containers#egress-of-the-nested-fleet), which step 2c built: the proxy settings of the nested Nodes, and the proxy's lines as egress facts of the Instance.
+**F2: fleet devices.** Make checkout ownership and the AppArmor-off device work two levels deep and survive a `base` restore.
 
-Tests: Pest for the setting, the project choice, the refusals and the proxy rules; Ansible fixture tests for the inner Incus, the tunnel unit, the fleet check and the proxy settings. Live on Beast:
+**F3: fleet lifecycle.** Build the fleet in the default and keep stopped ready copies. Refresh them on deployment. Start each clone's fleet and tunnel. Apply the nested proxy settings and report egress facts.
 
-1. Orbit's default Instance builds with the fleet, from scratch.
-2. A clone of it starts, and `zfs get written` shows only a few MB.
-3. In the clone, each nested container shows `N` at `/sys/module/apparmor/parameters/enabled`, no unit has `LoadCredential`, and the nested hub handshake is recent.
-4. As `agent`, `incus list` shows the fleet; as `orbit`, it is refused.
-5. A container of the test Project has no nesting and `user.max_user_namespaces=0`.
-6. The PR records the clone, nested start and `base` times.
-The egress proxy checks follow.
-
-7. A nested Node fetches a public package through the proxy, and the proxy logs the connection.
-8. A nested Node with the proxy unset reaches nothing outside.
-9. The proxy refuses `CONNECT` to the Gateway, to `127.0.0.1` and to a `.orbit` name.
+F1 tests cover Project admission, placement, keys, image contents and refusals, plus Ansible host and image fixtures. After deployment, converge the host, build the variant and create a nested default. Check its keys and users. Import a fleet and clone it by hand. Check that a normal Project still has no nesting and keeps the user namespace sysctl. F2 and F3 add their own live device and lifecycle proofs.
 
 ### PR 11: command proofs in an Instance container
 
