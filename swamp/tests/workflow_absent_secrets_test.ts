@@ -387,6 +387,12 @@ const cloneOutcomes = (): Record<string, Outcome> => ({
   "clone-register": JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-create-16210-t3-register.json", import.meta.url))).step,
 });
 
+Deno.test("the scheduler imports the level sort of the Swamp release that the repository pins", () => {
+  const pin = /^swampVersion: \S+-sha\.([0-9a-f]{8})$/m.exec(Deno.readTextFileSync(new URL("../.swamp.yaml", import.meta.url)))![1];
+  const imported = /swamp-club\/swamp\/([0-9a-f]{40})\//.exec(Deno.readTextFileSync(new URL(import.meta.url)))![1];
+  assertEquals(imported.slice(0, 8), pin, "move the TopologicalSortService import to the new Swamp pin");
+});
+
 Deno.test("the workspace and T3 share one step level of the clone job in every clone shape", () => {
   // Swamp's levels come from the static graph, so guards (database, Valkey, Club key, fleet) never move a step to another level.
   const flow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as { jobs: GraphJob[] };
@@ -474,8 +480,8 @@ Deno.test("a clone whose workspace fails while T3 runs registers nothing and sto
   assertEquals(ran.accepted.status, "failed");
 });
 
-Deno.test("a clone whose T3 step fails, in its agent part or its T3 part, registers nothing, stops the container and names T3", () => {
-  // The agent part and the T3 part fail the same step; its stderr (the Operation's failure detail) names the part.
+Deno.test("a clone whose T3 step fails, early or late, registers nothing, stops the container and names T3", () => {
+  // The agent part (early) and the T3 part (late) fail the same step; instance_clone_test.py proves which part its stderr names.
   for (const duration of [1.1, 7.2]) {
     const outcomes = cloneOutcomes();
     outcomes["clone-t3"] = { status: "failed", duration };

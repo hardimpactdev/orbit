@@ -646,7 +646,8 @@ jobs:
       # writes the workspace (T3 runs Git without optional locks), so it runs beside it under its own lock name; a shared name would make
       # Swamp run them one after another. Swamp starts a level of steps only when the whole level before it has ended
       # (swamp/docs/swamp-shape.md), so this list puts it in the workspace's level: the deepest step it names, clone-fleet, is as deep as the
-      # deepest step the workspace names. It reads nothing of the fleet or the database steps. clone-sessions is the join.
+      # deepest step the workspace names. A failed copy, Club key or fleet start skips it, as it skips the workspace. It reads nothing of the
+      # fleet or the database steps. clone-sessions is the join.
       - name: clone-t3
         labels: {role: swamp}
         writes: true

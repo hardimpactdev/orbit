@@ -117,7 +117,8 @@ sequenceDiagram
     %%> - starts use nonblocking systemd jobs, then a bounded readiness check for each running unit; container Process units order after `network.target`
     and T3 beside the workspace
     SW->>C: Start T3<br/>native clone-t3
-    %%> When: with the workspace; it depends on the copy, the Club key and the fleet start only for its level, and it reads nothing of the fleet or the database steps
+    %%> When: with the workspace; it depends on the copy, the Club key and the fleet start, which also sets its level; it reads nothing of the fleet or the database steps
+    %%> - a failed Club key or fleet start skips it, as it skips the workspace
     %%> - a nested-fleet clone starts T3 after the fleet step, beside the workspace; T3 still reads the seed's `NO_PROXY` files at boot
     %%> What it does, in one step:
     %%> - the agent part: writes the placeholder key for `agent` from SSH stdin, and the Claude Code and Codex settings that point at the model forwarder
@@ -126,7 +127,7 @@ sequenceDiagram
     %%> Check:
     %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`
     %%> On failure:
-    %%> - the result names `t3`; the Operation's failure detail says which part failed: `instance.container_agent_failed` or `instance.container_t3_failed`
+    %%> - the result names `t3`; unless the step timed out, the Operation's failure detail says which part failed: `instance.container_agent_failed` or `instance.container_t3_failed`
     %%> Why its own lock: the clone steps share one Swamp lock; T3 takes `ic-clone-t3-…`, so it runs beside the workspace
     end
     SW->>C: Register the T3 server<br/>native clone-register

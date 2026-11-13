@@ -99,7 +99,7 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | `operation.target_busy` | Another change to the Instance is running. |
 | `instance.default_missing` | The Project's `default` runs in a container on another Node, is not active or has no seed snapshot yet, or a build-list Node has no `default` of the Project yet. |
 | `instance.database_clone_unsupported` | The default's database cannot be cloned: a clone in a container names another Database server, or the database is not on a server. |
-| `instance.t3_unready` | A clone's T3 step failed: T3 did not answer within 30 seconds of its start, or the step's first part, which writes the agent's files, failed. `error.detail` names the part. |
+| `instance.t3_unready` | A clone's T3 step failed: T3 did not answer within 30 seconds of its start, or the step's first part, which writes the agent's files, failed. `error.detail` names the part, unless the step timed out. |
 | `instance.create_register_failed` | A clone's T3 server refused a session the run issued, or the Gateway's session lacks `access:read` and `access:write`. The step's report names the `conn.*` code. |
 | `instance.host_unavailable` | The container Node is not prepared, its bridge or its T3 ports are full, or its runtime folder lacks the Project's PHP build. |
 | `project.source_defaults_incomplete` | The Project's source defaults are incomplete, or a web-serving Project in a container has no PHP version. |
