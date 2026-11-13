@@ -323,6 +323,11 @@
   "operation-gateway-swamp-load": {
    "Check the Ansible collections": "read-only"
   },
+  "operation-instance-complete": {
+   "finish": "idempotent",
+   "server-database-check": "read-only",
+   "server-valkey-check": "read-only"
+  },
   "operation-instance-create": {
    "clone-server-database-check": "read-only",
    "clone-server-valkey-check": "read-only",

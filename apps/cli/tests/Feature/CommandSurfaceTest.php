@@ -15,6 +15,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\Instances\CompleteInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RestoreInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceMailRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
@@ -125,6 +126,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:auto-deploy:disable',
         'instance:auto-deploy:enable',
         'instance:clone',
+        'instance:complete',
         'instance:create',
         'instance:database:add',
         'instance:database:remove',
@@ -1326,6 +1328,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         ],
         'instance:rename' => [['instance' => '1', '--branch' => 't3code/login'], ...$profileMissing],
         'instance:restore' => [['instance' => '1'], ...$profileMissing],
+        'instance:complete' => [['instance' => '1'], ...$profileMissing],
         'instance:setup' => [['instance' => '1'], ...$profileMissing],
         'instance:setup-step:create' => [['name' => 'install-php', '--project' => '1', '--command' => 'true'], ...$profileMissing],
         'instance:setup-step:destroy' => [['name' => 'install-php', '--project' => '1', '--yes' => true], ...$profileMissing],
@@ -1692,6 +1695,50 @@ it('renders the final restore Operation in JSON and preserves the retry key', fu
         new Filesystem()->deleteDirectory($home);
     }
 });
+
+it('renders the final complete Operation in JSON and preserves the retry key', function (): void {
+    $home = sys_get_temp_dir().'/orbit-complete-operation-'.bin2hex(random_bytes(8));
+    config(['orbit.home' => $home]);
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(name: 'test', url: 'https://gateway.test', caPath: '/unused/root.pem'));
+    $final = ['data' => [
+        'id' => 43, 'kind' => 'instance.complete', 'target_type' => 'instance', 'target_id' => 17,
+        'input' => ['instance_id' => 17], 'status' => 'failed', 'sequence' => 5,
+        'current_step' => null, 'failed_step' => 'clone-check', 'error_code' => 'instance.container_process_inactive',
+        'result' => ['outcome' => 'failed', 'instance_id' => 17, 'ready' => false, 'failed_step' => 'check',
+            'recovery' => ['state' => 'retained_for_retry', 'retry' => ['command' => 'instance:complete', 'instance_id' => 17]]],
+        'cancel_requested' => false, 'attempts' => 1, 'triggered_by' => 'operator',
+        'created_at' => '2026-11-13T23:00:00+00:00', 'started_at' => '2026-11-13T23:00:01+00:00',
+        'finished_at' => '2026-11-13T23:00:20+00:00', 'poll_after_seconds' => null,
+    ], 'meta' => []];
+    $mock = MockClient::global([
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['url' => null, 'key' => null, 'channel' => 'orbit'], 'meta' => []]),
+        CompleteInstanceRequest::class => MockResponse::make($final, 202),
+        ShowOperationRequest::class => MockResponse::make($final),
+    ]);
+    try {
+        $exit = Artisan::call('instance:complete', ['instance' => '17', '--json' => true, '--idempotency-key' => 'complete-proof']);
+        $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($exit)->toBe(1)->and($output['kind'])->toBe('instance.complete')
+            ->and($output['status'])->toBe('failed')->and($output['result']['recovery']['retry']['command'])->toBe('instance:complete');
+        $mock->assertSent(fn (Request $request): bool => $request instanceof CompleteInstanceRequest && $request->headers()->get('Idempotency-Key') === 'complete-proof'
+            && $request->resolveEndpoint() === '/api/v1/instances/17/complete');
+    } finally {
+        MockClient::destroyGlobal();
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
+it('refuses missing and invalid complete IDs as structured errors without transport', function (array $input): void {
+    $mock = MockClient::global([]);
+    try {
+        $exit = Artisan::call('instance:complete', [...$input, '--json' => true]);
+        $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($exit)->toBe(1)->and($output['error']['code'])->toBe('instance.id_invalid');
+        $mock->assertNothingSent();
+    } finally {
+        MockClient::destroyGlobal();
+    }
+})->with([[[]], [['instance' => '0']], [['instance' => 'garbage']]]);
 
 it('refuses missing and invalid IDs as structured errors without transport', function (array $input): void {
     $mock = MockClient::global([]);

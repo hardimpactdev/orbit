@@ -11,6 +11,7 @@ use App\Domain\Instances\Environment\ContainerConnectionEnvironment;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentImportProjection;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
 use App\Domain\Instances\InstanceCloneProjection;
+use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceGitHubReadTokens;
 use App\Domain\Instances\InstanceRegisterResult;
 use App\Domain\Instances\InstanceRestoreProjection;
@@ -54,6 +55,14 @@ return [
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-intent-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-owner-[1-9][0-9]*$'],
             // A nested-fleet container's Club key (NestedFleetClubKey).
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^nested-fleet-club-api-key$']]],
+    // A clone's completion (docs/reference/development-containers.md#complete-a-clone): `finish` maps every step to the receipt.
+    'instance.complete' => ['workflow' => 'operation-instance-complete', 'workflow_inputs' => true,
+        'projection' => InstanceCompleteProjection::class,
+        'terminal_result' => ['job' => 'result', 'step' => 'finish'],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-complete-processes-[1-9][0-9]*$'],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'],
+            // The owned server database and Valkey user: the same copies as database:create.
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-intent-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-owner-[1-9][0-9]*$']]],
     'instance.env_import' => ['workflow' => 'operation-instance-env-import', 'workflow_inputs' => true,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-env-import\.content\.[1-9][0-9]*$']],
         'terminal_result' => ['job' => 'import', 'step' => 'Read .env into the vault', 'native' => true,

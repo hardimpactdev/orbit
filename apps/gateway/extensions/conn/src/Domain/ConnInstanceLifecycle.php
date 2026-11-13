@@ -69,6 +69,12 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
         }
     }
 
+    /** The clone's Conn environment, written by `projectCreate`; it stays while Conn is off, so an admitted completion can still run. */
+    public function registered(Instance $instance): bool
+    {
+        return ConnEnvironment::query()->where('instance_id', $instance->id)->exists();
+    }
+
     public function projectCreate(Instance $instance, array $server): void
     {
         $id = ValidatedData::string($server['environment_id']);

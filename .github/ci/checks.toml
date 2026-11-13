@@ -1965,8 +1965,36 @@ inputs = [
   "swamp/extensions/behaviors/node-worker/config.ts",
   "swamp/workflows/workflow-operation-instance-migrate.yaml",
   "swamp/extensions/behaviors/operations/instance-dev-command/assets.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts",
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
   "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/instance_complete_native_test.ts"
+cost = 30
+after_merge = true
+reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
+inputs = [
+  "swamp/extensions/behaviors/node-worker/config.ts",
+  "swamp/workflows/workflow-operation-instance-complete.yaml",
+  "swamp/extensions/behaviors/operations/instance-dev-command/assets.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/instance_complete_workflow_test.ts"
+cost = 1
+inputs = [
+  "swamp/workflows/workflow-operation-instance-complete.yaml",
+  "swamp/extensions/behaviors/operations/instance-dev-command/assets.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+  "swamp/tests/_support/swamp_expression.ts",
+  "swamp/tests/_support/swamp_workflow.ts",
 ]
 
 [[fixture]]
@@ -2459,6 +2487,8 @@ inputs = [
   "swamp/workflows/workflow-operation-instance-start.yaml",
   "swamp/workflows/workflow-operation-instance-wake.yaml",
   "swamp/tests/_support/swamp_expression.ts",
+  "swamp/tests/_support/swamp_workflow.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts",
 ]
 
 [[fixture]]

@@ -30,7 +30,7 @@ use Throwable;
 final class RoutePublicationHolds
 {
     /** @var list<string> */
-    private const array Kinds = ['instance.create', 'instance.destroy', 'instance.clone', 'instance.transfer', 'instance.migrate',
+    private const array Kinds = ['instance.create', 'instance.complete', 'instance.destroy', 'instance.clone', 'instance.transfer', 'instance.migrate',
         'instance.restore', 'route.create', 'route.update', 'route.destroy', 'route.target_set'];
 
     /** A timed-out write that Swamp never confirmed stopped gives its Nodes back after this long. */
@@ -380,7 +380,7 @@ final class RoutePublicationHolds
     /** Only unstarted creates can replace their whole publication from the current catalog; their resource intent stays fixed. */
     private function refreshPublication(Operation $operation): void
     {
-        if (! in_array($operation->kind, ['instance.create', 'instance.clone', 'instance.restore', 'route.create'], true) || ! isset($operation->input['route_create'])) {
+        if (! in_array($operation->kind, ['instance.create', 'instance.complete', 'instance.clone', 'instance.restore', 'route.create'], true) || ! isset($operation->input['route_create'])) {
             return;
         }
         DB::transaction(function () use ($operation): void {

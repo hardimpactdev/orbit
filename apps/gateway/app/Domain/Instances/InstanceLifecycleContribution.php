@@ -24,6 +24,9 @@ interface InstanceLifecycleContribution
      */
     public function projectCreate(Instance $instance, array $server): void;
 
+    /** Whether the contribution holds the clone's T3 server, as `projectCreate` recorded it. A completion needs it (`instance:complete`). */
+    public function registered(Instance $instance): bool;
+
     /** Remove extension records after native destruction, inside the projection transaction. */
     public function projectDestroy(Instance $instance): void;
 
