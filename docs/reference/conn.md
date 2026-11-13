@@ -180,7 +180,7 @@ Destroy keeps this contribution available while Conn is disabled. Admission capt
 
 ### Renewal of an Instance server
 
-T3 issues the Gateway's session for 30 days. Orbit keeps it alive; no device and no host job takes part. Orbit does not ask T3 for a longer session: a longer one would keep a stolen session valid for longer. The [registration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) has the steps.
+T3 issues the Gateway's session for 30 days. Orbit keeps it alive; no device and no host job takes part. Orbit does not ask T3 for a longer session: a longer one would keep a stolen session valid for longer. The [renewal chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) has the steps.
 
 #### When
 

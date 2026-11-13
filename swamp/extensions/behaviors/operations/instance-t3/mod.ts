@@ -1,7 +1,8 @@
 import { z } from "npm:zod@4.4.3";
 
 /**
- * The registration step of a container clone (docs/cli/conn/environment-renew.mmd). The `register` phase of
+ * The registration step of a container clone (docs/reference/development-containers.md#t3-registration-and-pairing).
+ * The `register` phase of
  * instance-container.yml wrote the container's reply into the run folder: the served environment, the two sessions it issued as
  * `agent`, and T3's answer to each session at `/api/auth/session`. This step makes the checks of `POST /conn/environments`,
  * stores both sessions as native sensitive fields, and returns only their vault keys. The Gateway records the server from that.
