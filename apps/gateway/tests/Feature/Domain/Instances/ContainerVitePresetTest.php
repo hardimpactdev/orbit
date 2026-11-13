@@ -129,23 +129,7 @@ describe('a new vite Process definition', function (): void {
 });
 
 describe('capture of a vite definition', function (): void {
-    it('records the preset in a container Instance without an assigned Vite port', function (): void {
-        $node = containerDefaultNode();
-        $project = containerDefaultProject();
-        ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'vite', 'environments' => ['development'], 'spec' => vitePresetSpec()]);
-
-        $operation = containerCreate($project, $node);
-        $instance = Instance::query()->findOrFail($operation->target_id);
-        $process = $instance->processes()->sole();
-
-        expect($process->runtime_config['preset'])->toBe('vite')
-            ->and($process->runtime_config['command'])->toBe(['/srv/workspace/node_modules/.bin/vite', '--host=0.0.0.0', '--port=5173', '--strictPort'])
-            ->and($instance->vite_port)->toBeNull()
-            ->and(containerIntentOf($operation)['processes'][0]['content'])
-            ->toContain('ExecStart=', '"/srv/workspace/node_modules/.bin/vite" "--host=0.0.0.0" "--port=5173" "--strictPort"');
-    });
-
-    it('directs PHP\'s development SSR requests to the vite port, with no ingress rule of its own', function (): void {
+    it('records nothing on a container default, which has no development ports, while vp-dev stays as before', function (): void {
         $node = containerDefaultNode();
         $node->update(['tld' => 'beast.test']);
         Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
@@ -153,12 +137,25 @@ describe('capture of a vite definition', function (): void {
         $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
         ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'vite', 'environments' => ['development'], 'spec' => vitePresetSpec()]);
 
-        $container = containerIntentOf(containerCreate($project, $node));
+        $operation = containerCreate($project, $node);
+        $instance = Instance::query()->findOrFail($operation->target_id);
+        $container = containerIntentOf($operation);
 
-        expect($container['units'][0]['name'])->toBe('orbit-frankenphp.service')
-            ->and($container['units'][0]['content'])->toContain("Environment=INERTIA_SSR_HOT_URL=http://127.0.0.1:5173\n")
-            ->and(array_column($container['acl_rules']['ingress'], 'destination_port'))->not->toContain('5173')
-            ->and(implode("\n", $container['environment']))->not->toContain('INERTIA_SSR_HOT_URL');
+        expect($instance->processes()->count())->toBe(0)
+            ->and($container['processes'])->toBe([])
+            ->and($container['units'][0]['content'])->not->toContain('INERTIA_SSR_HOT_URL');
+    });
+
+    it('still records a captured vp-dev definition on a container default', function (): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'dev', 'environments' => ['development'],
+            'spec' => ['runtime' => 'systemd', 'preset' => 'vp-dev', 'preset_version' => 1, 'command' => VpDevPreset::definitionCommand()]]);
+
+        $instance = Instance::query()->findOrFail(containerCreate($project, $node)->target_id);
+
+        expect($instance->processes()->sole()->runtime_config['preset'])->toBe('vp-dev')
+            ->and($instance->vite_port)->toBe(VpDevPreset::ContainerPort);
     });
 
     it('refuses a checkout target, which has no container to run it', function (): void {

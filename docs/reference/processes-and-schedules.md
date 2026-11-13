@@ -201,7 +201,7 @@ It comes only from a Project Process definition for `development`. Create one wi
           "restart_policy": "on-failure"}}
 ```
 
-The command must be exactly this canonical command. The definition may add `environment`, `keep_alive` and `restart_policy`; without `restart_policy`, Vite is not restarted after a crash. A container Instance created after that gets the Process, and a deployment of an existing container default adds it. The container unit runs `<application directory>/node_modules/.bin/vite --host=0.0.0.0 --port=5173 --strictPort` as `orbit`, in the application directory. It installs no dependencies. A checkout Instance has no container for it: its create refuses the definition with `process.container_command_unsupported`.
+The command must be exactly this canonical command. The definition may add `environment`, `keep_alive` and `restart_policy`; without `restart_policy`, Vite is not restarted after a crash. A container clone created after that gets the Process. A container default never gets it: see below. The container unit runs `<application directory>/node_modules/.bin/vite --host=0.0.0.0 --port=5173 --strictPort` as `orbit`, in the application directory. It installs no dependencies. A checkout Instance has no container for it: its create refuses the definition with `process.container_command_unsupported`.
 
 The unit sets `VITE_APP_URL` to the Instance's Route URL, `https://<Route domain>`, beside the host allowance. The definition's own `VITE_APP_URL` wins, including an empty value; Orbit then adds none. Orbit does not read the Project's `.env` for it.
 
@@ -213,10 +213,12 @@ The Instance's PHP unit gets `INERTIA_SSR_HOT_URL=http://127.0.0.1:5173`, so Ine
 
 The preset has no assigned Vite port, no `/__orbit/vite` path and no `DEV_SERVER_ORIGIN`. Browsers reach port 5173 through the container's [development ports](/reference/development-containers#agent-development-servers). That way in has its limits:
 
-- Only a container clone with a private Route has development ports. A container default runs no T3 and has none, so its `vite` Process runs but no browser reaches it.
+- Only a container clone with a private Route has development ports. A container default runs no T3 and has none.
 - Only WireGuard clients reach them. A client that resolves the domain to the Node's LAN address does not.
 - The page at `https://<Route domain>` loads its modules from port 5173, another origin. Whether Vite allows that depends on the Project's Vite config.
 - A program on the Node that listens on port 5173 or publishes it takes the port from every clone on that Node.
+
+A container default never runs the `vite` preset. Vite there would write `public/hot` with port 5173. The default's own pages would then load their CSS and JavaScript from an address that no browser reaches. So a container default's create and deployment skip the definition. A deployment also removes a `vite` Process that a default recorded earlier, and stops and removes its unit. `laravel-vite-plugin` removes `public/hot` when Vite stops. Run the dev server in a clone. A checkout Instance still refuses the definition.
 
 A supported `vp-dev` Process also moves during [Instance migration](/cli/instance/migrate). It keeps its preset identity, assigned port and desired state, uses the shared runtime in the container, and follows the ordinary container Process controls after cutover.
 
