@@ -1,0 +1,166 @@
+[
+  {
+    "unit": "swamp/tests/instance_container_wake_test.ts",
+    "status": "passed",
+    "seconds": 3.921,
+    "revision": null,
+    "run_id": null,
+    "declared_seconds": 36.0,
+    "source_sha256": "72b0644c090b0ddd4b5ba717553c0c359a674add49a623dfacc8adeae404ccee",
+    "cases": [
+      {
+        "name": "a request resumes a Frozen container behind its marker, closes swap, waits for FrankenPHP, then removes the marker",
+        "status": "passed",
+        "seconds": 0.06294852000000001,
+        "started_at_ms": 1794612541440
+      },
+      {
+        "name": "any other state removes only the request and changes nothing",
+        "status": "passed",
+        "seconds": 0.17303598900000003,
+        "started_at_ms": 1794612541503
+      },
+      {
+        "name": "a request whose name is not app-instance-<digits>.wake, a link, or one older than a second is removed and ignored",
+        "status": "passed",
+        "seconds": 0.01851162599999998,
+        "started_at_ms": 1794612541676
+      },
+      {
+        "name": "a silent or 5xx FrankenPHP, or a failed resume, keeps the marker and writes no resumed file",
+        "status": "passed",
+        "seconds": 3.274572967,
+        "started_at_ms": 1794612541694
+      },
+      {
+        "name": "FrankenPHP that answers after a few tries is waited for",
+        "status": "passed",
+        "seconds": 0.2817737080000002,
+        "started_at_ms": 1794612544969
+      },
+      {
+        "name": "the script's folders and port are the Gateway's",
+        "status": "passed",
+        "seconds": 0.0004402989999998681,
+        "started_at_ms": 1794612545251
+      },
+      {
+        "name": "the app-dev role installs the script as root and a watch on the request folder, with no capabilities",
+        "status": "passed",
+        "seconds": 0.00623078600000008,
+        "started_at_ms": 1794612545252
+      },
+      {
+        "name": "the Node script and the wake's workflow run the same library check, after the marker went",
+        "status": "passed",
+        "seconds": 0.0017513560000002144,
+        "started_at_ms": 1794612545258
+      },
+      {
+        "name": "the library check rebuilds the cache only when a shared runtime library is missing from it",
+        "status": "passed",
+        "seconds": 0.003936157000000094,
+        "started_at_ms": 1794612545260
+      }
+    ],
+    "startup_seconds": 0.114,
+    "registered": [
+      "a request resumes a Frozen container behind its marker, closes swap, waits for FrankenPHP, then removes the marker",
+      "any other state removes only the request and changes nothing",
+      "a request whose name is not app-instance-<digits>.wake, a link, or one older than a second is removed and ignored",
+      "a silent or 5xx FrankenPHP, or a failed resume, keeps the marker and writes no resumed file",
+      "FrankenPHP that answers after a few tries is waited for",
+      "the script's folders and port are the Gateway's",
+      "the app-dev role installs the script as root and a watch on the request folder, with no capabilities",
+      "the Node script and the wake's workflow run the same library check, after the marker went",
+      "the library check rebuilds the cache only when a shared runtime library is missing from it"
+    ],
+    "excluded": []
+  },
+  {
+    "unit": "swamp/bin/source_test.ts",
+    "status": "passed",
+    "seconds": 0.364,
+    "revision": null,
+    "run_id": null,
+    "declared_seconds": 8.0,
+    "source_sha256": "1a51ec838f9b8634ed71b42d30b3ebef859f0cb2bbb641d2dcacf011b928a786",
+    "cases": [
+      {
+        "name": "model IDs are unique",
+        "status": "passed",
+        "seconds": 0.0045137849999999985,
+        "started_at_ms": 1794612541470
+      },
+      {
+        "name": "workflow queue bounds have measured per-kind budgets",
+        "status": "passed",
+        "seconds": 0.10323034499999999,
+        "started_at_ms": 1794612541475
+      },
+      {
+        "name": "every Ansible file ships with the ansible-input extension",
+        "status": "passed",
+        "seconds": 0.003922080000000022,
+        "started_at_ms": 1794612541578
+      },
+      {
+        "name": "runtime credentials and generated records are ignored",
+        "status": "passed",
+        "seconds": 0.006661495999999999,
+        "started_at_ms": 1794612541582
+      },
+      {
+        "name": "no workflow names a behavior by a literal and constant names are preserved",
+        "status": "passed",
+        "seconds": 0.11777458499999997,
+        "started_at_ms": 1794612541589
+      }
+    ],
+    "startup_seconds": 0.145,
+    "registered": [
+      "model IDs are unique",
+      "workflow queue bounds have measured per-kind budgets",
+      "every Ansible file ships with the ansible-input extension",
+      "runtime credentials and generated records are ignored",
+      "no workflow names a behavior by a literal and constant names are preserved"
+    ],
+    "excluded": []
+  },
+  {
+    "unit": "swamp/tests/ansible_command_output_test.py",
+    "status": "passed",
+    "seconds": 1.522,
+    "revision": null,
+    "run_id": null,
+    "declared_seconds": 3.0,
+    "source_sha256": "f10de64195b1b74768a7e56d851edde65035dfd6fff03be6d6ed69bb68e37ae7",
+    "cases": [
+      {
+        "name": "test_every_regex_is_exercised_or_classified_without_command_output",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_unclassified_native_regex_tests_fail_coverage",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_recorded_output_through_production_expressions",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_dpkg_installed_held_removed_and_absent",
+        "status": "passed",
+        "seconds": null
+      },
+      {
+        "name": "test_every_reachable_converge_task_name_is_static",
+        "status": "passed",
+        "seconds": null
+      }
+    ]
+  }
+]

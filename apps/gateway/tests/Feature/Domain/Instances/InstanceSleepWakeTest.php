@@ -30,6 +30,7 @@ use App\Models\Operation;
 use App\Models\Route;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
@@ -476,4 +477,21 @@ it('still sends the visitor to the app when an extension fails after the Node re
     activationPoll($clone)->assertStatus(307);
     expect(Operation::query()->where('kind', InstanceWake::Kind)->sole()->status->value)->toBe('succeeded');
     Queue::assertNotPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->delay === null);
+});
+
+it('leaves a Node whose script took no request out of the fast path for ten minutes, then tries it again', function (): void {
+    $clone = frozenClone();
+    $state = wakeNode($clone, ['script' => false]);
+
+    activationPoll($clone)->assertStatus(401);
+    expect(Cache::has(ContainerResume::missingScriptKey($clone->node_id)))->toBeTrue();
+
+    // The next wake of any Instance on that Node goes straight to its workflow, with no Node call.
+    Operation::query()->where('kind', InstanceWake::Kind)->update(['status' => 'failed', 'lock_key' => null]);
+    $calls = count($state->calls);
+    expect(app(InstanceWake::class)->start($clone, null, null)->state[InstanceWake::ResumeState] ?? null)->toBeNull()
+        ->and(count($state->calls))->toBe($calls);
+
+    $this->travel(ContainerResume::MissingScriptSeconds + 1)->seconds();
+    expect(Cache::has(ContainerResume::missingScriptKey($clone->node_id)))->toBeFalse();
 });

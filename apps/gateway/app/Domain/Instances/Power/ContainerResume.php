@@ -16,6 +16,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
 use Throwable;
@@ -37,6 +38,9 @@ final readonly class ContainerResume
     /** The removal of an untaken request: the whole fast path stays within about 4.5 s of Gateway time. */
     private const float RemoveSeconds = 1.0;
 
+    /** How long a Node whose script took no request is left out of the fast path: its wakes then cost nothing extra until it converges. */
+    public const int MissingScriptSeconds = 600;
+
     /** The script needs about half a second after the request; the first read waits that long, later reads come 0.1 s apart. */
     private const float FirstReadSeconds = 0.35;
 
@@ -57,7 +61,8 @@ final readonly class ContainerResume
      */
     public function applies(Instance $instance, InstanceRuntime $runtime, array $input): bool
     {
-        if ($runtime->power_state !== InstanceRuntimePowerState::Stopped || (ValidatedData::object($input['container'])['web_config'] ?? null) === null) {
+        if ($runtime->power_state !== InstanceRuntimePowerState::Stopped || (ValidatedData::object($input['container'])['web_config'] ?? null) === null
+            || Cache::has(self::missingScriptKey($instance->node_id))) {
             return false;
         }
         $sleep = Operation::query()->where('kind', InstanceSleep::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
@@ -100,6 +105,9 @@ final readonly class ContainerResume
                 }
                 $untaken = $at('request') !== null && self::now() - $marked >= self::TakeSeconds;
                 $declined = $at('request') === null && $at('taken') === null;
+                if ($untaken) {
+                    Cache::put(self::missingScriptKey($node->id), true, self::MissingScriptSeconds);
+                }
                 if ($untaken || $declined || self::now() + self::ReadPauseSeconds >= $until) {
                     $this->fallBack($operation, $node, $request, $untaken ? 'untaken' : ($declined ? 'declined' : 'bound'));
 
@@ -115,6 +123,11 @@ final readonly class ContainerResume
 
             return null;
         }
+    }
+
+    public static function missingScriptKey(int $nodeId): string
+    {
+        return 'instances.wake-script-missing.'.$nodeId;
     }
 
     /** Seconds with microseconds, from the clock that a test's faked sleep moves. */

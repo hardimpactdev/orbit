@@ -980,7 +980,9 @@ In any other case it changes nothing, and a failure after the resume keeps the m
 
 The Gateway reads the request, `.taken`, `.resumed` and the marker with the agent's `hibernation.times`, first after 0.35 seconds and then every 0.1 seconds, within 3 seconds of the request. When the resume shows, the Operation succeeds at once: `wake: resumed`, `trigger_seconds` (the request's call) and `confirm_seconds` (from the request until the Gateway read the resume). Caddy's activation call gets `307` to the visitor's own path, so the browser sends the same request again, with its method and body, and gets the app. The waiting page is not shown. A request that arrives while the resume runs joins the wake and waits for it, up to the bound.
 
-Anything else starts the run below, in the same Operation, and the visitor gets the waiting page as before. That covers a request that no script took within 0.6 seconds, such as on a Node whose role predates the script. It also covers a script that declined (another state, FrankenPHP silent), a failed agent call, and the bound. The Gateway then removes a request still there. The script ignores a request older than one second, so a request left behind never wakes the Instance later.
+Anything else starts the run below, in the same Operation, and the visitor gets the waiting page as before. That covers a request that no script took within 0.6 seconds, such as on a Node whose role predates the script. The Gateway then leaves that Node out of the fast path for 10 minutes, so its other wakes cost nothing extra.
+
+It also covers a script that declined (another state, FrankenPHP silent), a failed agent call, and the bound. The Gateway then removes a request still there. The script ignores a request older than one second, so a request left behind never wakes the Instance later.
 
 Each Incus call in the script has its own bound, so it ends within about 6.5 seconds of the request, before the workflow reaches the container. A Gateway worker that dies during the resume leaves a queued wake: a delayed start runs its workflow 15 seconds later. A cancel during the resume keeps the Operation cancelled.
 
