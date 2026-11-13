@@ -797,6 +797,8 @@ Build output that appears after the create counts too. It stays work until the P
 
 The baseline is what a new Instance held when it was made, so a fresh copy of a default with local branches, stashes or untracked files reads `clean`. When a create or clone of a non-default container succeeds, a queued job records the local branch heads, the stash ids and the untracked set. They go to the Gateway's `instance_runtimes.workspace_baseline`, outside the container.
 
+A clone whose create takes its [ready mark](/reference/operations#ready-mark-of-a-clone-create) gets its baseline at the mark instead: the Gateway reads it with the same reader before it records the mark. The queued job after the create then finds a recorded baseline and records nothing.
+
 The job normally runs seconds after the create ends; work done in those seconds falls into the baseline. A job that starts more than 60 seconds after the end records nothing, because the workspace may then hold work of its own. When the untracked set has more than 2,000 entries, or the answer would pass 900 KB, Orbit drops it, so every untracked file counts. Nothing rewrites a recorded baseline: not a deploy, a rename or a removal restore.
 
 An Instance without a recorded baseline, such as one made before baselines existed, compares with the Project default as it is at the time of the read.

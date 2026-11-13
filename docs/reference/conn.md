@@ -169,12 +169,14 @@ A clone of a container default runs its own T3 server. Its create flow registers
 
 - The record names the Instance and its Node, with the URL `http://<Node WireGuard address>:<T3 port>` and the label `<project> / <instance>`.
 - The Gateway reads the session from the vault key the result names. It does not call T3 again: the run made the checks above in the container.
-- A new record starts with its cleanup done. Recording a server again bumps the cleanup revision and starts the cleanup.
+- A new record starts with its cleanup done. Recording another session for the server bumps the cleanup revision and starts the cleanup.
 - A resumed create can leave the sessions of its failed run valid in T3, until a later renewal cleans them.
 - Orbit renews the Gateway's session on the server: see [Renewal of an Instance server](#renewal-of-an-instance-server).
 - The bumped revision also stops a Node's registration of the same id that read the row before the record: that registration compares the revision again in its lock and fails with `conn.environment_changed`.
 - While Conn is off, a clone is refused with `operation.kind_unavailable`: nothing would record its server.
 - A create admitted before Conn went off still records its server.
+
+The run can also record the server earlier, at the create's [ready mark](/reference/operations#ready-mark-of-a-clone-create). The create workflow does not take the mark yet. The terminal success then records the same server again. A record with the same environment id, Instance and Gateway session changes nothing: it starts no new cleanup revision and no cleanup. A create that fails after the mark keeps the server record, and the Instance stays retained for retry.
 
 Destroy keeps this contribution available while Conn is disabled. Admission captures its environment. The run deletes T3 with the container, retiring all sessions and unused links. Terminal projection deletes its execution copies, environment and pairings before core deletes the Instance. New pairings refuse an Instance marked removing.
 
@@ -340,7 +342,7 @@ Checkout stays inside `clone-workspace`. No setup or deploy command runs again a
 
 Conn follows that Operation with `GET /operations/{id}`. Conn Operation show also shows an `instance.create` that the caller started, here or with the core Instance API, and an `instance.destroy` started through the Conn endpoint below. Other destroy Operations keep their existing 404 on this path. Conn Operation cancel does not cancel it.
 
-Operation show returns the same recorded `steps` as core Operation show, in recorded order: `name`, `job`, `status`, `started_at` and `finished_at`. Steps contain no command output, secrets or environment values. Both endpoints accept `after_sequence` but currently return all recorded steps.
+Operation show returns `ready_at` as core Operation show does: the time of the clone's ready mark, or null before it. Operation show returns the same recorded `steps` as core Operation show, in recorded order: `name`, `job`, `status`, `started_at` and `finished_at`. Steps contain no command output, secrets or environment values. Both endpoints accept `after_sequence` but currently return all recorded steps.
 
 Conn maps these stable container-clone step names to stage detail, in this order: `clone-container`, `clone-workspace`, `clone-t3`, `clone-register`. Other steps can occur between them. `clone-t3` runs beside `clone-workspace`, so it can start and end before `clone-workspace` ends; `clone-register` always comes after both. Renaming or removing any of these four names is a breaking change for Conn.
 

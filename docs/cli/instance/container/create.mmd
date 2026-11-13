@@ -133,6 +133,13 @@ sequenceDiagram
     %%> What it does:
     %%> - see conn/environment-renew.mmd: the sessions go to the vault, and the step checks the environment id and scopes
     %%> - an inactive required unit refuses with `instance.container_process_inactive`; copy its structured public refusal even when sessions failed, skip registration, and retain the unit states in the Operation
+    Note over GW: Record T3 server · ready<br/>not yet called
+    %%> Not yet called:
+    %%> - the Gateway has the endpoint `operation:direct:instance-ready`; the workflow has no step that calls it yet
+    %%> When called, after the registration, with the run id and the register output:
+    %%> - before its transaction: reads the Gateway session from the vault and the workspace baseline from the Node
+    %%> - in one transaction: records the T3 server through the Conn layer, the runtime runs, the baseline when none is recorded, and the Operation's `ready_at`
+    %%> - the terminal success then records the same server again and changes nothing; a failure after it keeps the server
   and independent Route job · no depth link
     opt web-serving Project
       SW->>N: Make, sign Route key<br/>child route-create-csr

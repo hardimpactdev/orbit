@@ -228,6 +228,7 @@ Every operation has the same fields, whatever its kind.
 | `created_at`, `started_at`, `finished_at` | ISO 8601 times. `started_at` is the first start |
 | `poll_after_seconds` | How long a polling client waits before its next read, or null once terminal. [Follow an operation by polling](#follow-an-operation-by-polling) gives the values |
 | `capacity_wait` | For an Operation on a task group that waits for a task place: `operation_id`, `position` and `holders`, as [Task places](/reference/tasks#task-places) defines. Null otherwise |
+| `ready_at` | When a clone's create took its [ready mark](#ready-mark-of-a-clone-create), as an ISO 8601 time. Null for every other Operation and before the mark. It never changes after it is set |
 
 A cancelled operation has an `error_code` only when a rollback superseded it: `operation.superseded`.
 
@@ -576,6 +577,21 @@ If confirmation is lost after submission, the Operation records `swamp.start_unc
 Resolution requires native evidence for the exact workflow, `inputs.operation_id`, `inputs.node_id`, `inputs.kind` and recorded start key. A matching run can supply the missing binding for the existing terminal subscriber. Only authoritative proof that no run started permits a not-started failure and another admission. An unreadable or empty partial response is not that proof. A connection failure before submission or an explicit native refusal still fails the Operation.
 
 On every reconciler pass, an unbound running Operation marked `swamp.start_uncertain` receives one native run lookup. The lookup uses its recorded workflow, admitted identity and `orbit_start_key`. Exactly one matching root supplies the binding, then the same pass projects its terminal result. Missing, ambiguous, mismatched or unavailable evidence leaves the Operation and target hold unchanged. The lookup never submits work.
+
+### Ready mark of a clone create
+
+A container clone's create run can tell the Gateway that the clone is ready while the run still works. The run calls `POST /api/v1/direct-operations/{operation}/instance-ready` (`operation:direct:instance-ready`) with only `run_id` and `t3`. `t3` is the output of the run's `clone-register` step: the environment id, the T3 version, the session expiry and the vault key of the Gateway's session, with no secret. The create workflow does not call it yet.
+
+- The caller is the Operation's Node or the Swamp Node, else `operation.executor_forbidden` (403). `run_id` must be the run bound to the Operation, else `operation.run_unbound` or `operation.run_mismatch` (409).
+- Only the `instance.create` of a new container clone has the mark. Another Operation answers `operation.ready_forbidden` (403).
+- A terminal Operation answers `operation.finished` (409). A `t3` that does not prove a registered server answers `instance.result_invalid`.
+- Before its transaction, the Gateway reads the session from the vault and the [workspace baseline](/reference/development-containers#workspace-work-state) from the Node. The transaction makes no network call.
+- One transaction then records the T3 server through `InstanceLifecycleContribution::projectCreate()`, sets the runtime's `power_state` to `running` and sets `ready_at`.
+- The same transaction records the workspace baseline. It keeps a baseline that is already recorded.
+- The answer is `{"ready_at": "<time>"}`. A second call with the same body changes nothing and answers the same time.
+- A call that names another server replaces the record, as a terminal success would. `ready_at` keeps its first time.
+
+The terminal success later records the same server again, and that changes nothing ([Instance servers](/reference/conn#instance-servers)). A failure after the mark keeps the server record.
 
 ### Execution-copy failures
 
