@@ -397,7 +397,7 @@ Every read returns the whole record and the steps that changed. So a client that
 
 ### Follow an operation over Reverb
 
-When the [`websocket` role](/reference/events) is active, the Gateway sends `operation.updated` on the private channel `private-operation.{id}` at each change. A client:
+When the [`websocket` role](/reference/events) is active, the Gateway sends `operation.updated` on the private channel `private-operation.{id}` at each change, and on `orbit` at each status change. A client:
 
 1. Subscribes to `private-operation.{id}`. `POST /api/v1/broadcasting/auth` signs it for any caller with Gateway access.
 2. Reads the operation over HTTP.
