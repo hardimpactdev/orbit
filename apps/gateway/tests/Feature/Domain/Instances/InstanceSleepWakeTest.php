@@ -223,7 +223,7 @@ it('holds Gateway release idle until sleep and wake settle', function (string $k
     Sleep::assertSleptTimes(1);
 })->with(['instance.sleep', 'instance.wake', 'instance.start']);
 
-it('renders a running container site as before plus only the asleep check, which calls nothing while the marker is missing', function (): void {
+it('renders a running container site as before plus only the asleep check and the access log, which call nothing while the marker is missing', function (): void {
     $clone = sleepingClone();
     $route = Route::query()->create(['kind' => 'app', 'project_id' => $clone->project_id, 'node_id' => $clone->node_id, 'provenance' => 'explicit',
         'publication' => 'private', 'domain' => 'clone.tool.test', 'status' => 'pending']);
@@ -239,10 +239,16 @@ it('renders a running container site as before plus only the asleep check, which
         ->and(substr_count($before, 'forward_auth'))->toBe(0)
         ->and($after)->toContain('try_files /app-instance-'.$clone->id.'.asleep')
         ->and($after)->toContain('uri /api/v1/runtime-activations/app-instance/'.$clone->id)
-        ->and($after)->not->toContain('.awake');
+        ->and($after)->not->toContain('.awake')
+        // The idle sleep reads the log's mtime; a probe and a request that meets the asleep marker write nothing, and one roll bounds it.
+        ->and($after)->toContain('output file /data/caddy/orbit/hibernation/app-instance-'.$clone->id.'.log {')
+        ->and($after)->toContain('roll_size 1MiB')->and($after)->toContain('roll_keep 1')
+        ->and($after)->toContain('@orbit_probe header X-Orbit-Probe 1')
+        ->and($after)->toContain('log_skip @orbit_probe')->and($after)->toContain('log_skip @orbit_asleep')
+        ->and($before)->not->toContain('log {');
 
     // Removing the one inserted block gives back the site as it was rendered before: the proxy, its order and its options stay.
-    $start = strpos($after, '@orbit_asleep {');
+    $start = strpos($after, '@orbit_probe header');
     $end = strpos($after, 'reverse_proxy', $start);
     expect($start)->not->toBeFalse()->and($end)->not->toBeFalse();
     $lineStart = strrpos(substr($after, 0, $start), PHP_EOL) + 1;

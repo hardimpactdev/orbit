@@ -126,7 +126,7 @@ Beast and Shark take the dev path beside their task VMs. A task VM host on the b
 | 11 | Command proofs in an Instance container | |
 | — | [Parity gate](#parity-gate) | |
 | 12 | Switch task work | |
-| 13 | Sleep and wake | Commands and the wake on a Route visit merged, [#3601](https://github.com/hardimpactdev/orbit/pull/3601); the idle sleep and the wake from Conn or a task planned |
+| 13 | Sleep and wake | Commands and the wake on a Route visit merged, [#3601](https://github.com/hardimpactdev/orbit/pull/3601); the idle sleep built, off by default; the wake from Conn or a task planned |
 | 14 | Start a thread in an Orbit Project (Conn) | Merged, [#3308](https://github.com/hardimpactdev/orbit/pull/3308) |
 | 15 | Migrate checkout Instances | Merged, [#3315](https://github.com/hardimpactdev/orbit/pull/3315) |
 | 16 | Switch every `app-dev` Node | |

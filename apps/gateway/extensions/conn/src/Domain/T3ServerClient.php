@@ -18,4 +18,11 @@ interface T3ServerClient
 
     /** GET /api/auth/session: the scopes and expiry of `$adminSession`. A session T3 does not accept is rejected. */
     public function session(string $baseUrl, #[SensitiveParameter] string $adminSession): T3AdminSession;
+
+    /**
+     * GET /api/orchestration/shell: the server's threads with their run state (orchestration protocol 2).
+     *
+     * @return array<array-key, mixed>
+     */
+    public function shell(string $baseUrl, #[SensitiveParameter] string $adminSession): array;
 }

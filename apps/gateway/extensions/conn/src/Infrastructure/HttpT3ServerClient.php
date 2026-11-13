@@ -25,6 +25,9 @@ final readonly class HttpT3ServerClient implements T3ServerClient
 
     private const int TIMEOUT_SECONDS = 10;
 
+    /** The orchestration routes refuse a request without the protocol version they speak. */
+    private const string ORCHESTRATION_PROTOCOL_HEADER = 'x-t3-orchestration-protocol';
+
     public function describe(string $baseUrl): T3EnvironmentDescriptor
     {
         $body = $this->json($baseUrl, 'describe', fn (): Response => $this->request()->get($this->endpoint($baseUrl, '/.well-known/t3/environment')));
@@ -63,6 +66,13 @@ final readonly class HttpT3ServerClient implements T3ServerClient
             expiresAt: $this->timestamp($baseUrl, 'session', $expiresAt),
             scopes: array_values(array_filter($scopes, is_string(...))),
         );
+    }
+
+    public function shell(string $baseUrl, #[SensitiveParameter] string $adminSession): array
+    {
+        return $this->json($baseUrl, 'shell', fn (): Response => $this->request($adminSession)
+            ->withHeaders([self::ORCHESTRATION_PROTOCOL_HEADER => '2'])
+            ->get($this->endpoint($baseUrl, '/api/orchestration/shell')));
     }
 
     private function request(#[SensitiveParameter] ?string $adminSession = null): PendingRequest

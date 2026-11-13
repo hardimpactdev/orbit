@@ -23,6 +23,8 @@ use App\Domain\Instances\InstanceNodeServiceProcessRemovalGuard;
 use App\Domain\Instances\InstanceOperationAlerts;
 use App\Domain\Instances\Logs\InstanceLogReader;
 use App\Domain\Instances\NativeInstanceProvisioningSetup;
+use App\Domain\Instances\Power\ContainerIdleSweep;
+use App\Domain\Instances\Power\NodeFileTimes;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Instances\ProductionRepositoryBinding;
 use App\Domain\Instances\Queue\InstanceQueueReader;
@@ -32,6 +34,7 @@ use App\Domain\Processes\ProcessRemovalGuard;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Dependencies\WebSocketSwampDependencyReader;
+use App\Infrastructure\Instances\AgentNodeFileTimes;
 use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
@@ -71,6 +74,7 @@ final class InstancesServiceProvider extends ServiceProvider
         InstanceRouteEnvironmentSynchronizer::class => SynchronizeInstanceEnvironmentAction::class,
         InstanceLogReader::class => RemoteInstanceLogReader::class,
         InstanceQueueReader::class => StoreInstanceQueueReader::class,
+        NodeFileTimes::class => AgentNodeFileTimes::class,
     ];
 
     public function register(): void
@@ -83,5 +87,8 @@ final class InstancesServiceProvider extends ServiceProvider
         ));
         $this->app->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
         $this->app->scoped(InstanceEnvironmentOperationLock::class, NativeInstanceEnvironmentOperationLock::class);
+        $this->app->when(ContainerIdleSweep::class)->needs('$idleSeconds')->giveConfig('orbit.hibernation.idle_seconds');
+        $this->app->when(ContainerIdleSweep::class)->needs('$neverSleep')->give(static fn (): array => array_values(array_filter(
+            Config::array('orbit.hibernation.container_never_sleep'), is_int(...))));
     }
 }

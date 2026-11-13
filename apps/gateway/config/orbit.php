@@ -124,5 +124,9 @@ return [
         'wake_timeout_seconds' => max(5, (int) env('ORBIT_HIBERNATION_WAKE_TIMEOUT_SECONDS', 60)),
         'dependency_idle_seconds' => max(1, (int) env('ORBIT_HIBERNATION_DEPENDENCY_IDLE_SECONDS', 604800)),
         'cold_wake_timeout_seconds' => max(60, (int) env('ORBIT_HIBERNATION_COLD_WAKE_TIMEOUT_SECONDS', 1800)),
+        // The idle sleep of development containers: off until the operator turns it on. The dry run reads it either way.
+        'container_sleep' => (bool) env('ORBIT_HIBERNATION_CONTAINER_SLEEP', false),
+        // Instance ids the idle sleep never puts to sleep, comma-separated.
+        'container_never_sleep' => array_values(array_filter(array_map('intval', explode(',', (string) env('ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP', ''))), static fn (int $id): bool => $id > 0)),
     ],
 ];

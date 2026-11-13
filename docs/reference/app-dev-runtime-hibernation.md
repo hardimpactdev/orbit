@@ -24,7 +24,7 @@ Hibernation applies to a Process that meets every condition:
 | Desired state | `running`. Orbit leaves a stopped Process stopped. |
 | `keep_alive` | `false`. |
 
-Processes in [Instance containers](/reference/development-containers#processes) are excluded from this Node-level policy. A container sleeps as a whole: see [Sleep and wake](/reference/development-containers#sleep-and-wake). Its Route uses the same activation endpoint and pages as below.
+Processes in [Instance containers](/reference/development-containers#processes) are excluded from this Node-level policy. A container sleeps as a whole, through the same sweep: see [Sleep and wake](/reference/development-containers#sleep-and-wake). Its Route uses the same activation endpoint and pages as below.
 
 Restart policy does not matter. Hibernation never touches Node Processes, production Instances, Schedules, PHP-FPM services or pools, or Caddy socket paths.
 
@@ -40,13 +40,13 @@ orbit process:create queue --instance=12 --runtime=systemd \
   --restart=on-failure --keep-alive --start
 ```
 
-A wake still starts every desired-running Process, including a keep-alive Process that is down. `process:stop` records `desired_state=stopped`, and a wake leaves that Process stopped. Keep-alive has no effect outside hibernation.
+A wake still starts every desired-running Process, including a keep-alive Process that is down. `process:stop` records `desired_state=stopped`, and a wake leaves that Process stopped. Keep-alive has no effect outside hibernation. In a container Instance, a desired-running keep-alive Process keeps the whole container awake, because a frozen container runs no Process.
 
 The [Node agent](/reference/node-agent#commands) reads activity times, manages awake and cold markers, inspects checkout dependencies, and prunes eligible directories. The Gateway owns the idle thresholds and wake decisions.
 
 ## Idle window and sweep
 
-`orbit-runtime-hibernator.timer` runs on the Gateway host every 10 minutes. It reads the last HTTP activity of each Instance: the newer of the Instance's Caddy access log and its awake marker. The [gateway role convergence](/cli/node/role-add) installs the service and enables the timer; releases leave them unchanged.
+`orbit-runtime-hibernator.timer` runs on the Gateway host every 10 minutes. It reads the last HTTP activity of each Instance: the newer of the Instance's Caddy access log and its awake marker. The same run applies the [idle sleep of development containers](/reference/development-containers#sleep-and-wake) when `ORBIT_HIBERNATION_CONTAINER_SLEEP` is on; it uses the same idle window and sweep interval. The [gateway role convergence](/cli/node/role-add) installs the service and enables the timer; releases leave them unchanged.
 
 Set these values in the Gateway's environment, not an Instance's `.env`. They configure hibernation only; [task-agent effort](/reference/tasks#drivers) uses separate Gateway settings. `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` counts [task workspace provisioning failures](/reference/tasks#execution-ownership), not wake failures. The repository map that [trusts GitHub feedback](/reference/tasks#trusted-github-feedback), `orbit.tasks.github_reviewers`, also lives in Gateway configuration but changes no hibernation threshold, Process keep-alive setting, or wake behavior. Neither does `ORBIT_TASKS_COPIES_MAX`, which caps [task copies](/reference/tasks#task-copy).
 
@@ -57,6 +57,8 @@ Set these values in the Gateway's environment, not an Instance's `.env`. They co
 | Sweep interval | 600 seconds | `orbit.hibernation.sweep_seconds` | `ORBIT_HIBERNATION_SWEEP_SECONDS` |
 | Wake timeout | 60 seconds | `orbit.hibernation.wake_timeout_seconds` | `ORBIT_HIBERNATION_WAKE_TIMEOUT_SECONDS` |
 | Cold wake timeout | 1,800 seconds | `orbit.hibernation.cold_wake_timeout_seconds` | `ORBIT_HIBERNATION_COLD_WAKE_TIMEOUT_SECONDS` |
+| Container idle sleep | Off | `orbit.hibernation.container_sleep` | `ORBIT_HIBERNATION_CONTAINER_SLEEP` |
+| Containers that never sleep | None | `orbit.hibernation.container_never_sleep` | `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP`, comma-separated Instance ids |
 
 After the idle window, the sweep stops each desired-running Process that is not keep-alive. It keeps `desired_state` as it is and removes the awake marker. When the [Node agent view](/reference/node-agent#gateway-view) is fresh and shows a Process already stopped, the sweep skips it. When an Instance has no desired-running Process without keep-alive, the sweep skips it: it never sleeps and is never pruned. An Instance with no recorded HTTP activity counts as idle, so it sleeps at the first sweep.
 

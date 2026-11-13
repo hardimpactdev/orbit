@@ -13,7 +13,7 @@ covers:
 
 Put one development container Instance to sleep now. Orbit freezes the whole container and moves its memory to swap, so it holds almost no RAM. Its processes, disk, databases, Route, T3 threads and sessions stay. [Sleep and wake](/reference/development-containers#sleep-and-wake) explains the lifecycle.
 
-**This command does not check T3.** If an agent turn runs in the Instance, the freeze holds it, and a model provider may drop its connection during a long sleep. T3 continues the turn when the Instance wakes. The result says `t3_turn: not_checked`. No idle rule puts an Instance to sleep yet: only `instance:sleep` does. A planned automatic sleep after an idle hour will check T3, and never cut a turn.
+**This command does not check T3.** If an agent turn runs in the Instance, the freeze holds it, and a model provider may drop its connection during a long sleep. T3 continues the turn when the Instance wakes. The result says `t3_turn: not_checked`. The [idle sleep](/reference/development-containers#sleep-and-wake) after an idle hour does check T3 first, never cuts a turn, and admits the same Operation; its result says `t3_turn: idle`.
 
 ## Usage
 
