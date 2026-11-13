@@ -61,7 +61,7 @@ it('builds the nested-fleet variant with the pinned inner Incus, agent authority
     $files = array_column($nested['files'], null, 'path');
 
     expect($nested['alias'])->toStartWith('orbit-instance-nested-')->toHaveLength(strlen('orbit-instance-nested-') + 12)
-        ->and($nested['packages'])->toBe(['acl', 'git', 'nftables', 'wireguard-tools', 'sqlite3', 'sudo'])
+        ->and($nested['packages'])->toBe(['acl', 'git', 'nftables', 'wireguard-tools', 'sqlite3', 'sudo', 'zstd'])
         ->and(array_column($nested['incus'], 'name'))->toBe(['incus-base', 'incus-client'])
         ->and($nested['incus'])->toBe(array_values(array_filter($incus['packages'], fn (array $package): bool => $package['name'] !== 'incus')))
         ->and($nested['prepare'])->toBe($normal['prepare']."usermod --append --groups incus-admin agent\n")
@@ -70,8 +70,17 @@ it('builds the nested-fleet variant with the pinned inner Incus, agent authority
         ->and($files['/etc/subgid']['content'])->toBe("root:1000000:100000000\nroot:1000:1\n")
         ->and($files['/etc/orbit/apparmor-off']['content'])->toBe("N\n")
         ->and($files['/etc/sudoers.d/orbit-agent'])->toBe(['path' => '/etc/sudoers.d/orbit-agent', 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440'])
+        // The network wait asks only for a route on eth0: the DNS that netplan's wait asks for never comes, and held each start for 120 s.
+        ->and($files[InstanceImage::NestedWaitOnline]['content'])
+        ->toBe("# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/usr/lib/systemd/systemd-networkd-wait-online --interface=eth0:routable --timeout=30\n")
+        // It sorts after netplan's drop-in, so its ExecStart replaces netplan's.
+        ->and(strcmp(basename(InstanceImage::NestedWaitOnline), '10-netplan.conf'))->toBeGreaterThan(0)
+        // A stop of nftables leaves the inner Incus's tables alone.
+        ->and($files['/etc/systemd/system/nftables.service.d/90-orbit-own-table.conf']['content'])
+        ->toBe("# Managed by Orbit.\n[Service]\nExecStop=\nExecStop=/usr/sbin/nft destroy table inet orbit_agent_guard\n")
         // Every other file and step is the normal image's.
-        ->and(array_values(array_diff_key($files, array_flip(['/etc/nftables.conf', '/etc/subuid', '/etc/subgid', '/etc/orbit/apparmor-off', '/etc/sudoers.d/orbit-agent']))))
+        ->and(array_values(array_diff_key($files, array_flip(['/etc/nftables.conf', '/etc/subuid', '/etc/subgid', '/etc/orbit/apparmor-off', '/etc/sudoers.d/orbit-agent',
+            InstanceImage::NestedWaitOnline, '/etc/systemd/system/nftables.service.d/90-orbit-own-table.conf']))))
         ->toBe(array_values(array_filter($normal['files'], fn (array $file): bool => ! in_array($file['path'], ['/etc/nftables.conf', '/etc/sysctl.d/90-orbit-no-userns.conf'], true))))
         ->and($nested['finish'])->toBe($normal['finish']);
 
@@ -79,7 +88,10 @@ it('builds the nested-fleet variant with the pinned inner Incus, agent authority
     $normalRules = array_map('trim', explode("\n", InstanceImage::firewall('10.253.0.1')));
     $policy = array_search('type filter hook output priority 0; policy accept;', $rules, true);
     expect($rules[$policy + 1])->toBe('ip daddr { 10.45.0.0/24, 10.232.2.0/24 } meta skuid 1000 drop')
-        ->and(array_values(array_diff($rules, [$rules[$policy + 1]])))->toBe($normalRules)
+        // The file replaces only Orbit's own table; the normal image keeps its flush of the whole rule set.
+        ->and($rules)->toContain('destroy table inet orbit_agent_guard')->not->toContain('flush ruleset')
+        ->and(array_values(array_diff($rules, [$rules[$policy + 1], 'destroy table inet orbit_agent_guard'])))->toBe(array_values(array_diff($normalRules, ['flush ruleset'])))
+        ->and($normalRules)->toContain('flush ruleset')
         ->and(implode("\n", $normalRules))->not->toContain('10.45.0.0/24');
 
     $changed = $incus;
