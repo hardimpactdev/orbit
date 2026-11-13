@@ -36,6 +36,7 @@ sequenceDiagram
   %%> - `incus init` from the Node's image `orbit-instance` with the reserved bridge address, then `incus start`; the project's profile gives `security.port_isolation` and the idmapped, read-only shared folders
   %%> - the NIC carries `orbitinst0-proxy` and the container's own ACL, which lets only the Node's Caddy reach port 8080; `orbitinst0-egress` stays on the bridge only
   %%> - the agent folder is mounted too, so its clones have it; nothing in the default runs from it
+  %%> - a nested-fleet default then gets its nested Gateway's Club key into /run by pipelined stdin, never on disk or in its seed
   %%> - fetches the default branch into the Node's mirror with the read token; the token stays on the Node
   %%> Mail:
   %%> - the same launch applies the exact SMTP path before the four root-owned mail units; no separate mail playbook or step

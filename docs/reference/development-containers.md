@@ -1099,6 +1099,28 @@ The agent reaches its fleet as on a task VM, with its own tunnel.
 - `orbit` has no access to the inner Incus.
 - The nested Gateway and `app-dev` get `/srv/workspace` as the disk device `checkout`, so an edit reaches them at once.
 
+### The Club key of the nested Gateway
+
+The nested Gateway's `swamp serve` needs a Swamp Club API key. It is never the proof Club key. Orbit gives it to a nested-fleet container at each start that Orbit runs, and it never lands on the container's disk. No snapshot, seed, clone copy or export of the container can hold it.
+
+| Part | Rule |
+| --- | --- |
+| Source | The Gateway env setting `ORBIT_NESTED_FLEET_CLUB_API_KEY`. `gateway:nested-fleet-club-key:install` writes it from stdin ([Gateway environment](/reference/gateway-environment)) |
+| Vault | One Swamp vault entry, `orbit-control-inputs` / `nested-fleet-club-api-key`. The Gateway replaces it when the value changes; no run deletes it |
+| Intent | A nested-fleet container's intent has `club_key`: the folder, the owner `1000:1000`, the tmpfiles line, the nested Gateway and its serve unit. A run sets `club_key.available`. Other containers have no `club_key` |
+| Starts | The create of the default, the clone and every deploy start, right after the container starts |
+| Channel | Stdin only. The value is in no argument, intent, result, log or file on the Node |
+| Place | `/run/orbit-club/swamp-club-api-key` in the container, mode `0600`, owner `1000:1000`. `/run` is a tmpfs; the step refuses with `instance.nested_club_key_not_tmpfs` when it is not. `/etc/tmpfiles.d/orbit-club.conf` makes the empty folder at boot and holds no secret |
+| Nested Gateway | The disk device `club-key` binds the folder `/run/orbit-club` into nested-gateway at `/home/orbit/.config/swamp/club`, `shift=false`. `/home/orbit/.config/swamp/api-key` there is a link to `club/swamp-club-api-key`. A new value restarts its `orbit-swamp-serve` |
+| Without a value | The container starts without the key. The Operation's input says `nested_fleet_club_key: missing`; with a value it says `delivered`. Serve stays down until a later start delivers the key |
+| Other containers | No new task runs and no command changes. Their workflow steps name a key that every run has, which the step never delivers |
+
+The step runs right after `Start the container`, before any check of the inner fleet. That covers the restart after a failed refresh too, which starts the container through the same `start` phase. A clone runs its own step, `clone-club-key`, right after `clone-container`.
+
+In Ansible the value is the module stdin of a pipelined task with `no_log`. Without pipelining, or with remote files kept, Ansible writes the module with its arguments to `~/.ansible/tmp` on the Node. So the task forces pipelining and refuses with `instance.nested_club_key_unsafe_transfer` before it reads the value when pipelining is off. A clone gets the value on the SSH stdin of `instance_clone.py club-key`. Both pass it on as the stdin of `incus exec ... sh -c`.
+
+A container that Incus starts by itself after a host reboot has no key until Orbit starts or deploys it again. `/etc/orbit/swamp-club-api-key` is the hand-placed file that this replaces; nothing writes it.
+
 ### Egress of the nested fleet
 
 The nested test Nodes reach the public internet through the Node's [egress proxy](#egress-and-dns), as the container itself does.
@@ -1200,6 +1222,9 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.bridge_state_unresolved` | 502 | A bounded ACL readback could not determine the result after a timeout or ambiguous write; retry convergence |
 | `instance.container_endpoint_unresolved` | 502 | A local Docker endpoint has no unique exact DNAT mapping; the phase refuses before probing or downtime |
 | `instance.container_network_unsafe` | 502 | The NIC has no effective ACL or no default egress reject. In the nested-fleet project, also a `raw.*` key, privilege or an unlisted device. Orbit does not start it |
+| `instance.nested_club_key_unsafe_transfer` | 502 | A nested-fleet start would send the Club key with pipelining off or remote files kept. Orbit stops before it reads the value |
+| `instance.nested_club_key_not_tmpfs` | 502 | The container's `/run` is not a tmpfs, so a snapshot could hold the Club key. Orbit does not write it |
+| `instance.nested_club_key_delivery_failed` | 502 | Writing the Club key into the container failed. The error carries no output |
 | `instance.container_<phase>_failed` | 502 | A phase of a container default's create or deployment failed without a refusal, such as `instance.container_start_failed` |
 
 ## Why it works this way

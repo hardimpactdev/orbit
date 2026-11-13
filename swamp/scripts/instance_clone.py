@@ -59,7 +59,7 @@ def main():
     account = sys.argv[4]
     folder = Path(sys.argv[5])
     phase = sys.argv[-1]
-    if phase not in {"container", "workspace", "agent", "t3", "sessions", "cleanup"}:
+    if phase not in {"container", "club-key", "workspace", "agent", "t3", "sessions", "cleanup"}:
         raise ValueError("instance.clone_phase_invalid")
     name = container["name"]
     project = ["incus", "--project", container["project"]]
@@ -498,6 +498,21 @@ def main():
                     )
         finally:
             credential.unlink(missing_ok=True)
+    elif phase == "club-key":
+        # The nested Gateway's Club key, from SSH stdin into the copy's /run, a tmpfs that no snapshot holds
+        # (docs/reference/development-containers.md#the-club-key-of-the-nested-gateway). The value is only subprocess input.
+        club = container["club_key"]
+        if not club.get("available") or not secret:
+            raise RuntimeError("instance.nested_club_key_delivery_failed")
+        if run(project + ["exec", name, "--", "findmnt", "--noheadings", "--output", "FSTYPE", "--target", "/run"]).stdout.strip() != "tmpfs":
+            raise RuntimeError("instance.nested_club_key_not_tmpfs")
+        written = run(project + ["exec", name, "--", "sh", "-c", json.loads(sys.argv[6])["club_key"], "sh", club["directory"], club["file"],
+                                 str(club["owner"]), str(club["group"]), club["tmpfiles"], club["gateway"], club["serve_unit"]], secret, check=False)
+        outcome = written.stdout.strip()
+        if written.returncode or outcome not in {"changed", "unchanged"}:
+            raise RuntimeError("instance.nested_club_key_not_tmpfs" if written.returncode == 3 else "instance.nested_club_key_delivery_failed")
+        if outcome == "changed":
+            changes.append("club-key")
     elif phase == "workspace":
         # Admission frames both private values in one vault copy for native SSH stdin.
         workspace = json.loads(secret)

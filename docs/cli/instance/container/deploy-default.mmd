@@ -27,6 +27,12 @@ sequenceDiagram
   opt the default Instance is asleep
     SW->>N: Start the container<br/>incus start
   end
+  opt nested-fleet container
+    SW->>C: Deliver the Club key<br/>Ansible · tags start
+    %%> What it does:
+    %%> - pipelined module stdin into the container's /run (a tmpfs, never a snapshot), before any check of the inner fleet
+    %%> - without a vault copy the container runs without the key; the Operation's input says `nested_fleet_club_key: missing`
+  end
   SW->>N: Fetch into the mirror<br/>Ansible · tags fetch
   %%> What it does:
   %%> - fetches into the Node's mirror and pushes the branch into the container as a bundle; the token never enters the container

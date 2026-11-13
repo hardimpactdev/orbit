@@ -626,5 +626,76 @@ console.log(JSON.stringify(JSON.parse(created.stdout)));
         )
 
 
+class ClubKeyPhaseTest(unittest.TestCase):
+    """A nested-fleet clone's Club key: SSH stdin of the `club-key` phase reaches only the delivery script's stdin."""
+
+    CLUB_SCRIPT = SCRIPT.parents[1] / "ansible/instance_nested_club_key.sh"
+    VALUE = "fake-club-key-7f3a9c"
+
+    def phase(self, fstype="tmpfs", available=True, outcome="changed", code=0, stdin=VALUE):
+        calls = []
+
+        def command(argv, **kwargs):
+            calls.append((argv, kwargs.get("input")))
+            if "findmnt" in argv:
+                return subprocess.CompletedProcess(argv, 0, fstype + "\n", "")
+            return subprocess.CompletedProcess(argv, code, outcome + "\n", "")
+
+        container = {"name": "instance-9", "project": "orbit-instances-nested", "mirror": "/nonexistent",
+                     "club_key": {"directory": "/run/orbit-club", "file": "swamp-club-api-key", "owner": 1000, "group": 1000,
+                                  "tmpfiles": "/etc/tmpfiles.d/orbit-club.conf", "gateway": "nested-gateway",
+                                  "serve_unit": "orbit-swamp-serve", "available": available}}
+        output, error = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as folder, (
+            patch("sys.argv", [str(SCRIPT), json.dumps(container), "guest", "network", "orbit", folder + "/private",
+                               json.dumps({"club_key": self.CLUB_SCRIPT.read_text()}), "club-key"])
+        ), patch("sys.stdin", io.StringIO(stdin)), patch("subprocess.run", command), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+            try:
+                runpy.run_path(str(SCRIPT), run_name="__main__")
+            except SystemExit as result:
+                self.assertEqual(result.code, 1)
+            self.assertFalse(Path(folder + "/private").exists())
+        for argv, _ in calls:
+            self.assertNotIn(self.VALUE, json.dumps(argv))
+        self.assertNotIn(self.VALUE, output.getvalue() + error.getvalue())
+        return calls, output.getvalue(), error.getvalue()
+
+    def test_delivers_the_key_only_as_the_scripts_stdin_after_the_tmpfs_check(self):
+        calls, output, error = self.phase()
+        self.assertEqual(error, "")
+        self.assertEqual(json.loads(output)["changed"], True)
+        self.assertEqual([argv[:6] for argv, _ in calls], [
+            ["incus", "--project", "orbit-instances-nested", "exec", "instance-9", "--"],
+            ["incus", "--project", "orbit-instances-nested", "exec", "instance-9", "--"]])
+        self.assertIn("findmnt", calls[0][0])
+        argv, given = calls[1]
+        self.assertEqual(argv[6:9], ["sh", "-c", self.CLUB_SCRIPT.read_text()])
+        self.assertEqual(argv[9:], ["sh", "/run/orbit-club", "swamp-club-api-key", "1000", "1000", "/etc/tmpfiles.d/orbit-club.conf",
+                                    "nested-gateway", "orbit-swamp-serve"])
+        self.assertEqual(given, self.VALUE)
+
+    def test_the_same_key_changes_nothing(self):
+        _, output, _ = self.phase(outcome="unchanged")
+        self.assertEqual(json.loads(output)["changed"], False)
+
+    def test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value(self):
+        calls, _, error = self.phase(fstype="zfs")
+        self.assertEqual(error, "instance.nested_club_key_not_tmpfs\n")
+        self.assertEqual(len(calls), 1)
+
+    def test_names_a_failed_delivery_without_its_output(self):
+        _, _, error = self.phase(code=4, outcome="")
+        self.assertEqual(error, "instance.nested_club_key_delivery_failed\n")
+        _, _, error = self.phase(code=3, outcome="")
+        self.assertEqual(error, "instance.nested_club_key_not_tmpfs\n")
+
+    def test_refuses_without_a_vault_copy_or_value_and_runs_nothing(self):
+        for available, stdin in [(False, self.VALUE), (True, "")]:
+            with self.subTest(available=available):
+                calls, _, error = self.phase(available=available, stdin=stdin)
+                self.assertEqual(error, "instance.nested_club_key_delivery_failed\n")
+                self.assertEqual(calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()

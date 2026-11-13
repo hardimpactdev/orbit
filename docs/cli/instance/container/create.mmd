@@ -54,6 +54,13 @@ sequenceDiagram
     %%> - keep a mail warning and continue workspace, T3 and registration; mail:update remains the repair command
     %%> Branch:
     %%> - fetches the Instance's branch into the Node's mirror with the read token, or creates it at the seed commit; the token stays on the Node
+    opt nested-fleet clone with a Club key
+      SW->>C: Deliver the Club key<br/>native clone-club-key
+      %%> What it does:
+      %%> - SSH stdin into the copy's /run (a tmpfs, never a snapshot); a new key restarts the nested Gateway's Swamp serve
+      %%> On failure:
+      %%> - `instance.nested_club_key_not_tmpfs` or `instance.nested_club_key_delivery_failed`; the workspace phase does not run
+    end
     opt database on a Database server
       SW->>N: Create the database<br/>child operation-database-create
       %%> What it does, through the database family:

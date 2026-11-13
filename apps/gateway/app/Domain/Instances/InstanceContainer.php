@@ -200,7 +200,8 @@ final readonly class InstanceContainer
             // A runtime recorded in the nested-fleet project starts from the nested-fleet image; every other one from the normal image.
             'image' => $runtime->incus_project === InstancePlacement::NestedProject ? InstanceImage::NestedAlias : self::Image,
             'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
-            ...($runtime->incus_project === InstancePlacement::NestedProject ? ['allowed_devices' => $this->allowedDevices($instance, $runtime)] : []),
+            ...($runtime->incus_project === InstancePlacement::NestedProject
+                ? ['allowed_devices' => $this->allowedDevices($instance, $runtime), 'club_key' => NestedFleetClubKey::intent()] : []),
             'acl' => $runtime->container_name, 'nic_acl' => InstanceHostIntent::NicAcl,
             'bridge_cidr' => ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')),
             'bridge_admitted_at' => $admittedAt,

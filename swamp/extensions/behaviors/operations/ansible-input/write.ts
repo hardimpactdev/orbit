@@ -152,7 +152,7 @@ export const behavior = {
                 const collections = await Deno.readTextFile(
                     ctx.extensionFile("ansible/requirements.yml"),
                 );
-                const container = args.intent.container as { clone?: unknown; instance_id: number; allowed_devices?: unknown } | null | undefined;
+                const container = args.intent.container as { clone?: unknown; instance_id: number; allowed_devices?: unknown; club_key?: unknown } | null | undefined;
                 const privatePath = `/tmp/orbit-clone-${container?.instance_id ?? 0}-${folder.split("/").at(-1)?.slice("orbit-ansible-".length)}`;
                 const launcher = container?.clone
                     ? await Deno.readTextFile(ctx.extensionFile("scripts/instance_clone_launch.py")) : "";
@@ -176,6 +176,8 @@ export const behavior = {
                         mail: await Deno.readTextFile(ctx.extensionFile("ansible/instance_mail.py")),
                         bridge: await Deno.readTextFile(ctx.extensionFile("ansible/instance_bridge.py")),
                         node: await Deno.readTextFile(ctx.extensionFile("ansible/instance_node_runtime.py")),
+                        // Only a nested-fleet clone delivers its nested Gateway's Club key.
+                        ...(container.club_key ? { club_key: await Deno.readTextFile(ctx.extensionFile("ansible/instance_nested_club_key.sh")) } : {}),
                     },
                 }) : "";
                 const value = Output.parse({

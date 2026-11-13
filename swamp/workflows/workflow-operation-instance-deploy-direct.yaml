@@ -27,7 +27,7 @@ inputs:
             - orbit-control-inputs
           key:
             type: string
-            pattern: ^(process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*|(development|instance)-deploy-operation-[1-9][0-9]*-(step-([0-9]|[12][0-9]|3[01])|credential|processes)|instance-environment-(testing-)?[1-9][0-9]*)$
+            pattern: ^(process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*|(development|instance)-deploy-operation-[1-9][0-9]*-(step-([0-9]|[12][0-9]|3[01])|credential|processes)|instance-environment-(testing-)?[1-9][0-9]*|nested-fleet-club-api-key)$
         required:
         - vault
         - key
@@ -1785,7 +1785,7 @@ jobs:
       methodName: execute
       inputs:
         run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start "$ORBIT_ANSIBLE/instance-container.yml"
-        env: &container_ansible
+        env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_RUN_ID: ${{ run.id }}
           ORBIT_ANSIBLE: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets : "" }}'
@@ -1793,6 +1793,9 @@ jobs:
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+          # Only a nested-fleet container's start gets its Club key, from its one vault copy; Ansible passes it on stdin. Any other run
+          # names a key it always has, which Ansible never delivers (docs/reference/swamp-command-steps.md#secret-inputs).
+          ORBIT_CLUB_KEY: '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.intent.deployment.variant == "container" && inputs.intent.container.project == "orbit-instances-nested" && inputs.intent.container.club_key.available ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.credential.key) }}'
   - name: Fetch into the mirror
     labels:
       role: swamp
@@ -1834,7 +1837,14 @@ jobs:
       methodName: execute
       inputs:
         run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags checkout "$ORBIT_ANSIBLE/instance-container.yml"
-        env: *container_ansible
+        env: &container_ansible
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_RUN_ID: ${{ run.id }}
+          ORBIT_ANSIBLE: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets : "" }}'
+          ANSIBLE_CONFIG: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets + "/ansible.cfg" : "" }}'
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
   - name: Run dev deploy steps
     labels:
       role: swamp

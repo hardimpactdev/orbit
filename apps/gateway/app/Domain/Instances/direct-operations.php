@@ -43,7 +43,9 @@ return [
             // A container default runs the Project's development deploy steps, each from its own copy.
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$'],
             // The owned server database: the same copies as database:create.
-            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-intent-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-owner-[1-9][0-9]*$']]],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-intent-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-owner-[1-9][0-9]*$'],
+            // A nested-fleet container's Club key (NestedFleetClubKey).
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^nested-fleet-club-api-key$']]],
     'instance.env_import' => ['workflow' => 'operation-instance-env-import', 'workflow_inputs' => true,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-env-import\.content\.[1-9][0-9]*$']],
         'terminal_result' => ['job' => 'import', 'step' => 'Read .env into the vault', 'native' => true,
@@ -82,7 +84,9 @@ return [
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-(?:credential|processes)$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-deploy-operation-[1-9][0-9]*-credential$'],
-            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-environment-(?:testing-)?[1-9][0-9]*$']],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-environment-(?:testing-)?[1-9][0-9]*$'],
+            // A nested-fleet container's Club key (NestedFleetClubKey).
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^nested-fleet-club-api-key$']],
         'projection' => InstanceDeployProjection::class,
     ],
     // The link read back after the swap is the end check; every step runs on Node 209 over official SSH.

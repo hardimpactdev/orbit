@@ -31,7 +31,9 @@ async function cloneInput(nested = false) {
     const account = new TextDecoder().decode((await new Deno.Command("id", { args: ["-un"] }).output()).stdout).trim();
     const container = {
         instance_id: 7, name: "instance-7", project: nested ? "orbit-instances-nested" : "orbit-instances",
-        ...(nested ? {allowed_devices: {root: {type: "disk", path: "/", pool: "orbit-instances"}}} : {}), network: "orbitinst0", acl: "instance-7",
+        ...(nested ? {allowed_devices: {root: {type: "disk", path: "/", pool: "orbit-instances"}},
+            club_key: {directory: "/run/orbit-club", file: "swamp-club-api-key", owner: 1000, group: 1000, tmpfiles: "/etc/tmpfiles.d/orbit-club.conf",
+                gateway: "nested-gateway", serve_unit: "orbit-swamp-serve", available: true}} : {}), network: "orbitinst0", acl: "instance-7",
         nic_acl: "orbitinst0-proxy", address: "10.253.0.7", acl_rules: { description: "Orbit Instance 7", egress: [], ingress: [] },
         root_disk_pool: "orbit-instances", root_disk_size: "40GiB", config: {}, mirror: folder + "/mirror",
         repository: "https://github.com/example/fixture.git", protocols: ["https"], branch: "feature/clone",
@@ -265,8 +267,12 @@ Deno.test("nested clone input ships the composed pre-start policy and keeps the 
                 assertEquals(payload.network, normal.split('if __name__ == "__main__":')[0] + await Deno.readTextFile(asset("ansible/instance_nested.py")));
                 const manifest = parse(await Deno.readTextFile(asset("manifest.yaml"))) as {additionalFiles: string[]};
                 assert(manifest.additionalFiles.includes("ansible/instance_nested.py"));
+                // The Club key script crosses the same staged input; the key itself never does.
+                assertEquals(payload.bundle.club_key, await Deno.readTextFile(asset("ansible/instance_nested_club_key.sh")));
+                assert(manifest.additionalFiles.includes("ansible/instance_nested_club_key.sh"));
             } else {
                 assertEquals(payload.network, normal);
+                assertEquals(Object.keys(payload.bundle).sort(), ["bridge", "mail", "node", "node_services"]);
             }
         } finally { await Deno.remove(folder, {recursive: true}); }
     }
