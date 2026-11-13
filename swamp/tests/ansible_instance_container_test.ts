@@ -1369,3 +1369,60 @@ for (const damage of ["raw.lxc", "privileged", "host-disk", "extra-share-key"]) 
     },
   });
 }
+
+for (const scopes of ["recorded nested runtimes", "a normal Node"]) {
+Deno.test({
+  name: scopes === "a normal Node"
+    ? "a changed shared folder on a normal Node runs main's list and restart command lines"
+    : "a changed shared folder restarts running normal and nested runtimes before clearing its marker",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await hostFixture({pool: "dir"});
+    try {
+      const state = f.state();
+      state.instances = [
+        {project: "orbit-instances", name: "instance-7", status: "Running"},
+        {project: "orbit-instances-nested", name: "instance-8", status: "Running"},
+        {project: "orbit-instances-nested", name: "instance-9", status: "Stopped"},
+        {project: "unrelated", name: "other", status: "Running"},
+      ];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      // Existing versions let this case exercise only the real refresh and restart path.
+      for (const folder of Object.values(f.instances.folders)) {
+        Deno.mkdirSync(`${folder.path}/aaaaaaaaaaaa`, {recursive: true});
+        Deno.mkdirSync(`${folder.path}/${folder.version}`, {recursive: true});
+        Deno.symlinkSync("aaaaaaaaaaaa", `${folder.path}/current`);
+      }
+      f.write(scopes === "a normal Node" ? f.instances
+        : {...f.instances, runtime_projects: ["orbit-instances", "orbit-instances-nested", "not-created-yet"]});
+      Deno.writeTextFileSync(`${f.folder}/play.yml`, stringify([{
+        hosts: "localhost", gather_facts: false,
+        tasks: [{"ansible.builtin.include_tasks": "tasks/instance-folder.yml",
+          loop: "{{ instances.folders | dict2items }}", loop_control: {loop_var: "shared"},
+          vars: {folder_name: "{{ shared.key }}", folder: "{{ shared.value }}"}}],
+      }]));
+      const result = await f.run();
+      assert(result.ok, result.output);
+      if (scopes === "a normal Node") {
+        // The exact argv of main's tasks: one project, and each running container restarted in it.
+        assertEquals(f.calls().filter((args) => args[0] === "list" || args[0] === "exec"), ["orbit-*.service", "t3.service"].flatMap((unit) => [
+          ["list", "--project", "orbit-instances", "--format", "json", "status=running"],
+          ["exec", "--project", "orbit-instances", "instance-7", "--", "systemctl", "try-restart", unit],
+        ]));
+      }
+      assertEquals(f.state().folder_restarts, ["orbit-*.service", "t3.service"].flatMap(unit => [
+        {project: "orbit-instances", name: "instance-7", unit, marked: true},
+        ...(scopes === "a normal Node" ? [] : [{project: "orbit-instances-nested", name: "instance-8", unit, marked: true}]),
+      ]));
+      for (const folder of Object.values(f.instances.folders)) {
+        assert(!f.has(`opt/${folder.path.split("/").at(-1)}/.restart`));
+        assertEquals(Deno.readLinkSync(`${folder.path}/current`), folder.version);
+      }
+      const again = await f.run();
+      assert(again.ok, again.output);
+      assert(/changed=0/.test(again.output), again.output);
+      assertEquals(f.state().folder_restarts.length, scopes === "a normal Node" ? 2 : 4);
+    } finally { f.cleanup(); }
+  },
+});
+}

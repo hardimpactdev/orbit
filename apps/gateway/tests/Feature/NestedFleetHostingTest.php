@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Schedules\RunScheduleAction;
 use App\Data\Nodes\NodeTaskVmsData;
 use App\Domain\Instances\BaselineNormalInstanceContainer;
 use App\Domain\Instances\BaselineNormalInstanceHostIntent;
@@ -9,17 +10,22 @@ use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\Schedule;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Symfony\Component\Process\Process;
+use Symfony\Component\Yaml\Yaml;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -244,3 +250,43 @@ describe('a switched-on Node', function (): void {
             ->and($host['ids'])->toBe(13_172_736 + 101_000_000);
     });
 });
+
+it('validates a captured container Schedule run in either recorded project against the production workflow schema', function (bool $nested): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    $instance = $nested ? recordedNestedInstance($project, $node) : Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id,
+        'name' => 'default', 'checkout_path' => '/test/default']);
+    $instance->update(['status' => 'active', 'provisioning_step' => 'active', 'first_setup_pending' => false]);
+    $runtime = $instance->runtime()->first() ?? app(InstanceContainer::class)->reserve($instance, $node);
+    $schedule = Schedule::query()->create(['target_type' => 'instance', 'target_id' => $instance->id, 'host_node_id' => $node->id,
+        'name' => 'nightly', 'calendar' => '*-*-* 03:00:00', 'command' => 'true', 'timeout_seconds' => 30, 'trigger' => 'swamp', 'desired_timer_state' => 'enabled', 'status' => 'active']);
+    SwampNodeFixture::ensure();
+    $frame = [];
+    $socket = Mockery::mock(WebSocketClient::class);
+    $socket->shouldReceive('connect', 'close')->andReturnNull();
+    $socket->shouldReceive('isConnected')->andReturnTrue();
+    $socket->shouldReceive('send')->andReturnUsing(function (array $sent) use (&$frame): void {
+        $frame = $sent;
+    });
+    $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame): array {
+        return [['id' => $frame['id'], 'type' => 'vault.put', 'payload' => ['data' => ['vaultName' => $frame['payload']['vaultName'],
+            'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    });
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => '192.0.2.209', 'swamp.ca_path' => __FILE__, 'swamp.run_token' => 'fixture']);
+    $input = app(DirectOperation::class)->workflowInputs(app(RunScheduleAction::class)->admit($schedule));
+    expect($input['intent']['container'])->toBe(['project' => $runtime->refresh()->incus_project, 'name' => $runtime->container_name]);
+    $workflow = Yaml::parseFile(base_path('../../swamp/workflows/workflow-task-command-run.yaml'));
+    $validate = new Process(['deno', 'eval', <<<'JS'
+import Ajv from "npm:ajv@8.17.1";
+import addFormats from "npm:ajv-formats@3.0.1";
+const {schema, input} = JSON.parse(await new Response(Deno.stdin.readable).text());
+const ajv = new Ajv({strict: false});
+addFormats(ajv);
+if (!ajv.validate(schema, input)) throw new Error(JSON.stringify(ajv.errors));
+JS]);
+    $validate->setInput(json_encode(['schema' => $workflow['inputs'], 'input' => $input], JSON_THROW_ON_ERROR));
+    $validate->run();
+    expect($validate->isSuccessful())->toBeTrue($validate->getErrorOutput())
+        ->and($workflow['jobs'][0]['steps'][0]['task']['inputs']['argv'])->toContain('inputs.intent.container.project');
+})->with([false, true]);

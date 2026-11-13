@@ -9,19 +9,19 @@ LIMIT = 4 * 1024 * 1024
 ENTRY = 256 * 1024
 
 
-def pair(container, unit):
-    if not re.fullmatch(r"instance-[1-9][0-9]*", container) or not re.fullmatch(
+def pair(project, container, unit):
+    if project not in INSTANCE_PROJECTS or not re.fullmatch(r"instance-[1-9][0-9]*", container) or not re.fullmatch(
         r"orbit-process-[1-9][0-9]*-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.service", unit
     ):
         raise ValueError("invalid Process target")
-    return ["incus", "exec", "--project", "orbit-instances", container, "--", "/usr/bin/timeout", "2", "/usr/bin/env", "-i"]
+    return ["incus", "exec", "--project", project, container, "--", "/usr/bin/timeout", "2", "/usr/bin/env", "-i"]
 
 
 def states(arguments):
     deadline = time.monotonic() + 2.5
     result = []
-    for container, unit in zip(arguments[::2], arguments[1::2], strict=True):
-        command = pair(container, unit) + ["/usr/bin/systemctl", "show", "--property=LoadState", "--property=ActiveState", "--", unit]
+    for project, container, unit in zip(arguments[::3], arguments[1::3], arguments[2::3], strict=True):
+        command = pair(project, container, unit) + ["/usr/bin/systemctl", "show", "--property=LoadState", "--property=ActiveState", "--", unit]
         state = "unknown"
         remaining = deadline - time.monotonic()
         if remaining > 0:
@@ -39,10 +39,10 @@ def states(arguments):
 
 
 def journal(arguments):
-    lines, container, unit = arguments
+    lines, project, container, unit = arguments
     if not lines.isdecimal() or not 1 <= int(lines) <= 1000:
         raise ValueError("invalid line limit")
-    command = pair(container, unit) + ["/usr/bin/journalctl", "--no-pager", "--quiet", "--unit=" + unit,
+    command = pair(project, container, unit) + ["/usr/bin/journalctl", "--no-pager", "--quiet", "--unit=" + unit,
                                       "--reverse", "--lines=" + lines, "--output=short-iso", "--utc"]
     child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     used = indent = total = 0

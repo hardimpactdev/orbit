@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Processes\ShowProcessLogsAction;
 use App\Domain\Hibernation\HibernationException;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Logs\LogReadLimit;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
@@ -51,7 +52,7 @@ beforeEach(function (): void {
 });
 
 /** @return array{Instance, Process} */
-function directContainerProcess(?Node $node = null): array
+function directContainerProcess(?Node $node = null, string $incusProject = 'orbit-instances'): array
 {
     $number = Project::query()->count() + 1;
     $node ??= Node::withoutEvents(fn (): Node => Node::query()->forceCreate(['name' => 'node-'.$number,
@@ -63,7 +64,7 @@ function directContainerProcess(?Node $node = null): array
         'status' => 'active', 'first_setup_pending' => false, 'checkout_path' => '/container-fixture/'.$number, 'branch' => 'main']);
     $prefix = substr($node->instance_bridge, 0, strrpos($node->instance_bridge, '.') + 1);
     InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id,
-        'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$instance->id,
+        'incus_project' => $incusProject, 'container_name' => 'instance-'.$instance->id,
         'bridge_address' => $prefix.($number + 1), 'runtime_version' => 'fixture', 'agent_version' => 'fixture', 'power_state' => 'running']);
     $process = Process::query()->create(['owner_type' => 'instance', 'owner_id' => $instance->id, 'name' => 'worker',
         'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/true'], 'environment' => ['QUEUE_TOKEN' => 'private-queue-token']],
@@ -72,12 +73,12 @@ function directContainerProcess(?Node $node = null): array
     return [$instance, $process];
 }
 
-it('reads twenty container Processes across four Instances in one bounded call to their Node', function (): void {
+it('reads twenty container Processes across four Instances in one bounded call to their Node', function (string $incusProject): void {
     $this->freezeTime();
-    [$instance, $first] = directContainerProcess();
+    [$instance, $first] = directContainerProcess(incusProject: $incusProject);
     $processes = collect([$first]);
     for ($i = 1; $i < 4; $i++) {
-        [$other, $process] = directContainerProcess($instance->node);
+        [$other, $process] = directContainerProcess($instance->node, $incusProject);
         $processes->push($process);
     }
     foreach ($processes->all() as $process) {
@@ -86,15 +87,15 @@ it('reads twenty container Processes across four Instances in one bounded call t
         }
     }
     $ssh = Mockery::mock(SshExecutor::class);
-    $ssh->shouldReceive('execute')->once()->withArgs(function (SshConnection $connection, RemoteCommand $command) use ($processes): bool {
+    $ssh->shouldReceive('execute')->once()->withArgs(function (SshConnection $connection, RemoteCommand $command) use ($processes, $incusProject): bool {
         expect($connection->user)->toBe('nckrtl')->and($connection->identityFile)->toBe('/fixture/key')
             ->and($connection->knownHostsFile)->toBe('/fixture/known_hosts')->and($connection->connectTimeout)->toBe(2)
             ->and($connection->commandTimeout)->toBe(4.0)->and($command->timeout)->toBe(4.0);
         expect(array_slice($command->arguments, 0, 5))->toBe(['timeout', '3', 'python3', '-', 'states']);
-        expect(count($command->arguments))->toBe(45);
+        expect(count($command->arguments))->toBe(65);
         foreach ($processes->values() as $index => $process) {
-            expect(array_slice($command->arguments, 5 + $index * 2, 2))->toBe([
-                'instance-'.$process->owner_id, "orbit-process-{$process->id}-{$process->name}.service",
+            expect(array_slice($command->arguments, 5 + $index * 3, 3))->toBe([
+                $incusProject, 'instance-'.$process->owner_id, "orbit-process-{$process->id}-{$process->name}.service",
             ]);
         }
 
@@ -108,7 +109,7 @@ it('reads twenty container Processes across four Instances in one bounded call t
     }
     expect(Operation::query()->count())->toBe(0);
     Queue::assertNothingPushed();
-});
+})->with(InstancePlacement::projects());
 
 it('isolates an unreachable or malformed Node reply and clears the reason after recovery', function (string $failure): void {
     [$instance, $process] = directContainerProcess();
@@ -138,11 +139,11 @@ it('isolates an unreachable or malformed Node reply and clears the reason after 
     expect(Operation::query()->count())->toBe(0);
 })->with(['timeout', 'exit', 'invalid JSON', 'invalid state']);
 
-it('tails once with resolved names and applies the host ordering and redaction', function (int $lines): void {
-    [$instance, $process] = directContainerProcess();
+it('tails once with resolved names and applies the host ordering and redaction', function (int $lines, string $incusProject): void {
+    [$instance, $process] = directContainerProcess(incusProject: $incusProject);
     $ssh = Mockery::mock(SshExecutor::class);
-    $ssh->shouldReceive('execute')->once()->withArgs(function (SshConnection $connection, RemoteCommand $command) use ($lines, $instance, $process): bool {
-        expect($command->arguments)->toBe(['timeout', '3', 'python3', '-', 'logs', (string) $lines,
+    $ssh->shouldReceive('execute')->once()->withArgs(function (SshConnection $connection, RemoteCommand $command) use ($lines, $instance, $process, $incusProject): bool {
+        expect($command->arguments)->toBe(['timeout', '3', 'python3', '-', 'logs', (string) $lines, $incusProject,
             'instance-'.$instance->id, "orbit-process-{$process->id}-worker.service"])
             ->and($command->maxOutputBytes)->toBe(LogReadLimit::Bytes);
 
@@ -153,7 +154,7 @@ it('tails once with resolved names and applies the host ordering and redaction',
         ->toBe("2026-11-10 worker: first\n2026-11-11 worker: [REDACTED]\n");
     expect(Operation::query()->count())->toBe(0);
     Queue::assertNothingPushed();
-})->with([1, 1000]);
+})->with([1, 1000])->with(InstancePlacement::projects());
 
 it('returns only a safe log error when its Node is unavailable', function (bool $throws): void {
     [$instance, $process] = directContainerProcess();
@@ -224,9 +225,9 @@ function runContainerReadFixture(array $arguments, string $scenario, string $jou
     copy(base_path('tests/Fixtures/container-process-incus.py'), $folder.'/incus');
     chmod($folder.'/incus', 0700);
     $read = new LocalProcess(['timeout', '3', 'python3', '-', ...$arguments], env: [
-        'PATH' => $folder.':/usr/bin:/bin', 'PROCESS_READ_FIXTURE' => $folder, 'PROCESS_READ_CASE' => $scenario,
+        'PATH' => $folder.':/usr/bin:/bin', 'PROCESS_READ_FIXTURE' => $folder, 'PROCESS_READ_CASE' => $scenario, 'PROCESS_READ_PROJECT' => $arguments[$arguments[0] === 'logs' ? 2 : 1],
     ]);
-    $read->setInput(file_get_contents(resource_path('processes/container-process-read.py')));
+    $read->setInput('INSTANCE_PROJECTS = '.json_encode(InstancePlacement::projects(), JSON_THROW_ON_ERROR)."\n".file_get_contents(resource_path('processes/container-process-read.py')));
     try {
         $read->run();
     } finally {
@@ -238,20 +239,20 @@ function runContainerReadFixture(array $arguments, string $scenario, string $jou
     return $read;
 }
 
-it('reads real fixed argv for stopped or missing containers and missing units', function (string $scenario, string $expected): void {
-    $read = runContainerReadFixture(['states', 'instance-1', 'orbit-process-2-worker.service'], $scenario);
+it('reads real fixed argv for stopped or missing containers and missing units', function (string $scenario, string $expected, string $incusProject): void {
+    $read = runContainerReadFixture(['states', $incusProject, 'instance-1', 'orbit-process-2-worker.service'], $scenario);
     expect($read->isSuccessful())->toBeTrue()->and(json_decode($read->getOutput(), true))->toBe([$expected]);
-    $logs = runContainerReadFixture(['logs', '10', 'instance-1', 'orbit-process-2-worker.service'], $scenario);
+    $logs = runContainerReadFixture(['logs', '10', $incusProject, 'instance-1', 'orbit-process-2-worker.service'], $scenario);
     expect($logs->isSuccessful())->toBe($scenario === 'missing-unit')->and($logs->getOutput())->toBe('');
-})->with([['stopped', 'unknown'], ['missing-container', 'unknown'], ['missing-unit', 'inactive']]);
+})->with([['stopped', 'unknown'], ['missing-container', 'unknown'], ['missing-unit', 'inactive']])->with(InstancePlacement::projects());
 
-it('cuts huge entries and output at the host limits in the real fixed reader', function (): void {
+it('cuts huge entries and output at the host limits in the real fixed reader', function (string $incusProject): void {
     $prefix = '2026-11-11T00:00:00+00:00 node worker[2]: ';
     $journal = $prefix.str_repeat('é', 200000)."\n";
-    $read = runContainerReadFixture(['logs', '1000', 'instance-1', 'orbit-process-2-worker.service'], 'active', $journal);
+    $read = runContainerReadFixture(['logs', '1000', $incusProject, 'instance-1', 'orbit-process-2-worker.service'], 'active', $journal);
     expect($read->isSuccessful())->toBeTrue()
         ->and($read->getOutput())->toBe($prefix.str_repeat('é', 131072)."\n".str_repeat(' ', strlen($prefix))."[orbit] message cut at 256 KiB\n");
-    $read = runContainerReadFixture(['logs', '1000', 'instance-1', 'orbit-process-2-worker.service'], 'active', str_repeat($prefix.str_repeat('x', 10000)."\n", 500));
+    $read = runContainerReadFixture(['logs', '1000', $incusProject, 'instance-1', 'orbit-process-2-worker.service'], 'active', str_repeat($prefix.str_repeat('x', 10000)."\n", 500));
     expect($read->isSuccessful())->toBeTrue()->and(strlen($read->getOutput()))->toBe(LogReadLimit::Bytes)
         ->and(LogReadLimit::journalInTimeOrder($read->getOutput()))->not->toEndWith('x');
-});
+})->with(InstancePlacement::projects());
