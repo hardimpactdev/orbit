@@ -1318,6 +1318,8 @@ Deno.test({
                 };
                 const instances = collision === "orbit-stock-build"
                     ? [{
+                        // The stand-in lists instances by project, as Incus does.
+                        project: stockProject,
                         name: collision,
                         config: { "user.orbit.stock-build": stockAlias },
                     }]
