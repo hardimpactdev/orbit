@@ -59,7 +59,7 @@ Snapshots use the temporary index described above, so a staged, force-added igno
 
 Each command writes its output to a guest file. Ansible copies the output folder to the Node and fetches it into the private worker run folder; the guest and Node copies are removed on success and failure. The typed result holds only exit codes and Git evidence, within the 512 KiB result bound; a larger diff fails the phase.
 
-The existing task check rules then read, redact and delete the output files, judge deliverables, check the candidate commit and shape the receipt. A phase failure returns its workspace error code as the check's error code. The parent captures the receipt from `Check in the Instance`; the Gateway records it as it records a task VM check.
+The existing task check rules then read, redact and delete the output files, judge deliverables, check the candidate commit and shape the receipt. A phase failure returns its workspace error code as the check's error code. The parent captures the receipt from `Check in the Instance`; the Gateway records it as it records a task VM check. The `candidate` step receives the commit read as a map, closed with `} }`: Swamp ends an expression at the first `}}`.
 
 ## Verification
 

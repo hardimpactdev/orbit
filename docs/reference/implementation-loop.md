@@ -47,7 +47,7 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same fast checks.
 
-Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units in hosted shards. Route access fixtures share the admitted argv with the Gateway unit test, so hosted Ansible checks need no Gateway Composer installation. The fixture for destroy without a Route evaluates guards with the pinned CEL compiler. It runs source removal against real temporary Git trees.
+Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units in hosted shards. Route access fixtures share the admitted argv with the Gateway unit test, so hosted Ansible checks need no Gateway Composer installation. The fixture for destroy without a Route evaluates guards with the pinned CEL compiler. It runs source removal against real temporary Git trees. The expression-end fixture reads every workflow file and fails when an expression holds a `}}` before its end, because Swamp ends a `${{ … }}` expression at the first `}}`. Any change under `swamp/workflows` selects it.
 
 The [task Instance workspace regression](/reference/task-instance-workspace#verification) runs the production Ansible phases against disposable Git checkouts through a local transport shim. It checks evidence, receipt bounds and branch export; the live Instance proof remains separate.
 

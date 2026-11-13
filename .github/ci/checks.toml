@@ -2293,6 +2293,20 @@ inputs = [
   "swamp/workflows/workflow-operation-instance-deploy-direct.yaml",
   "swamp/workflows/workflow-operation-process-container.yaml",
   "swamp/workflows/workflow-route-withdraw.yaml",
+  "swamp/tests/_support/swamp_expression.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/workflow_expression_ends_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/tests/_support/swamp_expression.ts",
+  "swamp/workflows/**",
 ]
 
 [[fixture]]

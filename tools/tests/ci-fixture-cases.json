@@ -1902,7 +1902,7 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "7422271014a92868113a89b70c31069d6e36a5d4095d43b889e3f7f1d28ff04d",
+    "source_sha256": "7a38c70857ee5a6748bb6476491c0e87a2b757cbb851561143726e8bb28ab659",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
@@ -2369,6 +2369,13 @@
       "a normal container deployment skips every fleet step, after success and after a failure",
       "a nested-fleet default first keeps its current seed, refreshes its fleet before the last seed, and restores nothing when every step passes",
       "a nested-fleet deployment that failed after its checkout restores the old seed, starts through start and keeps the failed phase's result"
+    ]
+  },
+  "swamp/tests/workflow_expression_ends_test.ts": {
+    "source_sha256": "8f3cacdd919020172cc0397d4815efea51f7e6d1314ac36250fa2f50398c1dae",
+    "cases": [
+      "no workflow expression holds a `}}` that ends it before its end",
+      "a map or string closed with `}}` inside an expression is found, and `} }}` passes"
     ]
   }
 }
