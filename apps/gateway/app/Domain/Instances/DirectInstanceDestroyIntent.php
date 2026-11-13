@@ -28,6 +28,7 @@ use App\Models\Route;
 use App\Models\Schedule;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /** Records owned dev-removal facts. Swamp owns ordering, effects and recovery. */
@@ -53,67 +54,21 @@ final readonly class DirectInstanceDestroyIntent
      */
     private function recordIntent(array $input): array
     {
-        app(ContainerInstanceDestroy::class)->assertAvailable(Instance::query()->lockForUpdate()->findOrFail(ValidatedData::integer($input['instance_id'])), $input['force'] === true);
+        $this->assertRootAvailable($input);
         $members = InstanceLifecycleInput::members($input);
-        if (Operation::query()->whereIn('kind', ['instance.destroy'])
-            ->where('target_type', 'instance')->whereIn('target_id', array_column($members, 'instance_id'))
-            ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
-            throw new ResourceOperationException('operation.target_busy', 'A removal root already owns this Instance.', 409);
-        }
         $stored = InstanceRemoval::query()->whereKey(ValidatedData::string($input['removal_id']))->first();
         if ($stored?->native_intent !== null) {
             return $this->replay($stored, $input);
         }
-        $ids = ValidatedData::integerList(array_column($members, 'instance_id'));
-        if ($members === [] || count(array_unique($ids)) !== count($ids)
-            || ! in_array($input['instance_id'] ?? null, $ids, true)
-            || array_any($members, static fn (array $member): bool => $member['environment'] !== 'development' || $member['node_id'] !== $input['node_id'])) {
-            throw new ResourceOperationException('instance.destroy_unsupported', 'Direct development removal requires its recorded source Node.', 409);
-        }
-        foreach ($members as $member) {
-            if (! ($input['source_pending'] ?? false) && (! is_string($member['worktree_inventory'] ?? null) || ! is_string($member['origin'] ?? null) || $member['origin'] === '')) {
-                throw new ResourceOperationException('instance.removal_conflict', 'Removal requires its captured source inventory and origin.', 409);
-            }
-        }
+        $ids = $this->memberIds($input, $members);
         // Every owning artifact must be admitted before any desired-state write.
         $databases = $this->databases->execute(
             Instance::query()->with('node')->findOrFail(ValidatedData::integer($input['instance_id'])), $ids,
         );
-        $routeIds = array_values(array_unique([...ValidatedData::integerList(array_values(array_filter(array_column($members, 'route_id')))), ...ValidatedData::integerList($input['additional_route_ids'])]));
-        sort($routeIds);
-        $attached = Route::query()->whereHas('targets', fn ($query) => $query->whereIn('instance_id', $ids))->orderBy('id')->get();
-        if ($attached->modelKeys() !== $routeIds) {
-            throw new ResourceOperationException('instance.removal_conflict', 'The complete attached Route inventory changed.', 409);
-        }
+        [$routeIds, $attached] = $this->routes($input, $members, $ids);
         $routePolicy = app(NativeRouteMutationInput::class);
+        [$beforeSites, $previousRoutes] = $this->routeInputs($attached);
         $sites = app(DevelopmentSiteRepository::class);
-        $beforeSites = clone $sites->all();
-        $previousRoutes = [];
-        foreach ($attached as $route) {
-            $removalInventory = app(NativeRouteRemovalIntent::class)->capture($route);
-            // A first publication can reach the Node before its probe fails, without setting sites_published.
-            // Capture its possible publication as well as absence; withdrawal accepts either actual state.
-            $routeSites = $sites->routeSites($route);
-            $beforeSites->push(...$routeSites);
-            $leaves = [];
-            $nodeIds = [];
-            foreach ($removalInventory['nodes'] as $participant) {
-                $target = Node::query()->findOrFail($participant['node_id']);
-                $nodeIds[] = $target->id;
-                foreach ($participant['certificate_scopes'] as $scope) {
-                    $leaves[] = app(NativeRouteCertificateInput::class)->scopeInput($target, $scope);
-                }
-            }
-            foreach ($routeSites as $site) {
-                if (! $site->publicListener) {
-                    $nodeIds[] = $site->nodeId;
-                    $leaves[] = app(NativeRouteCertificateInput::class)->scopeInput(Node::query()->findOrFail($site->nodeId), $site->certificateScope ?? $site->scope);
-                }
-            }
-            $previousRoutes[] = ['route_id' => $route->id, 'domain' => $route->domain,
-                'intent' => ['node_ids' => array_values(array_unique($nodeIds)), 'certificates' => array_values(array_unique($leaves, SORT_REGULAR))], 'sites' => $routeSites, 'url_writes' => []];
-        }
-        $beforeSites = $beforeSites->unique(static fn (DevelopmentSite $site): string => $site->addressKey())->values();
         $removal = InstanceRemoval::query()->firstOrCreate(['id' => $input['removal_id']], [
             'requested_instance_id' => $input['instance_id'], 'requested_name' => $input['name'],
             'force' => $input['force'], 'inventory_digest' => $input['inventory_digest'], 'total' => count($members),
@@ -122,21 +77,12 @@ final readonly class DirectInstanceDestroyIntent
         if ($removal->requested_instance_id !== $input['instance_id'] || $removal->inventory_digest !== $input['inventory_digest']) {
             throw new ResourceOperationException('instance.removal_conflict', 'The admitted removal set changed.', 409);
         }
-        $node = Node::query()->findOrFail(ValidatedData::integer($input['node_id']));
-        if ($node->status !== LifecycleStatus::Active) {
-            throw new ResourceOperationException('route.withdrawal_node_unavailable', 'Withdrawal requires its active admitted Node.', 409);
-        }
-        if ($node->user === 'root' || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $node->user) !== 1) {
-            throw new ResourceOperationException('instance.destroy_unsupported', 'Development removal requires its configured non-root Node account.', 409);
-        }
+        $node = $this->node($input);
         $runtime = ['processes' => [], 'schedules' => []];
         $nativeProcesses = [];
         $teardown = [];
         foreach ($members as $member) {
-            $instance = Instance::query()->with('project')->findOrFail(ValidatedData::integer($member['instance_id']));
-            if ($instance->project_id !== $input['project_id'] || $instance->node_id !== $node->id || ! $instance->placedOnAppDev()) {
-                throw new ResourceOperationException('instance.removal_conflict', 'The removal member changed placement.', 409);
-            }
+            $instance = $this->member($member, $input, $node);
             $ownedRoutes = $attached->filter(static fn (Route $route): bool => $route->targets->contains('instance_id', $instance->id))->modelKeys();
             $record = $removal->members()->firstOrCreate(['instance_id' => $instance->id], ['route_ids' => $ownedRoutes, ...Arr::only($member, [
                 'position', 'project_id', 'node_id', 'route_id', 'name', 'environment', 'source_layout', 'repository_identity',
@@ -189,6 +135,166 @@ final readonly class DirectInstanceDestroyIntent
      */
     private function replay(InstanceRemoval $removal, array $input): array
     {
+        $saved = $this->assertReplayAvailable($removal, $input);
+        if ($input['force'] !== $removal->force) {
+            $removal->update(['force' => $input['force']]);
+        }
+        $removal->update(['status' => InstanceRemovalStatus::Removing, 'failed_step' => null, 'error_code' => null]);
+
+        return [...$saved, 'force' => $input['force']];
+    }
+
+    /** Only stored inputs are read: no Node probe, intent record, desired-state write or dispatch.
+     * @param  array<string,mixed>  $input
+     */
+    public function assertAvailable(array $input): void
+    {
+        $this->assertRootAvailable($input);
+        $stored = InstanceRemoval::query()->whereKey(ValidatedData::string($input['removal_id']))->first();
+        if ($stored?->native_intent !== null) {
+            $this->assertReplayAvailable($stored, $input);
+
+            return;
+        }
+        $members = InstanceLifecycleInput::members($input);
+        $ids = $this->memberIds($input, $members);
+        $this->databases->snapshot(Instance::query()->with('node')->findOrFail(ValidatedData::integer($input['instance_id'])), $ids);
+        [, $attached] = $this->routes($input, $members, $ids);
+        $this->routeInputs($attached);
+        $node = $this->node($input);
+        foreach ($members as $member) {
+            $instance = $this->member($member, $input, $node);
+            if (($input['container_destroy'] ?? null) === null) {
+                foreach (Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)->orderBy('id')->get() as $process) {
+                    $this->processes->inputFor($process, 'destroy');
+                }
+            }
+            foreach (Schedule::query()->whereIn('target_type', Instance::morphTypes())->where('target_id', $instance->id)->orderBy('id')->get() as $schedule) {
+                $this->schedules->inputFor($schedule, 'destroy', cascade: true);
+            }
+        }
+        app(SwampSshExecutionInput::class)->forNode($node);
+    }
+
+    /** @param array<string,mixed> $input */
+    private function assertRootAvailable(array $input): void
+    {
+        app(ContainerInstanceDestroy::class)->assertAvailable(Instance::query()->lockForUpdate()->findOrFail(ValidatedData::integer($input['instance_id'])), $input['force'] === true);
+        $members = InstanceLifecycleInput::members($input);
+        if (Operation::query()->whereIn('kind', ['instance.destroy'])
+            ->where('target_type', 'instance')->whereIn('target_id', array_column($members, 'instance_id'))
+            ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
+            throw new ResourceOperationException('operation.target_busy', 'A removal root already owns this Instance.', 409);
+        }
+    }
+
+    /** @param array<string,mixed> $input
+     * @param  list<array<string,mixed>>  $members
+     * @return list<int>
+     */
+    private function memberIds(array $input, array $members): array
+    {
+        $ids = ValidatedData::integerList(array_column($members, 'instance_id'));
+        if ($members === [] || count(array_unique($ids)) !== count($ids)
+            || ! in_array($input['instance_id'] ?? null, $ids, true)
+            || array_any($members, static fn (array $member): bool => $member['environment'] !== 'development' || $member['node_id'] !== $input['node_id'])) {
+            throw new ResourceOperationException('instance.destroy_unsupported', 'Direct development removal requires its recorded source Node.', 409);
+        }
+        foreach ($members as $member) {
+            if (! ($input['source_pending'] ?? false) && (! is_string($member['worktree_inventory'] ?? null) || ! is_string($member['origin'] ?? null) || $member['origin'] === '')) {
+                throw new ResourceOperationException('instance.removal_conflict', 'Removal requires its captured source inventory and origin.', 409);
+            }
+        }
+
+        return $ids;
+    }
+
+    /** @param array<string,mixed> $input
+     * @param  list<array<string,mixed>>  $members
+     * @param  list<int>  $ids
+     * @return array{list<int>,\Illuminate\Database\Eloquent\Collection<int,Route>}
+     */
+    private function routes(array $input, array $members, array $ids): array
+    {
+        $routeIds = array_values(array_unique([...ValidatedData::integerList(array_values(array_filter(array_column($members, 'route_id')))), ...ValidatedData::integerList($input['additional_route_ids'])]));
+        sort($routeIds);
+        $attached = Route::query()->whereHas('targets', fn ($query) => $query->whereIn('instance_id', $ids))->orderBy('id')->get();
+        if ($attached->modelKeys() !== $routeIds) {
+            throw new ResourceOperationException('instance.removal_conflict', 'The complete attached Route inventory changed.', 409);
+        }
+
+        return [$routeIds, $attached];
+    }
+
+    /** @param \Illuminate\Database\Eloquent\Collection<int,Route> $attached
+     * @return array{Collection<int,DevelopmentSite>,list<array{route_id:int,domain:string,intent:array{node_ids:list<int>,certificates:list<array<string,mixed>>},sites:list<DevelopmentSite>,url_writes:list<array{node_id:int,instance_id:int,name:string,input:array<string,mixed>}>}>}
+     */
+    private function routeInputs(\Illuminate\Database\Eloquent\Collection $attached): array
+    {
+        $sites = app(DevelopmentSiteRepository::class);
+        $beforeSites = clone $sites->all();
+        $previousRoutes = [];
+        foreach ($attached as $route) {
+            $removalInventory = app(NativeRouteRemovalIntent::class)->capture($route);
+            // A first publication can reach the Node before its probe fails, without setting sites_published.
+            // Capture its possible publication as well as absence; withdrawal accepts either actual state.
+            $routeSites = $sites->routeSites($route);
+            $beforeSites->push(...$routeSites);
+            $leaves = [];
+            $nodeIds = [];
+            foreach ($removalInventory['nodes'] as $participant) {
+                $target = Node::query()->findOrFail($participant['node_id']);
+                $nodeIds[] = $target->id;
+                foreach ($participant['certificate_scopes'] as $scope) {
+                    $leaves[] = app(NativeRouteCertificateInput::class)->scopeInput($target, $scope);
+                }
+            }
+            foreach ($routeSites as $site) {
+                if (! $site->publicListener) {
+                    $nodeIds[] = $site->nodeId;
+                    $leaves[] = app(NativeRouteCertificateInput::class)->scopeInput(Node::query()->findOrFail($site->nodeId), $site->certificateScope ?? $site->scope);
+                }
+            }
+            $previousRoutes[] = ['route_id' => $route->id, 'domain' => $route->domain,
+                'intent' => ['node_ids' => array_values(array_unique($nodeIds)), 'certificates' => array_values(array_unique($leaves, SORT_REGULAR))], 'sites' => $routeSites, 'url_writes' => []];
+        }
+        $beforeSites = $beforeSites->unique(static fn (DevelopmentSite $site): string => $site->addressKey())->values();
+
+        return [$beforeSites, $previousRoutes];
+    }
+
+    /** @param array<string,mixed> $input */
+    private function node(array $input): Node
+    {
+        $node = Node::query()->findOrFail(ValidatedData::integer($input['node_id']));
+        if ($node->status !== LifecycleStatus::Active) {
+            throw new ResourceOperationException('route.withdrawal_node_unavailable', 'Withdrawal requires its active admitted Node.', 409);
+        }
+        if ($node->user === 'root' || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $node->user) !== 1) {
+            throw new ResourceOperationException('instance.destroy_unsupported', 'Development removal requires its configured non-root Node account.', 409);
+        }
+
+        return $node;
+    }
+
+    /** @param array<string,mixed> $member
+     * @param  array<string,mixed>  $input
+     */
+    private function member(array $member, array $input, Node $node): Instance
+    {
+        $instance = Instance::query()->with('project')->findOrFail(ValidatedData::integer($member['instance_id']));
+        if ($instance->project_id !== $input['project_id'] || $instance->node_id !== $node->id || ! $instance->placedOnAppDev()) {
+            throw new ResourceOperationException('instance.removal_conflict', 'The removal member changed placement.', 409);
+        }
+
+        return $instance;
+    }
+
+    /** @param array<string,mixed> $input
+     * @return array<string,mixed>
+     */
+    private function assertReplayAvailable(InstanceRemoval $removal, array $input): array
+    {
         $saved = $removal->native_intent;
         if ($saved === null || $removal->requested_instance_id !== $input['instance_id']
             || $removal->inventory_digest !== $input['inventory_digest']
@@ -203,11 +309,7 @@ final readonly class DirectInstanceDestroyIntent
                 throw new ResourceOperationException('instance.removal_conflict', 'A saved native removal member changed.', 409);
             }
         }
-        if ($input['force'] !== $removal->force) {
-            $removal->update(['force' => $input['force']]);
-        }
-        $removal->update(['status' => InstanceRemovalStatus::Removing, 'failed_step' => null, 'error_code' => null]);
 
-        return [...$saved, 'force' => $input['force']];
+        return $saved;
     }
 }

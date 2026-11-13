@@ -284,13 +284,59 @@ A remote target created after the Node's final head read cannot be detected by c
 
 Checkout stays inside `clone-workspace`. No setup or deploy command runs again after checkout. Dependencies and build come from the default's seed, and may need an install or build for the selected code.
 
-Conn follows that Operation with `GET /operations/{id}`. Conn Operation show also shows an `instance.create` that the caller started, here or with `instance:create`. Conn Operation cancel does not cancel it.
+Conn follows that Operation with `GET /operations/{id}`. Conn Operation show also shows an `instance.create` that the caller started, here or with the core Instance API, and an `instance.destroy` started through the Conn endpoint below. Other destroy Operations keep their existing 404 on this path. Conn Operation cancel does not cancel it.
 
 Operation show returns the same recorded `steps` as core Operation show, in recorded order: `name`, `job`, `status`, `started_at` and `finished_at`. Steps contain no command output, secrets or environment values. Both endpoints accept `after_sequence` but currently return all recorded steps.
 
 Conn maps these stable container-clone step names to stage detail, in this order: `clone-container`, `clone-workspace`, `clone-t3`, `clone-register`. Other steps can occur between them. Renaming or removing any of these four names is a breaking change for Conn.
 
 A server of an Instance names its `instance_id` and the container's `power_state`, `running` or `stopped`. Other servers have `null` for both. Conn shows a `stopped` server as asleep.
+
+## Remove an Instance
+
+`POST /instances/{id}/destroy` requires an `Idempotency-Key` and `{"acknowledge_unsaved": true|false}`. The caller needs access to the Instance's Node. Only non-default container Instances can be removed here:
+
+- A default refuses with `instance.default_protected` (409).
+- A host checkout refuses with `instance.not_container` (409).
+- Without acknowledgement, Orbit always refuses with `instance.unsaved_work` (409) and `{"uncommitted": null, "unpushed": null, "state": "unknown"}` in error details. Container Git observations are not available yet.
+
+Orbit never probes the container in this request. When Git observations become available, uncommitted work, unpushed commits or no upstream each require acknowledgement. An observation over ten minutes old or from an offline agent remains unknown. The Conn checks above leave Schedules, Routes, databases, pairings, environments and Operations unchanged when they refuse. These checks do not change the CLI's destroy rules.
+
+With acknowledgement, Orbit admits the existing `instance.destroy` engine with force enabled and answers its Operation with HTTP 202. Existing lifecycle, Route and database blockers keep their codes and messages. Conn checks the stored engine blockers before calling the engine. The engine keeps its existing order and failure boundary: if Schedule removal fails, no removal intent or Operation is recorded, and the Instance and Route stay active. Follow the Operation on `GET /operations/{id}`; `succeeded`, `failed`, `cancelled` and `interrupted` are terminal.
+
+Inherited refusals keep their codes:
+
+| Code | Meaning |
+| --- | --- |
+| `instance.lifecycle_busy` | A move is running or has not finished. |
+| `instance.transfer_incomplete` | A transfer needs recovery. |
+| `instance.clone_in_progress` | This Instance is an incomplete clone's candidate. |
+| `websocket.route_in_use` | A public Reverb attachment still uses the Instance. |
+| `analytics.tracking_hosts_exist` | Analytics still publishes a tracking host. |
+| `instance.remove_refused` | The state, source layout or attached Route is unsafe to remove. |
+| `instance.removal_conflict` | Saved removal, placement or Route inventory changed. |
+| `instance.destroy_unsupported` | Removal requires its recorded development placement and non-root account. |
+| `operation.target_busy` | Another destroy owns a member of the removal set. |
+| `operation.kind_unavailable` | The placement has no supported native destroy path. |
+| `route.withdrawal_node_unavailable` | The admitted withdrawal Node is inactive. |
+| `database.connection_attached` | An owned database is attached outside the removal set. |
+| `database.ownership_unproven` | The database's owner or managed state cannot be proven. |
+| `database.removal_conflict` | Owned database membership, server state or SQLite path is unsafe. |
+| `database.server_required` | The remote database has no managed server. |
+| `database.server_in_use` | Database creation is unfinished on its server. |
+| `database.system_database` | A system database cannot be dropped. |
+| `caddy.render_failed` | The shared Caddyfile could not be rendered safely (409). |
+| `certificate.scope_invalid` | A Route leaf has no valid admitted account or scope. |
+| `swamp.ssh_identity_unavailable` | The control Node SSH identity is not configured. |
+| `swamp.ssh_target_unavailable` | The stored target address, account or host key is missing. |
+
+Infrastructure failures keep their existing codes, such as `swamp.schedule_publish_unavailable` (503). A failed Operation can have `error: null` even when `error_code` is set; Conn must use that code without assuming `error.detail` exists.
+
+Removal can fail because a Node is unavailable (for example 503 `swamp.ssh_target_unavailable`) after stopping the Instance's Schedules; Conn and the CLI behave the same, and the next release fixes this order.
+
+The same caller, key, Instance ID and body return the same Operation with HTTP 202, even after the Instance was deleted. Reusing the key with a changed body refuses with `operation.idempotency_conflict` (409). A missing Instance without that receipt keeps the normal 404.
+
+On success, the container, its volume and snapshots, T3 history, Instance-owned database records, pairings and environment entry are deleted. The Route is withdrawn and deleted. Only owned databases are dropped; an owned database attached elsewhere refuses with its existing code, and shared or foreign databases stay. A migrated Instance's retained Git folder stays on the Node, and the Operation result retains `retained_git_path` and `retained_git_at`. See [Instance removal](/reference/instance-removal) for the engine's full cleanup and retry rules.
 
 ## Pairing and revocation
 
@@ -316,6 +362,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `GET /projects` | — | list of project |
 | `GET /projects/{id}/instances/check` | `name` query string | name, available, reason, domain |
 | `POST /projects/{id}/instances` | `{"name": "fix-login-k3j9"}` | Operation (202) |
+| `POST /instances/{id}/destroy` | `{"acknowledge_unsaved": true}` and `Idempotency-Key` | Operation (202) |
 | `GET /environments` | — | list of environment |
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |
 | `GET /environments/{environment_id}/pairings` | — | list of pairing, newest first |
