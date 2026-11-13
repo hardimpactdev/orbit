@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Hibernation\ActivateInstanceRuntimeAction;
 use App\Actions\Instances\AttachInstanceNodeServiceTargetAction;
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
+use App\Actions\Instances\RenameInstanceAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceMigrateAction;
@@ -16,9 +17,14 @@ use App\Actions\Schedules\CreateScheduleAction;
 use App\Actions\Schedules\RunScheduleAction;
 use App\Actions\Schedules\ShowScheduleLogsAction;
 use App\Data\Instances\InstanceData;
+use App\Data\Instances\RenameInstanceData;
 use App\Data\Operations\OperationData;
 use App\Data\Schedules\AddScheduleData;
 use App\Data\Schedules\ScheduleData;
+use App\Domain\AgentView\AgentNodeView;
+use App\Domain\AgentView\AgentStateView;
+use App\Domain\AgentView\AgentViewFreshness;
+use App\Domain\AgentView\AgentViewSubscriberHealth;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\PlausibleProcess;
@@ -89,6 +95,7 @@ use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
+use App\Models\NodeFact;
 use App\Models\Operation;
 use App\Models\ProblemCollectorState;
 use App\Models\Process;
@@ -4325,6 +4332,33 @@ it('keeps a never-pushed local branch while probing the Project default for migr
         ->and($run['intent']['container']['repository'])->toBe($instance->checkout_path)
         ->and($run['execution_secrets']['source_credential'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-migrate-source-'.$migration->id])
         ->and($migration->input['migrate'])->not->toHaveKey('source');
+});
+
+it('compares the moved checkout with the branch that rename recorded for a linked worktree', function (): void {
+    $project = containerDefaultProject();
+    $node = containerDefaultNode();
+    $node->update(['ssh_host_fingerprint' => 'fixture']);
+    migrateMovedDefault($project, $node);
+    $instance = migrateCheckout($project, $node, 'ps-server');
+    $instance->update(['source_layout' => 'worktree', 'branch' => 'powersync/server', 'branch_override' => 'powersync/server']);
+    $path = $instance->checkout_path;
+    NodeFact::query()->create(['node_id' => $node->id, 'kind' => 'checkout', 'subject' => $path, 'digest' => str_repeat('a', 64),
+        'observed_at' => now(), 'received_at' => now(), 'data' => ['application' => $path, 'top_level' => $path,
+            'common_dir' => '/home/orbit/apps/tool/default/.git', 'linked' => true, 'worktrees' => [$path], 'origin' => $project->repository_url,
+            'owner' => 'orbit', 'head' => str_repeat('c', 40), 'branch' => 'fix/on-disk', 'default_branch' => 'main',
+            'artisan' => 'absent', 'composer' => null, 'env' => null]]);
+    $view = Mockery::mock(AgentStateView::class);
+    $clock = (float) now()->format('U.u');
+    $view->shouldReceive('subscriber')->andReturn(new AgentViewSubscriberHealth($clock, true, true, 1));
+    $view->shouldReceive('node')->andReturn(new AgentNodeView($node->id, AgentViewFreshness::Fresh, receivedAt: $clock));
+    $view->shouldReceive('lastSeen')->andReturn(null);
+    app()->instance(AgentStateView::class, $view);
+
+    app(RenameInstanceAction::class)->execute($instance->fresh(), new RenameInstanceData('fix/on-disk'));
+    $migration = migrateStart($instance->fresh());
+
+    expect($migration->input['migrate']['branch'])->toBe('fix/on-disk')
+        ->and(app(InstanceMigrateProjection::class)->input($migration)['intent']['container']['branch'])->toBe('fix/on-disk');
 });
 
 it('preserves gh_cli migration without an App preflight or source credential copy', function (): void {

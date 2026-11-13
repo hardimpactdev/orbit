@@ -1,7 +1,7 @@
 ---
 title: "orbit instance:rename"
 sidebarTitle: "instance:rename"
-description: "Record a Git branch that is already checked out in an active development checkout."
+description: "Record a Git branch that is already checked out in an active development checkout or linked worktree."
 ---
 
 ```bash
@@ -20,7 +20,7 @@ orbit instance:rename <instance> [--branch=BRANCH] [--domain=HOST] [--json]
 
 Supply at least one of `--branch` and `--domain`, and neither empty; otherwise the CLI refuses with `validation.failed` and sends no request. The command needs no `--yes` or `--force`. In a terminal, an omitted Instance is chosen from an interactive list; a noninteractive or `--json` call without it is refused with `instance.id_invalid` and sends no request, and so is a value that is not a positive integer.
 
-The command does not rename the Instance, move its directory, change its starting commit, or change Git `HEAD`.
+The command does not rename the Instance, move its directory, change its starting commit, or change Git `HEAD`. It accepts a plain checkout and a linked worktree alike: the Node agent reports both, and a worktree records the branch its own `HEAD` names.
 
 Rename the branch locally before recording it. The [Node agent](/reference/node-agent#checkouts) reports the checkout shortly after the change. The Gateway trusts the report only while the agent is online, which means it sent an event in the last 15 seconds. It checks that report: the checkout's top level and origin, and the branch that symbolic `HEAD` names. The Gateway reads nothing on the Node and starts no task. A dirty or unpublished branch can be recorded. Normal removal still requires clean, published source.
 
@@ -54,8 +54,8 @@ The API is `POST /api/v1/instances/{instance}/rename` with `{"branch":"t3code/lo
 | `operation.kind_unavailable` | A domain was supplied; Route replacement is unavailable through rename. |
 | `instance.id_invalid` | The Instance is missing in a call that cannot prompt, or is not a positive integer. |
 | `input.cancelled` | You cancelled the Instance list. |
-| `instance.rename_unsupported` | The Instance is production or is not a development checkout, including linked worktrees. |
-| `instance.rename_inactive` | The development checkout is not active. |
+| `instance.rename_unsupported` | The Instance is production, or is not a development checkout or linked worktree. |
+| `instance.rename_inactive` | The development checkout or worktree is not active. |
 | `instance.lifecycle_busy` | The Instance is being removed, has an unfinished transfer, or is the candidate of a clone in progress. |
 | `instance.branch_not_checked_out` | The reported symbolic `HEAD` names another branch or is detached, the checkout's top level or origin differs from its record, or the Node agent has not reported it recently. |
 | `http.404` | The Instance is unknown. |
