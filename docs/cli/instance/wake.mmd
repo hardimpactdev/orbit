@@ -39,7 +39,7 @@ sequenceDiagram
   %%> - waits until each desired-running unit is active
   %%> Why:
   %%> - unit enablement holds each Process's desired state, so a stopped Process stays stopped
-  SW->>N: Mark the Instance awake<br/>Ansible · tags wake
+  SW->>N: Mark the Instance awake<br/>Ansible · tags awake
   %%> What it does:
   %%> - waits up to 30 s for T3's environment endpoint in a clone, else `instance.t3_unready`
   %%> - removes the asleep marker, so Caddy sends the next request to the app

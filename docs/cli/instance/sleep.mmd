@@ -37,7 +37,7 @@ sequenceDiagram
     %%> Why:
     %%> - a sleep by itself never cuts a turn. The command does not check: its result says `t3_turn: not_checked`
   end
-  SW->>N: Mark the Route asleep<br/>Ansible · tags sleep
+  SW->>N: Mark the Route asleep<br/>Ansible · tags asleep
   %%> What it does:
   %%> - checks that Caddy's loaded site of the Instance has the asleep rule, else `instance.sleep_route_unready`
   %%> - writes the asleep marker, so each request from now on gets the wake page

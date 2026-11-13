@@ -1,10 +1,10 @@
 ---
-# The parts of instance-container-power.yml. `power` is `sleep` or `wake`.
+# The parts of instance-container-power.yml. `power` is `asleep` (before a sleep's stop) or `awake` (after a wake's start).
 
 # Caddy's site of a container Instance checks the marker only once a publish of the Node's sites rendered the check. A marker without
 # the check would leave the Route proxying to a stopped container, so the sleep refuses before it changes anything.
 - name: Read Caddy's loaded configuration
-  when: power == 'sleep'
+  when: power == 'asleep'
   ansible.builtin.uri:
     url: "{{ caddy_admin }}/config/"
     return_content: true
@@ -14,7 +14,7 @@
   failed_when: false
 
 - name: Refuse a sleep while the site has no asleep check
-  when: power == 'sleep'
+  when: power == 'asleep'
   ansible.builtin.assert:
     that:
       - caddy_config.status | default(0) == 200
@@ -24,7 +24,7 @@
 
 # Before the stop: a request during the stop gets the wake page. The directory is the app-dev role's hibernation directory.
 - name: Write the asleep marker
-  when: power == 'sleep'
+  when: power == 'asleep'
   ansible.builtin.copy:
     content: ""
     dest: "{{ marker }}"
@@ -34,7 +34,7 @@
 
 # The start part waited for every desired-running unit. A clone's T3 answers on its environment endpoint once it serves.
 - name: Wait for T3
-  when: power == 'wake' and container.clone is not none
+  when: power == 'awake' and container.clone is not none
   ansible.builtin.command:
     argv: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', '/home/agent', '--env', 'HOME=/home/agent', container.name,
@@ -49,7 +49,7 @@
   failed_when: false
 
 - name: Refuse a wake whose T3 did not answer
-  when: power == 'wake' and container.clone is not none
+  when: power == 'awake' and container.clone is not none
   ansible.builtin.assert:
     that: [t3_ready.rc == 0]
     fail_msg: instance.t3_unready
@@ -57,7 +57,7 @@
 
 # After T3 and the Processes run: Caddy sends the next request to the app.
 - name: Remove the asleep marker
-  when: power == 'wake'
+  when: power == 'awake'
   ansible.builtin.file:
     path: "{{ marker }}"
     state: absent

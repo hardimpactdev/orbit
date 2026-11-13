@@ -1,8 +1,8 @@
 ---
 # The asleep marker of a development container (docs/reference/development-containers.md#sleep-and-wake). One tagged part per Swamp
 # phase; the container's own stop and start are the `stop` and `start` parts of instance-container.yml.
-#   sleep: check that Caddy's loaded site of the Instance has the asleep check, then write the marker, before the stop.
-#   wake: after the start, wait for T3 in a clone, then remove the marker.
+#   asleep: check that Caddy's loaded site of the Instance has the asleep check, then write the marker, before the stop.
+#   awake: after the start, wait for T3 in a clone, then remove the marker.
 # Each part writes `result.json` in the run folder: `{}`, or the public error code of its refusal.
 - name: Pin the Node and address it
   hosts: localhost

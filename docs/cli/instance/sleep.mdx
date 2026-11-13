@@ -47,5 +47,5 @@ Sleeping an Instance that already sleeps runs again and changes nothing. A faile
 | `instance.sleep_unsupported` | The Instance is not a development Instance, is its Project's default, or runs a nested fleet. |
 | `instance.lifecycle_busy`, `operation.target_busy` | Lifecycle work, Process work or a task runs on the Instance. |
 | `instance.sleep_route_unready` | Caddy's loaded site of the Instance has no asleep rule yet. Nothing changed. Publish the Node's Caddy sites and retry. |
-| `instance.container_sleep_failed` | The asleep marker could not be written. The container still runs. |
+| `instance.container_asleep_failed` | The asleep marker could not be written. The container still runs. |
 | `instance.container_stop_failed` | The container did not stop. |

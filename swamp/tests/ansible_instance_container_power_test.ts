@@ -14,8 +14,8 @@ const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 Deno.test("each sleep and wake step runs its charted part with the shipped Ansible settings", () => {
     const context = { inputs: { node_id: 9, intent: {} }, steps: { input: { status: "succeeded", outputs: { assets: shipped } } }, run: { id: runId } };
     const evaluate = (value: string) => value.startsWith("${{") ? String(cel.evaluate(value.slice(3, -2).trim(), context)) : value;
-    for (const [kind, parts] of [["sleep", [["Mark the Route asleep", "--tags sleep", "instance-container-power.yml"], ["Stop the container", "--tags stop", "instance-container.yml"]]],
-        ["wake", [["Start the container", "--tags start", "instance-container.yml"], ["Mark the Instance awake", "--tags wake", "instance-container-power.yml"]]]] as const) {
+    for (const [kind, parts] of [["sleep", [["Mark the Route asleep", "--tags asleep", "instance-container-power.yml"], ["Stop the container", "--tags stop", "instance-container.yml"]]],
+        ["wake", [["Start the container", "--tags start", "instance-container.yml"], ["Mark the Instance awake", "--tags awake", "instance-container-power.yml"]]]] as const) {
         const all = steps(kind);
         assertEquals(all.map((step) => step.name), ["input", parts[0][0], parts[1][0], "result", "cleanup"]);
         assertEquals(all[2].dependsOn?.[0].step, parts[0][0]);
@@ -38,7 +38,7 @@ const group = new TextDecoder().decode(new Deno.Command("id", { args: ["-gn"] })
 
 /** One part of instance-container-power.yml with a Caddy admin answer and, for a clone, a T3 that serves or not (the fixture's T3). */
 async function part(
-    tag: "sleep" | "wake",
+    tag: "asleep" | "awake",
     options: { caddy?: string; t3?: boolean; clone?: boolean; marker?: boolean },
 ): Promise<{ ok: boolean; output: string; result: Record<string, unknown>; marker: boolean }> {
     const folder = Deno.makeTempDirSync();
@@ -86,29 +86,29 @@ async function part(
 const loaded = JSON.stringify({ apps: { http: { servers: { orbit: { routes: [{ match: [{ file: { root: "/data/caddy/orbit/hibernation", try_files: ["/app-instance-7.asleep"] } }] }] } } } } });
 
 Deno.test({ name: "a sleep writes the marker once Caddy's loaded site has the check, and refuses without changing anything when it lacks it", ignore: !available, async fn() {
-    const ready = await part("sleep", { caddy: loaded });
+    const ready = await part("asleep", { caddy: loaded });
     assert(ready.ok, ready.output);
     assertEquals(ready.result, {});
     assert(ready.marker);
 
-    const unready = await part("sleep", { caddy: JSON.stringify({ apps: { http: {} } }) });
+    const unready = await part("asleep", { caddy: JSON.stringify({ apps: { http: {} } }) });
     assert(!unready.ok, unready.output);
     assertEquals(unready.result, { error_code: "instance.sleep_route_unready" });
     assert(!unready.marker);
 } });
 
 Deno.test({ name: "a wake removes the marker after T3 answers in a clone, keeps it when T3 stays silent, and needs no T3 in a default", ignore: !available, async fn() {
-    const clone = await part("wake", { t3: true, marker: true });
+    const clone = await part("awake", { t3: true, marker: true });
     assert(clone.ok, clone.output);
     assertEquals(clone.result, {});
     assert(!clone.marker);
 
-    const silent = await part("wake", { t3: false, marker: true });
+    const silent = await part("awake", { t3: false, marker: true });
     assert(!silent.ok, silent.output);
     assertEquals(silent.result, { error_code: "instance.t3_unready" });
     assert(silent.marker);
 
-    const defaultWake = await part("wake", { clone: false, marker: true });
+    const defaultWake = await part("awake", { clone: false, marker: true });
     assert(defaultWake.ok, defaultWake.output);
     assert(!defaultWake.marker);
 } });

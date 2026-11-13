@@ -38,7 +38,7 @@ jobs:
           behaviorName: '${{ "instance-sleep-marker-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
-            run: timeout 30 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags sleep "$ORBIT_ANSIBLE/instance-container-power.yml"
+            run: timeout 30 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags asleep "$ORBIT_ANSIBLE/instance-container-power.yml"
             env:
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ANSIBLE_FORCE_COLOR: '0'
