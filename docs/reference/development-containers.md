@@ -217,7 +217,7 @@ Which Node answers:
 - **Cluster members on a LAN.** [Private DNS](/reference/private-dns#cluster-router-addresses) gives a Cluster member with a LAN address the Router's LAN address. The table does not take it, so such a member reaches no development port.
 - **WireGuard clients.** A WireGuard client outside the Cluster, such as a Mac, gets the WireGuard address and reaches the ports.
 
-The [`vite` Process preset](/reference/processes-and-schedules#the-vite-preset) uses this way in for a Project's own Vite on port 5173. It adds no rule: the same limits apply, and a container default, which has no development ports, is out of its scope.
+The [`vite` Process preset](/reference/processes-and-schedules#the-vite-preset) uses this way in for a Project's own Vite on port 5173. It adds no rule: the same limits apply. A container default, which has no development ports, gets no `vite` Process.
 
 The Node's converge writes the table, and its unit loads it at boot. A Database server or Process added later is left alone by the socket check while it runs; the next converge also adds its port to the ports the Node keeps.
 

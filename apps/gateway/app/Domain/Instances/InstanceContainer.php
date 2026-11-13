@@ -507,7 +507,13 @@ final readonly class InstanceContainer
     {
         $route ??= $instance->routes()->whereNull('web_root')->orderBy('routes.id')->first();
 
-        return $runtime->t3_port !== null && $route instanceof Route && $route->publication !== RoutePublication::Public;
+        return self::runsT3($runtime) && $route instanceof Route && $route->publication !== RoutePublication::Public;
+    }
+
+    /** Every container but the Project's default runs T3 and has development ports: a clone, and a checkout that moved into a container. */
+    public static function runsT3(InstanceRuntime $runtime): bool
+    {
+        return $runtime->t3_port !== null;
     }
 
     /** Every UFW rule of a container Instance carries this comment prefix. */

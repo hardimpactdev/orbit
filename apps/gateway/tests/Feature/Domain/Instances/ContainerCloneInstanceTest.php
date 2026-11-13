@@ -21,6 +21,7 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Processes\VitePreset;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\Projects\ProjectEnvironmentTemplateRefresh;
 use App\Domain\Projects\ProjectSourceReader;
@@ -29,6 +30,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -1157,6 +1159,48 @@ it('rolls back a refused retry Process set and admits new definitions on a reser
         ->and($instance->processes()->sole()->source_definition_id)->toBe($new->id)
         ->and(Process::query()->find($original->id))->toBeNull()
         ->and(containerIntentOf($retry)['processes'][0]['content'])->toContain('/bin/sleep');
+});
+
+it('runs the vite preset only in a clone; a deployment of the default removes the copy it recorded before', function (): void {
+    $node = containerDefaultNode();
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $default = seededDefault($node);
+    $default->project->update(['type' => ProjectType::LaravelApp, 'php_version' => '8.5', 'root' => 'public']);
+    ProcessDefinition::query()->create(['project_id' => $default->project_id, 'name' => 'vite', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'preset' => 'vite', 'preset_version' => 1, 'command' => VitePreset::definitionCommand()]]);
+    // The copy an earlier Gateway recorded on the default, which its deployments installed and started.
+    $default->processes()->create(['name' => 'vite', 'runtime' => 'systemd', 'working_directory' => '/srv/workspace',
+        'runtime_config' => ['preset' => 'vite', 'preset_version' => 1, 'command' => VitePreset::command($default)],
+        'restart_policy' => 'on-failure', 'desired_state' => 'running', 'status' => 'active']);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(['head' => str_repeat('c', 40), 'files' => [
+        '.env.example' => ['mode' => '100644', 'object' => str_repeat('d', 40), 'content' => "APP_NAME=tool\n"],
+        'composer.json' => ['mode' => '100644', 'object' => str_repeat('d', 40), 'content' => '{"require":{"php":"^8.5","laravel/framework":"^13.0"}}'],
+        'artisan' => ['mode' => '100644', 'object' => str_repeat('d', 40), 'content' => 'entry']]]);
+
+    $settle = static fn () => Operation::query()->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    $settle();
+    $deployment = app(StartInstanceDeployAction::class)->execute($default, 'manual', null);
+    $deployed = $deployment->input['deployment']['container'];
+    $settle();
+
+    expect($default->processes()->count())->toBe(0)
+        ->and($deployed['processes'])->toBe([])
+        ->and($deployed['units'][0]['content'])->not->toContain('INERTIA_SSR_HOT_URL');
+
+    $operation = containerCreate($default->project, $node, 'feature');
+    $clone = Instance::query()->findOrFail($operation->target_id);
+    $container = containerIntentOf($operation);
+    $site = app(DevelopmentSiteRepository::class)->workloadSite($clone, $clone->routes()->sole());
+
+    expect($clone->processes()->sole()->runtime_config['preset'])->toBe('vite')
+        ->and($container['processes'][0]['content'])->toContain('"/srv/workspace/node_modules/.bin/vite" "--host=0.0.0.0" "--port=5173" "--strictPort"',
+            'Environment=VITE_APP_URL=https://'.$site->domain."\n")
+        ->and($container['units'][0]['content'])->toContain("Environment=INERTIA_SSR_HOT_URL=http://127.0.0.1:5173\n")
+        ->and(implode("\n", $container['environment']))->not->toContain('INERTIA_SSR_HOT_URL')
+        ->and(array_column($container['acl_rules']['ingress'], 'destination_port'))->not->toContain('5173')
+        ->and($site->devUpstream)->toBe($clone->runtime()->firstOrFail()->bridge_address);
 });
 
 it('preserves an active container Process after definition removal on create and deploy', function (): void {

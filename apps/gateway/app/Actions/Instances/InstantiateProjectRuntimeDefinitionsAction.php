@@ -6,6 +6,7 @@ namespace App\Actions\Instances;
 
 use App\Data\Processes\AddProcessData;
 use App\Domain\Instances\ContainerProcesses;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
@@ -22,11 +23,13 @@ use App\Domain\Schedules\ScheduleTrigger;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
 use App\Support\ValidatedData;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
@@ -103,9 +106,7 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
 
             return;
         }
-        $definitions = ProcessDefinition::query()->where('project_id', $instance->project_id)
-            ->orderBy('name')->orderBy('id')->lockForUpdate()->get()
-            ->filter(static fn (ProcessDefinition $definition): bool => in_array(DefinitionEnvironment::Development->value, $definition->environments, strict: true));
+        $definitions = $this->developmentDefinitions($instance);
         if ($definitions->isNotEmpty()) {
             $target = $this->processTargets->forPreparation($instance);
             foreach ($definitions as $definition) {
@@ -122,9 +123,11 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
      */
     public function refreshForContainer(Instance $instance, bool $forCreateRetry = false): void
     {
-        $definitions = ProcessDefinition::query()->where('project_id', $instance->project_id)
-            ->orderBy('name')->orderBy('id')->lockForUpdate()->get()
-            ->filter(static fn (ProcessDefinition $definition): bool => in_array(DefinitionEnvironment::Development->value, $definition->environments, strict: true));
+        $definitions = $this->developmentDefinitions($instance);
+        if (! $this->servesVite($instance)) {
+            // A record from before this rule goes; the deployment then stops and removes its unit as one of another owner.
+            $instance->processes()->where('runtime_config->preset', VitePreset::NAME)->delete();
+        }
         if ($forCreateRetry) {
             // Create owns the entire Process set; active deployments retain removed definitions.
             $instance->processes()->where(fn ($query) => $query->whereNull('source_definition_id')
@@ -152,6 +155,30 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
             }
         }
         $this->initializeContainerPresetPort($instance);
+    }
+
+    /**
+     * The Project's development definitions that apply to this Instance. A container default gets no `vite` preset: browsers reach
+     * that dev server only through development ports, which a default has not, so its `public/hot` would break the default's own site.
+     *
+     * @return Collection<int, ProcessDefinition>
+     */
+    private function developmentDefinitions(Instance $instance): Collection
+    {
+        $vite = $this->servesVite($instance);
+
+        return ProcessDefinition::query()->where('project_id', $instance->project_id)
+            ->orderBy('name')->orderBy('id')->lockForUpdate()->get()
+            ->filter(static fn (ProcessDefinition $definition): bool => in_array(DefinitionEnvironment::Development->value, $definition->environments, strict: true)
+                && ($vite || ($definition->spec['preset'] ?? null) !== VitePreset::NAME));
+    }
+
+    /** False only for a container default; a checkout Instance still refuses the preset (process.container_command_unsupported). */
+    private function servesVite(Instance $instance): bool
+    {
+        $runtime = $instance->runtime()->first();
+
+        return ! $runtime instanceof InstanceRuntime || $instance->placedOnAppProd() || InstanceContainer::runsT3($runtime);
     }
 
     private function initializeContainerPresetPort(Instance $instance): void
