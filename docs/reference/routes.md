@@ -890,3 +890,7 @@ Complete Node Caddy builds use official cfgmgmt file application and an end chec
 Native Cluster Router admission captures Caddy recipe candidates through the same native-only producer as Node convergence. Its [candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror) accepts the schema before producing candidates, then activates consumers after that Gateway release is live.
 
 Site rendering uses only live Instance removal members. Abandoned history does not retain the unavailable site from a previous removal.
+
+Forward Route mutations always publish prepared private DNS through the existing live read, three-way merge, validation and service activation. They skip only the final DNS child when its records and catalog equal the prepared publication: the first child has already established that set, and the intervening steps change no DNS. Failure guards and required contribution counts still require every child that must run.
+
+This removes one DNS child per DNS Node from a same-Node move, while retaining the first child's existing repair and readiness behavior. The DNS grace still precedes withdrawal when the first publication changes an answer, even if the final publication is omitted. Restoration and withdrawal keep their existing order.

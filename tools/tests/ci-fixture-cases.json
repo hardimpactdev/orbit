@@ -2243,5 +2243,23 @@
       "test_holder_death_closes_the_descriptor_and_releases_the_lock",
       "test_invalid_lock_or_checksum_refuses_without_touching_live_file"
     ]
+  },
+  "swamp/extensions/behaviors/operations/routes/update-command/workflow_test.ts": {
+    "source_sha256": "962c1bea5e867848ab5cd854447e6d02fbdf2c6e5b32345077d633741a3a049e",
+    "cases": [
+      "Route update workflows place every step on the swamp role and keep mutation parents small",
+      "the task-cancel withdrawal keeps certificate cleanup visible per scope and gates LAN retirement",
+      "restore keeps the observed candidate serving, then withdraws it after DNS grace",
+      "Route primitive and shared publication children use one209selector",
+      "a clone publishes its prepared Route beside workspace without waiting for app startup",
+      "a captured same-Node move retains its first live DNS child and omits only the redundant final child",
+      "a captured replacement with real record changes runs both DNS stages and completes",
+      "mixed captured Nodes keep dense final child indexes and exact contribution completeness",
+      "the retained first child repairs drift of captured owned DNS keys through the real merger",
+      "a previous Gateway intent needs no new key and skipped DNS steps need no outputs",
+      "a failed first publication still fails completeness and guards later work",
+      "DNS grace and withdrawal order remain independent of omitting the final publication",
+      "either a records-only or catalog-only final difference retains the final DNS child"
+    ]
   }
 }
