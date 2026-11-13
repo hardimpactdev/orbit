@@ -9,6 +9,7 @@ use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceDestroyKind;
+use App\Domain\Instances\InstanceDestroyReplicationSlots;
 use App\Domain\Instances\InstanceDestroyWorktrees;
 use App\Domain\Instances\InstanceLifecycleInput;
 use App\Domain\Instances\InstanceRemovalStatus;
@@ -63,7 +64,9 @@ final readonly class StartInstanceDestroyAction
         app(ContainerInstanceDestroy::class)->assertAvailable($instance, $force);
         $admission = $instance->status === InstanceState::Removing ? [] : app(InstanceDestroyWorktrees::class)->assertAvailable($instance);
         $snapshot = [...$this->snapshot($instance, $force), ...$admission];
-        app(DirectInstanceDestroyIntent::class)->prepare($snapshot);
+        [$prepared] = app(DirectInstanceDestroyIntent::class)->prepare($snapshot);
+        // A replication slot makes the drop fail after the fence closed the database; refuse before any effect, also with --force.
+        app(InstanceDestroyReplicationSlots::class)->assertNone($prepared);
         // A native Schedule fires from its own workflow on serve, not from the Node; it stops before the Instance goes.
         $members = array_column(is_array($snapshot['members'] ?? null) ? $snapshot['members'] : [], 'instance_id');
         app(NativeSchedules::class)->removeForInstances($members === [] ? [$instance->id] : ValidatedData::integerList($members));

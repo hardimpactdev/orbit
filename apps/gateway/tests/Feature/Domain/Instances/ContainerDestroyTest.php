@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Data\Operations\OperationData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerDestroyExecutionCopies;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
@@ -21,6 +22,11 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\DockerProcessRenderer;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -30,7 +36,9 @@ use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
+use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
@@ -92,6 +100,21 @@ beforeEach(function (): void {
         }
     };
     app()->instance(WebSocketClient::class, $this->socket);
+    // The replication slot read of removal admission: no slot unless a test says otherwise.
+    $this->slots = new class implements SshExecutor
+    {
+        public array $calls = [];
+
+        public ?Closure $answer = null;
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->calls[] = [$connection, $command, stream_get_contents($command->protectedInput?->stream() ?? fopen('php://memory', 'r'))];
+
+            return $this->answer === null ? new CommandResult(0, "orbit.slots\n", '', 1, false) : ($this->answer)($command);
+        }
+    };
+    app()->instance(SshExecutor::class, $this->slots);
     config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'test-token']);
 });
 
@@ -265,7 +288,11 @@ it('wires the lifecycle destroy contribution while Conn is disabled', function (
     expect(collect($contributions)->map(fn (object $contribution): string => $contribution::class)->all())->toBe([ConnInstanceLifecycle::class]);
 });
 
-it('deletes the owned server database create and destroy copies but keeps the default copies', function (): void {
+/** A container clone that owns a PostgreSQL database on a Database server; its default owns another.
+ * @return array{Instance, DatabaseServer, Operation, Operation}
+ */
+function ownedPostgresClone(): array
+{
     app(ExtensionStore::class)->set('conn', true);
     app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
     {
@@ -297,6 +324,13 @@ it('deletes the owned server database create and destroy copies but keeps the de
     $clone = Instance::query()->findOrFail($create->target_id);
     $clone->update(['status' => InstanceState::Active, 'first_setup_pending' => false, 'branch' => 'feature', 'starting_commit' => str_repeat('c', 40)]);
     $create->forceFill(['status' => 'succeeded', 'finished_at' => now()])->save();
+
+    return [$clone, $server, $create, $defaultCreate];
+}
+
+it('deletes the owned server database create and destroy copies but keeps the default copies', function (): void {
+    [$clone, $server, $create, $defaultCreate] = ownedPostgresClone();
+    $default = Instance::query()->findOrFail($defaultCreate->target_id);
     $cloneIntent = $create->input['direct_provisioning']['server_database']['intent_id'];
     $defaultIntent = $defaultCreate->input['direct_provisioning']['server_database']['intent_id'];
     expect($this->socket->values)->toHaveKeys(['database-create-intent-'.$cloneIntent, 'database-create-owner-'.$cloneIntent,
@@ -365,5 +399,98 @@ it('deletes a clone\'s own Valkey user and its copies, never the default\'s shar
         ->and($deleted)->toContain('database-create-intent-'.$intent, 'database-create-owner-'.$intent)
         ->and(DatabaseConnection::query()->where('owner_instance_id', $clone->id)->exists())->toBeFalse()
         ->and($shared->fresh())->not->toBeNull()
-        ->and($shared->targets()->pluck('instance_id')->all())->toBe([$default->id]);
+        ->and($shared->targets()->pluck('instance_id')->all())->toBe([$default->id])
+        // A Valkey server has no replication slots: removal admission reads nothing.
+        ->and($this->slots->calls)->toBe([]);
+});
+
+/** @return array<string, mixed> The removal facts that a refused admission must leave as they were. */
+function slotGuardState(Instance $clone): array
+{
+    return ['instance' => $clone->fresh()->status, 'operations' => Operation::query()->where('kind', 'instance.destroy')->count(),
+        'removals' => InstanceRemoval::query()->count(), 'routes' => Route::query()->orderBy('id')->get(['id', 'status', 'sites_published'])->toArray(),
+        'holds' => DB::table('route_publication_holds')->count()];
+}
+
+it('reads the planned databases\' replication slots with the drop\'s admin client, then admits a removal without a slot', function (): void {
+    [$clone, $server] = ownedPostgresClone();
+
+    $destroy = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    // Every name the drop plans: the database, its test database and the test pool.
+    $planned = $destroy->input['direct_destroy']['database']['servers'][0]['intent']['databases'];
+    $names = implode(',', array_map(fn (string $name): string => "'{$name}'", $planned));
+
+    expect($this->slots->calls)->toHaveCount(1);
+    [$connection, $command, $stdin] = $this->slots->calls[0];
+    $container = app(DockerProcessRenderer::class)->containerName($server->process);
+    expect($connection->host)->toBe($server->node->wireguard_ip)->and($connection->user)->toBe($server->node->user)
+        ->and($connection->connectTimeout)->toBe(2)->and($connection->commandTimeout)->toBe(5.0)
+        ->and($command->timeout)->toBe(5.0)
+        // As the drop runs it: `sudo: true` on the server's Node, then its admin client (Node 17's user has no Docker group).
+        ->and($command->arguments)->toBe(['timeout', '4', 'sudo', '-n', 'docker', 'exec', '-i', $container, 'sh', '-c',
+            'IFS= read -r PGPASSWORD && export PGPASSWORD && exec psql --no-psqlrc --host=127.0.0.1 --username="$1" --dbname="$2" --no-align --tuples-only --quiet --set=ON_ERROR_STOP=1',
+            'sh', 'postgres', 'postgres'])
+        ->and($command->input)->toBeNull()
+        ->and($stdin)->toBe("root-secret\nSELECT 'orbit.slots';\nSELECT slot_name::text || '|' || database::text || '|' || slot_type::text || '|' || active::text FROM pg_replication_slots WHERE database IN ({$names}) ORDER BY database, slot_name;\n")
+        ->and($planned)->toContain(DatabaseConnection::query()->where('owner_instance_id', $clone->id)->sole()->database)
+        ->and($destroy->kind)->toBe('instance.destroy')
+        ->and($clone->fresh()->status)->toBe(InstanceState::Removing);
+});
+
+it('refuses a removal whose database has a replication slot before any effect, also with --force', function (string $active): void {
+    [$clone] = ownedPostgresClone();
+    $database = DatabaseConnection::query()->where('owner_instance_id', $clone->id)->sole()->database;
+    $this->slots->answer = fn (): CommandResult => new CommandResult(0, "orbit.slots\npowersync_feature|{$database}|logical|{$active}\n", '', 1, false);
+    $before = slotGuardState($clone);
+    $messages = count($this->socket->messages);
+
+    try {
+        app(StartInstanceDestroyAction::class)->execute($clone, true);
+        $this->fail('The removal was admitted.');
+    } catch (ResourceOperationException $refusal) {
+        expect($refusal->errorCode)->toBe('instance.database_replication_slot')->and($refusal->status)->toBe(409)
+            ->and($refusal->getMessage())->toContain("Database [{$database}]", 'replication slot [powersync_feature]')
+            ->and($refusal->details['slots'])->toBe([['server_id' => DatabaseServer::query()->sole()->id, 'server' => 'pg', 'database' => $database,
+                'slot' => 'powersync_feature', 'type' => 'logical', 'active' => $active === 'true']]);
+    }
+
+    // No Schedule trigger removal, vault copy, Operation, status, Route or hold changed.
+    expect(slotGuardState($clone))->toBe($before)->and($before['instance'])->toBe(InstanceState::Active)
+        ->and(count($this->socket->messages))->toBe($messages);
+})->with(['active slot' => 'true', 'inactive slot' => 'false']);
+
+it('refuses a removal when the replication slot read fails, without the admin password in the refusal', function (Closure $answer): void {
+    [$clone] = ownedPostgresClone();
+    $this->slots->answer = $answer;
+    $before = slotGuardState($clone);
+
+    try {
+        app(StartInstanceDestroyAction::class)->execute($clone, true);
+        $this->fail('The removal was admitted.');
+    } catch (ResourceOperationException $refusal) {
+        expect($refusal->errorCode)->toBe('instance.database_slots_unreadable')->and($refusal->status)->toBe(503)
+            ->and($refusal->getMessage())->toContain('Database server [pg]')->not->toContain('root-secret')
+            ->and(json_encode($refusal->details, JSON_THROW_ON_ERROR))->not->toContain('root-secret')
+            ->and($refusal->getPrevious())->toBeNull();
+    }
+
+    expect(slotGuardState($clone))->toBe($before);
+})->with([
+    'unreachable' => fn () => fn (): never => throw new RuntimeException('ssh: connect timed out; password root-secret'),
+    'client failed' => fn () => fn (): CommandResult => new CommandResult(2, '', 'psql: password authentication failed (root-secret)', 1, false),
+    'no marker' => fn () => fn (): CommandResult => new CommandResult(0, '', '', 1, false),
+    'unknown row' => fn () => fn (): CommandResult => new CommandResult(0, "orbit.slots\nslot|other_database|logical|true\n", '', 1, false),
+    'truncated' => fn () => fn (): CommandResult => new CommandResult(0, "orbit.slots\n", '', 1, true),
+]);
+
+it('names the planned databases in the slot read only through the drop\'s identifier check and quoting', function (): void {
+    expect(app(DatabaseStatements::class)->replicationSlots(['app', 'app_test_1']))
+        ->toContain("WHERE database IN ('app','app_test_1')");
+
+    try {
+        app(DatabaseStatements::class)->replicationSlots(["app') OR ('1'='1"]);
+        $this->fail('A quoted name reached the statement.');
+    } catch (ResourceOperationException $refusal) {
+        expect($refusal->errorCode)->toBe('database.server_admin_invalid');
+    }
 });
