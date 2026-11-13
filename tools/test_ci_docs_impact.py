@@ -77,5 +77,37 @@ class DocsImpactPolicyTest(unittest.TestCase):
                 delivery.validate(needs)
 
 
+class HandoffBodyTest(unittest.TestCase):
+    def test_fresh_process_uses_only_its_checkout_branch_body_without_exported_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(['git', 'init', '-q', '-b', 'task/123'], cwd=root, check=True)
+            subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.test',
+                            'commit', '--allow-empty', '-qm', 'base'], cwd=root, check=True)
+            common = root / '.git'
+            body = common / 'orbit/proposed-pr-bodies/task/123.md'
+            body.parent.mkdir(parents=True)
+            body.write_text('Docs-unaffected: docs/reference/tasks.md: Match the existing contract.\n')
+            program = ('import json,runpy,sys; from pathlib import Path; '
+                       'f=runpy.run_path(sys.argv[1])["docs_impact_command"]; '
+                       'print(json.dumps(f(Path(sys.argv[2]), "HEAD", Path(sys.argv[3]))))')
+            env = {name: value for name, value in os.environ.items() if name != 'ORBIT_DOCS_PR_BODY_FILE'}
+
+            def command():
+                return json.loads(subprocess.check_output(
+                    ['python3', '-c', program, str(ROOT / 'bin/review-check'), str(root), str(common)],
+                    env=env, text=True, timeout=10))
+
+            expected = [str(root / 'bin/docs-impact'), '--gate', '--base', 'HEAD']
+            self.assertEqual(command(), expected + ['--pr-body-file', str(body)])
+            env['ORBIT_DOCS_PR_BODY_FILE'] = '/explicit/proposed-body.md'
+            self.assertEqual(command(), expected)  # PHP reads the explicit input; no implicit file overrides it.
+            env.pop('ORBIT_DOCS_PR_BODY_FILE')
+            subprocess.run(['git', 'switch', '-qc', 'other'], cwd=root, check=True)
+            self.assertEqual(command(), expected)
+            subprocess.run(['git', 'checkout', '-q', '--detach'], cwd=root, check=True)
+            self.assertEqual(command(), expected)
+
+
 if __name__ == '__main__':
     unittest.main()

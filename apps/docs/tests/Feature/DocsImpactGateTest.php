@@ -337,7 +337,7 @@ it('PR acknowledgements cannot waive generator and ownership failures', function
         ->and(implode(' ', $gate['failures']))->toContain('Unowned migration surface');
 });
 
-it('task handoffs and the hook use the proposed body from the environment', function (): void {
+it('local checks and the hook use the proposed body from their environment', function (): void {
     [$root, $base] = docsImpactGateFixture();
     changeDocsImpactGateSource($root);
     $bodyFile = $root.'/.git/proposed-pr-body.txt';

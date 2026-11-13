@@ -85,7 +85,13 @@ Before pushing, save the proposed PR body outside the checkout and run the same 
 bin/docs-impact --gate --base origin/main --pr-body-file /tmp/orbit-pr-body.md
 ```
 
-The file is input data, never executed. Copy its acknowledgement lines into the PR body. To let the pre-push hook and task handoff (`composer check` / `bin/review-check`) use the same file, export `ORBIT_DOCS_PR_BODY_FILE=/tmp/orbit-pr-body.md` before pushing. Without a body file, the gate accepts no waivers. This policy runs through Orbit's `composer check` and `bin/review-check`; the generic Gateway task engine does not know about docs-first or documentation conventions. Jev is out of scope for this version.
+The file is input data, never executed. Copy its acknowledgement lines into the PR body. For the pre-push hook or checks run from your current shell, export `ORBIT_DOCS_PR_BODY_FILE=/tmp/orbit-pr-body.md` before pushing. Without a body file, the gate accepts no waivers. This policy runs through Orbit's `composer check` and `bin/review-check`; the generic Gateway task engine does not know about docs-first or documentation conventions. Jev is out of scope for this version.
+
+A Gateway task handoff opens a fresh SSH session on the task checkout; it does not inherit your exported variables. Before handoff, save the proposed PR body **on that checkout's machine** at `<git-common-dir>/orbit/proposed-pr-bodies/<branch>.md`. Obtain the directory with `git rev-parse --path-format=absolute --git-common-dir` and the branch with `git branch --show-current`. Create parent directories for branch names containing `/`.
+
+`bin/review-check` reads only that branch's file and records its path in the check report. A detached checkout has no branch file. An explicit local `ORBIT_DOCS_PR_BODY_FILE` takes precedence.
+
+The reviewer confirms these proposed lines at handoff. Copy them to the PR body before READY: CI reads only the live PR body, never the checkout's proposed-body file.
 
 Run from the repository root:
 
@@ -332,7 +338,7 @@ A deterministic report makes the docs-first decision repeatable. It combines cha
 
 Deleting a migration without an owner does not require a new ownership binding for the removed file. Removing an owned migration still routes the change to its page, and new or changed migrations still need owners.
 
-A waiver belongs in the PR body so a reviewer can see it. Before the PR exists, the task check reads the proposed body from `ORBIT_DOCS_PR_BODY_FILE`; the author copies those lines to the PR body before READY. Private Git notes are not review evidence. A shared tracked waiver file is rejected because concurrent branches would edit the same lines.
+A waiver belongs in the PR body so a reviewer can see it. Before the PR exists, the task check reads the branch-specific proposed-body file on its own checkout; the author copies those lines to the PR body before READY. Private Git notes are not review evidence. A shared tracked waiver file is rejected because concurrent branches would edit the same lines.
 
 Page ownership belongs beside the documentation, in `covers:` frontmatter and the extractor's surface mappings. Listing owners in every task brief is rejected, because duplicate lists go stale and miss new surfaces. Running only existing generators is also rejected: generated API, CLI, and MCP contracts do not find every hand-written page affected by configuration, errors, migrations, or schedules. Current generator output needs no duplicate prose, but stale or missing output still requires an update.
 
