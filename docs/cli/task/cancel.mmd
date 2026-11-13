@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design (agreed with Nick, 2026-11-07): a task VM and its identity are disposable; the release frees its place. Orchestrator 2026-11-08: keeping approved work is a precondition of the cancel, not a step of it.
+  %% Orchestrator 2026-11-13: a task copy ends through its Instance destroy; the cancel records the copy's unpushed work and does not block on it.
   %% status: draft
   %% command: task:cancel
   %% kind: tasks.cancel
@@ -29,7 +30,19 @@ sequenceDiagram
   %%> Result:
   %%> - otherwise the cancel refuses with HTTP 409 `tasks.approved_work_unpublished`, names the commit and the branch, and admits nothing: run `task:publish` first, which resumes a parked VM
   %%> - every other outcome refuses the same way: a GitHub read that fails, a branch that is gone without a merged pull request
-  alt no VM and no workspace
+  alt the task owns a task copy
+    Note over GW: Read the copy's workspace<br/>one bounded read
+    %%> What it does:
+    %%> - one SSH call to the copy's Node, bounded at 4 s, reads what the copy holds beyond its seed: commits that origin lacks, uncommitted, untracked and stashed files
+    %%> - a stopped or unreachable copy reads `unknown` with its reason; the cancel goes on
+    Note over GW: Admit the copy's destroy<br/>instance.destroy · force
+    %%> Requirements:
+    %%> - no Operation holds the copy, such as its create or an earlier destroy; otherwise HTTP 409 `operation.target_busy`, naming it
+    %%> Result:
+    %%> - the cancel is recorded as succeeded at once (R1), right after the destroy's admission; its result names the destroy Operation and holds the workspace read
+    %%> - the destroy runs as every Instance destroy does; when it succeeds, a task that still runs and its open subtasks are `cancelled`, and the task lets go of the copy; a `failed` task stays `failed`
+    %%> - when it fails, the task runs on and keeps the copy; the next cancel admits the destroy again
+  else no VM and no workspace
     Note over GW: End the task at admission<br/>R1: no run
     %%> When:
     %%> - the task holds no task VM and no workspace, such as a `todo` task or one that waits for a place; its waiting Operation is cancelled first

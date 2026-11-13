@@ -1,0 +1,87 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Tasks;
+
+use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
+use App\Actions\Projects\CaptureProjectSourceFactsAction;
+use App\Data\Instances\CreateInstanceData;
+use App\Domain\Instances\DefaultInstanceName;
+use App\Domain\Instances\InstanceRuntimePowerState;
+use App\Domain\Instances\InstanceState;
+use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Projects\ProjectSourceAccess;
+use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
+use App\Models\Operation;
+use App\Models\Task;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * The start of a task whose Project's tasks run as copies (docs/cli/task/start.mmd): one clone of the Project's default Instance,
+ * named and branched `task-<id>`, that the group owns. The clone is an `instance.create` as every clone is; the group, its binding and
+ * the create's Operation commit together, and Swamp starts the run only after that commit.
+ */
+final readonly class TaskCopyStart
+{
+    public function __construct(private OperationIdempotency $idempotency) {}
+
+    /** A retry with the request's Idempotency-Key replays the same create: the key moves to the create's own kind. */
+    public function start(Task $group, string $caller, ?string $request): Operation
+    {
+        $key = $this->idempotency->key;
+
+        return $key === null ? $this->admit($group, $caller, $request)
+            : $this->idempotency->under('instance.create', $key, (string) $this->idempotency->fingerprint, fn (): Operation => $this->admit($group, $caller, $request));
+    }
+
+    private function admit(Task $group, string $caller, ?string $request): Operation
+    {
+        if (($replay = $this->idempotency->replay('instance.create')) !== null) {
+            return $replay;
+        }
+        $project = $group->project()->firstOrFail();
+        // The create captures missing source facts itself; that read can reach the forge, so it runs here, before the transaction.
+        if ($project->source_facts_captured_at === null && $project->source_access !== ProjectSourceAccess::GhCli) {
+            app(CaptureProjectSourceFactsAction::class)->execute($project);
+        }
+
+        return DB::transaction(function () use ($group, $caller, $request): Operation {
+            $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
+            app(TaskProvisionIntent::class)->assertProvisionable($group);
+            $project = $group->project;
+            $default = Instance::query()->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)->lockForUpdate()->first();
+            $runtime = $default?->runtime;
+            // A copy starts only from a running default with a seed: a stopped or unfinished default fails here, before any record.
+            if ($default === null || $runtime === null || $default->status !== InstanceState::Active || $runtime->seed_commit === null
+                || $runtime->power_state !== InstanceRuntimePowerState::Running) {
+                throw new ResourceOperationException('tasks.copy_source_unavailable',
+                    "Project [{$project->slug}] has no running default Instance with a seed snapshot to copy.", 409);
+            }
+            $name = TaskWorkspaceName::for($group);
+            if (Instance::query()->where('project_id', $project->id)->where('name', $name)->exists()) {
+                throw new ResourceOperationException('tasks.copy_name_taken', "Instance [{$name}] already exists in Project [{$project->slug}].", 409);
+            }
+            $limit = Config::integer('orbit.tasks.copies_max');
+            $live = self::live($default->node_id);
+            if ($live >= $limit) {
+                throw new ResourceOperationException('tasks.copy_capacity_full',
+                    "The Node holds {$live} task copies; the Gateway allows {$limit} at once.", 409, details: ['live' => $live, 'limit' => $limit]);
+            }
+            $operation = app(StartDevelopmentInstanceCreateAction::class)->execute(
+                new CreateInstanceData($project->id, $default->node_id, $name, null, null, $name), $caller, $request, $group);
+            $group->taskable()->associate(Instance::query()->findOrFail($operation->target_id));
+            $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
+
+            return $operation;
+        });
+    }
+
+    /** The task copies on the Node now: every Instance with a container that a task group owns, also one that is failing or being destroyed. */
+    public static function live(int $nodeId): int
+    {
+        return Instance::query()->where('node_id', $nodeId)->whereNotNull('task_workspace_owner_id')->whereHas('runtime')->count();
+    }
+}

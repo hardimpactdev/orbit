@@ -105,6 +105,8 @@ return [
         'reviewer_effort' => $reviewerEffort === null || $reviewerEffort === '' ? 'high' : $reviewerEffort,
         // A group reserved longer than this returns to todo on the next tick. Keep it well above the slowest workspace provision.
         'reserved_timeout_seconds' => max(60, (int) env('ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS', 3600)),
+        // How many task copies (docs/cli/task/start.mmd) one Node holds at once, counted at each task start. Set in the Gateway's .env.
+        'copies_max' => max(0, (int) env('ORBIT_TASKS_COPIES_MAX', 1)),
     ],
     // Release alerts always write Activity and a problem. The signed webhook is skipped unless both values are set.
     'releases' => [

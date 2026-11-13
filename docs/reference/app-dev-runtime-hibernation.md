@@ -48,7 +48,7 @@ The [Node agent](/reference/node-agent#commands) reads activity times, manages a
 
 `orbit-runtime-hibernator.timer` runs on the Gateway host every 10 minutes. It reads the last HTTP activity of each Instance: the newer of the Instance's Caddy access log and its awake marker. The [gateway role convergence](/cli/node/role-add) installs the service and enables the timer; releases leave them unchanged.
 
-Set these values in the Gateway's environment, not an Instance's `.env`. They configure hibernation only; [task-agent effort](/reference/tasks#drivers) uses separate Gateway settings. `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` counts [task workspace provisioning failures](/reference/tasks#execution-ownership), not wake failures. The repository map that [trusts GitHub feedback](/reference/tasks#trusted-github-feedback), `orbit.tasks.github_reviewers`, also lives in Gateway configuration but changes no hibernation threshold, Process keep-alive setting, or wake behavior.
+Set these values in the Gateway's environment, not an Instance's `.env`. They configure hibernation only; [task-agent effort](/reference/tasks#drivers) uses separate Gateway settings. `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` counts [task workspace provisioning failures](/reference/tasks#execution-ownership), not wake failures. The repository map that [trusts GitHub feedback](/reference/tasks#trusted-github-feedback), `orbit.tasks.github_reviewers`, also lives in Gateway configuration but changes no hibernation threshold, Process keep-alive setting, or wake behavior. Neither does `ORBIT_TASKS_COPIES_MAX`, which caps [task copies](/reference/tasks#task-copy).
 
 | Setting | Default | Config key | Environment key |
 | --- | --- | --- | --- |

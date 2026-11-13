@@ -2296,8 +2296,8 @@ it('never restarts stale held siblings when the watchdog resumes a proof after a
 });
 
 /*
- * The one placement rule (docs/reference/projects.md#nested-fleet-setting): task work that needs a new workspace refuses a nested-fleet
- * Project before it records a place, an identity, a workspace, a wait or an Operation.
+ * The one placement rule (docs/reference/projects.md#nested-fleet-setting): task work that needs a task VM refuses a nested-fleet
+ * Project before it records a place, an identity, a workspace, a wait or an Operation. Its task start takes the copy path instead.
  */
 describe('nested-fleet Projects', function (): void {
     /** @return array<string, int> */
@@ -2311,7 +2311,8 @@ describe('nested-fleet Projects', function (): void {
     };
     $flag = static fn (Project $project) => DB::table('projects')->where('id', $project->id)->update(['nested_fleet' => true]);
 
-    it('refuses task provisioning of a Project flagged through the API, with or without a free place', function (int $places) use ($rows, $refused): void {
+    // A task start of such a Project takes the copy path (TaskCopyStart): without a default to copy it is refused by name, and no VM place is used.
+    it('starts no task VM for a Project flagged through the API, with or without a free place', function (int $places) use ($rows): void {
         Queue::fake();
         [, $project] = slotPoolHost(taskPlaces: $places);
         slotPoolSweepWorld();
@@ -2321,7 +2322,8 @@ describe('nested-fleet Projects', function (): void {
         $this->patchJson('/api/v1/projects/'.$project->id, ['nested_fleet' => true])->assertOk();
         $group = slotPoolGroup($project->refresh());
         $before = $rows();
-        $refused(fn () => app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40)));
+        expect(fn () => app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40)))
+            ->toThrow(fn (ResourceOperationException $error) => expect([$error->errorCode, $error->status])->toBe(['tasks.copy_source_unavailable', 409]));
         expect($rows())->toBe($before)->and($group->refresh()->status)->toBe(TaskGroupStatus::Todo)->and($group->taskable_id)->toBeNull();
         Queue::assertNotPushed(AdmitTaskVm::class);
     })->with(['free place' => [2], 'full pool' => [0]]);

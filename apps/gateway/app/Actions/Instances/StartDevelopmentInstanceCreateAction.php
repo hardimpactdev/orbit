@@ -44,6 +44,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\Task;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -60,7 +61,11 @@ final readonly class StartDevelopmentInstanceCreateAction
         private DevelopmentInstanceCreateAdmission $admission,
     ) {}
 
-    public function execute(CreateInstanceData $data, ?string $caller, ?string $requestId): Operation
+    /**
+     * `$taskOwner` is the task group whose copy this new clone is (TaskCopyStart): the group becomes the clone's owner when its row is
+     * written, as the database allows an owner only then. Every other create passes none.
+     */
+    public function execute(CreateInstanceData $data, ?string $caller, ?string $requestId, ?Task $taskOwner = null): Operation
     {
         if (($replay = $this->idempotency->replay('instance.create')) !== null) {
             return $replay;
@@ -77,7 +82,7 @@ final readonly class StartDevelopmentInstanceCreateAction
         $selection = $data->branchSelection === null ? null
             : app(DevelopmentInstanceBranchAdmission::class)->prepare($project, $data->name, $data->branchSelection, $caller);
 
-        return DB::transaction(function () use ($data, $caller, $requestId, $selection, $observed): Operation {
+        return DB::transaction(function () use ($data, $caller, $requestId, $selection, $observed, $taskOwner): Operation {
             $project = Project::query()->findOrFail($data->projectId);
             $this->admission->assertSourceAccess($project);
             $node = Node::query()->findOrFail($data->nodeId);
@@ -91,6 +96,9 @@ final readonly class StartDevelopmentInstanceCreateAction
             // A container Instance is the Project's default, or a clone of that default ($source).
             [$container, $source] = $this->container($project, $node, $name, $instance, $data);
             InstancePlacement::place($project, $node, $container);
+            if ($taskOwner instanceof Task && ($instance instanceof Instance || ! $source instanceof Instance)) {
+                throw new ResourceOperationException('tasks.copy_name_taken', "A task copy is a new clone of the default; Instance [{$name}] cannot be one.", 409);
+            }
 
             if ($instance instanceof Instance) {
                 $this->assertRetry($instance, $node, $root, $data->branch);
@@ -125,6 +133,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                     'source_layout' => InstanceSourceLayout::Checkout, 'checkout_path' => '/var/lib/orbit/instance-reservations/'.Str::uuid(),
                     'source_prepare_id' => (string) Str::uuid(), 'root' => $root, 'branch_override' => $data->branch,
                     'status' => InstanceState::Reserved, 'first_setup_pending' => true,
+                    ...($taskOwner instanceof Task ? ['task_workspace_owner_id' => $taskOwner->id] : []),
                 ]);
                 // The runtime row first: it makes the Process records target the container, and it records the Incus project.
                 app(InstanceContainer::class)->reserve($instance, $node, $source);

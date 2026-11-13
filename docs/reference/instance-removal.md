@@ -98,6 +98,8 @@ The Gateway captures the run budget at admission from the teardown timeouts, the
 
 A retry repeats every step; each converges, and a checkout that is already gone counts as removed. If a step fails after the Route withdrawal, the site stays down until a rerun finishes the removal. A withdrawal that held frees the Route publication hold at once and records `route_withdrawn_at` on the removal ([One Route write per Node](/reference/operations#one-route-write-per-node)). A retry after that skips the withdrawal and takes no hold.
 
+When the removed Instance is a [task copy](/reference/tasks#task-copy), the successful removal also releases its task before the row goes: a task that still runs is `cancelled` with its open subtasks, and an ended task only lets go of the copy. A failed removal leaves the task bound to the copy.
+
 The Gateway records the member set as Removing in the same admission transaction that captures database ownership. Database saves refuse additions, ownership changes and attachments involving a Removing owner. An owned database targeted by another Instance refuses removal. Only owned resources go with an Instance; unrelated checkouts and database targets remain untouched. Registered external databases lose their records without a backend absence claim.
 
 ## Available placements
