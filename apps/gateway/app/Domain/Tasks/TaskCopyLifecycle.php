@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\Operations\OperationStatus;
 use App\Jobs\Tasks\DestroyTaskCopy;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -16,23 +17,30 @@ use App\Models\Task;
 final readonly class TaskCopyLifecycle
 {
     /**
-     * The create of a copy ended. A success runs the group; a failure or cancel fails the group, which keeps owning the copy until the
-     * queued destroy removes it.
+     * The create of a copy ended, however it ended. A success runs a group that waits for it. Any other end fails a group that still
+     * runs and queues the copy's destroy, unless the run's budget expired: that run may still be stopping, so the group keeps the copy
+     * until `task:cancel` destroys it.
      */
-    public function createEnded(Operation $operation, string $status): void
+    public function createEnded(Operation $operation): void
     {
         $owned = $this->owned($operation->target_id);
-        if ($owned === null || $owned[1]->status !== TaskGroupStatus::Reserved) {
+        if ($owned === null) {
             return;
         }
         [$instance, $group] = $owned;
-        if ($status === 'succeeded') {
-            $group->update(['status' => TaskGroupStatus::Running, 'started_at' => $group->started_at ?? now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
+        if ($operation->status === OperationStatus::Succeeded) {
+            if ($group->status === TaskGroupStatus::Reserved) {
+                $group->update(['status' => TaskGroupStatus::Running, 'started_at' => $group->started_at ?? now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
+            }
 
             return;
         }
-        $group->update(['status' => TaskGroupStatus::Failed, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
-        DestroyTaskCopy::dispatch($instance->id);
+        if (in_array($group->status, TaskGroupStatus::active(), true)) {
+            $group->update(['status' => TaskGroupStatus::Failed, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
+        }
+        if ($operation->error_code !== 'operation.timed_out') {
+            DestroyTaskCopy::dispatch($instance->id);
+        }
     }
 
     /**

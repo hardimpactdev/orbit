@@ -25,7 +25,7 @@ Orbit refuses the start at once and records nothing in these cases:
 
 The Gateway setting `ORBIT_TASKS_COPIES_MAX` in the Gateway's `.env` sets how many task copies one Node holds at once. The default is 1. Every copy that a task owns counts, also one whose create failed or that is being destroyed.
 
-When the create fails, the task is `failed` and Orbit destroys the copy with force. If that destroy fails, the task keeps owning the copy. Run `task:cancel` or `orbit instance:destroy <id> --yes --force` to destroy it.
+When the create fails, is refused by Swamp, or is cancelled before its run starts, the task is `failed` and Orbit destroys the copy with force. When the create's run budget expires, the task is `failed` but keeps the copy, because the run may still be stopping. If the destroy fails, the task also keeps owning the copy. Run `task:cancel` or `orbit instance:destroy <id> --yes --force` to destroy it.
 
 The copy's agent gets the fixed task model key, as every clone does; the key is not per task. Per-task model keys are an open decision. A stopped copy, for example after a reboot of its Node, stays stopped until Orbit starts it.
 

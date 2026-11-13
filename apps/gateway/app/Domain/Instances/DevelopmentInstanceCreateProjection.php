@@ -12,7 +12,6 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
 use App\Jobs\RecordWorkspaceBaseline;
@@ -67,10 +66,6 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             }
             if ($data['status'] === 'succeeded') {
                 $result['mail_keys_set'] = ValidatedData::stringList($operation->input['mail_keys_set'] ?? []);
-            }
-            if (! $operation->status->terminal() && in_array($data['status'], ['succeeded', 'failed', 'cancelled'], true)) {
-                // A task's copy moves its group on; any other Instance has no owner and nothing happens.
-                app(TaskCopyLifecycle::class)->createEnded($operation, $data['status']);
             }
             if ($container !== null && in_array($data['status'], ['failed', 'cancelled'], true)) {
                 $recovery = $this->recovery($operation, ValidatedData::object($container), $data['status'] === 'failed'

@@ -38,8 +38,10 @@ sequenceDiagram
       SW--xGW: Run failed<br/>failed step
       Note over GW: Fail the task<br/>queue the copy's destroy
       %%> On failure:
+      %%> - every end of the create counts: a failed run, a start that Swamp refuses, a cancel before the run starts, an expired run budget
       %%> - the task is `failed` and still owns the copy; a queued job admits `instance:destroy` of the copy with force
-      %%> - when that destroy fails, or the run never reported, the task keeps the copy: `task:cancel` admits the destroy again, and `orbit instance:destroy ID --yes --force` does too
+      %%> - after an expired budget the run may still be stopping, so no destroy is queued: the task keeps the copy
+      %%> - while the task keeps the copy, `task:cancel` admits its destroy, and `orbit instance:destroy ID --yes --force` does too
     end
   else every other Project
     Note over GW: Claim a task place<br/>mint an identity · database only

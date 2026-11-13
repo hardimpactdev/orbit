@@ -8,6 +8,7 @@ use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Proof\ProofChildStarts;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Models\Operation;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
@@ -126,6 +127,11 @@ final readonly class OperationStore
             }
             if ($operation->kind === InstanceMigration::Kind && ! $current->status->terminal() && $operation->status->terminal()) {
                 app(InstanceMigrateProjection::class)->terminal($operation, $current);
+            }
+            // Every end of a create reaches here: a run's report, a refused start, a cancel before the run, an expired budget. A task's copy
+            // moves its group on; an Instance that no task owns changes nothing.
+            if ($operation->kind === 'instance.create' && ! $current->status->terminal() && $operation->status->terminal()) {
+                app(TaskCopyLifecycle::class)->createEnded($operation);
             }
         });
         $this->broadcaster->changed($operation, $before !== $operation->status || $cancelRequested);

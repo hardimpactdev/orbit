@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
@@ -12,9 +13,9 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
-use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskRuntime;
@@ -278,9 +279,31 @@ describe('the end of the copy\'s create', function (): void {
         $group = copyGroup(copySource()->project);
         $operation = startCopy($group);
 
-        app(TaskCopyLifecycle::class)->createEnded($operation, 'succeeded');
+        app(OperationStore::class)->change($operation, ['status' => OperationStatus::Succeeded, 'finished_at' => now()]);
 
         expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->started_at)->not->toBeNull();
+        Queue::assertNotPushed(DestroyTaskCopy::class);
+    });
+
+    it('fails the group and queues the destroy when the create is cancelled before its run starts', function (): void {
+        $group = copyGroup(copySource()->project);
+        $operation = startCopy($group);
+
+        app(CancelOperationAction::class)->execute($operation);
+
+        expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled)
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Failed)
+            ->and($group->taskable_id)->toBe($operation->target_id);
+        Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $operation->target_id);
+    });
+
+    it('fails the group but keeps the copy when the create\'s budget expired, as its run may still be stopping', function (): void {
+        $group = copyGroup(copySource()->project);
+        $operation = runningOperation(startCopy($group));
+
+        app(OperationStore::class)->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'operation.timed_out']);
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed)->and($group->taskable_id)->toBe($operation->target_id);
         Queue::assertNotPushed(DestroyTaskCopy::class);
     });
 

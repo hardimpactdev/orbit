@@ -924,14 +924,15 @@ Orbit writes an untracked `.mcp.json` into the workspace before a reviewer start
 
 ### Task copy
 
-A task of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on has no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) destroys it. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases). Turns, publish, prep and build do not run in a copy yet.
+A task of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on has no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) destroys it; the cancel result records the copy's unpushed work. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases). Turns, publish, prep and build do not run in a copy yet.
 
 | Part | Rule |
 | --- | --- |
 | Cap | `ORBIT_TASKS_COPIES_MAX` in the Gateway's `.env`, default 1: the task copies one Node holds at once. A start over it fails with `tasks.copy_capacity_full`, with no wait |
 | Model key | The copy's agent gets the fixed task model key, as every clone does. It is not per task. Per-task model keys are an open decision |
-| Failed create | The task is `failed`; Orbit destroys the copy with force. A failed destroy leaves the copy owned by the task until `task:cancel` or `instance:destroy --force` |
-| End | The task is `cancelled` when the copy's destroy succeeds. The cancel result records the copy's unpushed work |
+| Failed create | The task is `failed`, and Orbit destroys the copy with force. A refused start or a cancel before the run counts too |
+| Kept copy | After an expired run budget or a failed destroy, the task keeps the copy until `task:cancel` or `instance:destroy --force` |
+| End | When the copy's destroy succeeds, a running task is `cancelled` and a failed task stays `failed`. Both let go of the copy |
 
 ### Workspace ownership
 
