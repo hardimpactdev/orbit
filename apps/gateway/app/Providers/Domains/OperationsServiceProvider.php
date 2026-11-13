@@ -19,7 +19,7 @@ final class OperationsServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Queue::before(static function (): void {
-            app(SwampConnection::class)->release();
+            app(SwampConnection::class)->releaseIdle();
         });
     }
 

@@ -147,13 +147,15 @@ The pass has no retry, backoff or per-Operation job. Only one pass runs at a tim
 
 ### Kept read connection
 
-Before each queue job, the Gateway closes the kept Swamp read connection from earlier work in that PHP process. Reads within one job still share one connection. A job never starts a read on an earlier job's idle socket. This applies to every queue, including the operations worker that runs starts, reconciliation and scheduled-result projection.
+Each PHP process keeps one read connection to serve. Jobs that follow each other share it. Before each queue job, the Gateway closes it when it has been idle for more than 10 seconds: no request was sent and no frame arrived on it in that time. The job then reads on a new connection. Reads within one job always share one connection. The rule lives in `SwampConnection`; it applies to every queue, including the operations worker that runs starts, reconciliation and scheduled-result projection.
 
-Each reading job now opens its own connection. A burst of scheduled-result jobs can exceed serve's shared 50-handshake limit per fixed minute. One worker serializes these jobs but does not limit their rate; the existing handshake retry and connect deadline still apply. There is no new throttle.
+Serve can close a connection while it sits idle, and PHP cannot see this before the connection is used. A kept connection that sat idle for about a minute is always found closed. The 10-second age drops such a connection before a job uses it, so the job does not wait out the reply deadline first.
 
-This boundary does not change the 15-second connect budget, 30-second reply budget or retry rule below. Short PHP HTTP requests and one-shot commands release their sockets when they end. The long-running native event observer uses its own connection and keeps receiving events and answering pings.
+Jobs in a burst follow each other within seconds. A burst of jobs that project scheduled results therefore shares one connection and makes about one handshake. Serve admits 50 handshakes per IP per fixed minute. Each release needs 10 idle seconds first, so the age adds at most 6 handshakes per PHP process per minute, and only while that process is mostly idle. A failed read still drops the connection as before. There is no new throttle.
 
-When a read fails on a kept connection, the Gateway drops it and sends the same read once on a new connection. Every read in this file is idempotent. A read that fails on a new connection is final. The error keeps the exception that caused it as its previous exception, so the Gateway log names the cause. A reply that does not match its request is never sent again.
+This rule does not change the 15-second connect budget, 30-second reply budget or retry rule below. Short PHP HTTP requests and one-shot commands release their sockets when they end. The long-running native event observer uses its own connection and keeps receiving events and answering pings.
+
+When a read fails on a kept connection that serve closed within the age, the Gateway drops it and sends the same read once on a new connection. Every read in this file is idempotent. A read that fails on a new connection is final. The error keeps the exception that caused it as its previous exception, so the Gateway log names the cause. A reply that does not match its request is never sent again.
 
 ### Step times
 

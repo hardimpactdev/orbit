@@ -743,8 +743,9 @@ final readonly class SwampCommandStep
         }
         $endpoint = new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token);
         $connection = app(SwampConnection::class);
-        // A connection kept from an earlier job may have been closed by serve while idle. Then the first use fails on a dead
-        // socket, so one new connection answers the same read. Every read here is idempotent. A new connection that fails is a real failure.
+        // A kept connection can still have been closed by serve: SwampConnection drops it only once it is idle for longer
+        // than its idle age. Then the first use fails on a dead socket, so one new connection answers the same read.
+        // Every read here is idempotent. A new connection that fails is a real failure.
         $reused = $connection->holds($endpoint);
         try {
             return $this->exchange($connection, $endpoint, $type, $arguments);

@@ -93,12 +93,13 @@ it('keeps one connection for two reads inside one queue job', function (): void 
     expect($socket->connects)->toBe(1)->and($socket->sends)->toBe(2);
 });
 
-it('closes the earlier job socket before the next job starts in the same process', function (): void {
+it('closes the earlier job socket when the next job starts after the idle age', function (): void {
     $socket = staleSocket();
     Queue::connection('sync')->push(CallQueuedClosure::create(static function (): void {
         readHistory();
     }));
     $socket->stale = true;
+    $this->travel(SwampConnection::IdleSeconds + 1)->seconds();
 
     Queue::connection('sync')->push(CallQueuedClosure::create(static function (): void {
         expect(app(WebSocketClient::class)->isConnected())->toBeFalse();
@@ -106,6 +107,35 @@ it('closes the earlier job socket before the next job starts in the same process
     }));
 
     expect($socket->connects)->toBe(2)->and($socket->sends)->toBe(2);
+});
+
+it('shares one connection between jobs that follow each other within the idle age', function (): void {
+    $socket = staleSocket();
+    Queue::connection('sync')->push(CallQueuedClosure::create(static function (): void {
+        readHistory();
+    }));
+    $this->travel(SwampConnection::IdleSeconds - 1)->seconds();
+
+    Queue::connection('sync')->push(CallQueuedClosure::create(static function (): void {
+        expect(app(WebSocketClient::class)->isConnected())->toBeTrue();
+        readHistory();
+    }));
+
+    expect($socket->connects)->toBe(1)->and($socket->sends)->toBe(2);
+});
+
+it('counts a received frame as activity on the kept connection', function (): void {
+    $socket = staleSocket();
+    $endpoint = new WebSocketEndpoint('swamp.test', 443, 'swamp.orbit', '/', '/tmp/ca.pem', 'read-token');
+    $kept = app(SwampConnection::class)->socket($endpoint, 15, $socket);
+    $kept->send(['type' => 'workflow.history.get', 'id' => 'a', 'payload' => []]);
+    $this->travel(SwampConnection::IdleSeconds - 1)->seconds();
+    expect($kept->receive(1.0))->not->toBe([]);
+    $this->travel(SwampConnection::IdleSeconds - 1)->seconds();
+
+    app(SwampConnection::class)->releaseIdle();
+
+    expect(app(SwampConnection::class)->holds($endpoint))->toBeTrue();
 });
 
 it('reads on a new connection when the kept one was closed while idle', function (): void {
