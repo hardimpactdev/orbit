@@ -32,32 +32,11 @@
         }
 
         main {
+            width: min(100%, 158px);
+        }
+
+        main:has(.reason) {
             width: min(100%, 32rem);
-        }
-
-        .status {
-            margin: 28px 0 0;
-            font-size: 15px;
-            line-height: 1.5;
-            text-align: center;
-            overflow-wrap: anywhere;
-        }
-
-        /* Shown, without motion, once the wake takes longer than a few seconds; a 0 s step after a delay, not an animation. */
-        .slow {
-            margin: 4px 0 0;
-            color: #a1a1aa;
-            font-size: 13px;
-            line-height: 1.5;
-            text-align: center;
-            visibility: hidden;
-            animation: orbit-slow 0s linear {{ (int) $slowAfterSeconds }}s forwards;
-        }
-
-        @keyframes orbit-slow {
-            to {
-                visibility: visible;
-            }
         }
 
         .logo {
@@ -199,13 +178,6 @@
                 <div class="logo-rotor"></div>
             </div>
         </div>
-
-        @unless ($failed)
-            <div role="status">
-                <p class="status">Waking {{ $name }}…</p>
-                <p class="slow">This takes a few seconds.</p>
-            </div>
-        @endunless
 
         @if ($failed)
             @if ($failureReason !== null)

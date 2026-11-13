@@ -79,7 +79,7 @@ Orbit deletes `vendor` only next to `composer.json` and `composer.lock`. It dele
 
 Caddy on the Instance's Node checks for the awake marker on every request. When the marker is missing, Caddy calls `GET /api/v1/runtime-activations/app-instance/{id}` on the Gateway over WireGuard, trusting the Orbit root certificate. The caller must be the Instance's Node, or a Node with an [access grant](/cli/node) to it.
 
-The Gateway answers with a progress page, status 401, headers `X-Orbit-Runtime-Activation-State: pending` and `Retry-After: 1`, and then starts the wake. Caddy shows the page and does not pass the request on. The page says "Waking NAME…", with the same name as its title; after 10 seconds it adds "This takes a few seconds." It polls the original path every 250 ms and loads it when the state header is gone. That load is the first application request. `Retry-After` stays one second, the smallest whole value HTTP allows, for a client without the page's script.
+The Gateway answers with a progress page, status 401, headers `X-Orbit-Runtime-Activation-State: pending` and `Retry-After: 1`, and then starts the wake. Caddy shows the page and does not pass the request on. The page shows only the animated Orbit logo; the Instance's name is the page title. It polls the original path every 250 ms and loads it when the state header is gone. That load is the first application request. `Retry-After` stays one second, the smallest whole value HTTP allows, for a client without the page's script.
 
 The wake runs in this order:
 
