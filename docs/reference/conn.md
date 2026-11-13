@@ -398,7 +398,7 @@ Inherited refusals keep their codes:
 | `instance.remove_refused` | The state, source layout or attached Route is unsafe to remove. |
 | `instance.removal_conflict` | Saved removal, placement or Route inventory changed. |
 | `instance.destroy_unsupported` | Removal requires its recorded development placement and non-root account. |
-| `operation.target_busy` | Another destroy owns a member of the removal set. |
+| `operation.target_busy` | Another destroy owns a member of the removal set, or a restore owns the Instance. |
 | `operation.kind_unavailable` | The placement has no supported native destroy path. |
 | `route.withdrawal_node_unavailable` | The admitted withdrawal Node is inactive. |
 | `database.connection_attached` | An owned database is attached outside the removal set. |
@@ -416,9 +416,23 @@ Infrastructure failures keep their existing codes, such as `swamp.schedule_publi
 
 A missing SSH pin or Caddy render fault found by the dry run refuses removal before any effect, for Conn, the core API and the CLI. If a fact changes after the dry run, admission uses its current value and may refuse; Schedules may already be stopped.
 
+### Remove a clone whose completion runs
+
+A clone's create ends when its thread is usable; its [completion](/cli/instance/complete) then sets up the rest. A removal from Conn while that completion runs is one call. In one transaction the Gateway records the cancel of the completion and admits the removal with status `waiting` and `after_operation_id` set to the completion. The call answers 202 with the removal at once; it is the one Operation to follow. Swamp is asked to stop the completion after the commit, and the reconciler asks again on each pass until it stops. A completion that had not started yet ends `cancelled` at once.
+
+The removal starts when the completion has ended. The completion's SSH and shell steps take the abort at once. Its own `withdraw-route` step takes back a Route it published, and the removal then deletes the container, the database (a half-filled one too), the Route, the completion's vault copies and the records. The removal's run budget counts from its start, not from its admission. Several removals at once each wait for their own clone's completion; removals that share Route Nodes start one after another, oldest first, as every Route write does.
+
+While the completion runs, the remove sheet's read answers as for any running container: the completion writes no tracked file, so a workspace without the user's work reads `clean`. Its `baseline` is `default_now` until the create records the baseline. After a failed or cancelled completion the clone stays `source_resolved` with its container running; the read and the removal work as for a retained failed create.
+
+The CLI and the core API keep their refusal: `instance:destroy` while the completion runs answers `operation.target_busy` (409) with `details.operation_id`, the completion. Follow it to its end, or cancel it, then destroy again.
+
 The same caller, key, Instance ID and body return the same Operation with HTTP 202, even after the Instance was deleted. Reusing the key with a changed body refuses with `operation.idempotency_conflict` (409). A missing Instance without that receipt keeps the normal 404.
 
 On success, the container, its volume and snapshots, T3 history, Instance-owned database records, pairings and environment entry are deleted. The Route is withdrawn and deleted. Only owned databases are dropped; an owned database attached elsewhere refuses with its existing code, and shared or foreign databases stay. A migrated Instance's retained Git folder stays on the Node, and the Operation result retains `retained_git_path` and `retained_git_at`. See [Instance removal](/reference/instance-removal) for the engine's full cleanup and retry rules.
+
+## Retry a completion
+
+`POST /instances/{id}/complete` is the Retry of a clone's failed or cancelled completion. It takes no body and requires an `Idempotency-Key`; the caller needs access to the Instance's Node. It admits the same `instance.complete` as [`instance:complete`](/cli/instance/complete) and answers its Operation with HTTP 202. A clone that is not `source_resolved` with its starting commit and a registered T3 server refuses with `instance.complete_unavailable` (409); a clone another Operation holds refuses with `operation.target_busy` (409). The same caller and key return the same Operation.
 
 ## Pairing and revocation
 
@@ -452,6 +466,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `POST /projects/{id}/instances` | `{"name": "fix-login-k3j9"}` | Operation (202) |
 | `GET /instances/{id}/work` | — | workspace work state |
 | `POST /instances/{id}/destroy` | `{"acknowledge_unsaved": true}` and `Idempotency-Key` | Operation (202) |
+| `POST /instances/{id}/complete` | no body; `Idempotency-Key` | Operation (202) |
 | `GET /environments` | — | list of environment |
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |
 | `GET /environments/{environment_id}/pairings` | — | list of pairing, newest first |
@@ -481,6 +496,7 @@ The objects:
 | `conn.environment_owned` | 409 | Another Node registered this environment id. |
 | `instance.name_taken` | 409 | Another device's create holds the name of a thread's clone. |
 | `instance.default_missing` | 409 | The Project has no default Instance in a container that is active and has a seed snapshot. |
+| `instance.complete_unavailable` | 409 | The clone is not `source_resolved` with its starting commit and a registered T3 server. |
 | `validation.failed` | 422 | The request breaks a rule; `details` names each field. |
 | `conn.settings_version_conflict` | 409 | The document, or a section a patch names, changed since the sent version. `details.current_version` is the document version; a patch adds `details.sections`, the current version of each section it named. |
 | `conn.environment_mismatch` | 422 | `url` serves another environment. |

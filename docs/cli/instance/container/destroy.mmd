@@ -22,8 +22,10 @@ sequenceDiagram
   %%> - these refusals change no Schedule, Route, database, pairing, environment or Operation, and never probe the container
   %%> - acknowledged removal uses this same engine with force=true; all existing engine blockers keep their codes
   %%> - the same key and request returns the same Operation with 202, including after Instance deletion; a changed request is an idempotency conflict
+  %%> - a running completion (`instance.complete`) of the clone does not refuse a Conn removal: see the completion block below
   %%> CLI requirements:
   %%> - Node access to the Instance's Node and no other lifecycle Operation holds the Instance
+  %%> - a running completion refuses with `operation.target_busy` and names it in `details.operation_id`
   %%> - this slice supports a non-default container Instance, cloned or migrated; the Instance named `default` remains unavailable
   %%> - `--force` is required until guarded removal is built; no work or turn check runs
   alt container default
@@ -52,6 +54,16 @@ sequenceDiagram
     Note over GW: Record removal intent<br/>mark removing
     %%> Result:
     %%> - call the same preparation again inside the admission transaction; record only this fresh intent, then mark the Instance removing and the Route retiring
+    opt Conn removal while the completion runs
+      %% path: after-completion
+      Note over GW: Cancel the completion<br/>wait behind it
+      %%> What it does:
+      %%> - the same transaction records the completion's cancel and admits the removal `waiting`, with `after_operation_id`
+      %%> - after the commit Swamp is asked to stop the completion; the reconciler asks again on each pass
+      %%> - the completion's own `withdraw-route` takes back a Route it published
+      %%> When:
+      %%> - the removal starts when the completion has ended, as a waiting Route write starts
+    end
     GW->>SW: Start run, full intent<br/>operation-instance-destroy
     GW-->>CLI: 202 Accepted<br/>Operation ID
     opt clone has a Route

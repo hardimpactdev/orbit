@@ -31,7 +31,9 @@ The Gateway refuses before any change with `instance.complete_unavailable` when 
 
 The completion writes no tracked file in the workspace, so the user's work in the checkout stays as it is. A failed or cancelled completion keeps the clone `source_resolved` with `failed_step` and `error_code`. The container keeps running and T3 keeps its thread. A Route that the run published is withdrawn again. The result's `recovery` names this command as the retry, and [`instance:destroy`](/cli/instance/destroy) to remove the clone.
 
-The API is `POST /api/v1/instances/{instance}/complete`. The MCP tool is `instance-complete`.
+The API is `POST /api/v1/instances/{instance}/complete`. The MCP tool is `instance-complete`. Conn's Retry calls [`POST /api/v1/conn/instances/{instance}/complete`](/reference/conn#retry-a-completion), the same admission.
+
+A destroy from the CLI while the completion runs refuses with `operation.target_busy` and names the completion. A removal from Conn cancels the completion and starts after it ([Remove a clone whose completion runs](/reference/conn#remove-a-clone-whose-completion-runs)).
 
 ## How it works
 
