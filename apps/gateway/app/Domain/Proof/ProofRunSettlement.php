@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace App\Domain\Proof;
 
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Closes the `proof.run` of the CLI once, when the last of its runs has ended. The proof passes only when every run passes. This
@@ -38,19 +43,73 @@ final readonly class ProofRunSettlement
     }
 
     /**
-     * The single proof place: an open parent with runs, or a parent whose child is still working or awaits native settlement.
-     * The timeout hold is ExpireOperationAction::awaitsSettlement's rule; releaseStaleHolds bounds an unproven end to 60 minutes.
-     * Called inside the admission write transaction, before any groups or children are recorded.
+     * The single proof place. A stale child and its parent's run list cannot hold it alone.
+     * Called only inside the admission write transaction; a refusal rolls back its after-commit warning.
      */
     public static function workingProof(): ?Operation
     {
-        $children = Operation::query()->select('input->proof_operation_id')->where('kind', ProofGroup::OwnerKind)
-            ->where(fn ($query) => $query->whereNotIn('status', OperationStatus::terminalValues())
-                ->orWhere(fn ($query) => $query->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')->whereNotNull('lock_key')));
+        $children = self::placeChildren();
+        $stale = $children->filter(self::staleChild(...));
+        $holding = $children->except($stale->modelKeys());
+        $parentId = static fn (Operation $child): int => ValidatedData::integer($child->input['proof_operation_id']);
+        $working = Operation::query()->where('kind', OperationKinds::ProofRun)
+            ->where(fn ($query) => $query->where(fn ($query) => $query->whereNotIn('status', OperationStatus::terminalValues())
+                ->whereJsonLength('input->runs', '>', 0)->whereNotIn('id', $stale->map($parentId)->all()))
+                ->orWhereIn('id', $holding->map($parentId)->all()))->orderBy('id')->first(['id']);
+        if ($working === null) {
+            foreach ($stale as $child) {
+                $context = ['operation_id' => $child->id, 'proof_operation_id' => $parentId($child),
+                    'age_seconds' => $child->updated_at === null ? 0 : max(0, (int) $child->updated_at->diffInSeconds(now()))];
+                DB::afterCommit(static fn () => Log::warning('A stale proof child no longer holds the proof place.', $context));
+            }
+        }
 
-        return Operation::query()->where('kind', OperationKinds::ProofRun)
-            ->where(fn ($query) => $query->where(fn ($query) => $query->whereNotIn('status', OperationStatus::terminalValues())->whereJsonLength('input->runs', '>', 0))
-                ->orWhereIn('id', $children))->orderBy('id')->first(['id']);
+        return $working;
+    }
+
+    /** @return Builder<Operation> Only unresolved proof children can hold a place or become stale. */
+    public static function unresolvedPlaceChildren(): Builder
+    {
+        return Operation::query()->where('operations.kind', ProofGroup::OwnerKind)->whereNotNull('operations.input->proof_operation_id')
+            ->where(fn ($query) => $query->whereNotIn('operations.status', OperationStatus::terminalValues())
+                ->orWhere(fn ($query) => $query->where('operations.status', OperationStatus::Failed)
+                    ->where('operations.error_code', 'operation.timed_out')->whereNotNull('operations.lock_key')));
+    }
+
+    /** One read of only unresolved children and the parent's allowance; no per-child reads or writes.
+     * @return Collection<int, Operation>
+     */
+    private static function placeChildren(): Collection
+    {
+        return self::unresolvedPlaceChildren()->leftJoin('operations as proof', 'proof.id', '=', 'operations.input->proof_operation_id')
+            ->get(['operations.id', 'operations.kind', 'operations.status', 'operations.error_code', 'operations.lock_key',
+                'operations.input', 'operations.state', 'operations.attempts', 'operations.created_at', 'operations.updated_at',
+                'operations.started_at', 'operations.finished_at', 'proof.status as proof_parent_status', 'proof.created_at as proof_parent_created_at']);
+    }
+
+    /** @return Collection<int, Operation> The same classification used for admission and Gateway health. */
+    public static function stalePlaceChildren(): Collection
+    {
+        return self::placeChildren()->filter(self::staleChild(...));
+    }
+
+    private static function staleChild(Operation $child): bool
+    {
+        if (ExpireOperationAction::awaitsSettlement($child)) {
+            $end = $child->finished_at ?? $child->updated_at;
+
+            return $end === null || $end->lt(now()->subMinutes(ExpireOperationAction::HoldMinutes));
+        }
+        $parentStatus = $child->getAttribute('proof_parent_status');
+        $parentCreated = $child->getAttribute('proof_parent_created_at');
+        if (ProofChildStarts::held($child) && is_string($parentStatus) && ! OperationStatus::from($parentStatus)->terminal()
+            && is_string($parentCreated) && CarbonImmutable::parse($parentCreated)->addSeconds(ProofRunIntent::WaitSeconds)->isFuture()) {
+            return false;
+        }
+        $deadline = OperationRunBudgets::deadline($child)
+            ?? $child->updated_at?->toImmutable()->addSeconds(ProofBatchPlan::MaxShardSeconds);
+
+        return $deadline === null || $deadline->addMinutes(ExpireOperationAction::HoldMinutes)->isPast();
     }
 
     public function settle(int $proofId): void

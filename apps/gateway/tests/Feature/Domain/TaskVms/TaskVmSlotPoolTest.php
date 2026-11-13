@@ -2122,3 +2122,101 @@ describe('one working proof at a time', function (): void {
     });
 
 });
+
+describe('stale proof children release the proof place', function (): void {
+    beforeEach(fn () => Carbon::setTestNow(now()->startOfSecond()));
+    afterEach(fn () => Carbon::setTestNow());
+
+    it('admits past a stale child without changing it or its parent and warns once after admission', function (string $case): void {
+        $caller = slotPoolCiProofWorld(6);
+        $intent = app(ProofRunIntent::class);
+        $first = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller);
+        $intent->admit($first->id);
+        $children = ProofRunSettlement::children($first->id);
+        $child = $children->firstOrFail();
+        foreach ($children->except([$child->id]) as $ended) {
+            $ended->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+        }
+        $seconds = $case === 'admission' ? 600 : ValidatedData::integer($child->input['run_budget_seconds']);
+        $age = $seconds + ExpireOperationAction::HoldMinutes * 60 + 1;
+        $child->forceFill(['status' => OperationStatus::Running, 'attempts' => $case === 'admission' ? 0 : 1,
+            'started_at' => now()->subSeconds($age), 'updated_at' => now()->subSeconds($age),
+            'state' => $case === 'admission' ? [] : ['swamp_run_id' => 'stale-proof-child']])->save();
+        if ($case === 'timeout' || $case === 'timeout-without-finish') {
+            $age = ExpireOperationAction::HoldMinutes * 60 + 1;
+            $child->forceFill(['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out',
+                'lock_key' => 'task_group:'.$child->target_id, 'updated_at' => now()->subSeconds($age),
+                'finished_at' => $case === 'timeout' ? now()->subSeconds($age) : null])->save();
+        } elseif ($case === 'held') {
+            $age = ProofBatchPlan::MaxShardSeconds + ExpireOperationAction::HoldMinutes * 60 + 1;
+            $child->forceFill(['updated_at' => now()->subSeconds($age), 'state' => ['proof_child_start' => ['released_at' => null]]])->save();
+            $first->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
+        }
+        $before = $child->getAttributes();
+        $parentBefore = $first->refresh()->getAttributes();
+        $logger = Log::spy();
+        $second = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
+        $intent->admit($second->id);
+        $intent->admit($second->id);
+        expect($second->refresh()->input['runs'])->not->toBeEmpty()
+            ->and($child->refresh()->getAttributes())->toBe($before)
+            ->and($first->refresh()->getAttributes())->toBe($parentBefore);
+        $context = ['operation_id' => $child->id, 'proof_operation_id' => $first->id, 'age_seconds' => $age];
+        $logger->shouldHaveReceived('warning')->once()->with('A stale proof child no longer holds the proof place.', $context);
+        fwrite(STDOUT, "\n".json_encode(['message' => 'A stale proof child no longer holds the proof place.', 'context' => $context], JSON_THROW_ON_ERROR)."\n");
+    })->with(['execution', 'admission', 'timeout', 'timeout-without-finish', 'held']);
+
+    it('keeps a legitimate child in place until its budget or young parent allowance and stale bound have passed', function (bool $held): void {
+        $caller = slotPoolCiProofWorld(6);
+        $intent = app(ProofRunIntent::class);
+        $first = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller);
+        $intent->admit($first->id);
+        $children = ProofRunSettlement::children($first->id);
+        $child = $children->firstOrFail();
+        foreach ($children->except([$child->id]) as $ended) {
+            $ended->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+        }
+        $budget = ValidatedData::integer($child->input['run_budget_seconds']);
+        $child->forceFill(['status' => OperationStatus::Running, 'started_at' => now(), 'attempts' => 1,
+            'updated_at' => now()->subSeconds(ProofBatchPlan::MaxShardSeconds + ExpireOperationAction::HoldMinutes * 60 + 1),
+            'state' => $held ? ['proof_child_start' => ['released_at' => null]] : ['swamp_run_id' => 'legitimate-proof-child']])->save();
+        $second = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
+        $intent->admit($second->id);
+        expect($second->refresh()->input['runs'])->toBe([])
+            ->and($second->current_step)->toBe("Waiting for proof Operation {$first->id} to finish.");
+        app(CancelOperationAction::class)->execute($second);
+        Carbon::setTestNow(now()->addSeconds($held ? ProofRunIntent::WaitSeconds + 1 : $budget + ExpireOperationAction::HoldMinutes * 60 + 1));
+        $third = $intent->start(str_repeat('c', 40), false, 'test', null, authenticatedCaller: $caller);
+        $intent->admit($third->id);
+        expect($third->refresh()->input['runs'])->not->toBeEmpty();
+    })->with([false, true]);
+
+    it('does not warn when another child or capacity still prevents admission', function (): void {
+        $caller = slotPoolCiProofWorld(6);
+        $intent = app(ProofRunIntent::class);
+        $first = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller);
+        $intent->admit($first->id);
+        $child = ProofRunSettlement::children($first->id)->firstOrFail();
+        $child->forceFill(['status' => OperationStatus::Running, 'attempts' => 1, 'state' => ['swamp_run_id' => 'stale-child'],
+            'started_at' => now()->subSeconds(ValidatedData::integer($child->input['run_budget_seconds']) + ExpireOperationAction::HoldMinutes * 60 + 1)])->save();
+        $logger = Log::spy();
+        $second = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
+        $intent->admit($second->id);
+        expect($second->refresh()->input['runs'])->toBe([]);
+        $logger->shouldNotHaveReceived('warning');
+        foreach (ProofRunSettlement::children($first->id)->except([$child->id]) as $ended) {
+            $ended->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+        }
+        // Force a failure after the place check; its after-commit warning must roll back with admission.
+        $settings = app(TaskVmSettings::class);
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(false, null, '', [], '/pi', '', []));
+        $intent->admit($second->id);
+        expect($second->refresh()->input['runs'])->toBe([]);
+        $logger->shouldNotHaveReceived('warning');
+        app()->instance(TaskVmSettings::class, $settings);
+        $intent->admit($second->id);
+        expect($second->refresh()->input['runs'])->not->toBeEmpty();
+        $logger->shouldHaveReceived('warning')->once()->with('A stale proof child no longer holds the proof place.', [
+            'operation_id' => $child->id, 'proof_operation_id' => $first->id, 'age_seconds' => 0]);
+    });
+});

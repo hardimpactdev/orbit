@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationReconcileHealth;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Proof\ProofBatchPlan;
+use App\Domain\Proof\ProofRunIntent;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampConnection;
@@ -17,6 +20,7 @@ use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -486,3 +490,92 @@ it('finishes and records the pass when its info logger throws', function (): voi
         ->and(ProblemCollectorState::query()->sole()->observation)->toMatchArray([
             'operation_reconcile_finished_at' => '2026-11-12T12:00:00.000000Z', 'operation_settlement_count' => 0]);
 });
+
+/** One stranded child whose parent never settled; status must share the admission rule without changing either row. */
+function reconcileHealthProofChild(Node $gateway, bool $timedOut = false): Operation
+{
+    $age = ($timedOut ? 0 : 2700) + ExpireOperationAction::HoldMinutes * 60 + 1;
+    $parent = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $gateway->id, 'node_id' => $gateway->id,
+        'status' => OperationStatus::Running, 'input' => ['runs' => [['operation_id' => 1]]]]);
+
+    return Operation::query()->forceCreate(['kind' => 'proof.command', 'target_type' => 'task_group', 'target_id' => $parent->id, 'node_id' => $gateway->id,
+        'status' => $timedOut ? OperationStatus::Failed : OperationStatus::Running, 'attempts' => 1,
+        'input' => ['proof_operation_id' => $parent->id, 'run_budget_seconds' => 2700], 'state' => ['swamp_run_id' => 'stranded-proof-child'],
+        'lock_key' => 'task_group:'.$parent->id, 'error_code' => $timedOut ? 'operation.timed_out' : null,
+        'started_at' => now()->subSeconds($age), 'finished_at' => $timedOut ? now()->subSeconds($age) : null,
+        'updated_at' => now()->subSeconds($age)]);
+}
+
+it('shows a stale proof child as one Gateway group with its last activity and without changing the row', function (bool $timedOut): void {
+    $gateway = reconcileHealthNode();
+    ProblemCollectorState::query()->create(['observation' => ['operation_reconcile_finished_at' => now()->toISOString()]]);
+    $child = reconcileHealthProofChild($gateway, $timedOut);
+    $before = $child->refresh()->getAttributes();
+    $expected = [['node_id' => $gateway->id, 'node_name' => 'gateway', 'code' => 'gateway.proof_place_stale_child', 'count' => 1,
+        'since' => $child->updated_at?->toISOString(), 'newest_since' => $child->updated_at?->toISOString(), 'resource' => null]];
+    expect(reconcileHealthIssues($gateway))->toBe($expected)
+        ->and($child->refresh()->getAttributes())->toBe($before);
+    fwrite(STDOUT, "\nStale proof group: ".json_encode($expected[0], JSON_THROW_ON_ERROR)."\n");
+})->with([false, true]);
+
+it('counts stale children in one bounded read and adds no query when no unresolved proof child exists', function (): void {
+    $gateway = reconcileHealthNode();
+    ProblemCollectorState::query()->create(['observation' => ['operation_reconcile_finished_at' => now()->toISOString()]]);
+    reconcileHealthIssues($gateway); // Warm request-local framework settings before comparing statement counts.
+    $queries = [];
+    DB::listen(function (QueryExecuted $query) use (&$queries): void {
+        $queries[] = $query->sql;
+    });
+    expect(reconcileHealthIssues($gateway))->toBe([]);
+    $empty = count($queries);
+    expect($empty)->toBe(11);
+    expect(array_filter($queries, fn (string $sql): bool => str_contains($sql, 'join "operations"')))->toBe([]);
+    $children = [reconcileHealthProofChild($gateway), reconcileHealthProofChild($gateway, true), reconcileHealthProofChild($gateway)];
+    $oldest = now()->subSeconds(2700 + ExpireOperationAction::HoldMinutes * 60 + 20);
+    $children[2]->forceFill(['updated_at' => $oldest])->save();
+    $queries = [];
+    $groups = reconcileHealthIssues($gateway);
+    expect($groups)->toHaveCount(1)->and($groups[0]['count'])->toBe(3)->and($groups[0]['since'])->toBe($oldest->toISOString())
+        ->and(count($queries))->toBe($empty + 1)
+        ->and(array_filter($queries, fn (string $sql): bool => str_contains($sql, 'join "operations"')))->toHaveCount(1);
+    $withChildren = count($queries);
+    foreach ($children as $child) {
+        $child->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    }
+    $queries = [];
+    expect(reconcileHealthIssues($gateway))->toBe([])->and(count($queries))->toBe($empty);
+    fwrite(STDOUT, "\nProof place status queries: ".json_encode(['empty' => $empty, 'stale' => $withChildren, 'ended' => count($queries)], JSON_THROW_ON_ERROR)."\n");
+});
+
+it('protects a child inside its budget and a held child of a young parent before showing them stale', function (bool $held): void {
+    $gateway = reconcileHealthNode();
+    ProblemCollectorState::query()->create(['observation' => ['operation_reconcile_finished_at' => now()->toISOString()]]);
+    $child = reconcileHealthProofChild($gateway);
+    $child->forceFill(['started_at' => now(), 'updated_at' => now()->subSeconds(ProofBatchPlan::MaxShardSeconds + ExpireOperationAction::HoldMinutes * 60 + 1),
+        'state' => $held ? ['proof_child_start' => ['released_at' => null]] : ['swamp_run_id' => 'legitimate-child']])->save();
+    expect(reconcileHealthIssues($gateway))->toBe([]);
+    $seconds = $held ? ProofRunIntent::WaitSeconds + 1 : 2700 + ExpireOperationAction::HoldMinutes * 60 + 1;
+    Carbon::setTestNow(now()->addSeconds($seconds));
+    ProblemCollectorState::query()->sole()->update(['observation' => ['operation_reconcile_finished_at' => now()->toISOString()]]);
+    expect(array_column(reconcileHealthIssues($gateway), 'code'))->toContain('gateway.proof_place_stale_child');
+})->with([false, true]);
+
+it('reports a stranded proof child even before reconciliation has created its state row', function (): void {
+    $gateway = reconcileHealthNode();
+    reconcileHealthProofChild($gateway);
+    expect(ProblemCollectorState::query()->count())->toBe(0)
+        ->and(array_column(reconcileHealthIssues($gateway), 'code'))->toContain('gateway.proof_place_stale_child')
+        ->and(ProblemCollectorState::query()->count())->toBe(0);
+});
+
+it('holds a child at its exact stale bound and reports it only after that bound', function (bool $timedOut): void {
+    $gateway = reconcileHealthNode();
+    ProblemCollectorState::query()->create(['observation' => ['operation_reconcile_finished_at' => now()->toISOString()]]);
+    $child = reconcileHealthProofChild($gateway, $timedOut);
+    $age = ($timedOut ? 0 : 2700) + ExpireOperationAction::HoldMinutes * 60;
+    $child->forceFill(['started_at' => now()->subSeconds($age), 'updated_at' => now()->subSeconds($age),
+        'finished_at' => $timedOut ? now()->subSeconds($age) : null])->save();
+    expect(reconcileHealthIssues($gateway))->toBe([]);
+    Carbon::setTestNow(now()->addSecond());
+    expect(array_column(reconcileHealthIssues($gateway), 'code'))->toContain('gateway.proof_place_stale_child');
+})->with([false, true]);

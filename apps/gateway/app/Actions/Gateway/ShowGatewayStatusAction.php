@@ -15,7 +15,6 @@ use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Operations\OperationReconcileHealth;
 use App\Domain\Problems\ProblemSource;
 use App\Models\Node;
-use App\Models\ProblemCollectorState;
 use App\Models\ProblemFingerprint;
 use Illuminate\Foundation\Application;
 use Throwable;
@@ -41,7 +40,7 @@ final readonly class ShowGatewayStatusAction
     public function handle(?Node $consumer): GatewayStatusData
     {
         [$release, $sha] = $this->releases->current();
-        $observation = $consumer !== null ? ProblemCollectorState::query()->orderBy('id')->first()?->observation : null;
+        $observation = $consumer !== null ? app(OperationReconcileHealth::class)->observation() : null;
         // Status explicitly includes the caller's own Node; other commands keep the shared grant rule.
         $visibleIds = $consumer !== null ? array_fill_keys([$consumer->id, ...$this->access->accessibleNodeIds($consumer)], true) : [];
         // Resolved once for the request: the reconcile facts and the Gateway groups below share it.
@@ -75,7 +74,11 @@ final readonly class ShowGatewayStatusAction
             ? ProblemFingerprint::query()->where('source', ProblemSource::Doctor)->whereNull('evidence->resolved_at')
                 ->where('evidence->doctor_observed_at', '>=', $startedAt)->orderBy('id')->get()
             : ProblemFingerprint::query()->whereRaw('0 = 1')->get();
-        $nodes = Node::query()->whereIn('id', $rows->map(fn (ProblemFingerprint $row): mixed => $row->evidence['doctor_node'] ?? null))->get()->keyBy('id');
+        $nodeIds = $rows->map(fn (ProblemFingerprint $row): mixed => $row->evidence['doctor_node'] ?? null)->all();
+        if ($gatewayId !== null) {
+            $nodeIds[] = $gatewayId;
+        }
+        $nodes = Node::query()->whereIn('id', $nodeIds)->get()->keyBy('id');
         $groups = [];
         foreach ($rows as $row) {
             $nodeId = $row->evidence['doctor_node'] ?? null;
@@ -108,7 +111,7 @@ final readonly class ShowGatewayStatusAction
         $duration = $observation['doctor_duration_ms'] ?? null;
         $duration = is_int($duration) || is_float($duration) ? $duration : null;
         if ($duration !== null && $duration > 1000 && $collectedAt !== null) {
-            $gateway = Node::query()->find($gatewayId);
+            $gateway = $gatewayId === null ? null : $nodes->get($gatewayId);
             if ($gateway instanceof Node) {
                 $groups['slow'] = ['node_id' => $gateway->id, 'node_name' => $gateway->name, 'code' => 'gateway.doctor_collection_slow',
                     'count' => 1, 'since' => $collectedAt, 'newest_since' => $collectedAt, 'resource' => null];
@@ -116,7 +119,7 @@ final readonly class ShowGatewayStatusAction
         }
         $signals = app(OperationReconcileHealth::class)->issues($observation);
         if ($signals !== []) {
-            $gateway = Node::query()->find($gatewayId);
+            $gateway = $gatewayId === null ? null : $nodes->get($gatewayId);
             if ($gateway instanceof Node) {
                 foreach ($signals as $signal) {
                     $groups[$signal['code']] = ['node_id' => $gateway->id, 'node_name' => $gateway->name, ...$signal];

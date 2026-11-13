@@ -56,7 +56,16 @@ When only paths that need no proof changed, such as documentation and charts, th
 
 Only one `proof.run` works at a time, including `--report-only` proofs. Operator and CI parents wait in proof Operation id order. While another proof holds the place, the waiting step and recorded capacity reason read `Waiting for proof Operation <id> to finish.` Orbit retries every 20 seconds and clears the step at admission. The shown execution duration starts at admission; the wait allowance starts at creation.
 
-A waiting parent holds no proof place. An open parent with recorded runs holds it until it closes. Its children also hold it while any is still open or has timed out without a proven end and still holds its lock. Cancelling the parent alone does not free the place. The existing 60-minute stale-hold release bounds a timed-out child's unproven end. Children take no separate proof places. Proofs with nothing to prove, `proof.verify` and base refresh work take none.
+A waiting parent holds no proof place. An open parent with recorded runs or an unresolved child holds it. Stale children and their parent's run list cannot hold it alone. Children take no separate proof places. Proofs with nothing to prove, `proof.verify` and base refresh work take none.
+
+What frees the place:
+
+- All children ended and the parent closed.
+- The parent was cancelled and its children ended.
+- A child timed out with a lock held, and the stale-hold release freed it after 60 minutes.
+- A child row that nothing ends passed its own deadline plus 60 minutes. Without a deadline, the bound is its last activity plus the longest shard budget of 120 minutes, plus 60 minutes. A timed-out lock holder uses its finish time, or last activity if absent, plus 60 minutes. Orbit leaves the child unchanged, logs `A stale proof child no longer holds the proof place.` when admitting another proof, and reports `gateway.proof_place_stale_child` in [Gateway status](/cli/gateway/status).
+
+A child waiting its turn to start stays protected while its parent is open and within 120 minutes of creation. After that, the bound for a child without a deadline applies. The status group counts stale children and uses the oldest last activity as `since`.
 
 A proof that waits more than 120 minutes fails `proof.capacity_timeout`. This applies to operator and CI parents, including an older parent blocking the queue. Ended or cancelled parents and proofs with nothing to prove leave the queue. Two predecessors of up to two hours each exceed the allowance: a third proof behind them fails by the wait and must be run again.
 
