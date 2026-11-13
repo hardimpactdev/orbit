@@ -994,6 +994,8 @@ Deno.test({
       const result = f.result();
       assertEquals([result.wake, result.marker_found], ["resumed", true]);
       assert(typeof result.resume_seconds === "number" && typeof result.web_probe_seconds === "number", JSON.stringify(result));
+      // After the marker went, one exec checks the library cache that a converge could not refresh while the container was frozen.
+      assert(Deno.readTextFileSync(`${f.folder}/calls`).includes("ldconfig -p"), "the library check ran");
     } finally {
       f.cleanup();
     }

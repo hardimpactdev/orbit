@@ -114,7 +114,7 @@ Deno.test("FrankenPHP that answers after a few tries is waited for", async () =>
     try {
         await Deno.writeTextFile(`${folder}/requests/app-instance-5.wake`, "");
         await run(folder);
-        assertEquals(calls(folder).filter((call) => call.startsWith("exec")).length, 3);
+        assertEquals(calls(folder).filter((call) => call.startsWith("exec") && call.includes(" curl ")).length, 3);
         assert(!exists(`${folder}/markers/app-instance-5.asleep`));
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
@@ -143,4 +143,39 @@ Deno.test("the app-dev role installs the script as root and a watch on the reque
     assertEquals(block.at(-1)!["ansible.builtin.systemd_service"], { name: "orbit-instance-wake.path", daemon_reload: "{{ wake_service.changed or wake_path.changed }}", enabled: true, state: "started" });
     const manifest = Deno.readTextFileSync(new URL("../manifest.yaml", import.meta.url));
     assertStringIncludes(manifest, "  - ansible/files/instance-container-wake.sh\n");
+});
+
+const libraryCheck = (text: string) => text.match(/c=\$\(ldconfig -p\)[^\n']*done/)![0];
+
+Deno.test("the Node script and the wake's workflow run the same library check, after the marker went", () => {
+    const power = Deno.readTextFileSync(new URL("../ansible/tasks/instance-container-power.yml", import.meta.url));
+    assertEquals(libraryCheck(Deno.readTextFileSync(script)), libraryCheck(power));
+    const tasks = parse(power) as Record<string, any>[];
+    const names = tasks.map((task) => task.name);
+    const refresh = names.indexOf("Refresh a stale library cache after the wake");
+    assert(refresh > names.indexOf("Remove the asleep marker") && refresh < names.indexOf("Wait for T3"), names.join(" | "));
+    assertEquals(tasks[refresh].failed_when, false);
+    // In the script the check comes after the marker went and the Gateway's resumed file exists.
+    const text = Deno.readTextFileSync(script);
+    assert(text.indexOf('sh -c "$library_check"') > text.indexOf(': > "$requests/app-instance-$id.resumed"'));
+});
+
+Deno.test("the library check rebuilds the cache only when a shared runtime library is missing from it", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        await Deno.mkdir(`${folder}/lib`);
+        await Deno.mkdir(`${folder}/bin`);
+        await Deno.writeTextFile(`${folder}/lib/libnss3.so`, "");
+        const check = libraryCheck(Deno.readTextFileSync(script)).replace("/opt/orbit-runtime/current/lib", `${folder}/lib`);
+        const run = async (cache: string) => {
+            await Deno.writeTextFile(`${folder}/bin/ldconfig`, `#!/bin/sh\nif [ "$1" = -p ]; then printf '%s\\n' '${cache}'; else echo "$*" >> '${folder}/rebuilt'; fi\n`);
+            await Deno.chmod(`${folder}/bin/ldconfig`, 0o755);
+            const out = await new Deno.Command("sh", { args: ["-c", check], stdout: "piped", env: { PATH: `${folder}/bin:/usr/bin:/bin` } }).output();
+            return new TextDecoder().decode(out.stdout).trim();
+        };
+        assertEquals(await run(`\tlibnss3.so (libc6,x86-64) => ${folder}/lib/libnss3.so`), "");
+        assert(!exists(`${folder}/rebuilt`));
+        assertEquals(await run("\tlibc.so.6 (libc6,x86-64) => /lib/x86_64-linux-gnu/libc.so.6"), "rebuilt");
+        assertEquals(Deno.readTextFileSync(`${folder}/rebuilt`).trim(), "-X");
+    } finally { await Deno.remove(folder, { recursive: true }); }
 });

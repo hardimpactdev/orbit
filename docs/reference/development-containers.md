@@ -1001,6 +1001,8 @@ Measured on a frozen fixture clone before this path: the resume took 0.02 second
 
 The result also gives `resume_seconds` and `web_probe_seconds` for a resume. A boot starts the container and waits until each running unit is active. Then the run waits until FrankenPHP answers. A web unit that listens before the app is ready answers 5xx for a moment, so the run waits up to 5 more seconds for an answer below 500; an app that answers 5xx by itself is then served as it is. Then the run removes the marker, and the next request gets the app. A Project without a web unit has no web wait.
 
+A converge cannot run a command in a frozen container, so a container that slept through a converge may wake with a library cache that lacks the shared runtime libraries. After the marker went, so the visitor does not wait, each wake runs one check in the container: when `ldconfig -p` lacks a library of `/opt/orbit-runtime/current/lib`, it runs `ldconfig -X`. The run does it after its marker removal; the Node's wake script does it after it wrote `.resumed`. A failed check fails nothing.
+
 Only then does the run wait up to 30 seconds for T3 in a clone: T3 gates the end of the Operation, not the visitor's page. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the Route shows the failure page.
 
 A destroy removes the marker. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.

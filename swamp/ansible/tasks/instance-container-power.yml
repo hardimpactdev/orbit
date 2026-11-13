@@ -175,6 +175,17 @@
     path: "{{ marker }}"
     state: absent
 
+# A converge cannot exec in a frozen container, so one that slept through it may wake with a library cache that lacks the shared
+# runtime libraries. After the marker went, so the visitor does not wait: one exec, `ldconfig -X` only when a library is missing.
+# The Node's wake script (files/instance-container-wake.sh) runs the same check after its resume.
+- name: Refresh a stale library cache after the wake
+  when: power == 'awake'
+  ansible.builtin.command:
+    argv: ['incus', 'exec', '--project', '{{ container.project }}', '{{ container.name }}', '--', 'sh', '-c', 'c=$(ldconfig -p) || exit 0; for f in /opt/orbit-runtime/current/lib/*.so*; do [ -e "$f" ] || continue; case "$c" in *"${f##*/} ("*) ;; *) ldconfig -X && echo rebuilt; exit 0;; esac; done']
+  register: wake_library_cache
+  changed_when: "'rebuilt' in wake_library_cache.stdout"
+  failed_when: false
+
 # T3 gates only the end of the wake: a clone whose T3 stays silent ends failed while its site already serves.
 - name: Wait for T3
   when: power == 'awake' and container.clone | default(none) is not none

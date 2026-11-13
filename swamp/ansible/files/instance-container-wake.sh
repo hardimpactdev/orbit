@@ -22,6 +22,10 @@ web_port=8080
 # the script ends within about 6.5 s of the request.
 max_age_ns=1000000000
 probe_limit_ns=1500000000
+# The same check as the wake's workflow (tasks/instance-container-power.yml, "Refresh a stale library cache after the wake"): a converge
+# cannot exec in a frozen container, so its library cache may lack the shared runtime libraries.
+# shellcheck disable=SC2016 # it runs in the container's shell, which expands it
+library_check='c=$(ldconfig -p) || exit 0; for f in /opt/orbit-runtime/current/lib/*.so*; do [ -e "$f" ] || continue; case "$c" in *"${f##*/} ("*) ;; *) ldconfig -X && echo rebuilt; exit 0;; esac; done'
 
 now_ns() { date +%s%N; }
 log() { echo "orbit-instance-wake: $*"; }
@@ -65,6 +69,10 @@ resume() {
     rm -f -- "$marker" || { log "instance $id: marker not removed"; return 0; }
     : > "$requests/app-instance-$id.resumed"
     log "instance $id: resumed resume_ms=$(( (resumed - started) / 1000000 )) web_probe_ms=$(( (probed - resumed) / 1000000 ))"
+    # After the marker went and the Gateway can answer: the visitor does not wait for this.
+    if [ "$(timeout 5 incus exec --project "$project" "$container" -- sh -c "$library_check" 2>/dev/null)" = rebuilt ]; then
+        log "instance $id: library cache rebuilt"
+    fi
 }
 
 shopt -s nullglob
