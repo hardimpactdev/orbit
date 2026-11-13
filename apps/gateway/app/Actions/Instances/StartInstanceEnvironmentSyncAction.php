@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Instances\Environment\ContainerConnectionEnvironment;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
 use App\Domain\Instances\Environment\ObservedInstanceEnvironment;
@@ -21,9 +22,20 @@ final readonly class StartInstanceEnvironmentSyncAction
     public function __construct(private StartOperationAction $operations, private OperationIdempotency $idempotency,
         private InstanceEnvironmentContextResolver $contexts, private NativeInstanceEnvironmentSync $sync, private ObservedInstanceEnvironment $observed) {}
 
-    /** `$force` replaces a file whose keys the Node agent has not reported, or that holds keys stored configuration lacks. */
+    /**
+     * `$force` replaces a file whose keys the Node agent has not reported, or that holds keys stored configuration lacks. A container
+     * Instance's `.env` is never rendered again: there the sync writes only the attached connections' keys in place.
+     */
     public function execute(Instance $instance, ?string $caller = null, ?string $requestId = null, bool $force = false): Operation
     {
+        if ($instance->runtime()->exists()) {
+            $start = fn (): Operation => app(ContainerConnectionEnvironment::class)->start($instance, $caller, $requestId);
+            $scope = $this->idempotency;
+
+            // The request's key keys the container kind instead.
+            return $scope->key === null || $scope->fingerprint === null ? $start()
+                : $scope->under(ContainerConnectionEnvironment::Kind, $scope->key, $scope->fingerprint, $start);
+        }
         if (($replay = $this->idempotency->replay('instance.sync_environment')) !== null) {
             return $replay;
         }

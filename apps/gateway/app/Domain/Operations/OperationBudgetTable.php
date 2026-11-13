@@ -17,6 +17,8 @@ final class OperationBudgetTable
     public const array SecondsByKind = [
         // Bounded shared path and one-line phase (90 s), plus input, result and cleanup. No live sample yet.
         'instance.mail_update' => 120,
+        // One 150 s network, file and restart phase, plus input, result and cleanup. No live sample yet.
+        'instance.connection_environment' => 180,
         // One 90 s scoped network/proxy phase, plus input/result/cleanup.
         'instance.node_service_detach' => 120,
         'instance.create' => 'run_budget_seconds',

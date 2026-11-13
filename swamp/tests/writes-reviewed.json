@@ -426,6 +426,10 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
+  "operation-instance-connection-environment": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "operation-node-role-add": {
    "Check the role": "read-only",
    "Read the OS release": "read-only",

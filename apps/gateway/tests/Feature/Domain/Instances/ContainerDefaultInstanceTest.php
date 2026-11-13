@@ -7,7 +7,6 @@ use App\Actions\Instances\StartInstanceCloneAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceEnvironmentImportAction;
-use App\Actions\Instances\StartInstanceEnvironmentSyncAction;
 use App\Actions\Instances\StartInstanceStepListAction;
 use App\Actions\Instances\StartInstanceTransferAction;
 use App\Actions\Projects\CaptureProjectSourceFactsAction;
@@ -300,7 +299,6 @@ it('refuses every command that works on a checkout from the Node, for an Instanc
 })->with([
     'destroy' => [fn (Instance $instance) => app(StartInstanceDestroyAction::class)->execute($instance, true)],
     'setup' => [fn (Instance $instance) => app(StartInstanceStepListAction::class)->execute($instance, LifecyclePhase::Setup, 'test', null)],
-    'env:sync' => [fn (Instance $instance) => app(StartInstanceEnvironmentSyncAction::class)->execute($instance)],
     'env:import' => [fn (Instance $instance) => app(StartInstanceEnvironmentImportAction::class)->execute($instance, false)],
     'transfer' => [fn (Instance $instance) => app(StartInstanceTransferAction::class)->execute($instance, new TransferInstanceData(1, null, null))],
     'rename' => [fn (Instance $instance) => app(RenameInstanceAction::class)->execute($instance, new RenameInstanceData('feature'))],

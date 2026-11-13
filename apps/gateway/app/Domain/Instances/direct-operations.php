@@ -7,6 +7,7 @@ use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\Deployment\InstanceRollbackProjection;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
+use App\Domain\Instances\Environment\ContainerConnectionEnvironment;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentImportProjection;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
 use App\Domain\Instances\InstanceCloneProjection;
@@ -56,6 +57,10 @@ return [
             'environment_write' => ['job' => 'environment', 'step' => 'Write .env, .env.testing-0', 'field' => 'status'],
             'testing_write' => ['job' => 'environment', 'step' => 'Write .env, .env.testing-1', 'field' => 'status']]],
         'projection' => NativeInstanceEnvironmentProjection::class,
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-environment-(?:testing-)?[1-9][0-9]*$']]],
+    // env:sync on a container: only the attached connections' keys, in place, from the same vault key family as the host sync.
+    'instance.connection_environment' => ['workflow' => 'operation-instance-connection-environment', 'workflow_inputs' => true,
+        'projection' => ContainerConnectionEnvironment::class, 'terminal_result' => ['job' => 'environment', 'step' => 'result'],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-environment-(?:testing-)?[1-9][0-9]*$']]],
     'instance.register' => ['workflow' => 'operation-instance-register', 'workflow_inputs' => true, 'projection' => InstanceRegisterResult::class,
         'terminal_result' => ['job' => 'register', 'step' => 'Create the Route', 'alternatives' => ['Protect the .env', 'Run Project setup steps-0', 'Create, start Processes-0'], 'native' => true],

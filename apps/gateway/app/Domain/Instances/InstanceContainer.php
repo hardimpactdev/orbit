@@ -117,7 +117,7 @@ final readonly class InstanceContainer
         }
         // The one placement decision, recorded once; a clone lives in the project its default's runtime records.
         $placed = InstancePlacement::place($instance->project()->firstOrFail(), $node, true);
-        $incusProject = $source === null ? $placed : $source->runtime()->firstOrFail()->incus_project;
+        $incusProject = $source?->runtime()->firstOrFail()->incus_project ?? $placed;
         $folders = $this->folders();
         $bridge = Node::query()->whereKey($node->id)->value('instance_bridge');
         if (! is_string($bridge)) {
@@ -139,7 +139,7 @@ final readonly class InstanceContainer
         // Every Instance but the default runs T3: a clone, and a checkout Instance that moved into a container.
         if ($instance->name !== 'default') {
             $ports = array_map(ValidatedData::integer(...), InstanceRuntime::query()->where('node_id', $node->id)->whereNotNull('t3_port')->pluck('t3_port')->all());
-            $port = array_values(array_diff(range(self::T3PortFirst, self::T3PortLast), $ports))[0]
+            $port = array_first(array_diff(range(self::T3PortFirst, self::T3PortLast), $ports))
                 ?? throw new ResourceOperationException('instance.host_unavailable', 'The Node has no free T3 port.', 409);
         }
         $plan = InstanceFolderPlan::for($folders);
@@ -208,8 +208,7 @@ final readonly class InstanceContainer
             // The common NIC ACL keeps the ways to the model forwarder and egress proxy; this one lets the Node's Caddy reach
             // FrankenPHP, a clone's T3 clients reach T3, and the container reach each attached target.
             'acl_rules' => ['description' => 'Orbit Instance '.$instance->id,
-                'egress' => array_map(static fn (array $target): array => ['action' => 'allow', 'destination' => $target['host'].'/32', 'protocol' => 'tcp',
-                    'destination_port' => (string) $target['port'], 'state' => 'enabled',
+                'egress' => array_map(static fn (array $target): array => [...self::egressRule($target),
                     ...(($target['node_service'] ?? false) ? ['description' => 'Orbit Node service:'.$target['port']]
                         : ($mail !== null && $target['host'] === $mail['host'] && $target['port'] === $mail['port']
                             ? ['description' => 'Orbit development SMTP'] : []))], $access),
@@ -394,6 +393,33 @@ final readonly class InstanceContainer
         }
 
         return $targets;
+    }
+
+    /**
+     * The network paths of the Instance's attached database connections only, as `intent()` writes them: each server's ACL egress
+     * rule, bridge endpoint and UFW rule. `env:sync` on a running container adds these and removes nothing.
+     *
+     * @return array{egress: list<array<string, string>>, bridge_endpoints: list<array{host: string, port: int, docker: bool}>, firewall: list<array<string, string>>}
+     */
+    public function connectionPaths(Instance $instance, InstanceRuntime $runtime): array
+    {
+        $access = $this->databaseAccesses($instance, $runtime, null);
+
+        return ['egress' => array_map(self::egressRule(...), $access),
+            'bridge_endpoints' => array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port'], 'docker' => $target['docker']], $access),
+            'firewall' => array_column($access, 'rule')];
+    }
+
+    /**
+     * The ACL egress rule that lets the container reach one TCP target.
+     *
+     * @param  array{host: string, port: int}  $target
+     * @return array<string, string>
+     */
+    private static function egressRule(array $target): array
+    {
+        return ['action' => 'allow', 'destination' => $target['host'].'/32', 'protocol' => 'tcp',
+            'destination_port' => (string) $target['port'], 'state' => 'enabled'];
     }
 
     /**

@@ -1,0 +1,165 @@
+---
+# env:sync on a container Instance (docs/cli/env/sync.mdx): add the attached connections' network paths, write only their keys
+# into the container's .env in place, then restart what runs. Nothing is removed. The values come only from ORBIT_CONNECTION_ENVIRONMENT.
+- name: Address the Instance Node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: environment_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Write the attached connections into the container
+  hosts: environment_node
+  become: true
+  gather_facts: false
+  tags: [environment]
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    container: "{{ intent.container }}"
+    plan: "{{ intent.connection_environment }}"
+    as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
+    as_orbit: "{{ ['incus', 'exec', '--project', container.project, container.name, '--user', '1000', '--group', '1000', '--'] }}"
+  tasks:
+    - name: Apply and check the connection keys
+      block:
+        - name: Read the container's ACL
+          ansible.builtin.command: { argv: [incus, query, "--", "/1.0/network-acls/{{ container.acl }}?project=default"] }
+          register: connection_acl_read
+          changed_when: false
+
+        - name: Read the current egress rules
+          ansible.builtin.set_fact:
+            connection_acl: "{{ connection_acl_read.stdout | from_json }}"
+            connection_missing_egress: []
+
+        # Add-only: a rule counts as present when an allow rule has the same TCP destination and port.
+        - name: Find the missing egress rules
+          when: >-
+            connection_acl.egress | default([]) | selectattr('action', 'defined') | selectattr('action', 'equalto', 'allow')
+            | selectattr('protocol', 'defined') | selectattr('protocol', 'equalto', 'tcp')
+            | selectattr('destination', 'defined') | selectattr('destination', 'equalto', item.destination)
+            | selectattr('destination_port', 'defined') | selectattr('destination_port', 'equalto', item.destination_port)
+            | list | length == 0
+          ansible.builtin.set_fact:
+            connection_missing_egress: "{{ connection_missing_egress + [item] }}"
+          loop: "{{ plan.egress }}"
+          loop_control: { label: "{{ item.destination }}:{{ item.destination_port }}" }
+
+        - name: Add the missing egress rules
+          when: connection_missing_egress | length > 0
+          ansible.builtin.command:
+            argv: [incus, network, acl, edit, "{{ container.acl }}", --project, default]
+            stdin: >-
+              {{ {'description': connection_acl.description | default(''), 'ingress': connection_acl.ingress | default([]),
+                  'egress': (connection_acl.egress | default([])) + connection_missing_egress} | to_json }}
+          changed_when: true
+
+        - name: Admit the connection endpoints at the bridge
+          ansible.builtin.include_tasks: tasks/instance-bridge-rules.yml
+          vars:
+            bridge_network: "{{ container.network }}"
+            bridge_cidr: "{{ container.bridge_cidr }}"
+            bridge_endpoints: "{{ plan.bridge_endpoints }}"
+            bridge_admitted_at: "{{ container.bridge_admitted_at }}"
+            bridge_reconcile: false
+
+        - name: Admit the container's paths to the servers on the Node
+          community.general.ufw:
+            rule: "{{ item.rule }}"
+            route: "{{ item.route | default('no') | bool }}"
+            interface_in: "{{ item.interface_in }}"
+            interface_out: "{{ item.interface_out | default(omit) }}"
+            from_ip: "{{ item.from_ip }}"
+            to_ip: "{{ item.to_ip }}"
+            to_port: "{{ item.to_port }}"
+            proto: "{{ item.proto }}"
+            comment: "{{ item.comment }}"
+          loop: "{{ plan.firewall }}"
+          loop_control: { label: "{{ item.comment }}" }
+
+        - name: Write the connection keys
+          ansible.builtin.command:
+            argv: [python3, -c, "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_env_keys.py') }}",
+                   "{{ container.project }}", "{{ container.name }}", "{{ container.environment_file }}"]
+            stdin: "{{ lookup('ansible.builtin.env', 'ORBIT_CONNECTION_ENVIRONMENT') }}"
+            expand_argument_vars: false
+          register: connection_keys
+          no_log: true
+          failed_when: false
+          changed_when: connection_keys.rc == 0 and (connection_keys.stdout | from_json).status == 'changed'
+
+        - name: Require a safe key result
+          ansible.builtin.assert:
+            that: connection_keys.rc == 0
+            fail_msg: >-
+              {{ 'env.configuration_invalid' ~ (': ' ~ (connection_keys.stdout | from_json).error_detail
+                 if connection_keys.stdout | default('') | length > 0 and
+                 (connection_keys.stdout | from_json).error_detail is defined else '') }}
+            quiet: true
+
+        - name: Keep only the public key result
+          ansible.builtin.set_fact:
+            connection_result: "{{ connection_keys.stdout | from_json }}"
+
+        - name: Refresh what runs only after the file changed
+          when: connection_result.status == 'changed'
+          block:
+            - name: Clear Laravel's cached configuration when PHP and artisan exist
+              when: plan.refresh.php is not none
+              ansible.builtin.command:
+                argv: >-
+                  {{ as_orbit + ['sh', '-c', 'if [ -x "$1" ] && [ -f "$2/artisan" ]; then cd -- "$2" && "$1" artisan config:clear >/dev/null 2>&1; fi',
+                      'sh', plan.refresh.php, plan.refresh.application] }}
+                expand_argument_vars: false
+              no_log: true
+              changed_when: false
+              failed_when: false
+
+            - name: Restart the Instance's running units
+              ansible.builtin.command:
+                argv: "{{ as_root + ['systemctl', 'try-restart', item] }}"
+              loop: "{{ plan.refresh.units }}"
+              changed_when: true
+
+        - name: Write the public result
+          ansible.builtin.copy:
+            content: >-
+              {{ {'environment': connection_result,
+                  'network': {'egress_added': connection_missing_egress | length, 'firewall': plan.firewall | length},
+                  'restarted': plan.refresh.units if connection_result.status == 'changed' else []} | to_json }}
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            mode: '0600'
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: &local
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      rescue:
+        - name: Write the failure result
+          ansible.builtin.copy:
+            content: >-
+              {{ {'error_code': 'env.configuration_invalid' if connection_keys is defined and connection_keys.rc | default(0) != 0
+                  else ansible_failed_result.msg if ansible_failed_result.msg | default('') in
+                  ['instance.bridge_busy', 'instance.container_endpoint_unresolved'] else 'instance.connection_environment_failed'}
+                 | combine({'error_detail': (connection_keys.stdout | from_json).error_detail}
+                   if connection_keys is defined and connection_keys.rc | default(0) != 0 and connection_keys.stdout | default('') | length > 0
+                   and (connection_keys.stdout | from_json).error_detail is defined else {}) | to_json }}
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            mode: '0600'
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: *local
+        - name: Fail the environment phase
+          ansible.builtin.fail:
+            msg: instance.connection_environment_failed

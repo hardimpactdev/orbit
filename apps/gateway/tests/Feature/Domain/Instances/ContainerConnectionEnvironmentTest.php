@@ -1,0 +1,207 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Actions\Instances\StartInstanceEnvironmentSyncAction;
+use App\Domain\Instances\Environment\ContainerConnectionEnvironment;
+use App\Domain\Instances\InstanceContainer;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationStore;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Processes\SystemdProcessRenderer;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
+use App\Models\DatabaseServer;
+use App\Models\Instance;
+use App\Models\Operation;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+
+uses(LazilyRefreshDatabase::class);
+require_once __DIR__.'/ContainerInstanceHelpers.php';
+
+const CONNECTION_ENV_SECRET = 'connection-env-password-sentinel';
+
+beforeEach(function (): void {
+    Queue::fake();
+    Http::preventStrayRequests();
+});
+
+/** A running container default with one database recorded by `database:create --instance`, as Instance 24 has. */
+function connectionEnvFixture(bool $attach = true): Instance
+{
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    $instance = Instance::query()->create(['node_id' => $node->id, 'project_id' => $project->id, 'name' => 'default',
+        'checkout_path' => '/workspace/default', 'root' => '.', 'status' => 'active', 'first_setup_pending' => false, 'source_is_laravel' => false]);
+    app(InstanceContainer::class)->reserve($instance, $node)->update(['power_state' => 'running', 'seed_commit' => str_repeat('a', 40)]);
+    if ($attach) {
+        $server = DatabaseServer::query()->create(['slug' => 'beast-mysql', 'driver' => 'mysql', 'node_id' => $node->id, 'tag' => '8.4',
+            'port' => 3306, 'root_password' => 'root-sentinel', 'status' => 'active']);
+        $connection = DatabaseConnection::query()->forceCreate(['slug' => 'servauto', 'driver' => 'mysql', 'node_id' => $node->id,
+            'database_server_id' => $server->id, 'owner_instance_id' => $instance->id, 'host' => $node->wireguard_ip, 'port' => 3306,
+            'database' => 'servauto', 'test_database' => 'servauto_test', 'username' => 'servauto_app_default', 'password' => CONNECTION_ENV_SECRET]);
+        DatabaseConnectionTarget::query()->create(['instance_id' => $instance->id, 'database_connection_id' => $connection->id,
+            'prefix' => 'DB', 'network' => 'wireguard']);
+    }
+
+    return $instance->refresh();
+}
+
+/** A Swamp vault behind the WebSocket that keeps each put. */
+function connectionEnvVault(): object
+{
+    $socket = new class implements WebSocketClient
+    {
+        /** @var list<array{key: string, value: string}> */
+        public array $puts = [];
+
+        /** @var list<array<string, mixed>> */
+        private array $frames = [];
+
+        private bool $open = false;
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->open = true;
+        }
+
+        public function send(array $message): void
+        {
+            $this->frames[] = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = end($this->frames);
+            $this->puts[] = ['key' => $frame['payload']['key'], 'value' => (string) ($frame['payload']['value'] ?? '')];
+
+            return [['id' => $frame['id'], 'type' => 'vault.put', 'payload' => ['data' => [
+                'vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
+        }
+
+        public function close(): void
+        {
+            $this->open = false;
+        }
+
+        public function isConnected(): bool
+        {
+            return $this->open;
+        }
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
+
+    return $socket;
+}
+
+it('starts the container Operation from env:sync with key names, the attached paths and the running units only', function (): void {
+    $instance = connectionEnvFixture();
+    $running = $instance->processes()->create(['name' => 'queue', 'runtime' => 'systemd', 'runtime_config' => ['command' => ['node', 'worker.js']],
+        'status' => 'active', 'desired_state' => 'running', 'working_directory' => '/srv/workspace']);
+    $stopped = $instance->processes()->create(['name' => 'idle', 'runtime' => 'systemd', 'runtime_config' => ['command' => ['node', 'idle.js']],
+        'status' => 'active', 'desired_state' => 'stopped', 'working_directory' => '/srv/workspace']);
+    $instance->node->accessibleNodes()->syncWithoutDetaching([$instance->node_id]);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip])
+        ->postJson('/api/v1/instances/'.$instance->id.'/environment/sync', ['force' => false])
+        ->assertAccepted()->assertJsonPath('data.kind', ContainerConnectionEnvironment::Kind);
+
+    $operation = Operation::query()->where('kind', ContainerConnectionEnvironment::Kind)->sole();
+    $plan = $operation->input['connection_environment'];
+    $full = app(InstanceContainer::class)->intent($instance, $instance->runtime()->sole());
+    expect(Operation::query()->where('kind', 'instance.sync_environment')->exists())->toBeFalse()
+        ->and($operation->lock_key)->toBe(OperationStore::lockKey('instance', $instance->id))
+        ->and($plan['keys'])->toBe(['DB_CONNECTION', 'DB_DATABASE', 'DB_HOST', 'DB_PASSWORD', 'DB_PORT', 'DB_USERNAME'])
+        ->and($plan['egress'])->toBe([['action' => 'allow', 'destination' => '10.44.0.7/32', 'protocol' => 'tcp', 'destination_port' => '3306', 'state' => 'enabled']])
+        ->and(array_intersect(array_map('json_encode', $full['acl_rules']['egress']), array_map('json_encode', $plan['egress'])))->toHaveCount(1)
+        ->and($plan['firewall'])->toBe([$full['firewall'][0]])
+        ->and($plan['bridge_endpoints'])->toBe([['host' => '10.44.0.7', 'port' => 3306, 'docker' => false]])
+        ->and($plan['refresh']['units'])->toContain(app(SystemdProcessRenderer::class)->unitName($running))
+        ->and($plan['refresh']['units'])->not->toContain(app(SystemdProcessRenderer::class)->unitName($stopped))
+        ->and($operation->input['container']['environment_file'])->toBe('/srv/workspace/.env')
+        ->and(json_encode($operation->input))->not->toContain(CONNECTION_ENV_SECRET)->not->toContain('servauto_app_default');
+});
+
+it('hands the rendered lines to the run only through one vault copy', function (): void {
+    $instance = connectionEnvFixture();
+    $vault = connectionEnvVault();
+    $operation = app(ContainerConnectionEnvironment::class)->start($instance, null, null);
+    $control = containerDefaultNode('control', '10.44.0.209', false);
+    $control->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+
+    $input = app(ContainerConnectionEnvironment::class)->input($operation);
+    $put = collect($vault->puts)->sole();
+    $lines = json_decode($put['value'], true, 512, JSON_THROW_ON_ERROR)['lines'];
+    expect($put['key'])->toBe('instance-environment-'.$operation->id)
+        ->and($lines)->toBe(['DB_CONNECTION' => 'DB_CONNECTION="mysql"', 'DB_DATABASE' => 'DB_DATABASE="servauto"', 'DB_HOST' => 'DB_HOST="10.44.0.7"',
+            'DB_PASSWORD' => 'DB_PASSWORD="'.CONNECTION_ENV_SECRET.'"', 'DB_PORT' => 'DB_PORT="3306"', 'DB_USERNAME' => 'DB_USERNAME="servauto_app_default"'])
+        ->and($input['execution_secrets'])->toBe(['connection_environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-environment-'.$operation->id]])
+        ->and(json_encode($input['intent']))->not->toContain(CONNECTION_ENV_SECRET)
+        ->and(app(DirectOperation::class)->definition(ContainerConnectionEnvironment::Kind)['workflow'])->toBe('operation-instance-connection-environment');
+});
+
+it('refuses a changed set of connections at the run start instead of writing other keys', function (): void {
+    $instance = connectionEnvFixture();
+    connectionEnvVault();
+    $operation = app(ContainerConnectionEnvironment::class)->start($instance, null, null);
+    $redis = DatabaseConnection::query()->forceCreate(['slug' => 'cache', 'driver' => 'redis', 'node_id' => $instance->node_id,
+        'host' => '10.44.0.7', 'port' => 6379, 'database' => '1']);
+    DatabaseConnectionTarget::query()->create(['instance_id' => $instance->id, 'database_connection_id' => $redis->id, 'prefix' => 'REDIS', 'network' => 'wireguard']);
+
+    expect(fn () => app(ContainerConnectionEnvironment::class)->input($operation))->toThrow(
+        fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('env.connection_changed'));
+});
+
+it('refuses a container with nothing to write, a stopped container and busy lifecycle work before any Operation', function (string $case, string $code): void {
+    $instance = connectionEnvFixture($case !== 'no connection');
+    match ($case) {
+        'stopped' => $instance->runtime()->update(['power_state' => 'stopped']),
+        'lifecycle' => $instance->update(['status' => 'checkout_prepared']),
+        default => null,
+    };
+    expect(fn () => app(StartInstanceEnvironmentSyncAction::class)->execute($instance))->toThrow(
+        fn (ResourceOperationException $error) => expect($error->errorCode)->toBe($code));
+    expect(Operation::query()->count())->toBe(0);
+})->with([['no connection', 'env.connection_missing'], ['stopped', 'process.target_inactive'], ['lifecycle', 'instance.lifecycle_busy']]);
+
+it('keeps the host Instance on the full render path', function (): void {
+    $instance = connectionEnvFixture();
+    $instance->runtime()->delete();
+    expect(fn () => app(StartInstanceEnvironmentSyncAction::class)->execute($instance->refresh()))->toThrow(
+        fn (ResourceOperationException $error) => expect($error->errorCode)->not->toBe('env.connection_missing'));
+    expect(Operation::query()->where('kind', ContainerConnectionEnvironment::Kind)->exists())->toBeFalse();
+});
+
+it('projects the key names of the result and records the written keys as Orbit-owned', function (): void {
+    $instance = connectionEnvFixture();
+    $instance->forceFill(['environment_owned_keys' => ['APP_KEY']])->save();
+    $operation = app(ContainerConnectionEnvironment::class)->start($instance, null, null);
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'connection-env-proof']])->save();
+    $result = ['environment' => ['status' => 'changed', 'written' => ['DB_HOST', 'DB_PORT'], 'added' => ['DB_PASSWORD'], 'kept' => ['DB_USERNAME'], 'unchanged' => ['DB_CONNECTION']],
+        'network' => ['egress_added' => 1, 'firewall' => 1], 'restarted' => ['orbit-process-1.service']];
+
+    $projected = app(ContainerConnectionEnvironment::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'connection-env-proof',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => $result]);
+
+    expect($projected->result)->toBe($result)
+        ->and($instance->refresh()->environment_owned_keys)->toBe(['APP_KEY', 'DB_CONNECTION', 'DB_HOST', 'DB_PASSWORD', 'DB_PORT']);
+});
+
+it('records nothing as owned after a failed write', function (): void {
+    $instance = connectionEnvFixture();
+    $operation = app(ContainerConnectionEnvironment::class)->start($instance, null, null);
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'connection-env-fail']])->save();
+
+    $projected = app(ContainerConnectionEnvironment::class)->apply($operation, ['status' => 'failed', 'run_id' => 'connection-env-fail',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['error_code' => 'env.configuration_invalid', 'error_detail' => 'line 4']]);
+
+    expect($projected->error_code)->toBe('env.configuration_invalid')
+        ->and($instance->refresh()->environment_owned_keys)->toBeNull();
+});
