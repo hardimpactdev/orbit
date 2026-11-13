@@ -904,7 +904,7 @@ If the finish output is missing, verified native rollback can release the owned 
 | Runtime | A Route that serves the container makes the container the Instance's runtime: the workspace becomes its checkout path |
 | Retained Git | The whole old checkout moves under `<checkout>.orbit-retired-git/<sha256 of original path>`. The Instance records `retained_git_path` and `retained_git_at`; files and Git recovery data stay there |
 | Linked checkout | Retains all files and independent Git data. Removes only its matching, now-missing owner registration after verification; keeps owner and sibling metadata untouched |
-| Last worktree | The default's old checkout is a retirement candidate. Any other registered worktree blocks owner retirement, including a path in the same batch |
+| Last worktree | The default's old checkout retires after the moving worktree, in the same batch. Another live worktree blocks it. [Retirement](/cli/instance/migrate#retained-git-data) names the rules |
 | Failed removal | The container keeps serving. Source or retained files stay. An interrupted linked unregister fails explicitly on repeat with `instance.migrate_retire_failed` |
 | Failure | Restore puts back a moved Route, then removes the container, its ACL, firewall rules and mirror |
 | Reserved row | Dropped after a successful restore or an unstarted run. A failed restore retains the row, address and T3 port across retries to clean up the original rules |

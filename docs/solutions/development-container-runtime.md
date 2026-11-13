@@ -594,7 +594,7 @@ The spec commit adds [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/m
 - A default Instance moves before the other Instances of its Project, and keeps its checkout until its last worktree has moved.
 - The container gets a standalone repository from the Node. The checkout's `.git` is never copied.
 - A non-default Instance before its default refuses with `instance.default_not_migrated`.
-- Every planned retirement refuses other registered worktrees, uncommitted changes, unpushed commits and stashes before downtime. Another path in the same batch still blocks.
+- Every planned retirement refuses other registered worktrees and submodule changes before downtime. Tracked edits, local branches and stashes are carried.
 - Retirement repeats the preflight, then atomically retains the whole old checkout, including all Git metadata and work-tree files.
 - Retirement never recursively deletes or prunes Git data. `retained_git_path` and `retained_git_at` make it discoverable.
 - A failure before cutover leaves the checkout Instance running as before. A retirement failure keeps the container serving and the checkout intact.
