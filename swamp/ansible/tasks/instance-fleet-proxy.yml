@@ -4,7 +4,8 @@
 # The value is the intent's own `environment.NO_PROXY` (InstanceNodeServiceTargets::proxyEnvironment, the one builder).
 # instance_node_services.py `proxy` is the one writer of the drop-ins and of systemd's manager environment. T3 restarts only when the
 # write changed something AND this Operation started the container: Incus records each start as `last_used_at`, and the intent's
-# `bridge_admitted_at` is the admission. So nobody works in it yet; a copy that was running keeps its T3 as it is. Every other fleet
+# `bridge_admitted_at` is the admission. So nobody works in it yet; a copy that was running keeps its T3 as it is. The rule assumes the
+# Gateway's and the Node's clocks agree (both run NTP); a Gateway clock far ahead skips the restart, never adds one. Every other fleet
 # start skips this file.
 # Follow-up: when the start phase writes the composed proxy environment itself (the realtime change's step "Write the composed proxy
 # environment"), this write becomes redundant and only the T3 restart, keyed on that step's result, stays.
