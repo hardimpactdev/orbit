@@ -420,9 +420,15 @@ A missing SSH pin or Caddy render fault found by the dry run refuses removal bef
 
 A clone's create ends when its thread is usable; its [completion](/cli/instance/complete) then sets up the rest. A removal from Conn while that completion runs is one call. In one transaction the Gateway records the cancel of the completion and admits the removal with status `waiting` and `after_operation_id` set to the completion. The call answers 202 with the removal at once; it is the one Operation to follow. Swamp is asked to stop the completion after the commit, and the reconciler asks again on each pass until it stops. A completion that had not started yet ends `cancelled` at once.
 
-The removal starts when the completion has ended. The completion's SSH and shell steps take the abort at once. Its own `withdraw-route` step takes back a Route it published, and the removal then deletes the container, the database (a half-filled one too), the Route, the completion's vault copies and the records. The removal's run budget counts from its start, not from its admission. Several removals at once each wait for their own clone's completion; removals that share Route Nodes start one after another, oldest first, as every Route write does.
+The removal starts when the completion has ended. The completion's SSH and shell steps take the abort at once: Swamp ends their connection to the Node. Its own `withdraw-route` step takes back a Route it published, and the removal then deletes the container, the clone's database, the Route, the completion's vault copies and the records.
+
+One step can outlive the cancel: a database fill already running on the database server. The cancel ends the connection to it, not the copy, which runs on until it ends or reaches its 600-second limit. A PostgreSQL copy that commits after the removal dropped the clone's database leaves that database on the server. A MySQL copy keeps its session on the database, so the removal refuses to drop it with `database.in_use` and fails; a new removal after the copy has ended finishes it.
+
+The removal's run budget counts from its start, not from its admission. Several removals at once each wait for their own clone's completion; removals that share Route Nodes start one after another, oldest first, as every Route write does.
 
 While the completion runs, the remove sheet's read answers as for any running container: the completion writes no tracked file, so a workspace without the user's work reads `clean`. Its `baseline` is `default_now` until the create records the baseline. After a failed or cancelled completion the clone stays `source_resolved` with its container running; the read and the removal work as for a retained failed create.
+
+A retry of a removal never starts after a completion that an earlier call named: from Conn it cancels the running completion and waits again; from the CLI it refuses while the completion runs.
 
 The CLI and the core API keep their refusal: `instance:destroy` while the completion runs answers `operation.target_busy` (409) with `details.operation_id`, the completion. Follow it to its end, or cancel it, then destroy again.
 

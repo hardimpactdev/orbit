@@ -28,7 +28,8 @@ final readonly class DestroyConnInstanceAction
             $this->work->assertRemovalSafe($instance);
         }
 
-        $operation = $this->destroy->execute($instance, true, 'node:'.$caller->id, $requestId);
+        // A running completion of the clone is cancelled in the same transaction, and the removal starts when it has ended.
+        $operation = $this->destroy->execute($instance, true, 'node:'.$caller->id, $requestId, cancelCompletion: true);
 
         return DB::transaction(function () use ($operation, $caller): Operation {
             $recorded = Operation::query()->lockForUpdate()->findOrFail($operation->id);

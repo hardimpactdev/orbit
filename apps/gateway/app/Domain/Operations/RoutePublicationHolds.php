@@ -136,15 +136,35 @@ final class RoutePublicationHolds
         }
     }
 
+    /**
+     * The Operation an admitted write starts after, from its input `after_operation_id`: a Conn removal admitted while the clone's
+     * completion runs waits until that completion has ended (docs/reference/conn.md#remove-an-instance).
+     */
+    public static function after(Operation $operation): ?int
+    {
+        $after = $operation->input['after_operation_id'] ?? null;
+
+        return is_int($after) ? $after : null;
+    }
+
+    /** Whether the Operation the write starts after is still open. */
+    private static function afterOpen(Operation $operation): bool
+    {
+        $after = self::after($operation);
+
+        return $after !== null && Operation::query()->whereKey($after)->whereNotIn('status', OperationStatus::terminalValues())->exists();
+    }
+
     /** True when the Operation may start now. Otherwise it is set to `waiting` and starts when `promote` finds its Nodes free. */
     public function admit(Operation $operation): bool
     {
         // A kind that holds per step takes no Node at admission: its run calls for the hold around its Route-publish step.
         $nodes = self::applies($operation->kind) ? self::nodes($operation) : [];
-        if ($nodes === []) {
+        $after = self::applies($operation->kind) && self::afterOpen($operation);
+        if ($nodes === [] && ! $after) {
             return true;
         }
-        if (! $this->olderWaiterOverlaps($operation->id, $nodes) && $this->acquire($operation->id, $nodes)) {
+        if (! $after && ! $this->olderWaiterOverlaps($operation->id, $nodes) && $this->acquire($operation->id, $nodes)) {
             return true;
         }
         app(OperationStore::class)->change($operation, ['status' => OperationStatus::Waiting,
@@ -157,7 +177,10 @@ final class RoutePublicationHolds
     public function release(int $operationId, bool $wasWaiting = false): void
     {
         $freed = DB::table('route_publication_holds')->where('operation_id', $operationId)->delete();
-        if ($freed > 0 || $wasWaiting) {
+        // A write that starts after this Operation may start now, even when this one held no Node.
+        $follower = Operation::query()->whereIn('kind', self::Kinds)->where('status', OperationStatus::Waiting)
+            ->where('input->after_operation_id', $operationId)->exists();
+        if ($freed > 0 || $wasWaiting || $follower) {
             PromoteRouteWrites::dispatch()->afterCommit();
         }
     }
@@ -196,6 +219,10 @@ final class RoutePublicationHolds
         $promoted = [];
         $blocked = [];
         foreach ($this->waiters() as $waiter) {
+            // A write still waiting for its Operation claims nothing yet, so it holds back no younger write.
+            if (self::afterOpen($waiter)) {
+                continue;
+            }
             $nodes = self::waitingNodes($waiter);
             if (array_intersect($nodes, $blocked) !== [] || ! $this->acquire($waiter->id, $nodes)) {
                 $blocked = [...$blocked, ...$nodes];
@@ -215,7 +242,7 @@ final class RoutePublicationHolds
     {
         return Operation::query()->whereIn('kind', self::Kinds)->where('status', OperationStatus::Waiting)->whereNull('state->swamp_run_id')
             ->when($before !== null, static fn ($query) => $query->where('id', '<', $before))->orderBy('id')->get()
-            ->filter(static fn (Operation $waiter): bool => self::waitingNodes($waiter) !== [])->values();
+            ->filter(static fn (Operation $waiter): bool => self::waitingNodes($waiter) !== [] || self::after($waiter) !== null)->values();
     }
 
     /** @return list<int> */
@@ -230,7 +257,7 @@ final class RoutePublicationHolds
     private function olderWaiterOverlaps(int $operationId, array $nodes): bool
     {
         foreach ($this->waiters($operationId) as $waiter) {
-            if (array_intersect($nodes, self::waitingNodes($waiter)) !== []) {
+            if (! self::afterOpen($waiter) && array_intersect($nodes, self::waitingNodes($waiter)) !== []) {
                 return true;
             }
         }
@@ -297,7 +324,7 @@ final class RoutePublicationHolds
     private function waitingOverlaps(array $nodes): bool
     {
         foreach ($this->waiters() as $waiter) {
-            if (array_intersect($nodes, self::waitingNodes($waiter)) !== []) {
+            if (! self::afterOpen($waiter) && array_intersect($nodes, self::waitingNodes($waiter)) !== []) {
                 return true;
             }
         }

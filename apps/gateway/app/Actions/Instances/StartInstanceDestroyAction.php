@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
+use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
@@ -20,6 +21,7 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\ProtectedPathCatalog;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\ProjectLifecycleStepStore;
@@ -38,7 +40,9 @@ use App\Models\RouteTarget;
 use App\Models\WebSocketAppTarget;
 use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /** Record stored removal intent. The placed native run inspects source and account facts. */
@@ -51,7 +55,11 @@ final readonly class StartInstanceDestroyAction
         private CheckoutRemovalBoundary $boundaries,
     ) {}
 
-    public function execute(Instance $instance, bool $force, ?string $caller = null, ?string $requestId = null): Operation
+    /**
+     * `$cancelCompletion`: a running `instance.complete` of the clone is cancelled, and the removal is admitted to start after it ends,
+     * in the same transaction (docs/reference/conn.md#remove-an-instance). Without it such a removal refuses with `operation.target_busy`.
+     */
+    public function execute(Instance $instance, bool $force, ?string $caller = null, ?string $requestId = null, bool $cancelCompletion = false): Operation
     {
         $kind = InstanceDestroyKind::forInstance($instance);
         if (($replay = $this->idempotency->replay($kind)) !== null) {
@@ -64,6 +72,10 @@ final readonly class StartInstanceDestroyAction
         app(ContainerInstanceDestroy::class)->assertAvailable($instance, $force);
         $admission = $instance->status === InstanceState::Removing ? [] : app(InstanceDestroyWorktrees::class)->assertAvailable($instance);
         $snapshot = [...$this->snapshot($instance, $force), ...$admission];
+        $completion = $cancelCompletion ? $this->completion($instance) : null;
+        if ($completion !== null) {
+            $snapshot['after_operation_id'] = $completion;
+        }
         [$prepared] = app(DirectInstanceDestroyIntent::class)->prepare($snapshot);
         // A replication slot makes the drop fail after the fence closed the database; refuse before any effect, also with --force.
         app(InstanceDestroyReplicationSlots::class)->assertNone($prepared);
@@ -71,15 +83,43 @@ final readonly class StartInstanceDestroyAction
         $members = array_column(is_array($snapshot['members'] ?? null) ? $snapshot['members'] : [], 'instance_id');
         app(NativeSchedules::class)->removeForInstances($members === [] ? [$instance->id] : ValidatedData::integerList($members));
 
-        return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId, $kind): Operation {
+        return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId, $kind, $completion): Operation {
             if (($replay = $this->idempotency->replay($kind)) !== null) {
                 return $replay;
             }
             $input = app(DirectInstanceDestroyIntent::class)->record($snapshot);
+            if ($completion !== null) {
+                // After the record, which took the Instance and marked it removing: the order the completion's projection uses.
+                $running = Operation::query()->lockForUpdate()->findOrFail($completion);
+                if (! $running->status->terminal() && ! isset($running->state['swamp_run_id'])) {
+                    // No run is bound: the cancel ends it here, with no Swamp call, so no start can slip in after the commit.
+                    app(CancelOperationAction::class)->execute($running);
+                } elseif (! $running->status->terminal()) {
+                    // The cancel is recorded with the removal; Swamp is asked to stop the run after the commit, never inside it.
+                    app(OperationStore::class)->change($running, ['cancel_requested_at' => $running->cancel_requested_at ?? now()]);
+                    // The reconciler asks again on each pass.
+                    DB::afterCommit(static function () use ($running): void {
+                        try {
+                            app(CancelOperationAction::class)->execute($running);
+                        } catch (ResourceOperationException $exception) {
+                            Log::warning('instance.complete_cancel_deferred', ['operation_id' => $running->id, 'error_code' => $exception->errorCode]);
+                        }
+                    });
+                }
+            }
             $input['run_budget_seconds'] = $this->budget($input);
 
             return $this->operations->execute($kind, 'instance', $instance->id, $instance->node_id, $input, $caller, $requestId);
         });
+    }
+
+    /** The clone's completion that holds the Instance lock, if one runs. */
+    private function completion(Instance $instance): ?int
+    {
+        $id = Operation::query()->where('kind', StartInstanceCompleteAction::Kind)
+            ->where('lock_key', OperationStore::lockKey('instance', $instance->id))->value('id');
+
+        return is_int($id) ? $id : null;
     }
 
     /** @return array<string, mixed> */
@@ -99,7 +139,8 @@ final readonly class StartInstanceDestroyAction
                 $this->conflict($instance);
             }
             if ($removal->native_intent !== null) {
-                return [...$removal->native_intent, 'force' => $force];
+                // Only this call may set the Operation the removal starts after; a saved one may name a completion that still runs.
+                return [...Arr::except($removal->native_intent, ['after_operation_id']), 'force' => $force];
             }
             $this->conflict($instance);
         }

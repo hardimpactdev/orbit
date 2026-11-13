@@ -45,7 +45,8 @@ final readonly class InstanceCompleteProjection implements DirectOperationProjec
             }
             unset($result['detail']);
             $instance = Instance::query()->lockForUpdate()->findOrFail($operation->target_id);
-            if ($operation->status->terminal()) {
+            // A removal admitted to start after this completion owns the clone: the run's end changes no record of it.
+            if ($operation->status->terminal() || $instance->status === InstanceState::Removing) {
                 return $this->direct->project($operation, $data, $result);
             }
             if ($status === 'succeeded' && (($result['ready'] ?? false) !== true || ($result['instance_id'] ?? null) !== $instance->id)) {
@@ -80,11 +81,16 @@ final readonly class InstanceCompleteProjection implements DirectOperationProjec
      * A completion cancelled before its run started: the clone records the cancel as a cancelled run does, inside the cancel's
      * transaction, and the result names the same recovery.
      *
-     * @return array<string, mixed>
+     * A removal that owns the clone keeps it as it is, and the result names no retry.
+     *
+     * @return array<string, mixed>|null
      */
-    public static function cancelledBeforeRun(Operation $operation): array
+    public static function cancelledBeforeRun(Operation $operation): ?array
     {
         $instance = Instance::query()->lockForUpdate()->findOrFail($operation->target_id);
+        if ($instance->status === InstanceState::Removing) {
+            return null;
+        }
         $instance->update(['failed_step' => 'complete', 'error_code' => 'operation.cancelled']);
 
         return self::recovery($instance);

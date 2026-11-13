@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Http\Controllers;
 
+use App\Actions\Instances\StartInstanceCompleteAction;
 use App\Data\Operations\OperationData;
+use App\Domain\Shared\ResourceOperationException;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Instance;
 use App\Models\Node;
@@ -38,6 +41,26 @@ final class ConnInstancesController extends Controller
         assert($caller instanceof Node);
         $operation = $action->execute(Instance::query()->findOrFail($instance_id), $request->acknowledgeUnsaved(),
             $caller, $request->attributes->getString('orbit.request_id'));
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
+    }
+
+    /**
+     * Conn's Retry after a failed completion: the same admission as `instance:complete` (docs/reference/conn.md#remove-an-instance and
+     * docs/cli/instance/complete.mdx). It takes no body.
+     */
+    #[RequiresNodeAccess(ServingNode::InstanceOwning)]
+    #[StartsOperation('instance.complete', requiresKey: true, bindCaller: true)]
+    public function complete(Request $request, int $instance_id, StartInstanceCompleteAction $action): JsonResponse
+    {
+        if ($request->all() !== []) {
+            throw new ResourceOperationException('validation.failed', 'Instance completion takes no options or body fields.', 422);
+        }
+        $caller = RequireActiveWireGuardPeer::activePeer($request);
+        assert($caller instanceof Node);
+        $operation = $action->execute(Instance::query()->findOrFail($instance_id), 'node:'.$caller->id,
+            $request->attributes->getString('orbit.request_id'));
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);

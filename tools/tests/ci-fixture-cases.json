@@ -2533,12 +2533,14 @@
     ]
   },
   "swamp/tests/instance_complete_native_test.ts": {
-    "source_sha256": "f2195a77b43875193d972dc3644ac17f8e5d072e60921455218416f80258c39e",
+    "source_sha256": "01f166539eb849804713d2aeb6219274c025fb4ec8562ca0f3e73af5895c5fc7",
     "cases": [
       "pinned complete: a normal clone with a Route runs every step and ends ready",
       "pinned complete: a dead unit fails the check with its receipt and withdraws the Route",
       "pinned complete: a failed Route names the Route and is withdrawn",
-      "pinned complete: a cancel during the services withdraws the Route and removes the private folder"
+      "pinned complete: a cancel during clone-services stops it within 10 s, withdraws the Route and removes the private folder",
+      "pinned complete: a cancel during server-database-fill stops it within 10 s, withdraws the Route and removes the private folder",
+      "pinned complete: a cancel during clone-fleet stops it within 10 s, withdraws the Route and removes the private folder"
     ]
   }
 }

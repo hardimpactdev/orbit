@@ -3,13 +3,18 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
+use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
+use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\NativeRouteMutationInput;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
@@ -647,3 +652,181 @@ it('includes a VPN Node activated during Schedule removal in fresh admission for
         ->and($operation->input['participant_node_ids'])->toContain($dns->id)
         ->and(array_column($operation->input['native_destroy']['route_mutations']['forward']['publications'], 'node_id'))->toContain($dns->id);
 })->with(['CLI' => [false], 'Conn' => [true]]);
+
+/** A clone between its two Operations whose completion runs, as PR 3's create leaves it: `source_resolved`, its Route not yet active. */
+function connCompletingClone(string $name = 'feature', string $status = 'running'): array
+{
+    $default = test()->default;
+    $instance = Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $default->node_id, 'name' => $name,
+        'status' => InstanceState::SourceResolved, 'branch' => $name, 'starting_commit' => str_repeat('c', 40),
+        'checkout_path' => '/fixture/reservation', 'source_layout' => 'checkout', 'first_setup_pending' => true]);
+    $instance->update(['checkout_path' => InstanceContainer::workspaceOnNode($instance)]);
+    app(InstanceContainer::class)->reserve($instance, $default->node, $default);
+    $route = Route::query()->create(['kind' => 'app', 'project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+        'domain' => $name.'.fixture.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    DatabaseConnection::query()->create(['slug' => $name.'-db', 'driver' => 'sqlite', 'node_id' => $instance->node_id,
+        'owner_instance_id' => $instance->id, 'path' => $instance->checkout_path.'/database.sqlite']);
+    ConnEnvironment::query()->forceCreate(['instance_id' => $instance->id, 'environment_id' => $name.'-env',
+        'label' => $name, 'url' => 'http://10.44.0.7:3800', 'node_id' => $instance->node_id,
+        'admin_session' => 'fixture-session', 'admin_session_expires_at' => now()->addDay(), 'registered_at' => now()]);
+    $terminal = in_array($status, ['failed', 'cancelled'], true);
+    $completion = Operation::query()->create(['kind' => 'instance.complete', 'target_type' => 'instance', 'target_id' => $instance->id,
+        'node_id' => $instance->node_id, 'lock_key' => $terminal ? null : OperationStore::lockKey('instance', $instance->id),
+        'input' => ['instance_id' => $instance->id, 'direct_provisioning' => ['container' => ['processes' => []]]],
+        'state' => $status === 'running' ? ['swamp_run_id' => 'complete-'.$name] : [], 'status' => $status, 'sequence' => 1,
+        'attempts' => $status === 'queued' ? 0 : 1, 'started_at' => now()->subSeconds(2), 'finished_at' => $terminal ? now() : null]);
+    if ($terminal) {
+        $instance->update(['failed_step' => 'check', 'error_code' => 'instance.container_process_inactive']);
+    }
+
+    return [$instance->refresh(), $completion];
+}
+
+/** The completion's run reports its end, as Swamp reports a cancelled run; the removal behind it then promotes. */
+function connCompletionEnds(Operation $completion, string $status = 'cancelled'): void
+{
+    app(InstanceCompleteProjection::class)->apply($completion->refresh(), ['status' => $status, 'run_id' => $completion->state['swamp_run_id'],
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['instance_id' => $completion->target_id, 'ready' => false]]);
+    app(RoutePublicationHolds::class)->promoteAndStart();
+}
+
+describe('a removal while the clone\'s completion runs', function (): void {
+    it('answers 202 at once with one waiting removal, records the cancel, and starts the removal when the completion has ended', function (): void {
+        [$instance, $completion] = connCompletingClone();
+
+        $response = connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()
+            ->assertJsonPath('data.kind', 'instance.destroy')->assertJsonPath('data.status', 'waiting');
+        $removal = Operation::query()->findOrFail($response->json('data.id'));
+
+        expect($removal->input['after_operation_id'])->toBe($completion->id)
+            ->and($completion->refresh()->cancel_requested_at)->not->toBeNull()
+            ->and($instance->refresh()->status)->toBe(InstanceState::Removing)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(1);
+        // Swamp has not ended the completion yet: the removal keeps waiting, and its budget clock has not started.
+        app(RoutePublicationHolds::class)->promoteAndStart();
+        expect($removal->refresh()->status)->toBe(OperationStatus::Waiting);
+
+        connCompletionEnds($completion);
+
+        expect($completion->refresh()->status)->toBe(OperationStatus::Cancelled)
+            ->and($completion->result['recovery'] ?? null)->toBeNull()
+            ->and($instance->refresh()->status)->toBe(InstanceState::Removing)
+            ->and($removal->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and($removal->started_at)->not->toBeNull();
+        connRemovalSucceed($removal->refresh());
+        expect($instance->fresh())->toBeNull()
+            ->and(Route::query()->where('domain', 'feature.fixture.test')->exists())->toBeFalse()
+            ->and(DatabaseConnection::query()->where('owner_instance_id', $instance->id)->exists())->toBeFalse()
+            ->and(ConnEnvironment::query()->where('instance_id', $instance->id)->exists())->toBeFalse();
+    });
+
+    it('lets three removals wait at once, each for its own clone\'s completion', function (): void {
+        $pairs = array_map(fn (string $name): array => connCompletingClone($name), ['one', 'two', 'three']);
+        $removals = array_map(fn (array $pair): Operation => Operation::query()->findOrFail(
+            connRemovalCall($pair[0]->id, ['acknowledge_unsaved' => true], 'remove-'.$pair[0]->id)->assertAccepted()
+                ->assertJsonPath('data.status', 'waiting')->json('data.id')), $pairs);
+
+        connCompletionEnds($pairs[1][1]);
+        expect(array_map(fn (Operation $removal): string => $removal->refresh()->status->value, $removals))->toBe(['waiting', 'queued', 'waiting']);
+        connCompletionEnds($pairs[0][1]);
+        connCompletionEnds($pairs[2][1], 'failed');
+        // The three clones' Routes share the Node's publication: the started removal holds it, the others follow it oldest first.
+        expect(array_map(fn (Operation $removal): string => $removal->refresh()->status->value, $removals))->toBe(['waiting', 'queued', 'waiting']);
+        foreach ([1, 0, 2] as $index) {
+            expect($removals[$index]->refresh()->status)->toBe(OperationStatus::Queued);
+            connRemovalSucceed($removals[$index]);
+            app(RoutePublicationHolds::class)->promoteAndStart();
+        }
+        foreach ($pairs as [$instance]) {
+            expect($instance->fresh())->toBeNull();
+        }
+        expect(Operation::query()->where('kind', 'instance.destroy')->pluck('status')->map->value->all())->toBe(['succeeded', 'succeeded', 'succeeded']);
+    });
+
+    it('ends a completion that had not started at once, and the removal follows', function (): void {
+        [$instance, $completion] = connCompletingClone(status: 'queued');
+
+        $removal = Operation::query()->findOrFail(connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()->json('data.id'));
+        app(RoutePublicationHolds::class)->promoteAndStart();
+
+        expect($completion->refresh()->status)->toBe(OperationStatus::Cancelled)
+            ->and($completion->lock_key)->toBeNull()
+            ->and($completion->result['recovery'] ?? null)->toBeNull()
+            ->and($instance->refresh()->status)->toBe(InstanceState::Removing)
+            ->and($removal->refresh()->status)->toBe(OperationStatus::Queued);
+    });
+
+    it('removes a clone whose completion failed at once, as a retained failed create', function (): void {
+        [$instance] = connCompletingClone(status: 'failed');
+
+        connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()
+            ->assertJsonPath('data.status', 'queued')->assertJsonPath('data.input.after_operation_id', null);
+    });
+
+    it('keeps the CLI and core API refusal while the completion runs, naming the completion, and changes nothing', function (): void {
+        [$instance, $completion] = connCompletingClone();
+        $before = connRemovalStored();
+
+        try {
+            app(StartInstanceDestroyAction::class)->execute($instance, true);
+            $refusal = null;
+        } catch (ResourceOperationException $exception) {
+            $refusal = $exception;
+        }
+
+        expect($refusal?->errorCode)->toBe('operation.target_busy')
+            ->and($refusal?->details)->toBe(['operation_id' => $completion->id])
+            ->and(connRemovalStored())->toBe($before)
+            ->and($completion->refresh()->cancel_requested_at)->toBeNull();
+    });
+
+    it('makes a retry of a cancelled waiting removal wait again from Conn and refuse from the CLI, never trusting the saved completion', function (): void {
+        [$instance, $completion] = connCompletingClone();
+        $first = Operation::query()->findOrFail(connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()->json('data.id'));
+        app(CancelOperationAction::class)->execute($first);
+        expect($first->refresh()->status)->toBe(OperationStatus::Cancelled)
+            ->and($completion->refresh()->status)->toBe(OperationStatus::Running);
+
+        try {
+            app(StartInstanceDestroyAction::class)->execute($instance->refresh(), true);
+            $code = null;
+        } catch (ResourceOperationException $exception) {
+            $code = $exception->errorCode;
+        }
+        expect($code)->toBe('operation.target_busy');
+
+        $retry = connRemovalCall($instance->id, ['acknowledge_unsaved' => true], 'remove-again')->assertAccepted()
+            ->assertJsonPath('data.status', 'waiting')->assertJsonPath('data.input.after_operation_id', $completion->id);
+        connCompletionEnds($completion);
+        expect(Operation::query()->findOrFail($retry->json('data.id'))->status)->toBe(OperationStatus::Queued);
+    });
+
+    it('keeps a removing clone removing when its completion succeeds after the cancel was recorded', function (): void {
+        [$instance, $completion] = connCompletingClone();
+        $removal = Operation::query()->findOrFail(connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()->json('data.id'));
+        $route = Route::query()->where('domain', 'feature.fixture.test')->sole();
+
+        connCompletionEnds($completion, 'succeeded');
+
+        expect($completion->refresh()->status)->toBe(OperationStatus::Succeeded)
+            ->and($instance->refresh()->status)->toBe(InstanceState::Removing)
+            ->and($route->refresh()->status)->toBe(RouteStatus::Retiring)
+            ->and($removal->refresh()->status)->toBe(OperationStatus::Queued);
+    });
+
+    it('lets a removal with no completion pass a removal on the same Node that still waits for its completion', function (): void {
+        [$waiting] = connCompletingClone('slow');
+        [$failed] = connCompletingClone('broken', 'failed');
+        connRemovalCall($waiting->id, ['acknowledge_unsaved' => true], 'remove-slow')->assertAccepted()->assertJsonPath('data.status', 'waiting');
+
+        connRemovalCall($failed->id, ['acknowledge_unsaved' => true], 'remove-broken')->assertAccepted()->assertJsonPath('data.status', 'queued');
+    });
+
+    it('reads the workspace of a clone whose completion runs, as for any running container', function (): void {
+        [$instance] = connCompletingClone();
+        $this->workspace->answer = json_encode(connWorkAnswer(baseline: 'default_now'), JSON_THROW_ON_ERROR);
+
+        connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'clean')->assertJsonPath('data.baseline', 'default_now');
+    });
+});

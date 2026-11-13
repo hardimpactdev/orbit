@@ -230,6 +230,7 @@ swamp/extensions/behaviors/operations/ansible-input/write.ts  instance:clone ins
 swamp/extensions/behaviors/operations/certificates/sign.ts  instance:clone instance:create instance:migrate
 swamp/extensions/behaviors/operations/instance-deploy/vp_requirements.ts  instance:clone
 swamp/extensions/behaviors/operations/instance-dev-command/assets.ts  instance:create instance:migrate
+swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts  instance:create instance:migrate instance:complete
 swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts  instance:create instance:migrate
 swamp/extensions/behaviors/operations/instance-dev-command/result.ts  instance:create instance:migrate
 swamp/extensions/behaviors/operations/instance-lifecycle/source_identity.ts  instance:clone
