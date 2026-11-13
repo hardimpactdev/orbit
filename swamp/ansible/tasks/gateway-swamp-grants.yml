@@ -20,6 +20,8 @@
   loop: "{{ (current_control_plan.stdout | from_json).grants | dict2items }}"
   loop_control: { label: "{{ item.key }}" }
   register: current_control_grants
+- name: Wait for Swamp before reloading grants
+  ansible.builtin.wait_for: { host: 127.0.0.1, port: 9418, timeout: 60 }
 - name: Reload the checkout's Swamp grants
   become: true
   become_user: "{{ control.user }}"

@@ -3,6 +3,7 @@ import getpass
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -72,6 +73,9 @@ class GatewaySwampGrantsTest(unittest.TestCase):
 
     def test_restored_grants_are_replaced_from_the_candidate_and_a_failed_reload_is_retried(self):
         with tempfile.TemporaryDirectory() as directory:
+            server = socket.socket()
+            self.addCleanup(server.close)
+            server.bind(('127.0.0.1', 0))
             folder = Path(directory)
             repository = folder / 'swamp'
             (repository / 'grants').mkdir(parents=True)
@@ -103,6 +107,12 @@ class GatewaySwampGrantsTest(unittest.TestCase):
             tasks[0]['ansible.builtin.command']['argv'][2] = str(folder / 'bin/ansible-galaxy')
             tasks += yaml.safe_load((ANSIBLE / 'tasks/gateway-swamp-grants.yml').read_text())
             for task in tasks:
+                if 'ansible.builtin.wait_for' in task:
+                    wait = task['ansible.builtin.wait_for']
+                    self.assertEqual(wait, {'host': '127.0.0.1', 'port': 9418, 'timeout': 60})
+                    # A private port and short deadline; the real wait_for module
+                    # must refuse before the fake reload or snapshot is called.
+                    wait.update(port=server.getsockname()[1], timeout=1)
                 if 'ansible.builtin.copy' in task:
                     task['ansible.builtin.copy'].pop('owner')
                     task['ansible.builtin.copy'].pop('group')
@@ -158,6 +168,12 @@ else:
                                        '-e', 'ansible_python_interpreter=' + sys.executable, str(folder / 'fleet.yml')],
                                       check=False, capture_output=True, text=True, timeout=60, env=env)
 
+            unavailable = run(True)
+            self.assertNotEqual(unavailable.returncode, 0, unavailable.stdout + unavailable.stderr)
+            self.assertFalse((folder / 'reload.log').exists(), 'reload ran before serve was listening')
+            self.assertFalse((folder / 'snapshots.log').exists(), 'unready serve was snapshotted')
+            server.listen(128)
+
             failed = run(False)
             self.assertNotEqual(failed.returncode, 0, failed.stdout + failed.stderr)
             self.assertEqual(grant.read_text(), current)
@@ -177,7 +193,7 @@ else:
             self.assertEqual(restored.returncode, 0, restored.stdout + restored.stderr)
             self.assertEqual(grant.read_text(), current)
             self.assertTrue(all('--checkout=' + str(repository) in line for line in (folder / 'render.log').read_text().splitlines()))
-            self.assertEqual(len((folder / 'collections.log').read_text().splitlines()), 4)
+            self.assertEqual(len((folder / 'collections.log').read_text().splitlines()), 5)
             # Gateway code, migration and token stamps were current. The grants-only repair must still update every base snapshot.
             self.assertEqual((folder / 'snapshots.log').read_text().splitlines(), list(guests.values()) * 2)
             current_run = run(True)

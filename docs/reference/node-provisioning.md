@@ -52,6 +52,8 @@ The public SSH intent of a Node carries its target `name`, `node_id`, `host`, `u
 
 The Gateway projects the terminal result and records settings or completed footprint artifacts.
 
+Nested proof fleets wait for the local Swamp listener before reloading candidate grants. [Nested checkout apply](/reference/compute-drivers#apply-and-check-the-nested-fleet) describes the bounded readiness and failure rules.
+
 Native role prerequisites retain a complete Docker CE installation instead of installing `docker.io` over it. One bounded APT command installs missing prerequisites with removal and upgrades disabled. The end check verifies the retained provider packages or the normal Ubuntu packages. Exporter children use bounded fan-out so a single control worker does not exhaust their native queue timeout.
 
 Node and standalone role removal also execute from 209. They remove services, files, containers and authorized keys with official cfgmgmt behaviors. Direct commands use SSH argv. No removal script ships to a worker or a Node. Publication withdrawal finishes before runtime removal. Node removal publishes Metrics membership before stopping exporters, updates the full hub configuration, and removes management keys last. Offline consent skips only an unreachable departing Node; other participants still converge.

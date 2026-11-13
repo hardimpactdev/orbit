@@ -1336,7 +1336,11 @@ The earlier standalone fleet build took 1,840 s (Operation 11816), so a new host
 
 The child `task-nested-apply` applies the checkout to the nested fleet, and the restore of the `base` snapshot reuses it. The containers start with the checkout already attached. At boot, the bind mount units of the containers put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the checkout.
 
-The child checks each of the three units on the Gateway and on app-dev and starts none. In a container no udev confirms the device behind the checkout's mount, so a start job would wait 90 s for it and fail. The child then renders and reloads the checkout’s scoped Swamp grants after optional token renewal, with the renewed or still-valid serve-driver credential, before migrations. Reconciliation requires successful agent delivery and successful or skipped renewal; either prerequisite failing stops apply. It uses the candidate manifests, not the grants saved in the bootstrap control plan.
+The child checks each of the three units on the Gateway and on app-dev and starts none. In a container no udev confirms the device behind the checkout's mount, so a start job would wait 90 s for it and fail.
+
+The child then renders and reloads the checkout’s scoped Swamp grants after optional token renewal, with the renewed or still-valid serve-driver credential, before migrations. Reconciliation requires successful agent delivery and successful or skipped renewal; either prerequisite failing stops apply. It uses the candidate manifests, not the grants saved in the bootstrap control plan.
+
+Before the single authenticated reload, it waits up to 60 seconds for the local Swamp listener. The wait and the reload’s 90-second bound fit inside the existing 180-second reconciliation limit with 30 seconds for setup. A listener timeout or failed reload stops apply and prevents snapshots.
 
 It restarts the queue worker, the agent-view subscriber and the Swamp worker, and checks, one unit at a time, that they and the nested Swamp serve are active.
 
