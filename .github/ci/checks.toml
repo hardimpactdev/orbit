@@ -225,7 +225,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 3742
+cost = 3927
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -236,8 +236,8 @@ after_merge_cases = [
 # Each retained case cost is the 90th percentile of its completed hosted PR times across the runs listed in
 # docs/reference/implementation-loop.md (2026-11-13), rounded up plus one second; startup is added per slice.
 # Cases with fewer than five hosted runs keep an estimate. The 190-second shard deadline is the headroom above p90.
-# 66 slices give each of the 66 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 66
+# 70 slices give each of the 70 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 70
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -281,6 +281,10 @@ inputs = [
   "a wake's start removes the marker once the app answers, waits a short time through 5xx, and keeps it when the web unit never answers" = 83 # ESTIMATE: local 39s x 2.1, rounded up, plus 1s
   "a wake's start removes the marker before the T3 wait: a silent T3 fails the wake while the site serves" = 50 # ESTIMATE: local 23s x 2.1, rounded up, plus 1s
   "a wake's start of a Project without a web unit removes the marker without a web wait" = 25 # ESTIMATE: local 11s x 2.1, rounded up, plus 1s
+  "a wake resumes a Frozen container without a boot, closes swap again and removes the marker; its result names the path and seconds" = 27 # ESTIMATE: local 12s x 2.1, rounded up, plus 1s
+  "a resumed container whose web unit stays silent is stopped and booted, then woken as a stopped one" = 37 # ESTIMATE: local 17s x 2.1, rounded up, plus 1s
+  "a wake boots a Stopped container behind its marker, verifies a Running one without a start, and reports a Frozen one without a marker" = 94 # ESTIMATE: local 44s x 2.1, rounded up, plus 1s
+  "a deployment's start resumes a Frozen container and then converges as usual" = 27 # ESTIMATE: local 12s x 2.1, rounded up, plus 1s
   "a clone runs its own Process units: the default's units and folders from the seed go, and its own start" = 116 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 70.1-118.2s
   "a clone's first boot starts no unit of the default and the clone has its own machine-id" = 117 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 85.6-118.1s
   "the workspace stays writable for its group before and after the deploy steps, whoever installed last" = 77 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 44.7-76.6s
@@ -1009,7 +1013,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_power_test.ts"
-cost = 4
+cost = 26
 # Local Deno case times on Beast rounded up by one second; not CI measurements.
 slices = 1
 inputs = [
@@ -1027,6 +1031,13 @@ inputs = [
 [fixture.case_costs]
   "each sleep and wake step runs its charted part with the shipped Ansible settings; the wake is one playbook" = 1
   "a sleep writes the marker once Caddy's loaded site has the check, and refuses without changing anything when it lacks it" = 3
+  "a freeze opens swap for the container, pauses it and pushes its memory to swap; the marker stays" = 3
+  "a freeze whose memory stays in RAM (swap is full) resumes and stops the container instead" = 3
+  "a failed pause closes swap again, removes the marker and fails with its own code; the container keeps running" = 3
+  "a freeze leaves a Frozen or Stopped container as it is" = 4
+  "a failed stop after a full swap closes swap again and removes the marker of the running container" = 3
+  "a failed resume after a full swap fails the sleep with the container frozen behind its marker" = 3
+  "an unreadable memory count after the pause keeps the container frozen behind its marker, without a reclaim" = 3
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_egress_test.py"

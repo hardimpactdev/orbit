@@ -1,8 +1,9 @@
 ---
-# The asleep marker of a development container before a sleep (docs/reference/development-containers.md#sleep-and-wake). The
-# container's own stop is the `stop` part of instance-container.yml; a wake's `start` part there removes the marker itself.
-#   asleep: check that Caddy's loaded site of the Instance has the asleep check, then write the marker, before the stop.
-# It writes `result.json` in the run folder: `{}`, or the public error code of its refusal.
+# The two parts of a development container's sleep (docs/reference/development-containers.md#sleep-and-wake). A wake's `start`
+# part of instance-container.yml resumes the container and removes the marker itself.
+#   asleep: check that Caddy's loaded site of the Instance has the asleep check, then write the marker, before the freeze.
+#   freeze: open swap for the container, pause it, push its memory to swap; stop it instead when swap does not take the memory.
+# It writes `result.json` in the run folder: `{}` (asleep), `{"sleep": "frozen"|"stopped"}` (freeze), or the public error code.
 - name: Pin the Node and address it
   hosts: localhost
   connection: local
@@ -19,7 +20,7 @@
     - name: Address the Node
       ansible.builtin.import_tasks: tasks/address-node.yml
 
-- name: Mark the container asleep
+- name: Put the container to sleep
   hosts: container_node
   gather_facts: false
   become: true
@@ -46,7 +47,7 @@
         - name: Write the result
           tags: [always]
           ansible.builtin.copy:
-            content: "{}"
+            content: "{{ power_result | default({}) | to_json }}"
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           delegate_to: localhost

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Domain;
 
+use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -45,6 +46,8 @@ final readonly class ConnRenewalSweep
         $admitted = [];
         $due = ConnEnvironment::query()->whereNotNull('instance_id')->whereNotNull('node_id')
             ->whereHas('instance', static fn (Builder $query) => $query->where('status', InstanceState::Active->value))
+            // A sleeping Instance renews when it wakes (ConnInstanceLifecycle::projectWake), not by a run that finds it asleep.
+            ->whereDoesntHave('instance.runtime', static fn (Builder $query) => $query->where('power_state', InstanceRuntimePowerState::Stopped->value))
             ->where('admin_session_expires_at', '<', $now->addDays(self::MarginDays))
             ->where(static fn (Builder $query) => $query->whereNull('renewal_error_code')->orWhere('renewal_error_code', '!=', 'conn.environment_stopped')
                 ->orWhere('renewal_checked_at', '<=', $now->subHours(self::StoppedRetryHours)))

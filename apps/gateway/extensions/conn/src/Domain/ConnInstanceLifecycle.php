@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Orbit\Extensions\Conn\Actions\AdmitConnCleanupAction;
+use Orbit\Extensions\Conn\Actions\AdmitConnRenewalAction;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 
@@ -47,6 +48,24 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
             }
             ConnPairing::query()->where('conn_environment_id', $environment->id)->delete();
             $environment->delete();
+        }
+    }
+
+    /**
+     * A woken Instance's server renews at once when its session ends within the sweep's margin or has ended: the sweep skips a
+     * sleeping Instance, and the run issues a new session without the old one. A busy server or Conn switched off starts nothing.
+     */
+    public function projectWake(Instance $instance): void
+    {
+        $environment = ConnEnvironment::query()->where('instance_id', $instance->id)
+            ->where('admin_session_expires_at', '<', Carbon::now()->addDays(ConnRenewalSweep::MarginDays))->first();
+        if (! $environment instanceof ConnEnvironment || ! $this->extensions->enabled('conn')) {
+            return;
+        }
+        try {
+            app(AdmitConnRenewalAction::class)->execute($environment);
+        } catch (ResourceOperationException $error) {
+            Log::warning('conn.renewal_start_failed', ['environment_id' => $environment->environment_id, 'error_code' => $error->errorCode]);
         }
     }
 

@@ -17,8 +17,9 @@ final class OperationBudgetTable
     public const array SecondsByKind = [
         // Bounded shared path and one-line phase (90 s), plus input, result and cleanup. No live sample yet.
         'instance.mail_update' => 120,
-        // The 30 s marker phase and the 60 s stop phase, plus input, result and cleanup. No live sample yet.
-        'instance.sleep' => 120,
+        // The 30 s marker phase and the 90 s freeze phase (a 30 s clean stop when swap is full), plus input, result and cleanup.
+        // Measured by hand on a fixture clone: the pause and the reclaim of a frozen container take under 0.5 s.
+        'instance.sleep' => 150,
         // The 120 s start phase and the 120 s T3 and marker phase (31 T3 tries of up to 3 s), plus input, result and cleanup.
         // Measured on a fixture clone: T3 answered 2.6 to 3.4 s after the start. No live run of the kind yet.
         'instance.wake' => 300,

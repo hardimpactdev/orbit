@@ -785,6 +785,16 @@ contexts:
     moved_process_ready:
       rc: 0
       stdout_lines: [ActiveState=active, Job=, MainPID=1742, NRestarts=0invalid]
+  freeze-memory-running:
+    power: freeze
+    intent: {freeze: {resident_anon_mib: 32}}
+    freeze_stat:
+      content: YW5vbiA2NzgxMzM3NgpmaWxlIDU2NzQ1OTg0Cmtlcm5lbCA5OTc3ODU2Cmtlcm5lbF9zdGFjayA1ODk4MjQKcGFnZXRhYmxlcyAxNjI2MTEyCnNlY19wYWdldGFibGVzIDAKcGVyY3B1IDgwNjQ3Mgpzb2NrIDAKdm1hbGxvYyA2ODgxMjgKc2htZW0gMzEwODg2NDAKenN3YXAgMAp6c3dhcHBlZCAwCmZpbGVfbWFwcGVkIDM4NjU4MDQ4CmZpbGVfZGlydHkgMApmaWxlX3dyaXRlYmFjayAwCnN3YXBjYWNoZWQgODE5Mgphbm9uX3RocCAwCmZpbGVfdGhwIDAKc2htZW1fdGhwIDAKaW5hY3RpdmVfYW5vbiAzMTUzMTAwOAphY3RpdmVfYW5vbiA2NzM2MjgxNgppbmFjdGl2ZV9maWxlIDE2MzM4OTQ0CmFjdGl2ZV9maWxlIDkzMzQ3ODQKdW5ldmljdGFibGUgMApzbGFiX3JlY2xhaW1hYmxlIDI5NDQzNDQKc2xhYl91bnJlY2xhaW1hYmxlIDMxOTI1NjgKc2xhYiA2MTM2OTEyCndvcmtpbmdzZXRfcmVmYXVsdF9hbm9uIDAKd29ya2luZ3NldF9yZWZhdWx0X2ZpbGUgNzU4MQp3b3JraW5nc2V0X2FjdGl2YXRlX2Fub24gMAp3b3JraW5nc2V0X2FjdGl2YXRlX2ZpbGUgMTM0MQp3b3JraW5nc2V0X3Jlc3RvcmVfYW5vbiAwCndvcmtpbmdzZXRfcmVzdG9yZV9maWxlIDE2NQp3b3JraW5nc2V0X25vZGVyZWNsYWltIDE1MzkKcGdkZW1vdGVfa3N3YXBkIDAKcGdkZW1vdGVfZGlyZWN0IDAKcGdkZW1vdGVfa2h1Z2VwYWdlZCAwCnBnZGVtb3RlX3Byb2FjdGl2ZSAwCnBncHJvbW90ZV9zdWNjZXNzIDAKcGdzY2FuIDE5MDczNgpwZ3N0ZWFsIDE4OTQ3NQpwc3dwaW4gMApwc3dwb3V0IDIKcGdzY2FuX2tzd2FwZCAxNzM2MTEKcGdzY2FuX2RpcmVjdCAxNzEyNApwZ3NjYW5fa2h1Z2VwYWdlZCAxCnBnc2Nhbl9wcm9hY3RpdmUgMApwZ3N0ZWFsX2tzd2FwZCAxNzI0MzAKcGdzdGVhbF9kaXJlY3QgMTcwNDQKcGdzdGVhbF9raHVnZXBhZ2VkIDEKcGdzdGVhbF9wcm9hY3RpdmUgMApwZ2ZhdWx0IDM5MzYxNDgKcGdtYWpmYXVsdCAyNTA3MTIKcGdyZWZpbGwgMzkxMDMKcGdhY3RpdmF0ZSAxMzMwCnBnZGVhY3RpdmF0ZSAwCnBnbGF6eWZyZWUgMApwZ2xhenlmcmVlZCAwCnN3cGluX3plcm8gMApzd3BvdXRfemVybyAwCnpzd3BpbiAwCnpzd3BvdXQgMAp6c3dwd2IgMAp0aHBfZmF1bHRfYWxsb2MgNjgKdGhwX2NvbGxhcHNlX2FsbG9jIDAKdGhwX3N3cG91dCAwCnRocF9zd3BvdXRfZmFsbGJhY2sgMApudW1hX3BhZ2VzX21pZ3JhdGVkIDAKbnVtYV9wdGVfdXBkYXRlcyAwCm51bWFfaGludF9mYXVsdHMgMAo=
+  freeze-memory-reclaimed:
+    power: freeze
+    intent: {freeze: {resident_anon_mib: 32}}
+    freeze_stat:
+      content: YW5vbiAwCmZpbGUgMApzaG1lbSAwCg==
 cases:
 - file: tasks/task-vm-fleet.yml
   task: Reconcile the nested Swamp grants
@@ -1672,6 +1682,16 @@ cases:
   field: ansible.builtin.set_fact.restore_seed
   context: restore-no-seed
   expected: ''
+- file: tasks/instance-container-power.yml
+  task: Note whether the memory stayed in RAM
+  field: ansible.builtin.set_fact.freeze_held
+  context: freeze-memory-running
+  expected: true
+- file: tasks/instance-container-power.yml
+  task: Note whether the memory stayed in RAM
+  field: ansible.builtin.set_fact.freeze_held
+  context: freeze-memory-reclaimed
+  expected: false
 non_command_output:
 - file: tasks/task-instance-workspace-phase.yml
   task: Validate the recorded workspace target

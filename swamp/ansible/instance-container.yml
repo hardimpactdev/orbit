@@ -58,7 +58,8 @@
                   (mail_result if mail_result is defined else
                   (process_result if process_result is defined else
                    (node_runtime_result if node_runtime_result is defined and ansible_run_tags | first in ['node-store', 'node-runtime']
-                    else {'commit': container_commit | default(none)})))) | combine(club_key_carried) | to_json }}
+                    else {'commit': container_commit | default(none)})))) | combine(club_key_carried)
+                 | combine(wake_result | default({})) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           no_log: true
@@ -96,7 +97,8 @@
                   else ({'error_code': failure_code}
                   | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({}))
                   | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
-                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(club_key_carried))) | to_json }}
+                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(club_key_carried)
+                  | combine(wake_result | default({})))) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           delegate_to: localhost

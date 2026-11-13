@@ -25,9 +25,9 @@ use App\Models\Task;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Sleep and wake of a development container (docs/reference/development-containers.md#sleep-and-wake). The sleep stops the whole
- * container behind the asleep marker; the wake starts it and removes the marker. Each terminal success records `power_state`, and so
- * does a wake that ends after the container started and its site serves.
+ * Sleep and wake of a development container (docs/reference/development-containers.md#sleep-and-wake). The sleep freezes the whole
+ * container behind the asleep marker, with its memory in swap; the wake resumes it (or starts a stopped one) and removes the marker.
+ * Each terminal success records `power_state`, and so does a wake that ends after the container runs and its site serves.
  */
 abstract readonly class InstancePower implements DirectOperationProjection
 {
@@ -44,7 +44,16 @@ abstract readonly class InstancePower implements DirectOperationProjection
         return ['power_state' => $this->powerState()->value];
     }
 
-    /** @return array<string, array<string, int>> The kind's own intent beside the container and the marker. */
+    /** @return list<string> The keys of the run's result that the Operation's result keeps, on success and on failure. */
+    protected function phaseKeys(): array
+    {
+        return [];
+    }
+
+    /** Work after a terminal Operation's transaction committed. */
+    protected function ended(Operation $operation): void {}
+
+    /** @return array<string, array<string, int|string>> The kind's own intent beside the container and the marker. */
     protected function intent(): array
     {
         return [];
@@ -119,16 +128,23 @@ abstract readonly class InstancePower implements DirectOperationProjection
     {
         $phase = is_array($data['result'] ?? null) ? $data['result'] : [];
         $succeeded = ($data['status'] ?? null) === OperationStatus::Succeeded->value;
+        $kept = array_intersect_key($phase, array_flip($this->phaseKeys()));
+        $endedBefore = in_array($operation->status->value, OperationStatus::terminalValues(), true);
 
-        return DB::transaction(function () use ($operation, $data, $phase, $succeeded): Operation {
+        $operation = DB::transaction(function () use ($operation, $data, $phase, $succeeded, $kept): Operation {
             $operation = app(DirectOperation::class)->project($operation,
                 [...$data, 'error_code' => $succeeded ? null : ($phase['error_code'] ?? $data['error_code'] ?? null)],
-                $succeeded ? $this->result() : array_intersect_key($phase, ['error_code' => true]));
+                $succeeded ? [...$this->result(), ...$kept] : [...array_intersect_key($phase, ['error_code' => true]), ...$kept]);
             if ($this->reached($operation)) {
                 InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => $this->powerState()]);
             }
 
             return $operation;
         });
+        if (! $endedBefore && in_array($operation->status->value, OperationStatus::terminalValues(), true)) {
+            $this->ended($operation);
+        }
+
+        return $operation;
     }
 }

@@ -1,6 +1,6 @@
 ---
 title: "orbit instance:wake"
-description: "Start a sleeping development container Instance, its T3 server and its Processes."
+description: "Resume a sleeping development container Instance, or start it when it was stopped."
 covers:
   - apps/gateway/app/Domain/Instances/Power/**
   - apps/gateway/app/Http/Controllers/Api/{InstancePowerController,RuntimeActivationsController}.php
@@ -26,7 +26,7 @@ orbit instance:wake 42 --json
 | `--idempotency-key=KEY` | Reuse a key to retry this operation start. |
 | `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
 
-Orbit starts the container. T3, FrankenPHP and each Process that ran before the sleep start with it; a stopped Process stays stopped. Orbit waits until each of them runs and the app answers. An answer of 500 or above gets up to 5 more seconds to clear; after that the app is served as it is. Then it removes the asleep marker, and the Route serves the app again. In a clone, the wake then waits until T3 answers; a visitor does not wait for it. In measured runs, a visitor got the app about 9 to 12 seconds after the first visit.
+Orbit resumes a frozen container: its processes continue where they stopped, and nothing boots. When FrankenPHP does not answer after 10 tries one second apart (about 20 seconds at most), Orbit stops the container and starts it. A container found stopped (after a host reboot, or a sleep that fell back to a stop) is started: T3, FrankenPHP and each Process that ran before the sleep start with it; a stopped Process stays stopped. Orbit waits until each of them runs and the app answers. An answer of 500 or above gets up to 5 more seconds to clear; after that the app is served as it is. Then it removes the asleep marker, and the Route serves the app again. In a clone, the wake then waits until T3 answers; a visitor does not wait for it. The result names the path: `wake` is `resumed`, `restarted_after_resume`, `started` or `already_running`; `marker_found` says whether the marker was there; a resume adds `resume_seconds` and `web_probe_seconds`. A successful wake also renews the Gateway's T3 session at once when it ends within 7 days or ended during the sleep.
 
 There is one wake per Instance at a time. A second caller joins the open wake and gets the same Operation.
 

@@ -57,6 +57,82 @@
   failed_when: false
   when: phase in ['container', 'clone', 'stop', 'start']
 
+# A wake (only its intent names the asleep marker) finds one of four states (docs/reference/development-containers.md#sleep-and-wake):
+# Frozen, the sleep's state: resume it, close swap again, and wait a short time for the web unit; a silent one gets a stop and the
+# boot below, as a visitor would rather wait for a boot than for ever. Stopped (after a host reboot or a sleep that fell back to a
+# stop): the boot below. Running: no start and no resume. A Frozen container without its marker is a defect that the result names.
+# A deployment's start resumes a Frozen container too, then converges as usual.
+- name: Read the asleep marker
+  tags: [start]
+  when: phase == 'start' and intent.marker is defined
+  ansible.builtin.stat: { path: "{{ intent.marker }}", get_checksum: false }
+  register: wake_marker
+
+- name: Note the container's state before the start
+  tags: [start]
+  when: phase == 'start'
+  ansible.builtin.set_fact:
+    start_found: "{{ (container_read.stdout | from_json).status if container_read.rc == 0 else 'Missing' }}"
+    # Incus writes `memory.swap.max = 0` from `limits.memory`; a sleep opens it for this cgroup only.
+    container_cgroup: "{{ cgroup_root | default('/sys/fs/cgroup') }}/lxc.payload.{{ container.project }}_{{ container.name }}"
+
+- name: Resume the frozen container
+  tags: [start]
+  when: phase == 'start' and start_found == 'Frozen'
+  block:
+    - name: Resume the container
+      ansible.builtin.command: { argv: "{{ incus_project + ['resume', container.name] }}" }
+      register: container_resume
+      changed_when: true
+    # Pages in swap stay there and come back on use; a running container swaps no more, as before the sleep.
+    - name: Keep the container's memory out of swap
+      ansible.builtin.command: { argv: [tee, "{{ container_cgroup }}/memory.swap.max"], stdin: "0", stdin_add_newline: false }
+      changed_when: true
+    - name: Start the web probe clock
+      ansible.builtin.set_fact: { resume_probe_started: "{{ now().timestamp() }}" }
+    - name: Wait for the resumed web unit
+      when: intent.web is defined and container.web_config | default(none) is not none
+      ansible.builtin.command:
+        argv: >-
+          {{ as_root + ['curl', '--silent', '--output', '/dev/null', '--write-out', '%{http_code}', '--max-time', '1',
+                        'http://127.0.0.1:' ~ intent.web.port ~ '/'] }}
+      register: resumed_web
+      until: resumed_web.rc == 0 and resumed_web.stdout | int > 0
+      retries: "{{ intent.web.resume_seconds }}"
+      delay: 1
+      changed_when: false
+      failed_when: false
+    - name: Record the resume
+      ansible.builtin.set_fact:
+        start_resumed: "{{ resumed_web is skipped or (resumed_web.rc == 0 and resumed_web.stdout | int > 0) }}"
+        start_resume_timing:
+          resume_seconds: "{{ (container_resume.delta.split(':')[1] | int) * 60 + (container_resume.delta.split(':')[2] | float) }}"
+          web_probe_seconds: "{{ ((now().timestamp() | float) - (resume_probe_started | float)) | round(3) }}"
+    - name: Stop the resumed container whose web unit is silent
+      when: not start_resumed
+      ansible.builtin.command: { argv: "{{ incus_project + ['stop', '--force', container.name] }}" }
+      changed_when: true
+    - name: Read the container after the resume
+      ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
+      register: resumed_read
+      changed_when: false
+    - name: Use the state after the resume
+      ansible.builtin.set_fact: { container_read: "{{ resumed_read }}" }
+
+# A wake of a container that runs (resumed now, or running already) boots nothing, so it converges nothing: the keys below were
+# applied at its last boot. The wake's result names its path and, for a resume, its seconds.
+- name: Note the wake's path
+  tags: [start]
+  when: phase == 'start' and intent.marker is defined
+  ansible.builtin.set_fact:
+    start_skips_boot: "{{ start_found == 'Running' or start_resumed | default(false) | bool }}"
+    wake_result: >-
+      {{ {'wake': 'resumed' if start_resumed | default(false) | bool
+                  else 'restarted_after_resume' if start_found == 'Frozen'
+                  else 'already_running' if start_found == 'Running' else 'started',
+          'marker_found': wake_marker.stat.exists}
+         | combine(start_resume_timing | default({})) }}
+
 # A nested-fleet container (only its intent has `allowed_devices`) is made from the nested-fleet image. While the Node's last
 # converge recorded a failed build of that image, the stable alias may name an older image or none: the create refuses before any
 # change (docs/reference/development-containers.md#the-nested-fleet-image). A later converge that builds the image clears the record.
@@ -242,7 +318,8 @@
 - name: Keep the container from starting at boot
   tags: [container, clone, start]
   when: >-
-    phase in ['container', 'clone', 'start'] and container_read.rc == 0 and 'boot.autostart' in container.config
+    phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool and container_read.rc == 0
+    and 'boot.autostart' in container.config
     and (container_read.stdout | from_json).expanded_config['boot.autostart'] | default('') != container.config['boot.autostart']
   ansible.builtin.command:
     argv: "{{ incus_project + ['config', 'set', container.name, 'boot.autostart=' ~ container.config['boot.autostart']] }}"
@@ -251,7 +328,7 @@
 # Both independent ACLs reject by default. Validate all effective bridge NICs, including copied local extra devices.
 - name: Check the container's effective egress gates before starting it
   tags: [container, clone, start]
-  when: phase in ['container', 'clone', 'start']
+  when: phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool
   block:
     - name: Read the container's effective devices
       ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
@@ -286,7 +363,7 @@
 # units, login shells and `incus exec` sessions, so `composer` runs for `agent` and `orbit` alike. A Project without one has none.
 - name: Link the Project's php
   tags: [container, start]
-  when: phase in ['container', 'start']
+  when: phase in ['container', 'start'] and not start_skips_boot | default(false) | bool
   vars:
     container_php: "{{ container.php | default(none) or '' }}"
   block:
@@ -318,7 +395,7 @@
 # web request, and FrankenPHP serves in classic mode, where it runs.
 - name: Configure the container's PHP settings
   tags: [container, clone, start]
-  when: phase in ['container', 'clone', 'start']
+  when: phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool
   vars:
     container_php_ini_path: /etc/orbit/php/conf.d/99-orbit-runtime.ini
     container_php_ini_content: "memory_limit = 1G\nauto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php\n"

@@ -36,6 +36,13 @@ final readonly class InstanceLifecycleContributions
         }
     }
 
+    public function projectWake(Instance $instance): void
+    {
+        foreach ($this->contributions as $contribution) {
+            $contribution->projectWake($instance);
+        }
+    }
+
     /** @param array<string, mixed> $server */
     public function projectCreate(Instance $instance, array $server): void
     {

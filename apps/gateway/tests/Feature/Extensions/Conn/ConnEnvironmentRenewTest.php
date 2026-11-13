@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
@@ -22,6 +23,7 @@ use Illuminate\Support\Facades\Queue;
 use Orbit\Extensions\Conn\Actions\AdmitConnCleanupAction;
 use Orbit\Extensions\Conn\Actions\AdmitConnRenewalAction;
 use Orbit\Extensions\Conn\Actions\IssueConnPairingAction;
+use Orbit\Extensions\Conn\Data\ConnEnvironmentData;
 use Orbit\Extensions\Conn\Domain\ConnRenewalProjection;
 use Orbit\Extensions\Conn\Domain\ConnRenewalSweep;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
@@ -349,4 +351,48 @@ it('hands the cleanup run after a renewal its vault reference to the new session
         ->and($inputs['execution_secrets']['admin_session']['vault'])->toBe('orbit-control-inputs')
         ->and($inputs['execution_secrets']['admin_session']['key'])->toStartWith('conn-pairing-revoke-')
         ->and(json_encode($inputs))->not->toContain('renewed-session-sentinel');
+});
+
+/** A wake's terminal update, as Swamp reports it, for an Instance whose container slept. */
+function renewWake(ConnEnvironment $environment, string $status): Operation
+{
+    $operation = Operation::query()->create(['kind' => InstanceWake::Kind, 'target_type' => 'instance', 'target_id' => $environment->instance_id,
+        'node_id' => $environment->node_id, 'status' => 'running', 'input' => [], 'state' => ['swamp_run_id' => 'wake-proof']]);
+
+    return app(InstanceWake::class)->apply($operation, ['status' => $status, 'run_id' => 'wake-proof', 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => $status === 'succeeded' ? ['wake' => 'resumed'] : ['error_code' => 'instance.web_unready']]);
+}
+
+it('skips a sleeping Instance, whose wake renews its session at once, also one that ended while it slept, with no re-pair', function (): void {
+    $asleep = renewServer($this->project, renewNode(1), 'asleep', -40);
+    InstanceRuntime::query()->where('instance_id', $asleep->instance_id)->update(['power_state' => 'stopped']);
+
+    expect(app(ConnRenewalSweep::class)->run())->toBe([])
+        ->and($asleep->refresh()->renewal_error_code)->toBeNull();
+
+    // A failed wake renews nothing; a woken one admits the renewal without waiting for the hourly sweep.
+    renewWake($asleep, 'failed');
+    expect(Operation::query()->where('kind', AdmitConnRenewalAction::Kind)->count())->toBe(0);
+    renewWake($asleep, 'succeeded');
+    $renewal = Operation::query()->where('kind', AdmitConnRenewalAction::Kind)->sole();
+    expect($renewal->target_id)->toBe($asleep->id)
+        ->and(json_encode($renewal->input))->not->toContain('old-session-asleep');
+
+    // The run issued a new session without the ended one: the server mints pairings again, so a device renews its own pairing.
+    $renewal->forceFill(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => RenewRun]])->save();
+    renewEnd($renewal->refresh(), 'succeeded', renewReport($asleep));
+    expect($asleep->refresh()->admin_session)->toBe('renewed-session-sentinel')
+        ->and($asleep->admin_session_expires_at->isFuture())->toBeTrue()
+        ->and(ConnEnvironmentData::fromModel($asleep->load('instance.runtime'))->status)->toBe('registered');
+});
+
+it('renews nothing at a wake whose session is not due, nor while Conn is off', function (): void {
+    $fresh = renewServer($this->project, renewNode(1), 'fresh', 20);
+    $due = renewServer($this->project, renewNode(2), 'due', 3);
+
+    renewWake($fresh, 'succeeded');
+    app(ExtensionStore::class)->set('conn', false);
+    renewWake($due, 'succeeded');
+
+    expect(Operation::query()->where('kind', AdmitConnRenewalAction::Kind)->count())->toBe(0);
 });
