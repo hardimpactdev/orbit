@@ -1,5 +1,28 @@
 /** Exercise production container deletion, including a migrated checkout with retained Git, against the Incus fixture. */
 import { assert, assertEquals } from "jsr:@std/assert@1";
+import { parse } from "jsr:@std/yaml@1.0.12";
+import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
+// The "Delete the container" step of a normal destroy, its guard and its env evaluated from the shipped workflow.
+type Step = { name: string; guard: string; task: { inputs: { env: Record<string, string> } } };
+const deleteStep = (parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-destroy.yaml", import.meta.url))) as {
+    jobs: { steps: Step[] }[];
+}).jobs.flatMap((job) => job.steps).find((step) => step.name === "Delete the container")!;
+const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false });
+const shipped = new URL("../ansible/", import.meta.url).pathname.replace(/\/$/, "");
+const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
+const normal = { intent: { container_destroy: { name: "instance-7" } }, node_id: 9 };
+const settled = { "Prepare container removal": { status: "succeeded", outputs: { assets: shipped } }, "Withdraw the Route": { status: "skipped" } };
+const evaluate = (expr: string) =>
+    expr.startsWith("${{") ? cel.evaluate(expr.slice(3, -2).trim(), { inputs: normal, steps: settled, run: { id: runId } }) : expr;
+const stepEnv = Object.fromEntries(Object.entries(deleteStep.task.inputs.env).map(([key, value]) => [key, String(evaluate(value))]));
+Deno.test("a normal destroy deletes the container over one pipelined SSH master with the shipped config", () => {
+    assertEquals(evaluate(deleteStep.guard), false);
+    assertEquals(stepEnv.ANSIBLE_CONFIG, `${shipped}/ansible.cfg`);
+    assert(Deno.readTextFileSync(stepEnv.ANSIBLE_CONFIG).includes("pipelining = True"));
+    for (const option of ["ControlMaster=auto", "ControlPersist=60s", `UserKnownHostsFile=/tmp/orbit-ansible-${runId}/known_hosts`, "StrictHostKeyChecking=yes"]) {
+        assert(stepEnv.ANSIBLE_SSH_ARGS.includes(`-o ${option}`), option);
+    }
+});
 const available =
     new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
         .outputSync().success;
@@ -138,6 +161,10 @@ Deno.test({
                         `${folder}/instance-container-destroy.yml`,
                     ],
                     env: {
+                        // The step's own Ansible settings, so the shipped config is proven to run this playbook.
+                        ANSIBLE_CONFIG: stepEnv.ANSIBLE_CONFIG,
+                        ANSIBLE_SSH_ARGS: stepEnv.ANSIBLE_SSH_ARGS,
+                        ANSIBLE_DISPLAY_FAILED_STDERR: stepEnv.ANSIBLE_DISPLAY_FAILED_STDERR,
                         HOST_FIXTURE: folder,
                         ORBIT_RUN: `${folder}/run`,
                         PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
