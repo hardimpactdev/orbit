@@ -281,13 +281,15 @@
     ]
   },
   "swamp/tests/ansible_instance_host_browser_test.ts": {
-    "source_sha256": "57cc7ef8ec2408c4898ea942b4109bc3059e009a70bc1dede411408671ad1397",
+    "source_sha256": "cb555c5e368582d1e98b18d3f961e82f9a8c6ba547981a98e5b47b6e7973b45c",
     "cases": [
-      "a Debian package part gives the runtime folder its libraries and fonts; existing containers get the shared files with no restart",
+      "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart",
       "two Debian packages that give the same library name fail the folder build: one would hide the other",
       "a second pass writes nothing and runs no ldconfig; a new library reaches running and stopped containers alike",
       "a new folder version that only adds files keeps every running process valid; a changed, missing or relinked file does not",
-      "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container"
+      "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container",
+      "a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec",
+      "a Node without a readable Orbit root CA fails the step by name and writes nothing"
     ]
   },
   "swamp/tests/ansible_instance_host_runtime_test.ts": {

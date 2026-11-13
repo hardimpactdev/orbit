@@ -263,6 +263,14 @@
                             "uid": 0,
                             "gid": 0,
                             "mode": "0644"
+                        },
+                        {
+                            "source": "/etc/orbit/agent/ca.pem",
+                            "path": "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
+                            "hash_directory": "/etc/ssl/certs",
+                            "uid": 0,
+                            "gid": 0,
+                            "mode": "0644"
                         }
                     ],
                     "files": [
@@ -622,6 +630,14 @@
                         {
                             "path": "/etc/ld.so.cache",
                             "content": "",
+                            "uid": 0,
+                            "gid": 0,
+                            "mode": "0644"
+                        },
+                        {
+                            "source": "/etc/orbit/agent/ca.pem",
+                            "path": "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
+                            "hash_directory": "/etc/ssl/certs",
                             "uid": 0,
                             "gid": 0,
                             "mode": "0644"

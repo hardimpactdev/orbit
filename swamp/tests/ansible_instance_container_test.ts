@@ -9,8 +9,9 @@ import { fixture as hostFixture } from "./_support/instance_host.ts";
 
 /** The normal host transcript of main; see the case that compares it. */
 // The browser change adds exactly one task (the image's shared files in existing containers) and two Incus calls (its instance
-// list, and the image's last `rm -f /etc/ld.so.cache`); the host files stay as they were.
-const MAIN_NORMAL_HOST = {calls: 64, tasks: 168, digest: "1682b35945050c29d78103b601dce0820a5aa135259d9e8d8d201833f4b3e43a"};
+// list, and the image's last `rm -f /etc/ld.so.cache`); the Orbit root CA in the image adds two tasks and two Incus calls (one push,
+// `update-ca-certificates`); the host files stay as they were.
+const MAIN_NORMAL_HOST = {calls: 66, tasks: 170, digest: "fdcd912277368c0590a00c3116bca446108f2a4c37f647b418e0fa5dd665162d"};
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })

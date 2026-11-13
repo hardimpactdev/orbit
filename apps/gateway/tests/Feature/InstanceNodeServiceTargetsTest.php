@@ -689,9 +689,9 @@ it('projects only the exact remote path and proxy host and withdraws the complet
         ->and($cloneIntent['environment'])->not->toContain('NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1,10.44.0.11');
     // The default's two proxy files are reset before the copy's first start, so the agent phase does not write them.
     $reset = 'NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1 no_proxy=localhost,127.0.0.1,::1,10.253.0.1';
-    // The browser files and the empty linker cache come first in every clone (InstanceContainer::bootFiles).
+    // The browser files, the empty linker cache and the Node root CA come first in every clone (InstanceContainer::bootFiles).
     expect(array_column(array_slice($cloneIntent['clone']['boot_files'], 0, -2), 'path'))
-        ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/ld.so.cache']);
+        ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt']);
     expect(array_slice($cloneIntent['clone']['boot_files'], -2))->toBe([
         ['path' => '/etc/systemd/system.conf.d/99-orbit-node-services.conf',
             'content' => "# Managed by Orbit: attached Node service.\n[Manager]\nDefaultEnvironment={$reset}\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],

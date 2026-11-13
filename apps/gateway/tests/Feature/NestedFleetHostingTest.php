@@ -220,7 +220,7 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
             $expected['clone'] = [...array_slice($expected['clone'], 0, $files, true), 'boot_files' => $actual['clone']['boot_files'],
                 ...array_slice($expected['clone'], $files, null, true)];
             expect(array_column($actual['clone']['boot_files'], 'path'))
-                ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/ld.so.cache']);
+                ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt']);
         }
         expect(json_encode($containers->intent($instance, $runtime), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR));
     })->with([false, true]);

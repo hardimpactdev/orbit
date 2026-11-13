@@ -28,6 +28,8 @@
   vars:
     build: orbit-instance-build
     in_build: [incus, exec, --project, "{{ instance_variant.project }}", orbit-instance-build, --env, DEBIAN_FRONTEND=noninteractive, --]
+    # The Orbit root CA that the Node's base converge writes for its agent (InstanceHostIntent::TrustSource).
+    instance_trust_source: /etc/orbit/agent/ca.pem
   block:
     - name: Read existing prepared-image builders
       ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances?project={{ instance_variant.project }}&recursion=1"] }
@@ -127,6 +129,17 @@
         stdin_add_newline: false
       loop: "{{ instance_variant.image.files }}"
       loop_control: { label: "{{ item.path }}" }
+      changed_when: true
+    # The Orbit root CA that the Node's base converge writes for its agent, as a local CA file, then in the bundle and under its hashed
+    # name, both made by `update-ca-certificates` (docs/reference/development-containers.md#trust). The image name does not depend on
+    # it: the Node converge brings every container, this image's too, to the Node's current root.
+    - name: Trust the Orbit root CA in the image
+      ansible.builtin.command:
+        argv: [incus, file, push, --project, "{{ instance_variant.project }}", --create-dirs, --uid, "0", --gid, "0", --mode, "0644",
+               "{{ instance_trust_source }}", "{{ build }}/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"]
+      changed_when: true
+    - name: Read the CA bundle again in the image
+      ansible.builtin.command: { argv: "{{ in_build + ['update-ca-certificates'] }}" }
       changed_when: true
     - name: Enable the units and clean up
       ansible.builtin.command: { argv: "{{ in_build + item }}" }

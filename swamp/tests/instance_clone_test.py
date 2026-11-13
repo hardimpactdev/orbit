@@ -162,9 +162,13 @@ class CloneTest(unittest.TestCase):
                 self.inputs[id(argv)] = kwargs.get("input")
                 if real_git and argv[0] in {"git", "timeout"}:
                     return real_run(argv, **kwargs)
-                if argv[:2] == ["python3", "-c"]:
+                if argv[:2] == ["python3", "-c"] or argv[0] == "openssl":
                     return real_run(argv, **kwargs)
                 output, status = "", 0
+                if argv[3:5] == ["file", "pull"] and "fixture_pull" in container:
+                    # What the copy holds at a path, as the seed left it; any other path is missing.
+                    held = container["fixture_pull"].get("/" + argv[5].split("/", 1)[1])
+                    return subprocess.CompletedProcess(argv, 0 if held is not None else 1, held or "", "" if held is not None else "Error: file does not exist")
                 if rootfs is not None and argv[:2] == ["incus", "query"] and "/files?" in argv[2]:
                     # The copy's files as Incus lists them, read from a real root file system.
                     directory = root / argv[2].split("&path=", 1)[1].lstrip("/")
@@ -338,6 +342,79 @@ class CloneTest(unittest.TestCase):
         self.assertEqual([self.inputs[id(call)] for call in pushes], [item["content"] for item in browser])
         start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
         self.assertTrue(all(calls.index(call) < start for call in pushes))
+
+    TRUST = {"source": "/etc/orbit/agent/ca.pem", "path": "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
+             "hash_directory": "/etc/ssl/certs", "uid": 0, "gid": 0, "mode": "0644"}
+
+    @staticmethod
+    def certificate(name):
+        with tempfile.TemporaryDirectory() as folder:
+            subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=" + name,
+                            "-keyout", folder + "/key.pem", "-out", folder + "/cert.pem"], check=True, capture_output=True)
+            pem = Path(folder + "/cert.pem").read_text()
+        digest = subprocess.run(["openssl", "x509", "-noout", "-subject_hash"], input=pem, text=True, capture_output=True, check=True)
+        return pem, digest.stdout.strip()
+
+    def clone_trusting(self, node_ca, clone, **kwargs):
+        """A clone whose Node holds `node_ca` (None: the file is missing) at the one allowed source path."""
+        original = Path.read_text
+
+        def read_text(path, *args, **kw):
+            if str(path) == self.TRUST["source"]:
+                if node_ca is None:
+                    raise FileNotFoundError(str(path))
+                return node_ca
+            return original(path, *args, **kw)
+
+        with patch("pathlib.Path.read_text", read_text):
+            return self.clone_with(clone, **kwargs)
+
+    def test_the_node_root_ca_reaches_the_copy_under_its_hashed_name_before_its_first_start(self):
+        pem, digest = self.certificate("Orbit Test Root")
+        calls, _, error = self.clone_trusting(pem, {"boot_files": [self.TRUST]})
+        self.assertEqual(error, "")
+        pushes = [call for call in calls if call[3:5] == ["file", "push"] and call[-1].endswith("orbit-managed-root-ca.crt")]
+        self.assertEqual([call[-1] for call in pushes], ["instance-7/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"])
+        self.assertEqual([self.inputs[id(call)] for call in pushes], [pem])
+        # The links that `update-ca-certificates` makes, so its rehash keeps them.
+        links = [call[3:] for call in calls if call[3:5] == ["file", "create"]]
+        self.assertEqual(links, [
+            ["file", "create", "--type=symlink", "--force", "instance-7/etc/ssl/certs/orbit-managed-root-ca.pem",
+             "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"],
+            ["file", "create", "--type=symlink", "--force", f"instance-7/etc/ssl/certs/{digest}.0", "/etc/ssl/certs/orbit-managed-root-ca.pem"],
+        ])
+        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+        self.assertTrue(all(calls.index(call) < start for call in pushes + [c for c in calls if c[3:5] == ["file", "create"]]))
+
+    def test_an_intent_cannot_smuggle_a_delete_through_a_plain_boot_file(self):
+        calls, _, error = self.clone_with({"boot_files": [{"path": "/etc/x", "content": "x", "uid": 0, "gid": 0, "mode": "0644",
+                                                            "replaces": "/etc/passwd", "link": "/etc/y", "target": "/etc/shadow"}]})
+        self.assertEqual(error, "")
+        self.assertFalse(any(call[3:5] in (["file", "delete"], ["file", "create"]) and "/etc/" in call[-1] and call[-1].endswith(("y", "shadow")) for call in calls))
+        self.assertIn("instance-7/etc/x", [call[-1] for call in calls if call[3:5] == ["file", "push"]])
+
+    def test_another_source_path_and_a_missing_node_ca_fail_by_name_before_the_copy(self):
+        pem, _ = self.certificate("Orbit Test Root")
+        for case, node_ca, entry, code in (("another source", pem, {**self.TRUST, "source": "/etc/shadow"}, "instance.clone_boot_source_refused"),
+                                           ("missing Node file", None, self.TRUST, "instance.clone_trust_unavailable"),
+                                           ("not a certificate", "not a certificate\n", self.TRUST, "instance.clone_trust_unavailable")):
+            with self.subTest(case=case):
+                calls, _, error = self.clone_trusting(node_ca, {"boot_files": [entry]})
+                self.assertEqual(error, code + "\n")
+                self.assertFalse(any("copy" in call for call in calls))
+                self.assertFalse(any(call[3:5] == ["file", "push"] for call in calls))
+
+    def test_a_seed_that_trusts_an_older_root_loses_its_old_hashed_name(self):
+        old, old_digest = self.certificate("Orbit Old Root")
+        new, new_digest = self.certificate("Orbit New Root")
+        calls, _, error = self.clone_trusting(new, {"boot_files": [self.TRUST]},
+                                              overrides={"fixture_pull": {self.TRUST["path"]: old}})
+        self.assertEqual(error, "")
+        delete = ["incus", "--project", "orbit-instances", "file", "delete", f"instance-7/etc/ssl/certs/{old_digest}.0"]
+        self.assertIn(delete, calls)
+        first_push = next(i for i, call in enumerate(calls) if call[3:5] == ["file", "push"] and "ca-certificates" in call[-1])
+        self.assertLess(calls.index(delete), first_push)
+        self.assertIn(f"instance-7/etc/ssl/certs/{new_digest}.0", [call[-2] for call in calls if call[3:5] == ["file", "create"]])
 
     def test_a_running_copy_and_a_clone_without_boot_files_push_none(self):
         running = {"status": "Running", "devices": {"t3": {}}, "config": {"volatile.uuid": "abc-123"},
