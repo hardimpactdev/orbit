@@ -83,10 +83,10 @@ const KEY = /^[A-Za-z0-9_.]+$/;
 
 /**
  * A clone's workspace phase prints its JSON line with the NAMES of the keys it copied from its default's .env and the keys it
- * dropped (docs/reference/development-containers.md#the-environment-of-a-clone), and the names it rewrote to the clone's own
- * host. Only names that are environment keys pass.
+ * dropped (docs/reference/development-containers.md#the-environment-of-a-clone), the names it rewrote to the clone's own
+ * host, and the names of the connections it shares with its default. Only names that are environment keys pass.
  */
-export function cloneEnvironment(phase: Phase): {copied: string[]; dropped: string[]; rewritten?: string[]} | null {
+export function cloneEnvironment(phase: Phase): {copied: string[]; dropped: string[]; rewritten?: string[]; shared?: string[]} | null {
     if (phase?.status !== "succeeded") return null;
     for (const line of String(phase.outputs?.stdout ?? "").split("\n")) {
         let parsed: unknown;
@@ -94,9 +94,11 @@ export function cloneEnvironment(phase: Phase): {copied: string[]; dropped: stri
         const printed = parsed as {phase?: unknown; environment?: unknown} | null;
         if (printed?.phase !== "workspace" || printed.environment == null) continue;
         const names = (raw: unknown) => Array.isArray(raw) ? raw.filter((name): name is string => typeof name === "string" && KEY.test(name)) : [];
-        const value = printed.environment as {copied?: unknown; dropped?: unknown; rewritten?: unknown};
+        const value = printed.environment as {copied?: unknown; dropped?: unknown; rewritten?: unknown; shared?: unknown};
         // `rewritten`: the copied keys whose value pointed at the default's own site and now points at the clone's.
-        return {copied: names(value.copied), dropped: names(value.dropped), ...(Array.isArray(value.rewritten) ? {rewritten: names(value.rewritten)} : {})};
+        // `shared`: the keys of the connections the clone shares with its default, rendered by Orbit as the clone's own.
+        return {copied: names(value.copied), dropped: names(value.dropped), ...(Array.isArray(value.rewritten) ? {rewritten: names(value.rewritten)} : {}),
+            ...(Array.isArray(value.shared) ? {shared: names(value.shared)} : {})};
     }
     return null;
 }

@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $instance_id
  * @property string $network
  * @property string $prefix
+ * @property bool $shared
  * @property-read DatabaseConnection $databaseConnection
  * @property-read Instance $instance
  */
@@ -26,7 +27,15 @@ final class DatabaseConnectionTarget extends Model
         'instance_id',
         'prefix',
         'network',
+        'shared',
     ];
+
+    /** @return array<string, string> */
+    #[\Override]
+    protected function casts(): array
+    {
+        return ['shared' => 'boolean'];
+    }
 
     /** @param array{touch?: bool|null} $options */
     #[\Override]

@@ -17,6 +17,7 @@ final class AttachDatabaseConnectionRequest extends FormRequest
     {
         return [
             'replace' => ['sometimes', 'boolean:strict'],
+            'shared' => ['sometimes', 'boolean:strict'],
             'network' => ['sometimes', 'string', 'in:wireguard,lan'],
             'prefix' => ['sometimes', 'string', 'regex:'.DatabaseConnectionPrefix::Pattern],
         ];
@@ -26,7 +27,7 @@ final class AttachDatabaseConnectionRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['prefix', 'network', 'replace']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['prefix', 'network', 'replace', 'shared']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -44,6 +45,14 @@ final class AttachDatabaseConnectionRequest extends FormRequest
         $validated = $this->validated();
 
         return ($validated['replace'] ?? false) === true;
+    }
+
+    /** True or false sets the mark; absent keeps what is recorded. */
+    public function shared(): ?bool
+    {
+        $validated = $this->validated();
+
+        return is_bool($validated['shared'] ?? null) ? $validated['shared'] : null;
     }
 
     public function network(): string

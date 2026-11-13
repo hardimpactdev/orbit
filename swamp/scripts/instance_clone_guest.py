@@ -310,6 +310,10 @@ def phase_main(phase, raw):
         # a Gateway before them: the file stays as that release wrote it.
         if merge is not None and "hosts" in merge:
             updated, environment_keys["rewritten"] = rewrite_default_hosts(updated, set(copied), merge["hosts"])
+        # The keys of the connections the clone shares with its default: Orbit renders them as the clone's own. Names only.
+        if merge is not None and "shared" in merge:
+            written = {key for key, _, _ in env_blocks(updated) if key is not None}
+            environment_keys["shared"] = sorted(set(merge["shared"]) & written)
         if env != updated:
             write(c["environment_file"], updated, 1000, 2760, "0640")
         # The existing Processes phase's group-write guarantee and foreign-owner cleanup.

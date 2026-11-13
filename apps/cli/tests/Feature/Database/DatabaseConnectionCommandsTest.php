@@ -170,6 +170,20 @@ it('adds a connection on an Instance through the typed request and hides the pas
         ->toBe([]);
 });
 
+it('sends the shared mark only when a flag names it, and refuses both flags before it contacts the Gateway', function (array $flags, ?array $body): void {
+    $mockClient = database_cli_mock(AddInstanceDatabaseRequest::class, database_cli_attachment_data());
+
+    $this->artisan('instance:database:add', ['slug' => 'app', '--instance' => '12', '--prefix' => 'FOOD_CATALOG', '--json' => true, ...$flags])
+        ->assertExitCode($body === null ? 1 : 0);
+
+    expect($body === null ? $mockClient->getLastRequest() : $mockClient->getLastRequest()?->body()->all())->toBe($body);
+})->with([
+    'no flag keeps the recorded mark' => [[], ['prefix' => 'FOOD_CATALOG']],
+    '--shared' => [['--shared' => true], ['prefix' => 'FOOD_CATALOG', 'shared' => true]],
+    '--no-shared' => [['--no-shared' => true], ['prefix' => 'FOOD_CATALOG', 'shared' => false]],
+    'both' => [['--shared' => true, '--no-shared' => true], null],
+]);
+
 it('removes a connection from an Instance after --force', function (): void {
     $mockClient = database_cli_mock(RemoveInstanceDatabaseRequest::class, [
         ...database_cli_attachment_data(),
