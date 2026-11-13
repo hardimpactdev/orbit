@@ -26,7 +26,8 @@ jobs:
       PROOF_SHA: ${{ github.event.pull_request.head.sha }}
       PROOF_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     if: >-
-      github.event.action == 'labeled'
+      vars.ORBIT_PROOF_ENABLED == 'true'
+      && github.event.action == 'labeled'
       && github.event.label.name == 'run-proofs'
       && github.event.pull_request.head.repo.full_name != github.repository
     # The same runner as the proof job of ci.yml: an enrolled Node that may reach the Gateway.

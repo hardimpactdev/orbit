@@ -695,7 +695,8 @@ jobs:
       pull-requests: read
     needs: changes
     if: >-
-      github.event_name == 'pull_request'
+      vars.ORBIT_PROOF_ENABLED == 'true'
+      && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
       && needs.changes.outputs.proof_run == 'true'
     runs-on: ubuntu-26.04
@@ -733,7 +734,8 @@ jobs:
     # the label `run-proofs` (stage 4 of the command pipeline) and never starts this job: the workflow proof-outside.yml
     # runs its proof. There is no queue run, and no run after the merge: the proof tests the PR head once per push.
     if: >-
-      github.event_name == 'pull_request'
+      vars.ORBIT_PROOF_ENABLED == 'true'
+      && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
       && needs.changes.outputs.proof_run == 'true'
       && needs.proof-eligibility.outputs.eligible == 'true'
