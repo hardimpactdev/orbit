@@ -8,6 +8,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^fleet-reboot-github-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^(?:instance-git-(?:operation|credential)-[1-9][0-9]*|instance-create-environment-(?:input|testing)-[1-9][0-9]*|instance-create-(?:model|processes)-[1-9][0-9]*)$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^nckrtl-instance-t3-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-register-session-(?:gateway|swamp)-[1-9][0-9]*-token$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^nckrtl-instance-t3-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-renew-session-gateway-[1-9][0-9]*-token$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^instance-transfer-environment-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^instance-git-(?:operation|credential)-[1-9][0-9]*$", "actions": ["write", "read"]},

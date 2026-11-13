@@ -5,10 +5,10 @@ covers:
   - apps/gateway/extensions/conn/**
   - swamp/extensions/behaviors/operations/conn-revocation/**
   - swamp/extensions/behaviors/operations/conn-pairing/**
-  - swamp/workflows/workflow-operation-conn-pairing-create.yaml
-  - swamp/workflows/workflow-operation-conn-pairing-revoke.yaml
+  - swamp/workflows/workflow-operation-conn-*.yaml
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/database/migrations/2027_02_03_000001_add_instance_to_conn_environments.php
+  - apps/gateway/database/migrations/2027_02_10_000000_add_renewal_to_conn_environments.php
 ---
 
 # Conn layer
@@ -171,11 +171,65 @@ A clone of a container default runs its own T3 server. Its create flow registers
 - The Gateway reads the session from the vault key the result names. It does not call T3 again: the run made the checks above in the container.
 - A new record starts with its cleanup done. Recording a server again bumps the cleanup revision and starts the cleanup.
 - A resumed create can leave the sessions of its failed run valid in T3, until a later renewal cleans them.
+- Orbit renews the Gateway's session on the server: see [Renewal of an Instance server](#renewal-of-an-instance-server).
 - The bumped revision also stops a Node's registration of the same id that read the row before the record: that registration compares the revision again in its lock and fails with `conn.environment_changed`.
 - While Conn is off, a clone is refused with `operation.kind_unavailable`: nothing would record its server.
 - A create admitted before Conn went off still records its server.
 
 Destroy keeps this contribution available while Conn is disabled. Admission captures its environment. The run deletes T3 with the container, retiring all sessions and unused links. Terminal projection deletes its execution copies, environment and pairings before core deletes the Instance. New pairings refuse an Instance marked removing.
+
+### Renewal of an Instance server
+
+T3 issues the Gateway's session for 30 days. Orbit keeps it alive; no device and no host job takes part. Orbit does not ask T3 for a longer session: a longer one would keep a stolen session valid for longer. The [registration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) has the steps.
+
+#### When
+
+Every hour the Gateway admits `conn.environment_renew` for each active Instance server whose session ends within seven days. It also admits one for a session that has ended. So a container that was stopped past the end gets a new session within an hour of its start. When a try found it stopped, the wait is up to six hours; the route below renews it at once.
+
+One tick admits at most five renewals, the earliest end first. It admits at most one per Node at a time. A server whose last renewal failed comes after the others, so it never holds its Node's slot from them. Clones made on one day reach the margin in the same hour.
+
+#### How
+
+The run reaches the Node over its SSH account. In that Instance's own container, as `agent`, it issues a new `Orbit Gateway` session with `t3 auth session issue`. It needs no old session, so an ended session renews too.
+
+A clone always gets its own session. The run names only that clone's container. It refuses a server that serves another environment id.
+
+#### Order
+
+The run proves the new session with one authenticated read of `/api/auth/session` at the recorded URL. That is the path a pairing takes. Only then does the run store the session.
+
+The Gateway records the session. Only then does it admit the cleanup that revokes the older `Orbit Gateway` sessions. Pairing admission locks the server row, so a pairing carries either the new session or the old one. While a pairing that carries the old session still runs, the cleanup waits with `conn.pairing_in_progress`. The next tick admits it. So a pairing never fails because of a renewal.
+
+#### Secrets
+
+The new session goes from a 0600 file on the Node to a native sensitive field in the vault. The run removes each private copy on every path. A cancelled run can leave its Node copy; the next renewal on that Node removes copies older than ten minutes. The session never enters an Operation input, result, Activity or log. The Gateway deletes the vault copy after it records the session.
+
+#### Failure
+
+A refusal fails the Operation with a `conn.*` code. The server record keeps the code as `renewal_error_code` and its time as `renewal_checked_at`. The old session stays, and the next tick tries again.
+
+After `conn.environment_stopped`, the server waits six hours before the next try. So a stopped container does not fill the Operation list.
+
+#### At once
+
+`POST /environments/{environment_id}/renew` admits the same Operation now, also for a stopped container. It needs node access to the server's Node. It refuses a host server with `conn.environment_not_instance`. It refuses with `operation.target_busy` while a renewal or cleanup of that server runs.
+
+The `Orbit Swamp` session of the container is not renewed: nothing uses it yet. A host T3 server renews its session itself, by registering again.
+
+| Renewal code | Meaning |
+| --- | --- |
+| `conn.environment_stopped` | The container does not run. |
+| `conn.environment_missing` | The Node has no such container. |
+| `conn.environment_unreadable` | Incus did not answer for the container. |
+| `conn.session_issue_failed` | T3 in the container did not issue a session. |
+| `conn.node_unreachable` | The run did not reach the Node. |
+| `conn.server_unreachable` | The T3 server did not answer at its recorded URL. |
+| `conn.environment_mismatch` | The URL serves another environment id. |
+| `conn.session_rejected` | T3 did not accept the new session. |
+| `conn.admin_scope_missing` | The new session lacks `access:read` or `access:write`. |
+| `conn.response_invalid` | An answer did not have T3's shape. |
+| `conn.renewal_incomplete` | The session was issued, but the run ended before it was stored. |
+| `conn.renewal_failed` | The run failed without a `conn.*` code. |
 
 ## Threads in an Orbit Project
 
@@ -374,6 +428,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `GET /environments/{environment_id}/pairings` | — | list of pairing, newest first |
 | `POST /environments/{environment_id}/pairings` | `{"renew": true}`, optional | Operation (202) |
 | `POST /environments/{environment_id}/pairings/revoke` | `{"node_id": 4, "pairing_id": 7}`, both optional | Operation (202) |
+| `POST /environments/{environment_id}/renew` | — | Operation (202) |
 
 The objects:
 
@@ -382,7 +437,7 @@ The objects:
   "node": {"id": 4, "name": "phone", "wireguard_ip": "10.44.0.77", "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"}},
   "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"},
   "settings": {"profile_id": 1, "version": 3, "settings": {"workspaces": []}, "sections": {"workspaces": {"version": 1, "updated_at": "2026-10-08T10:00:00+00:00", "updated_by": "phone"}}, "updated_at": "2026-10-08T10:00:00+00:00"},
-  "environment": {"environment_id": "env-beast", "label": "beast", "url": "http://10.44.0.30:3773", "server_version": "0.9.1", "registered_by": "beast", "registered_at": "2026-10-08T09:00:00+00:00", "admin_session_expires_at": "2026-11-07T09:00:00+00:00", "status": "registered", "instance_id": null, "power_state": null, "project_id": null, "project_name": null, "project_slug": null, "instance_name": null, "node_name": null, "instance_url": null},
+  "environment": {"environment_id": "env-beast", "label": "beast", "url": "http://10.44.0.30:3773", "server_version": "0.9.1", "registered_by": "beast", "registered_at": "2026-10-08T09:00:00+00:00", "admin_session_expires_at": "2026-11-07T09:00:00+00:00", "status": "registered", "instance_id": null, "power_state": null, "project_id": null, "project_name": null, "project_slug": null, "instance_name": null, "node_name": null, "instance_url": null, "renewal_error_code": null, "renewal_checked_at": null},
   "project": {"id": 3, "slug": "mealou", "name": "Mealou", "node_id": 7, "node_name": "beast", "instance_domain_suffix": ".mealou.test", "cloneable": true, "cloneable_reason": null, "checks": [{"key": "default_instance", "label": "Default Instance", "status": "pass"}, {"key": "container", "label": "Runs in a container", "status": "pass"}, {"key": "active", "label": "Active", "status": "pass"}, {"key": "seed_snapshot", "label": "Seed snapshot", "status": "pass"}, {"key": "node_access", "label": "Node access", "status": "pass"}, {"key": "source_access", "label": "Source access", "status": "pass"}, {"key": "source_defaults", "label": "Source defaults", "status": "pass"}, {"key": "production_placement", "label": "Development placement", "status": "pass"}, {"key": "node_active_linux", "label": "Active Linux Node", "status": "pass"}, {"key": "app_dev_role", "label": "App-dev role", "status": "pass"}, {"key": "source_profile", "label": "Source metadata", "status": "pass"}, {"key": "php_readiness", "label": "PHP readiness", "status": "pass"}, {"key": "runtime_contributions", "label": "Conn runtime", "status": "pass"}, {"key": "model_route", "label": "Model router", "status": "pass"}, {"key": "native_create", "label": "Create support", "status": "pass"}]},
   "pairing": {"id": 7, "environment_id": "env-beast", "node_id": 4, "node_name": "phone", "client_label": "phone via Orbit k3j9x0qa", "issued_at": "2026-10-08T10:00:00+00:00", "expires_at": "2026-10-08T10:05:00+00:00", "revoked_at": null}
 }
@@ -402,6 +457,8 @@ The objects:
 | `conn.environment_mismatch` | 422 | `url` serves another environment. |
 | `conn.admin_scope_missing` | 422 | The registered session is not an admin session. |
 | `conn.session_expired` | 409 | The Gateway's admin session on that server expired. |
+| `conn.environment_not_instance` | 409 | A renewal asked for a host server; its host renews it. |
+| `conn.pairing_in_progress` | 409 | A Gateway session cleanup waits for a pairing that runs with the earlier session. |
 | `conn.pairing_revoked` | 409 | A renewal asked for a server where the Node's newest pairing was revoked. Pair without `renew` to bring it back. |
 | `conn.server_unreachable` | 502 | The T3 server did not answer. |
 | `conn.session_rejected` | 502 | T3 does not accept the admin session: it answered 401, or `/api/auth/session` reported it unauthenticated. |
@@ -456,9 +513,9 @@ Steps make no Gateway calls.
 
 Gateway session cleanup runs the shared native revocation workflow on Node 209 for the fixed Gateway client label. It captures the T3 URL, registration revision and vault reference at admission, with no step-to-Gateway callback. The child lists sessions once and keeps the current admin and every other label. Failed HTTP or reply checks report `conn.revocation_failed`; the revision stays pending.
 
-Registration stores the new encrypted admin session and increments its cleanup revision. After that transaction commits, the Gateway admits `conn.gateway_sessions_revoke` once. Registration keeps its normal response if admission or cleanup fails. A failed start records a safe warning, and the revision stays pending. No scheduled publisher scans registrations. Cleanup keeps the current admin session and other client labels.
+Registration, and the [renewal of an Instance server](#renewal-of-an-instance-server), store the new encrypted admin session and increment its cleanup revision. After that transaction commits, the Gateway admits `conn.gateway_sessions_revoke` once. It refuses with `conn.pairing_in_progress` while a `conn.pairing_create` of that server runs, because that pairing carries the earlier session; the revision stays pending. For an Instance server, the hourly renewal tick admits a pending cleanup again. Registration keeps its normal response if admission or cleanup fails. A failed start records a safe warning, and the revision stays pending. No scheduled publisher scans host registrations. Cleanup keeps the current admin session and other client labels.
 
-Registration refuses with `operation.target_busy` while a cleanup or pairing revocation holds that environment. Session validation runs outside the database transaction; a concurrent revocation or registration refuses with `conn.environment_changed` before storing the candidate session. The list and registration replies expose the non-secret `cleanup_version`. The environment lock prevents overlapping revocations. A failed revision stays pending without another automatic Operation; a new registration or an explicit cleanup request permits a new attempt. A completed revision returns HTTP 204 without starting a run. Cleanup never discards the current admin session.
+Registration refuses with `operation.target_busy` while a cleanup or pairing revocation holds that environment. Session validation runs outside the database transaction; a concurrent revocation or registration refuses with `conn.environment_changed` before storing the candidate session. The list and registration replies expose the non-secret `cleanup_version`. The environment lock prevents overlapping revocations. For a host server, a failed revision stays pending without another automatic Operation; a new registration or an explicit cleanup request permits a new attempt. A completed revision returns HTTP 204 without starting a run. Cleanup never discards the current admin session.
 
 ## Pairing Operations
 

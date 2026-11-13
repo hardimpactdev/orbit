@@ -1,0 +1,217 @@
+id: 3f7c2a91-5d4e-4b8a-9c61-0e2f8d4b7a35
+name: operation-conn-environment-renew
+description: Renew the Gateway's admin session on a container Instance's T3 server (docs/cli/conn/environment-renew.mmd). The session is issued in the container, proven over the recorded URL, stored, and its private copies removed on every path.
+vaults:
+- orbit-control-inputs
+queueTimeout: 30
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: conn.environment_renew}
+    intent:
+      type: object
+      properties:
+        instance_id: {type: integer, minimum: 1}
+        environment_id: {type: string, pattern: '^[A-Za-z0-9._-]{1,255}$'}
+        url: {type: string, pattern: '^http://[0-9.]{7,15}:[0-9]{1,5}$'}
+        t3: {type: string, pattern: '^/[A-Za-z0-9._/-]+$'}
+        container:
+          type: object
+          properties:
+            project: {type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$'}
+            name: {type: string, pattern: '^instance-[1-9][0-9]*$'}
+          required: [project, name]
+          additionalProperties: false
+        ssh_execution: {type: object}
+      required: [instance_id, environment_id, url, t3, container, ssh_execution]
+      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: renew
+  labels: {role: swamp}
+  steps:
+  - name: Create the private folder
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "conn-renew-folder" }}
+      methodName: execute
+      inputs:
+        run: timeout 5 mkdir -m 700 -- "$ORBIT_RENEW_LOCAL"
+        env:
+          ORBIT_RENEW_LOCAL: ${{ "/tmp/orbit-ansible-" + run.id }}
+  # Prints only a public JSON word. The session goes to a 0600 file of the Node's SSH account, never to the run's output.
+  - name: Issue the Gateway session
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Create the private folder, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("conn-renew-" + string(inputs.intent.instance_id)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("conn-renew-" + string(inputs.intent.instance_id)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        stdin: ''
+        timeoutSec: 70
+        argv:
+        - timeout
+        - '60'
+        - sh
+        - -c
+        - |
+          set -u
+          p=$1 n=$2 d=$3 t=$4 a=$5
+          s=$(incus list --project "$p" --format csv --columns s "^$n\$" 2>/dev/null) || { echo '{"outcome":"failed","error_code":"conn.environment_unreadable"}'; exit 0; }
+          case "$s" in
+          RUNNING) ;;
+          '') echo '{"outcome":"failed","error_code":"conn.environment_missing"}'; exit 0 ;;
+          *) echo '{"outcome":"failed","error_code":"conn.environment_stopped"}'; exit 0 ;;
+          esac
+          umask 077
+          # A cancelled or expired run can leave its copy; remove copies older than ten minutes.
+          find /tmp -maxdepth 1 -name 'orbit-conn-renew-*' -mmin +10 -exec rm -rf -- {} + 2>/dev/null
+          rm -rf -- "$d" && mkdir -m 700 -- "$d" && chown -- "$a" "$d" || { echo '{"outcome":"failed","error_code":"conn.session_issue_failed"}'; exit 0; }
+          if incus --project "$p" exec "$n" -- runuser -u agent -- env HOME=/home/agent "$t" auth session issue --label 'Orbit Gateway' --json > "$d/issued.json" 2>/dev/null \
+            && chown -- "$a" "$d/issued.json"; then
+            echo '{"outcome":"issued"}'
+          else
+            rm -rf -- "$d"
+            echo '{"outcome":"failed","error_code":"conn.session_issue_failed"}'
+          fi
+        - sh
+        - ${{ inputs.intent.container.project }}
+        - ${{ inputs.intent.container.name }}
+        - ${{ "/tmp/orbit-conn-renew-" + run.id }}
+        - ${{ inputs.intent.t3 }}
+        - ${{ inputs.intent.ssh_execution.target.user }}
+  - name: Copy the session
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Issue the Gateway session, condition: {type: succeeded}}]
+    guard: ${{ !steps["Issue the Gateway session"].outputs.stdout.contains("\"outcome\":\"issued\"") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("conn-renew-" + string(inputs.intent.instance_id)).split(".").join("-") }}
+      methodName: copy
+      globalArgs:
+        name: ${{ ("conn-renew-" + string(inputs.intent.instance_id)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+      inputs:
+        hosts: name:target
+        src: ${{ "/tmp/orbit-conn-renew-" + run.id + "/issued.json" }}
+        dst: ${{ "/tmp/orbit-ansible-" + run.id + "/issued.json" }}
+        direction: from
+        captureOutput: false
+        timeoutSec: 20
+  # Removes the local copy on every path, proves the session with one authenticated read, and only then stores it.
+  - name: Store the session
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Copy the session, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-t3'
+      behaviorName: ${{ "ic-t3-register" }}
+      methodName: renew
+      inputs:
+        instance_id: ${{ inputs.intent.instance_id }}
+        folder: ${{ "/tmp/orbit-ansible-" + run.id }}
+        url: ${{ inputs.intent.url }}
+        environment_id: ${{ inputs.intent.environment_id }}
+- name: cleanup
+  labels: {role: swamp}
+  dependsOn: [{job: renew, condition: {type: completed}}]
+  steps:
+  - name: Remove the Node copy
+    labels: {role: swamp}
+    writes: true
+    guard: ${{ !("Issue the Gateway session" in steps) || steps["Issue the Gateway session"].status == "skipped" }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("conn-renew-" + string(inputs.intent.instance_id)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("conn-renew-" + string(inputs.intent.instance_id)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        stdin: ''
+        timeoutSec: 20
+        argv: ${{ ["timeout", "10", "rm", "-rf", "--", "/tmp/orbit-conn-renew-" + run.id] }}
+  - name: Remove the local copy
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "conn-renew-cleanup" }}
+      methodName: execute
+      inputs:
+        run: timeout 5 rm -rf -- "$ORBIT_RENEW_LOCAL"
+        env:
+          ORBIT_RENEW_LOCAL: ${{ "/tmp/orbit-ansible-" + run.id }}
+  # The run's one public report: the stored session's vault key and end, or the `conn.*` code of the step that refused.
+  - name: Report the renewal
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: Remove the local copy
+      condition: {type: completed}
+    - step: Remove the Node copy
+      condition: {type: completed}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "conn-renew-report" }}
+      methodName: execute
+      inputs:
+        run: printf '%s' "$ORBIT_RENEW_REPORT"
+        env:
+          ORBIT_RENEW_REPORT: '${{ "Store the session" in steps && steps["Store the session"].status == "succeeded" ? steps["Store the session"].outputs.stdout : ("Issue the Gateway session" in steps && steps["Issue the Gateway session"].status == "succeeded" ? (steps["Issue the Gateway session"].outputs.stdout.contains("\"error_code\"") ? steps["Issue the Gateway session"].outputs.stdout.trim() : "{\"outcome\":\"failed\",\"error_code\":\"conn.renewal_incomplete\"}") : "{\"outcome\":\"failed\",\"error_code\":\"conn.node_unreachable\"}") }}'
+  - name: Confirm renewal
+    labels: {role: swamp}
+    dependsOn: [{step: Report the renewal, condition: {type: succeeded}}]
+    task:
+      type: assert
+      expr: 'steps["Report the renewal"].outputs.stdout.contains("\"outcome\":\"succeeded\"")'
+      message: conn.renewal_failed
+      severity: high

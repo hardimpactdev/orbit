@@ -45,6 +45,8 @@ The generated `conn-pairing-revoke` tool includes optional `pairing_id`. Its des
 
 The generated `conn-pairing-create` tool includes optional `renew`, and its schema answers 202, 409 and 422. [Conn renewal](/reference/conn#renewal) defines when a renewal is refused.
 
+The generated `conn-environment-renew` tool has no body and answers 202 with `conn.environment_renew`. Its description in `bin/docs-openapi` names `conn.environment_not_instance` and `operation.target_busy`; [Renewal of an Instance server](/reference/conn#renewal-of-an-instance-server) owns them. `conn-environment-list` also returns `renewal_error_code` and `renewal_checked_at`.
+
 The generated `conn-instance-name-check` reason includes `domain_invalid` for an uncreatable web Route. Its description names the live 64-character certificate limit and the DNS limits. [Conn name checks](/reference/conn#threads-in-an-orbit-project) owns the refusal contract.
 
 Group assistance comments have separate collection and create schemas: `GET /api/v1/tasks/{task}/comments` returns an array of `TaskCommentData`, while POST returns one comment with HTTP 201. POST has no exact-retry 200 response: retries may insert another audit comment. Its 409 response describes the orchestration, group-status, and open-child guards. Keep these operation-specific mappings in `bin/docs-openapi`; [group assistance](/reference/tasks#group-assistance-after-all-children-end) owns the behavior.

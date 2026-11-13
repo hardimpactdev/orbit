@@ -343,7 +343,7 @@ Live on Beast, with the test Laravel Project `P` (PHP 8.5) and its default Insta
 
 ### PR 5: create an Instance as a clone of the default
 
-This PR changes `instance:create`, so its spec commit updates the create page and cases with [container/create.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) and [container/t3-register.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/t3-register.mmd).
+This PR changes `instance:create`, so its spec commit updates the create page and cases with [container/create.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) and [conn/environment-renew.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd).
 
 The create flow gets these parts:
 
@@ -364,7 +364,7 @@ The code changed these points of this plan:
 
 - **Dump path.** The dump and restore to another server is not built. A clone that names another server refuses with `instance.database_clone_unsupported`.
 - **Template copy.** The template copy on the default's server is built for PostgreSQL. MySQL keeps its dump on the same server.
-- **Renewal.** The daily renewal run moves to PR 13, with the wake that also renews. A session lasts 30 days.
+- **Renewal.** Built apart from PR 13: an hourly tick renews the Gateway's session on each clone's T3 server ([Renewal of an Instance server](/reference/conn#renewal-of-an-instance-server)). The `Orbit Swamp` session is not renewed yet.
 - **Vault copy.** The Gateway session's vault copy stays, as a pairing's credential does. Swamp has no delete for a sensitive field that a step wrote.
 - **Plug-in point.** `InstanceLifecycleContribution` records creation and terminal destroy cleanup. Conn supplies it.
 - **Limits.** The copy captures four CPUs, 8 GiB of memory, 4,096 processes and a 40 GiB root disk, as the [container limits](/reference/development-containers#inside-a-container) describe.
@@ -555,7 +555,7 @@ Tests: Pest for placement by runtime and the CI proof admission. Live: a normal 
 
 The spec commit adds [container/sleep.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/sleep.mmd) and [container/wake.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/wake.mmd) to the hibernation page.
 
-It also builds the session renewal that PR 5 left out: the wake renews a session within seven days of its expiry, and a daily run (`conn.environment_renew`) renews the sessions of running clones, as [container/t3-register.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/t3-register.mmd) shows.
+The session renewal that PR 5 left out is built: an hourly `conn.environment_renew` tick, as [conn/environment-renew.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) shows. PR 13 still adds the wake. Its wake should admit the same renewal when the session ends within seven days, so a woken container does not wait for the tick.
 
 Tests: Pest for the sweep's choices, the wake admission by caller, and the joined wake. Live on Beast:
 

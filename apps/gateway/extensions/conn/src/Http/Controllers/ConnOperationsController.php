@@ -45,7 +45,7 @@ final class ConnOperationsController extends Controller
     {
         $caller = RequireActiveWireGuardPeer::activePeer($request);
         $target = match ($operation->kind) {
-            'conn.pairing_create' => 'conn_pairing', 'conn.pairing_revoke' => 'conn_pairing_node', 'conn.gateway_sessions_revoke' => 'conn_environment',
+            'conn.pairing_create' => 'conn_pairing', 'conn.pairing_revoke' => 'conn_pairing_node', 'conn.gateway_sessions_revoke' => 'conn_environment', 'conn.environment_renew' => 'conn_environment',
             'instance.create' => 'instance',
             'instance.destroy' => ($operation->state['conn_destroy_caller_node_id'] ?? null) === $caller?->id ? 'instance' : null,
             default => null,

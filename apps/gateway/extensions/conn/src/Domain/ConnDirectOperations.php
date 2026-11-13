@@ -30,6 +30,11 @@ final readonly class ConnDirectOperations implements DirectOperationContribution
                 'captures' => ['session_receipt' => ['job' => 'session-replies', 'step' => 'Read session revocations', 'field' => 'stdout'],
                     'link_receipt' => ['job' => 'link-replies', 'step' => 'Read link revocations', 'field' => 'stdout']]]];
 
+        // A renewal reports through its own last step, so a refusal keeps its `conn.*` code.
+        $kinds['conn.environment_renew'] = ['workflow' => 'operation-conn-environment-renew', 'projection' => ConnRenewalProjection::class,
+            'workflow_inputs' => true, 'terminal_result' => ['job' => 'cleanup', 'step' => 'Report the renewal'],
+            'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => ConnRenewalProjection::SessionKey]]];
+
         return $kinds;
     }
 }
