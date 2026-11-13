@@ -47,6 +47,9 @@ final readonly class StartInstanceCloneAction
         if (($replay = $this->idempotency->replay('instance.clone')) !== null) {
             return $replay;
         }
+        if ($candidate->project->nested_fleet) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Production cloning of nested-fleet Instances is not available.', 503);
+        }
         InstanceContainer::assertCheckout($candidate);
 
         return DB::transaction(function () use ($candidate, $data, $caller, $requestId): Operation {

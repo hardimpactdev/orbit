@@ -66,6 +66,9 @@ final readonly class StartInstanceMigrateAction
     {
         return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
             $instance = Instance::query()->with(['project', 'node'])->lockForUpdate()->findOrFail($instance->id);
+            if ($instance->project->nested_fleet) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'Checkout migration into a nested-fleet container is not available.', 503);
+            }
             $previous = Operation::query()->where('kind', InstanceMigration::Kind)->where('target_type', 'instance')
                 ->where('target_id', $instance->id)->latest('id')->first();
             $recovery = $previous?->result['recovery'] ?? null;

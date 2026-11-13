@@ -40,6 +40,9 @@ final readonly class DevelopmentInstanceCreateAdmission
 
     public function assertProject(Project $project, Node $node): void
     {
+        if ($project->nested_fleet) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Nested-fleet Instance creation is not available until its image variant is built.', 503);
+        }
         $this->assertDefaults($project);
         $this->assertPlacement($node);
         $this->assertSourceProfile($project);

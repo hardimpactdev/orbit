@@ -181,6 +181,12 @@ final readonly class UpdateProjectAction
     private function applyProjectCommands(Project $project, UpdateProjectData $data): Project
     {
         $changes = [];
+        if ($data->nestedFleetProvided) {
+            if ($data->nestedFleet !== $project->nested_fleet && $project->instances()->exists()) {
+                throw new ResourceOperationException('project.nested_fleet_in_use', 'The Project has Instances; its nested fleet setting cannot change.', 409);
+            }
+            $changes['nested_fleet'] = $data->nestedFleet;
+        }
         if ($data->name !== null) {
             $changes['name'] = $data->name;
         }

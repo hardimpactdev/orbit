@@ -28,6 +28,7 @@ use SensitiveParameter;
  * @property string|null $default_branch
  * @property string|null $root
  * @property string|null $task_check
+ * @property bool $nested_fleet
  * @property bool $task_workspace_routed
  * @property bool $review_and_merge
  * @property string|null $merge_check
@@ -44,6 +45,7 @@ final class Project extends Model
     /** @var array<string, mixed> */
     #[\Override]
     protected $attributes = [
+        'nested_fleet' => false,
         'type' => 'laravel-app',
         'source_access' => 'github_app',
         'review_and_merge' => false,
@@ -52,7 +54,7 @@ final class Project extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'review_and_merge', 'merge_check', 'maintenance', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'nested_fleet', 'review_and_merge', 'merge_check', 'maintenance', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at'];
 
     /** @var list<string> */
     #[\Override]
@@ -162,6 +164,7 @@ final class Project extends Model
             'type' => ProjectType::class,
             'source_access' => ProjectSourceAccess::class,
             'task_workspace_routed' => 'boolean',
+            'nested_fleet' => 'boolean',
             'review_and_merge' => 'boolean',
             'maintenance' => 'boolean',
             'is_laravel' => 'boolean',
