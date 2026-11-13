@@ -22,7 +22,7 @@ sequenceDiagram
     %%> Result:
     %%> - the command succeeds and changes nothing
   else hosts exist
-    GW->>SW: Start run, full intent<br/>operation-analytics-disable
+    GW->>SW: Start run, full intent<br/>operation-analytics-disable-direct
     GW-->>CLI: 202 Accepted<br/>task ID
     opt host outside the TLD
       Note over SW: Remove private DNS<br/>VPN Node over @swamp/ssh

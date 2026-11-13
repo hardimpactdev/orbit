@@ -34,7 +34,6 @@ The orchestrator enables read-token requests for one Services peer during deploy
 
 | Variable | Meaning |
 | --- | --- |
-| `ORBIT_OPERATION_EXECUTOR_WORKER_NODE_IDS` | IDs of the Nodes that also run executor workers, separated by commas; empty by default. Services remains included. Workers need active peer identity and Gateway access; dependency tokens remain Services-only. |
 | `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID` | Gateway-owned Services Node ID, exposed as `dependency_detection.services_node_id`. Unset or invalid disables the dependency read-token route. The route ships disabled until the orchestrator follows the activation steps below. |
 
 Deploy Gateway first. Verify Services with `orbit node:show 17 --json`. On Gateway as `orbit`, back up `/home/orbit/shared/gateway.env` with mode `0600`, then set its single `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID=17` entry without changing other settings. Run `php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure`; never run `config:cache` in a release. From Services, verify `POST /api/v1/projects/20/dependency-read-token` succeeds without printing its token, then deploy Services. Follow the [release-safe env procedure](/reference/gateway-recovery#apply-an-env-change) and the exact backup/route-check commands in the [GitHub App](/reference/github-app#services-dependency-credentials) page. The orchestrator applies this setting during deployment; a merge does not enable it.
@@ -199,7 +198,7 @@ The fleet-owned `instances.mailpit` configuration names the main Docker Node Pro
 
 A list that is not a JSON array, such as `{}` or `{"0":123}`, is malformed: enabling then refuses with `project.nested_fleet_projects_invalid`. See [Nested fleet setting](/reference/projects#nested-fleet-setting) for what the flag does. Removing an ID does not change its stored flag and does not prevent turning it off.
 
-`ORBIT_INSTANCES_NESTED_FLEET_REFRESH` turns on the [refresh after a release](/reference/development-containers#refresh-after-a-release), read as `instances.nested_fleet_refresh`. It defaults to off. While it is off, the release step prints one line and admits nothing. Turn it on only when the Club key lives off the default's disk and a safety snapshot of the default exists.
+`ORBIT_INSTANCES_NESTED_FLEET_REFRESH` turns on the [refresh after a release](/reference/development-containers#refresh-after-a-release), read as `instances.nested_fleet_refresh`. It defaults to off; the live fleet has it on since 13 November 2026. While it is off, the release step prints one line and admits nothing. Turn it on only when the Club key lives off the default's disk and a safety snapshot of the default exists.
 
 Task VM hosts use [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list. Configure and verify each host's stored settings before removing the former `ORBIT_TASK_VMS_INCUS_HOSTS` variable with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read the environment list, including when configuration is cached.
 

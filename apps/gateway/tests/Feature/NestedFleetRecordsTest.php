@@ -424,6 +424,12 @@ describe('register', function (): void {
             $result = $register();
             expect($result)->toBeInstanceOf(Instance::class)->and($result->checkout_path)->toBe($path)->and($result->status->value)->toBe('active');
             $this->assertDatabaseCount('instances', 1);
+            // Registration writes none of the unread registration columns, so a later release can drop them.
+            expect(array_filter((array) DB::table('instances')->first([
+                'registration_authoritative_path', 'registration_repository_url', 'registration_repository_identity',
+                'registration_default_branch', 'registration_inferred_slug', 'registration_relocation_state', 'registration_worktree_paths',
+            ]), static fn (mixed $value): bool => $value !== null))->toBe([])
+                ->and(DB::table('instances')->value('registration_primary'))->toBe(0);
         } else {
             expectNestedFleetRefusal($register);
             $this->assertDatabaseCount('instances', 0);

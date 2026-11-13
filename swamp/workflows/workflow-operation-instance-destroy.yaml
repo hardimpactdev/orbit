@@ -159,7 +159,8 @@ jobs:
     - step: Prepare container removal
       condition:
         type: always
-    guard: '${{ steps.exists(k, steps[k].status == "failed") || (inputs.intent.members.all(m, m.route_id == null) && (!has(inputs.intent.additional_route_ids) || size(inputs.intent.additional_route_ids) == 0) && (!("route_mutations" in inputs.intent && "restore" in inputs.intent.route_mutations && "routes" in inputs.intent.route_mutations.restore) || size(inputs.intent.route_mutations.restore.routes) == 0)) }}'
+    # A retry of a removal whose earlier run withdrew the Route skips it; the Gateway took no Route hold for that retry.
+    guard: '${{ steps.exists(k, steps[k].status == "failed") || ("route_withdrawn" in inputs.intent && inputs.intent.route_withdrawn == true) || (inputs.intent.members.all(m, m.route_id == null) && (!has(inputs.intent.additional_route_ids) || size(inputs.intent.additional_route_ids) == 0) && (!("route_mutations" in inputs.intent && "restore" in inputs.intent.route_mutations && "routes" in inputs.intent.route_mutations.restore) || size(inputs.intent.route_mutations.restore.routes) == 0)) }}'
     task:
       type: workflow
       workflowIdOrName: ${{ "route-withdraw" }}
@@ -170,6 +171,28 @@ jobs:
         side: forward
         intent: ${{ inputs.intent }}
         execution_secrets: {}
+  - name: Release the Route Nodes
+    # The Route is withdrawn: the later steps write only files of this Instance, so the Route-serving Nodes go to the next Route
+    # write now, not at the end of the run. A refused call never fails the run (the end of the Operation frees the hold then), but
+    # its line says whether the release happened, and the Operation result carries it.
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    dependsOn:
+    - step: Withdraw the Route
+      condition:
+        type: always
+    guard: ${{ !("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && steps["Withdraw the Route"].outputs.result.ready) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-hold-release-withdrawn" }}
+      methodName: execute
+      inputs:
+        run: "status=$(curl --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --output /dev/null --write-out '%{http_code}' --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\") || status=000\nif [ \"$status\" = 200 ]; then released=true; else released=false; fi\nprintf '{\"route_hold_released\":%s,\"http_status\":\"%s\"}\\n' \"$released\" \"$status\"\n"
+        env:
+          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-release" }}
+          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
   - name: Stop, remove Processes
     labels:
       role: swamp

@@ -7,7 +7,7 @@ description: "Development and production spike results, design decisions, remain
 
 The two Laravel spikes proved that an application can run in an Incus system container. A development copy kept its own files and database. Production switched between prepared containers while requests finished on the old release. A small production deployment reached its HTTPS URL in about 10.5 seconds with warm dependencies and 12.2 seconds when adding packages.
 
-This is the design record and proposed implementation plan from the experiments on 8 November 2026. The experiments are complete; the managed Orbit and Conn features are not. Proposed behavior below does not replace the current [Instance lifecycle](/domains/applications), [releases](/reference/deployments), or [task execution](/reference/tasks) contracts. Implementation starts by reconciling those contracts, not by promoting the spike scripts into a second execution engine.
+This is the design record and proposed implementation plan from the experiments on 8 November 2026. The experiments are complete. The development features are partly built ([Instance containers](/reference/development-containers)); production containers are not built. Proposed behavior below does not replace the current [Instance lifecycle](/domains/applications), [releases](/reference/deployments), or [task execution](/reference/tasks) contracts. Implementation starts by reconciling those contracts, not by promoting the spike scripts into a second execution engine.
 
 ## Direction and vocabulary
 

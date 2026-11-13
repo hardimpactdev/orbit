@@ -16,7 +16,7 @@ covers:
 
 Swamp is the only executor of task groups; it runs provision, agent turns, checks, publication, review parking and cleanup as keyed operations. The Gateway stores the board and evidence and exposes keyed operations; it never claims a group, advances a subtask, retries a turn, appends a fixup or merges a PR on a timer. All groups use `external` orchestration, including groups created without an explicit mode. Existing records move to that mode without changing their status, workspace, assistance or receipts.
 
-Tasks is an optional Gateway extension. It runs planned work with coding agents. A task is one feature or bug fix, delivered as one pull request. Its subtasks run in order in one shared task workspace. A fresh implementer builds each subtask, the Project's task check and CI verify the handoff, and a fresh reviewer approves it. Orbit commits and pushes the work. After the last approval, Orbit opens the pull request and watches it until it merges.
+Tasks is an optional Gateway extension. It runs planned work with coding agents. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet): no task VM starts today. Tasks move to copies of a container Instance. A task is one feature or bug fix, delivered as one pull request. Its subtasks run in order in one shared task workspace. A fresh implementer builds each subtask, the Project's task check and CI verify the handoff, and a fresh reviewer approves it. Orbit commits and pushes the work. After the last approval, Orbit opens the pull request and watches it until it merges.
 
 While a subtask is open, Orbit also watches a pull request on `task-{id}`. It stops starting subtasks when that pull request merges or closes.
 
@@ -1364,25 +1364,11 @@ Swamp requests group completion or cancellation through the API. The Gateway sto
 
 Teardown steps run before the workspace and task VM are destroyed, and only while the provider reports the VM running. Origin must already have the approved work, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
 
+### Task VM cleanup
+
 Task VM cleanup is the release `task_vm.slot_release`. `task:cancel` runs it as the last step of its own run. `task:complete` runs the Project teardown while the VM is `ready` and retains recorded agent transcripts, admits the release, marks the task `completed`, and answers HTTP 200 with the task. The release then deletes the VM, the Node and the workspace Instance in its own run.
 
 Release admission locks and re-reads the VM. It reuses an open release, and any other open Operation on the VM, such as a resume, refuses it with `operation.target_busy`. A refused release still completes the task, requests `removal_failure` assistance and keeps the Instance attached; completing again retries the release. A release that passes ends that request when it deletes the workspace. A VM of the old pool, without a place number, is released the same way, by its name ([release a task VM](/reference/compute-drivers#release-a-task-vm)).
-
-
-### Direct lifecycle acknowledgement
-
-`task_vm.lifecycle_intent` uses the direct Swamp writer. Swamp acknowledges the admitted task VM identity through `operation-task-vms` on the Node 209 control worker. This stage changes no VM state, contacts no provider and runs no Node command. It uses the existing workflow grant and has no credential material. The Gateway validates the target and bounded result; the old lifecycle transport cannot run this kind. An explicit `polled` writer is refused. The owning cutover is reversed with a revert PR.
-
-The scheduled workflow continues to discover the other Task VM kinds. A direct acknowledgement skips discovery and execution of that batch. Incus effects remain placed on their owning host worker.
-
-### Direct Incus VM effects
-
-Incus create, start, stop and delete also declare the direct Swamp workflow
-`operation-task-vm-incus`. Direct
-admission captures the agent digest and the fixed VM command. The exact Node
-worker runs the pinned agent with the Node user's passwordless sudo. The
-Gateway records its bounded result; it adds no execution queue, retry or wait.
-Deletion still requires the owning destruction intent before admission. A worker for another Node cannot execute the action.
 
 ## Configuration
 

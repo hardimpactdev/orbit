@@ -22,7 +22,7 @@ orbit proof <orbit-command> [--group=ID] [--idempotency-key=KEY] [--json]
 orbit proof firewall:allow
 ```
 
-Run it on the task VM that you develop in. The Gateway finds the VM and its task group by the calling Node, so the command takes no commit. The route needs Gateway access, which a task VM does not hold, so a Node with Gateway access, such as an operator machine, names the group with `--group` instead. In a terminal, an omitted command is asked for with a text prompt. A noninteractive or `--json` call that omits it is refused with `proof.command_invalid`, and so is a value that is not `family:command`. A refused call sends no request.
+Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet), so this command has no VM to run on today. Run it on the task VM that you develop in. The Gateway finds the VM and its task group by the calling Node, so the command takes no commit. The route needs Gateway access, which a task VM does not hold, so a Node with Gateway access, such as an operator machine, names the group with `--group` instead. In a terminal, an omitted command is asked for with a text prompt. A noninteractive or `--json` call that omits it is refused with `proof.command_invalid`, and so is a value that is not `family:command`. A refused call sends no request.
 
 Built, not yet passed live: the command, the admission and the run. The workflow `proof-fleet-verify` and the restore of `base` that it uses have not passed a live run yet.
 

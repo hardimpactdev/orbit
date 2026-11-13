@@ -9,6 +9,7 @@ use App\Domain\Instances\InstanceRemovalStep;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 /**
  * @property string $id
@@ -23,6 +24,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property InstanceRemovalStep|null $current_step
  * @property InstanceRemovalStep|null $failed_step
  * @property string|null $error_code
+ * @property Carbon|null $route_withdrawn_at
  * @property-read Collection<int, InstanceRemovalMember> $members
  */
 final class InstanceRemoval extends Model
@@ -51,6 +53,7 @@ final class InstanceRemoval extends Model
         'current_step',
         'failed_step',
         'error_code',
+        'route_withdrawn_at',
     ];
 
     /** @return HasMany<InstanceRemovalMember, $this> */
@@ -69,6 +72,7 @@ final class InstanceRemoval extends Model
             'status' => InstanceRemovalStatus::class,
             'current_step' => InstanceRemovalStep::class,
             'failed_step' => InstanceRemovalStep::class,
+            'route_withdrawn_at' => 'datetime',
         ];
     }
 }

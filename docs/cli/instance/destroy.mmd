@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Decided by the orchestrator, for Nick's review (2026-11-06): a withdrawal clears the Router answers of the Route from the private DNS catalog in the same step, not only its records.
-  %% Decided by the orchestrator, for Nick's review (2026-11-06): the Gateway holds each Route-serving Node from admission to the terminal state; a second Route write on it waits (docs/reference/routes.md#coordinate-publication).
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): the Gateway holds each Route-serving Node from admission until the Route is withdrawn (the terminal state when the withdrawal did not hold); a second Route write on it waits (docs/reference/routes.md#coordinate-publication).
   %% Target design: ADR 0244 task, R1-R4, single-swamp-node (@swamp/ssh from 209), DECISIONS 1 (token minted at admission, vault.get), Schedules native (Nick 2026-11-02). docs/reference/instance-removal.md.
   %% Tightened: flow-tighten 2026-11-02, rules 3, 8, 14, 17, 22 (Route first, DNS only outside the TLD, cfgmgmt absent applies, no script read, source capture, report or assert step).
   %% Decided: Nick 2026-11-02, the Route is withdrawn first, before teardown; a failed teardown leaves the site down and a rerun completes.
@@ -177,6 +177,13 @@ sequenceDiagram
   %%> - the name is removed, not moved, so no client has a new target to switch to; the Route is withdrawn right after its DNS records go
   %%> Keeps:
   %%> - every other site, pool and certificate on Node 12
+  SW->>GW: Release the Route Nodes<br/>route-release · run ID
+  %%> When:
+  %%> - only after the withdrawal held; the later steps write no Caddy, PHP pool or DNS file, so the next Route write on Node 12 starts now, not at the end
+  %%> Records:
+  %%> - the removal's route_withdrawn_at: a retry skips the withdrawal and holds no Node
+  %%> If it is refused:
+  %%> - the run goes on; the task's end frees the Nodes, and its result says route_hold_released false with the HTTP status
   end
   opt checkout Instance
   SW->>N: Stop, remove Processes<br/>@swamp/cfgmgmt/systemd absent
@@ -270,6 +277,7 @@ sequenceDiagram
     %%> - the Schedule triggers stay removed
     %%> Retry:
     %%> - run `instance:destroy 42` again; it is a new task and converges the same captured set
+    %%> - after a held withdrawal the retry skips it and waits for no Route write
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5132

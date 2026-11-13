@@ -45,6 +45,8 @@ The Node's source lock is a blocking lock today. A command that stays takes it w
 | `extension:enable`, `extension:disable` | The hooks of [ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) amendment A3 keep their fleet work in the request, with explicit timeouts of at most 180 s |
 | `tasks:subtask:*`, `tasks:comment:create`, `tasks:check:cancel`, `project:create`, `project:document:*` | 20 s per Git call and per agent call; the deliverable check reads the file tree once per request |
 
+**Amended 2026-11-13:** `instance:rename` no longer calls the Node. It reads the Node agent's latest checkout report, and it refuses a new domain with `operation.kind_unavailable`.
+
 The fleet work of `doctor` and of an extension hook grows with the fleet. When a run passes 180 seconds, it works on its Nodes in parallel in the request. Neither moves to a queue.
 
 ### The deployment history becomes operations

@@ -10,6 +10,8 @@ orbit process:start <process> [--idempotency-key=KEY] [--json]
 
 A competing operation on the same Instance makes the command wait up to 30 seconds and then return `process.operation_busy`. A competing operation on the same Process returns `process.runtime_lock_failed`.
 
+On a container Instance, a Process whose definition the Project removed answers `process.removing` (409). The next deployment of the default removes it.
+
 ## How it works
 
 <div className="flow-at" data-chart="process/start"></div>

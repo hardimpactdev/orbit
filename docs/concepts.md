@@ -23,20 +23,20 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 - **Project Documents**: Folders and versioned files owned by a Project, independent of Git branches and Instances. See [Project Documents](/reference/project-documents).
 - **Instance**: One running copy of a Project on a Node, for development or production. See [Applications](/domains/applications).
 - **Default Instance**: The Instance named `default` of a Project. It runs the Project's default branch. See [Applications](/domains/applications#the-default-instance-keeps-its-name).
-- **Container Instance**: An Instance that runs in an Incus container on its Node. It is a clone of its Project's default Instance. See [Instance containers](/reference/development-containers).
+- **Container Instance**: An Instance that runs in an Incus container on its Node. Each one except the default Instance is a clone of the default Instance. See [Instance containers](/reference/development-containers).
 - **Placement**: The Node where an Instance runs. That Node's `app-dev` or `app-prod` role makes it a development or production Instance. Process and Schedule definitions name this kind `environments`.
 - **Route**: A domain that reaches an Instance or a Node-local service. See [Routes](/reference/routes).
 - **Process**: A long-running service that Orbit manages for an Instance or a Node, such as a queue worker. See [Processes and schedules](/reference/processes-and-schedules).
 - **Schedule**: A command that runs on a timer for an Instance or a Node. See [Schedules](/reference/schedules).
-- **Database server**: A MySQL or Valkey server that Orbit runs as a Docker Process on a Node and that holds Database connections. See [Database servers](/reference/database-servers).
-- **Deployment**: One release that Orbit prepares and activates on a production Instance. See [Production release layout](/reference/deployments).
+- **Database server**: A MySQL, PostgreSQL or Valkey server that Orbit runs as a Docker Process on a Node and that holds Database connections. See [Database servers](/reference/database-servers).
+- **Deployment**: One release that Orbit prepares and activates on a production Instance, or a new commit that Orbit installs in a development default Instance. See [Production release layout](/reference/deployments).
 
 ## Operations
 
 - **Doctor**: The check that compares the state the Gateway expects with each Node's actual state. It reports every difference and changes nothing. See [Doctor](/cli/doctor).
 - **Activity**: The Gateway's record of requests. It keeps every change and every failed request, plus a sample of successful reads. See [Activity](/cli/activity).
 - **Pi server**: The service on a Node that runs Pi coding-agent sessions for the Tasks `pi` driver. See [Pi server](/reference/pi-server). Server alone names neither it nor a Database server.
-- **Node agent**: The program on managed Linux Nodes that reports presence and Process state. It never changes a Node. See [Node agent](/reference/node-agent).
+- **Node agent**: The program on managed Linux Nodes that reports presence and Process state. It also runs the typed commands that the Gateway sends. See [Node agent](/reference/node-agent).
 - **Extension**: An optional Gateway feature with one switch. A disabled extension is invisible to every client. Core reaches its code only through plug-in points. See [extension](/cli/extension) and [Extensions](/reference/extensions).
 
 ## Tasks

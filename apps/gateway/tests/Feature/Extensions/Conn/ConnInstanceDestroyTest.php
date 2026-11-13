@@ -18,10 +18,17 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\SharedPhpPoolInput;
 use App\Domain\Schedules\ScheduleRuntimeAccount;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -32,12 +39,15 @@ use App\Models\Operation;
 use App\Models\Route;
 use App\Models\Schedule;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -96,6 +106,35 @@ beforeEach(function (): void {
         }
     };
     app()->instance(WebSocketClient::class, $this->socket);
+    // The workspace read is one SSH call to the Instance's Node; this stand-in records it and answers as the reader would.
+    $this->workspace = new class implements SshExecutor
+    {
+        /** @var list<array{SshConnection, RemoteCommand}> */
+        public array $calls = [];
+
+        public ?string $answer = null;
+
+        public int $exitCode = 0;
+
+        public ?Throwable $throws = null;
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->calls[] = [$connection, $command];
+            if ($this->throws !== null) {
+                throw $this->throws;
+            }
+
+            return new CommandResult($this->exitCode, $this->answer ?? '', '', 5, false);
+        }
+    };
+    app()->instance(SshExecutor::class, $this->workspace);
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->andReturn('/fixture/key');
+    app()->instance(SshKeyProvider::class, $keys);
+    $hosts = Mockery::mock(KnownHostsStore::class);
+    $hosts->shouldReceive('path')->andReturn('/fixture/known_hosts');
+    app()->instance(KnownHostsStore::class, $hosts);
     config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/fixture-ca', 'swamp.run_token' => 'fixture-token']);
     $this->node = containerDefaultNode();
     $this->phone = Node::withoutEvents(fn (): Node => Node::query()->create([
@@ -175,15 +214,137 @@ function connRemovalSucceed(Operation $operation): void
     ]);
 }
 
+/** @return array<string, mixed> What the fixed reader prints for a running workspace. */
+function connWorkAnswer(int $modified = 0, int $untracked = 0, int $commits = 0, int $stashes = 0, string $baseline = 'recorded'): array
+{
+    $names = static fn (string $prefix, int $count): array => array_map(static fn (int $n): string => $prefix.$n, $count === 0 ? [] : range(1, min($count, 5)));
+
+    return ['state' => $modified + $untracked + $commits + $stashes > 0 ? 'dirty' : 'clean', 'reason' => null, 'baseline' => $baseline, 'head' => 'feature-x',
+        'modified' => ['count' => $modified, 'names' => $names('app/File', $modified)],
+        'untracked' => ['count' => $untracked, 'names' => $names('new', $untracked)],
+        'commits' => ['count' => $commits, 'branch_count' => $commits > 0 ? 1 : 0, 'branches' => $commits > 0 ? [['name' => 'feature-x', 'count' => $commits]] : []],
+        'stashes' => ['count' => $stashes, 'names' => $names('stash@{', $stashes)]];
+}
+
+function connWorkRead(int $id): TestResponse
+{
+    return test()->withServerVariables(['REMOTE_ADDR' => test()->phone->wireguard_ip])->getJson('/api/v1/conn/instances/'.$id.'/work');
+}
+
 it('refuses unknown work without touching Schedules Routes databases pairings or any Operation', function (): void {
     $instance = connRemovalClone();
     connRemovalResources($instance);
     $before = connRemovalStored();
     $messages = $this->socket->messages;
+    $this->workspace->answer = json_encode(['state' => 'unknown', 'reason' => 'stopped']);
     connRemovalCall($instance->id, ['acknowledge_unsaved' => false])->assertConflict()
         ->assertJsonPath('error.code', 'instance.unsaved_work')
-        ->assertJsonPath('error.details', ['uncommitted' => null, 'unpushed' => null, 'state' => 'unknown']);
+        ->assertJsonPath('error.details.state', 'unknown')->assertJsonPath('error.details.reason', 'stopped')
+        ->assertJsonPath('error.details.uncommitted', null)->assertJsonPath('error.details.unpushed', null);
     expect(connRemovalStored())->toBe($before)->and($this->socket->messages)->toBe($messages);
+});
+
+it('reads the workspace for the remove sheet with the same answer the destroy admits by', function (): void {
+    $instance = connRemovalClone();
+    $this->workspace->answer = json_encode(connWorkAnswer(modified: 3, untracked: 1, commits: 2, stashes: 1));
+    $read = connWorkRead($instance->id)->assertOk()
+        ->assertJsonPath('data.instance_id', $instance->id)->assertJsonPath('data.state', 'dirty')->assertJsonPath('data.reason', null)
+        ->assertJsonPath('data.baseline', 'recorded')->assertJsonPath('data.head', 'feature-x')
+        ->assertJsonPath('data.uncommitted', 4)->assertJsonPath('data.unpushed', 2)
+        ->assertJsonPath('data.modified', ['count' => 3, 'names' => ['app/File1', 'app/File2', 'app/File3']])
+        ->assertJsonPath('data.commits.branches', [['name' => 'feature-x', 'count' => 2]])
+        ->assertJsonPath('data.stashes.count', 1);
+    expect($read->json('data.read_at'))->toBeString()->and($read->json('data.duration_ms'))->toBeInt();
+
+    [$connection, $command] = $this->workspace->calls[0];
+    expect($connection->host)->toBe($this->node->wireguard_ip)->and($connection->commandTimeout)->toEqual(4)
+        ->and($command->timeout)->toEqual(4)
+        ->and(array_slice($command->arguments, 0, 7))->toBe(['timeout', '3', 'python3', '-', 'read', 'orbit-instances', 'instance-'.$instance->id])
+        // No baseline yet: the read compares with the Project default's container.
+        ->and(array_slice($command->arguments, 8))->toBe(['orbit-instances', 'instance-'.$this->default->id])
+        ->and($command->input)->toContain("BUDGET = 2\n");
+
+    // The refusal carries the same object; the installed Conn's keys {uncommitted, unpushed, state} are a subset.
+    $refused = connRemovalCall($instance->id, ['acknowledge_unsaved' => false])->assertConflict()
+        ->assertJsonPath('error.code', 'instance.unsaved_work');
+    $details = $refused->json('error.details');
+    expect(Arr::only($details, ['uncommitted', 'unpushed', 'state']))->toEqual(['uncommitted' => 4, 'unpushed' => 2, 'state' => 'dirty'])
+        ->and(Arr::except($details, ['read_at', 'duration_ms']))->toBe(Arr::except($read->json('data'), ['read_at', 'duration_ms']))
+        ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse();
+});
+
+it('admits a clean workspace without consent', function (): void {
+    $instance = connRemovalClone();
+    $this->workspace->answer = json_encode(connWorkAnswer());
+    connRemovalCall($instance->id, ['acknowledge_unsaved' => false])->assertAccepted()
+        ->assertJsonPath('data.kind', 'instance.destroy')->assertJsonPath('data.input.force', true);
+    expect($this->workspace->calls)->toHaveCount(1);
+});
+
+it('reads no workspace when consent is given', function (): void {
+    connRemovalCall(connRemovalClone()->id, ['acknowledge_unsaved' => true])->assertAccepted();
+    expect($this->workspace->calls)->toBe([]);
+});
+
+it('answers unknown for each reason the reader gives and unreachable for a failed or garbled read', function (?string $answer, int $exitCode, string $reason): void {
+    $instance = connRemovalClone();
+    $this->workspace->answer = $answer;
+    $this->workspace->exitCode = $exitCode;
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'unknown')->assertJsonPath('data.reason', $reason)
+        ->assertJsonPath('data.uncommitted', null)->assertJsonPath('data.modified', null)->assertJsonPath('data.baseline', null);
+    connRemovalCall($instance->id, ['acknowledge_unsaved' => false])->assertConflict()
+        ->assertJsonPath('error.code', 'instance.unsaved_work')->assertJsonPath('error.details.reason', $reason);
+})->with([
+    'stopped' => ['{"state":"unknown","reason":"stopped"}', 0, 'stopped'],
+    'asleep' => ['{"state":"unknown","reason":"asleep"}', 0, 'asleep'],
+    'timeout' => ['{"state":"unknown","reason":"timeout"}', 0, 'timeout'],
+    'not a repository' => ['{"state":"unknown","reason":"not_a_repository"}', 0, 'not_a_repository'],
+    'unlisted reason' => ['{"state":"unknown","reason":"other"}', 0, 'unreachable'],
+    'ssh failure' => [null, 255, 'unreachable'],
+    'garbled' => ['{"state":"clean"}', 0, 'unreachable'],
+    'not json' => ['Traceback', 1, 'unreachable'],
+    'outer bound' => ['', 124, 'timeout'],
+]);
+
+it('answers timeout when the SSH call itself runs out of time', function (): void {
+    $instance = connRemovalClone();
+    $this->workspace->throws = new ProcessTimedOutException(new Process(['true']), ProcessTimedOutException::TYPE_GENERAL);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'unknown')->assertJsonPath('data.reason', 'timeout');
+    // The API command deadline wraps the process timeout; it is the same timeout.
+    $this->workspace->throws = new ResourceOperationException('command.deadline_exceeded', 'The command deadline was exceeded.', 504,
+        new ProcessTimedOutException(new Process(['true']), ProcessTimedOutException::TYPE_GENERAL));
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.reason', 'timeout');
+    $this->workspace->throws = new RuntimeException('connection refused');
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.reason', 'unreachable');
+});
+
+it('sends the recorded baseline to the reader and reads a default without one', function (): void {
+    $instance = connRemovalClone();
+    $baseline = ['heads' => [str_repeat('a', 40)], 'stashes' => [], 'untracked' => ['notes.txt']];
+    $instance->runtime()->update(['workspace_baseline' => $baseline, 'workspace_baseline_at' => now()]);
+    $this->workspace->answer = json_encode(connWorkAnswer());
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'clean');
+    $command = $this->workspace->calls[0][1];
+    expect(array_slice($command->arguments, 4))->toHaveCount(4)
+        ->and($command->input)->toContain('BASELINE = json.loads(base64.b64decode("'.base64_encode(json_encode($baseline)).'"))');
+
+    $this->default->runtime()->update(['workspace_baseline' => $baseline]);
+    $this->workspace->answer = json_encode(connWorkAnswer(commits: 447, baseline: 'none'));
+    connWorkRead($this->default->id)->assertOk()->assertJsonPath('data.unpushed', 447);
+    $command = $this->workspace->calls[1][1];
+    expect(array_slice($command->arguments, 4))->toHaveCount(4)
+        ->and($command->input)->toContain('BASELINE = json.loads(base64.b64decode("'.base64_encode('null').'"))');
+});
+
+it('keeps the read behind the destroy access rule and to container Instances', function (): void {
+    $instance = connRemovalClone();
+    $host = Instance::query()->create(['project_id' => $this->default->project_id, 'node_id' => $this->node->id, 'name' => 'host-checkout',
+        'status' => 'active', 'checkout_path' => '/fixture/host-checkout', 'source_layout' => 'checkout']);
+    connWorkRead($host->id)->assertConflict()->assertJsonPath('error.code', 'instance.not_container');
+    connWorkRead(999999)->assertNotFound();
+    $this->phone->accessibleNodes()->detach();
+    connWorkRead($instance->id)->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
+    expect($this->workspace->calls)->toBe([]);
 });
 
 it('admits the forced engine and follows its Conn-owned Operation through successful deletion and replay', function (): void {

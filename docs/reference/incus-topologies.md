@@ -13,7 +13,7 @@ covers:
 
 # Incus topologies
 
-This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness composes one topology per issue from the Nodes the issue declares, nested in a task VM. Each Node is a copy of the stopped VM `node-template` from the VM's topology seed, and the harness then bootstraps a fresh test Gateway and enrolls the Nodes. `bin/e2e-topology` controls a topology, and `bin/e2e-topology-host-setup` prepares the task VM. The [using-incus-topologies](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill covers the working habits.
+This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness composes one topology per issue from the Nodes the issue declares, nested in a task VM. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet), so no topology runs today. Each Node is a copy of the stopped VM `node-template` from the VM's topology seed, and the harness then bootstraps a fresh test Gateway and enrolls the Nodes. `bin/e2e-topology` controls a topology, and `bin/e2e-topology-host-setup` prepares the task VM. The [using-incus-topologies](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill covers the working habits.
 
 This harness composes the per-issue topology of a subtask. It is not the proof of a command: that runs on the nested fleet of [stages 2 and 3](/reference/command-development-pipeline) ([old paths](/reference/old-paths)).
 

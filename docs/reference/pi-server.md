@@ -10,7 +10,7 @@ covers:
 
 The Pi server runs [Pi](https://github.com/earendil-works/pi) coding-agent sessions on a [task VM](/reference/compute-drivers#task-vms). Swamp creates sessions, starts turns and records transcript snapshots through it. Gateway task reads use those recorded snapshots and never contact Pi. The [Tasks reference](/reference/tasks#drivers) describes the driver. The source lives in `apps/pi-server`. To build, run, and check it, see [Bun and Rust projects](/reference/bun-and-rust-projects#pi-server).
 
-Orbit runs Pi only on task VMs. The Gateway installs and starts it there; see [Run Pi on a task VM](#run-pi-on-a-task-vm). No host Node runs Pi for task agents.
+Orbit runs Pi only on task VMs. The Gateway installs and starts it there; see [Run Pi on a task VM](#run-pi-on-a-task-vm). No host Node runs Pi for task agents. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet), so no Pi server runs today.
 
 The Pi packages are pinned exactly to 1.5.0, including transitive dependencies, and pass the normal three-day release-age gate. Each session runs on one Pi Durable Harness and one SQLite database. Orbit passes Pi’s tool context through when it delegates a read.
 

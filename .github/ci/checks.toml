@@ -3094,6 +3094,17 @@ inputs = ["swamp/workflows/workflow-operation-instance-destroy.yaml"]
 "Route-less checkout and linked worktree skip the child and still remove the real source" = 1
 
 [[fixture]]
+file = "swamp/tests/instance_destroy_route_release_test.ts"
+cost = 4
+slices = false
+inputs = ["swamp/workflows/workflow-operation-instance-destroy.yaml"]
+[fixture.case_costs]
+"a normal Route removal releases the Route Nodes right after its withdraw step holds, with the run's own identity" = 1
+"no release while the Route is not withdrawn: a withdraw that did not hold, failed, or never ran keeps the hold to the end" = 1
+"a retry of a removal whose Route an earlier run withdrew skips the withdraw; an intent without the mark still runs it" = 1
+"the release says whether it happened, with the Gateway's status, and a refused or failed call never fails the run" = 1
+
+[[fixture]]
 file = "swamp/tests/ansible_instance_route_withdraw_test.ts"
 cost = 12
 slices = false

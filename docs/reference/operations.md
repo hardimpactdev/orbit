@@ -438,6 +438,14 @@ An operation holds its target from the start request to its terminal status. A s
 
 A Route write holds the Nodes that serve its site, from admission to its terminal status ([Coordinate publication](/reference/routes#coordinate-publication)). The kinds are `instance.create`, `instance.destroy`, `instance.clone`, `instance.transfer`, `instance.migrate`, `instance.restore`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
 
+`instance.destroy` gives its Nodes back sooner: when its Route is withdrawn. The step `Release the Route Nodes` runs after `Withdraw the Route` has succeeded and held, and calls `operation:direct:route-release`.
+
+The later steps change only what belongs to the removed Instance: its Process units, teardown steps in its checkout, hibernation files, source, databases, container, ACL, UFW rules by comment, mail state, asleep marker and repository mirror. None writes a Caddyfile, a PHP pool file or a DNS record. The Route is `retiring` with `sites_published` false since admission, so a create or clone that renders after the release leaves out its site and PHP pool.
+
+A refused or failed call does not fail the run; the terminal status frees the Nodes then. The Operation result carries `route_hold_released` and `route_hold_release_status` (the HTTP status, `0` when the Gateway was not reached). A run whose withdrawal did not hold keeps its Nodes to the end. So does a run that an older Gateway release started, whose workflow has no release step.
+
+The release records `route_withdrawn_at` on the removal. A retry of that removal skips `Withdraw the Route` and takes no hold, so it never waits for another Route write.
+
 Task provision and cancel, `instance.register` and the Cluster Router writes hold the same Nodes for one step only. The run calls `operation:direct:route-hold` before its Route-publish step and `operation:direct:route-release` after it. The hold of such a step has a lease of 5 minutes, which the minute pass frees when it ends, and the terminal status of the Operation frees it too.
 
 The hold is the `route_publication_holds` table, with one row per Node. A finished write frees its Nodes and queues `PromoteRouteWrites`, which moves the waiting writes that fit to `queued`, oldest first, and starts them. The minute pass of `ReconcileSwampOperations` frees the Nodes of a write that ended without a release. A waiting write has no deadline; its budget starts when it starts.
@@ -704,7 +712,7 @@ That list holds the methods that only read, or that write only Swamp data, each 
 
 Every audited step declares `writes: true` or has a step entry in the same file: read-only, idempotent or unreviewed. A check that runs over SSH leaves transport files on the worker, so it is idempotent rather than read-only. The unreviewed count is pinned, so a rise shows in the diff. The audit joins shell continuation lines before checking commands. Commands built from step outputs and effects inside playbooks still need a manual check.
 
-`instance.transfer_discard` uses only `operation-instance-lifecycle-direct`; it has no executor claim/run registration or polled discovery entry. `instance:rename` starts no Operation: the Gateway records the branch from the Node agent's checkout report.
+`instance:rename` starts no Operation: the Gateway records the branch from the Node agent's checkout report.
 
 Prove each kind end to end on a dev or canary target. Its takeover PR changes the writer and deletes the replaced Gateway path and execution tests together. Rollback is a revert PR. Admitted Operations retain their writer. Scoped workflow grants and token custody require review before activation; extending one family's run grant to another workflow is not implicit.
 

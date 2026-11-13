@@ -181,7 +181,8 @@ final readonly class DirectInstanceDestroyIntent
         }
         $removal->update(['status' => InstanceRemovalStatus::Removing, 'failed_step' => null, 'error_code' => null]);
 
-        return [...$saved, 'force' => $input['force']];
+        // An earlier run withdrew the Route: the retry has no Route work, so it skips the withdraw and holds no Route Node.
+        return [...$saved, 'force' => $input['force'], ...($removal->route_withdrawn_at !== null ? ['route_withdrawn' => true] : [])];
     }
 
     /** @param array<string,mixed> $input */

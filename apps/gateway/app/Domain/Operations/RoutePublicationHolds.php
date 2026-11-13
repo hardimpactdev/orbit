@@ -59,6 +59,15 @@ final class RoutePublicationHolds
         return in_array($kind, self::StepKinds, true);
     }
 
+    /**
+     * A removal holds its Nodes from admission until its Route is withdrawn, not until its end: the run calls the release right
+     * after its withdraw step succeeded, and the later steps write only files of the removed Instance.
+     */
+    public static function releasesAfterWithdraw(string $kind): bool
+    {
+        return $kind === 'instance.destroy';
+    }
+
     /** Whether the terminal state of the kind has holds to free. */
     public static function tracks(string $kind): bool
     {
@@ -95,6 +104,10 @@ final class RoutePublicationHolds
     public static function nodes(Operation $operation): array
     {
         if (! self::tracks($operation->kind)) {
+            return [];
+        }
+        // A retry of a removal whose earlier run withdrew the Route has no Route work left: it waits for no other Route write.
+        if (self::releasesAfterWithdraw($operation->kind) && ($operation->input['route_withdrawn'] ?? false) === true) {
             return [];
         }
         $nodes = [];
@@ -261,6 +274,15 @@ final class RoutePublicationHolds
     public function releaseStep(Operation $operation): void
     {
         if (DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNotNull('lease_until')->delete() > 0) {
+            PromoteRouteWrites::dispatch()->afterCommit();
+        }
+    }
+
+    /** Gives back the Nodes a removal took at admission, once its Route is withdrawn, then asks for the waiting writes to start. */
+    public function releaseWithdrawn(Operation $operation): void
+    {
+        if (self::releasesAfterWithdraw($operation->kind)
+            && DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNull('lease_until')->delete() > 0) {
             PromoteRouteWrites::dispatch()->afterCommit();
         }
     }

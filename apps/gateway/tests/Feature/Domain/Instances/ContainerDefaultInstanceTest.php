@@ -30,6 +30,7 @@ use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Jobs\RecordWorkspaceBaseline;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -263,6 +264,8 @@ it('records a created routed container default at its first seed and admits depl
     expect(Instance::query()->findOrFail($operation->target_id)->status)->toBe(InstanceState::Active)
         ->and($runtime->power_state)->toBe(InstanceRuntimePowerState::Running)
         ->and($runtime->seed_commit)->toBe($commit);
+    // A default has no baseline: its read is the plain truth.
+    Queue::assertNotPushed(RecordWorkspaceBaseline::class);
     $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(['head' => $commit, 'files' => [
         '.env.example' => null, 'artisan' => ['mode' => '100644', 'object' => $commit, 'content' => 'entry'],
         'composer.json' => ['mode' => '100644', 'object' => $commit, 'content' => '{"require":{"php":"^8.5","laravel/framework":"^13.0"}}'],

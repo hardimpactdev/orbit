@@ -167,7 +167,7 @@ jobs:
         env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
 ```
 
-Real references: [`operation-firewall-ansible`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-firewall-ansible.yaml) (one phase, one Node) and [`route-withdraw-node-ansible`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-route-withdraw-node-ansible.yaml) (one phase per Node, run in parallel by a parent `forEach` over child workflows).
+Real reference: [`route-withdraw-node`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-route-withdraw-node.yaml) (Ansible phases on one Node; the parent `route-withdraw` runs it per Node with a `forEach` over child workflows).
 
 - **Several logical phases:** one phase step each, in order, with `dependsOn`. Pass data between phases through the run folder, not through step outputs.
 - **Several Nodes:** a parent `forEach` over a child workflow per Node, so the Nodes run in parallel. Give each item a unique `behaviorName`.
