@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "ccb683f83f3630014f6318bd0e9e263d5a05793125cc2c0cf40b0cba2f84cc00",
+    "source_sha256": "034f0ae5d7887c9aac19efb9d8c7c18ace3c12109da3bbf72d5f2dbcc708abc1",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -170,7 +170,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "3a50e8242780529230a7ae501a34da067bb0e8908dd8c61c7e8900b640e6afd4",
+    "source_sha256": "cdd89e89b7261d9e02693856c6b57cfb49634e5a1da1275abb994dd28c996ee2",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -199,6 +199,7 @@
       "the agent phase trusts only its workspace and preserves other Git settings on reruns",
       "the agent can commit with its default identity and keeps each configured identity value",
       "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes",
+      "container writes the access plan's private names into /etc/hosts, keeps other lines, and removes them when the plan has none",
       "start refuses a NIC with missing ACL before starting the container",
       "start refuses a NIC with permissive default before starting the container",
       "start refuses a NIC with bridge union ACL before starting the container",
@@ -2042,7 +2043,7 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "5f28f07f6475223a3e1b02b626886b79e067979efd3b9ab8a15fb44a79a87a5f",
+    "source_sha256": "32d376768810ab3fd7503d0f0109b53c38d459672242dc57cbfcf1accf258606",
     "cases": [
       "test_stock_mysql_without_a_host_listener_warns_instead_of_refusing",
       "test_answering_unattached_loopback_service_retains_the_refusal",
@@ -2092,6 +2093,7 @@
       "test_named_env_redis_selectors_keep_the_endpoint_check",
       "test_only_selected_database_consumers_add_network_connection_requirements",
       "test_public_http_publishers_use_the_supplied_proxy_policy",
+      "test_the_private_websocket_endpoint_is_admitted_only_at_the_port_the_access_plan_names",
       "test_known_listeners_and_browser_settings_are_not_outbound_services",
       "test_active_mail_requires_explicit_port_instead_of_guessing_the_app_default",
       "test_quoted_keys_and_escape_parity_reach_the_endpoint_check",
@@ -2587,6 +2589,15 @@
       "a message without a run id keeps the transcript",
       "transcript text is redacted and bounded to the newest entries",
       "the method reads each evidence file on its own, so an oversized read keeps the start's end"
+    ]
+  },
+  "swamp/tests/instance_connection_websocket_test.py": {
+    "source_sha256": "73560a3ca82667f907ecdae25af6e4076dca63055d1a7357c03933eb32a079ef",
+    "cases": [
+      "test_an_attached_app_adds_its_rule_once_and_keeps_the_other_rules",
+      "test_a_removed_app_closes_the_path_and_keeps_every_other_rule",
+      "test_a_moved_websocket_node_replaces_the_old_address",
+      "test_an_instance_without_an_app_changes_nothing"
     ]
   }
 }
