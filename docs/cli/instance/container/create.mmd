@@ -25,6 +25,7 @@ sequenceDiagram
   %%> - the Project's `default` Instance runs in a container on this Node, is active and has a seed snapshot, else `instance.default_missing`
   %%> - Conn is enabled, and the model router has its guard, else `operation.kind_unavailable`
   %%> - a database on a Database server clones on the default's server; another server refuses `instance.database_clone_unsupported`
+  %%> - a nested-fleet Project: the Node has the nested-fleet switch, else the placement rule refuses (in progress)
   %%> Result:
   %%> - the Instance is reserved with its runtime record: container name, bridge address, the lowest free T3 port from 3800 and the default as clone source
   %%> - `.env` is rendered from the Project's env template; it, the placeholder model key and a repository read token go to the vault
@@ -87,6 +88,18 @@ sequenceDiagram
     %%> What it does:
     %%> - writes the shared FrankenPHP Caddyfile and unit, then restarts it as `orbit`; only the Node's bridge peer with `X-Forwarded-Proto: https` sets PHP's HTTPS scheme, port and resolved client IP
   %%> - starts use nonblocking systemd jobs, then a bounded readiness check for each running unit; container Process units order after `network.target`
+    opt nested-fleet Project
+      SW->>C: Start the inner fleet<br/>planned · Club key · Doctor
+      %%> What it does:
+      %%> - places the nested-fleet Swamp Club key from the vault, owner `orbit`, mode 0600, as the agent step places the model key
+      %%> - starts the three nested containers from the seed, then the operator tunnel `wg-nested`
+      %%> - waits for the same Doctor check a proof uses: the nested Gateway is healthy and its three agents are online
+      %%> Why:
+      %%> - the seed holds a ready fleet, so a clone builds and converges nothing
+      %%> - the seed holds no Club key; each clone gets it from the vault
+      %%> On failure:
+      %%> - the step fails the create with its exit code, as the other phases do
+    end
     SW->>C: Start T3<br/>native clone-t3
     %%> What it does:
     %%> - T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`

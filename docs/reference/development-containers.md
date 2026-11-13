@@ -20,8 +20,8 @@ covers:
 | --- | --- |
 | Records, Node preparation, egress and DNS | Built |
 | Default create and deploy, clone, forced non-default destroy, checkout migration | Built on the build-list Nodes |
-| Nested-fleet placement, host preparation, start guards and recorded-project readers | Built on build-list Nodes whose switch is on, with the [nested-fleet image](#the-nested-fleet-image); the fleet inside is planned |
-| Task containers, the nested fleet itself, sleep/wake and production containers | Planned |
+| [Nested fleet](#nested-fleet) | Placement, host preparation, start guards, readers and the [nested-fleet image](#the-nested-fleet-image) built on build-list Nodes whose switch is on; the [fleet step](#the-fleet-step) built, not called by a flow; the refresh and the clone with a ready fleet planned |
+| Task containers, nested-fleet parity, sleep/wake and production containers | Planned |
 | Dedicated workspace volumes and explicit package workspace links | [Draft specification](#workspace-volumes-draft); not implemented or proved |
 
 Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
@@ -42,6 +42,7 @@ The container flows keep the kinds of today's Instance flows. Their charts sit o
 | Destroy an Instance | [container/destroy.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) |
 | Put an idle Instance to sleep | [container/sleep.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/sleep.mmd) |
 | Wake an Instance | [container/wake.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/wake.mmd) |
+| Refresh a nested-fleet default after a release | [container/fleet-refresh.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd) |
 | Register and renew the T3 server | [container/t3-register.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/t3-register.mmd) |
 | Start a thread in an Orbit Project | [container/thread.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/thread.mmd) |
 | Move a checkout Instance into a container | [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) |
@@ -142,7 +143,7 @@ Every development container has the same layout. The image and the create set it
 | `orbit` | uid 1000, home `/home/orbit` mode 0750, password locked. Runs the app and every Orbit Process |
 | `agent` | uid 2750, home `/home/agent` mode 0700, password locked. Runs T3, Claude Code, Codex and their shell commands. Owns the T3 state, the agent settings and the placeholder key |
 | `work` | gid 2760, members `agent` and `orbit` |
-| Sudo | None for either user. The image's `sudoers.d` grant is removed. The [nested-fleet image](#the-nested-fleet-image) gives `agent` alone passwordless sudo |
+| Sudo | None for either user. The image's `sudoers.d` grant is removed. The [nested-fleet image](#the-nested-fleet-image) gives `agent` alone passwordless sudo, so it is root in its own [nested-fleet](#users) container |
 | Workspace | `/srv/workspace`, owned `agent:work`. Directories are setgid `work`, mode 2770, with the default ACL `g:work:rwX` and no access for others. `core.sharedRepository=group` |
 | Git | `safe.directory=/srv/workspace` in each user's own Git config; the agent phase preserves its other Git settings |
 | Shared folders | `/opt/orbit-runtime` and `/opt/orbit-agent`, the Node's folders, mounted read-only and idmapped |
@@ -995,9 +996,9 @@ Migration checks executable availability before downtime and requires moved runn
 
 ## Nested fleet
 
-A Project setting turns on a nested fleet. Its Instance containers then run a fleet of Incus containers nested inside them. Orbit uses it for its command proofs: a Gateway, an `app-dev` and an `app-prod` Node. Other Projects leave it off and keep the kernel surface of [Inside a container](#inside-a-container).
+A Project setting turns on a nested fleet. Each Instance container of that Project then holds a fleet of Incus containers nested inside it: a Gateway with its own Swamp, an `app-dev` Node and an `app-prod` Node. Orbit uses it to prove its commands before a pull request. Other Projects leave it off and keep the kernel surface of [Inside a container](#inside-a-container).
 
-Built: placement, host preparation, the start guards, the readers below and the [nested-fleet image](#the-nested-fleet-image). Not built: the fleet itself. Every Instance of a Project with `nested_fleet` on is a container in the nested Incus project, on a [build-list](#the-build-list) Node with nested-fleet hosting on. One placement rule in the Gateway refuses every other result before any record, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
+Built: placement, host preparation, the start guards, the readers below and the [nested-fleet image](#the-nested-fleet-image). The [fleet step](#the-fleet-step) is built, but no flow calls it yet. Every Instance of a Project with `nested_fleet` on is a container in the nested Incus project, on a [build-list](#the-build-list) Node with nested-fleet hosting on. One placement rule in the Gateway refuses every other result before any record, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
 
 ### The container
 
@@ -1030,6 +1031,12 @@ The devices must be exactly the root disk, the NIC, the two read-only shared fol
 The clone probe writes only `security.idmap.isolated=true`, so its guard admits only that key. A container of `orbit-instances` keeps its NIC guard, with the same program and arguments as before.
 
 After a host reboot, Incus restores the containers that were running, without the guard. A nested-fleet container has `boot.autostart=false`, so it stays stopped. An Orbit start of the Instance, such as its deployment, starts it again through the guard. A container made before the key existed gets it at its next start, before the guard reads it: it is the one key a start writes, and Incus applies it without a restart.
+
+The outer container is only the operator of its fleet. It runs no fleet service itself. It holds:
+
+- the inner Incus, its directory pool and its bridge;
+- the operator end of the fleet's WireGuard network, brought up with `ip` and `wg` by the [start phase](#the-fleet-step) at each start of the fleet, with no unit, because `wg-quick` fails under the outer container's AppArmor profile;
+- the nested Gateway's root CA and a CLI profile `nested`, so the candidate CLI in `/srv/workspace` talks to the nested Gateway.
 
 ### Capacity
 
@@ -1069,35 +1076,33 @@ While that record exists, the create of a nested-fleet default refuses with `ins
 
 ### The fleet
 
-The fleet runs under an Incus inside the container.
+The fleet runs under the inner Incus:
 
-- `/etc/subuid` and `/etc/subgid` in the container give root `1000000:100000000` and the one ID `1000`, all inside the container's 101,000,000 IDs.
-- The pool `topology-seed` is a directory pool inside the container's root disk. A clone of the container therefore carries the fleet. A delegated ZFS dataset would not work, because `incus copy` does not copy its child datasets.
-- The network `oe-nested` is an inner bridge.
-- Each nested container has `security.nesting=true`, a memory limit and `boot.autostart=true`.
-- Each nested container also has a read-only disk device that shows `N`, from `/etc/orbit/apparmor-off`, at `/sys/module/apparmor/parameters/enabled`.
-- Docker then skips its own AppArmor profile, which cannot load two levels below the host.
-- A unit that the nested fleet runs reads its secret from `SetCredential` or a file, never `LoadCredential`. There systemd gives the unit no credential and no error.
-- The fleet check fails on a unit that breaks this rule.
+- three nested containers, `nested-gateway`, `nested-app-dev` and `nested-app-prod`;
+- the directory pool `topology-seed` in the outer root disk. A ZFS clone of the outer container then carries the whole fleet;
+- the inner bridge `oe-nested` and the fleet's WireGuard network, which the nested Gateway leads; the outer container joins it as the operator.
 
-The one ID `1000` lets the inner Incus map the outer `orbit` into its nested Nodes, so the checkout keeps its owner.
+A delegated ZFS dataset is not used: `incus copy` does not copy its child datasets.
 
-The nested Nodes keep `wg-quick` from the nested Gateway's own Node converge. The fleet build's cloud-init `bootcmd` turns off the `wg` and `wg-quick` profiles.
+`TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
 
-The default Instance builds the fleet once and keeps the three nested containers stopped, each with its own `.env`, storage, database and a `base` snapshot. Its deployments keep them current. So a clone gets its own fleet in under a second, with no half-written database pages.
+In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:100000000`, plus `1000:1` for the [workspace mapping](#fleet-rules). The range fits inside the outer 101,000,000 IDs.
 
-### How the agent reaches its fleet
+### Fleet rules
 
-The agent reaches its fleet as on a task VM, with its own tunnel.
+Each rule below is a device or config key of a nested container, or a file it reads. All of them are in `base`, because a restore of `base` reverts device and config keys.
 
-- The container joins the nested fleet as the `operator` Node, `10.45.0.10`, with its own WireGuard key.
-- Its tunnel `wg-nested` runs as `orbit-wg-nested.service` with `ip` and `wg`, because `wg-quick` segfaults in the outer container under Ubuntu 26.04's AppArmor profile.
-- The candidate CLI in the workspace talks to the nested Gateway at `https://10.45.0.1`, with the `nested` profile and the nested root CA.
-- The agent runs `incus` in the container for `exec`, logs and snapshots of its nested containers.
-- `agent` is a member of the inner Incus admin group and has passwordless sudo.
-- That makes the agent root inside its own container, never on the Node.
-- `orbit` has no access to the inner Incus.
-- The nested Gateway and `app-dev` get `/srv/workspace` as the disk device `checkout`, so an edit reaches them at once.
+| Rule | Where | Why |
+| --- | --- | --- |
+| The workspace `/srv/workspace` is the disk device `checkout`, with `shift=false` | `nested-gateway`, `nested-app-dev` | An edit reaches them at once. A shifted mount fails two levels below the host |
+| `raw.idmap "both 1000 1000"` in the inner Incus | `nested-gateway`, `nested-app-dev` | The outer `orbit` and the nested `orbit` are one owner, so both write the workspace with no `chown`. The key is the inner Incus's own; the outer container still has no `raw.*` key |
+| The Club key folder device `club-key`: `/run/orbit-club` at `/home/orbit/.config/swamp/club`, `shift=false`, and the link `/home/orbit/.config/swamp/api-key` to `club/swamp-club-api-key` | `nested-gateway` | The nested Swamp reads the [Club key](#the-club-key-of-the-nested-gateway) that Orbit delivers to the outer container's `/run` |
+| A read-only disk device that shows `N` at `/sys/module/apparmor/parameters/enabled`, from `/etc/orbit/apparmor-off` | `nested-app-dev`, `nested-app-prod` | `docker run` fails without it: Docker's own profile cannot load two levels below the host |
+| `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` in a drop-in for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service` | `nested-gateway` | Swamp verifies a new Club key at Swamp Club, and the fleet reaches the internet only through the Node's [egress proxy](#egress-and-dns) |
+| The same proxy settings as `environment.*` keys in the inner Incus | All three | A nested Node downloads the agent and packages; fleet names stay off the proxy |
+| `security.nesting=true`, a memory limit and `boot.autostart=true` | All three | Docker runs in them, and they start with the outer container |
+
+A unit in the fleet reads its secret from `SetCredential` or a file, never `LoadCredential`: there systemd gives the unit no credential and no error. The fleet check fails on a unit that breaks this rule. The nested Nodes keep `wg-quick` from their own Node converge; the fleet build's cloud-init `bootcmd` turns off the `wg` and `wg-quick` profiles.
 
 ### The Club key of the nested Gateway
 
@@ -1127,19 +1132,83 @@ A container that Incus starts by itself after a host reboot has no key until Orb
 
 ### Egress of the nested fleet
 
-The nested test Nodes reach the public internet through the Node's [egress proxy](#egress-and-dns), as the container itself does.
+The nested Nodes reach the internet through `oe-nested`, the outer container's NAT and the Node's egress proxy, so the proxy's lines carry the Instance's bridge address.
 
-| Part | Rule |
-| --- | --- |
-| Bridge | A nested-fleet container sits on the same bridge `orbitinst0`, with port isolation |
-| Path | A nested Node sends through `oe-nested` and the outer container's NAT to the proxy, so the proxy sees the container's bridge address |
-| DNS | The nested fleet's own names come from its own DNS. Outside names resolve at the proxy |
-| Settings | The fleet build sets `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` for the nested Nodes, their package managers and their Docker daemons. Fleet names stay off the proxy |
-| Record | The proxy's lines carry the container's bridge address, so they belong to the Instance. [PR 10](/solutions/development-container-runtime#pr-10-the-nested-fleet) has the Node's agent report them as egress facts, so `task:egress` shows them |
+### Users
 
-### Take and restore `base`
+Two users share the outer container, and only one of them reaches the fleet.
 
-A proof restores each nested container to its `base` snapshot. On a directory pool a restore copies back the files that changed since `base`, so its time grows with the change. The limit is 45 seconds; the UpCloud spike measured 3–4 s for a restore and 21 s to take `base` again. Taking `base` stops the three nested containers first, then snapshots and starts them, because a snapshot of a running container on a directory pool is a file copy, not a consistent state.
+`agent` drives the inner Incus as a member of its admin group. It restores `base`, runs commands in the nested containers and reads their journals. It has root in its own container through `sudo` with no password. It is never root on the Node.
+
+`orbit` cannot use the inner Incus. A firewall rule by uid in the outer container drops its traffic to the fleet's bridge and WireGuard subnets, as the image does for the model route. The rule is needed because the nested Gateway trusts the source address. Without it, any user in the container would be the fleet's operator.
+
+### Club key and snapshots
+
+[The Club key of the nested Gateway](#the-club-key-of-the-nested-gateway) owns the delivery. For the fleet:
+
+- The key is never in `base`, never in a seed snapshot and never in an export: it lives only in `/run`, a tmpfs.
+- Swamp verifies a new key once at Swamp Club before serve runs. It goes through the egress proxy, by the proxy rule above.
+- Until the key is verified, serve exits with code 75. A verified key needs no network to run.
+- An agent with root in a clone can read the key. A task in any other Project never gets it.
+
+### Refresh after a release
+
+After each Gateway release, Orbit deploys the default Instance of the nested-fleet Project to the release commit. It does so on each switched-on Node that holds that default. The run updates the outer checkout, starts the fleet, applies the checkout to the nested Gateway, converges the two nested Nodes with the release's agent delivery and waits for Doctor. Then it stops the fleet, retakes `base`, stops the outer container and takes the seed snapshot. The [refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd) has the steps. It is planned.
+
+Rules:
+
+- **Best effort.** The release admits the run and does not wait for it. A refused admission never fails the release.
+- **The old seed stays.** The new seed replaces it only after Doctor is healthy and every step passed.
+- **No refresh during a copy.** A clone copy reads the seed that a refresh replaces. So a refresh waits for every copy in flight.
+- **A failure names its step.** It leaves the old seed in place; clones keep copying it.
+- **An update, not a rebuild.** The image variant's tools change only with a new image.
+
+It replaces the release trigger and the daily run of the [task VM refresh](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-image-refresh.mmd); [Old paths](/reference/old-paths) says when those go. A Project has one default Instance in the whole fleet today, so the refresh runs on the Node that holds it.
+
+| Step | Time | Source |
+| --- | --- | --- |
+| Start to a healthy Doctor | 31 to 55 s, measured | The second inner fleet experiment on a Node |
+| Apply the checkout to the nested Gateway | Not measured in a container | |
+| Converge of the two nested Nodes | Not measured in a container | |
+| Retake `base` (stop and three snapshots) | 94 s, measured | The second experiment |
+| Seed snapshot of the outer container | Under 1 s on ZFS, measured | The ADR 0250 spike |
+
+### A clone starts its fleet
+
+A new Instance or a task of the nested-fleet Project is a ZFS clone of the default's seed, as every [clone](#create) is. The clone then starts the outer container, places the Club key, starts the fleet and the operator tunnel. It is ready when the same Doctor check that a proof uses passes: the nested Gateway is healthy and its three agents are online. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) shows the step. It is planned.
+
+A clone keeps the fleet of the seed it copied. A later refresh does not change it.
+
+| Step | Time | Source |
+| --- | --- | --- |
+| ZFS clone of the seed | Under 1 s, measured | The ADR 0250 spike |
+| Fleet start to a healthy Doctor | 31 to 55 s, measured; 54 to 90 s cold, before the fleet rules were in `base` | The first and second inner fleet experiments |
+| Whole create of a nested-fleet clone | Not measured | |
+
+### Reset
+
+A reset restores `base` of the three nested containers, then waits for the same Doctor check. `agent` runs it. A reset command is planned. Restore of all three: 7 to 8 s, measured; Doctor healthy 33 s after, measured. On a directory pool a restore copies back only the files that changed since `base`, so its time grows with the change. The proof's limit is 45 seconds.
+
+### Rebuild from stock
+
+A rebuild makes the three nested containers again from stock Ubuntu in the default Instance, as the [fleet build of a task VM](/reference/compute-drivers#build-the-nested-fleet-in-the-converge) does, applies the [fleet rules](#fleet-rules) and takes `base`. It is a rare operator action: for a new Node, or a fleet that a refresh cannot repair. The release refresh never rebuilds. How an operator starts it is planned.
+
+### Fleet capacity
+
+The numbers below size the places of a Node for nested-fleet clones.
+
+| Per running nested-fleet clone | Value | Source |
+| --- | --- | --- |
+| Memory, idle, Swamp down | 1.9 GiB, measured | First experiment |
+| Memory, Swamp up, after two proof cases | 2.37 GiB, peak 2.72 GiB, measured | Second experiment |
+| Memory under a full proof batch | Not measured | |
+| Memory limits | 12 GiB outer; 4, 3 and 3 GiB nested | |
+| Disk of the default with its fleet | 12.2 GiB on ZFS, measured | First experiment |
+| Disk written by one clone | Not measured | |
+
+A stopped clone uses no memory, only the disk it changed.
+
+Gap: which refusal comes first on a full Node for nested-fleet clones, and its error code. Both come with the task places.
 
 ### The fleet step
 

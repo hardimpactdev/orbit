@@ -12,7 +12,7 @@ Every Instance runs in an unprivileged Incus container directly on its Node. A d
 
 In progress.
 
-**Delivered state, 2026-11-11.** The independent development tick (#3331) was reverted. Development auto-deploy remains in the shared producer and depends on the policy setting. A Gateway release does not deploy development defaults. A clone starts from the container default's last successfully deployed seed; `instance:deploy` on that default is the explicit refresh path. The every-merge policy below remains the intended decision. See [Automatic development defaults](/reference/deployments#automatic-development-defaults).
+**Delivered state, 2026-11-11.** The independent development tick (#3331) was reverted. Development auto-deploy remains in the shared producer and depends on the policy setting. A Gateway release does not deploy development defaults. A clone starts from the container default's last successfully deployed seed; `instance:deploy` on that default is the explicit refresh path. The every-merge policy below remains the intended decision. A nested-fleet default is the planned exception: each Gateway release deploys it and refreshes its fleet ([Nested fleet](/reference/development-containers#refresh-after-a-release)). See [Automatic development defaults](/reference/deployments#automatic-development-defaults).
 
 Nick decided the direction on 2026-11-09, after a spike on Beast proved nested Incus with Docker inside an unprivileged container. On the same day he decided that a T3 server is the agent engine in every agent container, and that a development container and a task container are one thing. The build follows [Build order](#build-order) under Decision.
 
@@ -88,7 +88,7 @@ The spikes of 2026-11-09 settled how an Instance container with a nested fleet r
 - Containers and their nested test Nodes have full access to the public internet, always through an Orbit egress proxy on the Node. A rule in that proxy can narrow the access with no change to the containers. The proxy refuses private and fleet addresses, and containers get no DNS of their own. [Egress and DNS](/reference/development-containers#egress-and-dns) describes it.
 - Units that need secrets use `SetCredential` or files, not `LoadCredential`. In nested containers systemd reports no credential error, but the unit gets no credential and fails.
 
-The default Instance holds the fleet's ready copies, with each nested container stopped and snapshotted, so a clone holds no half-written database pages.
+The default Instance holds the fleet's ready copies, with each nested container stopped and snapshotted, so a clone holds no half-written database pages. After each Gateway release, Orbit refreshes the fleet in that default and takes a new seed; a task or Instance of the Project clones that seed. Two levels below the host, the workspace device needs `shift=false` with an ID mapping instead of a shifted mount. [Nested fleet](/reference/development-containers#nested-fleet) owns the contract.
 
 ### Users and kernel surface
 
@@ -100,7 +100,7 @@ The default Instance holds the fleet's ready copies, with each nested container 
   - This is the boundary against an attacker who comes in through a preview URL.
   - Root work (packages, services, runtime setup) goes through Orbit from the host. A project's system packages come from its recipe, not from the agent.
   - Without a nested fleet, `user.max_user_namespaces=0` is set inside the container, and the container has no nesting.
-- **With a nested fleet.** The container gets nesting and the keys above. `agent` joins the inner Incus admin group and has passwordless sudo, which makes it root inside its own container. Nothing on the host is privileged. `orbit` still gets none of it. This is the accepted risk below.
+- **With a nested fleet.** The container gets nesting and the keys above. `agent` joins the inner Incus admin group and has passwordless sudo, which makes it root inside its own container, never on the Node. Nothing on the host is privileged. `orbit` still gets none of it. This is the accepted risk below.
 - **Production containers.** Only `orbit`. No agent, no T3 and no model route.
 
 ### Agent engine in containers

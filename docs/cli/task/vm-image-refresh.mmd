@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: each task VM host keeps one stopped base VM, `shark-base`, that never gets an identity. Its ZFS snapshot is the base a task start copies; there is no Incus image and no publish. In every Gateway release, and daily, the base VM converges and a new snapshot becomes the base, so a task start's converge stays near a no-op.
+  %% Target design: each task VM host keeps one stopped base VM, `shark-base`, that never gets an identity. Its ZFS snapshot is the base a task start copies; there is no Incus image and no publish. In every Gateway release, and daily, the base VM converges and a new snapshot becomes the base, so a task start's converge stays near a no-op. Old path: the refresh of the nested-fleet default after a release (docs/cli/instance/container/fleet-refresh.mmd) replaces its release trigger and daily run; see docs/reference/old-paths.md.
   %% status: draft
   %% command: none · in every Gateway release, and daily
   %% kind: task_vm.image_refresh

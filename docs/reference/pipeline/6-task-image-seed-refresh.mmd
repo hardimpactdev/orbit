@@ -1,66 +1,48 @@
 sequenceDiagram
-  %% Target design: stage 6 of the command development pipeline. Each task VM host keeps one stopped base VM that never gets an identity; its ZFS snapshot is the base a task start copies. After a release, and once a day, every host starts its base VM, converges it as a task start would, stops it and snapshots it; the snapshot is proven with one task start and the Gateway promotes it. There is no Incus image and no publish. Nothing is copied between hosts. The per-host run: docs/cli/task/vm-image-refresh.mmd.
+  %% Target design: stage 6 of the command development pipeline. Each Node with the nested-fleet switch keeps the nested-fleet Project's default Instance, an Incus container that holds the inner fleet. After each Gateway release, Orbit deploys that default to the release commit, refreshes its fleet and takes the seed snapshot that a task or a new Instance of the Project clones. There is no VM, no image publish and no daily run. The per-Node run: docs/cli/instance/container/fleet-refresh.mmd. Until the last proof runs in containers, the task VM refresh (docs/cli/task/vm-image-refresh.mmd) still runs; see docs/reference/old-paths.md.
   %% status: draft
-  %% command: development pipeline stage 6 · per-host task image and seed refresh
+  %% command: development pipeline stage 6 · per-Node seed refresh
   %% kind: pipeline.6-task-image-seed-refresh
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
-  %% lane H icon=server pill=each host tone=amber
-  %% lane VM icon=server pill=base VM tone=gray
+  %% lane N icon=server pill=each Node tone=amber
+  %% lane C icon=server pill=default tone=purple
   participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>one run per host
-  participant H as Task VM host<br/>Incus over ssh
-  participant VM as Base VM<br/>shark-base
-  Note over GW: Start the refresh<br/>release · daily
+  participant SW as Swamp<br/>one run per Node
+  participant N as app-dev Node<br/>switched on
+  participant C as Default<br/>with inner fleet
+  Note over GW: Admit after a release<br/>best effort
   %%> Triggers:
-  %%> - every verified Gateway release, after successful verification and successful or skipped Horizon start (the release's step "Admit VM refreshes"); admission uses the verified release's artisan, is best effort and does not wait for refresh completion; a code-only release refreshes too
-  %%> - a daily Schedule; it only dispatches the admission
-  %%> - a host with a refresh open keeps it, and the newest commit waits behind it; the run that ends admits that commit
-  Note over GW: Skip held hosts<br/>skipped:operator_hold
-  %%> Result:
-  %%> - each held host is named in the release admission output or daily admission log; no Operation starts or queues
-  %%> - the host keeps its last promoted snapshot and keeps taking task VMs
-  GW->>SW: Start one run per host<br/>all in parallel
+  %%> - every verified Gateway release, from its admission step after Horizon starts; the release does not wait
+  %%> When:
+  %%> - a Node with a clone copy in flight waits until the copy ends
+  %%> - a Node with a refresh open keeps it; the newest release commit waits behind it
+  GW->>SW: Start one run per Node<br/>instance-deploy-direct
   %%> Why:
-  %%> - each host bakes its own image and seed; copying them between hosts is not a supported flow
-  loop each task VM host, in parallel
-    SW->>H: Log egress<br/>host bridge, log only
+  %%> - each Node keeps its own seed; nothing is copied between Nodes
+  loop each switched-on Node
+    SW->>C: Deploy the release commit<br/>fetch · checkout · deploy steps
     %%> What it does:
-    %%> - sets up the egress log of the host bridge: an nftables rule, an rsyslog file and the DNS log of the bridge's dnsmasq; nothing is blocked
-    %%> - the first run sets `raw.dnsmasq`, which runs the setup of the bridge again and restarts its dnsmasq: running VMs lose DNS for about a second, and Incus runs that dnsmasq without its AppArmor profile
-    SW->>H: Start the base VM<br/>incus start
+    %%> - the same steps as every container default deployment
+    SW->>C: Refresh the inner fleet<br/>apply · converge · Doctor
     %%> What it does:
-    %%> - a host without a promoted base gets one here, from the stock Ubuntu VM image and an empty seed volume: a new host, or one whose earlier base never passed its first boot; the converge that follows builds everything else
-    SW->>VM: Converge<br/>the same converge as a task start
+    %%> - starts the fleet, migrates the nested Gateway, converges the two nested Nodes, waits for Doctor
+    SW->>C: Retake base<br/>fleet stopped
+    %%> Why:
+    %%> - a restore reverts device and config keys, so `base` holds every fleet rule
+    SW->>N: Take the seed snapshot<br/>default stopped · ZFS
     %%> What it does:
-    %%> - outer VM: packages, tools, Swamp, orbit-agent, the Pi server, sshd and UFW at the release's pins; each part runs only when its digest changed
-    %%> - the warm checkout: main at the release commit, installs only where a lock file changed
-    %%> - each container: migrations and restarts only when the code changed; no wait for nested services and no identity wipe
-    %%> - a base VM without a nested fleet builds it once, in the same converge: the containers from stock Ubuntu, the nested Gateway from one local `gateway-bootstrap` run, app-dev and app-prod through its own Orbit, and a Doctor wait; a base VM with its fleet skips the build
-    SW->>H: Stop and snapshot<br/>VM and seed
-    %%> What it does:
-    %%> - stops the base VM and snapshots it and its seed volume; ZFS snapshots, about 1 s
-    SW->>H: Prove the candidate<br/>one task start
-    %%> What it does:
-    %%> - steps 2 to 4 of a task start from the new snapshot in a free place, then its release
-    SW->>H: Prune old snapshots<br/>keep -previous
-    %%> What it does:
-    %%> - keeps the new snapshot and the one before it; removes older ones
-    SW->>H: Remove host leftovers<br/>after a refresh that passed
-    %%> What it does:
-    %%> - removes images, seed volumes and projects no current path makes
-    %%> - a failure fails no refresh; the result says `host_clean: succeeded`, `failed` or `skipped` (the refresh failed first)
+    %%> - removes the Club key, stops the default and snapshots it
   end
-  alt every host refreshed
-    SW-->>GW: Host refreshed<br/>terminal event per host
-    Note over GW: Promote the snapshot<br/>task starts copy it
+  alt the run passes on a Node
+    SW-->>GW: Node refreshed<br/>terminal event per Node
+    Note over GW: Record the seed commit<br/>clones copy it
     %%> Result:
-    %%> - target about 25 s per host for a no-op refresh before the proof; one slow host does not hold the others
-    %%> - the first refresh of a new host builds the whole base, its nested fleet included (about 30 min of it)
-  else a refresh failed
-    SW--xGW: Host not refreshed<br/>failed step
-    Note over GW: Alert · try again<br/>next trigger
+    %%> - one slow Node does not hold the others; existing clones keep their fleet
+  else a step fails on a Node
+    SW--xGW: Node not refreshed<br/>failed step
+    Note over GW: Keep the old seed<br/>next release retries
     %%> Result:
-    %%> - the base VM is rolled back to the recorded snapshot and the run's snapshot removed; the identity that proved it is released
+    %%> - clones keep copying the old seed; the Operation names the failed step
   end
