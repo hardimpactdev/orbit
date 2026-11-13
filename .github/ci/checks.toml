@@ -185,13 +185,13 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 2249
+cost = 2447
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = ["a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing"]
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (141s); these are estimates, not completed measurements.
-# 42 slices give each of the 42 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 42
+# 51 slices give each of the 51 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 51
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -246,7 +246,16 @@ inputs = [
   "nested fleet start gate: changed-host-path" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
   "nested fleet start gate: writable-share" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
   "nested fleet start gate: privileged" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
-  "nested fleet start gate: clean" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "nested fleet start gate: clean" = 29 # ESTIMATE: local 13s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "nested fleet start gate: kernel-modules" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "nested fleet start gate: mount-intercept" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "nested fleet start gate: bpf-intercept" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "nested fleet start gate: shared-idmap" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "nested fleet start gate: idmap-size" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "nested fleet start gate: changed-limit" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "nested fleet start gate: user-key" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "nested fleet start gate: made-before-autostart" = 29 # ESTIMATE: local 13s x 2.1, rounded up, plus 1s; no hosted measurement yet
+  "a normal container start never writes boot.autostart" = 20 # ESTIMATE: local 9s x 2.1, rounded up, plus 1s; no hosted measurement yet
   "a nested-fleet create refuses by name, before any Incus change, while the host converge records a failed nested-fleet image build" = 80 # ESTIMATE: local 37s x 2.1, rounded up, plus 1s; no hosted measurement yet
   "without a recorded failed build a nested-fleet create makes its container from the nested-fleet image, and a normal create never reads the record" = 30 # ESTIMATE: local 13s x 2.1, rounded up, plus 1s; no hosted measurement yet
   "a normal host intent runs the exact tasks, Incus command lines and host files of main" = 67 # ESTIMATE: local 31s x 2.1, rounded up, plus 1s; no hosted measurement yet
