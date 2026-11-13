@@ -26,7 +26,7 @@ Preparing an `app-dev` Node for [Instance containers](/reference/development-con
 
 On a Node with nested-fleet hosting on, a failed build of the [nested-fleet image](/reference/development-containers#the-nested-fleet-image) does not fail the role. The Node records the failed task, and only the create of a nested-fleet default refuses until a later converge builds the image. A failed build of the normal image still fails the role. The Club key of a nested fleet never touches the Node's disk: Ansible sends it as the stdin of a pipelined task and refuses without pipelining. The delivery never waits on the container's inner Incus ([Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway)).
 
-A deployment of a nested-fleet default compares its inner fleet with the [fleet rules](/reference/development-containers#fleet-rules) before it changes anything, and refuses with `instance.container_fleet_drift` where they differ in a rule Orbit does not write.
+A deployment of a nested-fleet default compares its inner fleet with the [fleet rules](/reference/development-containers#fleet-rules) before it changes anything, and refuses with `instance.container_fleet_drift` where they differ in a rule Orbit does not write. The create of its clone runs the same check, then starts the fleet and brings up the operator tunnel; a failed fleet start names only why, because a clone took no seed.
 
 In the nested-fleet project the clone probe also passes the [nested start guard](/reference/development-containers#the-container), an allowlist of its config and devices.
 
