@@ -78,7 +78,7 @@ jobs:
         timeout-minutes: 4
         with:
           coverage: none
-      - name: Run four bounded fixture workers
+      - name: Run two bounded fixture workers
         timeout-minutes: 36
         env:
           SHARD_NAME: ${{ matrix.name }}

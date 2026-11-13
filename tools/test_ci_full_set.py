@@ -127,13 +127,13 @@ class PlanningTest(unittest.TestCase):
         self.assertEqual({'renamed': 30, 'loop 1': 30, 'loop 2': 30}, result['fixtures']['swamp/a.ts']['case_costs'])
         self.assertNotIn('old', [name for u in result['units'] for name in u['cases']])
 
-    def test_all_cases_pack_beyond_five_shards_with_four_workers(self):
+    def test_all_cases_pack_beyond_five_shards_with_two_workers(self):
         cases = [f'case {n}' for n in range(93)]
         files = [{'file': 'swamp/migration.ts', 'cost': 16740, 'after_merge': True,
                   'case_costs': {name: 180 for name in cases}}]
         result = self.plan(files, {'swamp/migration.ts': cases})
         self.assertGreater(len(result['shards']), 5)
-        self.assertEqual(4, result['budget']['shard_workers'])
+        self.assertEqual(2, result['budget']['shard_workers'])
         admitted = [name for shard in result['shards'] for name in shard['units']]
         self.assertCountEqual(admitted, [unit['unit'] for unit in result['units']])
         self.assertCountEqual(cases, [name for unit in result['units'] for name in unit['cases']])

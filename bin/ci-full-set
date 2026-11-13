@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = '.github/workflows/ci-full-set.yml'
 CEILING = 540
 DEADLINE = 2100
-WORKERS = 4
+WORKERS = 2
 
 
 def module(name, path):
