@@ -1,0 +1,48 @@
+sequenceDiagram
+  %% Container runtime (ADR 0250 step 3, docs/reference/development-containers.md#t3-registration-and-pairing, docs/reference/conn.md#renewal-of-an-instance-server): how Orbit keeps the Gateway's admin session on a container's T3 server. The create flow registers the server (built, steps clone-sessions and clone-register of workflow-operation-instance-create). This chart is its renewal, `conn.environment_renew`, workflow-operation-conn-environment-renew. The container cannot call the Gateway, so the Gateway records the session from the run's result.
+  %% status: built
+  %% command: none · hourly tick, and POST /conn/environments/{environment_id}/renew
+  %% kind: conn.environment_renew
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Conn layer
+  participant SW as Swamp<br/>workflow execution
+  participant N as Node<br/>the container
+  Note over GW: Find sessions to renew<br/>hourly · under 7 days left
+  %%> When:
+  %%> - each session of an active Instance's T3 server that ends within seven days, or has ended
+  %%> - the route admits one at once, also past the wait below
+  %%> Limits:
+  %%> - at most five a tick, the earliest end first; one a Node at a time
+  %%> - after `conn.environment_stopped`, the server waits six hours
+  %%> Result:
+  %%> - one Operation a server, holding the server's lock; the intent has no session
+  GW->>SW: Start run, full intent<br/>operation-conn-environment-renew
+  SW->>N: Issue the Gateway session<br/>t3 auth session issue
+  %%> Command, over the Node's SSH account, then in the container as `agent`:
+  %%> - `t3 auth session issue --label "Orbit Gateway" --json`, into a 0600 file of the SSH account
+  %%> Refuses first:
+  %%> - a stopped container, `conn.environment_stopped`; no container, `conn.environment_missing`
+  %%> Why no old session:
+  %%> - an ended session renews too, so a container stopped past its end comes back
+  SW->>N: Copy the session<br/>to the worker
+  SW->>SW: Store the session<br/>one authenticated read
+  %%> What it does:
+  %%> - removes the copy, then reads `/.well-known/t3/environment` and `/api/auth/session` at the recorded URL, the path a pairing takes
+  %%> - the id must be the recorded one, else `conn.environment_mismatch`; T3 must accept the session with `access:read` and `access:write`
+  %%> - only then stores it as a native sensitive field
+  SW->>N: Remove the copies<br/>on every path
+  alt the session is proven
+    SW-->>GW: Run succeeded<br/>vault key · end
+    Note over GW: Record the session
+    %%> What it does:
+    %%> - stores the session encrypted, clears the last refusal, deletes the vault copy
+    %%> Result:
+    %%> - then admits the cleanup that revokes older `Orbit Gateway` sessions; it waits while a pairing that carries the old session runs
+  else a step refused
+    SW--xGW: Run failed<br/>conn.* code
+    %%> Result:
+    %%> - the old session stays; the server record keeps the code and its time, and the next tick tries again
+  end

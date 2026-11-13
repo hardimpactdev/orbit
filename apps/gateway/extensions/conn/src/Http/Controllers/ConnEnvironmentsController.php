@@ -13,6 +13,7 @@ use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Extensions\Conn\Actions\AdmitConnCleanupAction;
+use Orbit\Extensions\Conn\Actions\AdmitConnRenewalAction;
 use Orbit\Extensions\Conn\Actions\RegisterConnEnvironmentAction;
 use Orbit\Extensions\Conn\Data\ConnEnvironmentData;
 use Orbit\Extensions\Conn\Domain\ConnServerAccess;
@@ -52,6 +53,19 @@ final class ConnEnvironmentsController extends Controller
         return $operation === null ? response()->noContent()
             : response()->json(['data' => OperationData::fromModel($operation)->toArray(),
                 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
+    }
+
+    /** The same admission as the hourly sweep, at once and past its wait for a stopped container; it refuses while one runs. */
+    #[RequiresNodeAccess(ServingNode::Collection)]
+    #[StartsOperation('conn.environment_renew', bindCaller: true)]
+    public function renew(Request $request, ConnEnvironment $environment, ConnServerAccess $access, AdmitConnRenewalAction $action): JsonResponse
+    {
+        $caller = $request->user();
+        assert($caller instanceof Node);
+        $access->assert($caller, $environment);
+
+        return response()->json(['data' => OperationData::fromModel($action->execute($environment, $caller))->toArray(),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }
 
     public function store(RegisterConnEnvironmentRequest $request, RegisterConnEnvironmentAction $action): JsonResponse

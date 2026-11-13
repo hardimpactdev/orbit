@@ -48,6 +48,7 @@ Route::middleware([
         Route::post('projects/{project}/instances', [ConnProjectsController::class, 'createInstance'])->whereNumber('project')->name('conn:instance:create');
         Route::post('instances/{instance_id}/destroy', [ConnInstancesController::class, 'destroy'])->whereNumber('instance_id')->name('conn:instance:destroy');
         Route::get('environments', [ConnEnvironmentsController::class, 'index'])->name('conn:environment:list');
+        Route::post('environments/{environment}/renew', [ConnEnvironmentsController::class, 'renew'])->name('conn:environment:renew');
         Route::post('environments/{environment}/sessions/cleanup', [ConnEnvironmentsController::class, 'cleanup'])->name('conn:environment:cleanup');
         Route::get('environments/{environment}/pairings', [ConnPairingsController::class, 'index'])->name('conn:pairing:list');
         Route::get('environments/{environment}/pairings/{pairing}', [ConnPairingsController::class, 'show'])->whereNumber('pairing')->name('conn:pairing:show');

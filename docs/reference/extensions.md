@@ -60,7 +60,7 @@ Each extension has one service provider. It extends `App\Providers\ExtensionServ
 | `enable()` | Runs before the switch turns on. The default does nothing. |
 | `disable()` | Runs after the switch turns off. The default does nothing. |
 
-The provider registers what the extension owns: its routes with `loadRoutesFrom()`, its console commands, its schedule entries, and its plug-in contributions. The `ai-router` provider registers no schedule entry: its collector converge waits for a Swamp publication ([Follow the cache connection](/reference/ai-router#follow-the-cache-connection)). It uses `loadMigrationsFrom()` only when the extension has a migration directory. The Gateway baseline includes the existing Documents, Vault, Conn, and AI router schema.
+The provider registers what the extension owns: its routes with `loadRoutesFrom()`, its console commands, its schedule entries, and its plug-in contributions. The `conn` provider registers the hourly `conn:environments:renew` ([Renewal of an Instance server](/reference/conn#renewal-of-an-instance-server)). The `ai-router` provider registers no schedule entry: its collector converge waits for a Swamp publication ([Follow the cache connection](/reference/ai-router#follow-the-cache-connection)). It uses `loadMigrationsFrom()` only when the extension has a migration directory. The Gateway baseline includes the existing Documents, Vault, Conn, and AI router schema.
 
 `ExtensionRegistry` lists the registered providers that implement `Extension`. That list is the set of known slugs: `extension:list`, `extension:enable`, and `extension:disable` accept only those. No other list of slugs exists in the Gateway.
 

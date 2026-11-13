@@ -32,10 +32,13 @@ final readonly class IssueConnPairingAction
     public function admit(Node $node, ConnEnvironment $environment, bool $renew = false): Operation
     {
         IntegrationAvailability::assertKind('conn.pairing_create');
-        $this->assertSession($environment);
         $gateway = $this->nodes->activeGatewayId() ?? throw new ResourceOperationException('conn.gateway_missing', 'Pairing needs one active Gateway Node.', 409);
 
         return DB::transaction(function () use ($node, $environment, $gateway, $renew): Operation {
+            // The lock orders this admission against a renewal's record: it copies either the old session, which the cleanup then
+            // waits for, or the new one ([Renewal of an Instance server](/reference/conn#renewal-of-an-instance-server)).
+            $environment = ConnEnvironment::query()->lockForUpdate()->findOrFail($environment->id);
+            $this->assertSession($environment);
             if ($renew && ConnPairing::query()->where('node_id', $node->id)->where('conn_environment_id', $environment->id)->latest('id')->first()?->revoked_at !== null) {
                 throw new ResourceOperationException('conn.pairing_revoked', "This Node's newest pairing on {$environment->label} was revoked, so it is not renewed. Pair again without renew to bring the server back.", 409);
             }

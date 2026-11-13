@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn;
 
+use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\Activity\ActivityInputRedaction;
+use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceLifecycleContribution;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Providers\ExtensionServiceProvider;
+use Illuminate\Console\Scheduling\Schedule;
+use Orbit\Extensions\Conn\Console\RenewConnEnvironmentsCommand;
 use Orbit\Extensions\Conn\Domain\ConnDirectOperations;
 use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
 use Orbit\Extensions\Conn\Domain\T3ServerClient;
@@ -42,6 +46,11 @@ final class ConnServiceProvider extends ExtensionServiceProvider
     public function boot(): void
     {
         $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
-
+        $this->commands([RenewConnEnvironmentsCommand::class]);
+        // Hourly, so a container started after its session ended soon gets a new one; each tick admits only the due ones.
+        $this->callAfterResolving(Schedule::class, static function (Schedule $schedule): void {
+            GatewaySchedule::command($schedule, 'conn:environments:renew', uniqueFor: 3000, overlapMinutes: 50)->hourly()
+                ->when(static fn (): bool => app(ExtensionStore::class)->enabled('conn'));
+        });
     }
 }

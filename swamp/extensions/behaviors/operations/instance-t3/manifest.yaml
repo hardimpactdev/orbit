@@ -1,8 +1,8 @@
 manifestVersion: 1
 name: "@nckrtl/instance-t3"
-version: 2026.11.10.1
+version: 2026.11.13.1
 visibility: private
 license: MIT
-description: A container clone's T3 registration reply, checked, with its two sessions stored as native sensitive fields.
+description: A container clone's T3 registration reply, checked, with its two sessions stored as native sensitive fields; and the renewal of its Gateway session.
 behaviors:
   - operations/instance-t3/mod.ts

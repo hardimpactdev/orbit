@@ -121,7 +121,7 @@ sequenceDiagram
     %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`
     SW->>C: Register the T3 server<br/>native clone-register
     %%> What it does:
-    %%> - see container/t3-register.mmd: the sessions go to the vault, and the step checks the environment id and scopes
+    %%> - see conn/environment-renew.mmd: the sessions go to the vault, and the step checks the environment id and scopes
     %%> - an inactive required unit refuses with `instance.container_process_inactive`; copy its structured public refusal even when sessions failed, skip registration, and retain the unit states in the Operation
   and independent Route job · no depth link
     opt web-serving Project

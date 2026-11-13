@@ -32,6 +32,8 @@ final class ConnEnvironmentData extends Data
         public ?string $nodeName,
         public ?string $instanceUrl,
         public ?string $powerState,
+        public ?string $renewalErrorCode,
+        public ?string $renewalCheckedAt,
     ) {}
 
     public static function fromModel(ConnEnvironment $environment): self
@@ -58,6 +60,9 @@ final class ConnEnvironmentData extends Data
             nodeName: $environment->instance?->node->name,
             instanceUrl: $environment->instance?->url(),
             powerState: $environment->instance?->runtime?->power_state->value,
+            // The last renewal of a container server's Gateway session: null after a success, else its code.
+            renewalErrorCode: $environment->renewal_error_code,
+            renewalCheckedAt: $environment->renewal_checked_at?->toIso8601String(),
         );
     }
 }

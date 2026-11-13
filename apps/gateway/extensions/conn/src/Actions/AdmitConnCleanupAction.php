@@ -7,6 +7,7 @@ namespace Orbit\Extensions\Conn\Actions;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Nodes\NodeAccessAuthorizer;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -29,6 +30,11 @@ final readonly class AdmitConnCleanupAction
             $environment = ConnEnvironment::query()->lockForUpdate()->findOrFail($environment->id);
             if ($environment->cleanup_version <= $environment->cleanup_completed_version) {
                 return null;
+            }
+            // A pairing admitted before the new session was recorded carries the old one; revoking it now would fail that pairing.
+            if (Operation::query()->where('kind', 'conn.pairing_create')->where('input->conn_environment_id', $environment->id)
+                ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
+                throw new ResourceOperationException('conn.pairing_in_progress', 'A pairing on this server still runs with the earlier session. Clean up after it ends.', 409);
             }
 
             $reference = ['vault' => 'orbit-control-inputs', 'key' => 'conn-pairing-revoke-'.Str::uuid()];

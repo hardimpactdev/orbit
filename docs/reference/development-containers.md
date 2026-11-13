@@ -43,7 +43,7 @@ The container flows keep the kinds of today's Instance flows. Their charts sit o
 | Put an idle Instance to sleep | [container/sleep.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/sleep.mmd) |
 | Wake an Instance | [container/wake.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/wake.mmd) |
 | Refresh a nested-fleet default after a release | [container/fleet-refresh.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd) |
-| Register and renew the T3 server | [container/t3-register.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/t3-register.mmd) |
+| Register and renew the T3 server | [conn/environment-renew.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) |
 | Start a thread in an Orbit Project | [container/thread.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/thread.mmd) |
 | Move a checkout Instance into a container | [migrate.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/migrate.mmd) |
 
@@ -713,7 +713,7 @@ Clones are built for the Nodes of the [build list](#the-build-list).
 
 A failed or cancelled create keeps its reservation, runtime, and any container, workspace, owned databases, test databases and role until the owner acts. A refused retry removes none of them. After work starts, Orbit attempts to stop the container and withdraw the Route. Compensation can fail; its step then stays failed. Shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live.
 
-Its Operation reports `recovery.state=retained_for_retry` and names `instance:create` with the same Project, Node, name and options, using a new idempotency key. It also names `instance:destroy INSTANCE --yes --force`. A failed or cancelled default create reports the same retry path and marks destroy unavailable; container-default removal is not built. The PostgreSQL template copy runs again on a resume, so a resume starts from the default's data again. A resume also issues new T3 sessions; the ones of the failed run stay valid in T3 until a later renewal cleans them.
+Its Operation reports `recovery.state=retained_for_retry` and names `instance:create` with the same Project, Node, name and options, using a new idempotency key. It also names `instance:destroy INSTANCE --yes --force`. A failed or cancelled default create reports the same retry path and marks destroy unavailable; container-default removal is not built. The PostgreSQL template copy runs again on a resume, so a resume starts from the default's data again. A resume also issues new T3 sessions. The `Orbit Gateway` session of the failed run stays valid in T3 until the cleanup after the next renewal revokes it; its `Orbit Swamp` session stays valid until it ends.
 
 When an admitted Project Process fails with `instance.container_process_inactive`, `recovery.retry.requires=project_process_definition` tells clients that the definition needs a change first. Built-in unit failures and other failures keep the plain retry shape.
 
@@ -889,7 +889,7 @@ In the Gateway:
 2. It reads the Gateway session from the vault into its encrypted record. The vault copy stays, as a pairing's credential does.
 3. The server's Node is the container's Node, and the record names the Instance ([Instance servers](/reference/conn#instance-servers)).
 
-The container cannot call the Gateway, so registration never comes from inside it. Its renewal is not built yet: a session lasts 30 days. PR 13 of the plan adds it: Orbit issues a new session when it wakes a container whose session expires within seven days, and a daily check renews the sessions of running containers. The [registration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/t3-register.mmd) has the steps.
+The container cannot call the Gateway, so registration never comes from inside it. Orbit renews the Gateway's session from outside, in an hourly tick ([Renewal of an Instance server](/reference/conn#renewal-of-an-instance-server)). A container started after its session ended gets a new one within the hour, or within six hours when a try found it stopped. The [registration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) has the steps.
 
 A device pairs as with any T3 server: [`conn:pairing:create`](/reference/conn#pairing-and-revocation), with node access to the container's Node. Pairing with a sleeping Instance's server refuses with `conn.environment_asleep`; the device wakes it first. T3 prints a pairing token to its journal at each start; only root and `agent` can read it, and that is accepted.
 
@@ -948,7 +948,7 @@ Swamp reaches the container's T3 as a Conn device does, with its own session.
 - **Address.** The Instance's published URL: the Node's WireGuard address and the runtime row's `t3_port`. Conn devices use the same path. The firewall admits WireGuard peers and refuses task VMs.
 - **Session.** A second T3 session, `Orbit Swamp`, from the create flow.
 - **Vault.** Swamp keeps that session in the vault and reads it in each step that calls T3.
-- **Session scope.** The session never enters a run or the Gateway's records. The renewal of [registration](#t3-registration-and-pairing) renews it, and destroy revokes it.
+- **Session scope.** The session never enters a run or the Gateway's records. Destroy revokes it. Orbit does not renew it yet, because nothing uses it: it ends after 30 days.
 - **MCP.** `POST <url>/mcp` with `Authorization: Bearer <session>`.
 - **WebSocket.** `POST <url>/api/auth/websocket-ticket` with the same bearer gives a ticket. Swamp then opens `/ws?orchestrationProtocol=2&wsTicket=<ticket>` and sends Effect RPC requests.
 - **Workspace.** File and Git actions in the container go over SSH to the Node, then `incus exec` and `incus file pull`. No token enters the container.
@@ -968,7 +968,7 @@ Swamp uses these T3 calls and no others.
 | Read state and usage | WebSocket `orchestration.getThreadProjection` | `threadId`. Gives the run's status, failure, retry and provider turns with their token usage |
 | Interrupt | MCP `t3_thread_interrupt` | `threadId`, `runId`. If the run has not ended 30 seconds later, WebSocket `orchestration.forceStopThread` with `threadId` and `runId` |
 
-`clientRequestId` is `operation-{id}`. A retried launch or send with the same id and the same session returns the same run and starts no second turn, as a repeated Pi send key does. T3 keeps these ids per session, so Orbit never renews the `Orbit Swamp` session while a turn operation of the Instance runs.
+`clientRequestId` is `operation-{id}`. A retried launch or send with the same id and the same session returns the same run and starts no second turn, as a repeated Pi send key does. T3 keeps these ids per session, so a future renewal of the `Orbit Swamp` session must not run while a turn operation of the Instance runs.
 
 `runtimeMode: full-access` holds only while the session carries no mode limit and the server's managed policy sets no lower maximum. The image sets neither.
 
