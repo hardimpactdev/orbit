@@ -28,13 +28,17 @@ final readonly class IssueConnPairingAction
 
     public function __construct(private StartOperationAction $operations, private NodeAccessAuthorizer $nodes) {}
 
-    public function admit(Node $node, ConnEnvironment $environment): Operation
+    /** A renewal never brings back a server the Node's newest pairing was revoked on; only an explicit pairing does. */
+    public function admit(Node $node, ConnEnvironment $environment, bool $renew = false): Operation
     {
         IntegrationAvailability::assertKind('conn.pairing_create');
         $this->assertSession($environment);
         $gateway = $this->nodes->activeGatewayId() ?? throw new ResourceOperationException('conn.gateway_missing', 'Pairing needs one active Gateway Node.', 409);
 
-        return DB::transaction(function () use ($node, $environment, $gateway): Operation {
+        return DB::transaction(function () use ($node, $environment, $gateway, $renew): Operation {
+            if ($renew && ConnPairing::query()->where('node_id', $node->id)->where('conn_environment_id', $environment->id)->latest('id')->first()?->revoked_at !== null) {
+                throw new ResourceOperationException('conn.pairing_revoked', "This Node's newest pairing on {$environment->label} was revoked, so it is not renewed. Pair again without renew to bring the server back.", 409);
+            }
             $pairing = ConnPairing::query()->create(['node_id' => $node->id, 'conn_environment_id' => $environment->id,
                 'client_label' => $node->name.' via Orbit '.Str::lower(Str::random(8))]);
 
