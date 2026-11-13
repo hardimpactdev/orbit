@@ -49,9 +49,6 @@ final readonly class AttachDatabaseConnectionAction
     {
         $normalizedPrefix = DatabaseConnectionPrefix::normalize($prefix);
         $instance->refresh();
-        if ($shared === true) {
-            $this->assertShareable($instance, $connection, $normalizedPrefix);
-        }
 
         if ($connection->driver === DatabaseDriver::Sqlite && $connection->node_id !== $instance->node_id) {
             throw new ResourceOperationException(
@@ -88,7 +85,10 @@ final readonly class AttachDatabaseConnectionAction
             }
 
             $recorded = DatabaseConnectionTarget::query()->where('instance_id', $instance->id)->where('prefix', $normalizedPrefix)->first();
-            $markChanged = $shared !== null && ($recorded instanceof DatabaseConnectionTarget && $recorded->shared) !== $shared;
+            $wasShared = $recorded instanceof DatabaseConnectionTarget && $recorded->shared;
+            // The mark the attachment has afterwards: an add without it keeps the recorded one, so every add is checked.
+            $this->assertShareable($instance, $connection, $normalizedPrefix, $shared ?? $wasShared);
+            $markChanged = $shared !== null && $wasShared !== $shared;
             DatabaseConnectionTarget::query()->updateOrCreate(
                 [
                     'instance_id' => $instance->id,
@@ -115,19 +115,41 @@ final readonly class AttachDatabaseConnectionAction
     }
 
     /**
-     * A shared attachment is never the Instance's own database: not under the DB prefix, not the connection its DB keys come from,
-     * and not a database Orbit made for this Instance. Each of these goes to a clone as its own database, never as a shared one.
+     * A shared attachment is a SQL connection that is never the Instance's own database: not under the DB prefix, not the connection
+     * its DB keys come from, and not a database Orbit made for this Instance. Each of these goes to a clone as its own database. A
+     * Valkey or SQLite connection is never shared: a clone gets its own Valkey user, and a SQLite file lives in the workspace. An add
+     * under DB is refused too while the Instance shares that connection under another prefix.
      */
-    private function assertShareable(Instance $instance, DatabaseConnection $connection, string $prefix): void
+    private function assertShareable(Instance $instance, DatabaseConnection $connection, string $prefix, bool $shared): void
     {
-        $default = DatabaseConnectionTarget::query()->where('instance_id', $instance->id)
-            ->where('prefix', DatabaseConnectionPrefix::Default)->value('database_connection_id');
-        if ($prefix === DatabaseConnectionPrefix::Default || $connection->id === $default || $connection->owner_instance_id === $instance->id) {
+        if (! $shared) {
+            if ($prefix === DatabaseConnectionPrefix::Default && DatabaseConnectionTarget::query()->where('instance_id', $instance->id)
+                ->where('database_connection_id', $connection->id)->where('prefix', '!=', $prefix)->where('shared', true)->exists()) {
+                $this->refuseOwn();
+            }
+
+            return;
+        }
+        if (! in_array($connection->driver, [DatabaseDriver::Mysql, DatabaseDriver::Pgsql], true)) {
             throw new ResourceOperationException(
-                errorCode: 'database.shared_own_database',
-                message: 'This is the Instance\'s own database. A clone gets its own database; only another connection can be shared.',
+                errorCode: 'database.shared_driver_unsupported',
+                message: 'Only a mysql or pgsql connection can be shared with clones.',
                 status: 422,
             );
         }
+        $default = DatabaseConnectionTarget::query()->where('instance_id', $instance->id)
+            ->where('prefix', DatabaseConnectionPrefix::Default)->value('database_connection_id');
+        if ($prefix === DatabaseConnectionPrefix::Default || $connection->id === $default || $connection->owner_instance_id === $instance->id) {
+            $this->refuseOwn();
+        }
+    }
+
+    private function refuseOwn(): never
+    {
+        throw new ResourceOperationException(
+            errorCode: 'database.shared_own_database',
+            message: 'This is the Instance\'s own database. A clone gets its own database; only another connection can be shared.',
+            status: 422,
+        );
     }
 }

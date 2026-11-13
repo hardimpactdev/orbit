@@ -194,7 +194,9 @@ A container clone gets its own database and its own Valkey user, and it never co
 
 Mark it with `shared: true` in the body of the add, or `--shared` in the CLI. `shared: false` or `--no-shared` removes the mark. Without the field, a new attachment is not shared and an existing attachment keeps its mark, so an add for another reason never ends the sharing. A change of the mark alone counts as a change.
 
-Orbit never infers the mark from the connection, its prefix or its login. It refuses the mark with `database.shared_own_database` (422) for the Instance's own database: an attachment under the `DB` prefix, the connection that the Instance has under `DB`, and a database that Orbit made for the Instance (its owner). Each clone gets its own copy of those instead.
+Orbit never infers the mark from the connection, its prefix or its login. Only a mysql or pgsql connection can be shared; a Valkey or SQLite connection is refused with `database.shared_driver_unsupported` (422), because a clone gets its own Valkey user and a SQLite file lives in the workspace.
+
+The mark is refused with `database.shared_own_database` (422) for the Instance's own database: an attachment under the `DB` prefix, the connection that the Instance has under `DB`, and a database that Orbit made for the Instance (its owner). Each clone gets its own copy of those instead. Every add is checked against the mark the attachment has afterwards, so an add without the field cannot put the own database under a shared prefix, and an add under `DB` is refused for a connection the Instance shares.
 
 A container clone of a default with a shared attachment:
 

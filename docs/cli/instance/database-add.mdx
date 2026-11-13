@@ -18,7 +18,7 @@ orbit instance:database:add <slug> --instance=SELECTOR [--prefix=PREFIX] [--netw
 | `--prefix=PREFIX` | `DB` | Uppercase key prefix: letters, digits and underscore, starting with a letter, at most 32 characters. |
 | `--network=NETWORK` | `wireguard` | `wireguard` writes the connection's stored host. `lan` writes the managed server's LAN address and needs a managed server. |
 | `--replace` | off | Allow the add to change or remove stored keys that already exist. Without it, a conflicting add changes nothing and returns `database.environment_conflict`. |
-| `--shared` | keep | Mark the attachment shared: a container clone of this Instance keeps it. Refused for the Instance's own database (`database.shared_own_database`). |
+| `--shared` | keep | Mark the attachment shared: a container clone of this Instance keeps it. Refused for the Instance's own database (`database.shared_own_database`) and for redis and sqlite (`database.shared_driver_unsupported`). An add without the flag is checked against the mark it keeps. |
 | `--no-shared` | keep | Remove the shared mark. Without `--shared` or `--no-shared`, a new attachment is not shared and an existing one keeps its mark. |
 | `--json` | off | Print the result as JSON. |
 
@@ -36,7 +36,7 @@ The add changes the Instance's stored configuration and nothing on a Node. It st
 
 An add that would change or remove a key that is already stored is refused with `database.environment_conflict` unless you pass `--replace`; nothing is written. An add that changes nothing is skipped: it succeeds with `Skipped — nothing to change (database.attachment_unchanged)` and `Changed: false`. A change of the network alone counts as a change. A sqlite connection can be added only to an Instance on the connection's Node (`database.node_mismatch`). `--network=lan` needs the managed server's Node and the Instance's Node both active with an IPv4 LAN address, and a connection on a managed server, so it is refused for sqlite and external connections (`database.lan_unavailable`). To switch back, add the connection again with `--network=wireguard --replace`; the host key changes, so `--replace` is required. See [Choose LAN for an Instance](/reference/database-connections#choose-lan-for-an-instance).
 
-`--shared` marks a connection that every copy of the Instance may use, such as a read-only catalogue. A container clone then gets the same attachment, its keys in `.env` and the network path to it. A destroy of the clone leaves the connection alone. The mark acts on container clones only. See [Share a connection with clones](/reference/database-connections#share-a-connection-with-clones). A change of the mark alone counts as a change. Passing both flags is refused with `database.shared_flags_conflict` and sends no request.
+`--shared` marks a mysql or pgsql connection that every copy of the Instance may use, such as a read-only catalogue. A container clone then gets the same attachment, its keys in `.env` and the network path to it. A destroy of the clone leaves the connection alone. The mark acts on container clones only. See [Share a connection with clones](/reference/database-connections#share-a-connection-with-clones). A change of the mark alone counts as a change. Passing both flags is refused with `database.shared_flags_conflict` and sends no request.
 
 The Instance must be active, and its placement and Route must be usable (`env.owner_unavailable`). An Instance without a recorded source profile is refused with `instance.source_profile_missing`, and a stored configuration that would be invalid with the new keys, for example more keys than the limit, with `env.configuration_invalid`.
 
@@ -58,6 +58,7 @@ The command prints a detail titled `Database connection [<slug>] added to Instan
 | `env.configuration_invalid` | The stored configuration with the new keys would be invalid. |
 | `database.node_mismatch` | A sqlite connection is not on the Instance's Node. |
 | `database.environment_conflict` | The add would change stored keys and `--replace` is not set. |
-| `database.shared_own_database` | `--shared` names the Instance's own database: the `DB` prefix, the connection under `DB`, or a database Orbit made for the Instance. |
+| `database.shared_own_database` | The attachment would be shared (by `--shared` or by the mark it keeps) and is the Instance's own database: the `DB` prefix, the connection under `DB`, or a database Orbit made for the Instance. An add under `DB` of a shared connection is refused too. |
+| `database.shared_driver_unsupported` | The attachment would be shared (by `--shared` or by the mark it keeps) and is a redis or sqlite connection; only mysql and pgsql can be shared. |
 | `database.shared_flags_conflict` | Both `--shared` and `--no-shared` are set. |
 | `database.lan_unavailable` | `--network=lan` is selected but the connection is not on a managed server, or a Node is not active or has no IPv4 LAN address. |

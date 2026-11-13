@@ -277,7 +277,7 @@ final readonly class StartDevelopmentInstanceCreateAction
      */
     private function valkey(Instance $instance, Instance $source): ?array
     {
-        $targets = DatabaseConnectionTarget::query()->with('databaseConnection.server')->where('instance_id', $source->id)->where('shared', false)
+        $targets = DatabaseConnectionTarget::query()->with('databaseConnection.server')->where('instance_id', $source->id)
             ->whereHas('databaseConnection', static fn ($query) => $query->where('driver', DatabaseDriver::Redis->value))->orderBy('id')->get();
         if ($targets->isEmpty()) {
             return null;
