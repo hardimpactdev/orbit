@@ -187,7 +187,7 @@ final readonly class InstanceContainer
         $environment = [...$environment, ...InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices)];
         $access = $this->targetAccesses($instance, $runtime, $database, $mail, $nodeServices);
         $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url);
-        $vitePort = app(ContainerProcesses::class)->vitePort($instance);
+        ['vite' => $vitePort, 'server' => $devServerPort] = app(ContainerProcesses::class)->ports($instance);
 
         return [
             'instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
@@ -234,7 +234,7 @@ final readonly class InstanceContainer
             ...($nodeServices === [] ? [] : ['node_services' => $nodeServices]),
             'mail' => $mail,
             'mail_units' => $mail === null ? [] : app(DevelopmentMail::class)->units($mail),
-            'units' => $this->units($instance, $runtime, $application, $vitePort),
+            'units' => $this->units($instance, $runtime, $application, $devServerPort),
             'web_config' => $this->webConfig($instance, $runtime),
             // `php` on every PATH in the container is the Project's static build, so `composer` runs for `agent` and `orbit` alike.
             'php' => $this->php($project),
@@ -491,11 +491,11 @@ final readonly class InstanceContainer
 
     /**
      * FrankenPHP, in classic mode, as `orbit` from the runtime folder, for a web-serving Project with a PHP version.
-     * The container's validated vp-dev port also directs PHP's development SSR requests to its own Vite server.
+     * The port of the container's dev-server preset, `vp-dev` or `vite`, also directs PHP's development SSR requests to its own Vite server.
      *
      * @return list<array{name: string, content: string}>
      */
-    public function units(Instance $instance, InstanceRuntime $runtime, string $application, ?int $vitePort): array
+    public function units(Instance $instance, InstanceRuntime $runtime, string $application, ?int $devServerPort): array
     {
         $project = $instance->project;
         $version = $project->php_version;
@@ -505,8 +505,8 @@ final readonly class InstanceContainer
         $path = self::path($project);
         $php = InstanceHostIntent::RuntimeFolder.'/current/php/'.$version.'/bin';
         $config = self::FrankenPhpConfig;
-        $hotUrl = $vitePort !== null && $instance->placementEnvironment() === 'development'
-            ? "\nEnvironment=INERTIA_SSR_HOT_URL=http://127.0.0.1:{$vitePort}" : '';
+        $hotUrl = $devServerPort !== null && $instance->placementEnvironment() === 'development'
+            ? "\nEnvironment=INERTIA_SSR_HOT_URL=http://127.0.0.1:{$devServerPort}" : '';
 
         return [['name' => self::FrankenPhpUnit, 'content' => <<<UNIT
             # Managed by Orbit.
