@@ -41,7 +41,15 @@ Orbit first resolves the same source credential as deploy and reads the Project'
 
 The whole-run budget is 5,700 seconds. It covers the declared workflow timeouts, including Node preparation, restoration and cleanup, rounded up to five minutes, plus 600 seconds for admission and settlement.
 
+A previous migrate that awaits settlement refuses a new admission with `instance.migrate_settlement_pending` (409). The response names the previous Operation and its hold-limit time. Retry after the reconciler settles it. The existing 60-minute hold limit after expiry stays in force. At that limit, a result the reconciler still cannot read ends with `instance.migrate_result_unavailable` and releases the Gateway hold. Orbit keeps the container and address reservation; it does not claim that the move restored the checkout.
+
 The attached targets in [instance:show](/cli/instance/show) are the connections migrate reads: it grants and probes their network endpoints; SQLite files move with the checkout.
+
+A missing finish receipt gets a 60-second grace from the recorded native end. The original run deadline caps this grace. A receipt that arrives during the grace keeps the normal outcome.
+
+After the grace, verified end and rollback release the runtime reservation. The Operation fails with `instance.migrate_result_unavailable`. Its result keeps `native_status` and the error keeps the known native failure facts; a cancelled root stays visible as cancelled. Without rollback proof, recovery waits until the run deadline. It then records that code and keeps the reservation and Instance runtime. It never treats a completed move as a rollback.
+
+A retained reservation refuses another migrate with `instance.migrate_recovery_required`. The refusal names the previous Operation, missing evidence and owner recovery. No Orbit command repairs missing rollback or cutover proof today.
 
 ## What moves
 

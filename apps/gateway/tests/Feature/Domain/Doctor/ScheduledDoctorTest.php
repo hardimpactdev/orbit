@@ -3,7 +3,13 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\RunDoctorAction;
+use App\Data\Doctor\DoctorFamilyReportData;
+use App\Data\Doctor\DoctorIssueData;
+use App\Data\Doctor\DoctorNodeReportData;
+use App\Data\Doctor\DoctorReportData;
 use App\Domain\AgentView\AgentStateView;
+use App\Domain\Doctor\DoctorFamily;
+use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Firewall\FirewallInspectionInput;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\NodeAccessAuthorizer;
@@ -14,6 +20,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Node;
 use App\Models\NodeFact;
 use App\Models\ProblemCollectorState;
@@ -25,8 +32,10 @@ use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Database\Eloquent\Casts\Json;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -229,6 +238,106 @@ it('keeps the group link of an auto-closed Doctor finding that recurs', function
     expect($row->fresh()->task_group_id)->toBe($group->id);
 });
 
+it('refreshes unchanged findings without moving first seen or losing linked history', function (): void {
+    $node = scheduledDoctorNode();
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+    app(RunDoctorAction::class)->collectDoctor();
+    $row = ProblemFingerprint::query()->where('evidence->doctor_code', 'node.instance_bridge_unhealthy')->sole();
+    $firstSeen = $row->first_seen->toISOString();
+    $this->travel(5)->minutes();
+    $this->view->putSubscriber(true, true, 1);
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+
+    app(RunDoctorAction::class)->collectDoctor();
+
+    $row->refresh();
+    expect($row->first_seen->toISOString())->toBe($firstSeen)
+        ->and($row->last_seen->toISOString())->toBe('2026-11-12T12:05:00.000000Z')
+        ->and($row->evidence['doctor_observed_at'])->toBe('2026-11-12T12:05:00.000000Z')
+        ->and($row->occurrences)->toBe(2)
+        ->and($row->evidence['observation_times'])->toBe(['2026-11-12T12:00:00.000000Z', '2026-11-12T12:05:00.000000Z'])
+        ->and($row->evidence['observation_counts'])->toBe([1, 1]);
+});
+
+it('updates changed Doctor text and retains the group and first seen on open or recurring rows', function (bool $resolved): void {
+    $node = scheduledDoctorNode();
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+    app(RunDoctorAction::class)->collectDoctor();
+    $row = ProblemFingerprint::query()->where('evidence->doctor_code', 'node.instance_bridge_unhealthy')->sole();
+    $firstSeen = $row->first_seen->toISOString();
+    $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Closed', 'brief' => 'Closed brief', 'status' => TaskGroupStatus::Cancelled]);
+    $row->update(['task_group_id' => $group->id, 'evidence' => [...$row->evidence,
+        'auto_closed' => true, ...($resolved ? ['resolved_at' => now()->toISOString(), 'resolution' => 'fresh_doctor_success'] : [])]]);
+    $this->travel(5)->minutes();
+    $issue = DoctorIssueData::fromInternal(DoctorFamily::Node, 'node.instance_bridge_unhealthy', DoctorIssueKind::Drift,
+        $node->id, $node->name, 'New summary', 'New expectation', 'New observation');
+    $report = DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name,
+        [DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, [$issue], [$node->id])])]);
+
+    app(ProblemCollector::class)->recordDoctor($report, now());
+
+    $row->refresh();
+    expect($row->evidence)->toMatchArray(['expected' => 'New expectation', 'observed' => 'New observation', 'summary' => 'New summary',
+        'auto_closed' => true, 'doctor_resource_present' => true, 'doctor_observed_at' => '2026-11-12T12:05:00.000000Z'])
+        ->not->toHaveKeys(['resolved_at', 'resolution'])
+        ->and($row->task_group_id)->toBe($group->id)->and($row->first_seen->toISOString())->toBe($firstSeen)
+        ->and(ProblemFingerprint::query()->where('fingerprint', $row->fingerprint)->count())->toBe(1);
+})->with([false, true]);
+
+it('rolls back the batched refresh and recovery when the collection state cannot be saved', function (): void {
+    $node = scheduledDoctorNode();
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+    app(RunDoctorAction::class)->collectDoctor();
+    $row = ProblemFingerprint::query()->where('evidence->doctor_code', 'node.instance_bridge_unhealthy')->sole();
+    $cleared = scheduledDoctorProblem($node, 'node.disk_low', (string) $node->id, '2026-11-01T00:00:00Z');
+    $cleared->update(['evidence' => [...$cleared->evidence, 'doctor_family' => 'node']]);
+    $before = $row->getAttributes();
+    $state = ProblemCollectorState::query()->sole()->getAttributes();
+    $this->travel(5)->minutes();
+    $this->view->putSubscriber(true, true, 1);
+    scheduledDoctorFacts($node, 'instance.container_endpoint_unresolved');
+    ProblemCollectorState::saving(function (): void {
+        throw new RuntimeException('state write failed');
+    });
+
+    expect(fn () => app(RunDoctorAction::class)->collectDoctor())->toThrow(RuntimeException::class, 'state write failed');
+
+    expect($row->fresh()->getAttributes())->toBe($before)
+        ->and($cleared->fresh()->evidence)->not->toHaveKey('resolved_at')
+        ->and(ProblemCollectorState::query()->sole()->getAttributes())->toBe($state);
+});
+
+it('counts two real firewall issues sharing a fingerprint and replaces that count on the next run', function (): void {
+    $node = scheduledDoctorNode();
+    scheduledDoctorFacts($node);
+    $fact = NodeFact::query()->where('node_id', $node->id)->where('kind', 'ufw')->sole();
+    $data = $fact->data;
+    // Two missing Orbit rules both identify the Node, so their code and resource key are equal.
+    $missing = array_splice($data['rules'], 0, 2);
+    expect($missing)->toHaveCount(2);
+    $fact->update(['data' => $data]);
+
+    $report = app(RunDoctorAction::class)->collectDoctor();
+
+    expect($report->summary['drift'])->toBe(2);
+    $row = ProblemFingerprint::query()->where('evidence->doctor_code', 'firewall.rule_missing')->sole();
+    expect($row->evidence['doctor_issue_count'])->toBe(2)->and($row->occurrences)->toBe(1)
+        ->and($row->evidence['observation_counts'])->toBe([2]);
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])->getJson('/api/v1/gateway/status')->assertOk();
+    expect(collect($response->json('data.doctor.issues'))->firstWhere('code', 'firewall.rule_missing'))
+        ->toMatchArray(['count' => 2, 'resource' => ['type' => 'firewall', 'id' => 'node:'.$node->id]]);
+    $this->travel(5)->minutes();
+    $this->view->putSubscriber(true, true, 1);
+    scheduledDoctorFacts($node);
+    $fact->update(['data' => [...$data, 'rules' => [...$data['rules'], $missing[0]]], 'observed_at' => now(), 'received_at' => now()]);
+
+    expect(app(RunDoctorAction::class)->collectDoctor()->summary['drift'])->toBe(1);
+    expect($row->fresh()->evidence['doctor_issue_count'])->toBe(1);
+    $response = $this->getJson('/api/v1/gateway/status')->assertOk();
+    expect(collect($response->json('data.doctor.issues'))->firstWhere('code', 'firewall.rule_missing')['count'])->toBe(1);
+});
+
 it('evicts the oldest counted arrival while retaining 288 windows', function (): void {
     $node = scheduledDoctorNode();
     $start = new DateTimeImmutable('2026-11-12T12:00:00Z');
@@ -253,13 +362,17 @@ it('shows three open groups with both first-seen bounds, a single resource and n
     $beast = scheduledDoctorNode();
     $shark = scheduledDoctorNode('shark', 8);
     $beast->accessibleNodes()->attach($shark);
+    $gateway = scheduledDoctorNode('gateway', 1);
+    $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
+    $beast->accessibleNodes()->attach($gateway);
     scheduledDoctorProblem($beast, 'process.state_mismatch', '21', '2026-11-01T00:00:00Z');
     scheduledDoctorProblem($beast, 'process.state_mismatch', '22', '2026-11-12T11:00:00Z');
     scheduledDoctorProblem($beast, 'process.crash_loop', '23', '2026-11-09T00:00:00Z');
     scheduledDoctorProblem($shark, 'process.state_mismatch', '24', '2026-11-10T00:00:00Z');
     scheduledDoctorProblem($shark, 'process.crash_loop', '25', '2026-11-12T11:59:00Z', ['resolved_at' => now()->toISOString()]);
     ProblemFingerprint::query()->create(['source' => ProblemSource::Log, 'fingerprint' => 'log|exception|frame', 'evidence' => []]);
-    ProblemCollectorState::query()->create(['observation' => ['doctor_collected_at' => '2026-11-12T12:00:00.000000Z', 'doctor_duration_ms' => 650, 'doctor_started_at' => '2026-11-12T11:59:00.000000Z']]);
+    ProblemCollectorState::query()->create(['observation' => ['doctor_collected_at' => '2026-11-12T12:00:00.000000Z', 'doctor_duration_ms' => 650, 'doctor_started_at' => '2026-11-12T11:59:00.000000Z',
+        'operation_reconcile_finished_at' => '2026-11-12T12:00:00.000000Z', 'operation_reconcile_duration_ms' => 6.125, 'operation_settlement_count' => 0]]);
     $doctor = ['collected_at' => '2026-11-12T12:00:00.000000Z', 'last_run_ms' => 650, 'hidden_nodes' => 0, 'issues' => [
         ['node_id' => $beast->id, 'node_name' => 'beast', 'code' => 'process.state_mismatch', 'count' => 2,
             'since' => '2026-11-01T00:00:00.000000Z', 'newest_since' => '2026-11-12T11:00:00.000000Z', 'resource' => null],
@@ -269,6 +382,8 @@ it('shows three open groups with both first-seen bounds, a single resource and n
             'since' => '2026-11-09T00:00:00.000000Z', 'newest_since' => '2026-11-09T00:00:00.000000Z', 'resource' => ['type' => 'process', 'id' => '23']],
     ]];
     $response = $this->withServerVariables(['REMOTE_ADDR' => $beast->wireguard_ip])->getJson('/api/v1/gateway/status')->assertOk()->assertJsonPath('data.doctor', $doctor);
+    $reconcile = ['finished_at' => '2026-11-12T12:00:00.000000Z', 'last_pass_ms' => 6.125, 'unsettled_count' => 0];
+    $response->assertJsonPath('data.reconcile', $reconcile);
     $body = $response->json();
     $body['meta']['request_id'] = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
     $fixture = ['schema' => 1, 'request' => ShowGatewayStatusRequest::class, 'route' => 'GET /api/v1/gateway/status', 'status' => 200, 'body' => $body];
@@ -278,7 +393,8 @@ it('shows three open groups with both first-seen bounds, a single resource and n
     }
     expect(is_file($path))->toBeTrue();
     expect(json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR)['body']['data']['doctor'])->toBe($doctor);
-    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])->getJson('/api/v1/gateway/status')->assertOk()->assertJsonPath('data.doctor', null);
+    expect(json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR)['body']['data']['reconcile'])->toBe($reconcile);
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])->getJson('/api/v1/gateway/status')->assertOk()->assertJsonPath('data.doctor', null)->assertJsonPath('data.reconcile', null);
 });
 
 it('shows only what the latest full collection saw and keeps older open rows as history', function (): void {
@@ -332,17 +448,31 @@ it('counts the database queries for one real collection over 15 Nodes and 80 fai
     $event = scheduledDoctorEvent();
     $queries = [];
     DB::listen(function (QueryExecuted $query) use (&$queries): void {
-        $queries[] = $query->sql;
+        $queries[] = ['sql' => $query->sql, 'transaction' => $query->connection->transactionLevel()];
     });
-    $event->run(app());
-    $count = count($queries);
-    $types = array_count_values(array_map(fn (string $sql): string => strtolower(strtok($sql, ' ')), $queries));
+    $runs = [];
+    foreach (['first', 'steady'] as $run) {
+        $this->view->putSubscriber(true, true, 15);
+        foreach (Node::query()->get() as $node) {
+            scheduledDoctorFacts($node);
+        }
+        $queries = [];
+        $event->run(app());
+        $types = array_count_values(array_map(fn (array $query): string => strtolower(strtok($query['sql'], ' ')), $queries));
+        $writes = count(array_filter($queries, fn (array $query): bool => $query['transaction'] > 1 && preg_match('/^(insert|update|delete) /i', $query['sql']) === 1));
+        $transaction = array_filter($queries, fn (array $query): bool => $query['transaction'] > 1);
+        $transactionTypes = array_count_values(array_map(fn (array $query): string => strtolower(strtok($query['sql'], ' ')), $transaction));
+        $runs[$run] = ['statements' => count($queries), 'kinds' => $types, 'transaction_kinds' => $transactionTypes, 'transaction_writes' => $writes];
+        fwrite(STDOUT, "\nDoctor collection queries (15 Nodes, 80 Process findings, {$run}): ".json_encode($runs[$run], JSON_THROW_ON_ERROR)."\n");
+        $this->travel(5)->minutes();
+    }
     expect(ProblemFingerprint::query()->count())->toBe(80)
         ->and(ProblemFingerprint::query()->where('evidence->doctor_code', 'process.runtime_missing')->count())->toBe(80)
-        ->and(ProblemCollectorState::query()->sole()->observation['doctor_collected_at'])->toBe('2026-11-12T12:00:00.000000Z');
-    fwrite(STDOUT, "\nDoctor collection queries (15 Nodes, 80 Process findings): {$count}\n");
-    fwrite(STDOUT, json_encode($types, JSON_THROW_ON_ERROR)."\n");
-    expect($count)->toBe(441);
+        ->and(ProblemCollectorState::query()->sole()->observation['doctor_collected_at'])->toBe('2026-11-12T12:05:00.000000Z')
+        ->and($runs['steady']['statements'])->toBeLessThanOrEqual(175)
+        ->and($runs['steady']['transaction_writes'])->toBe(2)
+        ->and($runs['steady']['transaction_kinds'])->toBe(['select' => 3, 'update' => 2]);
+
 });
 
 it('records the peer status fixture from the real API with its cached desired fleet state', function (): void {
@@ -360,7 +490,9 @@ it('records the peer status fixture from the real API with its cached desired fl
     }
     $recorded = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
     expect($body['data']['doctor'])->toBe(['collected_at' => null, 'last_run_ms' => null, 'hidden_nodes' => 0, 'issues' => []])
-        ->and($recorded['body']['data']['doctor'])->toBe($body['data']['doctor']);
+        ->and($recorded['body']['data']['doctor'])->toBe($body['data']['doctor'])
+        ->and($body['data']['reconcile'])->toBeNull()
+        ->and($recorded['body']['data']['reconcile'])->toBeNull();
 });
 
 it('reports one monotonic run cost and commits its stored timing with the findings', function (): void {
@@ -472,4 +604,99 @@ it('counts a late signal again after its window was evicted, retaining arrival o
     $collector->recordSignals($signals);
     $row->refresh();
     expect($row->occurrences)->toBe(289)->and($row->evidence['counted_blocks'])->toBe([...array_slice($blocks, 1), $current - 500]);
+});
+
+it('bounds the evidence decodes of a steady collection over a store with history', function (): void {
+    for ($i = 1; $i <= 15; $i++) {
+        $node = scheduledDoctorNode('node-'.$i, $i);
+        scheduledDoctorFacts($node);
+        if ($i === 1) {
+            for ($j = 1; $j <= 80; $j++) {
+                Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'process-'.$j,
+                    'runtime' => 'systemd', 'desired_state' => 'running', 'status' => 'active', 'runtime_config' => []]);
+            }
+        }
+    }
+    // 100 open rows that no current check visits, each with a filled history, as an older collection left them.
+    $blocks = range(5_926_000, 5_926_287);
+    $times = array_map(static fn (int $k): string => sprintf('2026-11-11T%02d:%02d:00.000000Z', intdiv($k, 12), ($k % 12) * 5), range(0, 19));
+    for ($k = 0; $k < 100; $k++) {
+        ProblemFingerprint::query()->create(['source' => ProblemSource::Doctor, 'fingerprint' => 'doctor#old'.$k, 'first_seen' => '2026-10-26 12:20:00',
+            'last_seen' => '2026-10-31 07:34:00', 'occurrences' => 400,
+            'evidence' => ['doctor_node' => (string) (($k % 15) + 1), 'doctor_code' => 'process.node_unreachable', 'doctor_family' => 'process',
+                'doctor_resource' => 'old'.$k, 'doctor_observed_at' => '2026-10-31T07:34:00.000000Z',
+                'observation_times' => $times, 'observation_counts' => array_fill(0, 20, 1), 'counted_blocks' => $blocks]]);
+    }
+    app(RunDoctorAction::class)->collectDoctor();
+    $this->travel(5)->minutes();
+    $this->view->putSubscriber(true, true, 15);
+    foreach (Node::query()->get() as $node) {
+        scheduledDoctorFacts($node);
+    }
+    $decodes = 0;
+    Json::decodeUsing(static function (mixed $value, ?bool $associative) use (&$decodes): mixed {
+        $decodes++;
+
+        return json_decode($value, $associative);
+    });
+    try {
+        app(RunDoctorAction::class)->collectDoctor();
+    } finally {
+        Json::decodeUsing(null);
+    }
+    fwrite(STDOUT, "\nDoctor collection evidence decodes (15 Nodes, 80 findings, 100 old rows, steady): {$decodes}\n");
+    // 180 rows. A few decodes per row is the work; a count that multiplies rows by Nodes and families is the fault.
+    expect($decodes)->toBeLessThanOrEqual(180 * 6);
+});
+
+it('trims a sample to the same result as a comparator that parses both sides', function (array $times): void {
+    $counts = array_keys($times);
+    // The comparator this helper had before it parsed each time once.
+    $stamp = static function (string $time): int {
+        try {
+            return Carbon::parse($time)->utc()->getTimestamp();
+        } catch (Throwable) {
+            return 0;
+        }
+    };
+    $order = array_keys($times);
+    usort($order, static fn (int $left, int $right): int => $stamp($times[$left]) <=> $stamp($times[$right]));
+    $expected = [[], []];
+    foreach (array_slice($order, -20) as $index) {
+        $expected[0][] = $times[$index];
+        $expected[1][] = $counts[$index];
+    }
+    $trim = new ReflectionMethod(ProblemCollector::class, 'trimSample');
+    expect($trim->invoke(app(ProblemCollector::class), $times, $counts))->toBe($expected);
+})->with([
+    'ordered, 21 windows' => [array_map(static fn (int $k): string => sprintf('2026-11-12T%02d:%02d:00.000000Z', intdiv($k, 12), ($k % 12) * 5), range(0, 20))],
+    'unordered, 25 windows' => [array_map(static fn (int $k): string => sprintf('2026-11-12T%02d:%02d:00.000000Z', intdiv(($k * 7) % 25, 12), ((($k * 7) % 25) % 12) * 5), range(0, 24))],
+    'equal times keep their arrival order' => [[...array_fill(0, 12, '2026-11-12T10:00:00.000000Z'), ...array_fill(0, 12, '2026-11-12T09:00:00.000000Z')]],
+    'legacy formats and zones' => [['2026-11-12 10:00:00', '2026-11-12T09:00:00+02:00', '2026-11-12T08:30:00Z', '12 November 2026 07:00', '2026-11-12T10:00:00.000000Z', '@1794300000']],
+    'malformed times sort first' => [['2026-11-12T10:00:00Z', 'not a time', '', '2026-13-45T99:99:99Z', '2026-11-12T09:00:00Z', 'not a time', ...array_map(static fn (int $k): string => sprintf('2026-11-11T00:%02d:00Z', $k), range(0, 19))]],
+    'fewer than 20' => [['2026-11-12T10:05:00Z', '2026-11-12T10:00:00Z']],
+    'empty' => [[]],
+]);
+
+it('reads a relative sample time once per trim', function (): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-12T12:00:00Z'));
+    $trim = new ReflectionMethod(ProblemCollector::class, 'trimSample');
+    // 'now' is 12:00:00 for the whole trim, so it sorts between the two absolute times whatever the sort compares first.
+    expect($trim->invoke(app(ProblemCollector::class), ['2026-11-12T11:50:00Z', 'now', '2026-11-12T12:00:01Z'], [10, 20, 30]))
+        ->toBe([['2026-11-12T11:50:00Z', 'now', '2026-11-12T12:00:01Z'], [10, 20, 30]]);
+});
+
+it('preserves the reconcile pass facts when scheduled Doctor rewrites collection state', function (): void {
+    $node = scheduledDoctorNode();
+    scheduledDoctorFacts($node);
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    $facts = ProblemCollectorState::query()->sole()->observation;
+    expect($facts)->toMatchArray(['operation_reconcile_finished_at' => '2026-11-12T12:00:00.000000Z',
+        'operation_settlement_oldest_completed_at' => null, 'operation_settlement_count' => 0])->toHaveKey('operation_reconcile_duration_ms');
+
+    app(RunDoctorAction::class)->scheduled();
+
+    expect(ProblemCollectorState::query()->sole()->observation)->toMatchArray([
+        ...$facts, 'doctor_collected_at' => '2026-11-12T12:00:00.000000Z', 'doctor_started_at' => '2026-11-12T12:00:00.000000Z',
+    ]);
 });

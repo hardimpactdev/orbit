@@ -146,7 +146,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: proof-verify-batch-report
+      behaviorName: ${{ "proof-verify-batch-report" }}
       methodName: execute
       inputs:
         run: |

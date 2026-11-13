@@ -20,8 +20,13 @@ final class NodeConvergeResult
         if (! is_array($value)) {
             self::invalid();
         }
-        $raw = array_intersect_key($value, array_flip(['outcome', 'phases', 'failed_phase', 'changed', 'elapsed_seconds', 'tools', 'error_code', 'cleanup_complete']));
+        $raw = array_intersect_key($value, array_flip(['outcome', 'phases', 'failed_phase', 'changed', 'elapsed_seconds', 'tools', 'error_code', 'cleanup_complete', 'failure']));
         $rules = [
+            'failure' => ['sometimes', 'required', 'array:task,host,reason,rc'],
+            'failure.task' => ['present_with:failure', 'nullable', 'string', 'min:1', 'max:120', 'regex:/\A[\x20-\x7e]+\z/D'],
+            'failure.host' => ['required_with:failure', Rule::in(['target', 'hub'])],
+            'failure.reason' => ['required_with:failure', Rule::in(['hidden', 'unreachable', 'timeout', 'assertion', 'command_failed', 'module_failed'])],
+            'failure.rc' => ['sometimes', 'integer', 'min:-2147483648', 'max:2147483647', Rule::notIn([0, 124])],
             'outcome' => ['required', Rule::in(['succeeded', 'failed'])],
             'phases' => ['required', 'array', 'list', 'size:7'],
             'phases.*' => ['required', 'array:name,status,changed,elapsed_seconds'],
@@ -71,6 +76,15 @@ final class NodeConvergeResult
             || $raw['changed'] !== array_sum(array_column($rows, 'changed'))
             || abs((float) $elapsed - array_sum(array_column($rows, 'elapsed_seconds'))) > 0.001) {
             self::invalid();
+        }
+        if (array_key_exists('failure', $raw)) {
+            $taskFailure = ValidatedData::object($raw['failure']);
+            $hasRc = array_key_exists('rc', $taskFailure);
+            if ($failure === null || ($taskFailure['reason'] === 'command_failed') !== $hasRc
+                || ($hasRc && ! is_int($taskFailure['rc']))
+                || ($taskFailure['reason'] === 'hidden' && $taskFailure['task'] !== null)) {
+                self::invalid();
+            }
         }
         foreach (is_array($raw['tools'] ?? null) ? $raw['tools'] : [] as $tool) {
             $observation = ValidatedData::object($tool);

@@ -454,6 +454,52 @@ class ExecutionTest(unittest.TestCase):
             self.assertFalse(Path(env['TMPDIR']).exists())
         self.assertNotEqual(*directories)
 
+    def test_supervisor_reaps_orphans_before_leader_exit_and_keeps_leader_status(self):
+        for leader_code, orphan_code in [(0, 7), (7, 0)]:
+            with self.subTest(leader_code=leader_code), tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                receipt = folder / 'receipt'
+                leader = textwrap.dedent(f'''
+                    import os, pathlib, time
+                    folder = pathlib.Path({scratch!r})
+                    (folder / 'leader').write_text(str(os.getpid()))
+                    for index in range(4):
+                        child = os.fork()
+                        if child == 0:
+                            if os.fork() == 0:
+                                os.setsid()
+                                (folder / ('orphan-' + str(index))).write_text(str(os.getpid()))
+                                os._exit({orphan_code})
+                            os._exit(0)
+                        os.waitpid(child, 0)
+                    while not (folder / 'release').exists():
+                        time.sleep(.01)
+                    os._exit({leader_code})
+                ''')
+                process = subprocess.Popen([sys.executable, str(ROOT / 'bin/ci-units'), '--supervise',
+                                            '30', str(receipt), 'none', sys.executable, '-c', leader])
+                try:
+                    deadline = time.monotonic() + 5
+                    while time.monotonic() < deadline:
+                        files = list(folder.glob('orphan-*'))
+                        pids = [p.read_text() for p in files]
+                        if len(pids) == 4 and all(pids) and not any(Path('/proc', p).exists() for p in pids):
+                            break
+                        time.sleep(.01)
+                    else:
+                        self.fail('adopted children were not reaped while the leader was running')
+                    self.assertIsNone(process.poll())
+                    self.assertTrue(Path('/proc', (folder / 'leader').read_text()).exists())
+                    self.assertFalse(receipt.exists(), 'unit finished before the reaping observation')
+                    (folder / 'release').touch()
+                    self.assertEqual(process.wait(timeout=5), 0)
+                    self.assertEqual(json.loads(receipt.read_text())['status'], 'passed' if leader_code == 0 else 'FAILED')
+                finally:
+                    (folder / 'release').touch()
+                    if process.poll() is None:
+                        process.terminate()
+                        process.wait(timeout=5)
+
     def test_deadline_kills_process_group_and_reports_recovery(self):
         # Both leader and child block until killed. No fixture, Ansible or timing race.
         with tempfile.TemporaryDirectory() as scratch:

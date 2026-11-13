@@ -385,11 +385,11 @@ The Gateway prepares the runtime, certificates, Caddy sites, and firewall rules 
 
 ### Certificate request forms
 
-The live Node workflows still put the domain in the common name. Development Instance create therefore has a 64-character domain limit, checked before an Operation starts with `route.domain_invalid`. DNS labels remain limited to 63 characters, and a full DNS name to 253. The signer accepts longer DNS names in the new request form so the accepting Gateway can release before the producers change.
+The Node workflows and the remaining agent certificate command use the fixed short common name `Orbit` with exactly one DNS SAN equal to the admitted domain. Instance create and the name check keep their 64-character domain limit while this producer release becomes the rollback target. The domain rule and existing responses are unchanged.
 
 The Gateway accepts two CSR forms: common name equal to the admitted domain, with either no SAN or exactly that DNS SAN; or the fixed short common name `Orbit` with exactly one DNS SAN equal to the admitted domain. It always signs the admitted domain into the leaf SAN. Caddy, TLS probes and certificate reuse check SAN, so existing leaves remain valid.
 
-Remove the old request form only when no Node, queued or in-flight run, or supported rollback release can send it. The producers are `route-create-csr`, `route-certificate-publish`, `node-role-certificate-publish` and the remaining agent producer in [dev_certificates.rs](https://github.com/hardimpactdev/orbit/blob/main/apps/agent/src/commands/dev_certificates.rs#L313). Refreshing workflows alone does not retire that agent or old rollback releases.
+Remove the old request form only when no Node, queued or in-flight run, or supported rollback release can send it. The producers are `route-create-csr`, `route-certificate-publish`, `node-role-certificate-publish` and the remaining agent producer in [dev_certificates.rs](https://github.com/hardimpactdev/orbit/blob/main/apps/agent/src/commands/dev_certificates.rs#L313). Refreshing workflows alone does not retire that agent or old rollback releases. The agent source release needs a separate binary pin promotion and verified installation on the affected Nodes before the Instance domain limit can rise. A supported rollback target must retain both the SAN-capable workflows and the fixed agent pin.
 
 ### Node scope
 
@@ -454,29 +454,29 @@ A development systemd Process gets these values from the Route domain:
 | Variable | Value |
 | --- | --- |
 | `ORBIT_DEV_SERVER_ORIGIN` | `https://<route-domain>/__orbit/vite` |
+| `DEV_SERVER_ORIGIN` | The same address, for the `vp-dev` preset only when its own Process environment does not supply this name |
 | `ORBIT_DEV_SERVER_HOST` | The Route domain |
 | `ORBIT_DEV_SERVER_PATH` | `/__orbit/vite` |
 | `ORBIT_DEV_SERVER_PORT` | The Instance's assigned port |
 
-A checkout Instance’s Vite server binds loopback and publishes the Route origin, as below. A migrated container preset binds `0.0.0.0` so the Node can reach it:
+The `vp-dev` preset supplies `DEV_SERVER_ORIGIN` so Project configuration can read the public address without an Orbit-specific environment name. A value supplied in the Process environment wins; Orbit adds nothing in that case.
+
+`DEV_SERVER_ORIGIN` has no `VITE_` prefix, so Vite does not expose it to client code by default. [Process runtime environment](/reference/processes-and-schedules#runtime-environment) describes Project precedence and when existing units receive it. The preset supplies the host, assigned port, strict-port flag and base path: a checkout binds loopback, and a container binds `0.0.0.0` so the Node can reach it.
 
 ```js
 import { defineConfig } from 'vite'
 
-const origin = process.env.ORBIT_DEV_SERVER_ORIGIN
-const path = process.env.ORBIT_DEV_SERVER_PATH
+const origin = process.env.DEV_SERVER_ORIGIN
+const publicAddress = origin ? new URL(origin) : undefined
 
 export default defineConfig({
-    base: path ? `${path}/` : '/',
+    base: publicAddress ? `${publicAddress.pathname}/` : '/',
     server: {
-        host: '127.0.0.1',
-        port: Number(process.env.ORBIT_DEV_SERVER_PORT),
-        strictPort: true,
-        origin: origin ? new URL(origin).origin : undefined,
-        hmr: origin
+        origin: publicAddress?.origin,
+        hmr: publicAddress
             ? {
                 protocol: 'wss',
-                host: process.env.ORBIT_DEV_SERVER_HOST,
+                host: publicAddress.hostname,
                 clientPort: 443,
                 path: 'hmr',
             }
@@ -485,7 +485,7 @@ export default defineConfig({
 })
 ```
 
-Vite adds its base to the HMR path, so set `hmr.path` to `hmr`. The `vp-dev` preset sets `--base=/__orbit/vite/`. Laravel's `@vite` directive reads `public/hot`. That file must contain `ORBIT_DEV_SERVER_ORIGIN`, so the browser loads `/__orbit/vite/@vite/client` from the Route domain.
+Vite adds its base to the HMR path, so set `hmr.path` to `hmr`. The `vp-dev` preset sets `--base=/__orbit/vite/`. Laravel's `@vite` directive reads `public/hot`. That file must contain the public address from `DEV_SERVER_ORIGIN`, so the browser loads `/__orbit/vite/@vite/client` from the Route domain.
 
 ### Private network trust
 
@@ -713,6 +713,8 @@ Instance removal deletes a Route whose last target it removes, before it finaliz
 
 ## Coordinate publication
 
+Each Route plan captures the control Node resolved from the Swamp role with its Node connections, including connections needed only for certificate cleanup. Certificate retirement omits this unused metadata from its child call, so older plans need no new key. The child accepts the field as an optional integer for other callers; placement uses the Swamp role and the captured SSH connection.
+
 The Gateway's Route publication hold orders writers during normal work. The Node guard is a second layer for writers that use it. Withdrawal waits at most 5 seconds for an exclusive lock on `/etc/caddy/.orbit-publish.lock`. Under that lock, it compares the composed-from SHA-256 with the live Caddyfile, validates a restricted candidate, renames that exact inode and reloads Caddy.
 
 The lock file is a regular file owned by root, mode `0600`; it is never replaced or removed. Closing the descriptor releases the lock, including when the process dies. No SSH round trip occurs while the lock is held. Swamp behavior names provide no exclusion guarantee.
@@ -888,3 +890,7 @@ Complete Node Caddy builds use official cfgmgmt file application and an end chec
 Native Cluster Router admission captures Caddy recipe candidates through the same native-only producer as Node convergence. Its [candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror) accepts the schema before producing candidates, then activates consumers after that Gateway release is live.
 
 Site rendering uses only live Instance removal members. Abandoned history does not retain the unavailable site from a previous removal.
+
+Forward Route mutations always publish prepared private DNS through the existing live read, three-way merge, validation and service activation. They skip only the final DNS child when its records and catalog equal the prepared publication: the first child has already established that set, and the intervening steps change no DNS. Failure guards and required contribution counts still require every child that must run.
+
+This removes one DNS child per DNS Node from a same-Node move, while retaining the first child's existing repair and readiness behavior. The DNS grace still precedes withdrawal when the first publication changes an answer, even if the final publication is omitted. Restoration and withdrawal keep their existing order.

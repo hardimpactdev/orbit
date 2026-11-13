@@ -3,10 +3,13 @@ title: "orbit proof:run"
 sidebarTitle: "proof:run"
 description: "Prove the commands that a commit changes. Orbit picks the cases from the commit, runs them in a disposable test fleet inside a task VM, and reports a verdict for each case."
 covers:
+  - apps/gateway/app/Domain/Proof/ProofRunIntent.php
+  - apps/gateway/app/Domain/Proof/ProofChildStarts.php
   - apps/gateway/app/Domain/Proof/ProofBatchPlan.php
   - apps/gateway/app/Domain/Proof/ProofShardVerdicts.php
   - apps/gateway/app/Domain/Proof/ProofCommandProjection.php
   - apps/gateway/app/Domain/Proof/ProofRunSettlement.php
+  - apps/gateway/app/Domain/Proof/ProofRunWatch.php
   - bin/ci-proof-run
 ---
 
@@ -38,6 +41,8 @@ The command takes the commit and nothing else. The calling Node needs an access 
 
 Built so far: the trust check, the case selection, the run in a task VM and the verdict of each case. The CI job `proof-run` is part of Required checks. A failed case or missing verdict fails it. Capacity waits never pass as a proof. Not built yet: the receipt store.
 
+The CI wrapper waits up to 270 minutes, covering the two-hour admission budget and two-hour execution budget with 30 minutes of margin. Its Actions jobs allow 275 minutes. See [CI time budgets](/reference/implementation-loop) for the separate fast-check limits.
+
 The proof CI summary states the [remaining base-refresh limit](/reference/command-development-pipeline#2-development-environment), including when a run passes.
 
 ## Which commits Orbit proves
@@ -52,11 +57,34 @@ When only paths that need no proof changed, such as documentation and charts, th
 
 ## The run
 
-CI proofs join one first-come-first-served queue, ordered by their proof Operation id. The front proof takes every free CI place on hosts with usable bases, up to its number of batches. It needs at least one place. A full pool waits within a two-hour admission budget; an expired wait fails clearly. Other CI proofs cannot pass it.
+Only one `proof.run` works at a time, including `--report-only` proofs. Operator and CI parents wait in proof Operation id order. While another proof holds the place, the waiting step and recorded capacity reason read `Waiting for proof Operation <id> to finish.` Orbit retries every 20 seconds and clears the step at admission. The shown execution duration starts at admission; the wait allowance starts at creation.
+
+A waiting parent holds no proof place. An open parent with recorded runs or an unresolved child holds it. Stale children and their parent's run list cannot hold it alone. Children take no separate proof places. Proofs with nothing to prove, `proof.verify` and base refresh work take none.
+
+What frees the place:
+
+- All children ended and the parent closed.
+- The parent was cancelled and its children ended.
+- The proof ended while a child still waited its turn: the watchdog pass cancels that child.
+- A child that became stale is cancelled and never started.
+- A child timed out with a lock held, and the stale-hold release freed it after 60 minutes.
+- A child row that nothing ends passed its own deadline plus 60 minutes. Without a deadline, the bound is its last activity plus the longest shard budget of 120 minutes, plus 60 minutes. A timed-out lock holder uses its finish time, or last activity if absent, plus 60 minutes. Orbit leaves the child unchanged, logs `A stale proof child no longer holds the proof place.` when admitting another proof, and reports `gateway.proof_place_stale_child` in [Gateway status](/cli/gateway/status).
+
+A child waiting its turn to start stays protected while its parent is open and within 120 minutes of creation. After that, the bound for a child without a deadline applies. If its parent ended or is missing, the watchdog cancels the waiting child through normal group cleanup. If that recovery fails, the child stops holding the place 60 minutes after its last activity. Released children and children with a native run keep their own budgets and reconciliation. The status group counts stale children and uses the oldest last activity as `since`.
+
+A proof that waits more than 120 minutes fails `proof.capacity_timeout`. This applies to operator and CI parents, including an older parent blocking the queue. Ended or cancelled parents and proofs with nothing to prove leave the queue. Two predecessors of up to two hours each exceed the allowance: a third proof behind them fails by the wait and must be run again.
+
+The front CI proof takes every free CI VM place on hosts with usable bases, up to its number of batches. It needs at least one place. A full VM pool or stale base uses the same admission allowance and keeps the step "Wait for VMs to be released".
 
 Orbit reads the cases at the trusted commit and expands their variant ids. It sums measured case durations from prior reports for each whole batch, then assigns the longest batches to the least loaded VM. A batch never splits. Unseen cases use the median measured duration, or one second when no measurements exist.
 
 Each VM's share gets a run budget from its batches, at most two hours. When a share of more than one batch needs more, the proof waits for another CI place, as long as some usable place is taken. With every usable place free, it runs anyway. Orbit records the verdicts of each batch as the batch ends, so a share that reaches its budget keeps them; only the cases of its unfinished batches are `unrun`.
+
+Orbit starts the children of one proof in order. It queues the first start after all execution copies succeed, then queues each next start 20 seconds after the previous start answers. A refusal or definite start failure still lets the siblings start.
+
+A start with no confirmed answer is never submitted again. Its next child waits until recovery finds its run or it ends. The released child's 600-second admission deadline bounds that wait. Orbit then queues the next child 20 seconds after resolution. If that advance is missed, the next reconciliation pass repairs it and counts the delay from that pass.
+
+This leaves room for unrelated Operations to start between children. The [admission clock](/reference/operations#direct-swamp-starts) begins when a child is released.
 
 Each allocated VM starts from the host base with the task checkout at the tested commit. Orbit checks that commit, restores the nested fleet, and runs the VM's assigned batches in order. Before each batch it restores the head checkout, because replaying a changed case with `fails_on_base: true` may switch it to the merge base. Each batch runs its declared setup. A setup failure leaves missing cases unrun. Execution retries nothing.
 
@@ -89,7 +117,7 @@ The result names the commit, each case with its command, selection reason, verdi
 | You pressed Ctrl-C. | `130`. |
 | The process received SIGTERM. | `143`. |
 
-Ctrl-C, or `operation:cancel` on the proof, ends every run at once and cancels their groups, which destroys the VMs. A case that was running stops with its VM. Each group ends when its run ends.
+A child whose turn has not come is cancelled without submission if its proof was cancelled or ended. Ctrl-C, or `operation:cancel` on the proof, closes the parent at once and requests cancellation of its runs and groups. Children can continue until cancellation and VM destruction finish. Each group ends when its run ends.
 
 ## After the run
 
@@ -117,7 +145,7 @@ The request answers at once with the proof Operation. The checks of the commit, 
 | `proof.run_failed` | The VM or the test fleet of a run did not become ready, or its cases printed no verdict. Every selected case of that command is `unrun`. |
 | `proof.queue_unavailable` | The queue refused the job that admits the proof. No case ran. Run the command again. |
 | `proof.admission_interrupted` | The job that admits the proof was lost before it started the runs. No case ran, and each selected case is `unrun`. Run the command again. |
-| `proof.capacity_timeout` | No place on a host with a usable base became available within the two-hour admission budget. No case ran. |
+| `proof.capacity_timeout` | The proof was not admitted within 120 minutes of creation, while waiting for its turn, the working proof, a VM place or a usable base. No case ran. |
 | `proof.execution_disabled` | Cases are selected, and proof execution is switched off. The input of the proof holds the selected cases and the uncovered paths. |
 | `proof.selection_invalid` | The selection list of the commit is malformed. The message names the line. |
 | `proof.github_unavailable` | GitHub could not be read, so the commit or its cases cannot be checked. Run the command again. |

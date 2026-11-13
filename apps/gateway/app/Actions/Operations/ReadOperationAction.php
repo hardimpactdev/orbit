@@ -4,70 +4,13 @@ declare(strict_types=1);
 
 namespace App\Actions\Operations;
 
-use App\Domain\InstanceMigration\InstanceMigrateProjection;
-use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationRunBudgets;
-use App\Domain\Operations\OperationStatus;
-use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Swamp\ReadNativeRunFailure;
-use App\Infrastructure\Swamp\SwampCommandStep;
-use App\Infrastructure\Swamp\SwampReadBudget;
 use App\Models\Operation;
-use Illuminate\Support\Str;
 
-/** Records terminal native history when the original workflow could not deliver its callback. */
+/** A show returns recorded state; the reconciler owns native settlement and expiry. */
 final readonly class ReadOperationAction
 {
-    public function __construct(private ReadNativeRunFailure $history, private DirectOperation $direct, private FailNativeOperationAction $failures, private SwampReadBudget $budget) {}
-
     public function execute(Operation $operation): Operation
     {
-        if (InstanceMigrateProjection::unsettled($operation)) {
-            if (! $this->budget->take('operation:'.$operation->id, 30)) {
-                return $operation;
-            }
-
-            return app(InstanceMigrateProjection::class)->settle($operation);
-        }
-        $runId = $operation->state['swamp_run_id'] ?? null;
-        $definition = $this->direct->definition($operation->kind);
-        $deadline = OperationRunBudgets::deadline($operation);
-        if (! $operation->status->terminal() && $deadline !== null && ! $deadline->isFuture()
-            && is_string($runId) && Str::isUuid($runId) && isset($definition['terminal_result'])) {
-            try {
-                return app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId], $definition['terminal_result'], atDeadline: true);
-            } catch (ResourceOperationException) {
-                return app(ExpireOperationAction::class)->execute($operation->refresh());
-            }
-        }
-        $operation = app(ExpireOperationAction::class)->execute($operation);
-        if (($operation->status->terminal() && ! ($operation->error_code === 'operation.native_failed'
-            && in_array($operation->status, [OperationStatus::Failed, OperationStatus::Interrupted], true)
-            && ! array_key_exists('native_failure', $operation->state ?? []))) || ! is_string($runId) || ! Str::isUuid($runId)
-            || $definition === null || $operation->node_id === null) {
-            return $operation;
-        }
-        // The shared terminal subscriber is the main observer; a read checks the run again at most every 30 seconds.
-        if (! $this->budget->take('operation:'.$operation->id, 30)) {
-            return $operation;
-        }
-        $receipt = $this->history->read($operation, $definition['workflow'], $runId);
-        if ($receipt === null) {
-            return $operation->refresh();
-        }
-        try {
-            if ($operation->kind === 'proof.command' && $receipt['status'] === OperationStatus::Interrupted) {
-                // A diagnostic-only failure would lose completed case reports before the subscriber can record them.
-                return app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => 'interrupted'], $definition['terminal_result'] ?? throw new \LogicException('Proof commands require a full terminal result.'));
-            }
-
-            return $this->failures->execute($operation, $runId, $receipt['status'], $receipt['failure'], $receipt['finished_at']);
-        } catch (ResourceOperationException $exception) {
-            if (! in_array($exception->errorCode, ['operation.run_mismatch', 'operation.run_unbound'], true)) {
-                throw $exception;
-            }
-
-            return $operation->refresh();
-        }
+        return $operation;
     }
 }

@@ -100,6 +100,15 @@ final class GatewayStatusCommand extends GatewayCommand
             ConsoleWriter::write($this->output, implode("\n", $lines)."\n");
         }
 
+        if ($status->reconcile !== null) {
+            $reconcile = $status->reconcile;
+            $line = 'Reconcile: '.($reconcile['finished_at'] === null ? 'not run yet' : 'finished '.$reconcile['finished_at']);
+            if ($reconcile['last_pass_ms'] !== null) {
+                $line .= ', last pass '.$reconcile['last_pass_ms'].' ms';
+            }
+            ConsoleWriter::write($this->output, $line.', unsettled '.$reconcile['unsettled_count']."\n");
+        }
+
         return self::SUCCESS;
     }
 

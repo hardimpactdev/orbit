@@ -363,6 +363,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_updates_test.ts"
+after_merge = true
+reason = "The two remaining PR cases already run alone: runtime update reached 166.761s and Squid rollback 152.639s (run 43227699901), leaving about 7% and 15% of the 180s ceiling. Each requires two consecutive converges. All four cases remain in Main full set pending a measured faster fixture."
 # 159.349s, hosted four-worker run 43000765953 (completed unit).
 # 168.762s, hosted four-worker run 43000765953 (completed unit).
 after_merge_cases = ["a project that lists disk paths loses the list, so a container with the idmapped folders starts", "an old folder version that a process still maps stays; a restart that failed runs again on the next converge"]
@@ -748,6 +750,7 @@ inputs = [
 file = "swamp/tests/ansible_command_output_test.py"
 cost = 3
 inputs = [
+  "apps/gateway/app/Domain/Nodes/NodeDesiredConvergeInput.php",
   "bin/swamp-shape-gate",
   "swamp/ansible/**/*.yaml",
   "swamp/ansible/**/*.yml",
@@ -755,7 +758,9 @@ inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_result.ts",
   "swamp/tests/fixtures/command-output/**",
+  "swamp/workflows/workflow-operation-node-converge-direct.yaml",
 ]
 
 [[fixture]]
@@ -1837,6 +1842,7 @@ inputs = [
   "swamp/extensions/behaviors/operations/tools/native.ts",
   "swamp/scripts/instance_clone.py",
   "swamp/scripts/instance_clone_guest.py",
+  "swamp/tests/fixtures/node-converge-*.json",
   "swamp/workflows/workflow-operation-node-converge-direct.yaml",
 ]
 
@@ -2957,3 +2963,23 @@ inputs = ["swamp/ansible/instance_node_services.py", "swamp/ansible/instance-con
 [[fixture]]
 file = "swamp/tests/caddy_publish_test.py"
 inputs = ["swamp/ansible/library/orbit_caddy_publish.py", "swamp/ansible/module_utils/orbit_caddy_publish.py"]
+
+[[fixture]]
+file = "swamp/extensions/behaviors/operations/routes/update-command/workflow_test.ts"
+cost = 13
+inputs = ["swamp/workflows/**", "swamp/tests/fixtures/route-forward-intents.json", "swamp/extensions/behaviors/operations/routes/{mutation-command/{assets,dns},publication-command/sections,update-command/result}.ts"]
+
+[fixture.case_costs]
+"Route update workflows place every step on the swamp role and keep mutation parents small" = 1
+"the task-cancel withdrawal keeps certificate cleanup visible per scope and gates LAN retirement" = 1
+"restore keeps the observed candidate serving, then withdraws it after DNS grace" = 1
+"Route primitive and shared publication children use one209selector" = 1
+"a clone publishes its prepared Route beside workspace without waiting for app startup" = 1
+"a captured same-Node move retains its first live DNS child and omits only the redundant final child" = 1
+"a captured replacement with real record changes runs both DNS stages and completes" = 1
+"mixed captured Nodes keep dense final child indexes and exact contribution completeness" = 1
+"the retained first child repairs drift of captured owned DNS keys through the real merger" = 1
+"a previous Gateway intent needs no new key and skipped DNS steps need no outputs" = 1
+"a failed first publication still fails completeness and guards later work" = 1
+"DNS grace and withdrawal order remain independent of omitting the final publication" = 1
+"either a records-only or catalog-only final difference retains the final DNS child" = 1

@@ -73,6 +73,8 @@ These commands stay in the scheduler and never go to the queue, also while it is
 
 The Gateway collects Doctor findings for every Node every five minutes, from the facts the agents already reported. A failing Node check must show without anyone asking. This local scheduled action uses an overlap lock, makes no network call, and runs even while Tasks or the queue is disabled. Findings, recovery, and the last successful full collection time commit together in the existing Problems store. A failed collection rolls back and is reported once until a collection succeeds.
 
+Doctor preloads its stored findings and resource presence. Unchanged findings share one update for their last-seen time, latest collection time, and bounded occurrence history. New, changed, recurring, and recovered findings can need individual writes. All writes stay in the collection transaction. Fingerprints stay stable. Each row stores how many issues mapped to it in the latest run, so status counts every issue.
+
 Each scheduled run logs `Doctor collection ran.` at info level with `duration_ms`, `write_ms`, `nodes`, and `issues`. Monotonic timing measures the whole run and its write transaction. The same state write stores the durations measured before that write; no second write records timing.
 
 Logs, Activity, assistance signals, and the Horizon-only collection have no schedule. `observation:plan` and `observation:health` still collect Doctor findings, the Gateway's logs, and Activity and assistance signals on request, only while Tasks is enabled. The first signal collection begins at the current Activity cursor; assistance retains its 200-task sample and removes closed references.
@@ -83,7 +85,7 @@ Logs, Activity, assistance signals, and the Horizon-only collection have no sche
 
 While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks. `horizon:snapshot` does not run, and the Gateway creates no `horizon` Process. Native Operation starts and Task VMs need the queue. An Operation whose start cannot be queued fails with `swamp.start_enqueue_failed`. While task VMs are enabled, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
 
-Operations need the queue too: the minute `ReconcileSwampOperations` job, unique for 300 seconds, reads each open run's terminal result and records it on the `operations` queue ([Operations](/reference/operations#how-an-operation-runs)). It is the one scheduled job that works with Swamp runs.
+Operations need the queue too: the minute `ReconcileSwampOperations` job, unique for 300 seconds, reads each open run's terminal result and records it on the `operations` queue ([Operations](/reference/operations#how-an-operation-runs)). It is the one scheduled job that works with Swamp runs. The job records completed passes, so [`gateway:status`](/cli/gateway/status) can report [stalled reconciliation and stuck settlement](/reference/operations#recover-a-terminal-native-result) even when dispatch succeeds but the queue does not execute it.
 
 ## Horizon
 

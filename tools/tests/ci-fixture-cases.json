@@ -325,7 +325,7 @@
     ]
   },
   "swamp/bin/source_test.ts": {
-    "source_sha256": "3facff1822cfeb13e1ecb9e50094ae96a43a11c335d73d877cca92618f02a752",
+    "source_sha256": "7c3ac7537e0cc8c9c50b12ecf68f015b57e11e8378a42039ac3cb7a97c9355cd",
     "cases": [
       "model IDs are unique",
       "workflow queue bounds have measured per-kind budgets",
@@ -643,12 +643,13 @@
     ]
   },
   "swamp/tests/ansible_command_output_test.py": {
-    "source_sha256": "68821d06d0c31cf0c43faf93a99ff3b9878db0751290703c3a3313994f2e8217",
+    "source_sha256": "f10de64195b1b74768a7e56d851edde65035dfd6fff03be6d6ed69bb68e37ae7",
     "cases": [
       "test_every_regex_is_exercised_or_classified_without_command_output",
       "test_unclassified_native_regex_tests_fail_coverage",
       "test_recorded_output_through_production_expressions",
-      "test_dpkg_installed_held_removed_and_absent"
+      "test_dpkg_installed_held_removed_and_absent",
+      "test_every_reachable_converge_task_name_is_static"
     ]
   },
   "swamp/tests/ansible_container_host_system_test.py": {
@@ -717,7 +718,7 @@
     ]
   },
   "swamp/tests/ansible_instance_bridge_test.py": {
-    "source_sha256": "aa5d705cdcbb552e457f904dfa90e4a88d79536a4b821d7866377cbc585274ea",
+    "source_sha256": "7aacc4b03ca1f8019410960f4600962ff2de40fff55f07aef979f6909b142773",
     "cases": [
       "test_stale_capture_keeps_later_admission_then_current_capture_prunes_it",
       "test_refresh_paused_after_read_cannot_resurrect_last_user_after_withdrawal",
@@ -750,7 +751,15 @@
       "test_withdrawal_retains_stopped_shared_service_and_unrelated_stopped_database",
       "test_withdrawal_uses_last_refresh_translation_and_preserves_newer_admission",
       "test_withdrawal_cannot_admit_an_unrecorded_endpoint_or_changed_publication_kind",
-      "test_reconcile_preserves_proxy_ingress_and_rules_outside_its_endpoint_shape"
+      "test_reconcile_preserves_proxy_ingress_and_rules_outside_its_endpoint_shape",
+      "test_check_mode_missing_helper_reports_change_without_writing",
+      "test_check_mode_old_helper_reports_change_without_writing",
+      "test_check_mode_current_helper_reports_no_change_without_writing",
+      "test_check_mode_target_symlink_refuses_without_writing",
+      "test_verified_install_is_atomic_owned_executable_and_unchanged_repeat_is_write_free",
+      "test_corrupt_candidate_is_removed_and_old_helper_stays_installed",
+      "test_target_symlink_is_refused_without_touching_its_referent",
+      "test_candidate_symlink_is_refused_without_replacing_it_or_the_target"
     ]
   },
   "swamp/tests/ansible_instance_container_destroy_test.ts": {
@@ -846,7 +855,7 @@
     ]
   },
   "swamp/tests/ansible_static_php_test.py": {
-    "source_sha256": "0ceee7bc659a002a18635ec911a5bdb7e63d79525bb7927668271912ae3d65a9",
+    "source_sha256": "86d9ee6d2294d2486faf022aabe804f61a155fe082d16e6b821dfbac8ecd28c4",
     "cases": [
       "test_matching_build_passes",
       "test_a_missing_and_an_extra_extension_fail_for_their_binary",
@@ -1511,7 +1520,7 @@
     ]
   },
   "swamp/tests/node_converge_test.ts": {
-    "source_sha256": "0c16e114d8301ba02f505cf2e65faa105003d98506b2092d93fe8186d628b4fa",
+    "source_sha256": "87d98cb7df890f50cc4c67bab12cb877d5bd4f1134638e64174e96106b9e6e67",
     "cases": [
       "converge reports all phases, live no-op counts and measured elapsed time; hub changes are not target changes",
       "converge stops reporting success at input and preserves the first failure",
@@ -1540,7 +1549,29 @@
       "an out-of-constraint candidate is rejected before returning write argv",
       "a protected package cannot produce a machine plan",
       "a failed Tool postcondition is not installed",
-      "the workflow has ordered phase invocations and an always-dependent private cleanup"
+      "the workflow has ordered phase invocations and an always-dependent private cleanup",
+      "a failed role command exports only its bounded task and return code",
+      "converge classifies unreachable without exporting host output",
+      "converge classifies assert without exporting host output",
+      "converge classifies fail without exporting host output",
+      "converge classifies timeout without exporting host output",
+      "converge classifies module without exporting host output",
+      "converge classifies unbounded rc without exporting host output",
+      "converge identifies the hub failure while target stats stay clean",
+      "no_log and censored tasks hide names and return codes",
+      "converge bounds task text and refuses host addresses",
+      "unreadable or task-free failure reports never throw or invent a task",
+      "successful converge results have no failure key",
+      "the last fatal record explains ignored callback statistics",
+      "the last fatal record explains rescued callback statistics",
+      "the last fatal record explains always callback statistics",
+      "a rescued callback without fatal statistics succeeds with no failure",
+      "a censored unreachable callback identifies its failed host without leaking its name",
+      "an unreachable host is not explained by its earlier ignored failure",
+      "a rendered-secret callback retains the failure while withholding the name and private markers",
+      "a path callback retains the failure while withholding the name and private markers",
+      "value-like names are withheld without changing the failure class",
+      "only hosts with fatal statistics compete in play and task order, with hub winning ties"
     ]
   },
   "swamp/tests/node_network_hub_prune_test.ts": {
@@ -2225,6 +2256,24 @@
       "test_failed_timer_stop_never_waits_converges_or_snapshots",
       "test_direct_task_start_does_not_converge_or_snapshot",
       "test_incomplete_fleet_fails_before_convergence"
+    ]
+  },
+  "swamp/extensions/behaviors/operations/routes/update-command/workflow_test.ts": {
+    "source_sha256": "962c1bea5e867848ab5cd854447e6d02fbdf2c6e5b32345077d633741a3a049e",
+    "cases": [
+      "Route update workflows place every step on the swamp role and keep mutation parents small",
+      "the task-cancel withdrawal keeps certificate cleanup visible per scope and gates LAN retirement",
+      "restore keeps the observed candidate serving, then withdraws it after DNS grace",
+      "Route primitive and shared publication children use one209selector",
+      "a clone publishes its prepared Route beside workspace without waiting for app startup",
+      "a captured same-Node move retains its first live DNS child and omits only the redundant final child",
+      "a captured replacement with real record changes runs both DNS stages and completes",
+      "mixed captured Nodes keep dense final child indexes and exact contribution completeness",
+      "the retained first child repairs drift of captured owned DNS keys through the real merger",
+      "a previous Gateway intent needs no new key and skipped DNS steps need no outputs",
+      "a failed first publication still fails completeness and guards later work",
+      "DNS grace and withdrawal order remain independent of omitting the final publication",
+      "either a records-only or catalog-only final difference retains the final DNS child"
     ]
   }
 }

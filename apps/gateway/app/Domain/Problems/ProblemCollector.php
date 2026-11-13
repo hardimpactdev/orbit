@@ -159,24 +159,81 @@ final readonly class ProblemCollector
         });
     }
 
+    /** Doctor keeps its bounded history, but writes unchanged observations in one SQLite update. */
     public function recordDoctor(DoctorReportData $report, Carbon $startedAt): void
     {
         $issues = $this->doctorIssues($report);
         DB::transaction(function () use ($issues, $report, $startedAt): void {
+            $rows = ProblemFingerprint::query()->where('source', ProblemSource::Doctor)->lockForUpdate()->get()->keyBy('fingerprint');
+            $presence = $this->recovery->doctorResourcePresence($issues);
+            $seenAt = Carbon::now()->utc();
+            $updates = [];
             foreach ($issues as $issue) {
-                $this->record($issue['fingerprint'], ProblemSource::Doctor, [
-                    'expected' => $issue['expected'],
-                    'observed' => $issue['observed'],
-                    'summary' => $issue['summary'],
-                    'doctor_node' => $issue['doctor_node'],
-                    'doctor_family' => $issue['doctor_family'],
-                    'doctor_code' => $issue['doctor_code'],
-                    'doctor_resource' => $issue['doctor_resource'],
-                    'doctor_resource_present' => $this->recovery->resourceExists($issue['doctor_family'], $issue['doctor_resource'], (int) $issue['doctor_node']),
-                    'doctor_observed_at' => $startedAt->toISOString(),
+                $fingerprint = $issue['fingerprint'];
+                unset($issue['fingerprint']);
+                $observation = [...$issue, 'doctor_resource_present' => $presence[$fingerprint], 'doctor_observed_at' => $startedAt->toISOString()];
+                if ($this->suppression->suppressesSignal($fingerprint, $observation)) {
+                    continue;
+                }
+                $row = $rows->get($fingerprint) ?? new ProblemFingerprint([
+                    'fingerprint' => $fingerprint, 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => [],
                 ]);
+                // Decoded once: an array-cast attribute is decoded again on every read.
+                $current = $row->evidence;
+                $evidence = $current;
+                unset($evidence['resolved_at'], $evidence['resolution']);
+                $occurrences = $row->occurrences;
+                $settled = $this->evidence->legacyEpisode($evidence, ProblemSource::Doctor);
+                if ($settled !== null) {
+                    $evidence = $settled['evidence'];
+                    $occurrences = $settled['occurrences'];
+                }
+                $times = $this->observationTimes($evidence);
+                $counts = $this->observationCounts($evidence, count($times));
+                $blocks = $this->countedBlocks($evidence, $times);
+                $block = intdiv($seenAt->getTimestamp(), 300);
+                if (! in_array($block, $blocks, true)) {
+                    $blocks = array_slice([...$blocks, $block], -self::CountedBlocks);
+                    $occurrences++;
+                    $times[] = $seenAt->format('Y-m-d\TH:i:s.u\Z');
+                    $counts[] = $issue['doctor_issue_count'];
+                    [$times, $counts] = $this->trimSample($times, $counts);
+                } else {
+                    $index = $this->sampleIndex($times, $block);
+                    if ($index !== null) {
+                        $counts[$index] += $issue['doctor_issue_count'];
+                    }
+                }
+                $stored = $this->evidence->apply($evidence, $observation);
+                $stored['doctor_issue_count'] = $issue['doctor_issue_count'];
+                $history = ['observation_times' => $times, 'observation_counts' => $counts, 'counted_blocks' => $blocks];
+                $stored = [...$stored, ...$history];
+                $unchanged = $row->exists && $row->first_seen !== null && ! isset($current['resolved_at'])
+                    && array_all(array_diff_key($observation, ['doctor_observed_at' => true]),
+                        static fn (mixed $value, string $key): bool => array_key_exists($key, $current) && $current[$key] === $stored[$key]);
+                $row->occurrences = $occurrences;
+                $row->first_seen ??= $seenAt;
+                $row->last_seen = $seenAt;
+                $row->evidence = $stored;
+                if ($unchanged) {
+                    $updates[$row->id] = ['occurrences' => $occurrences, 'evidence' => [...$history, 'doctor_observed_at' => $startedAt->toISOString()]];
+                } else {
+                    $row->save();
+                }
+                $rows->put($fingerprint, $row);
             }
-            $this->recovery->doctor($report, $startedAt);
+            if ($updates !== []) {
+                // A JSON input table avoids one statement and many bound parameters per fingerprint.
+                DB::update(<<<'SQL'
+                    update problem_fingerprints
+                    set last_seen = ?, updated_at = ?,
+                        occurrences = json_extract(observation.value, '$.occurrences'),
+                        evidence = json_patch(problem_fingerprints.evidence, json_extract(observation.value, '$.evidence'))
+                    from json_each(?) as observation
+                    where problem_fingerprints.id = cast(observation.key as integer)
+                    SQL, [$seenAt->toDateTimeString(), $seenAt->toDateTimeString(), json_encode($updates, JSON_THROW_ON_ERROR)]);
+            }
+            $this->recovery->doctor($report, $startedAt, $rows);
         });
     }
 
@@ -221,7 +278,7 @@ final readonly class ProblemCollector
         });
     }
 
-    /** @return list<array{fingerprint: string, expected: bool|string|null, observed: bool|string|null, summary: string, doctor_node: string, doctor_family: string, doctor_code: string, doctor_resource: string|null}> */
+    /** @return list<array{fingerprint: string, expected: bool|string|null, observed: bool|string|null, summary: string, doctor_node: string, doctor_family: string, doctor_code: string, doctor_resource: string|null, doctor_issue_count: int}> */
     private function doctorIssues(DoctorReportData $report): array
     {
         $issues = [];
@@ -234,8 +291,11 @@ final readonly class ProblemCollector
                         continue;
                     }
 
-                    $issues[] = [
-                        'fingerprint' => $this->doctorFingerprint($issue),
+                    $fingerprint = $this->doctorFingerprint($issue);
+                    $count = ($issues[$fingerprint]['doctor_issue_count'] ?? 0) + 1;
+                    $issues[$fingerprint] = [
+                        'fingerprint' => $fingerprint,
+                        'doctor_issue_count' => $count,
                         'expected' => $issue->expected,
                         'observed' => $issue->observed,
                         'summary' => $issue->summary,
@@ -248,9 +308,9 @@ final readonly class ProblemCollector
             }
         }
 
-        usort($issues, static fn (array $left, array $right): int => strcmp($left['fingerprint'], $right['fingerprint']));
+        ksort($issues);
 
-        return $issues;
+        return array_values($issues);
     }
 
     private function doctorFingerprint(DoctorIssueData $issue): string
@@ -477,8 +537,13 @@ final readonly class ProblemCollector
      */
     private function trimSample(array $times, array $counts): array
     {
+        // Parse each time once. A comparator that parses both sides costs about eight times as many parses for 21 samples.
+        // A time that does not parse sorts as 0, first, as before. Every writer stores absolute times. A relative
+        // string in retained history, such as 'now', is read once per trim; the comparator read it at each
+        // comparison, so its place could differ when the clock moved during one sort.
+        $stamps = array_map(fn (string $time): int => $this->unixTime($time) ?? 0, $times);
         $order = array_keys($times);
-        usort($order, fn (int $left, int $right): int => ($this->unixTime($times[$left]) ?? 0) <=> ($this->unixTime($times[$right]) ?? 0));
+        usort($order, static fn (int $left, int $right): int => $stamps[$left] <=> $stamps[$right]);
         $trimmedTimes = [];
         $trimmedCounts = [];
 

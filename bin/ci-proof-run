@@ -17,8 +17,8 @@ import sys
 from pathlib import Path
 
 SHA = re.compile(r'[0-9a-f]{40}([0-9a-f]{24})?')
-# Two hours of admission plus the execution budget and cancellation margin.
-WAIT = 190 * 60
+# Two hours of admission plus two hours of execution, with setup/reporting/cancellation margin.
+WAIT = 270 * 60
 
 
 def find_result(document):

@@ -24,12 +24,14 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
+use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -51,6 +53,10 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         $refused = ! isset($operation->state['swamp_run_id']) && ($operation->state['native_start_not_submitted'] ?? false) === true;
         if ($instance !== null && ($unstarted || $refused) && ($operation->input['had_runtime_reservation'] ?? false) !== true) {
             $instance->runtime()->where('operation_id', $operation->id)->delete();
+        }
+        if (($unstarted || $refused) && is_array($operation->state['native_timeout'] ?? null)) {
+            app(OperationStore::class)->change($operation, ['state' => [...$operation->state,
+                'native_timeout' => [...ValidatedData::object($operation->state['native_timeout']), 'no_run_verified_at' => now()->toISOString()]]]);
         }
         app(DeferredMigrationScheduleRuns::class)->release($operation, targetAvailable: $instance !== null);
     }
@@ -95,30 +101,151 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         ]];
     }
 
-    /** Read a late migrate finish only when its Operation is shown or its Instance is admitted again. */
-    public function settle(Operation $operation): Operation
+    /** Keep the existing full hour from the recorded expiry; no failed read renews it. */
+    public static function settlementLimit(Operation $operation): ?CarbonImmutable
     {
-        $operation = app(ExpireOperationAction::class)->execute($operation);
-        if (! self::unsettled($operation)) {
-            return $operation;
+        $heldUntil = $operation->state['migrate_settlement_hold_limit'] ?? null;
+        if (is_string($heldUntil)) {
+            return CarbonImmutable::parse($heldUntil);
         }
-        $step = app(SwampCommandStep::class);
-        try {
-            if (! isset($operation->state['swamp_run_id'])) {
-                $step->recoverUnbound($operation);
-                $operation->refresh();
-            }
-            $run = $operation->state['swamp_run_id'] ?? null;
-            if (! is_string($run)) {
-                return $operation;
-            }
-            $selector = $this->direct->definition($operation->kind)['terminal_result']
-                ?? throw new \LogicException('Migrate requires a native terminal result.');
+        $expiry = $operation->error_code === 'operation.timed_out' && $operation->finished_at !== null
+            ? CarbonImmutable::instance($operation->finished_at) : OperationRunBudgets::deadline($operation);
 
-            return $step->projectTerminal($operation, ['id' => $run], $selector, atDeadline: true);
-        } catch (ResourceOperationException) {
-            return $operation->refresh();
+        return $expiry?->addMinutes(ExpireOperationAction::HoldMinutes);
+    }
+
+    /** Remember the first expiry's hold limit before any late-result read can reopen it. */
+    public function rememberSettlementLimit(Operation $operation): void
+    {
+        DB::transaction(function () use ($operation): void {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            if (self::unsettled($current) && ! isset($current->state['migrate_settlement_hold_limit'])) {
+                app(OperationStore::class)->change($current, ['state' => [...($current->state ?? []),
+                    'migrate_settlement_hold_limit' => self::settlementLimit($current)?->toISOString()]]);
+            }
+        });
+    }
+
+    /** One sweep interval lets a terminal receipt arrive after the native end. */
+    private const int OutputGraceSeconds = 60;
+
+    /**
+     * Only the job calls this with an identity-verified terminal history. No Node effect runs here.
+     *
+     * @param  array<string,mixed>  $run
+     */
+    public function missingOutput(Operation $operation, array $run): void
+    {
+        $completed = CarbonImmutable::parse(ValidatedData::string($run['completedAt']));
+        $failure = app(NativeStepFailure::class)->fromRun($run, $operation, includeCancelled: true);
+        DB::transaction(function () use ($operation, $run, $completed, $failure): void {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            $this->direct->assertRun($current, ValidatedData::string($run['id']));
+            if ($current->status->terminal() && ! self::unsettled($current)) {
+                return;
+            }
+            $deadline = OperationRunBudgets::deadline($current);
+            $atDeadline = $deadline !== null && ! $deadline->isFuture();
+            if (! $atDeadline && $completed->addSeconds(self::OutputGraceSeconds)->isFuture()) {
+                return;
+            }
+            $missing = $this->rollbackEvidence($run);
+            if ($missing !== [] && ! $atDeadline) {
+                return;
+            }
+            $instance = Instance::query()->lockForUpdate()->find($current->target_id);
+            $owned = $instance?->runtime()->where('operation_id', $current->id)->exists() ?? false;
+            $restored = $missing === [];
+            $result = self::unavailableResult($current, $restored && $owned, $missing);
+            // apply() holds this same Operation lock through the result and runtime writes.
+            $this->apply($current, [
+                'run_id' => $run['id'], 'status' => 'failed', 'started_at' => $run['startedAt'],
+                'finished_at' => $run['completedAt'], 'native_run' => $run,
+                'result' => [...$result, 'native_status' => $run['status'], 'ready' => false, 'moved' => $restored ? false : null, 'restored' => $restored ? true : null],
+                'failure' => $failure,
+            ]);
+        });
+    }
+
+    /**
+     * A successful restore can be a preflight no-op. Require completed preparation and no retirement too.
+     *
+     * @param  array<string,mixed>  $run
+     * @return list<string>
+     */
+    private function rollbackEvidence(array $run): array
+    {
+        $steps = [];
+        foreach (is_array($run['jobs'] ?? null) ? $run['jobs'] : [] as $job) {
+            if (! is_array($job) || ($job['name'] ?? null) !== 'migrate') {
+                continue;
+            }
+            foreach (is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
+                if (! is_array($step) || ! is_string($step['name'] ?? null) || isset($steps[$step['name']])) {
+                    return ['unambiguous_migrate_steps'];
+                }
+                $steps[$step['name']] = $step;
+            }
         }
+        $missing = [];
+        if (($steps['container']['status'] ?? null) !== 'succeeded') {
+            $missing[] = 'container_preparation';
+        }
+        if (($steps['retire']['status'] ?? null) !== 'skipped' || isset($steps['retire']['startedAt'])) {
+            $missing[] = 'retirement_not_started';
+        }
+        if (($steps['restore']['status'] ?? null) !== 'succeeded') {
+            $missing[] = 'checkout_restored';
+        }
+        $routeUntouched = ($steps['route']['status'] ?? null) === 'skipped' && ! isset($steps['route']['startedAt']);
+        $routeOutput = $steps['restore-route']['outputs'] ?? null;
+        $routeResult = is_array($routeOutput) ? ($routeOutput['result'] ?? null) : null;
+        $routeRestored = ($steps['restore-route']['status'] ?? null) === 'succeeded'
+            && is_array($routeResult) && ($routeResult['ready'] ?? null) === true;
+        if (! $routeUntouched && ! $routeRestored) {
+            $missing[] = 'route_restored';
+        }
+
+        return $missing;
+    }
+
+    /** @param list<string> $missing
+     * @return array<string,mixed>
+     */
+    private static function unavailableResult(Operation $operation, bool $released, array $missing): array
+    {
+        $evidence = implode(', ', ['finish_output', ...$missing]);
+        $repair = $released ? 'The run proved rollback. Its owned runtime reservation is released. Retry instance:migrate.'
+            : 'The runtime reservation stays. The owner must recover the finish receipt or verify and reconcile rollback or cutover. No Orbit command repairs this evidence gap.';
+
+        return ['instance_id' => $operation->target_id, 'error_code' => 'instance.migrate_result_unavailable',
+            'error_message' => "Operation [{$operation->id}] is missing {$evidence}. {$repair}",
+            'missing_evidence' => ['finish_output', ...$missing],
+            'recovery' => ['operation_id' => $operation->id, 'runtime_reservation' => $released ? 'released' : 'retained',
+                'repair_command' => $released ? 'instance:migrate '.$operation->target_id : null]];
+    }
+
+    /** The reconciler ends result recovery at the existing hold limit without claiming physical restoration. */
+    public function endUnavailable(Operation $operation): void
+    {
+        DB::transaction(function () use ($operation): void {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            if (! self::unsettled($current) || (self::settlementLimit($current)?->isFuture() ?? true)) {
+                return;
+            }
+            app(OperationStore::class)->change($current, [
+                'error_code' => 'instance.migrate_result_unavailable', 'lock_key' => null,
+                'result' => [...($current->result ?? []), ...self::unavailableResult($current, false, ['native_end', 'checkout_restored', 'route_restored'])],
+                'state' => [...($current->state ?? []),
+                    'native_failure' => [...ValidatedData::object($current->state['native_failure'] ?? []),
+                        'detail' => 'The reconciler could not read the migrate result before its target hold limit. The container and address reservation remain.',
+                        'stderr_recorded' => false],
+                    'native_timeout' => [
+                        ...ValidatedData::object($current->state['native_timeout'] ?? []),
+                        'native_terminal_status' => 'unproven', 'result_unavailable_at' => now()->toISOString(),
+                    ]],
+            ]);
+        });
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -149,7 +276,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
                 return $operation;
             }
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
-            $nativeStatus = $data['status'];
+            $nativeStatus = $run['status'] ?? $data['status'];
             $timeout = ValidatedData::object($operation->state['native_timeout'] ?? []);
             $deadline = OperationRunBudgets::deadline($operation);
             if ($timeout === [] && $deadline !== null && Carbon::parse(ValidatedData::string($data['finished_at']))->greaterThan($deadline)) {

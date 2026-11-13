@@ -741,8 +741,8 @@ jobs:
     # from its WireGuard address and uses no secret. Set the variable ORBIT_PROOF_RUNNER to a JSON list of labels to
     # move the job to such a runner.
     runs-on: ${{ fromJSON(vars.ORBIT_PROOF_RUNNER || '["self-hosted","hardimpact","orbit-shard"]') }}
-    # The VM wait plus the 30 minute run budget.
-    timeout-minutes: 195
+    # Two hours of admission, two hours of execution, and setup/reporting/cancellation margin.
+    timeout-minutes: 275
     # A new push cancels the proof run of the previous push on the same PR. A cancelled step cancels its Orbit run.
     concurrency:
       group: proof-run-${{ github.event.pull_request.number }}
@@ -807,7 +807,7 @@ jobs:
     if: always() && github.ref != 'refs/heads/main'
     needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes, swamp, fixtures]
     runs-on: ubuntu-26.04
-    timeout-minutes: ${{ github.event_name == 'pull_request' && vars.ORBIT_SLOW_CHECKS_BLOCKING != 'false' && vars.ORBIT_PROOF_BLOCKING != 'false' && needs.changes.outputs.proof_run == 'true' && 195 || 2 }}
+    timeout-minutes: ${{ github.event_name == 'pull_request' && vars.ORBIT_SLOW_CHECKS_BLOCKING != 'false' && vars.ORBIT_PROOF_BLOCKING != 'false' && needs.changes.outputs.proof_run == 'true' && 275 || 2 }}
     permissions:
       contents: read
       statuses: read

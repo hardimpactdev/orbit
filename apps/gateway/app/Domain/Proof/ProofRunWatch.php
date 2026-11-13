@@ -49,12 +49,24 @@ final readonly class ProofRunWatch
         $ended = 0;
         // The kept VMs expire on every pass, whatever the watch of the proofs does.
         try {
-            $open = Operation::query()->where('kind', OperationKinds::ProofRun)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running])
-                ->where('created_at', '<', now()->subSeconds(self::AdmissionSeconds))->pluck('id');
-            foreach ($open as $id) {
+            $open = Operation::query()->where(fn ($query) => $query->where(fn ($query) => $query->where('kind', OperationKinds::ProofRun)
+                ->whereIn('status', [OperationStatus::Queued, OperationStatus::Running])
+                ->where(fn ($query) => $query->where('created_at', '<', now()->subSeconds(self::AdmissionSeconds))
+                    ->orWhereIn('id', ProofChildStarts::heldProofs())))
+                ->orWhereIn('id', ProofChildStarts::endedHeldChildren()->select('id')))
+                ->get(['id', 'kind', 'created_at', 'input->proof_operation_id as proof_id']);
+            foreach ($open->where('kind', ProofGroup::OwnerKind)->pluck('proof_id')->unique() as $proofId) {
+                app(ProofChildStarts::class)->resume(ValidatedData::integer($proofId));
+            }
+            foreach ($open->where('kind', OperationKinds::ProofRun) as $proof) {
+                $children = ProofRunSettlement::children($proof->id);
+                if (ProofChildStarts::needsResume($children)) {
+                    app(ProofChildStarts::class)->resume($proof->id);
+                    $children = ProofRunSettlement::children($proof->id);
+                }
                 // Reads first: a healthy proof takes the write lock for nothing on every pass.
-                if ($this->needsAction(ValidatedData::integer($id))) {
-                    $ended += DB::transaction(fn (): int => $this->watch(ValidatedData::integer($id)));
+                if ($proof->created_at?->lt(now()->subSeconds(self::AdmissionSeconds)) && $this->needsAction($children)) {
+                    $ended += DB::transaction(fn (): int => $this->watch($proof->id));
                 }
             }
         } finally {
@@ -91,10 +103,9 @@ final readonly class ProofRunWatch
         }
     }
 
-    private function needsAction(int $id): bool
+    /** @param Collection<int, Operation> $children */
+    private function needsAction(Collection $children): bool
     {
-        $children = ProofRunSettlement::children($id);
-
         return $children->isEmpty() || $children->every(static fn (Operation $child): bool => $child->status->terminal())
             || ($children->contains(static fn (Operation $child): bool => self::neverHandedOver($child)) && self::quiet($children));
     }
@@ -145,6 +156,6 @@ final readonly class ProofRunWatch
     private static function neverHandedOver(Operation $child): bool
     {
         return ! $child->status->terminal() && ! isset($child->state['swamp_run_id']) && $child->attempts === 0
-            && $child->error_code !== 'swamp.start_uncertain' && ! isset($child->state['swamp_start']) && ! isset($child->input['capacity_request']);
+            && $child->error_code !== 'swamp.start_uncertain' && (! isset($child->state['swamp_start']) || ProofChildStarts::held($child)) && ! isset($child->input['capacity_request']);
     }
 }

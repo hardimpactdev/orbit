@@ -149,7 +149,7 @@ The plan job reads the checks table once. Selected jobs start after it; unselect
 
 Build, fixture and proof selection compare the candidate with its merge base against the supplied base commit. Selection requires both commits and their common ancestry; the plan job checks out full history. Commits added only to main after a pull request branches do not select checks for that pull request. For an ordinary main push, the previous main commit is the merge base, so selection covers the pushed changes.
 
-Every executable check job has a `timeout-minutes` equal to its table `ceiling`, rounded up to minutes. Plan, Gateway release inputs and CLI release dispatch have two-minute limits. Required checks has two minutes unless a selected pull-request proof is blocking; then it retains the proof's 195-minute wait budget. CI proof keeps its own 195-minute exception. [Main full set](/reference/main-full-set) keeps its separate limits and installs its planner's Python prerequisites before checking its workflow policy.
+Every executable check job has a `timeout-minutes` equal to its table `ceiling`, rounded up to minutes. Plan, Gateway release inputs and CLI release dispatch have two-minute limits. Required checks has two minutes unless a selected pull-request proof is blocking; then it retains the proof's 275-minute wait budget. CI proof keeps its own 275-minute exception. [Main full set](/reference/main-full-set) keeps its separate limits and installs its planner's Python prerequisites before checking its workflow policy.
 
 `CiBudgetTest` in `tools/test_ci_table.py` follows the reusable workflows from `ci.yml`. It rejects a pull request job without a timeout or table entry, a timeout above four minutes or different from the ceiling, and a dependency other than the plan. It names the non-check jobs explicitly. Only Required checks, CLI release dispatch and CI proof may have other dependencies; proof is the only long-running exception on the pull request path.
 
@@ -165,6 +165,8 @@ Fleet fixture costs use hosted timings as well as local measurements. Host-clean
 
 Container host preparation uses one case per unit. Each declared body cost uses its largest completed observation, rounded up plus one second; paired cases must not receive an equal share of the file total. Deadline cuts are censored observations, not completed measurements.
 
+Each fixture unit has its own child subreaper. It reaps adopted children while the session leader runs, so exited grandchildren do not remain zombies until the unit ends. The leader alone decides success or failure. Deadlines and cancellation still kill and reap the unit’s remaining descendants before temporary files are removed.
+
 Direct input matches take priority when work exceeds that limit, then fixture table order decides admission. A file runs with all its slices or is deferred whole; the plan names deferred units, their cases and unmapped Swamp paths in its summary. A file that cannot fit even an otherwise empty six-shard plan, or contains a unit above the lane budget, makes Required checks fail; admitted files still run. Unmapped paths select the table’s default checks.
 
 Migration remains after-merge-only: its declared work needs twelve shards, above the six-shard limit. The host ACL file also exceeds a lane, and the host build-list file needs an isolated measurement before admission. The FrankenPHP proxy fixture needs the pinned binary through `ORBIT_FRANKENPHP`, which hosted fixture setup does not install. Their table entries explain these coverage gaps. The measured container file remains eligible.
@@ -172,6 +174,8 @@ Migration remains after-merge-only: its declared work needs twelve shards, above
 The native migration fixture also forces advisory mail failure and malformed receipts for defaults and clones, proving that Route cutover and retirement succeed without rollback. Its account gate uses Swamp's upstream [throwaway credential fixture](https://github.com/swamp-club/swamp/blob/db3f6373/integration/auth_gate_fixture.ts), with no real credential or fleet call.
 
 The task VM host egress Python file is also after-merge-only: it repeatedly reached the 180-second PR ceiling, including run 43102509039. Python files run as whole units; the full-set receiver retains every case until measured case splitting makes PR admission possible. These explicit deferrals do not fail Required checks.
+
+The Instance host updates file runs after merge only. Across 24 PR observations per case, the runtime update reached 166.761 seconds and the Squid rollback reached 152.639 seconds, leaving about 7% and 15% of the 180-second ceiling. Both cases already run alone and require an initial converge followed by a changed-input converge. All four cases remain in Main full set; restoring PR coverage requires a measured faster fixture that preserves those transitions.
 
 Each fixture shard has a four-minute job limit. The runner stops the shard at 190 seconds, names running units as `OVER BUDGET` and queued units as `NOT RUN`, and fails the shard.
 
@@ -209,7 +213,7 @@ Every proof CI summary includes the [base-refresh caveat](/reference/command-dev
 
 The job summary lists case verdicts and uncovered paths. The `proof-receipt` artifact records the commit, operation, selected commands, outcome and idempotency key. An `interrupted` outcome means inconclusive coverage and exits nonzero; [proof outcomes](/cli/proof/run#verdicts) define failure precedence. It excludes execution input and host settings. Reports use full Swamp output artifacts because native history summaries keep only 4 KiB.
 
-The job holds no secret. The runner's CLI acts as its enrolled Node from its WireGuard address, with an access grant to the Gateway. Only an active authenticated `ci-runner` Node gets the CI pool. The default labels are `self-hosted, hardimpact, orbit-shard`; `ORBIT_PROOF_RUNNER` can supply a JSON list of labels. The 195-minute job timeout covers two hours of admission, execution and cancellation.
+The job holds no secret. The runner's CLI acts as its enrolled Node from its WireGuard address, with an access grant to the Gateway. Only an active authenticated `ci-runner` Node gets the CI pool. The default labels are `self-hosted, hardimpact, orbit-shard`; `ORBIT_PROOF_RUNNER` can supply a JSON list of labels. The wrapper waits up to 270 minutes, covering two hours of admission and two hours of execution with 30 minutes for setup, reporting and cancellation. Both proof jobs allow 275 minutes; an enabled blocking Required monitor uses the same limit. These exceptions do not change the fast-check ceilings or enable proof blocking.
 
 The checks table owns build input selection, known source roots, each root's default checks, and measured costs and ceilings. `ci.yml`, shared action definitions, the table and the planner select every check once. Other workflow files select their declared consumers.
 
@@ -756,6 +760,8 @@ The destroy guard is admission only. Tests pin the workflow to its pre-guard mai
 The container Schedule fixture checks timer installation and advisory activation with three Ansible launches. It executes the journal module directly for byte and transport limits. Its declared cost includes startup; inventory and case costs change together.
 
 Private Node-runtime fixtures use the shipped conversion and fetch helper with a fake Vite+ command; network downloads are tested separately in an owned fixture Instance.
+
+DNS publication fixtures evaluate the shipped selectors, guards and contribution counts with the pinned Swamp CEL evaluator on public intents captured through the real Gateway builders. They retain the first live publication, omit only an identical final publication, and exercise the real merge and terminal result for drift, mixed Nodes and failed children. The previous Gateway's intent needs no added field. Keep child-count evidence separate from live timing; release proof measures the migrate Route step against its recorded baseline.
 
 The Caddy candidate fixtures execute each changed writer with invalid and valid candidates. They keep every path and stand-in under a private temporary directory, run Ansible without facts or privilege, preserve relative-import directories and prove invalid input leaves live bytes unchanged with no reload.
 

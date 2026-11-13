@@ -1,0 +1,50 @@
+{
+  "custom_stats": {},
+  "global_custom_stats": {},
+  "plays": [
+    {
+      "play": {
+        "duration": {
+          "end": "2026-01-01T00:00:00Z",
+          "start": "2026-01-01T00:00:00Z"
+        },
+        "id": "00000000-0000-0000-0000-000000000001",
+        "name": "Callback proof",
+        "path": "proof.yml:1"
+      },
+      "tasks": [
+        {
+          "hosts": {
+            "target": {
+              "_ansible_no_log": true,
+              "action": "ansible.builtin.ping",
+              "censored": "the output has been hidden due to the fact that 'no_log: true' was specified for this result",
+              "changed": false,
+              "exception": "LEAK_EXCEPTION"
+            }
+          },
+          "task": {
+            "duration": {
+              "end": "2026-01-01T00:00:00Z",
+              "start": "2026-01-01T00:00:00Z"
+            },
+            "id": "00000000-0000-0000-0000-000000000001",
+            "name": "Hidden unreachable LEAK_HIDDEN",
+            "path": "proof.yml:1"
+          }
+        }
+      ]
+    }
+  ],
+  "stats": {
+    "target": {
+      "changed": 0,
+      "failures": 0,
+      "ignored": 0,
+      "ok": 0,
+      "rescued": 0,
+      "skipped": 0,
+      "unreachable": 1
+    }
+  }
+}

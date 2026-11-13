@@ -1,0 +1,92 @@
+{
+  "custom_stats": {},
+  "global_custom_stats": {},
+  "plays": [
+    {
+      "play": {
+        "duration": {
+          "end": "2026-01-01T00:00:00Z",
+          "start": "2026-01-01T00:00:00Z"
+        },
+        "id": "00000000-0000-0000-0000-000000000001",
+        "name": "Callback proof",
+        "path": "proof.yml:1"
+      },
+      "tasks": [
+        {
+          "hosts": {
+            "target": {
+              "_ansible_no_log": false,
+              "action": "ansible.builtin.fail",
+              "changed": false,
+              "exception": "LEAK_EXCEPTION",
+              "failed": true,
+              "msg": "LEAK_MSG"
+            }
+          },
+          "task": {
+            "duration": {
+              "end": "2026-01-01T00:00:00Z",
+              "start": "2026-01-01T00:00:00Z"
+            },
+            "id": "00000000-0000-0000-0000-000000000001",
+            "name": "Earlier failure",
+            "path": "proof.yml:1"
+          }
+        },
+        {
+          "hosts": {
+            "target": {
+              "_ansible_no_log": false,
+              "action": "ansible.builtin.command",
+              "changed": true,
+              "cmd": [
+                "LEAK_CMD"
+              ],
+              "delta": "0:00:00.002213",
+              "end": "2026-01-01T00:00:00Z",
+              "exception": "LEAK_EXCEPTION",
+              "failed": true,
+              "invocation": {
+                "module_args": {
+                  "_raw_params": "LEAK_ARGS"
+                }
+              },
+              "msg": "LEAK_MSG",
+              "rc": 7,
+              "start": "2026-01-01T00:00:00Z",
+              "stderr": "LEAK_STDERR",
+              "stderr_lines": [
+                "LEAK_STDERR"
+              ],
+              "stdout": "LEAK_STDOUT",
+              "stdout_lines": [
+                "LEAK_STDOUT"
+              ]
+            }
+          },
+          "task": {
+            "duration": {
+              "end": "2026-01-01T00:00:00Z",
+              "start": "2026-01-01T00:00:00Z"
+            },
+            "id": "00000000-0000-0000-0000-000000000001",
+            "name": "Fatal command",
+            "path": "proof.yml:1"
+          }
+        }
+      ]
+    }
+  ],
+  "stats": {
+    "target": {
+      "changed": 0,
+      "failures": 1,
+      "ignored": 1,
+      "ok": 1,
+      "rescued": 0,
+      "skipped": 0,
+      "unreachable": 0
+    }
+  }
+}

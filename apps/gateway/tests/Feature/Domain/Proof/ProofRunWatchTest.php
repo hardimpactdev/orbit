@@ -17,13 +17,16 @@ use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmRuntime;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
@@ -403,4 +406,119 @@ it('leaves an operator proof in task admission to its capacity budget instead of
         ->and($proof->refresh()->status)->toBe(OperationStatus::Running)
         ->and($waiting->refresh()->status)->toBe(OperationStatus::Waiting);
     Queue::assertNotPushed(CancelProofGroup::class);
+});
+
+it('ends held children after a lost successor only when the proof is old and every child has been quiet', function (): void {
+    $this->freezeTime();
+    Queue::fake();
+    $proof = watchProof(watchNode(), ProofRunWatch::AdmissionSeconds + 1);
+    $answered = watchRun($proof, 'firewall:allow', OperationStatus::Failed, 'swamp.start_job_failed');
+    $held = watchRun($proof, 'firewall:list', OperationStatus::Queued);
+    $held->update(['state' => ['swamp_start' => ['key' => 'operation:'.$held->id, 'workflow' => 'operation-proof-run'],
+        'proof_child_start' => ['not_before' => now()->subSeconds(900)->toISOString(), 'released_at' => null, 'advanced_at' => null]]]);
+    watchAged($held, 900, 299);
+    expect(app(ProofRunWatch::class)->sweep())->toBe(0);
+    expect(OperationRunBudgets::deadline($held))->toBeNull();
+    $this->travel(2)->seconds();
+
+    expect(app(ProofRunWatch::class)->sweep())->toBe(1);
+    expect($held->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($held->error_code)->toBe('proof.admission_interrupted');
+    expect($proof->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and(array_column($proof->result['cases'], 'verdict'))->toBe(['unrun', 'unrun']);
+    Queue::assertPushed(CancelProofGroup::class, fn ($job): bool => $job->operationId === $held->id);
+});
+
+it('keeps the existing query count for proofs without holds while repairing held proofs', function (int $age, int $expected): void {
+    $this->freezeSecond();
+    Queue::fake();
+    $proof = watchProof(watchNode(), $age);
+    watchRun($proof, 'firewall:allow', OperationStatus::Running, started: true);
+    $queries = [];
+    DB::listen(function (QueryExecuted $query) use (&$queries): void {
+        $queries[] = $query->sql;
+    });
+    app(ProofRunWatch::class)->sweep();
+    expect($queries)->toHaveCount($expected);
+
+    $repair = watchProof(Node::query()->findOrFail($proof->node_id), 60);
+    $answered = watchRun($repair, 'firewall:allow', OperationStatus::Failed);
+    $held = watchRun($repair, 'firewall:list', OperationStatus::Queued);
+    foreach ([$answered, $held] as $child) {
+        $child->update(['state' => ['proof_child_start' => ['not_before' => null, 'released_at' => null, 'advanced_at' => null]]]);
+    }
+    app(ProofRunWatch::class)->sweep();
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $held->id && $job->delay->equalTo(now()->addSeconds(20)));
+})->with(['young' => [60, 2], 'old' => [ProofRunWatch::AdmissionSeconds + 1, 3]]);
+
+/** The reviewer's lost queued start, still held even though its parent has ended. */
+function watchStrandedHeld(Operation $proof, int $age = 90 * 86400): Operation
+{
+    $child = watchRun($proof, 'firewall:allow', OperationStatus::Queued);
+    $child->update(['state' => ['swamp_start' => ['key' => 'operation:'.$child->id, 'workflow' => 'operation-proof-run'],
+        'proof_child_start' => ['not_before' => now()->subSeconds(20)->toISOString(), 'released_at' => null, 'advanced_at' => null]]]);
+
+    return watchAged($child, $age);
+}
+
+it('cancels months-old held children of terminal or missing parents on the first pass and queues normal cleanup once', function (string $status): void {
+    Queue::fake();
+    $proof = watchProof(watchNode(), 90 * 86400);
+    $child = watchStrandedHeld($proof);
+    if ($status === 'missing') {
+        $proof->delete();
+    } else {
+        $proof->update(['status' => OperationStatus::from($status)]);
+    }
+
+    app(ProofRunWatch::class)->sweep();
+
+    expect($child->refresh()->status)->toBe(OperationStatus::Cancelled)->and($child->cancel_requested_at)->not->toBeNull();
+    Queue::assertPushed(CancelProofGroup::class, 1);
+    Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $child->id && $job->trigger === 'proof-run');
+    $before = $child->getAttributes();
+    app(ProofRunWatch::class)->sweep();
+    expect($child->refresh()->getAttributes())->toBe($before);
+    Queue::assertPushed(CancelProofGroup::class, 1);
+})->with(['cancelled', 'succeeded', 'failed', 'interrupted', 'missing']);
+
+it('recovers stranded children without touching an open parent child, a released child or a bound child', function (string $case): void {
+    Queue::fake();
+    $node = watchNode();
+    $ended = watchProof($node, 60);
+    $stranded = watchStrandedHeld($ended, 60);
+    $ended->update(['status' => OperationStatus::Cancelled]);
+    $parent = $case === 'open' ? watchProof($node, 60) : $ended;
+    $protected = watchStrandedHeld($parent, 60);
+    if ($case === 'open') {
+        $protected->update(['state' => [...($protected->state ?? []), 'proof_child_start' => ['not_before' => now()->addMinute()->toISOString(), 'released_at' => null]]]);
+    } else {
+        $parent->update(['status' => OperationStatus::Cancelled]);
+        $protected->update(['state' => [...($protected->state ?? []),
+            ...($case === 'bound' ? ['swamp_run_id' => 'bound-proof-child'] : []),
+            'proof_child_start' => ['released_at' => $case === 'released' ? now()->toISOString() : null]]]);
+    }
+    $before = $protected->refresh()->getAttributes();
+    app(ProofRunWatch::class)->sweep();
+    expect($stranded->refresh()->status)->toBe(OperationStatus::Cancelled)
+        ->and($protected->refresh()->getAttributes())->toBe($before);
+    Queue::assertPushed(CancelProofGroup::class, 1);
+})->with(['open', 'released', 'bound']);
+
+it('keeps the two empty-fleet reads and folds stranded children into the existing watchdog selection', function (): void {
+    Queue::fake();
+    $node = watchNode();
+    $queries = [];
+    DB::listen(function (QueryExecuted $query) use (&$queries): void {
+        $queries[] = $query->sql;
+    });
+    app(ProofRunWatch::class)->sweep();
+    expect($queries)->toHaveCount(2);
+    $empty = count($queries);
+    $proof = watchProof($node, 60);
+    $child = watchStrandedHeld($proof, 60);
+    $proof->update(['status' => OperationStatus::Cancelled]);
+    app(ProofRunWatch::class)->sweep();
+    expect($child->refresh()->status)->toBe(OperationStatus::Cancelled);
+    fwrite(STDOUT, "\nHeld-child watchdog queries: ".json_encode(['empty_fleet' => $empty, 'additional_empty_reads' => 0], JSON_THROW_ON_ERROR)."\n");
 });

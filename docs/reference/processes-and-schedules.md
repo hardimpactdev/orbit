@@ -18,6 +18,8 @@ A Process is one long-running systemd service or Docker container that Orbit man
 
 An Instance container’s Process start and restart use nonblocking systemd jobs with bounded readiness checks. The [container Process contract](/reference/development-containers#processes) defines their network ordering and runtime.
 
+A retained container create retry derives its Processes from the Project's current development definitions at admission. Changed definitions update their Processes, and removed definitions remove theirs. See [create retry](/reference/development-containers#processes) for the units, environment files and recovery result.
+
 ## Execution
 
 Process create, update, start, stop, restart, and destroy record an Operation and return HTTP 202. The Gateway validates the request and stores intent. Swamp executes the local Node actions and returns a bounded native result. The Gateway projects that result into the Process lifecycle or removes its record. After an install or control command, Swamp reads the observed runtime state. The Gateway uses that result for status events and the Process status index. Reads keep their existing Gateway paths. An Idempotency-Key replays the admitted Operation, including after removal.
@@ -166,6 +168,10 @@ A Process can also store an environment map in its specification. The unit recei
 The derived keys always win: `PATH`, `NODE_USE_SYSTEM_CA`, `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, the `ORBIT_DEV_SERVER_*` keys, and the SSR keys when the Instance has an SSR port.
 
 A development Process also receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY`, the paths of the Instance's certificate files under `~/.orbit/certificates/app-instance-{id}/current/`. The `vp-dev` preset does not receive them. When the Instance has a Route, it receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, and `ORBIT_DEV_SERVER_PATH` for the [development-server endpoint](/reference/routes#development-server-endpoint), and `ORBIT_DEV_SERVER_PORT` only when `vite_port` is assigned. It also receives `ORBIT_SSR_PORT` and `INERTIA_SSR_URL` when it has an [assigned SSR port](/reference/assigned-ssr-ports), with or without a Route. These derived values are not secret. The unit carries them both as `Environment=` directives and on `ExecStart` through `/usr/bin/env`.
+
+Orbit adds the generic `DEV_SERVER_ORIGIN` alias only to the `vp-dev` dev-server preset. Orbit adds it beside `ORBIT_DEV_SERVER_ORIGIN` in the unit directives and command prefix when the Process has a Route and its own environment does not supply the generic name. The Project's own value wins, including an empty value: Orbit leaves its unit and managed Process environment file unchanged. The generic name is not reserved or filtered. Ordinary Route-backed, Node and Route-less Processes keep their existing rendering and `ORBIT_*` values.
+
+For an existing container default without a supplied value, its next deployment adds the alias and rewrites and restarts only the dev-server unit for this change. An existing clone gets it only when recreated; an existing checkout preset gets it only when its unit is reinstalled. Other deployment or runtime changes retain their normal restart behavior. A release, wake or ordinary Process restart does not refresh installed units. Existing container application `.env` files are not re-rendered for this change.
 
 ## Presets
 

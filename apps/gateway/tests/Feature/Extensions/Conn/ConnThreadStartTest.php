@@ -1516,16 +1516,16 @@ describe('Route certificate producer compatibility', function (): void {
         $this->signer = new GatewayLeafCertificateSigner($this->processes);
     });
 
-    it('signs the unchanged production old-form CSR at the live 64 character domain limit', function (string $workflow): void {
+    it('signs the new production CSR at the unchanged live 64 character domain limit', function (string $workflow): void {
         $domain = str_repeat('n', 54).'.tool.test';
         expect(strlen($domain))->toBe(64);
 
         $result = $this->processes->run(routeSanRequest($workflow, $this->directory, $domain));
 
         expect($result->exitCode)->toBe(0, $result->stderr)
-            ->and(openssl_csr_get_subject($result->stdout)['CN'])->toBe($domain);
+            ->and(openssl_csr_get_subject($result->stdout)['CN'])->toBe('Orbit');
         $certificate = expectRouteSanLeaf($domain, $result->stdout);
-        expect(openssl_x509_parse($certificate)['subject']['CN'])->toBe($domain);
+        expect(openssl_x509_parse($certificate)['subject']['CN'])->toBe('Orbit');
     })->with(['workflow-route-create-csr', 'workflow-route-certificate-publish', 'workflow-node-role-certificate-publish']);
 
     it('accepts the future producer form before any producer changes, including after switch-back', function (string $domain): void {
@@ -1563,4 +1563,10 @@ describe('Route certificate producer compatibility', function (): void {
             ->toThrow(ResourceOperationException::class, 'The CSR must be an RSA 2048 request for the admitted domain only.');
     })->with(['missing SAN' => null, 'different DNS name' => 'DNS:other.test', 'extra DNS name' => 'DNS:tool.test,DNS:other.test']);
 
+    it('keeps a real CSR failure diagnostic visible without RSA progress dots', function (string $workflow): void {
+        $result = $this->processes->run(routeSanRequest($workflow, $this->directory.'/missing', 'tool.test'));
+
+        expect($result->exitCode)->not->toBe(0)
+            ->and($result->stderr)->toContain('No such file or directory')->not->toMatch('/[.+*]{20}/');
+    })->with(['workflow-route-create-csr', 'workflow-route-certificate-publish', 'workflow-node-role-certificate-publish']);
 });

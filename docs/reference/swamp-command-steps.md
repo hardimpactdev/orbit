@@ -3,7 +3,7 @@ title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
   - apps/gateway/app/Domain/Proof/direct-operations.php
-  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,SwampConnection,SwampDispatch,SwampTerminalReadUnavailable}.php
+  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,NativeStepFailure,SwampConnection,SwampDispatch,SwampTerminalReadUnavailable,SwampTerminalOutputUnavailable}.php
   - apps/gateway/app/Jobs/Operations/ReconcileSwampOperations.php
   - apps/gateway/app/Domain/Operations/DirectOperationChildProjection.php
 ---
@@ -24,11 +24,15 @@ Call `executionCopy(string $vault, string $key, string $value): array{vault:stri
 
 Serve rate-limits requests and WebSocket handshakes per client and answers `429` with `Retry-After`. Its source admits at most 50 new WebSocket connections from one IP address in a fixed minute, for every token together, and names the rest of that minute as `Retry-After`; no serve setting changes it. Every Gateway process shares that budget.
 
-The execution copies that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. After every copy is acknowledged, the Gateway queues the native starts on its existing `operations` queue and answers admission without waiting for them. Each start job opens its own connection. A request that fails closes its connection, and the next request opens a new one.
+The execution copies that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. After every copy is acknowledged, the Gateway queues the native starts on its existing `operations` queue and answers admission without waiting for them. Children of a proof use the [spaced start sequence](/reference/operations#direct-swamp-starts). Each start job opens its own connection. A request that fails closes its connection, and the next request opens a new one.
+
+A successful `Swamp direct start` log retains `operation_id`, `outcome` and `duration_ms`, and adds `kind`, `inputs_ms`, `connect_ms`, `send_ms`, `first_event_ms`, `bind_ms`, `broadcast_ms` and `queue_wait_ms`. All measures are non-negative integers. Phase times and the total use a monotonic clock. The six start phases sum to no more than `duration_ms`; the separate `queue_wait_ms` measures Operation creation to start-job handler entry, including admission work before queuing.
+
+`inputs_ms` covers preparation through the built inputs, including the initial state transition and configuration lookup. `first_event_ms` covers send completion to the matching root `started` event. Bind includes its state-change notices; broadcast measures the final native-start notice. Success diagnostic exceptions are swallowed after binding, so a failed log write cannot fail the start. No input, secret, token or payload content is logged. Failure logs keep their existing fields and phase diagnostics.
 
 Every Gateway WebSocket client also tries a refused `429` handshake again after the server's `Retry-After`, or after a doubling backoff from half a second when serve names none. It tries at most four times and only while the caller's connect timeout leaves room, so a copy or start waits up to 15 seconds instead of failing at once. A wait for the rest of serve's minute is longer, so the Gateway keeps its own connection rate low instead.
 
-Reads that only refresh what a caller sees take a connection from one Gateway-wide read budget: at most 20 per minute, and one per subject per interval. An Operation read checks one run's history at most every 30 seconds, however often clients poll it; a task group's Swamp runs are read at most every five seconds. A read the budget refuses answers from recorded state. The rest of serve's minute stays for admissions, execution copies and the shared observers.
+Reads that only refresh what a caller sees take a connection from one Gateway-wide read budget: at most 20 per minute, and one per subject per interval. Operation shows use recorded state and make no Swamp request. A task group's Swamp runs are read at most every five seconds. A read the budget refuses answers from recorded state. The rest of serve's minute stays for admissions, execution copies and the shared observers.
 
 Map each named variable with one whole native expression under `task.inputs.env`:
 
@@ -116,16 +120,21 @@ A fire of a Schedule's own workflow is recorded as a task when its run ends, not
 
 ### Reconciler
 
-Migrate alone can settle a late native finish when its Operation is shown or its Instance is admitted for migration again. These reads run before the projector's write transaction. They add no recovery work to the shared reconciler; see the [migrate late-settlement rules](/reference/operations#native-run-budgets).
+A migrate with a verified terminal root but unreadable finish output supplies that history in a typed missing-output receipt. The job keeps a short grace, then records proven rollback or retains the reservation until the deadline. A network failure without verified history proves no rollback. Missing-output settlement keeps the verified root status and known failed-step diagnostics, including a cancelled root. Other diagnostic callers keep their existing root-status policy. See [migrate result recovery](/reference/operations#native-run-budgets).
+
+The reconciler reads late migrate finishes, including an uncertain start with no run binding or target hold. Shows and admissions do not settle them. See the [migrate late-settlement rules](/reference/operations#native-run-budgets).
 
 `ReconcileSwampOperations` is the one place that settles an Operation with its Swamp run. The scheduler runs it every minute, and the event observer asks for a pass when it sees a run end. Polling stays: the datastore is format 2, which has no commit feed. The same pass frees the Nodes of a Route write that ended without a release and starts the Route writes that wait for them ([One Route write per Node](/reference/operations#one-route-write-per-node)).
 
-Each pass reads every open Operation of a direct kind against Swamp:
+Each pass checks every open Operation of a direct kind, held timeouts, unsettled migrate timeouts and recent unconfirmed timeout cancels.
+
+Operation reads do not request terminal history or expire Operations. The event observer and minute sweep queue the reconciler, which owns native terminal settlement. A migrate whose hold limit ends without a readable result records its unavailable-result failure and releases the Gateway hold; its runtime reservation stays. Fleet kinds without a declared terminal selector use their existing generic failure probe in the reconcile job.
 
 - A bound run gets an exact root history read and any declared child evidence reads. A terminal history is projected through `SwampCommandStep::projectTerminal`.
 - A nonterminal parent records completed child evidence and stays open. Serve may announce the root’s end before saving history. An unavailable read waits for the next pass.
 - An Operation past its budget is expired. A history that shows the run ended within its budget wins.
-- An unbound Operation marked `swamp.start_uncertain` gets the exact lookup of its start. So does a timed-out one that still holds its target. The lookup repeats each pass until it binds the run or the hold ends.
+- An unbound Operation marked `swamp.start_uncertain` gets the exact lookup of its start. A timed-out Operation that holds its target gets the same lookup until binding or hold expiry.
+- An unsettled migrate gets this lookup even without a target hold. Its first expiry fixes its recovery limit.
 - A recorded cancel that Swamp has not confirmed is forwarded for up to an hour. Cancels go after the reads and stop 150 seconds into the pass.
 - A timed-out Operation whose run nothing proves ended frees its target after an hour.
 
@@ -154,6 +163,8 @@ The existing `orbit:agent-view` Gateway observer keeps the shared native run con
 Only kinds with `terminal_result` are followed through bound-root attachments and project their fixed result. The scheduled read runs as its own Gateway job. The reconciler and the scheduled read run on the operations queue.
 
 The native event connection and shared history reader accept messages and frames up to 8 MiB. Full run metadata and intent can exceed the Reverb client's 64 KiB message limit; Reverb keeps its existing limit. A run beyond the native bound cannot be projected through this connection and must not be treated as successful delivery.
+
+Each completed reconciliation pass records its time and duration and logs `Operation reconcile pass ran.` with its duration, open Operation count, and unsettled count. [`gateway:status`](/cli/gateway/status) exposes stored pass facts to peers with Gateway Node access. See [reconciliation health](/reference/operations#recover-a-terminal-native-result) for the facts and issue signals.
 
 A matching terminal frame is reduced to the Operation ID, bound run ID and actual native status. Laravel dispatches `ReconcileSwampOperations` for a pass; the pass reloads each Operation and its declaration and calls the same `SwampCommandStep` helper. There is no native execution command.
 
@@ -187,7 +198,7 @@ The descriptor does not prove that a target currently authorizes the existing ke
 
 ### Native failure observation
 
-Workflows have no Gateway failure-report step. The shared terminal subscriber follows kinds that declare `terminal_result`. Normal operation reads retain their existing native failure check. A failed or interrupted run without selected public output records `operation.native_failed`. A converted family maps the native failure in its Gateway projection; retained result steps may still supply a fixed public error code. Schedule runs map a failed native command to `schedule.run_failed`. The Gateway returns `404` for `POST /api/v1/direct-operations/{operation}/failure`.
+Workflows have no Gateway failure-report step. The shared terminal subscriber follows kinds that declare `terminal_result`. The reconciler owns the native failure check; Operation reads return stored state. A failed or interrupted run without selected public output records `operation.native_failed`. A converted family maps the native failure in its Gateway projection; retained result steps may still supply a fixed public error code. Schedule runs map a failed native command to `schedule.run_failed`. The Gateway returns `404` for `POST /api/v1/direct-operations/{operation}/failure`.
 
 Unexpected errors in retained `directOperation` actions fail the native step with a fixed public code. They do not send a failed result callback. The normal shared native failure reader owns their terminal settlement. Explicit no-effect cancellation and returned domain refusals retain their existing contracts until those families switch.
 

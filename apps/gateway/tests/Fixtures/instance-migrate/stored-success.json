@@ -1,0 +1,140 @@
+{
+  "id": "11111111-2222-4333-8444-555555555555",
+  "workflowName": "operation-instance-migrate",
+  "status": "succeeded",
+  "startedAt": "2026-11-12T21:28:34.012Z",
+  "completedAt": "2026-11-12T21:31:37.398Z",
+  "jobs": [
+    {
+      "name": "migrate",
+      "steps": [
+        {
+          "name": "input",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:28:34.018Z",
+          "completedAt": "2026-11-12T21:28:35.023Z"
+        },
+        {
+          "name": "source-credential",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:28:35.029Z",
+          "completedAt": "2026-11-12T21:28:36.043Z"
+        },
+        {
+          "name": "container",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:28:36.056Z",
+          "completedAt": "2026-11-12T21:29:06.920Z"
+        },
+        {
+          "name": "node-runtime",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:29:06.933Z",
+          "completedAt": "2026-11-12T21:29:12.194Z"
+        },
+        {
+          "name": "quiesce",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:29:12.205Z",
+          "completedAt": "2026-11-12T21:29:28.104Z"
+        },
+        {
+          "name": "workspace",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:29:28.117Z",
+          "completedAt": "2026-11-12T21:29:35.070Z"
+        },
+        {
+          "name": "files",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:29:35.086Z",
+          "completedAt": "2026-11-12T21:29:49.365Z"
+        },
+        {
+          "name": "Apply development mail",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:29:49.381Z",
+          "completedAt": "2026-11-12T21:29:53.633Z"
+        },
+        {
+          "name": "agent",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:29:53.649Z",
+          "completedAt": "2026-11-12T21:30:02.299Z"
+        },
+        {
+          "name": "container-processes",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:30:02.341Z",
+          "completedAt": "2026-11-12T21:30:11.641Z"
+        },
+        {
+          "name": "seed",
+          "status": "skipped",
+          "completedAt": "2026-11-12T21:30:11.665Z"
+        },
+        {
+          "name": "t3",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:30:11.665Z",
+          "completedAt": "2026-11-12T21:30:18.256Z"
+        },
+        {
+          "name": "t3-sessions",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:30:18.281Z",
+          "completedAt": "2026-11-12T21:30:24.579Z"
+        },
+        {
+          "name": "t3-register",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:30:24.609Z",
+          "completedAt": "2026-11-12T21:30:25.674Z"
+        },
+        {
+          "name": "route",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:30:25.709Z",
+          "completedAt": "2026-11-12T21:31:24.360Z"
+        },
+        {
+          "name": "retire",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:31:24.380Z",
+          "completedAt": "2026-11-12T21:31:34.895Z"
+        },
+        {
+          "name": "restore-route",
+          "status": "skipped",
+          "completedAt": "2026-11-12T21:31:34.929Z"
+        },
+        {
+          "name": "restore",
+          "status": "skipped",
+          "completedAt": "2026-11-12T21:31:34.963Z"
+        },
+        {
+          "name": "finish",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:31:34.990Z",
+          "completedAt": "2026-11-12T21:31:36.162Z",
+          "outputs": {
+            "stdout": "{\"instance_id\":1,\"ready\":true,\"moved\":true,\"restored\":false,\"commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+          }
+        },
+        {
+          "name": "accepted",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:31:36.188Z",
+          "completedAt": "2026-11-12T21:31:36.188Z"
+        },
+        {
+          "name": "cleanup",
+          "status": "succeeded",
+          "startedAt": "2026-11-12T21:31:36.188Z",
+          "completedAt": "2026-11-12T21:31:37.356Z"
+        }
+      ]
+    }
+  ]
+}

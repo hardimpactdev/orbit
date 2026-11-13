@@ -8,6 +8,9 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
+
+import yaml
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'bin/ci-proof-run'
 loader = importlib.machinery.SourceFileLoader('ci_proof_run', str(SCRIPT))
@@ -179,6 +182,24 @@ class InterruptedReportTest(unittest.TestCase):
 
 
 class RunTest(unittest.TestCase):
+    def test_full_admission_and_execution_budgets_fit_before_cancellation(self):
+        output = document('passed')
+        child = Mock(returncode=0)
+
+        def communicate(timeout=None):
+            if timeout is not None and timeout < (120 + 120) * 60:
+                raise subprocess.TimeoutExpired('orbit', timeout)
+            return output, None
+
+        child.communicate.side_effect = communicate
+        with patch.object(proof.subprocess, 'Popen', return_value=child), patch.object(proof.signal, 'signal'):
+            self.assertEqual(proof.run(SHA, 'key', 'orbit'), (0, output))
+        child.send_signal.assert_not_called()
+        child.communicate.assert_called_once_with(timeout=270 * 60)
+        for file in ('ci.yml', 'proof-outside.yml'):
+            workflow = yaml.safe_load((SCRIPT.parent.parent / '.github/workflows' / file).read_text())
+            self.assertEqual(workflow['jobs']['proof-run']['timeout-minutes'], proof.WAIT // 60 + 5)
+
     def run_script(self, orbit_body, env=None):
         with tempfile.TemporaryDirectory() as tmp:
             orbit = Path(tmp, 'orbit')

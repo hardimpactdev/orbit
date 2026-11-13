@@ -12,9 +12,9 @@ use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayVersion;
 use App\Domain\Nodes\NodeAccessAuthorizer;
+use App\Domain\Operations\OperationReconcileHealth;
 use App\Domain\Problems\ProblemSource;
 use App\Models\Node;
-use App\Models\ProblemCollectorState;
 use App\Models\ProblemFingerprint;
 use Illuminate\Foundation\Application;
 use Throwable;
@@ -40,6 +40,11 @@ final readonly class ShowGatewayStatusAction
     public function handle(?Node $consumer): GatewayStatusData
     {
         [$release, $sha] = $this->releases->current();
+        $observation = $consumer !== null ? app(OperationReconcileHealth::class)->observation() : null;
+        // Status explicitly includes the caller's own Node; other commands keep the shared grant rule.
+        $visibleIds = $consumer !== null ? array_fill_keys([$consumer->id, ...$this->access->accessibleNodeIds($consumer)], true) : [];
+        // Resolved once for the request: the reconcile facts and the Gateway groups below share it.
+        $gatewayId = $consumer !== null ? $this->access->activeGatewayId() : null;
 
         return new GatewayStatusData(
             name: 'orbit-gateway',
@@ -51,14 +56,17 @@ final readonly class ShowGatewayStatusAction
             release: $release,
             releaseSha: $sha,
             autoRelease: $consumer !== null ? $this->autoRelease() : null,
-            doctor: $consumer !== null ? $this->doctor($consumer) : null,
+            doctor: $consumer !== null ? $this->doctor($observation, $visibleIds, $gatewayId) : null,
+            reconcile: $gatewayId !== null && isset($visibleIds[$gatewayId]) ? app(OperationReconcileHealth::class)->facts($observation) : null,
         );
     }
 
-    /** @return array{collected_at: ?string, last_run_ms: int|float|null, hidden_nodes: int, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>} */
-    private function doctor(Node $consumer): array
+    /**
+     * @param array<string, mixed>|null $observation
+     * @param array<int, true> $visibleIds
+     * @return array{collected_at: ?string, last_run_ms: int|float|null, hidden_nodes: int, issues: list<array{node_id: int, node_name: string, code: string, count: int, since: ?string, newest_since: ?string, resource: array{type: string, id: ?string}|null}>} */
+    private function doctor(?array $observation, array $visibleIds, ?int $gatewayId): array
     {
-        $observation = ProblemCollectorState::query()->orderBy('id')->first()?->observation;
         $startedAt = $observation['doctor_started_at'] ?? null;
         // Only what the latest full collection saw is an open issue. A row that an older collection wrote and no
         // later one checks again stays in the store as history and is not shown.
@@ -66,7 +74,11 @@ final readonly class ShowGatewayStatusAction
             ? ProblemFingerprint::query()->where('source', ProblemSource::Doctor)->whereNull('evidence->resolved_at')
                 ->where('evidence->doctor_observed_at', '>=', $startedAt)->orderBy('id')->get()
             : ProblemFingerprint::query()->whereRaw('0 = 1')->get();
-        $nodes = Node::query()->whereIn('id', $rows->map(fn (ProblemFingerprint $row): mixed => $row->evidence['doctor_node'] ?? null))->get()->keyBy('id');
+        $nodeIds = $rows->map(fn (ProblemFingerprint $row): mixed => $row->evidence['doctor_node'] ?? null)->all();
+        if ($gatewayId !== null) {
+            $nodeIds[] = $gatewayId;
+        }
+        $nodes = Node::query()->whereIn('id', $nodeIds)->get()->keyBy('id');
         $groups = [];
         foreach ($rows as $row) {
             $nodeId = $row->evidence['doctor_node'] ?? null;
@@ -77,15 +89,17 @@ final readonly class ShowGatewayStatusAction
             }
             $key = $nodeId.'|'.$code;
             $since = $row->first_seen?->toISOString();
+            $count = $row->evidence['doctor_issue_count'] ?? 1;
+            $count = is_int($count) ? $count : 1;
             if (! isset($groups[$key])) {
                 $resource = $row->evidence['doctor_resource'] ?? null;
-                $groups[$key] = ['node_id' => $node->id, 'node_name' => $node->name, 'code' => $code, 'count' => 1,
+                $groups[$key] = ['node_id' => $node->id, 'node_name' => $node->name, 'code' => $code, 'count' => $count,
                     'since' => $since, 'newest_since' => $since,
                     'resource' => ['type' => is_string($row->evidence['doctor_family'] ?? null) ? $row->evidence['doctor_family'] : '',
                         'id' => is_int($resource) || is_string($resource) ? (string) $resource : null]];
             } else {
                 $group = &$groups[$key];
-                $group['count']++;
+                $group['count'] += $count;
                 $group['since'] = $group['since'] === null ? $since : ($since === null ? $group['since'] : min($group['since'], $since));
                 $group['newest_since'] = max($group['newest_since'], $since);
                 $group['resource'] = null;
@@ -97,14 +111,21 @@ final readonly class ShowGatewayStatusAction
         $duration = $observation['doctor_duration_ms'] ?? null;
         $duration = is_int($duration) || is_float($duration) ? $duration : null;
         if ($duration !== null && $duration > 1000 && $collectedAt !== null) {
-            $gateway = Node::query()->find($this->access->activeGatewayId());
+            $gateway = $gatewayId === null ? null : $nodes->get($gatewayId);
             if ($gateway instanceof Node) {
                 $groups['slow'] = ['node_id' => $gateway->id, 'node_name' => $gateway->name, 'code' => 'gateway.doctor_collection_slow',
                     'count' => 1, 'since' => $collectedAt, 'newest_since' => $collectedAt, 'resource' => null];
             }
         }
-        // Status explicitly includes the caller's own Node; other commands keep the shared grant rule.
-        $visibleIds = array_fill_keys([$consumer->id, ...$this->access->accessibleNodeIds($consumer)], true);
+        $signals = app(OperationReconcileHealth::class)->issues($observation);
+        if ($signals !== []) {
+            $gateway = $gatewayId === null ? null : $nodes->get($gatewayId);
+            if ($gateway instanceof Node) {
+                foreach ($signals as $signal) {
+                    $groups[$signal['code']] = ['node_id' => $gateway->id, 'node_name' => $gateway->name, ...$signal];
+                }
+            }
+        }
         $hidden = [];
         $issues = [];
         foreach ($groups as $group) {

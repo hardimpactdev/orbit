@@ -26,4 +26,6 @@ WebSocket names its pair `reverb.pem` and `reverb.key`, matching its Caddy site;
 
 Each run issues a new pair; it does not reuse a current one. A failed step fails the child, and the parent fails with it. Run the parent again after the fix. The child keeps no pair snapshot and has no rollback.
 
+Role requests use the same [SAN certificate policy](/reference/routes) as Route requests, with the fixed common name `Orbit`.
+
 The Orbit CA private key stays in the Gateway. Only the CSR and the public certificates pass through Swamp.

@@ -94,6 +94,10 @@ Each confirmed endpoint removal also removes its obsolete refresh records under 
 
 Gateway admission times are captured before reading targets. Owned ACL rules carry the same time in a strictly parsed description. Reattaching a tuple advances its rule’s stamp. Convergence preserves records and rules admitted at or after its capture, including admissions that arrive while it runs. Conditional ETag writes recheck this fence before deletion. An unknown description is never removed.
 
+Node convergence and the container phase stage the bridge helper beside its installed path, with owner `root:root` and mode `0755`. They compute the expected SHA-256 from that same shipped source file and verify the staged copy before an atomic rename. This detects transfer or staging corruption and truncation; it cannot detect a wrong source. A running refresh reads a complete file.
+
+A checksum mismatch removes the candidate and preserves the installed helper (`instance.bridge_helper_checksum_mismatch`). Symlinks at the installed path or candidate path refuse with `instance.bridge_helper_target_symlink` or `instance.bridge_helper_candidate_symlink`. An unchanged helper needs no write. In Ansible check mode, a missing or old helper reports a planned change without writing; a current helper reports no change. A target symlink still refuses.
+
 The timer recovers missed Docker events and DNAT rules installed after a start event. Admission, refresh, host convergence and withdrawal hold one exclusive lock at `/var/lib/orbit/instance-bridge/writer.lock` before reading records, through the last record and ACL write. A concurrent refresh refuses immediately; a new invocation reads the remaining records, so it cannot restore a removed endpoint.
 
 Lock acquisition makes one nonblocking attempt. An owned lock returns `instance.bridge_busy` immediately, without changing endpoint records, ACL rules or health. Retry the operation after the current writer finishes. Docker and NAT reads use the helper’s remaining budget: 30 seconds for refresh and 300 seconds for lifecycle work. Each Incus curl request keeps its five-second limit, with one request reserved for readback. A read timeout or curl exit 28 returns `instance.bridge_command_timeout` and releases the lock.
@@ -625,7 +629,9 @@ A deployment first records the Project's new definitions and changes the records
 
 One-shot log reads keep each complete journal line in time order and drop a final line cut by the byte limit.
 
-Repeating a failed create with the same Project, Node and name reuses its container and Route. Use a new idempotency key and keep the same root, branch and domain inputs. It runs the create phases again, including the Project's development deploy steps; activation and the seed commit are recorded only after the final receipt succeeds.
+Repeating a failed create with the same Project, Node and name reuses its container and Route. Use a new idempotency key and keep the same root, branch and domain inputs.
+
+At admission, the retry records the Project's current development Process definitions in the same transaction. It keeps each surviving definition's Process id, updates changed definitions, and removes Processes whose definitions were removed or exclude development. The create run replaces their units and environment files. Fix or remove a failing definition before retry. It runs the create phases again, including the Project's development deploy steps; activation and the seed commit are recorded only after the final receipt succeeds.
 
 `process:create`, `process:update` and `process:destroy` refuse a container Instance's Process with `operation.kind_unavailable`: the Project's definitions and a deployment change them.
 
@@ -665,6 +671,8 @@ Clones are built for the Nodes of the [build list](#the-build-list).
 A failed or cancelled create keeps its reservation, runtime, and any container, workspace, owned databases, test databases and role until the owner acts. A refused retry removes none of them. After work starts, Orbit attempts to stop the container and withdraw the Route. Compensation can fail; its step then stays failed. Shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live.
 
 Its Operation reports `recovery.state=retained_for_retry` and names `instance:create` with the same Project, Node, name and options, using a new idempotency key. It also names `instance:destroy INSTANCE --yes --force`. A failed or cancelled default create reports the same retry path and marks destroy unavailable; container-default removal is not built. The PostgreSQL template copy runs again on a resume, so a resume starts from the default's data again. A resume also issues new T3 sessions; the ones of the failed run stay valid in T3 until a later renewal cleans them.
+
+When an admitted Project Process fails with `instance.container_process_inactive`, `recovery.retry.requires=project_process_definition` tells clients that the definition needs a change first. Built-in unit failures and other failures keep the plain retry shape.
 
 A deployment of the default can replace the admitted seed before the copy. The copy then refuses with `instance.default_seed_moved`, and the same command takes the new seed. A clone already copied does not need its seed: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them.
 
@@ -767,6 +775,10 @@ All untracked files enter the default's seed snapshot and every clone, as ignore
 Migration reports `untracked_files_copied` as the count of untracked files that Git does not ignore, using `git ls-files --others --exclude-standard -z` at archive time. Selected nested repositories contribute their archived leaf files; directories do not count and symlinks count once. Ignored files are still copied. It exposes no new paths or file contents. Submodule changes still refuse because the parent archive cannot preserve them.
 
 The runtime reservation belongs to its admitting Operation. A late receipt cannot change a newer owner. Settlement reads private material before taking the Instance lock, then checks ownership and records the runtime and receipt atomically. An already-settled stale runtime is not repaired: inspections keep selecting it until a new migrate reuses and owns that reservation.
+
+A migrate admission does not read a previous run to settle it. While settlement is pending, `instance.migrate_settlement_pending` names the previous Operation and the existing hold limit. The reconciler reads late results without a show. See [migrate](/cli/instance/migrate) for the refusal and result-unavailable outcome.
+
+If the finish output is missing, verified native rollback can release the owned reservation after a 60-second grace. The original run deadline caps the grace. Without rollback proof, the deadline records `instance.migrate_result_unavailable` and keeps the Instance runtime. Another migrate names the Operation and missing evidence with `instance.migrate_recovery_required`. No Orbit command repairs that evidence gap.
 
 | Part | What Orbit does |
 | --- | --- |
