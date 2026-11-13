@@ -22,8 +22,8 @@ use App\Models\NodeFact;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Records the branch a development checkout already has checked out (R1: no task, no run). The Gateway checks the
- * Node agent's latest `checkout` fact instead of reading the Node.
+ * Records the branch a development checkout or linked worktree already has checked out (R1: no task, no run). The
+ * Gateway checks the Node agent's latest `checkout` fact instead of reading the Node.
  */
 final readonly class RenameInstanceAction
 {
@@ -59,8 +59,8 @@ final readonly class RenameInstanceAction
 
     private function admit(Instance $instance): void
     {
-        if (! $instance->placedOnAppDev() || $instance->source_layout !== InstanceSourceLayout::Checkout->value) {
-            throw new ResourceOperationException('instance.rename_unsupported', 'Rename requires a development checkout Instance.', 409);
+        if (! $instance->placedOnAppDev() || ! in_array($instance->source_layout, [InstanceSourceLayout::Checkout->value, InstanceSourceLayout::Worktree->value], true)) {
+            throw new ResourceOperationException('instance.rename_unsupported', 'Rename requires a development checkout or worktree Instance.', 409);
         }
         if ($instance->status === InstanceState::Removing
             || InstanceTransfer::query()->where('instance_id', $instance->id)->where('status', '!=', 'completed')->exists()

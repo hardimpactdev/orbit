@@ -162,7 +162,7 @@ git branch -m t3code/login-redirect
 orbit instance:rename <instance> --branch=t3code/login-redirect
 ```
 
-The API is `POST /api/v1/instances/{instance}/rename` with a nonempty `branch` string. The MCP tool is `instance-rename`. Send `instance` and at least one of `branch` or `domain`. The Gateway answers at once with the Instance; there is no task to follow. Only an active development checkout is eligible, not a linked worktree or production Instance. The Instance ID, name, path, layout, starting commit, and placement stay the same.
+The API is `POST /api/v1/instances/{instance}/rename` with a nonempty `branch` string. The MCP tool is `instance-rename`. Send `instance` and at least one of `branch` or `domain`. The Gateway answers at once with the Instance; there is no task to follow. Only an active development checkout or linked worktree is eligible, not a production Instance. The Instance ID, name, path, layout, starting commit, and placement stay the same.
 
 The Gateway checks the [Node agent's report](/reference/node-agent#checkouts) of the checkout, which arrives within seconds of a change. Symbolic `HEAD` must already name the supplied branch, and the checkout's top level and origin must still match, or the request refuses with `instance.branch_not_checked_out`. While the agent is silent, the same code says the Gateway can't verify. Dirty or unpublished source is allowed.
 
