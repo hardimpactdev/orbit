@@ -14,8 +14,11 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\AgentView\WebSocketException;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Operation;
 use Closure;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -25,6 +28,15 @@ use Throwable;
 final readonly class StartSwampRun
 {
     private const int ConfirmationSeconds = 120;
+
+    /**
+     * A start whose connection failed is queued again this many times. Serve admits 50 connections from one address in a fixed
+     * minute and answers a refused one with the rest of that minute as `Retry-After`; three deferrals cover more than a minute.
+     */
+    public const int MaxDeferrals = 3;
+
+    /** The longest wait before a deferred start runs again: serve's window plus a margin. */
+    public const int MaxDeferralSeconds = 65;
 
     /** @var Closure(): float */
     private Closure $clock;
@@ -43,6 +55,7 @@ final readonly class StartSwampRun
         $accepted = false;
         $submitted = false;
         $phases = [];
+        $connectFailure = null;
         try {
             if (! $this->begin($operation)) {
                 return;
@@ -58,7 +71,7 @@ final readonly class StartSwampRun
                 'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
             ];
             $phases['inputs_ms'] = $this->milliseconds($started);
-            $response = $this->request($endpoint, $payload, $submitted, $phases);
+            $response = $this->request($endpoint, $payload, $submitted, $phases, $connectFailure);
             $accepted = true;
             $binding = ($this->clock)();
             $this->bind($operation, $response['run_id']);
@@ -73,6 +86,14 @@ final readonly class StartSwampRun
             }
             $phases['broadcast_ms'] = $this->milliseconds($broadcasting);
         } catch (Throwable $exception) {
+            // A run-time execution copy whose connect failed also ran before any start frame.
+            $connectFailure ??= $exception instanceof ResourceOperationException && $exception->errorCode === 'swamp.vault_sync_unavailable'
+                && $exception->getPrevious() instanceof WebSocketException ? $exception->getPrevious() : null;
+            if ($connectFailure !== null && ! $submitted && $this->defer($operation, self::deferralSeconds($operation, $connectFailure))) {
+                $outcome = 'deferred';
+
+                return;
+            }
             $safe = $exception instanceof ResourceOperationException
                 ? $exception : ($accepted ? $this->uncertain()
                     : new ResourceOperationException('swamp.start_unavailable', 'The native workflow start is unavailable.', 503));
@@ -143,19 +164,67 @@ final readonly class StartSwampRun
         });
     }
 
-    /** Fails an admitted Operation whose run never started, such as after a failed execution copy. */
-    public function refuse(Operation $operation, ResourceOperationException $error): void
+    /**
+     * Queues a start again whose connection failed. Nothing was sent on that connection, and `workflow.run` is the first
+     * frame of a start, so no run can exist. The Operation returns to `queued`; its new job begins it again under the same
+     * lock, so at most one job ever submits. A proof child keeps its own serialized retry; the last deferral fails as before.
+     */
+    private function defer(Operation $operation, int $seconds): bool
     {
-        Log::info('Swamp direct start', ['operation_id' => $operation->id, 'outcome' => $error->errorCode, 'duration_ms' => 0]);
-        $this->fail($operation, $error, notSubmitted: true);
+        if (isset($operation->state['proof_child_start'])) {
+            return false;
+        }
+        $deferred = DB::transaction(function () use ($operation): bool {
+            $this->lock($operation);
+            $count = is_int($operation->state['start_deferrals'] ?? null) ? $operation->state['start_deferrals'] : 0;
+            if ($operation->status !== OperationStatus::Running || isset($operation->state['swamp_run_id']) || $operation->dispatched_at !== null
+                || $operation->cancel_requested_at !== null || $count >= self::MaxDeferrals) {
+                return false;
+            }
+            // started_at stays: the admission budget keeps counting from this start, and the next begin records a new one.
+            app(OperationStore::class)->change($operation, ['status' => OperationStatus::Queued, 'error_code' => null,
+                'state' => [...($operation->state ?? []), 'start_deferrals' => $count + 1]]);
+
+            return true;
+        });
+        if (! $deferred) {
+            return false;
+        }
+        Log::info('Swamp direct start deferred', ['operation_id' => $operation->id, 'delay_seconds' => $seconds,
+            'deferral' => $operation->state['start_deferrals'] ?? null]);
+        try {
+            Bus::dispatch(new StartAdmittedSwampRun($operation->id)->delay(now()->addSeconds($seconds)));
+        } catch (Throwable $exception) {
+            Log::warning('Swamp start could not be queued', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+            // Only while it is still queued: a duplicate job may have begun it since.
+            $this->refuse($operation, new ResourceOperationException('swamp.start_enqueue_failed', 'The native workflow start could not be queued.', 503), onlyQueued: true);
+        }
+
+        return true;
     }
 
-    private function fail(Operation $operation, ResourceOperationException $error, bool $notSubmitted): void
+    /** The wait before a start whose connection failed runs again: serve's `Retry-After` when it named one, else a doubling backoff. */
+    private static function deferralSeconds(Operation $operation, Throwable $exception): int
+    {
+        $count = is_int($operation->state['start_deferrals'] ?? null) ? $operation->state['start_deferrals'] : 0;
+        $retryAfter = $exception instanceof WebSocketException ? $exception->retryAfterSeconds : null;
+
+        return min(self::MaxDeferralSeconds, max(1, $retryAfter === null ? 5 << $count : $retryAfter + 1));
+    }
+
+    /** Fails an admitted Operation whose run never started, such as after a failed execution copy. */
+    public function refuse(Operation $operation, ResourceOperationException $error, bool $onlyQueued = false): void
+    {
+        Log::info('Swamp direct start', ['operation_id' => $operation->id, 'outcome' => $error->errorCode, 'duration_ms' => 0]);
+        $this->fail($operation, $error, notSubmitted: true, onlyQueued: $onlyQueued);
+    }
+
+    private function fail(Operation $operation, ResourceOperationException $error, bool $notSubmitted, bool $onlyQueued = false): void
     {
         $code = $error->errorCode;
-        $uncertain = DB::transaction(function () use ($operation, $code, $error, $notSubmitted): bool {
+        $uncertain = DB::transaction(function () use ($operation, $code, $error, $notSubmitted, $onlyQueued): bool {
             $this->lock($operation);
-            if ($operation->status->terminal()) {
+            if ($operation->status->terminal() || ($onlyQueued && ($operation->status !== OperationStatus::Queued || isset($operation->state['swamp_run_id'])))) {
                 return false;
             }
             if ($code === 'swamp.start_uncertain') {
@@ -195,7 +264,7 @@ final readonly class StartSwampRun
      * @param  array<string,int>  $phases
      * @return array{run_id:string,failed:bool}
      */
-    private function request(WebSocketEndpoint $endpoint, array $payload, bool &$submitted, array &$phases): array
+    private function request(WebSocketEndpoint $endpoint, array $payload, bool &$submitted, array &$phases, ?Throwable &$connectFailure = null): array
     {
         $id = bin2hex(random_bytes(16));
         $stage = 'connect';
@@ -269,6 +338,10 @@ final readonly class StartSwampRun
                 'confirmation_seconds' => self::ConfirmationSeconds, 'exception_type' => $exception::class]);
             if ($exception instanceof ResourceOperationException) {
                 throw $exception;
+            }
+            if ($stage === 'connect') {
+                // The connection failed before any frame was sent: the start may be queued again.
+                $connectFailure = $exception;
             }
             throw $stage === 'connect'
                 ? new ResourceOperationException('swamp.start_unavailable', 'The native workflow start could not connect.', 503)

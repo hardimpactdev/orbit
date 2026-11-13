@@ -11,16 +11,22 @@ use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
+use App\Domain\Instances\InstanceRemovalStatus;
+use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
@@ -47,9 +53,14 @@ beforeEach(function (): void {
 
         public array $values = [];
 
+        public int $connects = 0;
+
         private array $last = [];
 
-        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->connects++;
+        }
 
         public function send(array $message): void
         {
@@ -187,6 +198,65 @@ it('keeps a failed removal retryable without freeing the port', function (): voi
     expect($retry->input['removal_id'])->toBe($operation->input['removal_id'])->and($retry->input['force'])->toBeTrue();
     app(DevelopmentInstanceDestroyProjection::class)->apply($retry, destroyTerminal($retry, 'succeeded'));
     expect($clone->fresh())->toBeNull();
+});
+
+it('deletes every execution copy of a removed Instance over one connection', function (): void {
+    $clone = destroyClone(destroyDefault());
+    foreach (range(1, 60) as $index) {
+        Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $clone->id, 'node_id' => $clone->node_id,
+            'status' => 'succeeded', 'input' => [], 'state' => [], 'result' => ['copy' => ['vault' => 'orbit-control-inputs', 'key' => 'deploy-copy-'.$index]]]);
+    }
+    $operation = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    $terminal = destroyTerminal($operation, 'succeeded');
+    $this->socket->connects = 0;
+    $this->socket->messages = [];
+
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, $terminal);
+
+    $deleted = collect($this->socket->messages)->where('type', 'vault.delete')->pluck('payload.key');
+    // Serve admits 50 connections from the Gateway's address a minute; one per key refused the next destroys' starts.
+    expect($deleted->count())->toBeGreaterThan(60)->and($deleted)->toContain('deploy-copy-60')
+        ->and($this->socket->connects)->toBe(1)->and($clone->fresh())->toBeNull();
+});
+
+it('leaves a destroy whose start failed for good as a failed removal that a new destroy starts again', function (): void {
+    $default = destroyDefault();
+    $clone = destroyClone($default);
+    $operation = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    $operation->forceFill(['status' => OperationStatus::Running, 'started_at' => now()])->save();
+
+    app(StartSwampRun::class)->refuse($operation, new ResourceOperationException('swamp.start_unavailable', 'The native workflow start could not connect.', 503));
+
+    $removal = InstanceRemoval::query()->findOrFail($operation->input['removal_id']);
+    expect($operation->fresh()->status)->toBe(OperationStatus::Failed)
+        ->and($removal->status)->toBe(InstanceRemovalStatus::Failed)
+        ->and($removal->error_code)->toBe('swamp.start_unavailable')
+        ->and($removal->current_step)->toBe(InstanceRemovalStep::SourcePreparation)
+        ->and($removal->failed_step)->toBe(InstanceRemovalStep::SourcePreparation)
+        ->and($clone->fresh()->status)->toBe(InstanceState::Removing)
+        ->and($clone->runtime()->exists())->toBeTrue();
+
+    $retry = app(StartInstanceDestroyAction::class)->execute($clone->fresh(), true);
+    expect($retry->id)->not->toBe($operation->id)->and($retry->status)->toBe(OperationStatus::Queued)
+        ->and($retry->input['removal_id'])->toBe($operation->input['removal_id'])
+        ->and($removal->fresh()->status)->toBe(InstanceRemovalStatus::Removing);
+    app(DevelopmentInstanceDestroyProjection::class)->apply($retry, destroyTerminal($retry, 'succeeded'));
+    expect($clone->fresh())->toBeNull()->and($removal->fresh()->status)->toBe(InstanceRemovalStatus::Completed);
+});
+
+it('keeps the failed step of an earlier run when a retried destroy cannot start', function (): void {
+    $clone = destroyClone(destroyDefault());
+    $operation = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    $failure = ['summary' => ['failed_steps' => ['Stop, remove Processes']], 'steps' => ['Stop, remove Processes' => ['exit_code' => 1]]];
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, destroyTerminal($operation, 'failed', $failure));
+    $retry = app(StartInstanceDestroyAction::class)->execute($clone->fresh(), true);
+    $retry->forceFill(['status' => OperationStatus::Running, 'started_at' => now()])->save();
+
+    app(StartSwampRun::class)->refuse($retry, new ResourceOperationException('swamp.start_unavailable', 'The native workflow start could not connect.', 503));
+
+    $removal = InstanceRemoval::query()->findOrFail($operation->input['removal_id']);
+    expect($removal->status)->toBe(InstanceRemovalStatus::Failed)->and($removal->error_code)->toBe('swamp.start_unavailable')
+        ->and($removal->current_step)->toBe(InstanceRemovalStep::RuntimeCleanup)->and($removal->failed_step)->toBe(InstanceRemovalStep::RuntimeCleanup);
 });
 
 it('wires the lifecycle destroy contribution while Conn is disabled', function (): void {

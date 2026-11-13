@@ -759,7 +759,7 @@ The run withdraws the clone's Route, drops its owned server databases, then stop
 
 A migrated Instance's retained Git directory survives destroy and is purged only by hand. Its successful destroy Operation result keeps `retained_git_path` and `retained_git_at` after the Instance record is deleted; [instance:destroy](/cli/instance/destroy) explains how to read them.
 
-A failed removal retains its intent and reserved port. A fresh forced destroy accepts resources already gone and finishes cleanup. After withdrawal, the Route stays down until removal completes. The [clone destroy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) has the steps.
+A failed removal retains its intent and reserved port. A destroy whose native start failed for good (for example `swamp.start_unavailable`) also leaves its removal `failed`, at `source_preparation` or at the step an earlier failed run stopped at, with the Instance still `removing`; that start changed nothing on the Node. A fresh forced destroy accepts resources already gone and finishes cleanup. After withdrawal, the Route stays down until removal completes. The [clone destroy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) has the steps.
 
 ### Sleep and wake
 
