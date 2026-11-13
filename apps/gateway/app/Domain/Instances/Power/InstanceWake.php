@@ -7,6 +7,7 @@ namespace App\Domain\Instances\Power;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
+use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -38,7 +39,7 @@ final readonly class InstanceWake extends InstancePower
      */
     public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
-        if (! InstanceStart::nestedClone($instance, $instance->runtime()->first())) {
+        if (! NestedFleetIntent::cloneKeepsFleet($instance, $instance->runtime()->first())) {
             return parent::start($instance, $caller, $requestId);
         }
         $idempotency = app(OperationIdempotency::class);
@@ -103,7 +104,8 @@ final readonly class InstanceWake extends InstancePower
             }
         }
         try {
-            $this->start($instance, $caller, null);
+            // A Route visit wakes a sleeping container only; a nested-fleet clone never sleeps, so it gets the wake's own refusal.
+            parent::start($instance, $caller, null);
         } catch (ResourceOperationException $exception) {
             // Other lifecycle work holds the Instance: the page polls again, and a later request starts the wake.
             if (! in_array($exception->errorCode, ['operation.target_busy', 'instance.lifecycle_busy'], true)) {

@@ -6,9 +6,7 @@ namespace App\Domain\Instances\Power;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\InstanceContainer;
-use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
-use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NestedFleetClubKey;
 use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Logs\LogRedactor;
@@ -36,15 +34,6 @@ final readonly class InstanceStart implements DirectOperationProjection
 {
     public const string Kind = 'instance.start';
 
-    /** Whether the Instance is a clone of a nested-fleet default whose runtime keeps a fleet: only its wake is this start. */
-    public static function nestedClone(Instance $instance, ?InstanceRuntime $runtime): bool
-    {
-        $instance->loadMissing(['project', 'node']);
-
-        return $runtime !== null && $runtime->t3_port !== null
-            && InstancePlacement::keepsFleet($instance->project, $instance->node, $runtime->incus_project);
-    }
-
     public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
         if (($replay = app(OperationIdempotency::class)->replay(self::Kind)) !== null) {
@@ -54,18 +43,14 @@ final readonly class InstanceStart implements DirectOperationProjection
         return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
             $instance = Instance::query()->with(['node', 'project'])->lockForUpdate()->findOrFail($instance->id);
             $runtime = $instance->runtime()->first();
-            if ($runtime === null || $instance->placementEnvironment() !== 'development' || ! self::nestedClone($instance, $runtime)) {
+            if ($runtime === null || $instance->placementEnvironment() !== 'development' || ! NestedFleetIntent::cloneKeepsFleet($instance, $runtime)) {
                 throw new ResourceOperationException('instance.start_unsupported', 'Only a clone of a nested-fleet default starts this way.', 409);
             }
             if (($open = Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->orderBy('id')->first()) !== null) {
                 return $open;
             }
-            if ($instance->status !== InstanceState::Active
-                || Operation::query()->where('target_type', 'process')->whereIn('target_id', $instance->processes()->select('id'))
-                    ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
-                throw new ResourceOperationException('instance.lifecycle_busy', 'The Instance has unfinished lifecycle work.', 409);
-            }
+            InstancePower::assertIdle($instance);
             $fleet = app(NestedFleetIntent::class)->forClone($instance, $runtime);
 
             return app(StartOperationAction::class)->execute(self::Kind, 'instance', $instance->id, $instance->node_id,

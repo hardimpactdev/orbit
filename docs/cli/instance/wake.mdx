@@ -33,7 +33,7 @@ There is one wake per Instance at a time. A second caller joins the open wake an
 
 Waking an Instance that is awake changes nothing and also succeeds. A failed wake keeps the asleep marker: the Route shows a failure page with Try again. Try again, or this command, starts a new wake.
 
-The API is `POST /api/v1/instances/{instance}/wake`; it starts an `instance.wake` Operation. The MCP tool is `instance-wake`.
+The API is `POST /api/v1/instances/{instance}/wake`; it starts an `instance.wake` Operation, or an `instance.start` Operation for a clone of a nested-fleet default. The MCP tool is `instance-wake`.
 
 ## A stopped nested-fleet clone
 

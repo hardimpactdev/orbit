@@ -48,12 +48,23 @@ final readonly class NestedFleetIntent
      */
     public function forClone(Instance $instance, InstanceRuntime $runtime): ?array
     {
-        $instance->loadMissing(['project', 'node']);
-        if ($runtime->t3_port === null || ! InstancePlacement::keepsFleet($instance->project, $instance->node, $runtime->incus_project)) {
+        if (! self::cloneKeepsFleet($instance, $runtime)) {
             return null;
         }
 
         return $this->fleet($instance);
+    }
+
+    /**
+     * Whether the Instance is a clone (its runtime has a T3 port) of a default whose runtime keeps a fleet: the one rule for a clone's
+     * fleet start at its create and for its later start (Power\InstanceStart).
+     */
+    public static function cloneKeepsFleet(Instance $instance, ?InstanceRuntime $runtime): bool
+    {
+        $instance->loadMissing(['project', 'node']);
+
+        return $runtime !== null && $runtime->t3_port !== null
+            && InstancePlacement::keepsFleet($instance->project, $instance->node, $runtime->incus_project);
     }
 
     /** @return array<string, mixed> */

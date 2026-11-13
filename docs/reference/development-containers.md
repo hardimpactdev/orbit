@@ -20,7 +20,7 @@ covers:
 | --- | --- |
 | Records, Node preparation, egress and DNS | Built |
 | Default create and deploy, clone, forced non-default destroy, checkout migration | Built on the build-list Nodes |
-| [Nested fleet](#nested-fleet) | Built on switched-on build-list Nodes: placement, host preparation, start guards, the [image](#the-nested-fleet-image) and the [refresh after a release](#refresh-after-a-release). Planned: the clone's fleet start, reset and rebuild |
+| [Nested fleet](#nested-fleet) | Built on switched-on build-list Nodes: placement, host preparation, start guards, the [image](#the-nested-fleet-image), the [refresh](#refresh-after-a-release), and the [clone's](#a-clone-starts-its-fleet) and [stopped clone's](#a-stopped-nested-fleet-clone-starts) fleet start. Planned: reset, rebuild |
 | [Sleep and wake](#sleep-and-wake) | Built: the commands and the wake on a Route visit. Planned: the idle sleep, the wake from Conn and tasks |
 | Task containers, nested-fleet parity and production containers | Planned |
 | Dedicated workspace volumes and explicit package workspace links | [Draft specification](#workspace-volumes-draft); not implemented or proved |
@@ -1415,7 +1415,7 @@ The step `Start the inner fleet` runs the [fleet step](#the-fleet-step)'s check 
 
 A success records `power_state` `running`. The result also gives `nested_fleet_club_key`.
 
-Each step leaves what already runs as it is, so a start of a running copy only checks it. A nested-fleet default does not take this path: a wake refuses it with `instance.sleep_unsupported`, and only its deployment starts it. The run budget is 1,200 seconds; a clone's fleet start took 91 seconds (Operation 20180).
+Each step leaves what already runs as it is, so a start of a running copy only checks it. The start does not wait for T3: T3 starts with the container, as at every boot. A nested-fleet default does not take this path: a wake refuses it with `instance.sleep_unsupported`, and only its deployment starts it. The run budget is 1,200 seconds; a clone's fleet start took 91 seconds (Operation 20180).
 
 ### Reset
 

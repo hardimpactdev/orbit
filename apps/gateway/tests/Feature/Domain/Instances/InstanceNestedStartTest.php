@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\GatewayReleases\WaitForGatewayReleaseIdleAction;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\InstanceContainer;
@@ -218,6 +217,17 @@ it('keeps the power state of a failed start and turns a fleet failure into the r
         ->and($clone->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
 });
 
-it('holds a Gateway release while a start is open', function (): void {
-    expect(WaitForGatewayReleaseIdleAction::BlockingKindPatterns)->toContain(InstanceStart::Kind);
+it('takes the wake\'s own refusal for a clone of a nested-fleet Project on a Node whose switch is off', function (): void {
+    [, $clone] = startPair(true, switch: false);
+
+    expect(fn () => app(InstanceWake::class)->start($clone, null, null))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)
+        ->toBe('instance.sleep_unsupported'));
+    expect(Operation::query()->count())->toBe(0);
+});
+
+it('never starts a nested-fleet clone\'s fleet from a Route visit', function (): void {
+    [, $clone] = startPair(true);
+
+    expect(app(InstanceWake::class)->activate($clone, false, 'node:1'))->toBe('Only a development container that runs no nested fleet sleeps and wakes.')
+        ->and(Operation::query()->count())->toBe(0);
 });

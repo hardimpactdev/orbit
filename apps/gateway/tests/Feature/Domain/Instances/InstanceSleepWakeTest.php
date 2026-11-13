@@ -221,7 +221,7 @@ it('holds Gateway release idle until sleep and wake settle', function (string $k
     Sleep::whenFakingSleep(fn () => $operation->update(['status' => 'succeeded']));
     app(WaitForGatewayReleaseIdleAction::class)->execute();
     Sleep::assertSleptTimes(1);
-})->with(['instance.sleep', 'instance.wake']);
+})->with(['instance.sleep', 'instance.wake', 'instance.start']);
 
 it('renders a running container site as before plus only the asleep check, which calls nothing while the marker is missing', function (): void {
     $clone = sleepingClone();

@@ -17,6 +17,7 @@ sequenceDiagram
   %%> - `orbit instance:wake INSTANCE`
   %%> Callers:
   %%> - the command, after a host reboot, an OOM kill or a stop by hand left the copy stopped
+  %%> - never a Route visit: the runtime activation endpoint admits only a wake, and a nested-fleet clone has no asleep marker
   %%> - planned: the task flow before it uses a task's copy
   %%> Requirements:
   %%> - the caller is the Instance's Node or has node access to it
@@ -37,7 +38,7 @@ sequenceDiagram
   %%> What it does:
   %%> - the start guard: `boot.autostart=false`, the egress gates of every bridge NIC
   %%> - `incus start`, then the Club key into the container's /run (tmpfs) on stdin, the same script as the create's `clone-club-key`
-  %%> - waits until each desired-running unit is active
+  %%> - waits until each desired-running unit is active; T3 starts with the container, and the start does not wait for it
   %%> Why:
   %%> - no seed or snapshot holds the key, so every start delivers it before the fleet checks
   SW->>N: Start the inner fleet<br/>Ansible · fleet check, resume
