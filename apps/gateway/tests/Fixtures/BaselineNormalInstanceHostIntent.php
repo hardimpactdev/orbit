@@ -342,7 +342,7 @@ final readonly class BaselineNormalInstanceContainer
         $environment = InstanceImage::environment($gateway);
         $mail = app(DevelopmentMail::class)->forInstance($instance);
         $nodeServices = InstanceNodeServiceTargets::endpoints($instance);
-        $environment = [...$environment, ...InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices)];
+        $environment = [...$environment, ...InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices, false, [])];
         $access = $this->targetAccesses($instance, $runtime, $database, $mail, $nodeServices);
         $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url);
         $vitePort = app(ContainerProcesses::class)->vitePort($instance);
@@ -352,7 +352,7 @@ final readonly class BaselineNormalInstanceContainer
             'config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096',
                 ...(! array_any($nodeServices, static fn (array $target): bool => ! $target['docker']) && ! isset($clone['proxy_environment']) ? []
                     : array_combine(array_map(static fn (string $key): string => 'environment.'.$key, ['NO_PROXY', 'no_proxy']),
-                        array_values(InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices))))],
+                        array_values(InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices, false, []))))],
             'root_disk_pool' => InstanceHostIntent::Pool, 'root_disk_size' => '40GiB',
             'image' => self::Image, 'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
             'acl' => $runtime->container_name, 'nic_acl' => InstanceHostIntent::NicAcl,
@@ -454,7 +454,7 @@ final readonly class BaselineNormalInstanceContainer
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
                 't3' => InstanceHostIntent::AgentFolder.'/current/agent/bin/t3', 'project_mark' => '/home/agent/.config/orbit/t3-project'],
             'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600'],
-            ...($resetProxy ? ['proxy_environment' => InstanceNodeServiceTargets::proxyEnvironment($gateway, [])] : []),
+            ...($resetProxy ? ['proxy_environment' => InstanceNodeServiceTargets::proxyEnvironment($gateway, [], false, [])] : []),
             'files' => [
                 ...($resetProxy ? $this->proxyFiles($gateway) : []),
                 ['path' => self::InstanceFile, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => "# Managed by Orbit.\n"
@@ -477,7 +477,7 @@ final readonly class BaselineNormalInstanceContainer
      */
     private function proxyFiles(string $gateway): array
     {
-        $environment = InstanceNodeServiceTargets::proxyEnvironment($gateway, []);
+        $environment = InstanceNodeServiceTargets::proxyEnvironment($gateway, [], false, []);
         $assignments = implode(' ', array_map(static fn (string $key, string $value): string => $key.'='.$value, array_keys($environment), $environment));
 
         return [

@@ -13,6 +13,7 @@ use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
@@ -90,15 +91,25 @@ final class InstanceNodeServiceTargets
         return $targets;
     }
 
-    /** Managed proxy bypass; the network policy still admits only the selected TCP ports.
+    /**
+     * The one value of a container's own proxy bypass (docs/reference/development-containers.md#proxy-settings-in-a-container), from
+     * three sources: each attached Node service host that is not on the bridge; for a nested-fleet container its inner fleet (the
+     * nested Gateway's address, the fleet's private network and the nested network); and each name of the container intent's
+     * `private_names` ({name, host, port}), which only a container with a private websocket app has: an absent list adds nothing.
+     * The image's base comes first. The network policy still admits only the selected TCP ports. Every writer of the container's
+     * `environment.NO_PROXY` and of its drop-ins takes this value; none composes its own.
+     *
      * @param  list<array{host:string,docker:bool}>  $endpoints
+     * @param  list<array{name:string,host:string,port:int}>  $privateNames
      * @return array{NO_PROXY:string,no_proxy:string}
      */
-    public static function proxyEnvironment(string $gateway, array $endpoints): array
+    public static function proxyEnvironment(string $gateway, array $endpoints, bool $nestedFleet, array $privateNames): array
     {
         $base = InstanceEgress::environment($gateway)['NO_PROXY'];
         $hosts = array_values(array_unique(array_column(array_filter($endpoints, static fn (array $target): bool => ! $target['docker']), 'host')));
-        $value = $base.($hosts === [] ? '' : ','.implode(',', $hosts));
+        $fleet = $nestedFleet ? [TaskVmNestedFleet::Layout['gateway']['wireguard'], TaskVmNestedFleet::WireGuardSubnet, TaskVmNestedFleet::Subnet] : [];
+        $names = array_values(array_unique(array_column($privateNames, 'name')));
+        $value = implode(',', [$base, ...$hosts, ...$fleet, ...$names]);
 
         return ['NO_PROXY' => $value, 'no_proxy' => $value];
     }
