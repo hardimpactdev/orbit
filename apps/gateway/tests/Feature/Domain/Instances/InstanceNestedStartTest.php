@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\GatewayReleases\WaitForGatewayReleaseIdleAction;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
-use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\NestedFleetIntent;

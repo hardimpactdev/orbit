@@ -54,7 +54,7 @@ final readonly class InstanceStart implements DirectOperationProjection
         return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
             $instance = Instance::query()->with(['node', 'project'])->lockForUpdate()->findOrFail($instance->id);
             $runtime = $instance->runtime()->first();
-            if ($instance->placementEnvironment() !== 'development' || ! self::nestedClone($instance, $runtime)) {
+            if ($runtime === null || $instance->placementEnvironment() !== 'development' || ! self::nestedClone($instance, $runtime)) {
                 throw new ResourceOperationException('instance.start_unsupported', 'Only a clone of a nested-fleet default starts this way.', 409);
             }
             if (($open = Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
@@ -66,7 +66,6 @@ final readonly class InstanceStart implements DirectOperationProjection
                     ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('instance.lifecycle_busy', 'The Instance has unfinished lifecycle work.', 409);
             }
-            /** @var InstanceRuntime $runtime */
             $fleet = app(NestedFleetIntent::class)->forClone($instance, $runtime);
 
             return app(StartOperationAction::class)->execute(self::Kind, 'instance', $instance->id, $instance->node_id,

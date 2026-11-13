@@ -1405,10 +1405,15 @@ The workspace phase runs after the fleet is ready. When it checks out a branch a
 
 A nested-fleet clone does not sleep, and its container does not start at boot (`boot.autostart=false`). A host reboot, an out-of-memory kill or a stop by hand leaves it stopped. A start by hand with `incus start` gives it no Club key and no tunnel `wg-nested`. So [`instance:wake`](/cli/instance/wake) of such a clone starts an `instance.start` Operation instead of a wake. The [start chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/start.mmd) has the steps:
 
-1. The Gateway admits it only for an active development clone whose runtime keeps a fleet (`InstancePlacement::keepsFleet`). The request's Idempotency-Key keys the start; a second call joins the open start. The run reads the Club key once at its start. Without a key the fleet's Swamp cannot start and Doctor cannot pass, so the run fails before any change with `instance.nested_club_key_missing`.
-2. `Start the container` runs the `start` part of `instance-container.yml`, as a deployment does. It keeps `boot.autostart=false`, checks the egress gates of every bridge NIC, starts the container, and delivers the [Club key](#the-club-key-of-the-nested-gateway) into its `/run`.
-3. `Start the inner fleet` runs the [fleet step](#the-fleet-step)'s check and resume, as the clone's create does: the fleet rules, the nested containers, the tunnel and the Doctor wait. It records its time as `fleet_seconds`.
-4. A success records `power_state` `running`. The result also gives `nested_fleet_club_key`.
+The Gateway admits the start only for an active development clone whose runtime keeps a fleet (`InstancePlacement::keepsFleet`). The request's Idempotency-Key keys the start, and a second call joins the open start.
+
+The run reads the Club key once, at its start. Without a key the fleet's Swamp cannot start, and Doctor cannot pass. So the run then fails before any change, with `instance.nested_club_key_missing`.
+
+The step `Start the container` runs the `start` part of `instance-container.yml`, as a deployment does. It keeps `boot.autostart=false` and checks the egress gates of every bridge NIC. Then it starts the container and delivers the [Club key](#the-club-key-of-the-nested-gateway) into its `/run`.
+
+The step `Start the inner fleet` runs the [fleet step](#the-fleet-step)'s check and resume, as the clone's create does. It checks the fleet rules and starts the nested containers and the tunnel. Then it waits for Doctor. It records its time as `fleet_seconds`.
+
+A success records `power_state` `running`. The result also gives `nested_fleet_club_key`.
 
 Each step leaves what already runs as it is, so a start of a running copy only checks it. A nested-fleet default does not take this path: a wake refuses it with `instance.sleep_unsupported`, and only its deployment starts it. The run budget is 1,200 seconds; a clone's fleet start took 91 seconds (Operation 20180).
 
