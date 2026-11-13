@@ -2,18 +2,24 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
+use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Routes\NativeRouteMutationInput;
 use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\DatabaseExecutionIntent;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -127,7 +133,7 @@ function connRemovalStored(): array
 {
     $state = [];
     foreach (['instances', 'instance_runtimes', 'operations', 'schedules', 'routes', 'route_targets', 'database_connections',
-        'database_connection_targets', 'conn_environments', 'conn_pairings', 'instance_removals', 'instance_removal_members'] as $table) {
+        'database_connection_targets', 'conn_environments', 'conn_pairings', 'instance_removals', 'instance_removal_members', (new DatabaseExecutionIntent)->getTable()] as $table) {
         $state[$table] = DB::table($table)->get()->map(static fn (object $row): array => (array) $row)->all();
     }
 
@@ -315,3 +321,92 @@ it('keeps a Conn destroy readable at every terminal status when failure detail i
     connRemovalRead($operation)->assertOk()->assertJsonPath('data.status', $status)
         ->assertJsonPath('data.error_code', 'fixture.destroy_failed')->assertJsonPath('data.error', null);
 })->with(['failed', 'cancelled', 'interrupted']);
+
+it('refuses an unpinned workload or publication Node before any Schedule effect for both callers', function (bool $conn, bool $publication): void {
+    $instance = connRemovalClone();
+    connRemovalResources($instance);
+    if ($publication) {
+        $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'fixture-unpinned-dns', 'status' => 'active',
+            'platform' => 'linux', 'wireguard_ip' => '10.44.0.95', 'public_ssh_host' => '10.44.0.95', 'user' => 'orbit']));
+        $node->roles()->create(['role' => 'vpn', 'status' => 'active']);
+    } else {
+        $node = $this->node;
+    }
+    $node->forceFill(['ssh_host_key_type' => null, 'ssh_host_key' => null])->save();
+    $before = connRemovalStored();
+    $messages = $this->socket->messages;
+    $response = $conn ? connRemovalCall($instance->id, ['acknowledge_unsaved' => true])
+        : $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+            ->deleteJson('/api/v1/instances/'.$instance->id, ['force' => true]);
+    $response->assertStatus(503)->assertJsonPath('error.code', 'swamp.ssh_target_unavailable');
+    expect(connRemovalStored())->toBe($before)->and($this->socket->messages)->toBe($messages);
+})->with(['CLI workload' => [false, false], 'CLI publication' => [false, true],
+    'Conn workload' => [true, false], 'Conn publication' => [true, true]]);
+
+it('refuses a Caddy render failure before any Schedule effect for both callers', function (bool $conn): void {
+    $instance = connRemovalClone();
+    connRemovalResources($instance);
+    app()->instance(NodeCaddyfileRenderer::class, new NodeCaddyfileRenderer([new class implements NodeCaddySiteSource
+    {
+        public function order(): int
+        {
+            return 0;
+        }
+
+        public function sites(Node $node): array
+        {
+            throw new RuntimeException('fixture render problem');
+        }
+    }]));
+    $before = connRemovalStored();
+    $messages = $this->socket->messages;
+    $response = $conn ? connRemovalCall($instance->id, ['acknowledge_unsaved' => true])
+        : $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+            ->deleteJson('/api/v1/instances/'.$instance->id, ['force' => true]);
+    $response->assertConflict()->assertJsonPath('error.code', 'caddy.render_failed');
+    expect(connRemovalStored())->toBe($before)->and($this->socket->messages)->toBe($messages);
+})->with(['CLI' => [false], 'Conn' => [true]]);
+
+it('prepares the full withdrawal without a record execution copy or Schedule mutation', function (): void {
+    $instance = connRemovalClone();
+    connRemovalResources($instance);
+    $snapshot = app(StartInstanceDestroyAction::class)->snapshot($instance, true);
+    $before = connRemovalStored();
+    $messages = $this->socket->messages;
+    $prepared = app(DirectInstanceDestroyIntent::class)->prepare($snapshot);
+    expect($prepared['native_destroy']['route_mutations']['schema_version'])->toBe(2)
+        ->and($prepared['native_destroy']['execution_secrets'])->toBe([])
+        ->and($prepared['direct_destroy']['database'])->not->toHaveKey('intent_id')
+        ->and(connRemovalStored())->toBe($before)->and($this->socket->messages)->toBe($messages);
+    app(SwampDispatch::class)->copy(static function (): void {});
+    expect(connRemovalStored())->toBe($before)->and($this->socket->messages)->toBe($messages);
+});
+
+it('keeps the normal destroy effects and final state while capturing publication only once for both callers', function (bool $conn): void {
+    $instance = connRemovalClone();
+    connRemovalResources($instance);
+    $publication = app(NativeRouteMutationInput::class);
+    $spy = Mockery::mock($publication);
+    $spy->shouldReceive('capture')->once()->andReturnUsing(fn (...$args): array => $publication->capture(...$args));
+    app()->instance(NativeRouteMutationInput::class, $spy);
+    $start = count($this->socket->messages);
+    $response = $conn ? connRemovalCall($instance->id, ['acknowledge_unsaved' => true])
+        : $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+            ->deleteJson('/api/v1/instances/'.$instance->id, ['force' => true]);
+    $response->assertAccepted()->assertJsonPath('data.kind', 'instance.destroy')->assertJsonPath('data.input.force', true);
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    $frames = array_slice($this->socket->messages, $start);
+    expect(array_column(array_slice($frames, 0, 3), 'type'))->toBe(['workflow.trigger.remove', 'workflow.delete', 'vault.delete'])
+        ->and($instance->refresh()->status)->toBe(InstanceState::Removing)
+        ->and(Route::query()->where('domain', 'feature.fixture.test')->value('status'))->toBe(RouteStatus::Retiring)
+        ->and($operation->input['native_destroy']['execution_secrets'])->toBe([])
+        ->and($operation->input['direct_destroy']['database']['intent_id'])->toBeInt();
+    connRemovalSucceed($operation);
+    expect($instance->fresh())->toBeNull()->and($this->default->fresh())->not->toBeNull()
+        ->and(Route::query()->where('domain', 'feature.fixture.test')->exists())->toBeFalse()
+        ->and(DatabaseConnection::query()->where('owner_instance_id', $instance->id)->exists())->toBeFalse()
+        ->and(Schedule::query()->where('target_id', $instance->id)->exists())->toBeFalse()
+        ->and(ConnEnvironment::query()->where('instance_id', $instance->id)->exists())->toBeFalse()
+        ->and(ConnPairing::query()->exists())->toBeFalse()
+        ->and($operation->refresh()->status->value)->toBe('succeeded');
+})->with(['CLI' => [false], 'Conn' => [true]]);
