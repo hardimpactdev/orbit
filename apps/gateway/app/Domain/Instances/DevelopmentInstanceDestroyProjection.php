@@ -44,7 +44,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
                 $detail['hibernation'][] = ['instance_id' => ValidatedData::integer($member['instance_id']), 'path' => $path];
             }
         }
-        $public = [...Arr::only($input, ['container_destroy', 'removal_id', 'node_id', 'instance_id', 'project_id', 'name', 'force', 'inventory_digest', 'repository', 'source_pending', 'protected_source_roots', 'members']), 'direct_destroy' => $detail];
+        $public = [...Arr::only($input, ['container_destroy', 'removal_id', 'node_id', 'instance_id', 'project_id', 'name', 'force', 'inventory_digest', 'repository', 'source_pending', 'protected_source_roots', 'members', 'route_withdrawn']), 'direct_destroy' => $detail];
         $programs = ValidatedData::object(app(InstanceDestroyTeardownSecret::class)->resolve($operation, $operation->target_id, '', 'teardown')->value);
         $teardown = [];
         foreach (InstanceLifecycleInput::members($programs) as $member) {
@@ -130,6 +130,8 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         $run = ValidatedData::object($data['result'] ?? []);
         $warnings = is_array($operation->input['checkout_warnings'] ?? null) ? $operation->input['checkout_warnings'] : [];
         $diagnostics = $warnings === [] ? [] : ['warnings' => $warnings];
+        // Whether the run gave its Route publication hold back after the withdraw step, with the Gateway's answer.
+        $diagnostics = [...$diagnostics, ...self::holdRelease($run['route_hold_release'] ?? null)];
         if (($data['status'] ?? null) === 'succeeded') {
             return [null, ['removed' => true, ...$diagnostics]];
         }
@@ -138,7 +140,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         }
         $withdrawal = $run['withdrawal'] ?? null;
         if (is_array($withdrawal) && ($withdrawal['ready'] ?? null) === false) {
-            return ['route.withdrawal_failed', ['removed' => false, 'failed_step' => 'Withdraw the Route', 'error_code' => 'route.withdrawal_failed']];
+            return ['route.withdrawal_failed', ['removed' => false, 'failed_step' => 'Withdraw the Route', 'error_code' => 'route.withdrawal_failed', ...$diagnostics]];
         }
         $summary = is_array($run['summary'] ?? null) ? $run['summary'] : [];
         $first = is_array($summary['failed_steps'] ?? null) && is_string($summary['failed_steps'][0] ?? null) ? $summary['failed_steps'][0] : null;
@@ -156,7 +158,24 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             default => 'instance.removal_incomplete',
         };
 
-        return [$code, ['removed' => false, 'failed_step' => $label, 'error_code' => $code]];
+        return [$code, ['removed' => false, 'failed_step' => $label, 'error_code' => $code, ...$diagnostics]];
+    }
+
+    /**
+     * The release step prints one JSON line; a run without the step (no Route, a withdraw that did not hold, an older run) has none.
+     *
+     * @return array{route_hold_released?:bool,route_hold_release_status?:int}
+     */
+    private static function holdRelease(mixed $stdout): array
+    {
+        $line = is_string($stdout) ? json_decode(trim($stdout), true) : null;
+        if (! is_array($line) || ! is_bool($line['route_hold_released'] ?? null)) {
+            return [];
+        }
+        $status = $line['http_status'] ?? null;
+
+        return ['route_hold_released' => $line['route_hold_released'],
+            'route_hold_release_status' => is_string($status) && ctype_digit($status) ? (int) $status : 0];
     }
 
     /** @param array<string,mixed> $result */
