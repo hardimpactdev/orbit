@@ -16,6 +16,22 @@ export function containerFailure(raw: unknown): Record<string, unknown> | null {
     return nested.success ? nested.data : null;
 }
 
+/**
+ * The public part of a nested-fleet clone's failed `fleet` phase, from the run's result.json, or null: the fleet phase's own code
+ * (`instance.container_fleet_drift`, `instance.container_fleet_check_failed` or `instance.container_fleet_resume_failed`), why it
+ * failed in the phase's own safe words (the Doctor body for a readiness wait), and each drift line. The Gateway redacts the detail again.
+ */
+export function fleetFailure(raw: unknown): Record<string, unknown> | null {
+    const failure = z.object({
+        error_code: z.string().regex(/^instance\.container_fleet_[a-z_]+$/),
+        detail: z.string().optional(),
+        fleet_drift: z.array(z.string()).optional(),
+    }).safeParse(raw);
+    if (!failure.success) return null;
+    const { error_code, detail, fleet_drift } = failure.data;
+    return { error_code, ...(detail ? { detail: detail.slice(0, 1000) } : {}), ...(fleet_drift ? { fleet_drift: fleet_drift.slice(0, 32) } : {}) };
+}
+
 /** The public codes of a nested-fleet start that refused to deliver its Club key, or failed to (docs/reference/development-containers.md#the-club-key-of-the-nested-gateway). */
 const CLUB_KEY_REFUSALS = ["instance.nested_club_key_unsafe_transfer", "instance.nested_club_key_not_tmpfs", "instance.nested_club_key_delivery_failed"] as const;
 
@@ -73,6 +89,8 @@ type Container = {
     server?: string | null;
     /** A nested-fleet clone's `club-key` step. */
     club_key?: Phase;
+    /** A nested-fleet clone's fleet start and readiness wait; skipped for every other clone. */
+    fleet?: string;
 };
 
 /** The checkout phase prints the commit it left checked out as one `orbit-commit=<sha>` line. */
@@ -228,8 +246,8 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
 
 /**
  * A container default's phases in order: the container, the workspace with its commit, each development deploy step, the
- * Processes, the Route and the seed snapshot. A clone has no deploy step and no seed: after the copy and the workspace come the
- * agent's files, the Processes, T3, the Route and the registration, whose receipt must name the server.
+ * Processes, the Route and the seed snapshot. A clone has no deploy step and no seed: after the copy (and a nested-fleet clone's
+ * fleet) and the workspace come the agent's files, the Processes, T3, the Route and the registration, whose receipt must name the server.
  */
 function containerOutcomes(
     intent: Record<string, unknown>,
@@ -248,6 +266,8 @@ function containerOutcomes(
     if (clone !== null) {
         return [
             ["clone", container.launch === "succeeded", container.launch === "failed"],
+            // Only a clone of a nested-fleet default has `fleet` in its intent and runs this phase.
+            ["fleet", intent.fleet == null || container.fleet === "succeeded", container.fleet === "failed"],
             ["database", (intent.database == null && intent.server_database == null && intent.server_valkey == null) || phases.database === "succeeded", phases.database === "failed"],
             ["workspace", commit !== null, container.workspace?.status === "failed"],
             ["agent", container.agent === "succeeded", container.agent === "failed"],

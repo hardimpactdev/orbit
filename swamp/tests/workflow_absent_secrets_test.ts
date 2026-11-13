@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert@1.0.19";
+import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
 import { behavior } from "../extensions/behaviors/operations/instance-dev-command/assets.ts";
@@ -185,6 +185,47 @@ Deno.test("create finalization evaluates checkout, default and clone receipts wi
     ]));
     assertEquals(JSON.parse(createResult(intent, behavior.methods.create_result.arguments.parse(values)).stdout).club_key, word);
   }
+});
+
+Deno.test("only a clone whose intent has `fleet` starts its fleet; a normal clone skips the step and finishes as before", () => {
+  const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as {
+    jobs: { name: string; steps: { name: string; guard: string; dependsOn: unknown[]; task: { inputs: Record<string, string> } }[] }[];
+  };
+  const steps = workflow.jobs.flatMap((job) => job.steps);
+  const step = (name: string) => steps.find((s) => s.name === name)!;
+  /** A guard that is true skips its step. */
+  const skips = (intent: Record<string, unknown>) => environment.evaluate(swampExpression(step("clone-fleet").guard), { inputs: { intent } });
+  const base = { already_active: false, container: { clone: { source: "instance-7" }, project: "orbit-instances" } };
+  const nested = { already_active: false, container: { clone: { source: "instance-7" }, project: "orbit-instances-nested", club_key: { available: true } } };
+  const fleet = { guests: { gateway: "nested-gateway" } };
+  // A normal clone's intent has no `fleet` key at all (NativeDevelopmentInstanceInput), and a default's create has no clone.
+  assertEquals(skips(base), true);
+  assertEquals(skips({ ...nested }), true);
+  assertEquals(skips({ ...base, container: { clone: null, project: "orbit-instances" } }), true);
+  assertEquals(skips({ ...nested, already_active: true, fleet }), true);
+  assertEquals(skips({ ...nested, fleet }), false);
+  // It runs the existing fleet phases after the copy and the Club key, and the workspace waits for it or its skip.
+  assert(step("clone-fleet").task.inputs.run.includes("--tags fleet_check ") && step("clone-fleet").task.inputs.run.includes("--tags fleet_resume "));
+  assertEquals(step("clone-fleet").dependsOn, [{ step: "clone-container", condition: { type: "succeeded" } },
+    { step: "clone-club-key", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } }]);
+  assert(JSON.stringify(step("clone-workspace").dependsOn).includes('{"step":"clone-fleet","condition":{"type":"or","conditions":[{"type":"succeeded"},{"type":"skipped"}]}}'));
+  // The finish step hands the fleet step's status to the receipt: a normal clone's skipped step changes nothing, a nested clone needs it.
+  const finish = step("finish").task.inputs;
+  const commit = "a".repeat(40);
+  const succeeded = { status: "succeeded" };
+  const registration = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-create-16210-t3-register.json", import.meta.url))).step;
+  const ran = { "clone-container": succeeded, "clone-workspace": { ...succeeded, outputs: { stdout: `orbit-commit=${commit}` } }, "clone-agent": succeeded,
+    "clone-t3": { ...succeeded, outputs: { stdout: "{}" } }, "clone-sessions": { ...succeeded, outputs: { stdout: "{}" } }, "clone-register": registration };
+  const receipt = (intent: Record<string, unknown>, fleetStep: Record<string, unknown> | undefined) => {
+    const full = { instance_id: 8, database: null, server_database: null, server_valkey: null, processes: [], setup_steps: [], route: null, ...intent };
+    const values = Object.fromEntries(Object.entries(finish).map(([key, value]) => [key, environment.evaluate(swampExpression(value),
+      { inputs: { intent: full }, steps: { ...ran, ...(fleetStep ? { "clone-fleet": fleetStep } : {}) }, run: { id: "r" } })]));
+    return JSON.parse(createResult(full, behavior.methods.create_result.arguments.parse(values)).stdout);
+  };
+  assertEquals(receipt(base, undefined).ready, true);
+  assertEquals(receipt(base, { status: "skipped" }).ready, true);
+  assertEquals(receipt({ ...nested, fleet }, succeeded).ready, true);
+  assertEquals([receipt({ ...nested, fleet }, { status: "failed" }).ready, receipt({ ...nested, fleet }, { status: "failed" }).failed_step], [false, "fleet"]);
 });
 
 Deno.test("deploy VP workspace reads retain step names for the capture schema", () => {
