@@ -90,7 +90,7 @@ Track A replaces task VMs and the Project VM with containers, in the order ADR 0
 | 5 | Add the nested fleet as an optional feature, and run command proofs in an Orbit Instance container. | Nested fleet partly built; command proofs planned. See [Container runtime](/solutions/development-container-runtime#pr-10-the-nested-fleet) |
 | 6 | Parity gate: Orbit's command proof cases in an Orbit Instance container with the nested fleet match their task VM results. | Specified in [Parity gate](/solutions/development-container-runtime#parity-gate) |
 | 7 | Switch task work on Beast, then Shark, in a window with no proofs or merges in flight. | Open |
-| 8 | Switch development: sleep and wake, threads from Conn, migration, every `app-dev` Node. | Sleep and wake commands, threads from Conn and migration built; the idle sleep and every `app-dev` Node planned. See [Container runtime](/solutions/development-container-runtime#pr-13-sleep-and-wake) |
+| 8 | Switch development: sleep and wake, threads from Conn, migration, every `app-dev` Node. | Sleep and wake commands, threads from Conn, migration and the idle sleep (off by default) built; every `app-dev` Node planned. See [Container runtime](/solutions/development-container-runtime#pr-13-sleep-and-wake) |
 | 9 | Remove the task VM runtime, the Pi server and the task container setting. | Open |
 | 10 | Run production Instances in containers on every `app-prod` Node. | Planned in [Production Instances](/solutions/development-container-runtime#production-instances) |
 

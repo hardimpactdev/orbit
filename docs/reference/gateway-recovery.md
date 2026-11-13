@@ -88,6 +88,8 @@ sudo chmod 0600 /root/orbit-backups/gateway-before-update.tar.gz
 sudo tar -tzf /root/orbit-backups/gateway-before-update.tar.gz
 ```
 
+Stopping `orbit-runtime-hibernator.timer` also stops the idle sleep of development containers, which runs in the same command.
+
 In the release layout, archive `home/orbit/shared/gateway.env` instead of `home/orbit/orbit/apps/gateway/.env`, which is a link there.
 
 Adjust the paths when `ORBIT_HOME` or `DB_DATABASE` differs. Include an external database path and its `-wal` and `-shm` files, as [SQLite WAL default](/solutions/sqlite-wal-default) explains. Pause Gateway timers and external automation too; stopping the web services alone does not stop console writers. Do not copy a live SQLite file without its journal state. Transfer the archive to protected storage and verify that it can be read before changing source.

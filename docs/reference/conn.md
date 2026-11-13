@@ -188,6 +188,10 @@ Every hour the Gateway admits `conn.environment_renew` for each active Instance 
 
 The hourly renewal skips a [sleeping](/reference/development-containers#sleep-and-wake) Instance. A successful `instance.wake` admits the renewal at once instead, through `InstanceLifecycleContribution::projectWake()`, when the session ends within seven days or ended during the sleep. A wake's renewal does not wait for the one-per-Node limit below: the woken server gets its session at once. A refused admission (a renewal already runs, Conn is off) is logged and never fails the wake. Devices then renew their pairings through the Gateway as below, with no new pairing by the user.
 
+#### The idle sleep's read
+
+The [idle sleep](/reference/development-containers#sleep-and-wake) uses the same session to read a running clone's threads: one `GET /api/orchestration/shell` with the header `x-t3-orchestration-protocol: 2`. Conn contributes this read as `InstanceAgentActivity`. A refused or failed read, or Conn turned off, keeps the Instance awake. The read writes nothing in the container, and a sleeping Instance is not read.
+
 One tick admits at most five renewals, the earliest end first. It admits at most one per Node at a time. A server whose last renewal failed comes after the others, so it never holds its Node's slot from them. Clones made on one day reach the margin in the same hour.
 
 #### How
