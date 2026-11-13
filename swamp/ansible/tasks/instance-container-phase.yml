@@ -236,6 +236,18 @@
   loop: "{{ container.firewall }}"
   loop_control: { label: "{{ item.comment }}" }
 
+# Incus restores a container that was running when the host boots, without the start guard below. A nested-fleet intent sets
+# `boot.autostart: false`, which create and clone write; a container made before the key keeps its config, so the start writes
+# it here. It is the one key a start converges: it only takes a start away, and Incus applies it without a restart.
+- name: Keep the container from starting at boot
+  tags: [container, clone, start]
+  when: >-
+    phase in ['container', 'clone', 'start'] and container_read.rc == 0 and 'boot.autostart' in container.config
+    and (container_read.stdout | from_json).expanded_config['boot.autostart'] | default('') != container.config['boot.autostart']
+  ansible.builtin.command:
+    argv: "{{ incus_project + ['config', 'set', container.name, 'boot.autostart=' ~ container.config['boot.autostart']] }}"
+  changed_when: true
+
 # Both independent ACLs reject by default. Validate all effective bridge NICs, including copied local extra devices.
 - name: Check the container's effective egress gates before starting it
   tags: [container, clone, start]
@@ -253,6 +265,7 @@
         network_failure: instance.container_network_unsafe
         expected_network_device: eth0
         network_allowed_devices: "{{ container.allowed_devices | default({}) }}"
+        network_allowed_config: "{{ container.config }}"
 
 - name: Start the container
   tags: [container, clone, start]

@@ -79,7 +79,9 @@ final readonly class InstancePlacement
 
     /**
      * The extra container keys of a recorded Incus project. A nested-fleet container runs an inner Incus whose own range of
-     * 1,000,000 reserved and 100,000,000 subordinate IDs must fit in its isolated map, the size of a task container place.
+     * 1,000,000 reserved and 100,000,000 subordinate IDs must fit in its isolated map, the size of a task container place. It never
+     * starts at host boot, so only an Orbit start, behind the start guard, starts it. The start guard admits exactly these keys
+     * with the common limits: it reads them from the intent's `config` (docs/reference/development-containers.md#the-container).
      *
      * @return array<string, string>
      */
@@ -92,6 +94,7 @@ final readonly class InstancePlacement
             'security.idmap.isolated' => 'true',
             'security.idmap.size' => (string) InstanceHostIntent::TaskPlaceIds,
             'limits.memory' => '12GiB',
+            'boot.autostart' => 'false',
         ] : [];
     }
 

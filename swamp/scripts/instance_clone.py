@@ -363,7 +363,7 @@ def main():
             ).stdout
             checked = run(
                 ["python3", "-c", network_check, container["network"], "eth0"]
-                + ([json.dumps(container["allowed_devices"])] if "allowed_devices" in container else []),
+                + ([json.dumps(container["allowed_devices"]), json.dumps(container["config"])] if "allowed_devices" in container else []),
                 effective,
                 check=False,
             )
