@@ -177,7 +177,7 @@ final readonly class InstanceWake extends InstancePower
             if ($current->status !== OperationStatus::Queued || ($current->state[self::ResumeState] ?? null) !== 'node') {
                 return false;
             }
-            app(OperationStore::class)->change($operation, ['status' => OperationStatus::Succeeded, 'result' => [...$this->result(), ...$result],
+            app(OperationStore::class)->change($operation, ['status' => OperationStatus::Succeeded, 'result' => [...$this->result($operation), ...$result],
                 'started_at' => $startedAt, 'finished_at' => Carbon::now(), 'lock_key' => null,
                 'state' => [...($current->state ?? []), self::ResumeState => 'resumed']]);
             InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => $this->powerState()]);
