@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { containerFailure, createResult } from "./result.ts";
+import { containerFailure, createResult, fleetFailure } from "./result.ts";
 import { vpInstallSteps } from "../instance-vp-command/steps.ts";
 const intent = {
     instance_id: 7,
@@ -389,4 +389,33 @@ Deno.test("a nested-fleet create carries what its start did with the Club key, f
     assertEquals(clone(null).club_key, undefined);
     assertEquals(clone({ status: "failed", outputs: { stdout: '{"phase": "club-key", "club_key": "changed"}' } }).club_key, undefined);
     assertEquals(clone({ status: "succeeded", outputs: { stdout: "not json" } }).club_key, undefined);
+});
+
+Deno.test("only a nested-fleet clone runs the fleet phase; it is ready only after its fleet, and a failure keeps the fleet phase's code", () => {
+    const server = JSON.stringify({ environment_id: "env-9" });
+    const container: NonNullable<Parameters<typeof createResult>[1]["container"]> = {
+        launch: "succeeded",
+        workspace: { status: "succeeded", outputs: { stdout: `"msg": "orbit-commit=${commit}"` } },
+        deploy: [], processes: "succeeded", seed: "skipped", agent: "succeeded", t3: "succeeded", register: "succeeded", server,
+    };
+    const create = (fleet: unknown, changes: Partial<typeof container>) =>
+        JSON.parse(createResult({ ...intent, setup_steps: [], container: { clone: { source: "instance-1" } }, ...(fleet === undefined ? {} : { fleet }) }, {
+            ...phases, checkout: { status: "skipped" }, setup: "skipped", processes: [], container: { ...container, ...changes },
+        }).stdout);
+    // A normal clone (no `fleet` in its intent) is ready as before, whatever the skipped fleet step says.
+    for (const status of [undefined, "skipped"]) assertEquals(create(undefined, { fleet: status }).ready, true);
+    // A nested-fleet clone is ready only when its fleet phase passed.
+    assertEquals(create({ guests: {} }, { fleet: "succeeded" }).ready, true);
+    for (const status of ["skipped", undefined]) {
+        assertEquals([create({ guests: {} }, { fleet: status }).ready, create({ guests: {} }, { fleet: status }).failed_step], [false, "fleet"]);
+    }
+    const failed = create({ guests: {} }, { fleet: "failed", workspace: null, agent: "skipped", t3: "skipped", register: "skipped", server: null });
+    assertEquals([failed.ready, failed.failed_step, failed.error_code], [false, "fleet", "instance.create_fleet_failed"]);
+    // The run's result file gives the fleet phase's own code, its detail and its drift lines; nothing else passes.
+    assertEquals(fleetFailure({ error_code: "instance.container_fleet_resume_failed", detail: "Check Doctor: HTTP 200: {}", commit: null, club_key: "changed" }),
+        { error_code: "instance.container_fleet_resume_failed", detail: "Check Doctor: HTTP 200: {}" });
+    assertEquals(fleetFailure({ error_code: "instance.container_fleet_drift", fleet_drift: ["nested-gateway config raw.idmap"] }),
+        { error_code: "instance.container_fleet_drift", fleet_drift: ["nested-gateway config raw.idmap"] });
+    assertEquals(fleetFailure({ error_code: "instance.container_fleet_check_failed", detail: "x".repeat(2000) })?.detail, "x".repeat(1000));
+    for (const raw of [{ error_code: "instance.container_network_unsafe" }, { commit: null }, {}, null, "x"]) assertEquals(fleetFailure(raw), null);
 });

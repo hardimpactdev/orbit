@@ -2031,6 +2031,16 @@ Deno.test({
       assertEquals(f.result(), { ...first,
         restore_failure: "The inner fleet of the restored seed did not start: Check the agents: Readiness check 'agents' failed: the agent of app-prod is not online" });
       Deno.removeSync(`${f.folder}/run/failed.json`);
+      // A clone's create (no `deployment`) took no seed: its failed fleet start says only why, even after an earlier phase's result file.
+      const deployment = f.intent.deployment;
+      delete f.intent.deployment;
+      f.write();
+      Deno.writeTextFileSync(`${f.folder}/run/result.json`, JSON.stringify({ commit: null }));
+      assert(!f.run("fleet_resume").ok);
+      assertEquals(f.result(), { error_code: "instance.container_fleet_resume_failed",
+        detail: "Check the agents: Readiness check 'agents' failed: the agent of app-prod is not online" });
+      f.intent.deployment = deployment;
+      f.write();
 
       // The refresh retook the fleet's base, so the seed is taken again at the same commit.
       const stops = () => ((f.state().systemctl ?? []) as string[][]).filter((call) => call[0] === "stop").length;

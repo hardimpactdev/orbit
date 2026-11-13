@@ -458,6 +458,22 @@ jobs:
             hosts:
               - name: target
                 address: ${{ inputs.intent.ssh_execution.target.host }}
+      # A clone of a nested-fleet default starts the fleet it copied: it waits for the inner Incus and checks the fleet rules, then starts
+      # the nested containers, brings up the operator tunnel `wg-nested` and waits for Doctor and the three agents
+      # (docs/reference/development-containers.md#a-clone-starts-its-fleet). Only such an intent has `fleet`; every other clone skips it.
+      - name: clone-fleet
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: clone-container, condition: {type: succeeded}}, {step: clone-club-key, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
+        guard: '${{ inputs.intent.already_active || !("fleet" in inputs.intent) || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "ic-clone-fleet-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_check "$ORBIT_ANSIBLE/instance-container.yml" && timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_resume "$ORBIT_ANSIBLE/instance-container.yml"
+            env: *container_phase
       - name: clone-database-snapshot
         labels: {role: swamp}
         dependsOn: []
@@ -601,7 +617,7 @@ jobs:
       - name: clone-workspace
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: clone-container, condition: {type: succeeded}}, {step: clone-club-key, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-valkey-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
+        dependsOn: [{step: clone-container, condition: {type: succeeded}}, {step: clone-club-key, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-fleet, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-server-valkey-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
         guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
@@ -804,7 +820,7 @@ jobs:
             route: '${{ (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-route" in steps ? steps["clone-route"].status : "skipped") : ("route" in steps ? steps.route.status : "skipped")) }}'
             certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ((inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route-csr-" : "route-csr-") + string(i)) in steps ? steps[(inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route-csr-" : "route-csr-") + string(i)].status : "skipped") }}'
             container: '${{ inputs.intent.container == null ? dyn(null) : {"mail": (inputs.intent.container.clone != null ? ("clone-container" in steps ? steps["clone-container"] : null) : ("container" in steps ? steps.container : null)), "launch": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-container" in steps ? steps["clone-container"].status : "skipped") : ("container" in steps ? steps.container.status : "skipped")), "workspace": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-workspace" in steps ? steps["clone-workspace"] : null) : ("workspace" in steps ? steps.workspace : null)), "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-workspace" in steps ? steps["clone-workspace"].status : "skipped") : ("container-processes" in steps ? steps["container-processes"].status : "skipped")), "seed": "seed" in steps ? steps.seed.status : "skipped", "agent": "clone-agent" in steps ? steps["clone-agent"].status : "skipped", "t3": "clone-t3" in steps ? steps["clone-t3"].status
-              : "skipped", "register": "clone-sessions" in steps && steps["clone-sessions"].status == "failed" ? "failed" : ("clone-session-copy" in steps && steps["clone-session-copy"].status == "failed" ? "failed" : ("clone-register" in steps ? steps["clone-register"].status : "skipped")), "server": "clone-register" in steps && steps["clone-register"].status == "succeeded" ? steps["clone-register"].outputs.stdout : null, "club_key": "clone-club-key" in steps && steps["clone-club-key"].status == "succeeded" ? {"status": "succeeded", "outputs": {"stdout": steps["clone-club-key"].outputs.stdout} } : dyn(null)} }}'
+              : "skipped", "register": "clone-sessions" in steps && steps["clone-sessions"].status == "failed" ? "failed" : ("clone-session-copy" in steps && steps["clone-session-copy"].status == "failed" ? "failed" : ("clone-register" in steps ? steps["clone-register"].status : "skipped")), "server": "clone-register" in steps && steps["clone-register"].status == "succeeded" ? steps["clone-register"].outputs.stdout : null, "fleet": "clone-fleet" in steps ? steps["clone-fleet"].status : "skipped", "club_key": "clone-club-key" in steps && steps["clone-club-key"].status == "succeeded" ? {"status": "succeeded", "outputs": {"stdout": steps["clone-club-key"].outputs.stdout} } : dyn(null)} }}'
             t3_observation: '${{ "clone-t3" in steps && steps["clone-t3"].status == "succeeded" ? steps["clone-t3"].outputs.stdout : "" }}'
             sessions_observation: '${{ "clone-sessions" in steps && steps["clone-sessions"].status == "succeeded" ? steps["clone-sessions"].outputs.stdout : "" }}'
             route_observation: '${{ "clone-route" in steps && steps["clone-route"].status == "succeeded" ? steps["clone-route"].outputs : {} }}'

@@ -2949,7 +2949,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts"
-cost = 18
+cost = 19
 inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts", "swamp/workflows/workflow-operation-instance-create.yaml"]
 [fixture.case_costs]
 "create returns only the commit when every step finished" = 1
@@ -2970,6 +2970,7 @@ inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts"
 "a Node without the main Mailpit gets no mail warning or failure" = 1
 "a failed container phase keeps a Node service target refusal and the nested-fleet image refusal, nothing else" = 1
 "a nested-fleet create carries what its start did with the Club key, from the run, and a normal create never names it" = 1
+"only a nested-fleet clone runs the fleet phase; it is ready only after its fleet, and a failure keeps the fleet phase's code" = 1
 
 [[fixture]]
 file = "swamp/tests/ansible_route_site_test.py"

@@ -290,6 +290,7 @@
         "clone-input",
         "clone-container",
         "clone-club-key",
+        "clone-fleet",
         "clone-database-snapshot",
         "clone-database-install",
         "clone-database-cleanup",

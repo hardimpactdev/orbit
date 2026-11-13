@@ -887,6 +887,28 @@ it('gives only a nested-fleet default on a switched-on Node the fleet of its dep
     'normal Project' => [false, false, 'orbit-instances', false],
 ]);
 
+it('gives only a clone of a nested-fleet default on a switched-on Node the fleet of its create', function (bool $flag, bool $switch, string $incusProject, bool $fleet): void {
+    $default = nestedFleetDefault($flag, $switch, $incusProject);
+    $clone = Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $default->node_id, 'name' => 'seedcopy1',
+        'checkout_path' => '/srv/tool/seedcopy1', 'status' => InstanceState::Reserved]);
+    $runtime = InstanceRuntime::query()->create(['instance_id' => $clone->id, 'node_id' => $default->node_id, 'incus_project' => $incusProject,
+        'container_name' => 'instance-'.$clone->id, 'bridge_address' => '10.253.0.3', 't3_port' => 3800, 'clone_source_instance_id' => $default->id,
+        'runtime_version' => 'r', 'agent_version' => 'a', 'power_state' => InstanceRuntimePowerState::Stopped]);
+    $intents = app(NestedFleetIntent::class);
+
+    // The clone's create gets the same fleet as its default's deployment; a deployment never treats a clone as a default.
+    expect($intents->forClone($clone, $runtime))->toBe($fleet ? app(InstanceDeploymentIntent::class)->snapshot($default)['fleet'] : null)
+        ->and($intents->forDeployment($clone, $runtime))->toBeNull()
+        // The default itself has no T3 port: its create and deployments never take the clone's fleet start.
+        ->and($intents->forClone($default, $default->runtime()->firstOrFail()))->toBeNull();
+})->with([
+    'clone of the nested-fleet default' => [true, true, InstancePlacement::NestedProject, true],
+    'switch off' => [true, false, InstancePlacement::NestedProject, false],
+    'flag off' => [false, true, InstancePlacement::NestedProject, false],
+    'normal project runtime' => [true, true, 'orbit-instances', false],
+    'normal Project' => [false, false, 'orbit-instances', false],
+]);
+
 it('keeps a normal container deployment\'s workflow intent and budget free of the fleet', function (): void {
     deployVault();
     $instance = deployDefault(container: true);

@@ -3,7 +3,8 @@
 # default Instance, its first build (instance:create) and its development deployments (instance:deploy), and every other Instance,
 # a clone of the default's seed snapshot with T3. One tagged part per Swamp phase.
 #   create of the default: `container`, `workspace`, `processes`, `seed`, and `stop` after a failure.
-#   create of a clone: `clone`, `workspace`, `agent`, `processes`, `t3`, `register`, and `stop` after a failure.
+#   create of a clone: `clone`, `workspace`, `agent`, `processes`, `t3`, `register`, and `stop` after a failure. A clone of a
+#     nested-fleet default (its intent has `fleet`) runs `fleet_check` and `fleet_resume` after its start.
 #   deploy: `start`, `fetch`, `checkout`, `processes`, `seed`, `check`. A nested-fleet default (its intent has `fleet`) adds
 #     `seed` right after `start`, `fleet_start` and `fleet_refresh` before the last `seed`, and after a failure `fleet_restore`,
 #     then `start` again.
@@ -83,14 +84,15 @@
         # nonzero keeps no output, so a failed fleet phase also writes why into the result: `detail`, the failed task and its
         # message (a command's stderr tail with it). The fleet's messages are written to be safe to show; the Gateway redacts them
         # again. A fleet start after the refresh (`fleet_resume` without failed.json) keeps the commit the seed took and says that
-        # the new seed stays; after a restore it keeps the first failure's result and adds `restore_failure`.
+        # the new seed stays; after a restore it keeps the first failure's result and adds `restore_failure`. A clone's `fleet_resume`
+        # (a create intent, no `deployment`) took no seed, so its failure says only why the fleet it copied did not start.
         - name: Write the failure
           tags: [always]
           ansible.builtin.copy:
             content: >-
               {{ (((lookup('ansible.builtin.file', failure_restored) | from_json)
                    | combine({'restore_failure': 'The inner fleet of the restored seed did not start: ' ~ failure_reason}))
-                  if failure_phase == 'fleet_resume' and failure_restored is file
+                  if failure_phase == 'fleet_resume' and intent.deployment is defined and failure_restored is file
                   else ({'error_code': failure_code}
                   | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({}))
                   | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
@@ -129,7 +131,7 @@
               {{ {} if failure_phase not in ['fleet_check', 'fleet_start', 'fleet_refresh', 'fleet_resume'] or failure_code == failure_message
                  else {'detail': 'The new seed and base stay; the inner fleet on the new commit did not start: ' ~ failure_reason,
                        'commit': (lookup('ansible.builtin.file', club_key_result_file) | from_json).commit | default(none)}
-                 if failure_phase == 'fleet_resume' and club_key_result_file is file
+                 if failure_phase == 'fleet_resume' and intent.deployment is defined and club_key_result_file is file
                  else {'detail': failure_reason} }}
         - name: Fail the phase
           tags: [always]

@@ -146,7 +146,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "25c528ec0f7aef6602836e2c4b4a6f0799864aa8499512a950080d6cb74c4ce0",
+    "source_sha256": "2535a55a34527c268b63a17b553ba9bc654a3cce9dfcc90d428d643fd52e7506",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -1920,7 +1920,7 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "7a38c70857ee5a6748bb6476491c0e87a2b757cbb851561143726e8bb28ab659",
+    "source_sha256": "54066f9ceb422a43942a25af7744c463badcd61793f3148f19ad16b2557cc1cd",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
@@ -1931,6 +1931,7 @@
       "a container deployment reads the Club key copy only for a nested-fleet container that has it",
       "a container process:start, stop and restart read no `read` section, which only a migrated Schedule log read has",
       "create finalization evaluates checkout, default and clone receipts with Swamp's CEL types",
+      "only a clone whose intent has `fleet` starts its fleet; a normal clone skips the step and finishes as before",
       "deploy VP workspace reads retain step names for the capture schema",
       "guarded withdrawal resolves the same child when cleanup is needed and stays deferred during parent preflight"
     ]
@@ -2167,7 +2168,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {
-    "source_sha256": "b401a17b4913884335e385ebc09c27c2e69acc77b9df751c965c104313f96cc6",
+    "source_sha256": "4c53bef543b4529c82439d4344077fc2678421302dc6725094156fa18c6ac500",
     "cases": [
       "create returns only the commit when every step finished",
       "create names the first unfinished phase",
@@ -2186,7 +2187,8 @@
       "default and clone finish workspace T3 and registration despite bounded mail failure",
       "a Node without the main Mailpit gets no mail warning or failure",
       "a failed container phase keeps a Node service target refusal and the nested-fleet image refusal, nothing else",
-      "a nested-fleet create carries what its start did with the Club key, from the run, and a normal create never names it"
+      "a nested-fleet create carries what its start did with the Club key, from the run, and a normal create never names it",
+      "only a nested-fleet clone runs the fleet phase; it is ready only after its fleet, and a failure keeps the fleet phase's code"
     ]
   },
   "swamp/tests/instance_destroy_git_test.py": {

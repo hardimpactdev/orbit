@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
@@ -11,6 +12,7 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
 use App\Jobs\RecordWorkspaceBaseline;
 use App\Models\Instance;
@@ -46,6 +48,17 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 $result['nested_fleet_club_key'] = NestedFleetClubKey::outcome($result['club_key'] ?? null, $result['error_code'] ?? $data['error_code'] ?? null);
             }
             unset($result['club_key']);
+            if (($result['failed_step'] ?? null) === 'fleet') {
+                // A nested-fleet clone's fleet phase says why in the run's result file, the only record of a step that exits nonzero:
+                // it becomes the failure's detail, redacted again, as a deployment's fleet phase does (ContainerDeployOutcome).
+                if (is_string($result['detail'] ?? null) && $result['detail'] !== '') {
+                    $native = ValidatedData::object($data['failure'] ?? []);
+                    $data['failure'] = ['failed_step' => is_string($native['failed_step'] ?? null) ? $native['failed_step'] : 'clone-fleet',
+                        'detail' => mb_strcut(app(LogRedactor::class)->redact($result['detail'], []), 0, NativeStepFailure::MaximumBytes, 'UTF-8'),
+                        'stderr_recorded' => true];
+                }
+                unset($result['detail']);
+            }
             if (is_array($operation->input['branch_selection'] ?? null)) {
                 $selection = InstanceBranchSelection::fromArray(ValidatedData::object($operation->input['branch_selection']));
                 $result['branch'] = $selection->target;

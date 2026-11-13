@@ -1301,7 +1301,8 @@ function threadLegacySnapshot(mixed $value, ?string $key = null): mixed
     return $value;
 }
 
-// Frozen from main a38e037e; accepted delta: clone-mail progress folds into clone-container.
+// Frozen from main a38e037e; accepted deltas: clone-mail progress folds into clone-container; clone-fleet (skipped unless the intent has
+// `fleet`) joins the clone job after clone-club-key. Conn maps only its four stable stage names (docs/reference/conn.md), so neither delta reaches its card.
 it('matches the installed-client no-branch intent steps result and resume snapshot byte for byte', function (): void {
     $this->freezeTime();
     $default = threadDefault($this->beast, 'tool');
