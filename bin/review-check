@@ -202,6 +202,20 @@ def report_directory(reports):
                 raise
 
 
+
+def docs_impact_command(root, base, common):
+    """A fresh SSH handoff reads this branch's proposed PR body from its checkout."""
+    command = [str(root / 'bin/docs-impact'), '--gate', '--base', base]
+    if os.environ.get('ORBIT_DOCS_PR_BODY_FILE'):
+        return command  # The gate consumes an explicitly supplied local environment input.
+    branch = git(root, 'branch', '--show-current')
+    if branch:
+        body = common / 'orbit/proposed-pr-bodies' / (branch + '.md')
+        if body.is_file():
+            command.extend(['--pr-body-file', str(body)])
+    return command
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--shard', type=shard, default=(1, 1))
@@ -228,10 +242,11 @@ def main(argv=None):
     if shard_index == 1 and base is not None:
         log = directory / 'docs-impact-gate.log'
         started = time.monotonic()
+        command = docs_impact_command(root, base, common)
         with log.open('w') as output:
-            result = subprocess.run([str(root / 'bin/docs-impact'), '--gate', '--base', base], cwd=root,
+            result = subprocess.run(command, cwd=root,
                                     stdout=output, stderr=subprocess.STDOUT)
-        check = {'project': 'repository', 'command': ['bin/docs-impact', '--gate', '--base', base],
+        check = {'project': 'repository', 'command': ['bin/docs-impact', *command[1:]],
                  'exit_code': result.returncode, 'seconds': round(time.monotonic() - started, 3), 'log': str(log)}
         report['checks'].append(check)
         print(f'[repository] bin/docs-impact --gate --base {base}: '

@@ -247,13 +247,13 @@ final readonly class DocsImpact
      *   passed: bool
      * }
      */
-    public function gate(string $base): array
+    public function gate(string $base, string $prBody = ''): array
     {
         $report = $this->report($base, []);
         $changed = array_fill_keys($report['paths'], true);
         $exceptions = [];
-        foreach ($this->unaffectedPageNotes() as $note) {
-            if (preg_match('/^([^:#]+):\\s*(\\S.*)$/', trim($note), $match) === 1) {
+        foreach (explode("\n", $prBody) as $note) {
+            if (preg_match('/^Docs-unaffected: (docs\/[^\s:*?]+\.mdx?):[ \t]*(\S[^\r\n]*)$/', rtrim($note, "\r"), $match) === 1) {
                 $exceptions[$match[1]] = $match[2];
             }
         }
@@ -1790,24 +1790,6 @@ final readonly class DocsImpact
         exec($command, $output, $status);
 
         return $status === 0 ? implode("\n", $output) : null;
-    }
-
-    /**
-     * Notes that an impacted page needs no update, for the checked-out branch only.
-     * They live in the Git directory, so they never reach main or another branch.
-     *
-     * @return list<string>
-     */
-    private function unaffectedPageNotes(): array
-    {
-        $branch = $this->gitAllowMissing(['symbolic-ref', '--quiet', '--short', 'HEAD']);
-        if ($branch === null || trim($branch) === '') {
-            return [];
-        }
-        $gitDirectory = $this->git(['rev-parse', '--path-format=absolute', '--git-common-dir'])[0];
-        $path = $gitDirectory.'/orbit/docs-unaffected/'.trim($branch).'.txt';
-
-        return is_file($path) ? (file($path, FILE_IGNORE_NEW_LINES) ?: []) : [];
     }
 
     /**

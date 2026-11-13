@@ -367,6 +367,9 @@ jobs:
 
   docs:
     name: Docs build
+    permissions:
+      contents: read
+      pull-requests: read
     needs: changes
     if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['docs']) != 'false' }}
     runs-on: ubuntu-26.04
@@ -395,6 +398,25 @@ jobs:
         run: |
           composer docs-build
           composer docs-lint
+      - name: Require documentation updates or visible PR acknowledgements
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os, subprocess
+          from pathlib import Path
+          pr = json.loads(subprocess.check_output([
+              'gh', 'api', f"repos/{os.environ['GH_REPO']}/pulls/{os.environ['PR_NUMBER']}"
+          ], text=True, timeout=30))
+          if pr['head']['sha'] != os.environ['PR_HEAD']:
+              raise SystemExit('PR head moved; use the CI run of the new head.')
+          Path(os.environ['RUNNER_TEMP'], 'docs-impact-pr-body.txt').write_text(pr['body'] or '')
+          PYTHON
+          bin/docs-impact --gate --base HEAD^1 --pr-body-file "$RUNNER_TEMP/docs-impact-pr-body.txt"
       - name: Run the complete Docs Pest suite
         working-directory: apps/docs
         env:
@@ -592,6 +614,7 @@ jobs:
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
           args=()
           if [ "$MAIN" = true ]; then args+=(--main); fi
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then args+=(--pull-request); fi
           python3 bin/ci-build-plan --base "$BASE" --head "${{ github.event.pull_request.head.sha || github.sha }}" "${args[@]}" --proof-cases --proof-selection-output proof-selection.json --swamp-base --github-output "$GITHUB_OUTPUT"
       - name: Select fixture units
         id: units

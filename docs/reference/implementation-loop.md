@@ -72,7 +72,7 @@ Withdrawal fixtures also check that publication stops when the live checksum dif
 | PHP SDK Pest suite | Run the complete SDK suite on `ubuntu-26.04` in one process; fail on an empty suite and always upload JUnit results |
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
 | CLI static analysis, PHP SDK static analysis, E2E static analysis | Run PHPStan for `apps/cli`, `packages/php-sdk` or `apps/e2e` |
-| Docs build | Generate API contracts and the documentation index, run strict documentation lint and the complete Docs Pest suite, including its Python contracts; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) |
+| Docs build | Generate contracts and the Docs index; run strict lint, Docs Pest, `bin/check-flows` and the PR docs-impact gate |
 | Generated contracts | Check Operation kinds, their charts and workflow intent; generate OpenAPI, MCP tools and the web schema; check the recorded fixtures |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only and docs-only changes |
@@ -139,7 +139,7 @@ Runner containers are unprivileged. Install or repair their toolchain with `tool
 
 ### CI budget
 
-Pull request CI takes at most five minutes from push to result, including queues and dependencies. Proof CI is the only exception. Run only checks that apply to the changed files, using `bin/ci-build-plan`. Switch an over-budget check off until it meets the budget; no merge, deploy or review waits on it. Whoever adds or restores a job measures its complete path first.
+Pull request CI takes at most five minutes from push to result, including queues and dependencies. Proof CI is the only exception. Run only checks that apply to the changed files, using `bin/ci-build-plan`. Docs impact is a policy check on every pull request; it shares the existing Docs job and its two-minute ceiling. Switch an over-budget check off until it meets the budget; no merge, deploy or review waits on it. Whoever adds or restores a job measures its complete path first.
 
 Measure CI wall time from workflow creation to completion of `Required checks`. Include queueing, input selection and the final gate. Independent jobs overlap, so use the longest required path rather than adding every job's duration. The full workflow can continue after Required checks passes.
 
@@ -286,13 +286,19 @@ Tests of bin scripts live beside their script. The shape job names the liveness 
 
 Each main SHA has its own concurrency group in both CI and the reusable Swamp workflow. Main runs complete independently. A shared group would replace an older pending run even with `cancel-in-progress: false`; that option protects only the running job. Pull requests share a group and cancel superseded runs.
 
-Docs build installs the locked Docs dev dependencies and Gateway runtime dependencies. It uses the existing PHP action and Bun 1.4.2 pin, installs only the API-types workspace, and generates OpenAPI, MCP tools and web types before building the Docs index and running Pest. Python 3, Git and Node come from `ubuntu-26.04`; no service or fleet operation is needed. Every `apps/docs/**`, `bin/check-*` and docs chart change selects this job. The complete Unit and Feature suites run with two workers and fail on an empty suite; the Python wrapper discovers every `*_test.py` file and rejects an empty collection. No Docs case is deferred to Main full set.
+Docs build installs the locked Docs dev dependencies and Gateway runtime dependencies. It uses the existing PHP action and Bun 1.4.2 pin, installs only the API-types workspace, and generates OpenAPI, MCP tools and web types before building the Docs index and running Pest. Python 3, Git and Node come from `ubuntu-26.04`; no service or fleet operation is needed.
+
+Every pull request selects this job, including changes with no covered documentation. Other events retain path selection, including `apps/docs/**`, `bin/check-*` and docs chart changes.
+
+After generation, the PR gate compares the checked-out merge commit with its first parent. It reads the live PR body through the API, treats it as data, and checks that the PR head still matches this run. A body edit starts no workflow; `gh run rerun <run-id> --failed` rechecks failed jobs and Required on the same head. Successful jobs keep their existing results. [Documentation acknowledgements](/contributor-guide#2-write-the-documentation) use the same command locally with `--pr-body-file`.
+
+The complete Unit and Feature suites run with two workers and fail on an empty suite; the Python wrapper discovers every `*_test.py` file and rejects an empty collection. No Docs case is deferred to Main full set.
 
 The first local measurement at `6faf66c1da` took 13.34 seconds for 228 Pest tests with fourteen workers on Ubuntu 26.04, PHP 8.5.12 and Python 3.14.4. It exposed stale navigation fixtures and unprepared generated contracts. After preparing the generated inputs and repairing the navigation fixtures, all 228 tests passed with 768 assertions in 17.52 seconds of Pest time and 17.90 seconds wall time with two workers. The wrapper reached all 11 Python tests across three files. These are warm local measurements.
 
 A local install into empty vendor directories took 3.45 seconds for Docs dev packages and 3.18 seconds for Gateway runtime packages, with scripts disabled and warm Composer downloads. Contract generation took 1.61 seconds; web types took 0.82 seconds. Hosted PHP and Bun setup and cold downloads remain unmeasured.
 
-The job keeps its 120-second ceiling. Its table cost is a 70-second estimate: the previous 40 seconds plus about 28 seconds of measured local tests and setup, rounded up. Hosted evidence must replace this estimate. Budget PHP setup, dev-package extraction, Gateway runtime installation, the filtered Bun install and contract generation as well as Pest; download-cache misses add network time. Check the first hosted run against the two-minute job limit and the five-minute push-to-Required budget before claiming it fits.
+The job keeps its 120-second ceiling. Its table cost is an 85-second estimate: the previous 70 seconds plus 15 seconds for docs impact. The gate alone took a median 1.44 seconds and a maximum 6.17 seconds on 30 recent PR diffs on Beast; 15 seconds allows the maximum × 2.1 plus one second, rounded up. Hosted evidence must replace this estimate. Budget PHP setup, dev-package extraction, Gateway runtime installation, the filtered Bun install and contract generation as well as Pest; download-cache misses add network time. Check the first hosted run against the two-minute job limit and the five-minute push-to-Required budget before claiming it fits.
 
 Docs tests do not enforce a per-test wall-clock limit: shared-runner contention must not turn a correct result into a risky failure. Risky tests and PHPUnit warnings still fail. The Docs job still stops after two minutes if the suite hangs.
 

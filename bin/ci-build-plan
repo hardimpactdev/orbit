@@ -292,7 +292,7 @@ def selected_checks(paths, registry_checks=None):
     return selected, unclaimed
 
 
-def select(paths, main=False, selection=None, registry_checks=None):
+def select(paths, main=False, selection=None, registry_checks=None, pull_request=False):
     """`selection` is the text of the proof list; omitted, read this checkout's list."""
     paths = [path for path in paths if path]
     check_source_roots(paths)
@@ -301,6 +301,7 @@ def select(paths, main=False, selection=None, registry_checks=None):
     swamp_checks = {name: 'swamp-' + name in selected or 'swamp' in selected for name in SWAMP_CHECKS}
     jobs['swamp'] = any(swamp_checks.values())
     jobs['web'] |= main
+    jobs['docs'] |= pull_request
     docs_only = selected == {'docs'}
     scope_paths = [path for path in paths if path != TABLE or registry_checks is None or registry_checks]
     swamp_only = bool(scope_paths) and all(path.startswith('swamp/') for path in scope_paths)
@@ -338,6 +339,7 @@ def main():
     p.add_argument('--base', required=True)
     p.add_argument('--head', default='HEAD')
     p.add_argument('--main', action='store_true')
+    p.add_argument('--pull-request', action='store_true', help='Require the Docs impact gate on every PR')
     p.add_argument('--proof-cases', action='store_true', help='Compare case definitions at the merge base and head')
     p.add_argument('--github-output', type=Path)
     p.add_argument('--proof-selection-output', type=Path)
@@ -345,7 +347,7 @@ def main():
     a = p.parse_args()
     base, paths = changed_inputs(a.base, a.head)
     registry_checks = registry_check_changes(base, a.head) if TABLE in paths else None
-    result = select(paths, a.main, registry_checks=registry_checks)
+    result = select(paths, a.main, registry_checks=registry_checks, pull_request=a.pull_request)
     _, unclaimed = selected_checks(paths, registry_checks)
     if unclaimed:
         import sys

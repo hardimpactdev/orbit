@@ -121,16 +121,16 @@ it('docs impact gate fails and names an impacted page that was not changed', fun
         ->and($gate['missing_pages'])->toContain('docs/reference/tasks.md');
 });
 
-it('a note for the checked-out branch waives an impacted page', function (): void {
+it('private notes for the checked-out branch cannot waive an impacted page', function (): void {
     [$root, $base] = docsImpactGateFixture();
     changeDocsImpactGateSource($root);
     writeUnaffectedPageNote($root, 'task-1', 'docs/reference/tasks.md: This branch changes only internal behavior.');
 
     $gate = new DocsImpact($root)->gate($base);
 
-    expect($gate['passed'])->toBeTrue()
-        ->and($gate['missing_pages'])->toBe([])
-        ->and($gate['exceptions']['docs/reference/tasks.md'])->toBe('This branch changes only internal behavior.');
+    expect($gate['passed'])->toBeFalse()
+        ->and($gate['missing_pages'])->toBe(['docs/reference/tasks.md'])
+        ->and($gate['exceptions'])->toBe([]);
 });
 
 it('a note for another branch does not waive an impacted page', function (): void {
@@ -259,4 +259,129 @@ it('docs impact gate passes when the impacted page is updated', function (): voi
 
     expect($gate['passed'])->toBeTrue()
         ->and($gate['missing_pages'])->toBe([]);
+});
+
+it('an explicit PR body reason waives only its named page on detached CI checkouts', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    exec('git -C '.escapeshellarg($root).' checkout -q --detach');
+    changeDocsImpactGateSource($root);
+    file_put_contents($root.'/docs/reference/second.md', "---\ntitle: Second\ncovers:\n  - apps/gateway/app/Domain/Tasks/**\n---\nSecond\n");
+    exec('git -C '.escapeshellarg($root).' add docs/reference/second.md');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm second');
+    $body = "Summary\nDocs-unaffected: docs/reference/tasks.md: Restore documented behavior.\r\n";
+
+    $gate = new DocsImpact($root)->gate('HEAD', $body);
+
+    expect($gate['passed'])->toBeFalse()
+        ->and($gate['exceptions'])->toBe(['docs/reference/tasks.md' => 'Restore documented behavior.'])
+        ->and($gate['missing_pages'])->toBe(['docs/reference/second.md']);
+});
+
+it('empty broad and malformed PR reasons do not waive pages', function (string $body): void {
+    [$root, $base] = docsImpactGateFixture();
+    changeDocsImpactGateSource($root);
+    expect(new DocsImpact($root)->gate($base, $body)['passed'])->toBeFalse();
+})->with([
+    'blank' => 'Docs-unaffected: docs/reference/tasks.md:   ',
+    'wildcard' => 'Docs-unaffected: docs/reference/*.md: No change.',
+    'global' => 'Docs-unaffected: all: No change.',
+    'bare local syntax' => 'docs/reference/tasks.md: No change.',
+    'next line' => "Docs-unaffected: docs/reference/tasks.md:\nNo change.",
+]);
+
+it('the local gate reads the proposed PR body as data and prints accepted reasons', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    changeDocsImpactGateSource($root);
+    $bodyFile = $root.'/.git/pr-body.txt';
+    $reason = 'Only internal code: $(touch should-not-exist); `false`.';
+    file_put_contents($bodyFile, 'Docs-unaffected: docs/reference/tasks.md: '.$reason);
+    config(['librarian.path' => $root.'/docs']);
+
+    expect(Artisan::call('orbit:docs-impact', ['--base' => $base, '--gate' => true, '--pr-body-file' => $bodyFile]))->toBe(0);
+    $gate = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    expect($gate['exceptions']['docs/reference/tasks.md'])->toBe($reason)
+        ->and(file_exists($root.'/should-not-exist'))->toBeFalse();
+});
+
+it('a missing PR body file fails instead of silently ignoring its input', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    config(['librarian.path' => $root.'/docs']);
+    expect(Artisan::call('orbit:docs-impact', ['--base' => $base, '--gate' => true, '--pr-body-file' => $root.'/missing']))->toBe(1)
+        ->and(Artisan::output())->toContain('readable PR body file');
+});
+
+it('the failure tells contributors the exact visible acknowledgement and local command', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    changeDocsImpactGateSource($root);
+    [$status, $output] = runDocsImpactGateCommand($root, $base);
+    expect($status)->toBe(1)
+        ->and($output)->toContain('Docs-unaffected: docs/reference/tasks.md: <explain why no docs change is needed>', '--pr-body-file', 'PR body');
+});
+
+it('a stock change with no docs impact passes without a PR body', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    file_put_contents($root.'/README.md', 'Internal note.');
+    [$status, $output] = runDocsImpactGateCommand($root, $base);
+    expect($status)->toBe(0)
+        ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['missing_pages'])->toBe([]);
+});
+
+it('PR acknowledgements cannot waive generator and ownership failures', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    mkdir($root.'/apps/gateway/database/migrations', 0777, true);
+    file_put_contents($root.'/apps/gateway/database/migrations/2026_01_01_create_orphans.php', unownedMigrationContents());
+    file_put_contents($root.'/apps/gateway/resources/mcp/tools.json', '{"tools":[{"name":"new-tool","method":"GET","path":"/api/v1/widgets"}]}');
+    $gate = new DocsImpact($root)->gate($base, 'Docs-unaffected: docs/reference/mcp.mdx: No wording changes.');
+    expect($gate['passed'])->toBeFalse()
+        ->and($gate['failures'])->toContain('bin/mcp-tools generator status is missing.')
+        ->and(implode(' ', $gate['failures']))->toContain('Unowned migration surface');
+});
+
+it('local checks and the hook use the proposed body from their environment', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    changeDocsImpactGateSource($root);
+    $bodyFile = $root.'/.git/proposed-pr-body.txt';
+    file_put_contents($bodyFile, 'Docs-unaffected: docs/reference/tasks.md: Fix matches the documented task behavior.');
+    $previous = getenv('ORBIT_DOCS_PR_BODY_FILE');
+    putenv('ORBIT_DOCS_PR_BODY_FILE='.$bodyFile);
+    try {
+        [$status, $output] = runDocsImpactGateCommand($root, $base);
+        expect($status)->toBe(0)
+            ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['exceptions']['docs/reference/tasks.md'])
+            ->toBe('Fix matches the documented task behavior.');
+        file_put_contents($bodyFile, '');
+        expect(runDocsImpactGateCommand($root, $base)[0])->toBe(1);
+    } finally {
+        putenv($previous === false ? 'ORBIT_DOCS_PR_BODY_FILE' : 'ORBIT_DOCS_PR_BODY_FILE='.$previous);
+    }
+});
+
+it('the explicit PR body overrides an inherited handoff body and reporting ignores it', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    changeDocsImpactGateSource($root);
+    $bodyFile = $root.'/.git/actual-pr-body.txt';
+    file_put_contents($bodyFile, 'Docs-unaffected: docs/reference/tasks.md: Documentation still describes this fix.');
+    config(['librarian.path' => $root.'/docs']);
+    $previous = getenv('ORBIT_DOCS_PR_BODY_FILE');
+    putenv('ORBIT_DOCS_PR_BODY_FILE='.$root.'/missing');
+    try {
+        expect(Artisan::call('orbit:docs-impact', ['--base' => $base, '--gate' => true, '--pr-body-file' => $bodyFile]))->toBe(0)
+            ->and(Artisan::call('orbit:docs-impact', ['--base' => $base]))->toBe(0);
+    } finally {
+        putenv($previous === false ? 'ORBIT_DOCS_PR_BODY_FILE' : 'ORBIT_DOCS_PR_BODY_FILE='.$previous);
+    }
+});
+
+it('a failed CI gate prints the exact failed-job rerun command', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    changeDocsImpactGateSource($root);
+    $previous = getenv('GITHUB_RUN_ID');
+    putenv('GITHUB_RUN_ID=123456789');
+    try {
+        [$status, $output] = runDocsImpactGateCommand($root, $base);
+        expect($status)->toBe(1)
+            ->and($output)->toContain('gh run rerun 123456789 --failed', 'Docs-unaffected: docs/reference/tasks.md:', 'live PR body');
+    } finally {
+        putenv($previous === false ? 'GITHUB_RUN_ID' : 'GITHUB_RUN_ID='.$previous);
+    }
 });
