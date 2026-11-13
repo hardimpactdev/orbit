@@ -25,6 +25,7 @@ orbit instance:sleep 42 --json
 | Argument or option | Meaning |
 | --- | --- |
 | `instance-id` | Numeric Instance ID. |
+| `--idempotency-key=KEY` | Reuse a key to retry this operation start. |
 | `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
 
 Orbit first writes the asleep marker on the Node. From then on, each request to the Route gets the wake page. Then Orbit stops the container. A visit to the Route, or [`instance:wake`](/cli/instance/wake), starts it again.
@@ -46,4 +47,5 @@ Sleeping an Instance that already sleeps runs again and changes nothing. A faile
 | `instance.sleep_unsupported` | The Instance is not a development Instance, is its Project's default, or runs a nested fleet. |
 | `instance.lifecycle_busy`, `operation.target_busy` | Lifecycle work, Process work or a task runs on the Instance. |
 | `instance.sleep_route_unready` | Caddy's loaded site of the Instance has no asleep rule yet. Nothing changed. Publish the Node's Caddy sites and retry. |
+| `instance.container_sleep_failed` | The asleep marker could not be written. The container still runs. |
 | `instance.container_stop_failed` | The container did not stop. |

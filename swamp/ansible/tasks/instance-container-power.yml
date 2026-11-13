@@ -1,0 +1,63 @@
+---
+# The parts of instance-container-power.yml. `power` is `sleep` or `wake`.
+
+# Caddy's site of a container Instance checks the marker only once a publish of the Node's sites rendered the check. A marker without
+# the check would leave the Route proxying to a stopped container, so the sleep refuses before it changes anything.
+- name: Read Caddy's loaded configuration
+  when: power == 'sleep'
+  ansible.builtin.uri:
+    url: "{{ caddy_admin }}/config/"
+    return_content: true
+    timeout: 5
+  register: caddy_config
+  changed_when: false
+  failed_when: false
+
+- name: Refuse a sleep while the site has no asleep check
+  when: power == 'sleep'
+  ansible.builtin.assert:
+    that:
+      - caddy_config.status | default(0) == 200
+      - ('/' ~ (marker | basename)) in caddy_config.content | default('')
+    fail_msg: instance.sleep_route_unready
+    quiet: true
+
+# Before the stop: a request during the stop gets the wake page. The directory is the app-dev role's hibernation directory.
+- name: Write the asleep marker
+  when: power == 'sleep'
+  ansible.builtin.copy:
+    content: ""
+    dest: "{{ marker }}"
+    owner: "{{ marker_owner }}"
+    group: "{{ marker_group }}"
+    mode: "0644"
+
+# The start part waited for every desired-running unit. A clone's T3 answers on its environment endpoint once it serves.
+- name: Wait for T3
+  when: power == 'wake' and container.clone is not none
+  ansible.builtin.command:
+    argv: >-
+      {{ ['incus', 'exec', '--project', container.project, '--cwd', '/home/agent', '--env', 'HOME=/home/agent', container.name,
+          '--', 'runuser', '-u', 'agent', '--',
+          'curl', '--fail', '--silent', '--max-time', '2',
+          'http://127.0.0.1:' ~ container.clone.t3.internal_port ~ '/.well-known/t3/environment'] }}
+  register: t3_ready
+  until: t3_ready.rc == 0
+  retries: "{{ container.clone.t3.ready_seconds }}"
+  delay: 1
+  changed_when: false
+  failed_when: false
+
+- name: Refuse a wake whose T3 did not answer
+  when: power == 'wake' and container.clone is not none
+  ansible.builtin.assert:
+    that: [t3_ready.rc == 0]
+    fail_msg: instance.t3_unready
+    quiet: true
+
+# After T3 and the Processes run: Caddy sends the next request to the app.
+- name: Remove the asleep marker
+  when: power == 'wake'
+  ansible.builtin.file:
+    path: "{{ marker }}"
+    state: absent

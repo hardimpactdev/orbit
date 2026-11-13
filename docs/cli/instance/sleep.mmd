@@ -18,7 +18,7 @@ sequenceDiagram
   %%> - syntax: `<instance-id> [--json]`
   %%> Callers:
   %%> - the command, at once
-  %%> - the hibernation sweep, every 10 min, for an Instance without HTTP or T3 activity for an hour, without a running task and without a desired-running keep-alive Process
+  %%> - planned: the hibernation sweep, every 10 min, for an Instance without HTTP or T3 activity for an hour, without a running task and without a desired-running keep-alive Process
   Note over GW: Admit the sleep
   %%> When:
   %%> - an active development container that is not a default and not a nested-fleet Instance; take the Instance lock
@@ -28,6 +28,8 @@ sequenceDiagram
   GW-->>CLI: 202 Accepted<br/>Operation ID
   opt the hibernation sweep
     SW->>N: Check T3 is idle<br/>T3 MCP · thread list
+    %%> When:
+    %%> - planned, with the sweep; the sweep does not ship without this read
     %%> What it does:
     %%> - asks T3 for a running or queued turn and for the time of the last turn and client activity
     %%> Result:

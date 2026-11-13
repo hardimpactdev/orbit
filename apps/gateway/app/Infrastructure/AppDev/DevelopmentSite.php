@@ -58,6 +58,11 @@ final readonly class DevelopmentSite
         public ?string $devUpstream = null,
         /** A container's preset Vite server; checkout development servers use `vitePort` on loopback. */
         public ?string $viteUpstream = null,
+        /**
+         * A development container's site checks this asleep marker before it proxies, and sends a request that finds it to the
+         * runtime activation endpoint (docs/reference/development-containers.md#sleep-and-wake).
+         */
+        public ?string $asleepMarker = null,
     ) {}
 
     public function withWebSocket(string $key, string $websocketAppId): self

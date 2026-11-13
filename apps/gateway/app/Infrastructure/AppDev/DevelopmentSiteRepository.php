@@ -9,6 +9,7 @@ use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Power\InstancePower;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\CustomProxyProcessListener;
 use App\Domain\Routes\CustomProxyUpstream;
@@ -558,6 +559,7 @@ final readonly class DevelopmentSiteRepository
                 localHttpUpstream: $runtime->bridge_address.':'.InstanceContainer::WebPort,
                 devUpstream: app(InstanceContainer::class)->servesDevPorts($instance, $runtime, $route) ? $runtime->bridge_address : null,
                 viteUpstream: $vitePort === null ? null : $runtime->bridge_address.':'.$vitePort,
+                asleepMarker: $instance->placedOnAppDev() ? InstancePower::markerPath($instance) : null,
             );
         }
         // A development default in the old release layout serves through `current` until its next deployment converts it.

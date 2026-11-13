@@ -204,7 +204,11 @@ final readonly class DevelopmentCaddyConfigRenderer
                 }
                 CADDY;
 
-            return $site->viteUpstream === null ? $application : $this->withDevelopmentServer($application, $site->viteUpstream);
+            $handlers = $site->viteUpstream === null ? $application : $this->withDevelopmentServer($application, $site->viteUpstream);
+            $asleep = $this->containerWake($site);
+
+            // The site template indents only the first line, so the proxy keeps its site indentation after the check.
+            return $asleep === null ? $handlers : $asleep.PHP_EOL.'    '.$handlers;
         }
 
         if ($site->isProxy()) {
@@ -324,12 +328,10 @@ final readonly class DevelopmentCaddyConfigRenderer
             return null;
         }
 
-        $uri = '/api/v1/runtime-activations/app-instance/'.$id;
-        $root = self::ORBIT_ROOT_CA_PATH;
         $markers = RuntimeHibernation::MarkerDirectory;
         $marker = '/'.$key.'.awake';
-
         $probeHeader = RuntimeHibernation::ProbeHeader;
+        $activation = $this->activation((int) $id, $host);
 
         // A probe (`orbit profile --instance`) measures this site without disturbing it: it must
         // not reach forward_auth, which would start the Processes hibernation halted, and it must
@@ -346,7 +348,55 @@ final readonly class DevelopmentCaddyConfigRenderer
                 }
             }
             handle @orbit_asleep {
-                forward_auth {$this->gatewayOrigin} {
+                {$activation}
+            }
+            log {
+                output file {$log}
+            }
+            CADDY;
+    }
+
+    /**
+     * A sleeping development container's site (docs/reference/development-containers.md#sleep-and-wake). The `file` matcher is
+     * a stat of the marker on the Node, evaluated in the request matcher: while the marker is missing it is false, and the request
+     * goes straight to the proxy below without a call to the Gateway. A probe never wakes the Instance.
+     */
+    private function containerWake(DevelopmentSite $site): ?string
+    {
+        if ($site->asleepMarker === null || preg_match('/\Aapp-instance-([1-9][0-9]*)\z/D', $site->scope, $matches) !== 1) {
+            return null;
+        }
+        $host = parse_url($this->gatewayOrigin, PHP_URL_HOST);
+        if (! is_string($host) || $host === '') {
+            return null;
+        }
+        $directory = dirname($site->asleepMarker);
+        $marker = '/'.basename($site->asleepMarker);
+        $probeHeader = RuntimeHibernation::ProbeHeader;
+        $activation = $this->activation((int) $matches[1], $host);
+
+        return <<<CADDY
+            @orbit_asleep {
+                not header {$probeHeader} 1
+                file {
+                    root {$directory}
+                    try_files {$marker}
+                }
+            }
+            handle @orbit_asleep {
+                {$activation}
+            }
+            CADDY;
+    }
+
+    /** The runtime activation call of a sleeping Instance: the Gateway answers with the progress or failure page. */
+    private function activation(int $instanceId, string $host): string
+    {
+        $uri = '/api/v1/runtime-activations/app-instance/'.$instanceId;
+        $root = self::ORBIT_ROOT_CA_PATH;
+
+        return <<<CADDY
+            forward_auth {$this->gatewayOrigin} {
                     uri {$uri}
                     header_up Host {$host}
                     transport http {
@@ -354,10 +404,6 @@ final readonly class DevelopmentCaddyConfigRenderer
                         tls_server_name {$host}
                     }
                 }
-            }
-            log {
-                output file {$log}
-            }
             CADDY;
     }
 

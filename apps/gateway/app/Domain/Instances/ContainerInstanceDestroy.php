@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\InstanceMigration\InstanceMigration;
+use App\Domain\Instances\Power\InstancePower;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 
@@ -36,6 +37,8 @@ final readonly class ContainerInstanceDestroy
 
         return ['instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
             'acl' => $runtime->container_name, 'pool' => InstanceHostIntent::Pool,
-            'mirror' => InstanceContainer::mirror($instance), 'firewall_prefix' => InstanceContainer::firewallPrefix($instance)];
+            'mirror' => InstanceContainer::mirror($instance), 'firewall_prefix' => InstanceContainer::firewallPrefix($instance),
+            // A sleeping Instance leaves its marker behind on the Node; no later Instance or domain may find it.
+            'asleep_marker' => InstancePower::markerPath($instance)];
     }
 }

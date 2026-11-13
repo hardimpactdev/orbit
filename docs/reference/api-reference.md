@@ -9,6 +9,8 @@ covers:
 
 `instance:migrate` is POST `/api/v1/instances/{instance}/migrate`. It returns an Operation receipt; the [command page](/cli/instance/migrate) defines its prerequisites and failure behavior.
 
+`instance:sleep` and `instance:wake` are POST `/api/v1/instances/{instance}/sleep` and `/wake`. Each returns an Operation receipt; a wake of an Instance with an open wake returns that Operation. The [sleep](/cli/instance/sleep) and [wake](/cli/instance/wake) pages define their prerequisites and failure behavior.
+
 Node service target attachment returns typed `InstanceNodeServiceTarget` data. `GET /api/v1/instances/{instance}/node-service-targets` returns an ordered array of typed `InstanceNodeServiceTargetRecord` identities and environment key names, scoped to the selected Instance and its owning-Node authority. Detach takes a positive integer `target` path parameter and returns typed `Operation` data. Detach is record-only, including after successful migration: it performs no network, environment or runtime change. The generated MCP tools use these same schemas; [Node service target records](/reference/processes-and-schedules#node-service-target-records) defines the record-only behavior.
 
 Schedule log streams use POST, PUT and DELETE under `/api/v1/schedules/{schedule}/log-streams`. The Schedule selector is a UUID. These viewer leases share the [live log contract](/reference/live-logs) with Instance and Process streams.

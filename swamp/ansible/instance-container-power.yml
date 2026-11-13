@@ -1,0 +1,76 @@
+---
+# The asleep marker of a development container (docs/reference/development-containers.md#sleep-and-wake). One tagged part per Swamp
+# phase; the container's own stop and start are the `stop` and `start` parts of instance-container.yml.
+#   sleep: check that Caddy's loaded site of the Instance has the asleep check, then write the marker, before the stop.
+#   wake: after the start, wait for T3 in a clone, then remove the marker.
+# Each part writes `result.json` in the run folder: `{}`, or the public error code of its refusal.
+- name: Pin the Node and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: container_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Mark the container asleep or awake
+  hosts: container_node
+  gather_facts: false
+  become: true
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    container: "{{ intent.container }}"
+    marker: "{{ intent.marker }}"
+    # The app-dev role makes the marker directory root:caddy; Caddy reads the marker.
+    marker_owner: root
+    marker_group: caddy
+    # Caddy's admin API on the Node, which listens on loopback only.
+    caddy_admin: http://127.0.0.1:2019
+  tasks:
+    - name: Run the part
+      tags: [always]
+      block:
+        - name: Run the part's tasks
+          ansible.builtin.include_tasks:
+            file: tasks/instance-container-power.yml
+            apply: {tags: [always]}
+          tags: [always]
+          vars:
+            power: "{{ ansible_run_tags | first }}"
+        - name: Write the result
+          tags: [always]
+          ansible.builtin.copy:
+            content: "{}"
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: &local
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      rescue:
+        - name: Write the failure
+          tags: [always]
+          ansible.builtin.copy:
+            content: >-
+              {{ {'error_code': ansible_failed_result.msg
+                  if (ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z0-9_]+$'))
+                  else 'instance.container_' ~ (ansible_run_tags | first) ~ '_failed'} | to_json }}
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: *local
+        - name: Fail the part
+          tags: [always]
+          ansible.builtin.fail:
+            msg: "{{ ansible_failed_result.msg | default('The power part failed.') }}"

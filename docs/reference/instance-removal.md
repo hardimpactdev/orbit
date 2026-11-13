@@ -90,7 +90,7 @@ A container Instance follows the [container destroy flow](/reference/development
 
 Destroy also deletes migration execution copies, including the remote-read credential, and the create copies of the owned database and of the clone's own Valkey user, which hold their server and owner logins. The clone's Valkey user is deleted with its owned databases; the default's Valkey user stays. The runtime row stays until success, so its address and port stay reserved during a failed removal.
 
-Destroy removes the Instance's folder for pending mail activation from the Node, `/var/lib/orbit/instance-mail/<container>`. Its shared bridge endpoint stays for ordinary host reconciliation, as database endpoints do.
+Destroy removes the Instance's folder for pending mail activation from the Node, `/var/lib/orbit/instance-mail/<container>`, and its [asleep marker](/reference/development-containers#sleep-and-wake), so no later Instance or domain finds it. A sleeping container is deleted as it is, without a wake. Its shared bridge endpoint stays for ordinary host reconciliation, as database endpoints do.
 
 ## Retry and ownership
 

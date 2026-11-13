@@ -990,7 +990,29 @@ inputs = [
 
 [fixture.case_costs]
   "a normal destroy deletes the container over one pipelined SSH master with the shipped config" = 1
-  "migrated container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers) and mirror; a retry changes nothing" = 12 # CENSORED lower bound 6.893s, run 43010311414; not a completed measurement
+  "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker and mirror; a retry changes nothing" = 12 # CENSORED lower bound 6.893s, run 43010311414; not a completed measurement
+
+[[fixture]]
+file = "swamp/tests/ansible_instance_container_power_test.ts"
+cost = 9
+# Local Deno case times on Beast rounded up by one second; not CI measurements.
+slices = 1
+inputs = [
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance-container-power.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/ansible/tasks/instance-container-power.yml",
+  "swamp/tests/fixtures/instance-container-incus.ts",
+  "swamp/workflows/workflow-operation-instance-sleep.yaml",
+  "swamp/workflows/workflow-operation-instance-wake.yaml",
+]
+
+[fixture.case_costs]
+  "each sleep and wake step runs its charted part with the shipped Ansible settings" = 1
+  "a sleep writes the marker once Caddy's loaded site has the check, and refuses without changing anything when it lacks it" = 3
+  "a wake removes the marker after T3 answers in a clone, keeps it when T3 stays silent, and needs no T3 in a default" = 5
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_egress_test.py"

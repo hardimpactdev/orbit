@@ -774,12 +774,16 @@ A sleeping Instance's container is stopped. It uses no memory; its disk, databas
 | --- | --- |
 | [`instance:sleep`](/cli/instance/sleep) and [`instance:wake`](/cli/instance/wake) | Built for development clones. A default and a nested-fleet Instance do not sleep |
 | A Route visit wakes the Instance | Built |
-| Sleep after an idle hour | Planned. It counts HTTP activity and T3 activity (a turn, or a client working in a thread). It never cuts a turn, and it does not ship without a T3 activity read. A running task and a desired-running keep-alive Process keep the container awake |
+| Sleep after an idle hour | Planned; see below |
 | A Conn connection or a task turn wakes the Instance; the wake renews a session that ends within 7 days | Planned |
+
+**The planned idle sleep.** It counts HTTP activity and T3 activity: a turn, or a client working in a thread. It never cuts a turn, and it does not ship without a T3 activity read. A running task and a desired-running keep-alive Process keep the container awake.
 
 **The Route while asleep.** The Node's Caddy site of a container Instance checks for the asleep marker, `/data/caddy/orbit/hibernation/app-instance-<id>.asleep`. Without it, Caddy serves the request as before; the check is a file test on the Node and calls nothing. With it, Caddy calls the [runtime activation endpoint](/reference/app-dev-runtime-hibernation#wake), which shows the same progress page as for a checkout Instance and starts or joins the Instance's one `instance.wake`. A request with `X-Orbit-Probe: 1` skips the check. A failed wake keeps the marker, and the Route shows the failure page with Try again.
 
-The marker lives on disk, not in `/dev/shm`: a stopped container stays stopped after a host reboot, and so does its marker. A sleep writes the marker before it stops the container, and a wake removes it after T3 and the Processes run. A destroy removes it. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
+The marker lives on disk, not in `/dev/shm`: a stopped container stays stopped after a host reboot, and so does its marker. A sleep writes the marker before it stops the container, and a wake removes it after T3 and the Processes run. A destroy removes the marker. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
+
+The [agent development servers](#agent-development-servers) site on port 444 has no asleep check: on a sleeping clone it answers 502 until a visit to the Route wakes the Instance.
 
 **While asleep.** Schedules in the container do not run, and nothing catches up at the wake. Other Operations that need the running container refuse it, as they do today (`process.target_inactive`). A deployment of a sleeping default starts it in its own run, and a clone of a sleeping default copies its seed snapshot without a start.
 

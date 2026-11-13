@@ -19,7 +19,7 @@ sequenceDiagram
   %%> Callers:
   %%> - the command
   %%> - Caddy on the Instance's Node, when a request finds the asleep marker: `GET runtime-activations/app-instance/ID`
-  %%> - a Conn device that opens the T3 server, and the task flow before a turn on an attached Instance
+  %%> - planned: a Conn device that opens the T3 server, and the task flow before a turn on an attached Instance
   %%> - a deployment of a sleeping default starts it in its own run instead
   %%> Requirements:
   %%> - the caller is the Instance's Node or has node access to it
@@ -45,6 +45,8 @@ sequenceDiagram
   %%> - removes the asleep marker, so Caddy sends the next request to the app
   opt the Gateway session expires within 7 days
     SW->>N: Issue the Gateway session<br/>sensitive output · vault
+    %%> When:
+    %%> - planned; until then the hourly renewal renews the session after the wake
     %%> What it does:
     %%> - see conn/environment-renew.mmd
   end

@@ -23,6 +23,7 @@ orbit instance:wake 42 --json
 | Argument or option | Meaning |
 | --- | --- |
 | `instance-id` | Numeric Instance ID. |
+| `--idempotency-key=KEY` | Reuse a key to retry this operation start. |
 | `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
 
 Orbit starts the container. T3, FrankenPHP and each Process that ran before the sleep start with it; a stopped Process stays stopped. Orbit waits until each of them runs, and in a clone until T3 answers. Then it removes the asleep marker, and the Route serves the app again.
@@ -44,4 +45,5 @@ Waking an Instance that is awake changes nothing and also succeeds. A failed wak
 | `instance.sleep_unsupported` | The Instance is not a development Instance, or runs a nested fleet. |
 | `instance.lifecycle_busy`, `operation.target_busy` | Other lifecycle work runs on the Instance. |
 | `instance.container_start_failed` | The container or one of its units did not start. |
-| `instance.t3_unready` | T3 did not answer within 30 seconds. |
+| `instance.t3_unready` | T3 did not answer within about 30 seconds. The marker stays. |
+| `instance.container_wake_failed` | The asleep marker could not be removed. |

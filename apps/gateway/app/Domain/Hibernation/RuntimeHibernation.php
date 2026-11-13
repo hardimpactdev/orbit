@@ -64,6 +64,14 @@ final readonly class RuntimeHibernation
         return self::AccessLogDirectory.'/'.$key.'.log';
     }
 
+    /** A container Instance's asleep marker. It lives on disk: a stopped container stays stopped after a host reboot, and so does it. */
+    public static function asleepPath(string $key): string
+    {
+        self::parseInstanceId($key);
+
+        return self::AccessLogDirectory.'/'.$key.'.asleep';
+    }
+
     public static function coldPath(string $key): string
     {
         self::parseInstanceId($key);

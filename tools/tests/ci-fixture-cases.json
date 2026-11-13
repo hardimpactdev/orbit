@@ -830,10 +830,10 @@
     ]
   },
   "swamp/tests/ansible_instance_container_destroy_test.ts": {
-    "source_sha256": "435d8ed2e37b0340c4aa5debf91157aa6e2de84aa478b3c082b26170d7aeb69c",
+    "source_sha256": "31082dae6c4e042f090cb0fdb802adef7931a9372323f80472995a96b6ff0b19",
     "cases": [
       "a normal destroy deletes the container over one pipelined SSH master with the shipped config",
-      "migrated container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers) and mirror; a retry changes nothing"
+      "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker and mirror; a retry changes nothing"
     ]
   },
   "swamp/tests/ansible_instance_egress_test.py": {
@@ -2395,6 +2395,14 @@
       "the step names are the chart's",
       "each server's database steps reach its Node with its own batch",
       "the Route is republished by the Route create workflow, only after the database check, with its own secrets"
+    ]
+  },
+  "swamp/tests/ansible_instance_container_power_test.ts": {
+    "source_sha256": "0833e24cb0f7069f8e371af1ef61665c9f2b41b7bb1797d1ba11c72fe0460fb3",
+    "cases": [
+      "each sleep and wake step runs its charted part with the shipped Ansible settings",
+      "a sleep writes the marker once Caddy's loaded site has the check, and refuses without changing anything when it lacks it",
+      "a wake removes the marker after T3 answers in a clone, keeps it when T3 stays silent, and needs no T3 in a default"
     ]
   }
 }
