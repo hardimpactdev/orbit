@@ -209,6 +209,8 @@ The unit sets `VITE_APP_URL` to the Instance's Route URL, `https://<Route domain
 - A stock `laravel-vite-plugin` config does not read it. Such a Project needs `server.origin` instead.
 - The unit's value beats a `VITE_APP_URL` in the Project's `.env`, because Vite gives the process environment priority over `.env` files.
 
+The Instance's PHP unit gets `INERTIA_SSR_HOT_URL=http://127.0.0.1:5173`, so Inertia's development SSR requests reach this Vite inside the container. See [Processes in a container](/reference/development-containers#processes). An app that does not use Inertia's SSR never reads it.
+
 The preset has no assigned Vite port, no `/__orbit/vite` path and no `DEV_SERVER_ORIGIN`. Browsers reach port 5173 through the container's [development ports](/reference/development-containers#agent-development-servers). That way in has its limits:
 
 - Only a container clone with a private Route has development ports. A container default runs no T3 and has none, so its `vite` Process runs but no browser reaches it.

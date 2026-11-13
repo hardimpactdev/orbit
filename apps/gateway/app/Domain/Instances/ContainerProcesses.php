@@ -188,6 +188,34 @@ final readonly class ContainerProcesses
      */
     public function vitePort(Instance $instance, ?Collection $records = null): ?int
     {
+        return self::assigned($this->devServer($instance, $records));
+    }
+
+    /**
+     * Both ports from one read of the records: `vite` is vitePort(); `server` is the port of the container's one dev-server preset,
+     * `vp-dev` or `vite`, on the container's loopback, where PHP's development SSR requests go. Each is null without a preset.
+     *
+     * @return array{vite: ?int, server: ?int}
+     */
+    public function ports(Instance $instance): array
+    {
+        $server = $this->devServer($instance);
+
+        return ['vite' => self::assigned($server), 'server' => $server['port'] ?? null];
+    }
+
+    /** @param  array{preset: Process, port: int}|null  $server */
+    private static function assigned(?array $server): ?int
+    {
+        return $server !== null && $server['preset']->isVpDev() ? $server['port'] : null;
+    }
+
+    /**
+     * @param  Collection<int, Process>|null  $records
+     * @return array{preset: Process, port: int}|null
+     */
+    private function devServer(Instance $instance, ?Collection $records = null): ?array
+    {
         $records = ($records ?? $this->records([$instance->id]))->filter(static fn (Process $process): bool => $process->status !== LifecycleStatus::Removing);
         $presets = $records->filter(static fn (Process $process): bool => $process->isDevServerPreset())->values();
         $preset = $presets->first();
@@ -220,7 +248,7 @@ final readonly class ContainerProcesses
             }
         }
 
-        return $preset->isVpDev() ? $port : null;
+        return ['preset' => $preset, 'port' => $port];
     }
 
     /** A preset is mapped only after its stored intent matches a supported form; never discard a custom command. */

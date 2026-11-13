@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
@@ -142,6 +143,22 @@ describe('capture of a vite definition', function (): void {
             ->and($instance->vite_port)->toBeNull()
             ->and(containerIntentOf($operation)['processes'][0]['content'])
             ->toContain('ExecStart=', '"/srv/workspace/node_modules/.bin/vite" "--host=0.0.0.0" "--port=5173" "--strictPort"');
+    });
+
+    it('directs PHP\'s development SSR requests to the vite port, with no ingress rule of its own', function (): void {
+        $node = containerDefaultNode();
+        $node->update(['tld' => 'beast.test']);
+        Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+        $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+        $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
+        ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'vite', 'environments' => ['development'], 'spec' => vitePresetSpec()]);
+
+        $container = containerIntentOf(containerCreate($project, $node));
+
+        expect($container['units'][0]['name'])->toBe('orbit-frankenphp.service')
+            ->and($container['units'][0]['content'])->toContain("Environment=INERTIA_SSR_HOT_URL=http://127.0.0.1:5173\n")
+            ->and(array_column($container['acl_rules']['ingress'], 'destination_port'))->not->toContain('5173')
+            ->and(implode("\n", $container['environment']))->not->toContain('INERTIA_SSR_HOT_URL');
     });
 
     it('refuses a checkout target, which has no container to run it', function (): void {
