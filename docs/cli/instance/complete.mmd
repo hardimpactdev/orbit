@@ -1,0 +1,100 @@
+sequenceDiagram
+  %% Target design (ADR 0256, docs/reference/development-containers.md#complete-a-clone): the second Operation of a clone create. It starts the Processes, fills the database, starts a nested fleet, publishes the Route and checks the clone; only its success makes the clone `active`.
+  %% status: draft
+  %% command: instance:complete
+  %% kind: instance.complete
+  autonumber
+  %% lane CL icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CL as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>Instance container
+  CL->>GW: instance:complete INSTANCE
+  %%> Command:
+  %%> - `orbit instance:complete 42`
+  %%> - syntax: `instance:complete <instance> [--json]`
+  %%> Callers:
+  %%> - the command, to retry after a failed completion
+  %%> - the create's terminal projection, in the same transaction that ends the create
+  Note over GW: Check the clone<br/>take the Instance lock
+  %%> Requirements:
+  %%> - a container clone, `source_resolved`, with its starting commit recorded
+  %%> - its T3 server is registered
+  %%> - no other Operation holds the Instance
+  %%> Captures:
+  %%> - the create's admitted database plan and Processes; the Route publication from the current site catalog
+  %%> - holds the publication Nodes, as Route create does
+  alt a check fails
+    %% path: refused
+    GW--xCL: Refused<br/>instance.complete_unavailable
+    %%> Result:
+    %%> - nothing changes; no Operation starts
+    %%> - a held Instance lock refuses with `operation.target_busy`
+  else the clone can be completed
+    %% path: main
+    GW->>SW: Start run, full intent<br/>operation-instance-complete
+    GW-->>CL: 202 Accepted<br/>Operation ID
+    SW->>N: Stage the run folder<br/>clone-input · SSH
+    %%> What it does:
+    %%> - writes this run's own private folder; the create's folder is not read
+    opt a database
+      SW->>N: Create the database<br/>database steps · SSH
+      %%> What it does:
+      %%> - the clone's own database on the default's server, then a copy of the default's data; the clone's own Valkey user beside it
+      %%> On failure:
+      %%> - `failed_step: database`
+    end
+    opt a nested-fleet clone
+      SW->>N: Start the fleet<br/>clone-fleet · Ansible
+      %%> What it does:
+      %%> - starts the nested containers and waits for Doctor and the three agents
+      %%> On failure:
+      %%> - `failed_step: fleet` with the fleet phase's code
+    end
+    SW->>N: Start the services<br/>clone-services · SSH
+    %%> What it does:
+    %%> - PHP settings, file rights, Process files, web config, the Node store, then the units
+    %%> - refuses when the checkout mark names another Instance
+    %%> - writes no tracked file: the user's work in the checkout stays as it is
+    %%> On failure:
+    %%> - `failed_step: workspace`
+    SW->>N: Check the clone<br/>clone-check · SSH
+    %%> What it does:
+    %%> - the checkout mark, the agent's Git identity, PHP and every running unit
+    %%> On failure:
+    %%> - a dead unit: `instance.container_process_inactive` with its `process_failure` receipt
+    opt a Project that serves web pages
+      SW->>N: Publish the Route<br/>operation-route-create
+      %%> When:
+      %%> - in its own job, beside the container steps from the run's start
+      %%> What it does:
+      %%> - the Route create children unchanged: CSR, sign, site, TLS probe
+      %%> On failure:
+      %%> - `failed_step: route`
+    end
+    alt the run succeeds
+      %% path: completed
+      SW-->>GW: Run succeeded<br/>terminal result
+      Note over GW: Record active<br/>one transaction
+      %%> Result:
+      %%> - the Route is `active`, then the Instance `active` with `first_setup_pending` false
+    else a step fails or the run is cancelled
+      %% path: failed
+      SW->>N: Withdraw the Route<br/>route-withdraw
+      %%> When:
+      %%> - only when a Route step ran; no half Route stays
+      SW--xGW: Run failed or cancelled<br/>failed step, error_code
+      %%> Result:
+      %%> - the Instance stays `source_resolved` with `failed_step` and `error_code`; the container keeps running and T3 keeps its thread
+      %%> - `recovery.retry.command` is `instance:complete`; `instance:destroy` removes the clone
+      %%> Retry:
+      %%> - the same command runs the whole completion again, with the steps a create retry runs
+    end
+  end
+  loop until terminal
+    CL->>GW: operation:show TASK
+    GW-->>CL: Status and result
+  end

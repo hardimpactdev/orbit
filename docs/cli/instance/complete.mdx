@@ -1,0 +1,54 @@
+---
+title: "orbit instance:complete"
+sidebarTitle: "instance:complete"
+description: "Finish the setup of a container clone: start its Processes, fill its database, publish its Route, and make it active."
+covers:
+  - apps/gateway/app/Actions/Instances/StartInstanceCompleteAction.php
+  - apps/gateway/app/Domain/Instances/{InstanceCompleteProjection,NativeInstanceCompleteInput}.php
+  - apps/cli/app/Commands/Instances/CompleteInstanceCommand.php
+  - packages/php-sdk/src/Requests/Instances/CompleteInstanceRequest.php
+  - swamp/workflows/workflow-operation-instance-complete.yaml
+---
+
+```bash
+orbit instance:complete <instance> [--idempotency-key=KEY] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Positive numeric Instance ID. An omitted ID uses the [finite record selector](/reference/cli-ux#prompt-selection) in a terminal. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--idempotency-key=KEY` | generated | Reuse an [Operation start](/reference/operations#start-an-operation). |
+| `--json` | off | Print the final Operation as [JSON](/reference/cli-ux#input-and-output-modes). |
+
+A clone's create ends when its workspace is checked out and its T3 server is registered. The completion does the rest: it creates and fills the clone's database, starts a nested fleet, starts the Processes, publishes the Route and checks the clone. Only a completion that succeeds makes the clone `active`. [Complete a clone](/reference/development-containers#complete-a-clone) explains the two Operations.
+
+Run this command to retry after a failed completion. The create starts the first completion by itself.
+
+The Gateway refuses before any change with `instance.complete_unavailable` when the Instance is not a container clone, is not `source_resolved`, has no recorded starting commit, or its T3 server is not registered. An `active` clone is complete, so a repeat after success is refused the same way. Another Operation that holds the Instance gives `operation.target_busy`.
+
+The completion writes no tracked file in the workspace, so the user's work in the checkout stays as it is. A failed or cancelled completion keeps the clone `source_resolved` with `failed_step` and `error_code`. The container keeps running and T3 keeps its thread. A Route that the run published is withdrawn again. The result's `recovery` names this command as the retry, and [`instance:destroy`](/cli/instance/destroy) to remove the clone.
+
+The API is `POST /api/v1/instances/{instance}/complete`. The MCP tool is `instance-complete`.
+
+## How it works
+
+<div className="flow-at" data-chart="instance/complete"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The ID is missing or is not a positive integer, and the CLI cannot prompt. |
+| `instance.complete_unavailable` | The Instance is not a container clone that is `source_resolved` with a starting commit and a registered T3 server. |
+| `operation.target_busy` | Another Operation holds the Instance. |
+| `instance.create_database_failed` | The clone's database could not be created or filled. |
+| `instance.container_fleet_check_failed`, `instance.container_fleet_resume_failed`, `instance.container_fleet_drift` | The nested fleet did not start. The result names why. |
+| `instance.create_workspace_failed` | The services part of the workspace failed. |
+| `instance.container_process_inactive` | A Process unit is not running. `process_failure` names it. |
+| `instance.complete_check_failed` | The check of the clone failed for another reason. |
+| `instance.create_route_failed` | The Route publication or its TLS probe failed. |
+| `http.404` | The Instance is unknown. |
+| `node_access.required` | The caller has no access grant to the Instance's Node. |

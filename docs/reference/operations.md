@@ -440,7 +440,7 @@ An operation holds its target from the start request to its terminal status. A s
 
 ### One Route write per Node
 
-A Route write holds the Nodes that serve its site, from admission to its terminal status ([Coordinate publication](/reference/routes#coordinate-publication)). The kinds are `instance.create`, `instance.destroy`, `instance.clone`, `instance.transfer`, `instance.migrate`, `instance.restore`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
+A Route write holds the Nodes that serve its site, from admission to its terminal status ([Coordinate publication](/reference/routes#coordinate-publication)). The kinds are `instance.create`, `instance.complete`, `instance.destroy`, `instance.clone`, `instance.transfer`, `instance.migrate`, `instance.restore`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
 
 `instance.destroy` gives its Nodes back sooner: when its Route is withdrawn. The step `Release the Route Nodes` runs after `Withdraw the Route` has succeeded and held, and calls `operation:direct:route-release`.
 
@@ -456,7 +456,7 @@ The hold is the `route_publication_holds` table, with one row per Node. A finish
 
 A timed-out write keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes. A timed-out `instance.restore` holds its Instance lock as well, so it keeps its Nodes until its run is proven ended or the 60-minute settlement pass frees the lock.
 
-At promotion, a waiting `instance.create`, `instance.clone`, `instance.restore` or `route.create` re-captures its Caddy publication from the current site catalog before its run starts; other kinds keep their existing publication behavior.
+At promotion, a waiting `instance.create`, `instance.complete`, `instance.clone`, `instance.restore` or `route.create` re-captures its Caddy publication from the current site catalog before its run starts; other kinds keep their existing publication behavior.
 
 ## Errors
 
@@ -739,5 +739,7 @@ Development `instance.mail_update` holds the Instance lock and has a 120-second 
 Development `instance.sleep` and `instance.wake` hold the Instance lock. Their run budgets are 150 and 300 seconds: a 30-second marker phase and a 90-second freeze phase, or a 120-second start phase and a 120-second T3 and marker phase, plus input, result and cleanup. A second wake of the same Instance joins the open one. When the Instance is a clone of a nested-fleet default, the wake admits `instance.start` instead. That kind holds the Instance lock too. Its run budget is 1,200 seconds: a 240-second start phase, a 300-second fleet check and a 600-second fleet start. See [`instance:sleep`](/cli/instance/sleep) and [`instance:wake`](/cli/instance/wake).
 
 Container `instance.node_service_detach` uses one `node-service` Ansible phase with a 90-second execution bound and a 120-second Operation budget. It removes only the detached Instance access, retaining a shared port for other attachments; terminal success removes the record. A checkout detach still completes immediately without Node work.
+
+`instance.complete` finishes the setup of a container clone and makes it `active` ([Complete a clone](/reference/development-containers#complete-a-clone)). It holds the Instance lock and the Route publication Nodes. Its run budget is 1,800 seconds: the 600-second database fill and the 900-second fleet start, with margin; no run has a measured time yet. A failed or cancelled run keeps the clone `source_resolved`; `instance:complete` repeats it.
 
 `instance.restore` returns a host development Instance whose removal failed to `active` ([Restore a failed removal](/reference/instance-removal#restore-a-failed-removal)). A failed run leaves the Instance removing and its failed removal live; a new request repeats the command.

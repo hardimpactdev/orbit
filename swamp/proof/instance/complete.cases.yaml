@@ -1,0 +1,22 @@
+command: instance:complete
+chart: instance/complete
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+uncovered:
+  refused: "The proof fleet lacks Instance containers, so it has no clone to refuse. Pest covers each refusal: an active clone, a host Instance, a container default, no registered T3 server, and a held Instance lock."
+  main: "The proof fleet lacks Instance containers. Pest covers admission and the projection to active; the level fixture of the complete workflow and its run on the pinned Swamp binary cover the steps; the live proof runs on a fixture clone."
+  completed: "Pest covers the one transaction that makes the Route and then the Instance active."
+  failed: "Pest covers a failed and a cancelled completion: the clone stays source_resolved with its runtime running, and recovery names instance:complete. The pinned-binary fixture covers the Route withdrawal on failure and on cancel."
+cases:
+  - id: invalid-id
+    batch: fresh-fleet
+    covers: []
+    summary: Reject a nonnumeric Instance locally.
+    act:
+      - cli:
+          run: [instance:complete, invalid]
+          forms: [json, human]
+          expect: {exit: 1, code: instance.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
