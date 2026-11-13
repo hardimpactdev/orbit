@@ -64,6 +64,7 @@ What frees the place:
 - All children ended and the parent closed.
 - The parent was cancelled and its children ended.
 - The proof ended while a child still waited its turn: the watchdog pass cancels that child.
+- A child that became stale is cancelled and never started.
 - A child timed out with a lock held, and the stale-hold release freed it after 60 minutes.
 - A child row that nothing ends passed its own deadline plus 60 minutes. Without a deadline, the bound is its last activity plus the longest shard budget of 120 minutes, plus 60 minutes. A timed-out lock holder uses its finish time, or last activity if absent, plus 60 minutes. Orbit leaves the child unchanged, logs `A stale proof child no longer holds the proof place.` when admitting another proof, and reports `gateway.proof_place_stale_child` in [Gateway status](/cli/gateway/status).
 

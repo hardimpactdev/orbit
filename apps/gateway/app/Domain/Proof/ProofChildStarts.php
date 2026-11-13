@@ -100,6 +100,9 @@ final readonly class ProofChildStarts
                 return false;
             }
             $operation->setRawAttributes(Operation::query()->lockForUpdate()->findOrFail($operation->id)->getAttributes(), true);
+            if (self::held($operation) && $this->cancelStaleHeld($operation, ProofRunSettlement::stalePlaceChildren())) {
+                return false;
+            }
             $notBefore = self::record($operation)['not_before'] ?? null;
             if ($operation->status !== OperationStatus::Queued || ! is_string($notBefore)) {
                 return false;
@@ -170,10 +173,17 @@ final readonly class ProofChildStarts
     private function scheduleNext(Operation $proof): void
     {
         $notBefore = now()->toImmutable();
+        $stale = null;
         foreach (ProofRunSettlement::children($proof->id) as $child) {
             $start = $child->state['proof_child_start'] ?? null;
             if (! is_array($start)) {
                 continue;
+            }
+            if (self::held($child)) {
+                $stale ??= ProofRunSettlement::stalePlaceChildren();
+                if ($this->cancelStaleHeld($child, $stale)) {
+                    continue;
+                }
             }
             if (self::answered($child)) {
                 if (! isset($start['advanced_at'])) {
@@ -220,11 +230,30 @@ final readonly class ProofChildStarts
     private function cancelHeld(int $proofId): void
     {
         foreach (ProofRunSettlement::children($proofId) as $child) {
-            if (! $child->status->terminal() && self::held($child) && ! isset($child->state['swamp_run_id'])) {
-                app(CancelOperationAction::class)->execute($child);
-                DB::afterCommit(static fn () => CancelProofGroup::dispatch($child->id));
-            }
+            $this->cancelHeldChild($child);
         }
+    }
+
+    /** @param Collection<int, Operation> $stale */
+    private function cancelStaleHeld(Operation $child, Collection $stale): bool
+    {
+        if (! $stale->contains('id', $child->id) || ! $this->cancelHeldChild($child)) {
+            return false;
+        }
+        app(ProofRunSettlement::class)->settle(ValidatedData::integer($child->input['proof_operation_id']));
+
+        return true;
+    }
+
+    private function cancelHeldChild(Operation $child): bool
+    {
+        if ($child->status->terminal() || ! self::held($child) || isset($child->state['swamp_run_id'])) {
+            return false;
+        }
+        app(CancelOperationAction::class)->execute($child);
+        DB::afterCommit(static fn () => CancelProofGroup::dispatch($child->id));
+
+        return true;
     }
 
     /** @return array<string, mixed> */

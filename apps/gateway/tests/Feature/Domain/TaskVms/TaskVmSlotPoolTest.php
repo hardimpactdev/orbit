@@ -87,6 +87,7 @@ use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Infrastructure\Swamp\SwampWorkerKnownHostsInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Jobs\Proof\AdmitProofRun;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Jobs\Tasks\AdmitTaskVm;
@@ -2238,4 +2239,49 @@ describe('stale proof children release the proof place', function (): void {
         $logger->shouldHaveReceived('warning')->once()->with('A stale proof child no longer holds the proof place.', [
             'operation_id' => $child->id, 'proof_operation_id' => $first->id, 'age_seconds' => 0]);
     });
+});
+
+it('never restarts stale held siblings when the watchdog resumes a proof after another proof took its place', function (): void {
+    Carbon::setTestNow(now()->startOfSecond());
+    try {
+        $caller = slotPoolCiProofWorld(6);
+        $intent = app(ProofRunIntent::class);
+        $first = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller);
+        $intent->admit($first->id);
+        expect(ValidatedData::object($first->refresh()->state['native_failure'] ?? [])['detail'] ?? null)->toBeNull();
+        expect($first->input['runs'])->not->toBeEmpty();
+        $children = ProofRunSettlement::children($first->id);
+        app(ProofChildStarts::class)->queue($children->all());
+        $answered = $children->firstOrFail();
+        $batch = ProofBatchPlan::stored($answered->input['assignments'])[0] ?? throw new LogicException('Expected an assigned batch.');
+        $case = $batch['cases'][0] ?? throw new LogicException('Expected an assigned case.');
+        $answered->update(['status' => OperationStatus::Succeeded, 'finished_at' => now(),
+            'state' => ['swamp_run_id' => 'completed-first-child', 'proof_child_start' => [
+                'released_at' => now()->toISOString(), 'advanced_at' => now()->toISOString()]],
+            'result' => ['cases' => [['program' => $batch['file'].'#'.$case, 'command' => $batch['command'], 'case' => $case, 'verdict' => 'passed', 'seconds' => 1]]]]);
+        // The terminal was recorded, but its advance was lost. No successor has a due time.
+        foreach ($children->except([$answered->id]) as $held) {
+            expect(ValidatedData::object($held->refresh()->state['proof_child_start'] ?? []))->toMatchArray(['not_before' => null]);
+        }
+        Carbon::setTestNow(now()->addSeconds(ProofBatchPlan::MaxShardSeconds + ExpireOperationAction::HoldMinutes * 60 + 1));
+        Queue::fake();
+        $second = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
+        $intent->admit($second->id);
+        expect($second->refresh()->input['runs'])->not->toBeEmpty();
+
+        app(ProofRunWatch::class)->sweep();
+
+        foreach ($children->except([$answered->id]) as $held) {
+            expect($held->refresh()->status)->toBe(OperationStatus::Cancelled);
+        }
+        Queue::assertNotPushed(StartAdmittedSwampRun::class);
+        Queue::assertPushed(CancelProofGroup::class, 3);
+        expect(ProofRunSettlement::children($first->id)->every(fn (Operation $child): bool => $child->status->terminal()))->toBeTrue()
+            ->and($first->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($first->error_code)->toBe('proof.cases_failed')
+            ->and($second->refresh()->status)->toBe(OperationStatus::Running)
+            ->and(ProofRunSettlement::children($second->id)->every(fn (Operation $child): bool => ! $child->status->terminal()))->toBeTrue();
+    } finally {
+        Carbon::setTestNow();
+    }
 });

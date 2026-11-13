@@ -9,8 +9,10 @@ use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessControlProjection;
+use App\Domain\Proof\ProofBatchPlan;
 use App\Domain\Proof\ProofChildStarts;
 use App\Domain\Proof\ProofCommandProjection;
+use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -23,6 +25,7 @@ use App\Jobs\Proof\CancelProofGroup;
 use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use App\Models\Operation;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -33,7 +36,7 @@ require_once __DIR__.'/ProofCommandProjectionTest.php';
 /** The existing provision fixture, before native submission rather than after it. */
 function proofPendingStarts(int $count = 3): array
 {
-    [$proof, $records] = proofRuns(array_slice(['firewall:allow', 'firewall:list', 'firewall:deny'], 0, $count));
+    [$proof, $records] = proofRuns(array_slice(['firewall:allow', 'firewall:list', 'firewall:deny', 'node:list', 'route:list', 'task:list'], 0, $count));
     foreach ($records as [$child]) {
         $child->update(['status' => OperationStatus::Queued, 'state' => ['swamp_start' => [
             'key' => 'operation:'.$child->id, 'workflow' => 'operation-proof-run',
@@ -525,4 +528,60 @@ it('requeues an early delivery at the stored due time and starts that child once
         ->and($second->state['swamp_run_id'])->toBe(PROOF_RUN_ID);
     Queue::assertPushed(StartAdmittedSwampRun::class, 3);
     $native->shouldHaveReceived('send')->once();
+});
+
+describe('stale child start fence', function (): void {
+    beforeEach(fn () => Carbon::setTestNow(now()->startOfSecond()));
+    afterEach(fn () => Carbon::setTestNow());
+
+    it('cancels an already queued child that became stale before handle without submitting it', function (): void {
+        Queue::fake();
+        proofPendingStarts(1);
+        $proof = Operation::query()->where('kind', 'proof.run')->sole();
+        $child = ProofRunSettlement::children($proof->id)->sole();
+        $job = new StartAdmittedSwampRun($child->id);
+        Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $queued): bool => $queued->operationId === $child->id);
+        Carbon::setTestNow(now()->addSeconds(ProofBatchPlan::MaxShardSeconds + ExpireOperationAction::HoldMinutes * 60 + 1));
+        Queue::fake();
+        proofStartAnswer();
+        $socket = Mockery::mock(WebSocketClient::class);
+        $socket->shouldNotReceive('connect');
+        app()->instance(WebSocketClient::class, $socket);
+
+        expect(fn () => app()->call([$job, 'handle']))->not->toThrow(ResourceOperationException::class);
+
+        expect($child->refresh()->status)->toBe(OperationStatus::Cancelled)
+            ->and($child->state)->not->toHaveKey('swamp_run_id');
+        Queue::assertNotPushed(StartAdmittedSwampRun::class);
+        Queue::assertPushed(CancelProofGroup::class, 1);
+        Queue::assertPushed(CancelProofGroup::class, fn ($job): bool => $job->operationId === $child->id);
+        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($proof->status->terminal())->toBeTrue()
+            ->and($proof->error_code)->toBe('proof.run_failed')
+            ->and($proof->result['outcome'] ?? null)->toBe('failed');
+    });
+
+    it('starts all six healthy held children after slow answers give the last child several minutes of waiting', function (): void {
+        Queue::fake();
+        proofPendingStarts(6);
+        $children = ProofRunSettlement::children(Operation::query()->where('kind', 'proof.run')->sole()->id);
+        $began = now()->toImmutable();
+        proofStartAnswer(120);
+        foreach ($children as $index => $child) {
+            if ($index > 0) {
+                Carbon::setTestNow(now()->addSeconds(ProofChildStarts::SpacingSeconds));
+            }
+            app()->call([new StartAdmittedSwampRun($child->id), 'handle']);
+            expect($child->refresh()->status)->toBe(OperationStatus::Running)
+                ->and(isset($child->state['swamp_run_id']))->toBeTrue()
+                ->and(ProofChildStarts::held($child))->toBeFalse();
+        }
+        $last = $children->last() ?? throw new LogicException('Expected six proof children.');
+        $last->refresh();
+        expect($last->started_at?->diffInSeconds($began, true))->toBe(700.0)
+            ->and($last->input['run_budget_seconds'])->toBe(2700);
+        Queue::assertPushed(StartAdmittedSwampRun::class, 6);
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
 });
