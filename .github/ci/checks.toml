@@ -185,7 +185,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 64
+cost = 178
+slices = 7
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -196,13 +197,13 @@ inputs = [
 ]
 
 [fixture.case_costs]
-  "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing" = 8 # measured 7s locally; rounded up plus 1s
-  "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and waits for readiness; a rerun only reads" = 8 # measured 7s locally; rounded up plus 1s
-  "a start that fails names the nested container, and a readiness timeout names the check" = 12 # measured 11s locally; rounded up plus 1s
-  "a fleet without its rules is refused with the container and the rule, before any start" = 3 # measured 2s locally; rounded up plus 1s
-  "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules" = 14 # measured 13s locally; rounded up plus 1s
-  "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units" = 9 # measured 8s locally; rounded up plus 1s
-  "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused" = 10 # measured 9s locally; rounded up plus 1s
+  "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing" = 22 # ESTIMATE: local 7s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
+  "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and waits for readiness; a rerun only reads" = 22 # ESTIMATE: local 7s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
+  "a start that fails names the nested container, and a readiness timeout names the check" = 34 # ESTIMATE: local 11s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
+  "a fleet without its rules is refused with the container and the rule, before any start" = 7 # ESTIMATE: local 2s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
+  "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules" = 40 # ESTIMATE: local 13s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
+  "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units" = 25 # ESTIMATE: local 8s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
+  "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused" = 28 # ESTIMATE: local 9s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
