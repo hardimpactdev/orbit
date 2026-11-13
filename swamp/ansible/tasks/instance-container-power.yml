@@ -1,6 +1,7 @@
 ---
-# The asleep marker's tasks. `power` is `asleep` (instance-container-power.yml, before a sleep's stop) or `awake` (the end of a wake's
-# `start` part of instance-container.yml, which includes this file when its intent names the marker).
+# The tasks of a sleep and of a wake's end. `power` is `asleep` (instance-container-power.yml: the marker, before the freeze),
+# `freeze` (instance-container-power.yml: the freeze after the marker) or `awake` (the end of a wake's `start` part of
+# instance-container.yml, which includes this file when its intent names the marker).
 
 # Caddy's site of a container Instance checks the marker only once a publish of the Node's sites rendered the check. A marker without
 # the check would leave the Route proxying to a stopped container, so the sleep refuses before it changes anything.
@@ -32,6 +33,103 @@
     owner: "{{ marker_owner }}"
     group: "{{ marker_group }}"
     mode: "0644"
+
+# The freeze keeps every process and its memory: a wake resumes it in a fraction of a second. Incus writes `memory.swap.max = 0`
+# from `limits.memory`; the sleep opens swap for this cgroup only, freezes, then reclaims, so no frozen process pulls a page back.
+# A wake writes 0 again; a stop drops the cgroup with its setting. A container that is already Frozen or Stopped stays so.
+- name: Read the container before the freeze
+  when: power == 'freeze'
+  ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
+  register: freeze_read
+  changed_when: false
+
+- name: Name the container's cgroup
+  when: power == 'freeze'
+  ansible.builtin.set_fact:
+    container_cgroup: "{{ cgroup_root | default('/sys/fs/cgroup') }}/lxc.payload.{{ container.project }}_{{ container.name }}"
+
+- name: Freeze the container
+  when: power == 'freeze' and (freeze_read.stdout | from_json).status == 'Running'
+  block:
+    - name: Let the container's memory go to swap
+      ansible.builtin.command: { argv: [tee, "{{ container_cgroup }}/memory.swap.max"], stdin: "max", stdin_add_newline: false }
+      changed_when: true
+    - name: Pause the container
+      ansible.builtin.command: { argv: [incus, --project, "{{ container.project }}", pause, "{{ container.name }}"] }
+      changed_when: true
+  rescue:
+    # A failed swap write or pause leaves the container running: it serves again as before, without the marker.
+    - name: Close swap again after the failed freeze
+      ansible.builtin.command: { argv: [tee, "{{ container_cgroup }}/memory.swap.max"], stdin: "0", stdin_add_newline: false }
+      changed_when: true
+      failed_when: false
+    - name: Remove the marker after the failed freeze
+      ansible.builtin.file: { path: "{{ marker }}", state: absent }
+    - name: Refuse the failed freeze
+      ansible.builtin.fail: { msg: instance.container_freeze_failed }
+
+# The reclaim asks for the container's whole memory; the kernel ends it with EAGAIN once nothing more can go, which is normal. An
+# unreadable count leaves the container frozen with its marker: asleep, with its memory where the kernel left it.
+- name: Push the frozen memory to swap
+  when: power == 'freeze' and (freeze_read.stdout | from_json).status == 'Running'
+  block:
+    - name: Read the frozen container's memory
+      ansible.builtin.slurp: { src: "{{ container_cgroup }}/memory.current" }
+      register: freeze_current
+    - name: Reclaim the frozen memory
+      ansible.builtin.command:
+        argv: [tee, "{{ container_cgroup }}/memory.reclaim"]
+        stdin: "{{ freeze_current.content | b64decode | trim }}"
+        stdin_add_newline: false
+      changed_when: true
+      failed_when: false
+    - name: Read the memory left in RAM
+      ansible.builtin.slurp: { src: "{{ container_cgroup }}/memory.stat" }
+      register: freeze_stat
+  rescue:
+    - name: Keep the container frozen without a reclaim
+      ansible.builtin.set_fact: { freeze_stat: { skipped: true } }
+
+# Swap that cannot take the memory (it is full) leaves the app in RAM. A frozen container would then hold that RAM, which a sleep
+# exists to free, so the sleep stops the container instead: its next wake is a boot behind the same marker. A clean stop of a frozen
+# container times out, so it resumes first. A failed resume fails the sleep with the container frozen behind its marker: asleep.
+- name: Note whether the memory stayed in RAM
+  when: power == 'freeze'
+  ansible.builtin.set_fact:
+    freeze_held: >-
+      {{ freeze_stat is not skipped
+         and (freeze_stat.content | b64decode | regex_findall('(?m)^anon ([0-9]+)$') | first | default(0) | int) > intent.freeze.resident_anon_mib * 1048576 }}
+
+- name: Resume the container for a clean stop
+  when: power == 'freeze' and freeze_held | bool
+  ansible.builtin.command: { argv: [incus, --project, "{{ container.project }}", resume, "{{ container.name }}"] }
+  changed_when: true
+
+- name: Stop the container whose memory stayed in RAM
+  when: power == 'freeze' and freeze_held | bool
+  block:
+    - name: Stop the container
+      ansible.builtin.command: { argv: [incus, --project, "{{ container.project }}", stop, --timeout, "30", "{{ container.name }}"] }
+      register: freeze_stopped
+      changed_when: true
+  rescue:
+    # The resumed container runs: as after a failed freeze, it serves again without the marker and swaps no more.
+    - name: Close swap again after the failed stop
+      ansible.builtin.command: { argv: [tee, "{{ container_cgroup }}/memory.swap.max"], stdin: "0", stdin_add_newline: false }
+      changed_when: true
+      failed_when: false
+    - name: Remove the marker after the failed stop
+      ansible.builtin.file: { path: "{{ marker }}", state: absent }
+    - name: Refuse the failed stop
+      ansible.builtin.fail: { msg: instance.container_freeze_failed }
+
+- name: Note how the container sleeps
+  when: power == 'freeze'
+  ansible.builtin.set_fact:
+    power_result:
+      sleep: >-
+        {{ 'stopped' if freeze_stopped is defined and freeze_stopped is not skipped
+           else 'frozen' if (freeze_read.stdout | from_json).status in ['Running', 'Frozen'] else 'stopped' }}
 
 # A wake's start (instance-container.yml, `start` with the marker in the intent) waited for every desired-running unit. FrankenPHP
 # then answers once it listens: `intent.web.ready_seconds` tries 1 s apart, each bounded by curl's own 2 s. Only no answer at all

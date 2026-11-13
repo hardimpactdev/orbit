@@ -1,6 +1,6 @@
 id: 279e920a-da77-4487-8029-e9c989f9112d
 name: operation-instance-sleep
-description: Write the asleep marker of a development container, then stop the container.
+description: Write the asleep marker of a development container, then freeze the container with its memory in swap.
 queueTimeout: 10
 labels: {role: swamp}
 inputs:
@@ -47,17 +47,17 @@ jobs:
               ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
               ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
-      - name: Stop the container
+      - name: Freeze the container
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: Mark the Route asleep, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "instance-sleep-stop-" + string(inputs.node_id) }}'
+          behaviorName: '${{ "instance-sleep-freeze-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
-            run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags stop "$ORBIT_ANSIBLE/instance-container.yml"
+            run: timeout 90 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags freeze "$ORBIT_ANSIBLE/instance-container-power.yml"
             env:
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ANSIBLE_FORCE_COLOR: '0'
@@ -68,7 +68,7 @@ jobs:
               ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
       - name: result
         labels: {role: swamp}
-        dependsOn: [{step: Stop the container, condition: {type: always}}]
+        dependsOn: [{step: Freeze the container, condition: {type: always}}]
         task:
           type: behavior
           behaviorType: command/shell

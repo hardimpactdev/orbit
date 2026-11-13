@@ -9,7 +9,10 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 
-/** `instance:sleep`: the command reads no T3 state, so its result says a turn was not checked (docs/cli/instance/sleep.mdx). */
+/**
+ * `instance:sleep`: the command reads no T3 state, so its result says a turn was not checked (docs/cli/instance/sleep.mdx). Its result
+ * names how the container sleeps: `frozen`, or `stopped` when swap did not take its memory.
+ */
 final readonly class InstanceSleep extends InstancePower
 {
     public const string Kind = 'instance.sleep';
@@ -38,5 +41,16 @@ final readonly class InstanceSleep extends InstancePower
     protected function result(): array
     {
         return [...parent::result(), 't3_turn' => 'not_checked'];
+    }
+
+    protected function phaseKeys(): array
+    {
+        return ['sleep'];
+    }
+
+    /** The anonymous memory that may stay in RAM after the reclaim; more means swap is full, and the sleep stops the container. */
+    protected function intent(): array
+    {
+        return ['freeze' => ['resident_anon_mib' => 32]];
     }
 }

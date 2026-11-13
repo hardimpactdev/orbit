@@ -898,7 +898,7 @@ Deno.test({
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
       const silent = f.run("start");
       assert(!silent.ok, silent.output);
-      assertEquals(f.result(), { error_code: "instance.web_unready" });
+      assertEquals(f.result(), { error_code: "instance.web_unready", wake: "started", marker_found: true });
       assert(sleeping.present());
     } finally {
       f.cleanup();
@@ -918,7 +918,7 @@ Deno.test({
       f.write();
       const silent = f.run("start");
       assert(!silent.ok, silent.output);
-      assertEquals(f.result(), { error_code: "instance.t3_unready" });
+      assertEquals(f.result(), { error_code: "instance.t3_unready", wake: "started", marker_found: true });
       assert(!sleeping.present());
 
       sleeping = asleep(f, { web: [200], t3: true });
@@ -947,6 +947,126 @@ Deno.test({
       assert(woken.ok, woken.output);
       assert(!sleeping.present());
       assertEquals(sleeping.webChecks(), 0);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+/** The wake of each state a sleeping container can be in; the cgroup files live in the fixture. */
+function wakeFrom(f: ReturnType<typeof fixture>, status: "Frozen" | "Stopped" | "Running", options: { marker?: boolean; web?: number[]; silent?: boolean } = {}) {
+  const sleeping = asleep(f, { web: options.web ?? [200] });
+  if (options.marker === false) Deno.removeSync(sleeping.marker);
+  const state = f.state();
+  state.containers["instance-7"].status = status;
+  if (options.silent) state.containers["instance-7"].silent_until_boot = true;
+  Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+  const cgroup = `${f.folder}/cgroup/lxc.payload.orbit-instances_instance-7`;
+  Deno.mkdirSync(cgroup, { recursive: true });
+  Deno.writeTextFileSync(`${cgroup}/memory.swap.max`, "max");
+  Object.assign(f.intent, { marker: sleeping.marker, web: { port: 8080, ready_seconds: 2, settle_seconds: 1, resume_seconds: 2 } });
+  f.write();
+  const calls = Deno.readTextFileSync(`${f.folder}/calls`).split("\n").length;
+  const run = f.run("start", {}, ["-e", `cgroup_root=${f.folder}/cgroup`]);
+  const families = Deno.readTextFileSync(`${f.folder}/calls`).split("\n").slice(calls - 1).filter(Boolean)
+    .map((line) => (JSON.parse(line) as string[]).filter((arg, i, all) => arg !== "--project" && all[i - 1] !== "--project")[0]);
+  return { run, sleeping, families, swap: Deno.readTextFileSync(`${cgroup}/memory.swap.max`), status: f.state().containers["instance-7"].status as string };
+}
+
+Deno.test({
+  name: "a wake resumes a Frozen container without a boot, closes swap again and removes the marker; its result names the path and seconds",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const woken = wakeFrom(f, "Frozen");
+      assert(woken.run.ok, woken.run.output);
+      assertEquals(woken.status, "Running");
+      assertEquals(woken.swap, "0");
+      assert(!woken.sleeping.present());
+      assert(woken.families.includes("resume"));
+      assert(!woken.families.includes("start") && !woken.families.includes("stop"), woken.families.join(","));
+      // A running container converges nothing: no egress read, php link or ini push, no autostart key.
+      assert(!woken.families.includes("file") && !woken.families.includes("config"), woken.families.join(","));
+      const result = f.result();
+      assertEquals([result.wake, result.marker_found], ["resumed", true]);
+      assert(typeof result.resume_seconds === "number" && typeof result.web_probe_seconds === "number", JSON.stringify(result));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a resumed container whose web unit stays silent is stopped and booted, then woken as a stopped one",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const woken = wakeFrom(f, "Frozen", { silent: true });
+      assert(woken.run.ok, woken.run.output);
+      assertEquals(woken.families.filter((family) => ["resume", "stop", "start"].includes(family)), ["resume", "stop", "start"]);
+      assertEquals(woken.status, "Running");
+      assert(!woken.sleeping.present());
+      assertEquals(f.result().wake, "restarted_after_resume");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a wake boots a Stopped container behind its marker, verifies a Running one without a start, and reports a Frozen one without a marker",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const stopped = wakeFrom(f, "Stopped");
+      assert(stopped.run.ok, stopped.run.output);
+      assert(stopped.families.includes("start") && !stopped.families.includes("resume"));
+      assert(!stopped.sleeping.present());
+      assertEquals(f.result().wake, "started");
+
+      // After a host reboot the container runs while its marker stays: the web unit answers, the marker goes, nothing starts.
+      const running = wakeFrom(f, "Running");
+      assert(running.run.ok, running.run.output);
+      assert(!running.families.some((family) => ["start", "stop", "resume", "config", "file"].includes(family)), running.families.join(","));
+      assert(!running.sleeping.present());
+      assertEquals([f.result().wake, f.result().marker_found], ["already_running", true]);
+
+      // Running and no marker: nothing to do.
+      const awake = wakeFrom(f, "Running", { marker: false });
+      assert(awake.run.ok, awake.run.output);
+      assertEquals([f.result().wake, f.result().marker_found], ["already_running", false]);
+
+      // A Frozen container without its marker is a defect: the wake resumes it and its result says the marker was missing.
+      const defect = wakeFrom(f, "Frozen", { marker: false });
+      assert(defect.run.ok, defect.run.output);
+      assertEquals(defect.status, "Running");
+      assertEquals([f.result().wake, f.result().marker_found], ["resumed", false]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a deployment's start resumes a Frozen container and then converges as usual",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      asleep(f, { web: [200] });
+      const state = f.state();
+      state.containers["instance-7"].status = "Frozen";
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      Deno.mkdirSync(`${f.folder}/cgroup/lxc.payload.orbit-instances_instance-7`, { recursive: true });
+      const result = f.run("start", {}, ["-e", `cgroup_root=${f.folder}/cgroup`]);
+      assert(result.ok, result.output);
+      assertEquals(f.state().containers["instance-7"].status, "Running");
+      assertEquals(f.result().wake, undefined);
+      assert(/Configure the container's PHP settings|Read the container's PHP settings/.test(result.output));
+      assert(!/Read the container's PHP settings\]\s*\n\s*skipping/.test(result.output), result.output);
     } finally {
       f.cleanup();
     }

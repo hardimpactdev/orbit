@@ -83,7 +83,7 @@ it('admits a sleep with the container intent and the asleep marker under the Ins
         ->and($operation->input['marker'])->toBe('/data/caddy/orbit/hibernation/app-instance-'.$clone->id.'.asleep')
         ->and($operation->input['container']['name'])->toBe('instance-'.$clone->id)
         ->and($operation->input['container']['clone']['t3']['unit'])->toBe(InstanceContainer::T3Unit)
-        ->and(OperationRunBudgets::seconds($operation->forceFill(['state' => ['swamp_run_id' => 'r']])))->toBe(120);
+        ->and(OperationRunBudgets::seconds($operation->forceFill(['state' => ['swamp_run_id' => 'r']])))->toBe(150);
 });
 
 it('refuses a sleep that the Instance does not allow, before any run', function (string $case, string $code): void {
@@ -107,13 +107,16 @@ it('refuses a sleep that the Instance does not allow, before any run', function 
     ['task', 'instance.lifecycle_busy'], ['instance.deploy', 'operation.target_busy'], ['instance.wake', 'operation.target_busy'],
 ]);
 
-it('records a sleeping container as stopped and says that the command did not check T3', function (): void {
+it('records a sleeping container as stopped, says that the command did not check T3, and names how it sleeps', function (): void {
     $clone = sleepingClone();
 
-    $operation = powerRun(app(InstanceSleep::class)->start($clone, null, null), 'succeeded', ['commit' => null]);
+    $sleep = app(InstanceSleep::class)->start($clone, null, null);
+    expect($sleep->input['freeze'])->toBe(['resident_anon_mib' => 32]);
+
+    $operation = powerRun($sleep, 'succeeded', ['sleep' => 'frozen']);
 
     expect($operation->status->value)->toBe('succeeded')
-        ->and($operation->result)->toBe(['power_state' => 'stopped', 't3_turn' => 'not_checked'])
+        ->and($operation->result)->toBe(['power_state' => 'stopped', 't3_turn' => 'not_checked', 'sleep' => 'frozen'])
         ->and($operation->lock_key)->toBeNull()
         ->and($clone->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
 });
@@ -141,13 +144,14 @@ it('records a wake whose T3 stayed silent as failed but running, because the con
     powerRun(app(InstanceSleep::class)->start($clone, null, null), 'succeeded');
 
     $wake = app(InstanceWake::class)->start($clone, null, null);
-    expect($wake->input['web'])->toBe(['port' => InstanceContainer::WebPort, 'ready_seconds' => 30, 'settle_seconds' => 5])
+    expect($wake->input['web'])->toBe(['port' => InstanceContainer::WebPort, 'ready_seconds' => 30, 'settle_seconds' => 5, 'resume_seconds' => 10])
         ->and($wake->input['marker'])->toBe(InstanceWake::markerPath($clone));
 
-    $operation = powerRun($wake, 'failed', ['error_code' => 'instance.t3_unready']);
+    $operation = powerRun($wake, 'failed', ['error_code' => 'instance.t3_unready', 'wake' => 'started', 'marker_found' => true, 'commit' => null]);
 
     expect($operation->status->value)->toBe('failed')
         ->and($operation->error_code)->toBe('instance.t3_unready')
+        ->and($operation->result)->toBe(['error_code' => 'instance.t3_unready', 'wake' => 'started', 'marker_found' => true])
         ->and($clone->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Running);
 });
 
@@ -162,9 +166,9 @@ it('admits one wake per Instance, which a second caller joins, and records it aw
         ->and(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1)
         ->and(OperationRunBudgets::seconds((clone $first)->forceFill(['state' => ['swamp_run_id' => 'r']])))->toBe(300);
 
-    $done = powerRun($first, 'succeeded', ['commit' => null]);
+    $done = powerRun($first, 'succeeded', ['commit' => null, 'wake' => 'resumed', 'marker_found' => true, 'resume_seconds' => 0.021, 'web_probe_seconds' => 0.4]);
 
-    expect($done->result)->toBe(['power_state' => 'running'])
+    expect($done->result)->toBe(['power_state' => 'running', 'wake' => 'resumed', 'marker_found' => true, 'resume_seconds' => 0.021, 'web_probe_seconds' => 0.4])
         ->and($clone->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Running);
 });
 

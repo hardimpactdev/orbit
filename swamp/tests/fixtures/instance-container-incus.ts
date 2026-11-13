@@ -155,9 +155,28 @@ if (family === "list") {
   const [, , name, setting] = args;
   const key = setting.slice(0, setting.indexOf("="));
   state.containers[name].config = [...(state.containers[name].config ?? []).filter((value: string) => !value.startsWith(key + "=")), setting];
+} else if (family === "pause" || family === "resume") {
+  // A freeze keeps the processes and their memory; Incus refuses a pause of a container that does not run and a resume of one that
+  // is not frozen. `pause_fails` holds a pause that Incus refuses.
+  const name = args.at(-1)!;
+  if (!state.containers[name]) fail("Instance not found");
+  if (family === "pause" && (state.pause_fails || state.containers[name].status !== "Running")) fail("The instance isn't running");
+  if (family === "resume" && (state.resume_fails || state.containers[name].status !== "Frozen")) fail("The instance is not frozen");
+  state.containers[name].status = family === "pause" ? "Frozen" : "Running";
 } else if (family === "start" || family === "stop") {
   const name = args.at(-1)!;
   if (!state.containers[name]) fail("Instance not found");
+  // Incus 7: a start of a Frozen container unfreezes it, with no boot; a clean stop of one times out and leaves it running, so only a
+  // forced stop ends it.
+  if (state.containers[name].status === "Frozen" && family === "start") {
+    state.containers[name].status = "Running";
+    save();
+    Deno.exit(0);
+  }
+  if (family === "stop" && state.stop_fails) fail("Failed shutting down instance");
+  if (state.containers[name].status === "Frozen" && !args.includes("--force")) fail("Failed shutting down instance, status is \"Running\"");
+  // A boot brings a web unit back that stayed silent after a resume.
+  if (family === "start") delete state.containers[name].silent_until_boot;
   state.containers[name].status = family === "start" ? "Running" : "Stopped";
   if (family === "stop") {
     try {
@@ -348,7 +367,7 @@ if (family === "list") {
     // FrankenPHP on the web port: `web` lists the status of each answer in turn and keeps its last; none means it does not listen.
     if (url.startsWith("http://127.0.0.1:8080/")) {
       const web: number[] = state.containers[name].web ?? [];
-      if (web.length === 0) Deno.exit(7);
+      if (web.length === 0 || state.containers[name].silent_until_boot) Deno.exit(7);
       const status = web.length > 1 ? web.shift()! : web[0];
       save();
       Deno.stdout.writeSync(new TextEncoder().encode(String(status)));

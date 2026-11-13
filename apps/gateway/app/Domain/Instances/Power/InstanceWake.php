@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Power;
 
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -31,11 +32,26 @@ final readonly class InstanceWake extends InstancePower
 
     /**
      * FrankenPHP's port in the container, how long the wake waits for it to answer, and how long a 5xx answer may last before the
-     * wake serves the app as it is: the marker goes once the app answers.
+     * wake serves the app as it is: the marker goes once the app answers. A resumed container gets `resume_seconds` for its first
+     * answer; a silent one is stopped and booted, which a visitor prefers to a wait without end.
      */
     protected function intent(): array
     {
-        return ['web' => ['port' => InstanceContainer::WebPort, 'ready_seconds' => 30, 'settle_seconds' => 5]];
+        return ['web' => ['port' => InstanceContainer::WebPort, 'ready_seconds' => 30, 'settle_seconds' => 5, 'resume_seconds' => 10]];
+    }
+
+    /** The wake's path (`resumed`, `started`, `restarted_after_resume`, `already_running`), the marker it found and a resume's seconds. */
+    protected function phaseKeys(): array
+    {
+        return ['wake', 'marker_found', 'resume_seconds', 'web_probe_seconds'];
+    }
+
+    /** A woken Instance's extensions catch up, such as Conn's renewal of a session that ended or ends soon while it slept. */
+    protected function ended(Operation $operation): void
+    {
+        if ($operation->status === OperationStatus::Succeeded && ($instance = Instance::query()->find($operation->target_id)) !== null) {
+            app(InstanceLifecycleContributions::class)->projectWake($instance);
+        }
     }
 
     /**
