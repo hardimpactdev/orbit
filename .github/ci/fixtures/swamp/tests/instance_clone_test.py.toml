@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "d85608d6bceaa4f63e445c75a943c14c38122390c13a6e8d354dfdac94e9d221"
+source_sha256 = "fbf3c02af4f9195d66a35464a6616ac095160f6235492980492e751047e59de8"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_legacy_existing_remote_branch_still_uses_its_tip",
