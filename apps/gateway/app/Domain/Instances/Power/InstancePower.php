@@ -96,10 +96,21 @@ abstract readonly class InstancePower implements DirectOperationProjection
             self::assertIdle($instance);
             $this->refuse($instance, $runtime);
 
-            return app(StartOperationAction::class)->execute($this->kind(), 'instance', $instance->id, $instance->node_id,
+            return $this->admit($instance, $runtime,
                 ['container' => app(InstanceContainer::class)->intent($instance, $runtime), 'marker' => self::markerPath($instance), ...$this->intent()],
-                $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
+                $caller, $requestId);
         });
+    }
+
+    /**
+     * Records the admitted Operation inside the Instance lock and starts its run after the commit.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    protected function admit(Instance $instance, InstanceRuntime $runtime, array $input, ?string $caller, ?string $requestId): Operation
+    {
+        return app(StartOperationAction::class)->execute($this->kind(), 'instance', $instance->id, $instance->node_id, $input,
+            $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
     }
 
     /**

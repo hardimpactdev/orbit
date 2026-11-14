@@ -83,6 +83,8 @@ Caddy on the Instance's Node checks for the awake marker on every request. When 
 
 The Gateway answers with a progress page, status 401, headers `X-Orbit-Runtime-Activation-State: pending` and `Retry-After: 1`, and then starts the wake. Caddy shows the page and does not pass the request on. The page shows only the animated Orbit logo; the Instance's name is the page title. It polls the original path every 250 ms and loads it when the state header is gone. That load is the first application request. `Retry-After` stays one second, the smallest whole value HTTP allows, for a client without the page's script.
 
+A container Instance's site calls the same endpoint behind its asleep marker. When the Instance's Node resumes a frozen container within the call ([the Node resumes a frozen container](/reference/development-containers#the-node-resumes-a-frozen-container)), the Gateway answers `307` to the original path instead of the page, and the browser sends the request again. The page's own poll follows such a redirect too. The original path is the visitor's own path and query: control characters are dropped, and a path that starts with `//` or `/\` becomes `/`.
+
 The wake runs in this order:
 
 1. When the cold marker exists, restore dependencies with `composer install --no-interaction --prefer-dist` and `vp install --frozen-lockfile`. This uses the cold wake timeout.

@@ -922,9 +922,9 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | A Route visit wakes the Instance | Built |
 | Sleep after an idle hour | Built; off until the operator turns it on. See below |
 | The wake renews the Gateway's T3 session when it ends within 7 days or ended while the Instance slept | Built |
-| A visit gets the app without the waiting page while the container is frozen | Planned |
+| A visit gets the app without the waiting page while the container is frozen | Built: [the Node resumes it](#the-node-resumes-a-frozen-container), on a Node whose `app-dev` role converged with the wake script |
 | A long freeze becomes a stop | Planned |
-| A Conn connection or a task turn wakes the Instance | Planned |
+| A Conn connection or a task turn wakes the Instance | Planned. Conn calls `POST /api/v1/instances/{id}/wake`, which has the same access rule as the Conn remove |
 
 **The idle sleep.** The [runtime hibernator](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) puts a development clone to sleep after an idle hour, with the same idle window and sweep as a checkout Instance. It acts only while `ORBIT_HIBERNATION_CONTAINER_SLEEP` is on; it is off by default. A clone sleeps only when no row of this table keeps it awake. The sweep checks them in this order, and the first match is the reason it reports:
 
@@ -970,7 +970,27 @@ A request with `X-Orbit-Probe: 1` and a request that meets the asleep marker wri
 
 The marker lives on disk, not in `/dev/shm`: a host reboot loses the frozen state, but not the marker. A sleep writes the marker before it freezes the container.
 
-**The wake.** One Ansible run reads the container's state and the marker:
+**The Node resumes a frozen container.** <a id="the-node-resumes-a-frozen-container"></a>When the Instance's last sleep froze it and its site has a web unit, the wake does not start its run at once. The Gateway records the `instance.wake` Operation under the Instance lock, as always. After the commit it writes a wake request on the Instance's Node, `/dev/shm/orbit/hibernation/app-instance-<id>.wake`, with the agent's existing `hibernation.marker`. That folder belongs to root and the `caddy` group with mode `0755`, so only root writes in it. The agent stays frozen ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)).
+
+The `app-dev` role installs the Node's part: the script `/usr/local/libexec/orbit-instance-wake`, the service `orbit-instance-wake.service` and the path unit `orbit-instance-wake.path`, which starts the service while a request exists. The service runs as root with no capabilities, a read-only file system except the two hibernation folders and the cgroup tree, and no new privileges. It needs root because the Incus socket and the container's cgroup file belong to root; membership of `incus-admin` would give the same power.
+
+The script takes the Instance id only from the request's name, as digits, and never reads its content. It renames the request to `.taken`, and acts only when the request is at most one second old, the asleep marker exists, and Incus reports `instance-<id>` of `orbit-instances` as `Frozen`. Then it resumes the container, writes `memory.swap.max = 0`, and asks FrankenPHP once for an answer below 500, within 1.5 seconds. A resumed FrankenPHP still holds its socket, so one request tells. Then it removes the marker and writes `app-instance-<id>.resumed`. Last it removes the `.taken` file.
+
+In any other case it changes nothing, and a failure after the resume keeps the marker, so the site never proxies to a frozen container. Each step writes one line to the journal of `orbit-instance-wake.service`, with the resume's and the probe's milliseconds.
+
+The Gateway reads the request, `.taken`, `.resumed` and the marker with the agent's `hibernation.times`, first after 0.35 seconds and then every 0.1 seconds, within 3 seconds of the request. When the resume shows, the Operation succeeds at once: `wake: resumed`, `trigger_seconds` (the request's call) and `confirm_seconds` (from the request until the Gateway read the resume). Caddy's activation call gets `307` to the visitor's own path, so the browser sends the same request again, with its method and body, and gets the app. The waiting page is not shown. A request that arrives while the resume runs joins the wake and waits for it, up to the bound.
+
+Anything else starts the run below, in the same Operation, and the visitor gets the waiting page as before. That covers a Node without the script, such as one whose role predates it. The first read also asks for `/usr/local/libexec/orbit-instance-wake`. When it is missing, the Gateway leaves that Node out of the fast path for 10 minutes, so its other wakes cost nothing extra.
+
+It also covers a script that declined (another state, FrankenPHP silent), a failed agent call, and the bound. The Gateway then removes a request still there. The script ignores a request older than one second, so a request left behind never wakes the Instance later.
+
+Each Incus call in the script has its own bound, so a resume ends within about 6.5 seconds of the request, before the workflow reaches the container. The script takes every pending request, also one that arrived during a resume, before it checks any library cache. A Gateway worker that dies during the resume leaves a queued wake: a delayed start runs its workflow 15 seconds later. A cancel during the resume keeps the Operation cancelled.
+
+A Stopped container whose last sleep froze it, such as after a host reboot, now waits about a second longer for the waiting page, while the Node declines the request.
+
+Measured on a frozen fixture clone before this path: the resume took 0.02 seconds and the web probe 0.4 seconds, but the run's start-up and playbook took 8 to 13 of the 9 to 19 seconds a visitor waited.
+
+**The wake's run.** One Ansible run reads the container's state and the marker:
 
 | Found | The wake |
 | --- | --- |
@@ -982,6 +1002,12 @@ The marker lives on disk, not in `/dev/shm`: a host reboot loses the frozen stat
 | Frozen, no marker | A defect: the wake resumes it, and its result says `marker_found: false` |
 
 The result also gives `resume_seconds` and `web_probe_seconds` for a resume. A boot starts the container and waits until each running unit is active. Then the run waits until FrankenPHP answers. A web unit that listens before the app is ready answers 5xx for a moment, so the run waits up to 5 more seconds for an answer below 500; an app that answers 5xx by itself is then served as it is. Then the run removes the marker, and the next request gets the app. A Project without a web unit has no web wait.
+
+A converge cannot run a command in a frozen container, so a container that slept through a converge may wake with a library cache that lacks the shared runtime libraries. After the marker went, so the visitor does not wait, each wake runs one check in the container: when `ldconfig -p` does not list a soname of `/opt/orbit-runtime/current/lib` at that path, it runs `ldconfig -X`.
+
+That is the converge's own rule: only names such as `libasound.so.2` count, not the file `libasound.so.2.0.0`, which the cache never lists. The run does it after its marker removal; the Node's wake script does it after every pending request. A failed check fails nothing, and each rebuild is logged ("rebuilt" in the run's output, "library cache rebuilt" in the journal).
+
+A second check follows for the same reason. The converge keeps each container's Orbit root CA file current through the Incus file API, frozen containers included, but only a command in the container rebuilds the bundle. When `/etc/ssl/certs/ca-certificates.crt` lacks the root that `/usr/local/share/ca-certificates/orbit-managed-root-ca.crt` holds, the wake runs `update-ca-certificates`. A container without that file skips the check. It is logged as "refreshed" in the run's output and "CA bundle refreshed" in the journal, and it never fails the wake.
 
 Only then does the run wait up to 30 seconds for T3 in a clone: T3 gates the end of the Operation, not the visitor's page. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the Route shows the failure page.
 
