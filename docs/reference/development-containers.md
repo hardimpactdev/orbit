@@ -2,13 +2,13 @@
 title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
-  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
+  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
-  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
+  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
 ---
 
@@ -587,7 +587,9 @@ Pending activation lives on the Node at `/var/lib/orbit/instance-mail/<container
 
 One guest preflight checks the executable, unit ownership and contents, socket states and both ports; only when needed, a second guest command installs and activates the four units together. An unchanged repeat needs only the preflight entry. An active Orbit socket with a missing enable link remains Orbit-owned; the next run restores enablement. Guest failures retain only the fixed public `instance.host_unavailable` and `process.target_inactive` codes; tool output remains private. Network admission completes before any unit write.
 
-Updated endpoint settings rewrite the proxy services and restart active proxies, leaving application Processes running. The runtime folder's existing `try-restart orbit-*.service` also leaves idle proxies inactive; an active proxy restart can close its current SMTP connections while its socket remains listening. Process cleanup matches `orbit-process-*` and does not remove these mail units. Clone preparation disables inherited mail socket links before first boot, then its container launch enables its own listeners.
+Updated endpoint settings rewrite the proxy services and restart active proxies, leaving application Processes running. The runtime folder's existing `try-restart orbit-*.service` also leaves idle proxies inactive; an active proxy restart can close its current SMTP connections while its socket remains listening. Process cleanup matches `orbit-process-*` and does not remove these mail units.
+
+A clone keeps the seed's mail socket links. Its default's mail units are the Node's, the same for every copy, so the container launch finds them in place and reports `unchanged`. A seed taken before mail existed gets them as `applied`. The launch rewrites and restarts them only when the Node's endpoint changed after the seed.
 
 Destroy deletes the container, its private Node activation state and its own ACL, including the SMTP rule. It does not withdraw the shared bridge tuple: that stays for ordinary host reconciliation, like database tuples, and remains needed while other Instances use Mailpit. There is no new helper withdrawal.
 
@@ -1403,9 +1405,17 @@ The Instance's create flow registers its T3 server with the [Conn layer](/refere
 
 In the container, as `agent`:
 
-1. A phase in the container issues a session with `t3 auth session issue --label "Orbit Gateway" --token-only`, as `agent`.
-2. The same phase issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3). PR 8 narrows its scopes.
-3. It reads the served environment and asks T3 about both sessions at `/api/auth/session`. The reply waits in the run folder, mode 0600.
+1. The T3 step starts T3. T3's own CLI issues the `Orbit Gateway` session beside that start, as `agent`: `t3 auth session issue --label "Orbit Gateway" --token-only`.
+2. In parallel, the CLI issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3). PR 8 narrows its scopes.
+3. After T3 answers, `t3 project add` adds the workspace, once. During T3's start that call fails, so it waits.
+4. The tokens wait in the run's private folder, mode 0600. They never reach a log or a result.
+5. The sessions step reads the served environment and asks T3 about both sessions at `/api/auth/session`. It issues none. Its reply replaces the tokens in the private folder.
+
+Stock T3's CLI writes its sessions before and during the server's first start. So the two issues run while T3 starts and add no time of their own.
+
+A create that fails after the T3 step leaves its two sessions valid in T3, as a resume does. Both copies of the tokens stay in private folders, which the create's cleanup removes.
+
+A session issue that fails fails the T3 step: `instance.t3_unready`, with `instance.container_t3_failed: command t3 exited <code>` as its detail.
 
 On the Swamp worker:
 
@@ -1620,7 +1630,7 @@ An Instance container with a nested fleet lives in its own Incus project on the 
 | `security.syscalls.intercept.mknod` | `true` | The inner Incus makes device nodes for its containers |
 | `security.syscalls.intercept.setxattr` | `true` | The inner Incus and Docker set trusted extended attributes |
 | `security.idmap.isolated` | `true` | The container has its own ID range, as every Instance container |
-| `security.idmap.size` | `101000000` | The inner range below must fit inside |
+| `security.idmap.size` | The runtime's [recorded size](#the-id-map-size): `101000000`, or `1165536` after a conversion | The inner Incus takes its range from it: the outer size minus 1,000,000 |
 | `limits.memory` | `12GiB` | The inner fleet shares the container's memory |
 | `boot.autostart` | `false` | Incus never starts it at host boot, without the guard below |
 | `user.max_user_namespaces` | Not set to zero | The inner Incus needs user namespaces |
@@ -1682,7 +1692,7 @@ It is the normal image with these changes:
 | Inner Incus | `incus-base` and `incus-client` from the recipe's pinned artifacts, checked by SHA-256 |
 | Packages | `wireguard-tools`, `sqlite3`, `sudo`, `zstd` and `btrfs-progs` too. `zstd` reads the `.tar.zst` archives of the inner fleet's containers; the inner Incus's btrfs driver needs `btrfs-progs` for the pool on the [inner volume](#the-inner-volume) |
 | User namespaces | No `/etc/sysctl.d/90-orbit-no-userns.conf` |
-| Subordinate IDs | `/etc/subuid` and `/etc/subgid` give root `1000:1` and `1000000:100000000` |
+| Subordinate IDs | `/etc/subuid` and `/etc/subgid` give root `1000:1` and `1000000:100000000`. The inner Incus does not read them: see [The ID map size](#the-id-map-size) |
 | AppArmor marker | `/etc/orbit/apparmor-off` holds `N` |
 | `agent` | A member of the inner `incus-admin` group, with passwordless sudo from `/etc/sudoers.d/orbit-agent` (root:root, mode 0440) |
 | `orbit` | Neither the group nor sudo. The first rule of the firewall's output chain drops its traffic to the inner fleet's networks, `10.45.0.0/24` and `10.232.2.0/24`. The other rules stay the same |
@@ -1733,11 +1743,49 @@ The first nested-fleet default and every Instance without `inner_volume`, its co
 
 `TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
 
-In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:100000000`, plus `1000:1` for the [workspace mapping](#fleet-rules). The range fits inside the outer 101,000,000 IDs.
+In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:100000000`, plus `1000:1` for the [workspace mapping](#fleet-rules). The inner Incus does not read them, because the image has no `newuidmap`. It takes its range from its own map instead: base 1,000,000, size the outer size minus 1,000,000 ([The ID map size](#the-id-map-size)).
+
+### The ID map size
+
+Each nested-fleet runtime records the size of its isolated ID map in `idmap_size`. The create and the clone write it as `security.idmap.size`, and the start guard requires that value.
+
+| Runtime | Size |
+| --- | --- |
+| A new nested-fleet default, or a migrated nested Instance | 101,000,000 |
+| A copy, a plain clone or a task copy | Its default's size at the copy's reservation |
+| A converted default | 1,165,536, which gives the inner fleet 165,536 IDs |
+| A normal container | None: Incus's 65,536 |
+
+The inner range is the outer size minus 1,000,000, at base 1,000,000. The nested image has no `newuidmap`, so the inner Incus ignores `/etc/subuid` and takes this range from its own process map. The floor is 1,065,536. Below it the inner base moves to 65,536 and every inner file is remapped; below 131,072 the inner Incus gets no map at all and runs only privileged containers.
+
+The inner fleet's three containers share that range. They use IDs up to 65,534 (`nobody`), and Docker in them runs without user namespaces, so 65,536 IDs are enough; a converted default gives them 165,536. Every nested container mounts its root disk idmapped (`volatile.last_state.idmap` is `[]`), so a changed outer size moves no file on the host.
+
+A copy keeps its size for its whole life. So copies made before a conversion keep 101,000,000 and still match their start guard, beside new copies of 1,165,536. The [task start check](#the-check-at-a-task-start) and the converge's [subordinate-ID demand](/reference/node-settings#nested-fleet-instance-hosting) read the recorded sizes.
+
+#### Convert a default
+
+An operator converts a nested-fleet default once, outside any task turn. The steps:
+
+1. Stop the default. Its copies keep running; their ranges do not change.
+2. Take a container snapshot `pre-idmap-<time>`. Incus needs a free range of the old size for it, for a moment.
+3. Set `security.idmap.size` to `1165536` on the container.
+4. Run `php artisan gateway:instance-idmap-size <id> 1165536` on the Gateway host. It records the size and clears the default's seed, so clones refuse until a new seed exists.
+5. Start the outer container and its inner containers once by hand. The inner Incus then rewrites the owners of their files on its pool, once.
+6. Deploy the default. Its start passes the guard with the new size, and the deployment takes a new seed. New copies get the small size.
+
+At step 5 the inner containers' stored maps do not fit the new inner range, so the inner Incus maps them again. That rewrite is a walk over their files, so it takes minutes on a large pool.
+
+The command refuses a size other than the two above with `instance.idmap_size_invalid`, and its message names the floor of 1,065,536. It refuses an Instance that is not a nested-fleet default with `instance.idmap_size_not_nested_default`. It refuses a default that an open Operation holds with `operation.target_busy`. It refuses a size below a copy's recorded size with `instance.idmap_size_copies_smaller`, so a rollback waits until the small copies are gone. It holds the default's row lock, as a task copy's admission does.
+
+A rollback destroys the copies made after the conversion, restores `pre-idmap-<time>`, which brings back the old size and so the old inner range, and runs the command with `101000000`. The inner Incus rewrites the owners once more.
 
 #### The seed pair
 
 The seed of such a default is a pair: the container snapshot `seed-<commit>` and the volume snapshot of the same name. A container snapshot does not hold an attached custom volume, so the name ties the two. The [seed step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) takes the volume's half right after the container's, with the Processes still stopped, wherever it takes the seed. It retakes the pair when the volume's half is missing.
+
+Right before the volume's half, the step flushes the volume: `sync -f` on `/srv/inner-pool`, as root in the container. A snapshot of the volume is a snapshot of its block device, so it holds only what btrfs has committed, and btrfs commits every 30 s. Without the flush, a copy lacked an inner pool made 23 s before the seed.
+
+A failed flush takes no volume half and fails with `instance.seed_volume_flush_failed`; the old pair stays. There is no freeze: the two halves are separate snapshots anyway, so a freeze adds nothing over the flush and btrfs's crash consistency; each half is a point in time as after a power cut.
 
 A [retake](#a-retake-keeps-the-seed) takes both new halves under `next-<commit>` when the seed's name is taken. A failed volume snapshot deletes both new halves and fails with `instance.seed_volume_snapshot_failed`, so no reader finds half a pair. The old pair stays whole, also at the same commit. Older pairs go only after both new halves exist. A failed refresh checks that both halves exist before it restores anything; a failed restore of the volume after the container's fails the run.
 
@@ -2180,9 +2228,9 @@ The T3 server's record in the Conn layer names its Instance. Only the Instance's
 
 ## Isolated ID ranges
 
-Each container takes an isolated ID map from root's one subordinate range in `/etc/subuid` and `/etc/subgid`: 65,536 IDs for an Instance container, 101,000,000 for a nested-fleet container (`InstanceHostIntent::TaskPlaceIds`). A stopped container keeps its range. Incus places a new range in the first gap that fits, from 65,536 IDs past root's base, and a new snapshot needs one for a moment.
+Each container takes an isolated ID map from root's one subordinate range in `/etc/subuid` and `/etc/subgid`: 65,536 IDs for an Instance container, and the [recorded size](#the-id-map-size) for a nested-fleet container, 101,000,000 or 1,165,536. A stopped container keeps its range. Incus places a new range in the first gap that fits, from 65,536 IDs past root's base, and a new snapshot needs one for a moment.
 
-On a host with 1,000,000,000 subordinate IDs, nine nested-fleet ranges fit. A small range can sit in a gap a destroyed copy left, so only the bases that Incus chose say which gaps are free.
+On a host with 1,000,000,000 subordinate IDs, nine nested-fleet ranges of 101,000,000 fit, and about 850 of 1,165,536. A small range can sit in a gap a destroyed copy left, so only the bases that Incus chose say which gaps are free.
 
 ### The check at a task start
 
@@ -2191,6 +2239,12 @@ A [task copy](/cli/task/start) start reads them. One bounded SSH call (at most a
 The copy needs one range of its default's size. With the copy placed, a range must stay free for the next seed of this default and of every other default on the Node, so a small copy never fills the last nested-sized gap. Otherwise the start refuses with `tasks.copy_id_range_full`, before any record. A runtime whose container is not on the host counts only while its create is open. An unreadable host refuses with `tasks.copy_id_ranges_unreadable`: the Gateway cannot show a free range. `ORBIT_TASKS_COPIES_MAX` stays an upper bound for nested-fleet copies that an operator may lower.
 
 However, two starts within the same moment can still both pass. Then the later create or seed fails at Incus. The seed step keeps the old seed and names the cause, so the default stays copyable.
+
+### The Doctor warning
+
+Each read is kept on the Node: how many full-size ranges of 101,000,000 are free (up to 2), how many normal containers still fit before one would land in a full-size gap and split it (up to 10), and when it was read. Doctor reads it without reaching the Node.
+
+While the Node records a nested-fleet default of 101,000,000, it warns with `node.id_ranges_low` when fewer than 2 full-size ranges or fewer than 4 normal slots are free. The warning names the read's time, so an old read shows. Copies keep their size but retake no seed, so a Node whose nested defaults are all converted does not warn, even while old copies of 101,000,000 remain. Only a task copy start refreshes the read, so the warning can stay until the next one.
 
 ## Errors
 
@@ -2212,7 +2266,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.migrate_process_binary_unavailable` | 409 | A moved Process needs an unavailable PHP version or executable path. The error names the Process and path; the checkout keeps serving |
 | `instance.migrate_<step>_failed` | 502 | A step of a move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before |
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
-| `instance.t3_unready` | 502 | The T3 server did not answer within 30 seconds of its first start in a clone, or of a wake. After a wake, the app already serves |
+| `instance.t3_unready` | 502 | T3 did not answer within 30 seconds of a clone's first start or a wake, or its CLI failed in a clone's T3 step. After a wake, the app serves |
 | `instance.web_unready` | 502 | FrankenPHP gave no answer within 30 seconds of a wake. The asleep marker stays |
 | `instance.clone_in_flight` | 409 | The refresh of a nested-fleet default while the create of a clone of it is open. The next release tries again |
 | `instance.fleet_key_on_disk` | 502 | The seed of a nested-fleet default found the Club key as a file on the container's disk. The run's first seed refuses before it changes anything |
@@ -2223,6 +2277,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.refresh_failed` | none | An Activity row, not an API error: a refresh that a release admitted failed. It names the Operation, its code and its detail; see [Refresh after a release](#refresh-after-a-release) |
 | `instance.container_seed_failed` | 502 | The seed step could not take the new snapshot. The error detail names why, such as `No free ID range for the new seed`. The old seed stays; see [A retake keeps the seed](#a-retake-keeps-the-seed) |
 | `instance.seed_volume_snapshot_failed` | 502 | The snapshot of the [inner volume](#the-inner-volume) failed after the container's. Both new halves are deleted and the old pair stays; see [The seed pair](#the-seed-pair) |
+| `instance.seed_volume_flush_failed` | 502 | The flush of the [inner volume](#the-seed-pair) before its snapshot failed. The new container half is deleted and the old pair stays |
 | `instance.default_seed_incomplete` | 409 | The default's seed has no half on its [inner volume](#the-inner-volume), such as a seed taken before the pair existed. Deploy the default once |
 | `instance.default_seed_in_flight` | 409 | A clone of a default with an [inner volume](#the-inner-volume) while a deployment of the default is open. Create the clone when it ends |
 | `instance.container_process_inactive` | 502 | A required unit is inactive when a clone records its sessions. The Operation names the unit and records its states, exit status and restart count |

@@ -120,7 +120,7 @@ function deployDefault(bool $container, string $incusProject = 'orbit-instances'
     if ($container) {
         InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => $incusProject,
             'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2', 'runtime_version' => 'r', 'agent_version' => 'a',
-            'power_state' => InstanceRuntimePowerState::Stopped]);
+            'power_state' => InstanceRuntimePowerState::Stopped, 'idmap_size' => $incusProject === InstancePlacement::NestedProject ? 101000000 : null]);
     }
 
     return $instance;
@@ -968,7 +968,7 @@ it('refuses the refresh of a nested-fleet default while a clone of it is being c
         'name' => 'feature', 'checkout_path' => '/srv/tool/feature', 'status' => InstanceState::Active]);
     InstanceRuntime::query()->create(['instance_id' => $clone->id, 'node_id' => $clone->node_id, 'incus_project' => InstancePlacement::NestedProject,
         'container_name' => 'instance-'.$clone->id, 'bridge_address' => '10.253.0.3', 'runtime_version' => 'r', 'agent_version' => 'a',
-        't3_port' => 3800, 'clone_source_instance_id' => $instance->id, 'power_state' => InstanceRuntimePowerState::Stopped]);
+        't3_port' => 3800, 'clone_source_instance_id' => $instance->id, 'power_state' => InstanceRuntimePowerState::Stopped, 'idmap_size' => 101000000]);
     Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $clone->id, 'node_id' => $clone->node_id,
         'status' => $status, 'input' => [], 'state' => [], 'sequence' => 1, 'attempts' => 0]);
 

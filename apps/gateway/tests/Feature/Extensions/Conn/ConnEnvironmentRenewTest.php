@@ -16,6 +16,7 @@ use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\Operation;
 use App\Models\Project;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -27,6 +28,7 @@ use Orbit\Extensions\Conn\Data\ConnEnvironmentData;
 use Orbit\Extensions\Conn\Domain\ConnRenewalProjection;
 use Orbit\Extensions\Conn\Domain\ConnRenewalSweep;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Orbit\Extensions\Conn\Models\ConnPairing;
 use Tests\Support\SwampNodeFixture;
 
 use function Pest\Laravel\freezeTime;
@@ -271,6 +273,31 @@ it('defers the cleanup while a pairing that carries the old session runs, and th
     app(ConnRenewalSweep::class)->run();
 
     expect(Operation::query()->where('kind', 'conn.gateway_sessions_revoke')->sole()->input['cleanup_version'])->toBe(1);
+});
+
+it('defers the cleanup while a held session hold that carries the old session runs', function (): void {
+    $environment = renewServer($this->project, renewNode(1), 'held', 3);
+    Operation::query()->create(['kind' => 'conn.session_hold', 'target_type' => 'conn_pairing', 'target_id' => 1, 'node_id' => SwampNodeFixture::Id,
+        'status' => OperationStatus::Running, 'input' => ['conn_environment_id' => $environment->id]]);
+
+    renewEnd(renewOperation($environment), 'succeeded', renewReport($environment));
+
+    expect(Operation::query()->where('kind', 'conn.gateway_sessions_revoke')->exists())->toBeFalse()
+        ->and(fn () => app(AdmitConnCleanupAction::class)->execute($environment, renewNode(9)))->toThrow(ResourceOperationException::class, 'still runs with the earlier session');
+});
+
+it('renews the due held sessions of a server once its renewed Gateway session is recorded', function (): void {
+    $host = renewNode(1);
+    $environment = renewServer($this->project, $host, 'held', 3);
+    $phone = renewNode(2);
+    NodeAccess::query()->create(['consumer_node_id' => $phone->id, 'serving_node_id' => $host->id]);
+    $due = ConnPairing::query()->create(['node_id' => $phone->id, 'conn_environment_id' => $environment->id, 'client_label' => 'host-2 via Orbit due00000', 'held' => true,
+        'session' => 'held-session', 'session_expires_at' => now()->addDays(3), 'pairing_link_id' => 'link-due', 'expires_at' => now()->subDays(27)]);
+
+    renewEnd(renewOperation($environment), 'succeeded', renewReport($environment));
+
+    $hold = Operation::query()->where('kind', 'conn.session_hold')->sole();
+    expect($hold->input['renews_pairing_id'])->toBe($due->id)->and($hold->input['caller_node_id'])->toBe($phone->id);
 });
 
 it('admits a renewal through the route at once, past the wait for a stopped container, and refuses a second while it runs', function (): void {

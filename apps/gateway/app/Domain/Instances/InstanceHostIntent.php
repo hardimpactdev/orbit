@@ -15,6 +15,7 @@ use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\TaskVm;
+use LogicException;
 
 /**
  * The container branch of the `app-dev` role converge (docs/reference/development-containers.md#nodes): the Incus project on the
@@ -86,8 +87,17 @@ final readonly class InstanceHostIntent
 
     public const int IdMapSize = 65536;
 
-    /** The isolated range of each task container place and the base on a task container host (compute-drivers.md#the-host-system). */
+    /**
+     * The isolated range of each task container place and the base on a task container host (compute-drivers.md#the-host-system). A
+     * new nested-fleet default is made with it too, until its conversion (development-containers.md#the-id-map-size).
+     */
     public const int TaskPlaceIds = 101000000;
+
+    /**
+     * The converted size of a nested-fleet container. The inner Incus takes its range from its own map: 1,000,000 up to this size, so
+     * 165,536 IDs; the floor is 1,065,536 (development-containers.md#the-id-map-size).
+     */
+    public const int NestedIdMapSize = 1165536;
 
     public function __construct(
         private ContainerNodes $nodes,
@@ -136,9 +146,11 @@ final readonly class InstanceHostIntent
         // Instance containers and the task containers of the same host take their isolated ID maps from root's one range.
         $settings = app(NodeSettingsNormalizer::class)->fromStored($node->settings);
         $taskHost = $settings?->task_vms;
-        // Each nested-fleet container takes one task-place-sized map. A switched-on Node keeps two spare maps for the next ones.
+        // Each nested-fleet container takes the map its runtime records. A switched-on Node keeps two spare maps of a new default's size.
         $nested = $settings?->nested_fleet === true;
-        $nestedRuntimes = InstanceRuntime::query()->where('node_id', $node->id)->where('incus_project', InstancePlacement::NestedProject)->count();
+        $nestedMaps = InstanceRuntime::query()->where('node_id', $node->id)->where('incus_project', InstancePlacement::NestedProject)->pluck('idmap_size');
+        $nestedRuntimes = $nestedMaps->count();
+        $nestedIds = $nestedMaps->sum(static fn (mixed $size): int => is_int($size) ? $size : throw new LogicException('A nested-fleet runtime records its ID map size.'));
         $taskContainers = $taskHost?->containers;
         $taskIds = $taskContainers instanceof NodeTaskVmContainersData ? ($taskContainers->task_places + $taskContainers->ci_places + 1) * self::TaskPlaceIds : 0;
         $subnet = Ipv4Subnet::from($cidr);
@@ -159,7 +171,7 @@ final readonly class InstanceHostIntent
             'bridge_admitted_at' => $admittedAt,
             'bridge_endpoints' => app(InstanceContainer::class)->nodeEndpoints($node),
             'egress' => InstanceEgress::for(self::Network, $gateway, $cidr, $this->privateDns->domains()),
-            'ids' => (self::Containers + 1) * self::IdMapSize + $taskIds + ($nestedRuntimes + ($nested ? 2 : 0)) * self::TaskPlaceIds,
+            'ids' => (self::Containers + 1) * self::IdMapSize + $taskIds + $nestedIds + ($nested ? 2 : 0) * self::TaskPlaceIds,
             // A task VM host sizes the ARC for its task side, or keeps the Node's own (task-vm-host-prepare.yml): the Instance side
             // never changes it there.
             'arc' => $taskHost === null,

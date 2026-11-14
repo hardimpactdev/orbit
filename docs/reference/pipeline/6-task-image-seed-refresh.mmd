@@ -37,7 +37,7 @@ sequenceDiagram
     SW->>N: Take the seed snapshot<br/>Processes stopped · ZFS
     %%> What it does:
     %%> - refuses when the Club key is a file on the default's disk; the key lives outside it
-    %%> - a default with an inner volume: also snapshots the volume under the same name; the two snapshots are the seed, and older pairs go after both new halves exist
+    %%> - a default with an inner volume: also snapshots the volume under the same name, right after a flush of the volume (`sync -f`); the two snapshots are the seed, and older pairs go after both new halves exist
   end
   alt the run passes on a Node
     SW-->>GW: Node refreshed<br/>terminal event per Node

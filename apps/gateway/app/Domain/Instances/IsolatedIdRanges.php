@@ -90,6 +90,24 @@ final readonly class IsolatedIdRanges
         return $base === null ? null : new self($this->root, [...$this->held, [$base, $size]]);
     }
 
+    /**
+     * What Doctor keeps of a read (docs/reference/development-containers.md#isolated-id-ranges): how many full nested-size ranges are
+     * free, up to 2, and how many normal containers still fit before one would land in a full-size gap and split it, up to 10.
+     *
+     * @return array{full: int, small: int}
+     */
+    public function summary(): array
+    {
+        $full = $this->free(InstanceHostIntent::TaskPlaceIds, 2);
+        $small = 0;
+        $ranges = $this;
+        while ($small < 10 && ($ranges = $ranges->with(InstanceHostIntent::IdMapSize)) !== null && $ranges->free(InstanceHostIntent::TaskPlaceIds, 2) === $full) {
+            $small++;
+        }
+
+        return ['full' => $full, 'small' => $small];
+    }
+
     /** How many more ranges of this size fit, one after another, up to `$limit`. */
     public function free(int $size, int $limit = 1000): int
     {

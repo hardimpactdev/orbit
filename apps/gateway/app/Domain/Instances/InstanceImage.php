@@ -258,6 +258,8 @@ final readonly class InstanceImage
      */
     private static function nestedFiles(): array
     {
+        // The inner Incus does not read these files: the image has no newuidmap, so it takes its range from its own map, 1,000,000 up to
+        // the outer size (development-containers.md#the-id-map-size). They stay as built, so the image keeps its alias.
         $ids = "root:1000000:100000000\nroot:".InstanceHostIntent::OrbitUid.":1\n";
 
         return [
