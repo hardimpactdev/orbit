@@ -488,7 +488,7 @@ A remote target created after the Node's final head read cannot be detected by c
 
 Checkout stays inside `clone-workspace`. No setup or deploy command runs again after checkout. Dependencies and build come from the default's seed, and may need an install or build for the selected code.
 
-Conn follows that Operation with `GET /operations/{id}`. Conn Operation show also shows an `instance.create` that the caller started, here or with the core Instance API, and an `instance.destroy` started through the Conn endpoint below. Other destroy Operations keep their existing 404 on this path. It also shows a clone's [completion](/cli/instance/complete), `instance.complete`, to the Node that started it and to the Node that created the clone: the create's `result.completion_operation_id` names the first completion. Conn Operation cancel cancels none of these three kinds; it answers 404, and a removal cancels a running completion.
+Conn follows that Operation with `GET /operations/{id}`. Conn Operation show also shows an `instance.create` that the caller started, here or with the core Instance API, and an `instance.destroy` started through the Conn endpoint below. Other destroy Operations keep their existing 404 on this path. It also shows a clone's [completion](/cli/instance/complete), `instance.complete`, to the Node that started it and to the Node that created the clone: the create's `result.completion_operation_id` names the first completion. Conn Operation cancel cancels the create and the completion that show shows to the caller ([Cancel a create or a completion](#cancel-a-create-or-a-completion)). It answers 404 for a destroy: a removal is not cancelled.
 
 Operation show returns the same recorded `steps` as core Operation show, in recorded order: `name`, `job`, `status`, `started_at` and `finished_at`. Steps contain no command output, secrets or environment values. Both endpoints accept `after_sequence` but currently return all recorded steps.
 
@@ -510,6 +510,16 @@ The step names and jobs that installed Conn builds map stay: the completion's jo
 An installed build that maps create steps by name shows `clone-route` and its children on `Publish the address` during the create, ignores `clone-route-csr-<i>`, `records`, `catalog` and `restart`, and marks the row running again at the create's success until the completion ends. So after `published` the row can read done, then running for the about 7 seconds of the completion, then done; it is never done before the address answers TLS. A newer build reads `route_publication`: `published` keeps the row done; `deferred` and `failed` follow the completion's job `publication`.
 
 A server of an Instance names its `instance_id` and the container's `power_state`, `running` or `stopped`. Other servers have `null` for both. Conn shows a `stopped` server as asleep.
+
+### Cancel a create or a completion
+
+`POST /operations/{id}/cancel` with an empty JSON object cancels a clone's `instance.create` or `instance.complete` for the Node that Conn Operation show serves it to. It runs the same cancel as core [Cancel an operation](/reference/operations#cancel-an-operation), and answers 200 with the Operation, in the shape of Operation show. Another Node gets 404, and so does every `instance.destroy`. A second cancel answers the same way and does nothing more.
+
+An Operation whose run has not started ends `cancelled` at once. A running one keeps its status and reads `cancel_requested: true`; Swamp is asked to stop it after the answer, and the Operation ends `cancelled` when the run has stopped. Follow it with `GET /operations/{id}`.
+
+A cancelled create keeps the clone for its owner. The Instance stays `reserved`, with its runtime and any container, which Orbit stops. The create's `withdraw-route` step takes back an address that it started and did not finish publishing, and its end frees the Route Nodes it held. An address that `clone-route` already published stays up until the clone is removed. The result's `recovery` names a retry of the create and the removal. Conn removes the clone with `POST /instances/{id}/destroy`. A cancelled create admits no completion ([Complete a clone](/reference/development-containers#complete-a-clone)).
+
+A cancelled completion keeps the clone `source_resolved`, its container running and its thread usable. Its own `withdraw-route` step takes back an address that it published. Retry it with `POST /instances/{id}/complete`, or remove the clone. A database fill that already runs is not cut: the cancel waits until the fill has ended, with the two exceptions in [Remove a clone whose completion runs](#remove-a-clone-whose-completion-runs).
 
 ## Remove an Instance
 
@@ -579,6 +589,8 @@ A missing SSH pin or Caddy render fault found by the dry run refuses removal bef
 
 A clone's create ends when its thread is usable; its [completion](/cli/instance/complete) then sets up the rest. A removal from Conn while that completion runs is one call. In one transaction the Gateway records the cancel of the completion and admits the removal with status `waiting` and `after_operation_id` set to the completion. The call answers 202 with the removal at once; it is the one Operation to follow. Swamp is asked to stop the completion after the commit, and the reconciler asks again on each pass until it stops. A completion that had not started yet ends `cancelled` at once.
 
+To stop the completion and keep the clone, [cancel it](#cancel-a-create-or-a-completion) instead of removing it.
+
 The removal starts when the completion has ended. The completion's SSH and shell steps take the abort at once: Swamp ends their connection to the Node. Its own `withdraw-route` step takes back a Route it published, and the removal then deletes the container, the clone's database, the Route, the completion's vault copies and the records.
 
 A database fill that already runs is not cut: the cancel waits until the fill has ended, within its 600-second limit ([Cancel an operation](/reference/operations#cancel-an-operation)). Meanwhile the removal shows `waiting` and the completion keeps the clone's lock and its Route hold. Then the completion takes the cancel, withdraws its Route and ends, and the removal drops a database that no copy touches.
@@ -597,7 +609,7 @@ The CLI and the core API keep their refusal: `instance:destroy` while the comple
 
 A removal while the clone's create runs is accepted at once from every caller: Conn, the CLI and the core API. In one transaction the Gateway records the cancel of the create and admits the removal with status `waiting` and `after_operation_id` set to the create. The call answers 202. Swamp is asked to stop the create after the commit, and the reconciler asks again on each pass until it stops. A create that had not started yet ends `cancelled` at once.
 
-The removal starts when the create has ended. The create's own `withdraw-route` step takes back a publication that it started and did not finish. A removal admitted during the create marks the Route retiring, so an address that `clone-route` publishes after it stays down, and the removal's withdrawal captures the clone's site in either state. The create's end records nothing of the removed clone and admits no completion. Several removals at once each wait behind their own clone's create. Conn's cancel of an `instance.create` still answers 404.
+The removal starts when the create has ended. The create's own `withdraw-route` step takes back a publication that it started and did not finish. A removal admitted during the create marks the Route retiring, so an address that `clone-route` publishes after it stays down, and the removal's withdrawal captures the clone's site in either state. The create's end records nothing of the removed clone and admits no completion. Several removals at once each wait behind their own clone's create. Without a removal, Conn [cancels the create](#cancel-a-create-or-a-completion) and keeps the clone.
 
 The same caller, key, Instance ID and body return the same Operation with HTTP 202, even after the Instance was deleted. Reusing the key with a changed body refuses with `operation.idempotency_conflict` (409). A missing Instance without that receipt keeps the normal 404.
 
@@ -905,7 +917,7 @@ Callers do not retry these codes on their own; a person or the operator decides 
 
 A lost T3 response leaves issuance uncertain. There is no automatic retry, fallback token or issuance ledger. Inspect the native report and establish the external outcome before explicitly retrying a failed issue step or admitting another pairing.
 
-Conn callers follow their own pairing Operations at `GET /api/v1/conn/operations/{operation}` and cancel them at `POST /api/v1/conn/operations/{operation}/cancel`. These endpoints check the original requester, including when a revocation names another Node. They expose no other Operation or Gateway authority.
+Conn callers follow their own pairing Operations at `GET /api/v1/conn/operations/{operation}` and cancel them at `POST /api/v1/conn/operations/{operation}/cancel`; the same endpoints serve a clone's create and completion ([Cancel a create or a completion](#cancel-a-create-or-a-completion)). These endpoints check the original requester, including when a revocation names another Node. They expose no other Operation or Gateway authority.
 
 A failed session-list read ends the revocation Operation with its safe `conn.*` error code before any revoke call. Native pairing revocation reports `conn.revocation_failed`; its native report identifies the failed action. The retained legacy kinds use `conn.response_invalid` for invalid JSON. No failed read proves an empty session list or successful cleanup. The registration revision stays pending until a new registration or an explicit operator cleanup retry.
 
