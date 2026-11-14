@@ -745,6 +745,30 @@ class PopulationTest(unittest.TestCase):
             self.assertLess(max(loads), budget['shard_deadline_seconds'], shard['name'])
         self.assertCountEqual(seen, fixtures[file]['cases'])
 
+    def test_reboot_slices_cover_every_case_with_measured_headroom(self):
+        budget, fixtures, defaults = units.configuration()
+        file = 'swamp/tests/fleet_reboot_test.ts'
+        evidence = json.loads((ROOT / 'tools/tests/ci-reboot-cost-evidence.json').read_text())
+        self.assertEqual(evidence['source_sha256'], fixtures[file]['source_sha256'])
+        self.assertCountEqual(evidence['case_seconds'], fixtures[file]['cases'])
+        result = units.plan([file], budget, fixtures, defaults)
+        self.assertFalse(result.get('capacity'))
+        self.assertFalse(result['deferred'])
+        self.assertFalse(result.get('excluded'))
+        selected = [unit for shard in result['shards'] for unit in shard['units']
+                    if unit.split('#')[0] == file]
+        self.assertEqual(len(selected), evidence['slices'])
+        seen = []
+        for unit in selected:
+            cases = units.case_names(unit, fixtures)
+            seen.extend(cases)
+            measured = sum(evidence['case_seconds'][name] for name in cases)
+            estimate = math.ceil(measured * evidence['estimate_factor']) + 1
+            declared = fixtures[file]['cost'] / evidence['slices']
+            self.assertGreaterEqual(declared, estimate)
+            self.assertLessEqual(declared + budget['slice_startup_seconds'], 90)
+        self.assertCountEqual(seen, fixtures[file]['cases'])
+
     def test_image_cases_all_remain_required_and_have_ninety_second_planning_headroom(self):
         budget, fixtures, defaults = units.configuration()
         file = 'swamp/tests/ansible_instance_host_image_test.ts'
