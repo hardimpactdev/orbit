@@ -8,6 +8,7 @@ use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskableType;
 use App\Domain\Tasks\TaskAgentDefaults;
+use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskDeliverable;
@@ -104,6 +105,8 @@ use LogicException;
  * @property bool|null $preview
  * @property bool|null $current_recipe
  * @property TaskReviewMode $review_mode
+ * @property TaskPrMode|null $pr_mode
+ * @property array{code: string, check_id: int, at: string}|null $publish_refusal
  * @property string $implementer_model
  * @property string $reviewer_model
  * @property int|null $reviewer_agent_thread_id
@@ -162,6 +165,8 @@ final class Task extends Model
         'preview',
         'current_recipe',
         'review_mode',
+        'pr_mode',
+        'publish_refusal',
         'implementer_model',
         'reviewer_model',
         'reviewer_agent_thread_id',
@@ -297,6 +302,8 @@ final class Task extends Model
         'preview',
         'current_recipe',
         'review_mode',
+        'pr_mode',
+        'publish_refusal',
         'implementer_model',
         'reviewer_model',
         'reviewer_agent_thread_id',
@@ -606,6 +613,8 @@ final class Task extends Model
             'preview' => 'boolean',
             'current_recipe' => 'boolean',
             'review_mode' => TaskReviewMode::class,
+            'pr_mode' => TaskPrMode::class,
+            'publish_refusal' => 'array',
             'watched_pr_number' => 'integer',
             'agent_unavailable_since' => 'datetime',
             'agent_unavailable_notified_at' => 'datetime',

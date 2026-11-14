@@ -8,6 +8,7 @@ use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskPrMode;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -36,6 +37,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $pushed_at when Orbit saw that commit pushed for CI
  * @property Carbon $started_at
  * @property Carbon|null $finished_at
+ * @property TaskPrMode|null $pr_mode the group's mode when this handoff check passed ([Task group modes](/reference/tasks#where-the-mode-comes-from))
  */
 #[ObservedBy([TaskBroadcastObserver::class])]
 final class TaskCheck extends Model
@@ -43,7 +45,7 @@ final class TaskCheck extends Model
     #[\Override]
     protected $fillable = [
         'task_id', 'task_comment_id', 'kind', 'failed_step', 'status', 'pid', 'process_started', 'head_before', 'tree_before',
-        'head_after', 'tree_after', 'exit_code', 'changed_paths', 'output', 'deliverable_evidence', 'commit_sha', 'pushed_at', 'started_at', 'finished_at',
+        'head_after', 'tree_after', 'exit_code', 'changed_paths', 'output', 'deliverable_evidence', 'commit_sha', 'pushed_at', 'started_at', 'finished_at', 'pr_mode',
     ];
 
     /** @return BelongsTo<Task, $this> */
@@ -63,6 +65,7 @@ final class TaskCheck extends Model
         return [
             'kind' => TaskCheckKind::class,
             'status' => TaskCheckStatus::class,
+            'pr_mode' => TaskPrMode::class,
             'pid' => 'integer',
             'exit_code' => 'integer',
             'changed_paths' => 'array',
