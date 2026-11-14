@@ -148,10 +148,11 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
         return call.slice(5).join(" ");
       });
     },
-    run(phase: string, extra: string[] = []) {
+    /** Run a phase; its waits poll at once unless `ownDelay` keeps the delay that the phase sets. */
+    run(phase: string, extra: string[] = [], options: { ownDelay?: boolean } = {}) {
       const result = new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "-e", "ansible_connection=local", "-e", "ansible_python_interpreter={{ ansible_playbook_python }}",
-          "-e", `phase=${phase}`, "-e", "fleet_ready_delay=0", ...extra, `${folder}/play.yml`],
+          "-e", `phase=${phase}`, ...(options.ownDelay ? [] : ["-e", "fleet_ready_delay=0"]), ...extra, `${folder}/play.yml`],
         env: {
           HOST_FIXTURE: folder,
           PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
@@ -591,7 +592,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused",
+  name: "a reset stops the three containers in one call, restores base on each stopped one, keeps the rules of base, starts the fleet and polls every second; a base without the rules is refused",
   ignore: !hasAnsible,
   fn() {
     const f = fixture(ruled(), { base: true });
@@ -600,13 +601,22 @@ Deno.test({
       f.calls();
       // Work in the fleet changed a device of a nested container; the restore takes base's back.
       f.change((state) => state.containers["nested-app-dev"].devices.checkout.shift = "true");
-      const reset = f.run("reset");
+      // Doctor answers unhealthy once, so the readiness wait polls again after the reset's own delay.
+      f.change((state) => {
+        state.doctorCalls = 0;
+        state.doctorUnhealthy = 1;
+      });
+      const reset = f.run("reset", [], { ownDelay: true });
       assert(reset.ok, reset.output);
       const calls = f.calls();
       assertEquals(calls, [
+        // A restore of a running container stops and boots it again, one by one: the reset stops the three in one call first.
+        "incus list --format csv --columns ns",
+        `incus stop --force ${names.join(" ")}`,
         ...names.map((name) => `incus snapshot restore ${name} base`),
         ...startReads,
         "incus list --format csv --columns ns",
+        ...names.map((name) => `incus start ${name}`),
         "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key",
         "incus exec nested-gateway -- ln -sfnT club/swamp-club-api-key /home/orbit/.config/swamp/api-key",
         "test -s /etc/wireguard/wg-nested.key",
@@ -620,10 +630,14 @@ Deno.test({
         "incus exec nested-gateway -- systemctl is-active home-orbit-orbit-apps-gateway-.env.mount home-orbit-orbit-apps-gateway-storage.mount home-orbit-orbit-apps-gateway-bootstrap-cache.mount",
         "incus exec nested-app-dev -- systemctl is-active home-orbit-orbit-apps-gateway-.env.mount home-orbit-orbit-apps-gateway-storage.mount home-orbit-orbit-apps-gateway-bootstrap-cache.mount",
         "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan migrate --force",
-        ...readyCalls,
+        // The unhealthy Doctor answer is polled once more.
+        ...readyCalls.slice(0, 3), readyCalls[2], readyCalls[3],
       ]);
       assertKeyUntouched(calls, reset.output);
       assertEquals(f.state().containers["nested-app-dev"].devices.checkout.shift, "false");
+      assertEquals(f.state().runningRestores ?? 0, 0, "a restore of a running container boots it on its own");
+      // The waits poll every second within the 300 s bound: 300 retries, where the refresh's 5 s give 60.
+      assertStringIncludes(reset.output, "FAILED - RETRYING: [localhost]: Wait for Doctor of the nested Gateway (300 retries left)");
       const g = fixture(structuredClone(shapes), { base: true });
       try {
         const refused = g.run("reset");
