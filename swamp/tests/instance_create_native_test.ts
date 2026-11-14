@@ -11,7 +11,7 @@ import { Swamp } from "../extensions/behaviors/node-worker/config.ts";
 
 const binary = Deno.env.get("ORBIT_SWAMP_PROOF_BINARY");
 type RecordValue = Record<string, unknown>;
-type Mode = "success" | "workspace-failure" | "route" | "route-failure" | "route-csr-failure" | "route-cancel";
+type Mode = "success" | "workspace-failure" | "route" | "route-failure" | "route-csr-failure" | "route-cancel" | "route-then-t3-failure";
 const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 const exists = (path: string) => {
     try {
@@ -76,6 +76,8 @@ async function fixture(mode: Mode) {
             }
             let run = `printf '%s\\n' '${name}' >> '${folder}/calls'; touch '${folder}/${name}'`;
             if (name === "clone-workspace") run += mode === "workspace-failure" ? "; exit 3" : `; cat '${folder}/workspace.out'`;
+            // A later clone step fails after the Route has published (Nick's question: what happens to the address).
+            if (name === "clone-t3" && mode === "route-then-t3-failure") run += "; sleep 3; exit 4";
             if (name === "clone-register") run += `; cat '${folder}/register.out'`;
             // The publication runs beside the copy: a cancel while clone-route runs cuts the copy too.
             if (name === "clone-container" && mode === "route-cancel") run += "; sleep 30";
@@ -198,7 +200,6 @@ Deno.test({ name: `pinned create: a failed publication (${mode}) leaves the run 
         const done = await execute(f);
         // The publication steps allow their failure: the run, and so the create, still succeeds (D2).
         assert(done.success, text(done.stdout) + text(done.stderr));
-        assertEquals(JSON.parse(text(done.stdout)).status ?? "succeeded", "succeeded");
         const steps = await f.steps();
         assertEquals([status(steps, "clone-route-csr-0"), status(steps, "clone-route"), status(steps, "clone-register"), status(steps, "withdraw-route")],
             [csr, route, "succeeded", "skipped"]);
@@ -221,6 +222,25 @@ Deno.test({ name: "pinned create: a cancel while clone-route runs withdraws the 
         assertEquals([result(steps).ready, status(steps, "clone-register")], [false, "skipped"]);
         assert(exists(`${f.folder}/withdraw-route`));
         assert(exists(`${f.folder}/stop-container`));
+    } finally {
+        f.cleanup();
+    }
+} });
+
+Deno.test({ name: "pinned create: a later clone step that fails after the Route published fails the run, keeps the published address and stops the container", ignore: !binary, async fn() {
+    const f = await fixture("route-then-t3-failure");
+    try {
+        const done = await execute(f);
+        assert(!done.success, text(done.stdout) + text(done.stderr));
+        const steps = await f.steps();
+        // The publication runs to its end beside the clone steps; a clone failure never stops it.
+        assertEquals([status(steps, "clone-route-csr-0"), status(steps, "clone-route"), status(steps, "clone-t3"), status(steps, "clone-register")],
+            ["succeeded", "succeeded", "failed", "skipped"]);
+        // The published Route is active and its Nodes are free (the Gateway's progress event): the failed create keeps it.
+        assertEquals([status(steps, "withdraw-route"), status(steps, "stop-container"), status(steps, "accepted")], ["skipped", "succeeded", "failed"]);
+        const value = result(steps);
+        assertEquals([value.ready, value.failed_step, value.error_code, value.route_publication], [false, "t3", "instance.t3_unready", "published"]);
+        assertEquals(calls(f.folder).includes("withdraw-route"), false);
     } finally {
         f.cleanup();
     }

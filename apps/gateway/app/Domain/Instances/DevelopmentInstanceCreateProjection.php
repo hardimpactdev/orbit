@@ -71,6 +71,11 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 $result['nested_fleet_club_key'] = NestedFleetClubKey::outcome($result['club_key'] ?? null, $result['error_code'] ?? $data['error_code'] ?? null);
             }
             unset($result['club_key']);
+            // A removal admitted during the run cancelled it and owns the Instance: the run's end changes no record of it, and no completion
+            // starts (docs/reference/conn.md#remove-an-instance).
+            if (Instance::query()->find($operation->target_id)?->status === InstanceState::Removing) {
+                return $this->direct->project($operation, $data, $result);
+            }
             if (is_array($operation->input['branch_selection'] ?? null)) {
                 $selection = InstanceBranchSelection::fromArray(ValidatedData::object($operation->input['branch_selection']));
                 $result['branch'] = $selection->target;

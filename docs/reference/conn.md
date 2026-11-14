@@ -557,7 +557,7 @@ Inherited refusals keep their codes:
 | `instance.remove_refused` | The state, source layout or attached Route is unsafe to remove. |
 | `instance.removal_conflict` | Saved removal, placement or Route inventory changed. |
 | `instance.destroy_unsupported` | Removal requires its recorded development placement and non-root account. |
-| `operation.target_busy` | Another destroy owns a member of the removal set, a restore owns the Instance, or the Instance's create still runs. `details.operation_id` names the create. |
+| `operation.target_busy` | Another destroy owns a member of the removal set, or a restore owns the Instance. |
 | `operation.kind_unavailable` | The placement has no supported native destroy path. |
 | `route.withdrawal_node_unavailable` | The admitted withdrawal Node is inactive. |
 | `database.connection_attached` | An owned database is attached outside the removal set. |
@@ -583,7 +583,7 @@ The removal starts when the completion has ended. The completion's SSH and shell
 
 A database fill that already runs is not cut: the cancel waits until the fill has ended, within its 600-second limit ([Cancel an operation](/reference/operations#cancel-an-operation)). Meanwhile the removal shows `waiting` and the completion keeps the clone's lock and its Route hold. Then the completion takes the cancel, withdraws its Route and ends, and the removal drops a database that no copy touches.
 
-Three cases are not covered. A run that the Gateway times out or loses during the fill gets the cancel at once, so its copy can still outlive it. A cancel that reaches Swamp in the moment the fill starts, before the Gateway has recorded that start, can cut it. A CLI destroy of a clone whose create still runs its fill is admitted beside the create, and can race that copy.
+Two cases are not covered. A run that the Gateway times out or loses during the fill gets the cancel at once, so its copy can still outlive it. A cancel that reaches Swamp in the moment the fill starts, before the Gateway has recorded that start, can cut it.
 
 The removal's run budget counts from its start, not from its admission. Several removals at once each wait for their own clone's completion; removals that share Route Nodes start one after another, oldest first, as every Route write does.
 
@@ -592,6 +592,12 @@ While the completion runs, the remove sheet's read answers as for any running co
 A retry of a removal never starts after a completion that an earlier call named: from Conn it cancels the running completion and waits again; from the CLI it refuses while the completion runs.
 
 The CLI and the core API keep their refusal: `instance:destroy` while the completion runs answers `operation.target_busy` (409) with `details.operation_id`, the completion. Follow it to its end, or cancel it, then destroy again.
+
+### Remove a clone whose create runs
+
+A removal while the clone's create runs is accepted at once from every caller: Conn, the CLI and the core API. In one transaction the Gateway records the cancel of the create and admits the removal with status `waiting` and `after_operation_id` set to the create. The call answers 202. Swamp is asked to stop the create after the commit, and the reconciler asks again on each pass until it stops. A create that had not started yet ends `cancelled` at once.
+
+The removal starts when the create has ended. The create's own `withdraw-route` step takes back a publication that it started and did not finish. A removal admitted during the create marks the Route retiring, so an address that `clone-route` publishes after it stays down, and the removal's withdrawal captures the clone's site in either state. The create's end records nothing of the removed clone and admits no completion. Several removals at once each wait behind their own clone's create. Conn's cancel of an `instance.create` still answers 404.
 
 The same caller, key, Instance ID and body return the same Operation with HTTP 202, even after the Instance was deleted. Reusing the key with a changed body refuses with `operation.idempotency_conflict` (409). A missing Instance without that receipt keeps the normal 404.
 

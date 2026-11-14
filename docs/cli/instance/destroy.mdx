@@ -48,6 +48,8 @@ An Instance without a Route skips Route withdrawal. A sole pending or failed Rou
 
 A non-default container Instance, cloned or migrated, requires `--force` until guarded removal is built. It withdraws the Route, drops owned databases and stops and deletes the container with its Processes, T3 sessions, history, Incus storage, ACL and firewall rules. It removes Conn records and execution copies, then frees the T3 port. See [clone removal](/reference/development-containers#destroy).
 
+A removal while the Instance's create runs is accepted at once. It cancels the create, and it waits with status `waiting` until the create has ended; then it starts. Swamp is asked to stop the create after the commit, and the reconciler asks again on each pass. A create whose run never stops ends at its run budget, 1,800 seconds for a clone, as a timed-out Operation. The removal then starts when the create's Route Nodes are free: when Swamp confirms that the run stopped, or 15 minutes later. See [remove a clone whose create runs](/reference/conn#remove-a-clone-whose-create-runs).
+
 A container default is removable only when two things hold: its Project is on the operator list `ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS`, and no Instance has it as its clone source. Every other container default refuses with `operation.kind_unavailable`. The removal also needs `--force`. It deletes the container with its seed snapshots, and its [inner volume](/reference/development-containers#the-inner-volume) when it has one. A retry of a failed removal needs the Project still on the list.
 
 A migrated Instance's [retained Git directory](/cli/instance/migrate#retained-git-data), `<old-checkout>.orbit-retired-git/`, survives destroy. It is purged only by hand under the [manual purge prerequisites](/cli/instance/migrate#manual-purge). After the Instance record is deleted, find its retained path and time in the successful destroy Operation: `orbit operation:show OPERATION --json` or `GET /api/v1/operations/{operation}` returns `result.retained_git_path` and `result.retained_git_at`.
@@ -75,7 +77,7 @@ The [container destroy chart](https://github.com/hardimpactdev/orbit/blob/main/d
 | `instance.checkout_path_unsafe` | The checkout path is not safe to delete. |
 | `instance.clone_in_progress` | The Instance is the candidate of an incomplete clone. |
 | `instance.removal_conflict` | The Instance belongs to a different removal request, or `--force` was added or dropped on a rerun against the rules above. |
-| `operation.target_busy` | Another operation holds the Instance, such as a removal or a create that is still running. For a create, `details.operation_id` names it; wait for its end or cancel it, then destroy again. |
+| `operation.target_busy` | Another operation holds the Instance, such as a removal or a clone's completion that is still running. |
 | `instance.destroy_unsupported` | The Node account is not an unprivileged account, or the placement is a member placement. |
 | `websocket.route_in_use` | The Route has public Reverb attachments. |
 | `analytics.tracking_hosts_exist` | The Instance has analytics tracking hosts. Disable analytics first. |

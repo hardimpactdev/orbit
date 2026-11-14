@@ -735,7 +735,9 @@ A container clone's create takes the hold only when every Node is free at its ad
 
 A create that took the hold keeps it until its `clone-route` step ends. The Gateway sees that step succeed in the run's progress events. In one transaction it turns the Route `active` with its sites published and frees the Nodes; no step calls the Gateway. A failed step or a lost event keeps the hold until the create's terminal state.
 
-The create also keeps the hold to its end when a waiting Route write would publish the whole Caddyfile it rendered at its admission. Examples are `route:update`, `route:target:set`, `instance:migrate` and `instance:transfer`; that render lacks the new site. A waiting create renders again when it starts, and a removal composes from the live file, so they may start early. A completion of a Route that the create published holds no Node.
+A waiting Route write that publishes the whole Caddyfile it rendered at its admission records which sites its Nodes served then. Examples are `route:update`, `route:target:set`, `instance:migrate` and `instance:transfer`. When it gains its Nodes and a site was published or withdrawn on them meanwhile, it is refused with `route.publication_stale` (409) and changes nothing; run the same command again, and it renders from the current catalog. A waiting create renders again when it starts, and a removal composes from the live file, so neither records the sites.
+
+The step-scoped holders below render at admission too, and they are not checked yet. A Route published between their admission and their Route step is left out of their publication. This holds for any Route publication, the completion's included, not only for a clone's create. A completion of a Route that the create published holds no Node.
 
 A second Route write that needs a held Node is admitted with status `waiting`. It starts no Swamp run and gets no 409. It starts when every Node it needs is free, oldest first. A newer write also waits behind an older waiting one that shares a Node. Its time budget counts from its start, and an operator can cancel it while it waits.
 

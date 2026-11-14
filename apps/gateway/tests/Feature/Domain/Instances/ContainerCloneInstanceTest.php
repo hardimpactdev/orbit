@@ -1201,24 +1201,14 @@ it('keeps another Operation kind cancellation result unchanged', function (?arra
         ->and($operation->result)->toBe($result);
 })->with(['no result' => [null], 'existing result' => [['kept' => true]]]);
 
-/** A removal is refused while the create holds the Instance lock; these cases reach the create's projection after the lock went, as a late report of a run does. */
-function releaseCreateLock(Instance $instance): void
-{
-    Operation::query()->where('kind', 'instance.create')->where('target_id', $instance->id)->update(['lock_key' => null]);
-}
-
 $recoveryInvalidTargets = [
     'deleted' => [function (Instance $instance): void {
-        releaseCreateLock($instance);
         $destroy = app(StartInstanceDestroyAction::class)->execute($instance, true);
         app(ProjectDirectInstanceDestroyAction::class)->execute($destroy->input, []);
         expect(Instance::query()->find($instance->id))->toBeNull();
     }],
     'active' => [fn (Instance $instance) => $instance->update(['status' => InstanceState::Active])],
-    'removing' => [function (Instance $instance): void {
-        releaseCreateLock($instance);
-        app(StartInstanceDestroyAction::class)->execute($instance, true);
-    }],
+    'removing' => [fn (Instance $instance) => app(StartInstanceDestroyAction::class)->execute($instance, true)],
     'another reservation' => [fn (Instance $instance) => $instance->update(['source_prepare_id' => '2af21576-58f7-46df-b971-f88e269b6688'])],
 ];
 
@@ -1546,10 +1536,7 @@ describe('a connection the default shares with its clones', function (): void {
         $default = seededDefault($node);
         $catalogue = foodCatalogue($default, shared: true);
         // The clone as its create left it, with the shared attachment; a destroy treats every attachment the same.
-        $create = containerCreate($default->project, $node, 'feature');
-        // A removal waits for the create's end (operation.target_busy while it runs); this create failed and is retained.
-        $create->forceFill(['status' => 'failed', 'finished_at' => now(), 'lock_key' => null])->save();
-        $clone = Instance::query()->findOrFail($create->target_id);
+        $clone = Instance::query()->findOrFail(containerCreate($default->project, $node, 'feature')->target_id);
         expect(DatabaseConnectionTarget::query()->where('instance_id', $clone->id)->value('shared'))->toBeTrue();
 
         $destroy = app(StartInstanceDestroyAction::class)->execute($clone, true);

@@ -9,9 +9,12 @@ use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Instances\ClonePublication;
 use App\Domain\Routes\NativeRouteCreatePlan;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Operations\PromoteRouteWrites;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
@@ -178,10 +181,43 @@ final class RoutePublicationHolds
 
             return true;
         }
+        // A write that publishes a render made now records the sites its Nodes serve, so its start can tell when they changed.
         app(OperationStore::class)->change($operation, ['status' => OperationStatus::Waiting,
-            'state' => [...($operation->state ?? []), 'hold_nodes' => $nodes]]);
+            'state' => [...($operation->state ?? []), 'hold_nodes' => $nodes, ...(self::rendersAtStart($operation) ? [] : ['hold_sites' => self::served($nodes)])]]);
 
         return false;
+    }
+
+    /**
+     * The site domains each Node serves now, one digest per Node. A site published or withdrawn on a Node changes its digest.
+     *
+     * @param  list<int>  $nodes
+     * @return array<int, string>
+     */
+    private static function served(array $nodes): array
+    {
+        $served = [];
+        foreach ($nodes as $nodeId) {
+            // A Node that is gone serves nothing.
+            $node = Node::query()->find($nodeId);
+            $domains = $node === null ? [] : app(DevelopmentSiteRepository::class)->forNode($node)
+                ->map(static fn (DevelopmentSite $site): string => $site->domain)->unique()->sort()->values()->all();
+            $served[$nodeId] = hash('sha256', implode("\n", $domains));
+        }
+
+        return $served;
+    }
+
+    /**
+     * A waiting write that publishes the whole Caddyfile it rendered at its admission, when a site was published or withdrawn on its
+     * Nodes meanwhile: its render would drop or bring back that site. It is refused at its start with `route.publication_stale`, and
+     * the same command run again renders from the current catalog (docs/reference/routes.md#coordinate-publication).
+     */
+    private static function stale(Operation $operation): bool
+    {
+        $recorded = $operation->state['hold_sites'] ?? null;
+
+        return is_array($recorded) && $recorded !== self::served(self::waitingNodes($operation));
     }
 
     /** Frees the Nodes of a finished Operation, then asks for the waiting ones to start, after the caller's transaction. */
@@ -322,17 +358,8 @@ final class RoutePublicationHolds
      */
     public function releasePublished(Operation $operation): void
     {
-        $held = DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNull('lease_until');
-        // A waiting write that publishes the whole Caddyfile it rendered at its admission would drop the new site; it starts at the
-        // create's end, as it would have after the completion. Creates render again when they start, and a removal composes from the
-        // live file, so those may start now.
-        $nodes = ValidatedData::integerList((clone $held)->pluck('node_id')->all());
-        foreach ($this->waiters() as $waiter) {
-            if (array_intersect($nodes, self::waitingNodes($waiter)) !== [] && ! self::rendersAtStart($waiter)) {
-                return;
-            }
-        }
-        if ($held->delete() > 0) {
+        // A waiting write that renders at its admission is refused at its start, because the new site changed what its Nodes serve.
+        if (DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNull('lease_until')->delete() > 0) {
             PromoteRouteWrites::dispatch()->afterCommit();
         }
     }
@@ -425,6 +452,12 @@ final class RoutePublicationHolds
     private function start(array $operations): void
     {
         foreach ($operations as $operation) {
+            if (self::stale($operation)) {
+                app(StartSwampRun::class)->refuse($operation, new ResourceOperationException('route.publication_stale',
+                    'A Route site on a Node of this write changed while it waited; run the command again.', 409));
+
+                continue;
+            }
             try {
                 $this->refreshPublication($operation);
             } catch (Throwable $exception) {

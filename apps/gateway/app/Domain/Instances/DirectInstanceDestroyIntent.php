@@ -202,11 +202,11 @@ final readonly class DirectInstanceDestroyIntent
         if (Operation::query()->where('kind', 'instance.restore')->where('lock_key', OperationStore::lockKey('instance', ValidatedData::integer($input['instance_id'])))->exists()) {
             throw new ResourceOperationException('operation.target_busy', 'A restore owns this Instance.', 409);
         }
-        // A create holds the Instance until its run has ended: a removal beside it would race the copy and the Route it publishes.
-        // Cancel the create, or wait for its end; a failed or cancelled create is removed as a retained one.
+        // A running create holds the Instance until its run has ended: only a removal admitted to start after it, and that cancels it, may be
+        // recorded now (StartInstanceDestroyAction admits every removal so); a removal beside it would race the copy and its Route.
         $create = Operation::query()->where('kind', 'instance.create')->whereNotIn('status', OperationStatus::terminalValues())
             ->where('lock_key', OperationStore::lockKey('instance', ValidatedData::integer($input['instance_id'])))->value('id');
-        if ($create !== null) {
+        if ($create !== null && ($input['after_operation_id'] ?? null) !== $create) {
             throw new ResourceOperationException('operation.target_busy', 'The create of this Instance owns it.', 409, details: ['operation_id' => $create]);
         }
         // A clone's completion holds the Instance until its run has ended. Only a removal admitted to start after it, and that cancels

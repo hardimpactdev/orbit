@@ -65,7 +65,7 @@ sequenceDiagram
     %%> - the create's Route Nodes are freed, and waiting Route writes start oldest first
     %%> Otherwise:
     %%> - a failed or skipped `clone-route`, or a lost event, keeps the Nodes until the create's terminal state frees them
-    %%> - so does a waiting Route write that would publish a whole Caddyfile rendered at its admission; a waiting create renders again and a removal composes from the live file, so they start now
+    %%> - a waiting Route write that rendered its whole Caddyfile at its admission is refused at its start with `route.publication_stale`, because this site changed what its Nodes serve; a waiting create renders again and a removal composes from the live file
     %%> - a Route that another write took meanwhile, such as a retiring one, stays as it is
   end
     SW->>N: Stage clone helpers<br/>native clone-input

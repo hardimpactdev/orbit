@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\GatewayReleases\WaitForGatewayReleaseIdleAction;
 use App\Actions\Instances\StartInstanceCompleteAction;
-use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
@@ -23,8 +22,10 @@ use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\Swamp\NativeRunProgress;
+use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Operations\PromoteRouteWrites;
 use App\Models\Activity;
 use App\Models\Instance;
@@ -452,45 +453,6 @@ it('frees the Route Nodes when clone-route succeeds, with the Route active in th
         ->and(app(NativeInstanceCompleteInput::class)->input($completion)['intent']['route'])->toBeNull();
 });
 
-it('refuses a removal while a clone\'s create runs, with a free hold or a deferred address, and admits it once the create has ended', function (bool $deferred): void {
-    $node = containerDefaultNode();
-    $default = handoverDefault($node);
-    if ($deferred) {
-        DB::table('route_publication_holds')->insert(['node_id' => $node->id, 'operation_id' => 999999, 'created_at' => now(), 'lease_until' => null]);
-    }
-    $create = handoverCreate($default);
-    expect(isset($create->input['route_create']))->toBe(! $deferred);
-    $instance = Instance::query()->findOrFail($create->target_id);
-    $route = Route::query()->findOrFail($create->input['route_id']);
-
-    // Before clone-route ends, and after it published the address.
-    foreach (['before', 'after'] as $moment) {
-        if ($moment === 'after' && ! $deferred) {
-            handoverStep($create, 'publication', 'clone-route', 'step_completed', 1);
-        }
-        $refusal = null;
-        try {
-            app(StartInstanceDestroyAction::class)->execute($instance->refresh(), true);
-        } catch (ResourceOperationException $error) {
-            $refusal = $error;
-        }
-        expect([$refusal?->errorCode, $refusal?->details['operation_id'] ?? null])->toBe(['operation.target_busy', $create->id], $moment)
-            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse()
-            ->and($instance->refresh()->status)->toBe(InstanceState::Reserved);
-    }
-    expect($route->refresh()->status->value)->toBe($deferred ? 'pending' : 'active');
-    DB::table('route_publication_holds')->where('operation_id', 999999)->delete();
-
-    // A failed create is retained; its removal is admitted and withdraws a Route the create published.
-    app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), ['status' => 'failed', 'run_id' => 'run-1', 'error_code' => 'instance.create_t3_failed',
-        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['instance_id' => $create->target_id, 'ready' => false, 'failed_step' => 't3', 'error_code' => 'instance.t3_unready',
-            ...($deferred ? [] : ['route_publication' => 'published'])]]);
-    $removal = app(StartInstanceDestroyAction::class)->execute($instance->refresh(), true);
-    expect($removal->kind)->toBe('instance.destroy')
-        ->and(array_column($removal->input['members'], 'route_id'))->toBe([$route->id]);
-})->with(['hold free' => false, 'address deferred' => true]);
-
 it('leaves a Route that another write has taken alone when clone-route succeeds, and frees the Nodes', function (): void {
     $node = containerDefaultNode();
     $create = handoverCreate(handoverDefault($node));
@@ -503,29 +465,85 @@ it('leaves a Route that another write has taken alone when clone-route succeeds,
         ->and(DB::table('route_publication_holds')->count())->toBe(0);
 });
 
-it('keeps the create\'s hold to its end while a waiting writer would publish a render from its admission; a waiting create starts early', function (string $kind, bool $early): void {
+/** A Route write on the Node that renders its whole Caddyfile at its admission and publishes it later. */
+function handoverRouteWrite(Node $node, string $kind): Operation
+{
+    $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'route', 'target_id' => 1, 'node_id' => $node->id,
+        'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0,
+        'input' => ['plan' => ['publications' => [['node_id' => $node->id, 'serves_routes' => true]]]], 'state' => []]);
+    app(RoutePublicationHolds::class)->admit($operation);
+
+    return $operation->refresh();
+}
+
+it('refuses at its start a Route write that rendered before the clone\'s address was published, so it never drops the site', function (string $kind): void {
     $node = containerDefaultNode();
     $create = handoverCreate(handoverDefault($node));
-    $waiter = Operation::query()->create(['kind' => $kind, 'target_type' => 'route', 'target_id' => 1, 'node_id' => $node->id,
-        'status' => OperationStatus::Waiting, 'sequence' => 1, 'attempts' => 0,
-        'input' => $kind === 'instance.create' ? ['route_create' => ['route_id' => 1]] : [], 'state' => ['hold_nodes' => [$node->id]]]);
+    $route = Route::query()->findOrFail($create->input['route_id']);
+    // Admitted while the create holds the Node: it waits, and its render has no clone site.
+    $waiter = handoverRouteWrite($node, $kind);
+    expect($waiter->status)->toBe(OperationStatus::Waiting)
+        ->and($waiter->state['hold_sites'])->toHaveKey((string) $node->id);
 
     handoverStep($create, 'publication', 'clone-route', 'step_completed', 1);
+    app(RoutePublicationHolds::class)->promoteAndStart();
 
-    // The Route is active either way; only the Nodes wait for the create's end when the waiter's render is stale.
-    expect(Route::query()->findOrFail($create->input['route_id'])->sites_published)->toBeTrue()
-        ->and(DB::table('route_publication_holds')->where('operation_id', $create->id)->exists())->toBe(! $early);
-    app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), handoverPublished($create, 'published'));
-    expect(DB::table('route_publication_holds')->where('operation_id', $create->id)->exists())->toBeFalse()
-        ->and($waiter->refresh()->status)->toBe(OperationStatus::Waiting);
-})->with([
-    'route.update' => ['route.update', false],
-    'route.target_set' => ['route.target_set', false],
-    'instance.migrate' => ['instance.migrate', false],
-    'instance.transfer' => ['instance.transfer', false],
-    'a create that renders again' => ['instance.create', true],
-    'a removal that composes from the live file' => ['instance.destroy', true],
-]);
+    expect([$waiter->refresh()->status, $waiter->error_code])->toBe([OperationStatus::Failed, 'route.publication_stale'])
+        ->and([$route->refresh()->status->value, $route->sites_published])->toBe(['active', true])
+        ->and(DB::table('route_publication_holds')->where('operation_id', $waiter->id)->exists())->toBeFalse();
+    // Any render made now, a write run again or a create that renders at its start, serves the clone's site.
+    expect(app(DevelopmentSiteRepository::class)->forNode($node)->pluck('domain')->all())->toContain($route->domain);
+    $again = handoverRouteWrite($node, $kind);
+    expect($again->status)->not->toBe(OperationStatus::Waiting);
+})->with(['route.update', 'route.target_set', 'instance.migrate', 'instance.transfer']);
+
+it('starts a waiting Route write whose Nodes serve the same sites as at its admission', function (): void {
+    $node = containerDefaultNode();
+    $create = handoverCreate(handoverDefault($node));
+    $waiter = handoverRouteWrite($node, 'route.update');
+
+    // clone-route failed: no site was published, so the waiter's render is still current.
+    handoverStep($create, 'publication', 'clone-route', 'step_failed', 1);
+    $failed = handoverPublished($create, 'failed');
+    app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), $failed);
+    app()->instance(SwampDispatch::class, new class
+    {
+        public array $started = [];
+
+        public function start(Operation $operation): void
+        {
+            $this->started[] = $operation->id;
+        }
+    });
+    app(RoutePublicationHolds::class)->promoteAndStart();
+
+    expect($waiter->refresh()->error_code)->toBeNull()
+        ->and(app(SwampDispatch::class)->started)->toBe([$waiter->id]);
+});
+
+it('keeps the address of a create whose later clone step failed after clone-route published it: Route active, Nodes free, no completion', function (): void {
+    $node = containerDefaultNode();
+    $create = handoverCreate(handoverDefault($node));
+    $route = Route::query()->findOrFail($create->input['route_id']);
+    handoverStep($create, 'publication', 'clone-route', 'step_completed', 1);
+    // The Route is active and the Nodes are free while the clone steps still run.
+    expect([$route->refresh()->status->value, $route->sites_published, DB::table('route_publication_holds')->count()])->toBe(['active', true, 0]);
+    handoverStep($create, 'clone', 'clone-t3', 'step_failed', 2);
+    expect($create->refresh()->failed_step)->toBe('clone-t3');
+
+    app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), ['status' => 'failed', 'run_id' => 'run-1', 'error_code' => 'instance.t3_unready',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['instance_id' => $create->target_id, 'ready' => false, 'failed_step' => 't3', 'error_code' => 'instance.t3_unready', 'route_publication' => 'published']]);
+
+    $instance = Instance::query()->findOrFail($create->target_id);
+    expect([$create->refresh()->status, $create->failed_step, $create->error_code])->toBe([OperationStatus::Failed, 'clone-t3', 'instance.t3_unready'])
+        ->and($create->result['route_publication'])->toBe('published')
+        ->and($create->result['recovery']['retry']['command'])->toBe('instance:create')
+        ->and($create->result)->not->toHaveKey('completion_operation_id')
+        ->and(Operation::query()->where('kind', 'instance.complete')->exists())->toBeFalse()
+        ->and([$instance->failed_step, $instance->error_code])->toBe(['t3', 'instance.t3_unready'])
+        ->and([$route->refresh()->status->value, $route->sites_published, $route->failed_step])->toBe(['active', true, null]);
+});
 
 it('activates a published Route at the create\'s end when the progress event was lost, and frees the Nodes in that transaction', function (): void {
     $node = containerDefaultNode();

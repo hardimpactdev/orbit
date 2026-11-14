@@ -914,10 +914,7 @@ describe('a cancel of a group that owns a copy', function (): void {
         $default = copySource();
         $group = copyGroup($default->project);
         $group->update(['status' => TaskGroupStatus::Running]);
-        $create = containerCreate($default->project, $default->node, 'feature');
-        // A removal waits for the create's end (operation.target_busy while it runs); this one failed and is retained.
-        $create->forceFill(['status' => 'failed', 'finished_at' => now(), 'lock_key' => null])->save();
-        $clone = Instance::query()->findOrFail($create->target_id);
+        $clone = Instance::query()->findOrFail(containerCreate($default->project, $default->node, 'feature')->target_id);
         destroySucceeded(app(StartInstanceDestroyAction::class)->execute($clone, true));
 
         expect(Instance::query()->find($clone->id))->toBeNull()->and($group->refresh()->status)->toBe(TaskGroupStatus::Running);

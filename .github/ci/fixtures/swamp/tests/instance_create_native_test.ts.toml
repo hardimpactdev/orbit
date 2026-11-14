@@ -1,5 +1,5 @@
 order = 860
-source_sha256 = "b623fcc403a55bff806ac3ec08c290f265e5e077106df85dfddda58ccdbe5793"
+source_sha256 = "9fb2ac60e157c62288043a3e7e130790eb0c6cc766c349c736e3c46c3af29f08"
 cases = [
   "pinned create: a normal clone ends ready at its registration and runs no step of its completion",
   "pinned create: a failed workspace registers nothing, stops the container and removes the private folder",
@@ -7,6 +7,7 @@ cases = [
   "pinned create: a failed publication (route-failure) leaves the run succeeded and the create ready, names the Route warning and withdraws nothing",
   "pinned create: a failed publication (route-csr-failure) leaves the run succeeded and the create ready, names the Route warning and withdraws nothing",
   "pinned create: a cancel while clone-route runs withdraws the half Route and stops the container",
+  "pinned create: a later clone step that fails after the Route published fails the run, keeps the published address and stops the container",
 ]
 file = "swamp/tests/instance_create_native_test.ts"
 cost = 30
