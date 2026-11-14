@@ -17,6 +17,14 @@ GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 # Written by root after this Instance's first checkout; outside the workspace, so the agent cannot write it.
 CHECKOUT_MARK = "/var/lib/orbit/workspace-checkout"
 
+# The names a task copy's cleaning reports of each kind; the counts give the rest.
+CLEANED_NAMES = 20
+# The most clean rounds of a task copy: one per untracked `.gitignore` nested in another untracked folder that it hides.
+CLEAN_ROUNDS = 64
+
+# The agent's own ignore file: the task check runs Git as `agent` with no global configuration, so Git reads this file by default.
+AGENT_IGNORE = "/home/agent/.config/git/ignore"
+
 
 class PhaseRefusal(AssertionError):
     def __init__(self, evidence):
@@ -219,7 +227,7 @@ def phase_main(phase, raw):
     root = pathlib.Path
     private = sys.stdin.read()
 
-    def run(argv, check=True, agent=False, orbit=False, timeout=40, private_input=None):
+    def run(argv, check=True, agent=False, orbit=False, timeout=40, private_input=None, isolated=False):
         command = argv
         if agent or orbit:
             argv = ["runuser", "-u", "agent" if agent else "orbit", "--"] + argv
@@ -229,9 +237,13 @@ def phase_main(phase, raw):
             input=private_input,
             capture_output=True,
             text=True,
+            # A task copy's clean reads file names, which need not be UTF-8: they cross as escaped bytes, never as a crash.
+            errors="surrogateescape" if isolated else "strict",
             env=dict(
                 os.environ,
                 HOME="/home/agent" if agent else "/home/orbit" if orbit else "/root",
+                # The task check's own Git environment: no global or system configuration, so no ignore rule of a user's own.
+                **({"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "LC_ALL": "C"} if isolated else {}),
             ),
             cwd=ws if orbit else "/home/agent" if agent else "/",
             timeout=timeout,
@@ -259,13 +271,15 @@ def phase_main(phase, raw):
         if drift or attrs:
             changes.append(path)
 
-    def git(*args, agent=False, check=True):
+    def git(*args, agent=False, check=True, isolated=False, private_input=None):
         return run(
             ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"]
             + list(args),
             agent=agent,
             orbit=not agent,
             check=check,
+            isolated=isolated,
+            private_input=private_input,
         )
 
     def require_units():
@@ -285,6 +299,7 @@ def phase_main(phase, raw):
         assert root(ws + "/.git").is_dir()
         mark = root(CHECKOUT_MARK)
         checked_out = json.loads(mark.read_text()) if mark.is_file() else {}
+        cleaned = None
         try:
             # This Instance checked out before only when its mark names it; then a retry never moves the branch.
             if checked_out.get("instance_id") != c["instance_id"]:
@@ -310,6 +325,8 @@ def phase_main(phase, raw):
                     changes.append("checkout")
                 assert git("symbolic-ref", "--short", "HEAD").stdout.strip() == c["branch"]
                 assert git("rev-parse", "HEAD").stdout.strip() == c["expected_commit"]
+                if "clean_workspace" in c["clone"]:
+                    cleaned = clean_workspace()
                 checked_out = {"instance_id": c["instance_id"], "commit": c["expected_commit"]}
                 mark.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
                 # A whole file or none: a crash never leaves a mark that blocks each retry.
@@ -340,7 +357,53 @@ def phase_main(phase, raw):
         if env != updated:
             write(c["environment_file"], updated, 1000, 2760, "0640")
         exclude_environment()
-        return {"environment": environment_keys, "commit": checked_out["commit"]}
+        return {"environment": environment_keys, "commit": checked_out["commit"], **({"cleaned": cleaned} if cleaned is not None else {})}
+
+    def clean_workspace():
+        """A task copy starts from its start commit alone (development-containers.md#a-task-copy-starts-clean). The seed holds the
+        default's tree as it was, so the default's modified tracked files go back to the commit, and its untracked files that Git
+        does not ignore go, nested repositories too. Ignored files stay: `vendor`, `node_modules`, built assets, a SQLite file and
+        `.env`, which is excluded first, so the merge below still reads the default's file. It runs once, in the first checkout,
+        before the mark: T3 is registered and the group can run a turn or a check only after it. Names only leave, at most
+        CLEANED_NAMES of each kind, with the counts."""
+        exclude_environment()
+
+        def clean_git(*args, private_input=None):
+            # The ignore rules the task check reads: no global or system configuration, and the agent's own ignore file, which the
+            # check (as `agent`, HOME=/home/agent) reads by default. The C locale keeps `git clean -n`'s words as parsed below.
+            return git("-c", "core.quotePath=false", "-c", "core.excludesFile=" + AGENT_IGNORE, *args, isolated=True,
+                       private_input=private_input)
+
+        # A skip-worktree (`S`, or `s` with assume-unchanged too) or assume-unchanged (lower case) flag in the default's index hides a
+        # tracked file's edit from diff, reset and status. Each flag is cleared in its own call: `update-index` applies only the last
+        # flag it is given.
+        entries = [entry for entry in clean_git("ls-files", "-v", "-z").stdout.split("\0") if entry]
+        for flag, hidden in (("--no-skip-worktree", [e[2:] for e in entries if e[0] in "Ss"]),
+                             ("--no-assume-unchanged", [e[2:] for e in entries if e[0].islower()])):
+            if hidden:
+                clean_git("update-index", flag, "-z", "--stdin", private_input="".join(name + "\0" for name in hidden))
+        reset = [name for name in clean_git("diff", "--name-only", "--no-renames", "-z", "HEAD").stdout.split("\0") if name]
+        clean_git("reset", "--quiet", "--hard", "HEAD")
+        # After the reset, so the clean reads the start commit's `.gitignore`, not the default's edit of it. `git clean -n` names
+        # exactly what the clean removes: a folder of ignored files stays, a folder with one is not listed whole. An untracked
+        # `.gitignore` hides what it names until it is gone, so the clean runs again until a dry run finds nothing new. A path that a
+        # clean could not remove comes back in the next dry run: then the rounds stop and the status check below refuses the tree,
+        # as it refuses what CLEAN_ROUNDS rounds leave.
+        removed = []
+        for _ in range(CLEAN_ROUNDS):
+            found = [line.removeprefix("Would remove ") for line in clean_git("clean", "-d", "-ff", "-n").stdout.splitlines()
+                     if line.startswith("Would remove ")]
+            if not found or set(found) <= set(removed):
+                break
+            clean_git("clean", "-d", "-ff", "--quiet")
+            removed += found
+        # A changed submodule or a file that a reset cannot restore fails the copy: a task never starts on a dirty tree. Every
+        # untracked file counts, whatever the repository's own `status.showUntrackedFiles` says.
+        assert clean_git("status", "--porcelain", "--ignore-submodules=none", "--untracked-files=all").stdout == ""
+        if reset or removed:
+            changes.append("clean")
+        return {"reset_count": len(reset), "reset": sorted(reset)[:CLEANED_NAMES],
+                "removed_count": len(removed), "removed": sorted(removed)[:CLEANED_NAMES]}
 
     def exclude_environment():
         """Git never takes the `.env`, also when the Project's .gitignore does not name it: one line in the checkout's own

@@ -746,9 +746,29 @@ Each step that writes `.env` also names it once in the checkout's own `info/excl
 
 #### A task copy starts clean
 
-A [task copy](/reference/tasks#task-copy) starts from its start commit alone: the default's modified and untracked files, which the seed holds, must not reach its checks and its pull request. The Gateway marks a task copy in the clone intent with `container.clone.clean_workspace`. Every other clone, from Conn or `instance:create`, has no mark and keeps the default's tree.
+A [task copy](/reference/tasks#task-copy) starts from its start commit alone. The seed holds the default's tree as it was when the seed was taken, with the default's own work in it: modified files and untracked files. A task copy must not carry that work into its checks and its pull request. So the `checkout` part of a task copy cleans the tree once, at its first checkout:
 
-Planned: the clone's `checkout` part reads the mark and cleans the tree. Until it ships, a task copy keeps the default's tree as before.
+| Step | What happens |
+| --- | --- |
+| `.env` | Named in `info/exclude` first, so the clean keeps it and the merge still reads the default's file |
+| Index flags | Each skip-worktree and assume-unchanged flag from the default's index is cleared, so no edit stays hidden |
+| Modified tracked files | `git reset --hard` puts them back to the start commit, staged files and renames too |
+| Untracked files | Then `git clean -d -ff`, without `-x`, with the start commit's `.gitignore`: what Git does not ignore goes, nested repositories too. It repeats until a dry run finds nothing new, at most 64 rounds |
+| Check | `git status --porcelain --untracked-files=all` must be empty, else the create fails with `instance.create_workspace_failed`, for example for a changed submodule |
+
+Git runs here with the task check's ignore rules: no global or system configuration, and the agent's own ignore file, `~agent/.config/git/ignore`, which the check reads as `agent`. A file name that is not UTF-8 is cleaned too and named with its bytes escaped.
+
+What Git ignores stays: `vendor`, `node_modules`, built assets, a SQLite file and `.env`. They come from the seed and match the start commit, which is the seed's commit.
+
+A task copy runs no setup step. So a file that the Project does not ignore and that the clean removed does not come back. A Project without a `.gitignore` loses its `node_modules` and its build output in a task copy, and its check and Processes run without them. The fix is in the Project's `.gitignore`; Orbit writes none.
+
+The same goes for a local package kept as its own repository in the checkout, and for a second `.env` file, such as `apps/api/.env`, that `.gitignore` does not name: only the Instance's own `.env` is excluded. A `.env.testing` from the seed that the Project does not ignore goes too: it named the default's test database, and the copy's tests then read `.env`, the copy's own database.
+
+A path that the default excluded in its own `.git/info/exclude`, or under an untracked `.gitignore` that ignores itself, is ignored, so it stays in the copy. It never reaches a commit, but the check sees it, and a new file under such a pattern stays out of the commit too.
+
+The create's result names what went, as `workspace_cleaned`: `reset_count` and `removed_count`, and the first 20 names of each kind (`reset`, `removed`; a folder ends in `/`). Names only. The clean ends before the T3 registration, before the create ends and before the copy is `active`. So no turn and no check, the baseline included, sees the default's work. A retry of the checkout after the mark does not clean again: the work in the copy after its first checkout stays. A retry before the mark cleans again and names only what that run removed.
+
+The Gateway marks a task copy in the clone intent with `container.clone.clean_workspace`. Every other clone, from Conn or `instance:create`, has no mark and keeps the default's tree, its modified and untracked files included.
 
 #### Processes
 

@@ -255,6 +255,13 @@ Deno.test("a clone finishes only with its registered T3 server, which the receip
     // checkout's.
     assertEquals("environment" in create({ workspace: { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}\n{"phase":"checkout","changes":[]}\n` } } }), false);
     assertEquals("environment" in create({ workspace: { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}\n${printed.replace('"checkout"', '"workspace"')}\n` } } }), false);
+    // A task copy's checkout names what its cleaning took from the default's tree: counts and first names, under `workspace_cleaned`.
+    const cleaned = JSON.stringify({ phase: "checkout", changes: ["clean"], environment: { copied: [], dropped: [] },
+        cleaned: { reset_count: 1, reset: ["phpunit.xml"], removed_count: 3, removed: ["node_modules/", "tests/Wip.php", 7] } });
+    assertEquals(create({ workspace: { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}\n${cleaned}\n` } } }).workspace_cleaned,
+        { reset_count: 1, reset: ["phpunit.xml"], removed_count: 3, removed: ["node_modules/", "tests/Wip.php"] });
+    // A clone that is no task copy prints no `cleaned`, and its result has no `workspace_cleaned`.
+    assertEquals("workspace_cleaned" in create({ workspace: { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}\n${printed}\n` } } }), false);
     const failure = (changes: Partial<typeof container>) => [create(changes).failed_step, create(changes).error_code];
     assertEquals(failure({ launch: "failed", workspace: null }), ["clone", "instance.create_clone_failed"]);
     // The T3 step, whose first part writes the agent's files, has its own code, and the registration after it did not run; the
