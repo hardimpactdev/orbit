@@ -20,8 +20,8 @@
   ansible.builtin.file:
     path: "{{ swap_record | dirname }}"
     state: directory
-    owner: "{{ marker_owner | default('root') }}"
-    group: "{{ marker_group | default('caddy') }}"
+    owner: "{{ marker_owner }}"
+    group: "{{ marker_group }}"
     mode: "0755"
 
 - name: Let the container's memory go to swap

@@ -6,8 +6,15 @@
 # Caddy's site of a container Instance checks the marker only once a publish of the Node's sites rendered the check. A marker without
 # the check would leave the Route proxying to a stopped container, so the sleep refuses before it changes anything. An Instance without
 # a published Route has no site (the intent's `route` is false): nothing proxies to it, so there is nothing to check.
+- name: Refuse a sleep intent that does not say whether a Route has a site
+  when: power == 'asleep'
+  ansible.builtin.assert:
+    that: intent.route is defined and intent.route is boolean
+    fail_msg: The sleep intent names no `route`; the Gateway always sends it.
+    quiet: true
+
 - name: Read Caddy's loaded configuration
-  when: power == 'asleep' and intent.route | default(true) | bool
+  when: power == 'asleep' and intent.route
   ansible.builtin.uri:
     url: "{{ caddy_admin }}/config/"
     return_content: true
@@ -17,7 +24,7 @@
   failed_when: false
 
 - name: Refuse a sleep while the site has no asleep check
-  when: power == 'asleep' and intent.route | default(true) | bool
+  when: power == 'asleep' and intent.route
   ansible.builtin.assert:
     that:
       - caddy_config.status | default(0) == 200

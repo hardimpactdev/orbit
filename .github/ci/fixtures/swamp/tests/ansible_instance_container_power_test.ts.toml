@@ -1,5 +1,5 @@
 order = 390
-source_sha256 = "c57e9833c9217efa063a3dfe5101fb9d6b548319ca956b5549629d17d46eee5f"
+source_sha256 = "9d9be781319bb3105e3a001ea345bfdc4c2d1bdd1d1488c407696d2a7c18cd7e"
 cases = [
   "each sleep and wake step runs its charted part with the shipped Ansible settings; the wake is one playbook",
   "a nested-fleet clone's start runs the deployment's start with the Club key, then the clone's fleet check and resume, and times the fleet",
@@ -21,9 +21,10 @@ cases = [
   "a find that fails part way still records what it opened, and a failed freeze closes every inner cgroup it opened",
   "a freeze makes the record's folder that a Node's reboot emptied",
   "a sleep of a container an earlier sleep froze reports what that sleep opened, so its wake closes it",
+  "a sleep intent without `route` fails before it checks or writes anything",
 ]
 file = "swamp/tests/ansible_instance_container_power_test.ts"
-cost = 67
+cost = 69
 # Local Deno case times on Beast rounded up by one second; not CI measurements.
 slices = 1
 inputs = [
@@ -63,3 +64,4 @@ inputs = [
   "a find that fails part way still records what it opened, and a failed freeze closes every inner cgroup it opened" = 8
   "a freeze makes the record's folder that a Node's reboot emptied" = 4
   "a sleep of a container an earlier sleep froze reports what that sleep opened, so its wake closes it" = 2
+  "a sleep intent without `route` fails before it checks or writes anything" = 2

@@ -102,7 +102,7 @@ const group = new TextDecoder().decode(new Deno.Command("id", { args: ["-gn"] })
 async function part(
     tag: "asleep" | "freeze",
     options: { caddy?: string; t3?: boolean; clone?: boolean; marker?: boolean; status?: string; anonAfter?: number; pauseFails?: boolean; stopFails?: boolean; resumeFails?: boolean; unreadable?: boolean;
-        nested?: boolean; inner?: Record<string, string>; record?: string; route?: boolean; recordFolderMissing?: boolean; locked?: string },
+        nested?: boolean; inner?: Record<string, string>; record?: string; route?: boolean | null; recordFolderMissing?: boolean; locked?: string },
 ): Promise<{ ok: boolean; output: string; result: Record<string, unknown>; marker: boolean; status: string; swap: string; reclaim: string; calls: string[];
     inner: Record<string, string>; record: string | null }> {
     const folder = Deno.makeTempDirSync();
@@ -150,7 +150,7 @@ async function part(
                 ssh_execution: { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } },
                 container: { instance_id: 7, project, name: "instance-7", clone, ...(options.nested ? { allowed_devices: {} } : {}) },
                 marker,
-                route: options.route ?? true,
+                ...(options.route === null ? {} : { route: options.route ?? true }),
                 freeze: { resident_anon_mib: 32 },
             }),
         );
@@ -369,4 +369,12 @@ Deno.test({ name: "a sleep of a container an earlier sleep froze reports what th
     assert(again.ok, again.output);
     assertEquals(again.result, { sleep: "frozen", swap_subtree: 2 });
     assertEquals(again.calls.filter((call) => call !== "query"), []);
+} });
+
+Deno.test({ name: "a sleep intent without `route` fails before it checks or writes anything", ignore: !available, async fn() {
+    const done = await part("asleep", { caddy: loaded, route: null });
+    assert(!done.ok, done.output);
+    assertEquals(done.result, { error_code: "instance.container_asleep_failed" });
+    assert(done.output.includes("The sleep intent names no `route`"), done.output);
+    assert(!done.marker);
 } });
