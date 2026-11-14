@@ -859,6 +859,26 @@ contexts:
     fleet_tokens_read:
       rc: 0
       stdout: 'Error: the token store is locked'
+  # instance_shape_tools.py in the outer container: one JSON line on standard output, its programs' output on standard error.
+  fleet-tools-present:
+    fleet_tools_read:
+      rc: 0
+      stdout_lines:
+      - '{"tools": "present", "reason": "current", "venv": "venv-4f0ef3225f6ecfe5", "collections": "collections-72c3ef9fb7760b1b"}'
+  fleet-tools-failed:
+    fleet_tools_read:
+      rc: 0
+      stdout_lines:
+      - '{"tools": "failed", "reason": "names"}'
+  fleet-tools-timeout:
+    fleet_tools_read:
+      rc: 124
+      stdout_lines: []
+  fleet-tools-cut:
+    fleet_tools_read:
+      rc: 0
+      stdout_lines:
+      - '{"tools": "built", "reason": "missing", "venv": "venv-4f0'
   fleet-converged-malformed:
     fleet_recorded:
       code: 4f1c2a6b
@@ -1853,6 +1873,32 @@ cases:
   field: ansible.builtin.set_fact.freeze_held
   context: freeze-memory-reclaimed
   expected: false
+- file: tasks/instance-fleet-refresh.yml
+  task: Read what the tools step did
+  field: vars.fleet_tools_out
+  context: fleet-tools-present
+  expected:
+    tools: present
+    reason: current
+    venv: venv-4f0ef3225f6ecfe5
+    collections: collections-72c3ef9fb7760b1b
+- file: tasks/instance-fleet-refresh.yml
+  task: Read what the tools step did
+  field: vars.fleet_tools_out
+  context: fleet-tools-failed
+  expected:
+    tools: failed
+    reason: names
+- file: tasks/instance-fleet-refresh.yml
+  task: Read what the tools step did
+  field: vars.fleet_tools_out
+  context: fleet-tools-timeout
+  expected: {}
+- file: tasks/instance-fleet-refresh.yml
+  task: Read what the tools step did
+  field: vars.fleet_tools_out
+  context: fleet-tools-cut
+  expected: {}
 non_command_output:
 - file: tasks/instance-fleet-refresh.yml
   task: Read the digests of the checkout

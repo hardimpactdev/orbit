@@ -2,6 +2,7 @@
 import importlib.machinery
 import importlib.util
 import io
+import json
 import os
 import shutil
 import stat
@@ -170,6 +171,133 @@ class ShapeGateToolsTest(unittest.TestCase):
             finally:
                 release.set()
             self.assertEqual([item[0].name for item in result.result(timeout=2)], ['slow', 'fast'])
+
+
+# A workspace whose gate names the tools in a test folder and whose `tool_path` builds a venv without pip. Its galaxy and the system's
+# dpkg-query and apt-get are stubs that record their arguments and print to standard output, as real programs do.
+STUB_GATE = """
+import os
+from pathlib import Path
+SYSTEM_TOOLS = Path(os.environ['STUB_TOOLS'])
+def venv_name():
+    return 'venv-aaaaaaaaaaaaaaaa'
+def collections_path(tools):
+    return tools / 'collections-bbbbbbbbbbbbbbbb'
+def tool_path(tools):
+    venv = tools / venv_name()
+    (venv / 'bin').mkdir(parents=True, exist_ok=True)
+    galaxy = venv / 'bin/ansible-galaxy'
+    galaxy.write_text(Path(os.environ['STUB_BIN'], 'galaxy').read_text())
+    galaxy.chmod(0o755)
+    print('pip writes to standard output')
+    if os.environ.get('STUB_VENV_FAIL'):
+        raise OSError('no ensurepip')
+    (venv / '.complete').write_text('')
+    return venv / 'bin'
+"""
+STUB = """#!/bin/bash
+echo "$0 $*" >> "$STUB_LOG"
+"""
+NOISE = 'echo "$0 prints to standard output"\n'
+
+
+class InstanceShapeToolsTest(unittest.TestCase):
+    """instance_shape_tools.py keeps the gate's tools in a nested-fleet default, named by the workspace's own gate, and never fails."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+        self.workspace, self.tools, self.bin = self.root / 'workspace', self.root / 'opt/orbit-shape-gate', self.root / 'bin'
+        (self.workspace / 'bin').mkdir(parents=True)
+        (self.workspace / 'bin/swamp-shape-gate').write_text(STUB_GATE)
+        self.bin.mkdir()
+        self.log = self.root / 'log'
+        self.log.write_text('')
+        self.stub('apt-get', NOISE)
+        self.stub('dpkg-query', "printf 'install ok installed'\n")
+        self.stub('galaxy', NOISE + 'mkdir -p "${@: -1}/ansible_collections"\n')
+
+    def stub(self, name, body):
+        path = self.bin / name
+        path.write_text(STUB + body)
+        path.chmod(0o755)
+
+    def keep(self, **environment):
+        run = subprocess.run(['python3', '-I', '-c', (ANSIBLE / 'instance_shape_tools.py').read_text(), str(self.workspace)],
+                             capture_output=True, text=True, check=True,
+                             env={**os.environ, 'PATH': f'{self.bin}:{os.environ["PATH"]}', 'STUB_TOOLS': str(self.tools),
+                                  'STUB_BIN': str(self.bin), 'STUB_LOG': str(self.log), **environment})
+        # Standard output is the one result line; everything the programs print is on standard error.
+        self.assertEqual(len(run.stdout.splitlines()), 1, run.stdout)
+        return json.loads(run.stdout), self.log.read_text().splitlines()
+
+    def test_missing_tools_are_built_where_the_gate_looks_and_other_pins_go(self):
+        (self.tools / 'venv-0000000000000000').mkdir(parents=True)
+        (self.tools / 'collections-0000000000000000').mkdir()
+        (self.tools / 'lock').write_text('')
+        result, calls = self.keep()
+        self.assertEqual(result, {'tools': 'built', 'reason': 'missing', 'venv': 'venv-aaaaaaaaaaaaaaaa', 'collections': 'collections-bbbbbbbbbbbbbbbb'})
+        self.assertEqual(sorted(path.name for path in self.tools.iterdir()), ['collections-bbbbbbbbbbbbbbbb', 'lock', 'venv-aaaaaaaaaaaaaaaa'])
+        self.assertTrue((self.tools / 'collections-bbbbbbbbbbbbbbbb/ansible_collections').is_dir())
+        galaxy = [call for call in calls if call.startswith(str(self.tools))]
+        self.assertEqual(galaxy, [f'{self.tools}/venv-aaaaaaaaaaaaaaaa/bin/ansible-galaxy collection install -r '
+                                  f'{self.workspace}/swamp/ansible/requirements.yml -p {self.tools}/collections-bbbbbbbbbbbbbbbb.partial'])
+        self.assertFalse([call for call in calls if 'apt-get' in call], 'python3-venv was installed, so apt is not called')
+        # A reader is `agent`: the folders are readable by others.
+        self.assertEqual(stat.S_IMODE((self.tools / 'collections-bbbbbbbbbbbbbbbb').stat().st_mode) & 0o005, 0o005)
+
+    def test_complete_tools_are_only_read_and_a_cleanup_left_over_is_done(self):
+        self.keep()
+        self.log.write_text('')
+        result, calls = self.keep(STUB_VENV_FAIL='1')
+        self.assertEqual((result['tools'], result['reason']), ('present', 'current'))
+        self.assertEqual(calls, [])
+        # A cleanup that failed in an earlier refresh: the tools of other pins go now, so they do not stay in every seed.
+        (self.tools / 'venv-0000000000000000').mkdir()
+        self.assertEqual(self.keep(STUB_VENV_FAIL='1')[0]['tools'], 'present')
+        self.assertEqual(sorted(path.name for path in self.tools.iterdir()), ['collections-bbbbbbbbbbbbbbbb', 'venv-aaaaaaaaaaaaaaaa'])
+
+    def test_complete_collections_are_kept_when_only_the_venv_is_new(self):
+        (self.tools / 'collections-bbbbbbbbbbbbbbbb/ansible_collections').mkdir(parents=True)
+        result, calls = self.keep()
+        self.assertEqual(result['tools'], 'built')
+        self.assertFalse([call for call in calls if call.startswith(str(self.tools))], 'Galaxy was called for complete collections')
+        self.assertTrue((self.tools / 'venv-aaaaaaaaaaaaaaaa/.complete').is_file())
+
+    def test_a_missing_python3_venv_is_installed_through_apt(self):
+        self.stub('dpkg-query', 'exit 1\n')
+        result, calls = self.keep()
+        self.assertEqual(result['tools'], 'built')
+        apt = [call.split(' ', 1)[1] for call in calls if call.startswith(f'{self.bin}/apt-get')]
+        self.assertEqual(apt, ['-o DPkg::Lock::Timeout=120 update', '-o DPkg::Lock::Timeout=120 install --yes --no-install-recommends -- python3-venv'])
+
+    def test_each_failed_step_is_named_and_leaves_nothing_complete(self):
+        self.stub('dpkg-query', 'exit 1\n')
+        self.stub('apt-get', 'exit 100\n')
+        self.assertEqual(self.keep()[0]['reason'], 'package')
+        self.stub('dpkg-query', "printf 'install ok installed'\n")
+        result, _ = self.keep(STUB_VENV_FAIL='1')
+        self.assertEqual((result['tools'], result['reason']), ('failed', 'venv'))
+        self.stub('galaxy', 'exit 1\n')
+        self.assertEqual(self.keep()[0]['reason'], 'collections')
+        self.assertFalse((self.tools / 'collections-bbbbbbbbbbbbbbbb').exists(), 'a failed install leaves no complete collections')
+        # The gate and the proof runner take a venv with `.complete` as ready: without collections it has none, so a copy's
+        # runner builds its own tools in its cache instead of failing on a root-owned folder.
+        # (default_tools reads only that marker: test_uses_the_system_tools_only_when_built_for_these_pins.)
+        self.assertFalse((self.tools / 'venv-aaaaaaaaaaaaaaaa/.complete').exists())
+        (self.workspace / 'bin/swamp-shape-gate').unlink()
+        self.assertEqual(self.keep()[0], {'tools': 'failed', 'reason': 'names'})
+
+    def test_the_names_are_the_gates_own(self):
+        spec = importlib.util.spec_from_file_location('instance_shape_tools', ANSIBLE / 'instance_shape_tools.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        gate = load_gate()
+        _, tools, venv, collections = module.names(ROOT)
+        self.assertEqual((tools, venv, collections),
+                         (gate.SYSTEM_TOOLS, gate.SYSTEM_TOOLS / gate.venv_name(), gate.collections_path(gate.SYSTEM_TOOLS)))
+        self.assertNotRegex((ANSIBLE / 'instance_shape_tools.py').read_text(), r'sha256|\w==\d', 'the script names no pin and no digest rule')
 
 
 if __name__ == '__main__':
