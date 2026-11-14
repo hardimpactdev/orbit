@@ -271,6 +271,19 @@
                             "uid": 0,
                             "gid": 0,
                             "mode": "0644"
+                        },
+                        {
+                            "home": "/home/agent",
+                            "directories": [
+                                "/home/agent/.pki",
+                                "/home/agent/.pki/nssdb"
+                            ],
+                            "path": "/home/agent/.pki/nssdb/pkcs11.txt",
+                            "entry": "library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so\nname=Orbit system trust\n\n",
+                            "uid": 2750,
+                            "gid": 2750,
+                            "mode": "0600",
+                            "directory_mode": "0700"
                         }
                     ],
                     "files": [
@@ -632,6 +645,19 @@
                             "uid": 0,
                             "gid": 0,
                             "mode": "0644"
+                        },
+                        {
+                            "home": "/home/agent",
+                            "directories": [
+                                "/home/agent/.pki",
+                                "/home/agent/.pki/nssdb"
+                            ],
+                            "path": "/home/agent/.pki/nssdb/pkcs11.txt",
+                            "entry": "library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so\nname=Orbit system trust\n\n",
+                            "uid": 2750,
+                            "gid": 2750,
+                            "mode": "0600",
+                            "directory_mode": "0700"
                         }
                     ],
                     "files": [

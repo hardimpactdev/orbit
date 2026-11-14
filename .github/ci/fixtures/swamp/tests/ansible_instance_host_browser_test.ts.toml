@@ -1,5 +1,5 @@
 order = 70
-source_sha256 = "cb555c5e368582d1e98b18d3f961e82f9a8c6ba547981a98e5b47b6e7973b45c"
+source_sha256 = "853dbcf9fa68011e0fd39f556b33f206d7fa6c100e2e7da785f8864c2ea6aa8c"
 cases = [
   "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart",
   "two Debian packages that give the same library name fail the folder build: one would hide the other",
@@ -8,11 +8,15 @@ cases = [
   "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container",
   "a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec",
   "a Node without a readable Orbit root CA fails the step by name and writes nothing",
+  "agent's NSS store names the trust module in running, stopped and frozen containers: a new store holds only the entry, an existing one gets it appended once",
+  "a container without /home/agent gets no NSS store and is listed by name; the step passes and keeps the library digest",
+  "a container whose libp11-kit0 is not the trust module's version gets no NSS store and fails the step, naming both versions",
+  "the trust module's package only adds its module to the runtime folder: no restart, and nothing new in lib",
 ]
 file = "swamp/tests/ansible_instance_host_browser_test.ts"
-cost = 238
+cost = 249
 # Beast case times * 2.1, rounded up + 1s; startup is added per slice.
-slices = 7
+slices = 11
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "apps/gateway/resources/machine-software/recipe.json",
@@ -53,3 +57,7 @@ inputs = [
   "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container" = 130 # ESTIMATE: Beast 61s * 2.1, rounded up + 1s; two converges, with 6s startup within the 150s lane
   "a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec" = 4 # ESTIMATE: Beast 1s, no Ansible; rounded up
   "a Node without a readable Orbit root CA fails the step by name and writes nothing" = 1 # ESTIMATE: Beast 0.1s, no Ansible; rounded up
+  "agent's NSS store names the trust module in running, stopped and frozen containers: a new store holds only the entry, an existing one gets it appended once" = 4
+  "a container without /home/agent gets no NSS store and is listed by name; the step passes and keeps the library digest" = 3
+  "a container whose libp11-kit0 is not the trust module's version gets no NSS store and fails the step, naming both versions" = 3
+  "the trust module's package only adds its module to the runtime folder: no restart, and nothing new in lib" = 1

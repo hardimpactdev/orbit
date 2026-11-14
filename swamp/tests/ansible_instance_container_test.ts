@@ -13,7 +13,9 @@ import { fixture as hostFixture } from "./_support/instance_host.ts";
 // `update-ca-certificates` in the definition's finish); the host files stay as they were. The NIC address filters add two `--device`
 // keys to the build container's init (digest 4f193b4c… → b21a521d…). The strict filter check has no report task, so the tasks are
 // 174 again and the digest, which covers the task names, is 20b1670d…; the Incus calls stay the same.
-const MAIN_NORMAL_HOST = {calls: 66, tasks: 175, digest: "2e6fc2fde5b6f09a3429faf934f652016cbf73d6ed2d2c8c7d2e2a5ca69131f8"};
+// Chromium's trust adds five tasks: the folder gathers its one Debian package part (the trust module), and the image checks the
+// module's library (one exec) and writes agent's NSS store (one exec and one push); the host files stay as they were.
+const MAIN_NORMAL_HOST = {calls: 69, tasks: 180, digest: "d899f6c4d0f8f6cc8b6536d5b073ef83b1761379a0fc6665a18322a22cb5bf09"};
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
