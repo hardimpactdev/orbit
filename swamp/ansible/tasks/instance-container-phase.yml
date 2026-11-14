@@ -1459,11 +1459,11 @@
 # `fleet`: `fleet_start` is a deployment's one fleet check before the run changes anything (rules, start what is stopped, tunnel; no
 # Doctor wait), `fleet_refresh` migrates and restarts the nested Gateway and converges the nested Nodes, each only when its inputs
 # changed, retakes their `base` only when the fleet's disks changed and waits for readiness (tasks/instance-fleet-refresh.yml),
-# `fleet_resume` starts a restored fleet and waits for readiness, and a clone's `fleet_check` compares the fleet it copied
-# (tasks/instance-fleet-*.yml).
+# `fleet_resume` starts a restored fleet and waits for readiness, a clone's `fleet_check` compares the fleet it copied, and a task
+# copy's `fleet_reset` puts its fleet back on `base` before each proof batch (tasks/instance-fleet-*.yml).
 - name: Run the phase of the nested fleet
-  tags: [fleet_check, fleet_start, fleet_refresh, fleet_resume]
-  when: phase in ['fleet_check', 'fleet_start', 'fleet_refresh', 'fleet_resume']
+  tags: [fleet_check, fleet_start, fleet_refresh, fleet_resume, fleet_reset]
+  when: phase in ['fleet_check', 'fleet_start', 'fleet_refresh', 'fleet_resume', 'fleet_reset']
   ansible.builtin.include_tasks:
     file: "tasks/instance-fleet-{{ phase | replace('fleet_', '') }}.yml"
     apply: {tags: [always]}

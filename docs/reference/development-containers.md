@@ -20,7 +20,7 @@ covers:
 | --- | --- |
 | Records, Node preparation, egress and DNS | Built |
 | Default create and deploy, clone, forced non-default destroy, checkout migration | Built on the build-list Nodes |
-| [Nested fleet](#nested-fleet) | Built on switched-on build-list Nodes: placement, host preparation, start guards, the [image](#the-nested-fleet-image), the [refresh](#refresh-after-a-release), and the [clone's](#a-clone-starts-its-fleet) and [stopped clone's](#a-stopped-nested-fleet-clone-starts) fleet start. Planned: reset, rebuild |
+| [Nested fleet](#nested-fleet) | Built on switched-on build-list Nodes: placement, host preparation, start guards, the [image](#the-nested-fleet-image), the [refresh](#refresh-after-a-release), and the [clone's](#a-clone-starts-its-fleet) and [stopped clone's](#a-stopped-nested-fleet-clone-starts) fleet start, and a copy's [reset](#reset). Planned: rebuild |
 | [Sleep and wake](#sleep-and-wake) | Built: the commands, the wake on a Route visit, and the idle sleep, which is off until the operator turns it on. Planned: the wake from Conn and tasks |
 | Task containers, nested-fleet parity and production containers | Planned |
 | Dedicated workspace volumes and explicit package workspace links | [Draft specification](#workspace-volumes-draft); not implemented or proved |
@@ -1871,6 +1871,8 @@ On the host this is one volume and one device on one container: no pool, profile
 
 A failed create keeps the volume with the container for the retry, which reuses it. [Destroy](#destroy) deletes it with its snapshots.
 
+On this volume a [reset](#reset) of a copy's fleet, which a proof runs before each batch, takes about 16 seconds.
+
 Every Instance without `inner_volume`, the first nested-fleet default before its conversion and its copies included, keeps today's shape: no step makes, snapshots, copies or checks a volume for it.
 
 `TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
@@ -2352,9 +2354,23 @@ Its fleet step also writes the copy's [proxy bypass](#proxy-settings-in-a-contai
 
 ### Reset
 
-A reset restores `base` of the three nested containers, starts them, waits for the nested Gateway's state mounts, migrates it to its checkout (and restarts its services when a migration applied), then waits for the same Doctor check. `agent` runs it. A reset command is planned.
+A reset stops the three nested containers in one `incus stop --force` and restores `base` of each stopped container. It starts them and waits for the nested Gateway's state mounts. It migrates the nested Gateway to its checkout, and restarts its services when a migration applied. Then it waits for the same Doctor check. Its waits poll every second; the refresh's poll every 5 seconds.
 
-Restore of all three: 7 to 8 s, measured; Doctor healthy 33 s after, measured. On a directory pool a restore copies back only the files that changed since `base`, so its time grows with the change. The proof's limit is 45 seconds. On the [inner volume](#the-inner-volume) each restore is a btrfs snapshot restore: 1.9 to 3.1 s per container in the 2026-11-14 test, whatever changed. The reset on that volume follows separately.
+Its one caller is the [proof of a task copy](/cli/proof/proof#the-run): Swamp runs the phase `fleet_reset` of `instance-container.yml` from the copy's Node, before every batch, the first included, and not after the last. The Gateway admits it only for a clone that keeps its nested fleet. A Project's default Instance is refused with `proof.copy_fleet_missing`, so its fleet, the seed of every copy, is never reset. The play refuses it too, before any command and also when run by hand: an intent whose container is not a clone fails with `instance.fleet_reset_not_clone`.
+
+A restore of a running container stops it and boots it again, so the reset stops the three first. On the [inner volume](#the-inner-volume), measured by hand in a task copy on 2026-11-14:
+
+| Part | Seconds |
+| --- | --- |
+| Stop the three at once | 1.75 |
+| Restore a stopped container | 0.9 each; `nested-gateway` 2.5 |
+| Start the three in one call, after the rules check | 0.44 |
+| The whole reset, with readiness | 15.9 |
+| The whole reset before these cuts: running restores one by one (9.6 s), polls every 5 s | 30.7 |
+
+On a directory pool a restore copies back only the files that changed since `base`, so its time grows with the change: 7 to 8 s for all three, Doctor healthy 33 s after. Each restore has 45 seconds.
+
+A reset that fails after its stop starts each nested container that ran before it again, one by one and best effort, then fails with the first reason. The proof's batch reports that reason. A failed restore can leave a container on its old disk or on `base`, so the fleet runs but its state is unknown. To recover, run `orbit proof` again: it resets first. When a container has lost its `base` snapshot, the reset cannot succeed; start a new task copy.
 
 ### Rebuild from stock
 
@@ -2379,7 +2395,7 @@ Gap: which refusal comes first on a full Node for nested-fleet clones, and its e
 
 ### The fleet step
 
-Six phase task files keep the fleet of a nested-fleet Instance. The deployment of a nested-fleet default calls the check, the start, the refresh and the resume through the tags `fleet_check`, `fleet_start`, `fleet_refresh` and `fleet_resume` of `instance-container.yml`. The create of its clone, and the [start of a stopped clone](#a-stopped-nested-fleet-clone-starts), call the check and the resume ([A clone starts its fleet](#a-clone-starts-its-fleet)). No flow calls the rules or the reset alone yet.
+Six phase task files keep the fleet of a nested-fleet Instance. The deployment of a nested-fleet default calls the check, the start, the refresh and the resume through the tags `fleet_check`, `fleet_start`, `fleet_refresh` and `fleet_resume` of `instance-container.yml`. The create of its clone, and the [start of a stopped clone](#a-stopped-nested-fleet-clone-starts), call the check and the resume ([A clone starts its fleet](#a-clone-starts-its-fleet)). The proof of a task copy calls the reset through the tag `fleet_reset` ([Reset](#reset)). No flow calls the rules alone yet.
 
 Each phase runs on the Node and reaches the inner Incus with `incus exec` into the Instance container. Their input is `intent.container` and `intent.fleet`; the header of `swamp/ansible/tasks/instance-fleet.yml` defines it. The Gateway fills `intent.fleet` (`NestedFleetIntent`) from the fleet constants of task VMs, with the commit of the old seed, for the deployment of the default and the create of its clone.
 
@@ -2390,7 +2406,7 @@ Each phase runs on the Node and reaches the inner Incus with `incus exec` into t
 | Start | `instance-fleet-start.yml` | Checks the rules, starts the stopped nested containers, brings up `wg-nested`. Then checks the containers and the tunnel (`instance-fleet-reach.yml`), never Doctor. A stopped clone's start adds `instance-fleet-proxy.yml` |
 | Refresh | `instance-fleet-refresh.yml` | Migrates and restarts the nested Gateway, converges the three nested Nodes, waits for readiness (`instance-fleet-ready.yml`), stops the fleet and takes `base` again |
 | Resume | `instance-fleet-resume.yml` | Runs the start, then waits for readiness: the fleet after a passed refresh, or the fleet of a restored seed |
-| Reset | `instance-fleet-reset.yml` | Restores `base` on the three nested containers, then runs the start and waits for readiness |
+| Reset | `instance-fleet-reset.yml` | Stops the three nested containers at once and restores `base` on each. Then it runs the start, migrates the nested Gateway forward and waits for readiness |
 
 The fleet rules:
 
@@ -2411,7 +2427,7 @@ The Operation's result `fleet_drift` names each difference, as `<container> <kin
 
 The deployment runs the check right after it starts the container, before it takes its first seed. A refusal there changed nothing, so no seed is restored. A failure from the checkout on, such as a start that fails after a change, restores the seed.
 
-A restore of `base` reverts devices and configuration keys. So the rules must be in `base`. The start lets a missing owned rule pass, because the refresh after it writes the rule. The reset ends with the same start and has no refresh after it; no flow calls it yet.
+A restore of `base` reverts devices and configuration keys. So the rules must be in `base`. The start lets a missing owned rule pass, because the refresh after it writes the rule. The reset ends with the same start and has no refresh after it.
 
 Readiness is the proof's own check, from the container over `wg-nested`: every nested container runs, Doctor of the nested Gateway is healthy within a bounded wait, the three agents are online and the Gateway knows the operator with its key. A failure names the nested container or the check. A failed Doctor wait names what its last poll got: the HTTP status and the first 300 characters of the body, or curl's error when no response came.
 

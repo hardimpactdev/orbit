@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "f68841c5fef6a300f1090b7c93af5a0a6083155178157f6ca7c286a9fa78b074"
+source_sha256 = "543a43184968f8ee3b05220dbffbdfddc8540a12be5d3498cfe70be3aaa08afb"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -93,7 +93,7 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 4084
+cost = 4092
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   # The merged deploy steps' equivalence (two fixtures, separate and merged plays, a phase handler before the seed, a play killed after
@@ -248,6 +248,6 @@ inputs = [
   "a nested-fleet start refuses the key transfer by name, before it reads the value: pipelining turned off" = 16 # ESTIMATE: fewer than five hosted runs (2, max 14.5s); largest of the earlier estimate and hosted max rounded up plus 1s
   "a nested-fleet start refuses a /run that is not a tmpfs, before it reads the value" = 17 # ESTIMATE: fewer than five hosted runs (2, max 15.7s); largest of the earlier estimate and hosted max rounded up plus 1s
   "a normal container's create and deploy start run no Club key task and no Club key command" = 48 # ESTIMATE: fewer than five hosted runs (1, max 46.7s); largest of the earlier estimate and hosted max rounded up plus 1s
-  "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk" = 100 # p90 87 of 5 completed hosted PR runs on 2026-11-13 (range 56.1-86.4s), plus 13s ESTIMATE for the failed four-phase play (local 47, 51 and 58s on main, 59, 51 and 64s with it: 6s x 2.1, rounded up)
+  "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk" = 108 # p90 87 of 5 completed hosted PR runs on 2026-11-13 (range 56.1-86.4s), plus 13s ESTIMATE for the failed four-phase play (local 47, 51 and 58s on main, 59, 51 and 64s with it: 6s x 2.1, rounded up), plus 8s ESTIMATE for the failed fleet_reset play (measured 1.9 and 3.7s locally on 2026-11-14: 3.7s x 2.1, rounded up)
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left" = 77 # ESTIMATE: fewer than five hosted runs (2, max 75.5s); largest of the earlier estimate and hosted max rounded up plus 1s
   "a deployment at the seed's commit retakes the seed; a seed phase outside a deployment keeps it" = 72 # ESTIMATE: local 23s against 22s local for the converted-store seed case (69), rounded up

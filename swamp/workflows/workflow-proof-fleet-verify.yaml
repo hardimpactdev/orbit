@@ -101,6 +101,7 @@ jobs:
     condition: {type: succeeded}
   steps:
   # The author's fleet may have moved since the last proof (3-proof.mmd, first restore): it starts from `base`, as every batch does. The Gateway sets `restore_first` for `orbit proof`; the VM of a proof in CI has just taken `base`.
+  # A task copy resets its fleet in its first batch instead, as in every batch (proof-copy-fleet-reset).
   - name: 'Restore the base snapshot'
     labels: {role: swamp}
     writes: true
@@ -164,7 +165,10 @@ jobs:
         ssh_name: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.node_id) + ("copy" in inputs.intent ? "-" + string(inputs.intent.instance_id) : "")).split(".").join("-") }}'
         batch: ${{ self.batch.batch }}
         setup: ${{ self.batch.setup }}
-        restore: ${{ self._index > 0 }}
+        # A task copy whose intent sets `restore_first` resets its fleet before every batch, the first included (docs/cli/proof/proof.mmd).
+        # The keys of the reset are read only behind `restore_first`: a copy run that an older Gateway admitted has it false and lacks them.
+        restore: '${{ self._index > 0 || ("copy" in inputs.intent ? inputs.intent.restore_first : false) }}'
+        reset: '${{ ("copy" in inputs.intent ? inputs.intent.restore_first : false) ? {"container": inputs.intent.container, "fleet": inputs.intent.fleet, "ssh_execution": inputs.intent.ssh_execution} : {} }}'
         cases: ${{ self.batch.cases }}
 # Only an added or changed case with fails_on_base: true must fail on the merge base (3-proof.mmd, `Select replay cases`). Only a proof in CI sets `base` and `head` in the intent; `orbit proof` leaves them out, because the switch would replace the author's own checkout. With no selected flagged case no step changes anything.
 - name: can-fail
@@ -292,7 +296,10 @@ jobs:
         ssh_name: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.node_id) + ("copy" in inputs.intent ? "-" + string(inputs.intent.instance_id) : "")).split(".").join("-") }}'
         batch: ${{ self.batch.batch }}
         setup: ${{ self.batch.setup }}
-        restore: ${{ self._index > 0 }}
+        # A task copy whose intent sets `restore_first` resets its fleet before every batch, the first included (docs/cli/proof/proof.mmd).
+        # The keys of the reset are read only behind `restore_first`: a copy run that an older Gateway admitted has it false and lacks them.
+        restore: '${{ self._index > 0 || ("copy" in inputs.intent ? inputs.intent.restore_first : false) }}'
+        reset: '${{ ("copy" in inputs.intent ? inputs.intent.restore_first : false) ? {"container": inputs.intent.container, "fleet": inputs.intent.fleet, "ssh_execution": inputs.intent.ssh_execution} : {} }}'
         cases: ${{ self.batch.cases }}
 # Final restore for the author's command (3-proof.mmd): the intent sets `final_restore`; CI leaves it unset. It also runs after batches that failed.
 - name: finish

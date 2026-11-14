@@ -159,6 +159,7 @@ sequenceDiagram
   %%> - the Swamp workflow `proof-fleet-verify` runs this restore in its job `finish`, with the child `proof-fleet-restore` (restore and start, cloud-init, apply the checkout, readiness), after the batches end, also when a case failed or a step stopped the run
   %%> - it belongs to the author's own command: it runs when the intent sets `final_restore`; the proof in CI (stage 4) destroys its VM and leaves it unset
   %%> - `orbit proof COMMAND` sets `final_restore`; it also sets `restore_first`, which makes the workflow restore `base` before the first batch, because the author's fleet may have moved (CI leaves it unset: its VM has just taken `base`)
+  %%> - in a task copy `orbit proof COMMAND` leaves `final_restore` unset and resets the copy's inner fleet before every batch, the first included (docs/cli/proof/proof.mmd)
   %%> - it has the 45 s limit of every restore; one that fails or is not healthy in time fails the run, and the verdicts of the cases stay in the report
   Note over SW: Join the verdicts<br/>report step
   %%> What it does:
