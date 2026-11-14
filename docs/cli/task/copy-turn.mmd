@@ -17,7 +17,7 @@ sequenceDiagram
   %%> - `orbit task:turn SUBTASK --role=implementer --prompt="Run Doctor and commit a note."`
   %%> - `orbit task:turn SUBTASK --role=implementer --prompt="Start over from the brief." --thread=new`
   %%> - `orbit task:turn SUBTASK --role=reviewer --prompt="Review the checked commit." --check=CHECK`
-  Note over GW: Admit the turn<br/>owned copy · current subtask · role's thread
+  Note over GW: Admit the turn<br/>owned copy · subtask · role thread
   %%> What it does:
   %%> - a group that owns a task copy, or whose Project has `nested_fleet` on, turns in its copy as `tasks.copy_turn`; every other group takes the task VM turn (`turn.mmd`). A nested-fleet group without a copy refuses here with `tasks.no_workspace`
   %%> - composes the prompt as for a task VM turn: the title, brief and deliverables of the subtask, then the caller's prompt. A reviewer's prompt also names the checked commit
