@@ -1,7 +1,8 @@
 /**
  * `orbit proof` in a task copy (docs/cli/proof/proof.mdx#the-run). The pinned CEL evaluates the real guards and runner argv of
  * `proof-fleet-verify` and its batch child, for the intent the Gateway admits for a copy (the fixture ProofVerifyIntentTest checks)
- * and for a task VM. A copy reaches the runner only through `incus exec` and `runuser -u agent` on its Node, and runs no VM-only step.
+ * and for a task VM. A copy reaches the runner only through `incus exec` and `runuser -u agent` on its Node, runs no VM-only step, and
+ * resets its inner fleet before every batch.
  */
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
@@ -12,9 +13,9 @@ type Step = GraphStep & { task: GraphStep["task"] & { inputs?: Record<string, un
 type Flow = { inputs: { properties: Record<string, unknown>; required: string[] }; jobs: { name: string; steps: Step[] }[] };
 
 const copyIntent = JSON.parse(Deno.readTextFileSync(new URL("fixtures/proof-verify-copy.json", import.meta.url))).intent as Record<string, unknown>;
-const { copy: _copy, ...withoutCopy } = copyIntent;
+const { copy: _copy, container: _container, fleet: _fleet, ...withoutCopy } = copyIntent;
 const vmIntent = { ...withoutCopy, checkout_path: "/home/orbit/apps/orbit/workspace", restore_first: true, final_restore: true };
-const prefix = ["incus", "--project", "orbit-instances", "exec", "--disable-stdin", "--cwd", "/srv/workspace", "instance-2747", "--", "/usr/sbin/runuser", "-u", "agent", "--"];
+const prefix = ["incus", "--project", "orbit-instances-nested", "exec", "--disable-stdin", "--cwd", "/srv/workspace", "instance-2747", "--", "/usr/sbin/runuser", "-u", "agent", "--"];
 const plan = "fresh-fleet 0 new-restricted-allow already-applied\ndual-stack 1 family-ipv6";
 
 const read = (name: string) => parse(Deno.readTextFileSync(new URL(`../workflows/workflow-${name}.yaml`, import.meta.url))) as Flow;
@@ -56,7 +57,7 @@ Deno.test("the copy prefix is the fixed shape of a copy turn, names from the int
     // task-copy-turn.yml: incus --project P exec --cwd /srv/workspace NAME -- /usr/sbin/runuser -u agent -- /usr/bin/env -i HOME PATH.
     const turn = Deno.readTextFileSync(new URL("../ansible/task-copy-turn.yml", import.meta.url));
     const words = [...turn.match(/copy_exec: >-\n\s*\{\{ \[([\s\S]*?)\] \}\}/)![1].matchAll(/'([^']*)'|(intent\.runtime\.\w+)/g)]
-        .map((m) => m[1] ?? (m[2] === "intent.runtime.project" ? "orbit-instances" : "instance-2747"));
+        .map((m) => m[1] ?? (m[2] === "intent.runtime.project" ? "orbit-instances-nested" : "instance-2747"));
     const turnPrefix = words.slice(0, words.indexOf("/usr/bin/env"));
     // Two fixed differences: stdin is closed, as in the copy check, and the runner keeps the copy's recorded Incus environment
     // (its proxy settings), which `env -i` would drop, because it downloads the pinned Ansible controller and the observer agent.
@@ -76,24 +77,48 @@ Deno.test("a task VM keeps its argv and runs them as the SSH user", () => {
         ["timeout", "60", "incus", "exec", "nested-gateway", "--", "find", "/home/orbit/.config/swamp/serve-driver-token", "-mmin", "+28800"]);
 });
 
-Deno.test("a copy runs no restore and no re-mint, even with stale tokens or a restore flag set, and starts every batch with the copy prefix", () => {
-    for (const intent of [copyIntent, { ...copyIntent, restore_first: true, final_restore: true }]) {
-        const ran = runWorkflow("workflow-proof-fleet-verify.yaml", "proof.verify", intent, {
-            "Read the runner plan": { outputs: { stdout: plan } },
-            plan: { outputs: { stdout: plan } },
-            "Read the token age": { outputs: { stdout: "/home/orbit/.config/swamp/serve-driver-token\n" } },
-        }, () => ({}));
-        for (const name of ["Restore the base snapshot", "Re-mint the Swamp tokens", "Check readiness", "Take base again", "Restore the clean fleet"]) {
-            assertEquals(ran[name].status, "skipped", name);
-        }
-        assertEquals(ran["Read the token age"].status, "succeeded");
-        // The plan holds two batches; the forEach runs one child for each.
-        assertEquals([0, 1].map((i) => ran[`batch-${"${{ self._index }}"}-${i}`]?.status), ["succeeded", "succeeded"]);
+// The keys of the reset the batch gets: the copy's container, fleet and Node, from the Gateway's intent.
+const reset = { container: copyIntent.container, fleet: copyIntent.fleet, ssh_execution: copyIntent.ssh_execution };
+// A copy run that the Gateway before the reset admitted: no restore first, and no container or fleet in its intent.
+const olderCopyIntent = { ...withoutCopy, copy: copyIntent.copy, restore_first: false, final_restore: false };
+const batchInputs = (intent: Record<string, unknown>, index: number) => {
+    const inputs = step(parent, "batch-${{ self._index }}").task.inputs!;
+    const context = { inputs: parentInputs(intent), self: { _index: BigInt(index) } };
+    return { restore: cel(inputs.restore, context), reset: cel(inputs.reset, context) };
+};
+
+Deno.test("a copy runs no VM restore, no re-mint and no last restore, even with stale tokens, and starts every batch with the copy prefix", () => {
+    const ran = runWorkflow("workflow-proof-fleet-verify.yaml", "proof.verify", copyIntent, {
+        "Read the runner plan": { outputs: { stdout: plan } },
+        plan: { outputs: { stdout: plan } },
+        "Read the token age": { outputs: { stdout: "/home/orbit/.config/swamp/serve-driver-token\n" } },
+    }, () => ({}));
+    for (const name of ["Restore the base snapshot", "Re-mint the Swamp tokens", "Check readiness", "Take base again", "Restore the clean fleet"]) {
+        assertEquals(ran[name].status, "skipped", name);
     }
+    assertEquals(ran["Read the token age"].status, "succeeded");
+    // The plan holds two batches; the forEach runs one child for each.
+    assertEquals([0, 1].map((i) => ran[`batch-${"${{ self._index }}"}-${i}`]?.status), ["succeeded", "succeeded"]);
     const batches = step(parent, "batch-${{ self._index }}");
     assertEquals(cel(batches.task.inputs!.runner_prefix, { inputs: parentInputs(copyIntent) }), prefix);
-    // The flagged-case replay runs the same child with the same prefix expression.
-    assertEquals(step(parent, "fail-batch-${{ self._index }}").task.inputs!.runner_prefix, batches.task.inputs!.runner_prefix);
+    // The flagged-case replay runs the same child with the same prefix, restore and reset expressions.
+    for (const input of ["runner_prefix", "restore", "reset"]) {
+        assertEquals(step(parent, "fail-batch-${{ self._index }}").task.inputs![input], batches.task.inputs![input], input);
+    }
+});
+
+Deno.test("a copy resets its fleet before every batch, the first included; a VM restores before every batch but the first and resets nothing", () => {
+    assertEquals([0, 1].map((i) => batchInputs(copyIntent, i)), [{ restore: true, reset }, { restore: true, reset }]);
+    assertEquals([0, 1].map((i) => batchInputs(vmIntent, i)), [{ restore: false, reset: {} }, { restore: true, reset: {} }]);
+    // A CI proof's VM leaves `restore_first` unset.
+    const { restore_first: _first, final_restore: _final, ...ciIntent } = vmIntent;
+    assertEquals([0, 1].map((i) => batchInputs(ciIntent, i)), [{ restore: false, reset: {} }, { restore: true, reset: {} }]);
+});
+
+Deno.test("a copy run that an older Gateway admitted reads no key of the reset, and its later batches do not start", () => {
+    assertEquals([0, 1].map((i) => batchInputs(olderCopyIntent, i)), [{ restore: false, reset: {} }, { restore: true, reset: {} }]);
+    const later = { ...childInputs(prefix, true), reset: {} };
+    assertEquals([guard("restore", later), guard("reset", later), guard("setup", later)], [true, true, true]);
 });
 
 Deno.test("a task VM still restores first and last and passes no prefix", () => {
@@ -118,7 +143,7 @@ Deno.test("in a copy the steps that run there lock on the copy; on a task VM the
         return { plan: cel(plan.behaviorName, context), token: cel(token.behaviorName, context), batch };
     };
     assertEquals(names(copyIntent), { plan: "proof-verify-ssh-9-2747", token: "proof-verify-9-read-the-token-age-2747", batch: "proof-verify-ssh-9-2747" });
-    assertEquals(names({ ...copyIntent, instance_id: 2748, copy: { project: "orbit-instances", name: "instance-2748" } }).batch, "proof-verify-ssh-9-2748");
+    assertEquals(names({ ...copyIntent, instance_id: 2748, copy: { project: "orbit-instances-nested", name: "instance-2748" } }).batch, "proof-verify-ssh-9-2748");
     assertEquals(names(vmIntent), { plan: "proof-verify-ssh-9", token: "proof-verify-9-read-the-token-age", batch: "proof-verify-ssh-9" });
     for (const name of ["setup", "batch"]) {
         const task = step(child, name).task as Step["task"] & { behaviorName: string; globalArgs: { name: string } };
@@ -132,15 +157,21 @@ Deno.test("in a copy the steps that run there lock on the copy; on a task VM the
     assert(child.inputs.required.includes("ssh_name"));
 });
 
-const childInputs = (runnerPrefix: string[], restore: boolean) => ({
+const childInputs = (runnerPrefix: string[], restore: boolean, resetOf: Record<string, unknown> = {}) => ({
     ssh_execution: copyIntent.ssh_execution, checkout_path: "/srv/workspace", group_id: 4993n, file: "swamp/proof/firewall/allow.cases.yaml",
-    runner_prefix: runnerPrefix, ssh_name: runnerPrefix.length > 0 ? "proof-verify-ssh-9-2747" : "proof-verify-ssh-9", batch: "fresh-fleet", setup: false, restore, cases: ["new-restricted-allow", "already-applied"],
+    runner_prefix: runnerPrefix, ssh_name: runnerPrefix.length > 0 ? "proof-verify-ssh-9-2747" : "proof-verify-ssh-9", batch: "fresh-fleet", setup: false, restore, reset: resetOf, cases: ["new-restricted-allow", "already-applied"],
 });
 const guard = (name: string, inputs: Record<string, unknown>, steps: Record<string, unknown> = {}) => cel(step(child, name).guard, { inputs, steps });
 
-Deno.test("the first batch of a copy runs its setup and cases as agent in the copy", () => {
-    const inputs = childInputs(prefix, false);
-    assertEquals([guard("restore", inputs), guard("setup", inputs)], [true, false]);
+Deno.test("every batch of a copy resets the fleet, then runs its setup and cases as agent in the copy", () => {
+    const inputs = childInputs(prefix, true, reset);
+    assertEquals([guard("restore", inputs), guard("reset", inputs), guard("setup", inputs)], [true, false, false]);
+    const resetStep = step(child, "reset");
+    assertEquals(resetStep.task.workflowIdOrName, "proof-copy-fleet-reset");
+    assertEquals(cel(resetStep.task.inputs!.intent, { inputs }), reset);
+    // The setup waits for the reset and runs only after it passed.
+    assert((resetStep as { allowFailure?: boolean }).allowFailure);
+    assert(step(child, "setup").dependsOn!.some((d) => d.step === "reset" && JSON.stringify(d.condition).includes('"succeeded"')));
     const evidence = "/srv/workspace/.orbit-artifacts/4993/verify";
     const file = "/srv/workspace/swamp/proof/firewall/allow.cases.yaml";
     assertEquals(sshOf(step(child, "setup"), { inputs }),
@@ -152,19 +183,85 @@ Deno.test("the first batch of a copy runs its setup and cases as agent in the co
     });
 });
 
-Deno.test("a later batch of a copy starts nothing and reports its cases unrun", () => {
-    const inputs = childInputs(prefix, true);
-    assertEquals([guard("restore", inputs), guard("setup", inputs)], [true, true]);
-    const skipped = { restore: { status: "skipped", outputs: {} }, setup: { status: "skipped", outputs: {} } };
-    assertEquals(guard("batch", inputs, skipped), true);
-    const lines = String(cel((step(child, "report").task.inputs!.env as unknown as Record<string, string>).LINES, { inputs, steps: skipped })).split("\n").map((line) => JSON.parse(line));
+Deno.test("a failed reset stops the batch and reports its cases unrun with the reason of the reset", () => {
+    const inputs = childInputs(prefix, true, reset);
+    const report = (resetOutputs: Record<string, unknown>) => {
+        const failed = { restore: { status: "skipped", outputs: {} }, reset: { status: "failed", outputs: resetOutputs }, setup: { status: "skipped", outputs: {} } };
+        assertEquals(guard("batch", inputs, failed), true);
+        return String(cel((step(child, "report").task.inputs!.env as unknown as Record<string, string>).LINES, { inputs, steps: failed })).split("\n").map((line) => JSON.parse(line));
+    };
+    // The child's result step prints the result file, then the safe reason (proof-copy-fleet-reset, `result`).
+    const result = { stdout: JSON.stringify({ error_code: "instance.container_fleet_reset_failed", detail: "x" }) +
+        "\nreason=Check the restores: nested-app-prod did not restore base: Error: Snapshot not found" };
+    const lines = report({ result });
     assertEquals(lines.map((line) => [line.id, line.verdict, line.cause]),
         [["new-restricted-allow", "unrun", "infrastructure"], ["already-applied", "unrun", "infrastructure"]]);
+    assertEquals(lines.map((line) => line.failed),
+        Array(2).fill(["run stopped: the fleet reset failed: Check the restores: nested-app-prod did not restore base: Error: Snapshot not found"]));
+    // A child that kept no output still names the reset.
+    assertEquals(report({}).map((line) => line.failed[0]), Array(2).fill("run stopped: the fleet reset failed"));
+    // A batch whose own setup failed keeps its message.
+    const setupFailed = { restore: { status: "skipped", outputs: {} }, reset: { status: "succeeded", outputs: {} }, setup: { status: "succeeded", outputs: { stdout: '{"setup": "failed"}' } } };
+    const setupLines = String(cel((step(child, "report").task.inputs!.env as unknown as Record<string, string>).LINES, { inputs, steps: setupFailed })).split("\n");
+    assertEquals(JSON.parse(setupLines[0]).failed, ["run stopped: the batch setup did not succeed"]);
+});
+
+Deno.test("the reset child prints the reason of a failure on a line of its own, safe inside a JSON string", () => {
+    const folder = Deno.makeTempDirSync();
+    try {
+        Deno.writeTextFileSync(`${folder}/result.json`, JSON.stringify({ error_code: "instance.container_fleet_reset_failed", detail: 'Check the restores: "x" a\\b\nnext' }));
+        Deno.writeTextFileSync(`${folder}/reset_ms`, "15900");
+        const run = String(step(resetFlow, "result").task.inputs!.run).replace("/opt/orbit/ansible/venv/bin/python", "python3");
+        const done = new Deno.Command("sh", { args: ["-c", run], env: { ORBIT_RUN: folder } }).outputSync();
+        const [first, reason] = new TextDecoder().decode(done.stdout).split("\n");
+        assertEquals(JSON.parse(first).reset_seconds, 15.9);
+        assertEquals(reason, "reason=Check the restores: 'x' a/b next");
+    } finally {
+        Deno.removeSync(folder, { recursive: true });
+    }
 });
 
 Deno.test("a later batch of a task VM restores, then runs its setup as the SSH user", () => {
     const inputs = { ...childInputs([], true), checkout_path: "/home/orbit/apps/orbit/workspace" };
-    assertEquals([guard("restore", inputs), guard("setup", inputs)], [false, false]);
+    assertEquals([guard("restore", inputs), guard("reset", inputs), guard("setup", inputs)], [false, true, false]);
     const setup = sshOf(step(child, "setup"), { inputs });
     assertEquals([setup.sudo, setup.argv[0], setup.argv[2]], [false, "python3", "setup"]);
+});
+
+// The reset child (docs/reference/development-containers.md#reset): the phase `fleet_reset` of instance-container.yml from the copy's
+// Node, as the start of a stopped clone runs its phases, with no secret.
+const resetFlow = read("proof-copy-fleet-reset");
+const resetContext = { inputs: { intent: reset }, steps: { input: { outputs: { assets: "/opt/swamp/assets" } } }, run: { id: "run-1" } };
+
+Deno.test("the reset child writes the intent, runs fleet_reset under a timeout on the copy's lock, records its seconds and cleans up", () => {
+    assertEquals(resetFlow.inputs.required, ["intent"]);
+    assertEquals((resetFlow as unknown as { vaults: string[] }).vaults, []);
+    const input = step(resetFlow, "input");
+    assertEquals((input.task as unknown as { behaviorType: string }).behaviorType, "@nckrtl/ansible-input");
+    assertEquals(cel(input.task.inputs!.intent, resetContext), reset);
+    assertEquals(cel(input.task.inputs!.path, resetContext), "/tmp/orbit-ansible-run-1/intent.json");
+    const play = step(resetFlow, "Reset the inner fleet");
+    const run = String(play.task.inputs!.run);
+    assert(/timeout \d+ \/opt\/orbit\/ansible\/venv\/bin\/ansible-playbook -i localhost, --tags fleet_reset "\$ORBIT_ANSIBLE\/instance-container.yml"/.test(run), run);
+    assert(run.includes('> "$ORBIT_RUN/reset_ms"; exit $rc'), run);
+    assertEquals(cel((play.task as unknown as { behaviorName: string }).behaviorName, resetContext), "proof-copy-fleet-reset-2747");
+    const env = play.task.inputs!.env as unknown as Record<string, string>;
+    assertEquals(cel(env.ORBIT_RUN, resetContext), "/tmp/orbit-ansible-run-1");
+    assertEquals(cel(env.ORBIT_ANSIBLE, resetContext), "/opt/swamp/assets");
+    // The reset only tests that the Club key is there: no key and no execution secret reach it.
+    assert(!("ORBIT_CLUB_KEY" in env) && !JSON.stringify(resetFlow).includes("vault.get"));
+    assert(play.dependsOn!.some((d) => d.step === "input" && d.condition.type === "succeeded"));
+    assert(step(resetFlow, "result").dependsOn!.some((d) => d.step === "Reset the inner fleet" && d.condition.type === "always"));
+    assert(String(step(resetFlow, "result").task.inputs!.run).includes('"reset_seconds"'));
+    assert(step(resetFlow, "cleanup").dependsOn!.some((d) => d.step === "result" && d.condition.type === "always"));
+    assertEquals(String(step(resetFlow, "cleanup").task.inputs!.run), 'timeout 5 rm -rf -- "$ORBIT_RUN"');
+});
+
+Deno.test("the intent of the reset holds what the play of the fleet reads", () => {
+    // swamp/ansible/instance-container.yml addresses the Node from ssh_execution; instance-fleet.yml reads container and fleet.
+    const play = Deno.readTextFileSync(new URL("../ansible/instance-container.yml", import.meta.url));
+    assert(play.includes("intent.ssh_execution.target") && play.includes("intent.ssh_execution.identity_file"));
+    const fleet = Deno.readTextFileSync(new URL("../ansible/tasks/instance-fleet.yml", import.meta.url));
+    assert(fleet.includes("intent.container.project") && fleet.includes("intent.fleet.guests"));
+    assertEquals(Object.keys(reset).sort(), ["container", "fleet", "ssh_execution"]);
 });

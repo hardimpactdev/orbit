@@ -10,6 +10,7 @@
 #     `fleet_restore`, then `start` and `fleet_resume`. One run holds the phases that share their failure handling: `phases`, a
 #     comma-separated list in order with the same tags, such as `-e phases=start,fetch --tags start,fetch`.
 #   process: `process`, for one Process's start, stop, restart, status or logs (ORBIT_PROCESS_ACTION).
+#   proof of a task copy: `fleet_reset`, before each batch: the copy's nested fleet back on `base` (tasks/instance-fleet-reset.yml).
 #   `container` (a create, and a move's container phase) writes the presented machine name after the first start, and `start`
 #     before it boots a stopped container (tasks/instance-machine-name.yml); a clone gets `/etc/machine-info` as a
 #     boot file before its first start, so T3 shows the name from its first start, and the rest right after that start (instance_clone.py).
@@ -127,7 +128,7 @@
               {{ {'detail': 'Not active: ' ~ failure_inactive_units | join(', '), 'units_inactive': failure_inactive_units}
                  if failure_inactive_units | length > 0 else {} }}
             failure_fleet_detail: >-
-              {{ {} if failure_phase not in ['fleet_check', 'fleet_start', 'fleet_refresh', 'fleet_resume'] or failure_code == failure_message
+              {{ {} if failure_phase not in ['fleet_check', 'fleet_start', 'fleet_refresh', 'fleet_resume', 'fleet_reset'] or failure_code == failure_message
                  else {'detail': failure_reason} }}
             # A checkout that fails other than by a refusal names its task and the end of the command's stderr, at most 4096
             # characters in all: on 2026-11-14 a refresh failed in the group mode pass, and the Operation said only "Command exited

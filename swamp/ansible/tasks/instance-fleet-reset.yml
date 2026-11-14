@@ -1,36 +1,85 @@
 ---
 # Reset the nested fleet of an Instance container to `base`, then start it (instance-fleet-start.yml, which checks the fleet rules) and
 # wait for readiness (instance-fleet-ready.yml). `base` may hold an older schema than the checkout: a refresh does not retake it for a
-# migration, so the reset migrates the nested Gateway forward and restarts it when one applied (instance-fleet-migrate.yml). Input: instance-fleet.yml. A restore takes
-# 4 to 8 s on the directory pool; each has 45 s. The restores run one after the other: three parallel restores save a few seconds
-# against the minute of readiness after them.
-# A restore of a running container starts it again; a stopped one stays stopped, and the start starts it.
+# migration, so the reset migrates the nested Gateway forward and restarts it when one applied (instance-fleet-migrate.yml). Input: instance-fleet.yml.
+# The proof of a task copy runs it before each batch (docs/reference/development-containers.md#reset).
+# A restore of a running container stops it and boots it again, one by one: 9.6 s for the three on the inner volume. So the reset
+# stops the running ones in one call (1.75 s), restores each stopped container (0.9 s; nested-gateway 2.5 s; each has 45 s), and the
+# start boots the three in one call after its rules check (`fleet_start_together`; 0.44 s in parallel). Its waits poll every second,
+# not every 5 s as the refresh's do: the whole reset took 15.9 s against 30.7 s (measured by hand in a task copy, 2026-11-14). Each
+# wait is an include, so its `fleet_ready_delay` wins over the fact that instance-fleet.yml sets.
 - { name: Name the fleet commands, ansible.builtin.import_tasks: instance-fleet.yml }
-- name: Restore base
-  ansible.builtin.command: { argv: "{{ ['timeout', '45'] + fleet_incus + ['snapshot', 'restore', item, 'base'] }}" }
-  loop: "{{ fleet_names }}"
-  register: fleet_restore
-  changed_when: true
-  failed_when: false
-- name: Check the restores
-  vars:
-    fleet_restore_failed: "{{ fleet_restore.results | rejectattr('rc', 'eq', 0) | list }}"
+# Only a clone's fleet is reset. A default's fleet is the seed of every copy, so the play refuses it before any command, also when someone
+# runs it by hand; the Gateway refuses it first with `proof.copy_fleet_missing`.
+- name: Refuse an Instance that is not a clone
   ansible.builtin.assert:
-    that: fleet_restore_failed | length == 0
-    fail_msg: >-
-      {{ fleet_restore_failed | map(attribute='item') | join(', ') }} did not restore base:
-      {{ fleet_restore_failed | map(attribute='stderr') | map('trim') | join('; ') | truncate(400) }}
+    that: intent.container.clone is defined and intent.container.clone is not none
+    fail_msg: instance.fleet_reset_not_clone
     quiet: true
-- { name: Start the fleet, ansible.builtin.import_tasks: instance-fleet-start.yml }
-# The migrate reads `.env` and writes `storage` of the nested Gateway: their state mounts come up at boot, after the restore's start, so
-# the reset waits for them first, as the refresh does (instance-fleet-mounts.yml), with the Swamp state when the Club key is there.
-- name: Look for the Club key
-  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['test', '-s', fleet_club_key] }}" }
-  register: fleet_club
+- name: Read the state of the nested containers
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['list', '--format', 'csv', '--columns', 'ns'] }}" }
+  register: fleet_reset_list
   changed_when: false
-  failed_when: false
-- { name: Wait for the state mounts, ansible.builtin.include_tasks: instance-fleet-mounts.yml }
-- name: Migrate the nested Gateway to its checkout
-  ansible.builtin.include_tasks: instance-fleet-migrate.yml
-  vars: { fleet_migrate_due: true, fleet_restart_due: false }
-- { name: Wait for readiness, ansible.builtin.import_tasks: instance-fleet-ready.yml }
+- name: Name the running nested containers
+  ansible.builtin.set_fact:
+    fleet_reset_running: >-
+      {{ fleet_names | select('in', fleet_reset_list.stdout_lines | select('match', '^[^,]+,RUNNING$') | map('regex_replace', ',.*$', '') | list) | list }}
+- name: Stop the nested containers
+  when: fleet_reset_running | length > 0
+  ansible.builtin.command: { argv: "{{ ['timeout', '60'] + fleet_incus + ['stop', '--force'] + fleet_reset_running }}" }
+  changed_when: true
+# A failure after the stop must not leave the fleet down: the rescue starts each nested container that ran before the reset again, one
+# by one and best effort (one that already runs makes its start fail, which counts for nothing), then fails with the first reason. The
+# author keeps a running fleet, and the next proof resets again. A fleet that was stopped before stays stopped.
+- name: Reset the stopped fleet
+  block:
+    - name: Restore base
+      ansible.builtin.command: { argv: "{{ ['timeout', '45'] + fleet_incus + ['snapshot', 'restore', item, 'base'] }}" }
+      loop: "{{ fleet_names }}"
+      register: fleet_restore
+      changed_when: true
+      failed_when: false
+    - name: Check the restores
+      vars:
+        fleet_restore_failed: "{{ fleet_restore.results | rejectattr('rc', 'eq', 0) | list }}"
+      ansible.builtin.assert:
+        that: fleet_restore_failed | length == 0
+        fail_msg: >-
+          {{ fleet_restore_failed | map(attribute='item') | join(', ') }} did not restore base:
+          {{ fleet_restore_failed | map(attribute='stderr') | map('trim') | join('; ') | truncate(400) }}
+        quiet: true
+    - name: Start the fleet
+      ansible.builtin.include_tasks: instance-fleet-start.yml
+      vars: { fleet_ready_delay: 1, fleet_start_together: true }
+    # The migrate reads `.env` and writes `storage` of the nested Gateway: their state mounts come up at boot, after the start, so the reset
+    # waits for them first, as the refresh does (instance-fleet-mounts.yml), with the Swamp state when the Club key is there.
+    - name: Look for the Club key
+      ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['test', '-s', fleet_club_key] }}" }
+      register: fleet_club
+      changed_when: false
+      failed_when: false
+    - name: Wait for the state mounts
+      ansible.builtin.include_tasks: instance-fleet-mounts.yml
+      vars: { fleet_ready_delay: 1 }
+    - name: Migrate the nested Gateway to its checkout
+      ansible.builtin.include_tasks: instance-fleet-migrate.yml
+      vars: { fleet_migrate_due: true, fleet_restart_due: false, fleet_ready_delay: 1 }
+    - name: Wait for readiness
+      ansible.builtin.include_tasks: instance-fleet-ready.yml
+      vars: { fleet_ready_delay: 1 }
+  rescue:
+    - name: Keep the reason of the failed reset
+      ansible.builtin.set_fact:
+        fleet_reset_failed_task: "{{ ansible_failed_task.name | default('A fleet reset task') }}"
+        fleet_reset_failed_msg: >-
+          {{ (ansible_failed_result.msg | default('The fleet reset failed.') | string | trim)
+             ~ ((': ' ~ (ansible_failed_result.stderr | string | trim)[-400:])
+                if (ansible_failed_result.msg | default('')) == 'non-zero return code' and (ansible_failed_result.stderr | default('') | string | trim) != ''
+                else '') }}
+    - name: Start the nested containers again
+      ansible.builtin.command: { argv: "{{ ['timeout', '60'] + fleet_incus + ['start', item] }}" }
+      loop: "{{ fleet_reset_running }}"
+      changed_when: false
+      failed_when: false
+    - name: "{{ fleet_reset_failed_task }}"
+      ansible.builtin.fail: { msg: "{{ fleet_reset_failed_msg }}" }

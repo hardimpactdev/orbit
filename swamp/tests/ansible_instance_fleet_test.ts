@@ -148,10 +148,11 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
         return call.slice(5).join(" ");
       });
     },
-    run(phase: string, extra: string[] = []) {
+    /** Run a phase; its waits poll at once unless `ownDelay` keeps the delay that the phase sets. */
+    run(phase: string, extra: string[] = [], options: { ownDelay?: boolean } = {}) {
       const result = new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "-e", "ansible_connection=local", "-e", "ansible_python_interpreter={{ ansible_playbook_python }}",
-          "-e", `phase=${phase}`, "-e", "fleet_ready_delay=0", ...extra, `${folder}/play.yml`],
+          "-e", `phase=${phase}`, ...(options.ownDelay ? [] : ["-e", "fleet_ready_delay=0"]), ...extra, `${folder}/play.yml`],
         env: {
           HOST_FIXTURE: folder,
           PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
@@ -596,7 +597,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused",
+  name: "a reset stops the three containers in one call, restores base on each stopped one, keeps the rules of base, starts the fleet and polls every second; a base without the rules is refused",
   ignore: !hasAnsible,
   fn() {
     const f = fixture(ruled(), { base: true });
@@ -605,13 +606,23 @@ Deno.test({
       f.calls();
       // Work in the fleet changed a device of a nested container; the restore takes base's back.
       f.change((state) => state.containers["nested-app-dev"].devices.checkout.shift = "true");
-      const reset = f.run("reset");
+      // Doctor answers unhealthy once, so the readiness wait polls again after the reset's own delay.
+      f.change((state) => {
+        state.doctorCalls = 0;
+        state.doctorUnhealthy = 1;
+      });
+      const reset = f.run("reset", [], { ownDelay: true });
       assert(reset.ok, reset.output);
       const calls = f.calls();
       assertEquals(calls, [
+        // A restore of a running container stops and boots it again, one by one: the reset stops the three in one call first.
+        "incus list --format csv --columns ns",
+        `incus stop --force ${names.join(" ")}`,
         ...names.map((name) => `incus snapshot restore ${name} base`),
         ...startReads,
         "incus list --format csv --columns ns",
+        // One call starts the three after the rules check: Incus boots them in parallel.
+        `incus start ${names.join(" ")}`,
         "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key",
         "incus exec nested-gateway -- ln -sfnT club/swamp-club-api-key /home/orbit/.config/swamp/api-key",
         "test -s /etc/wireguard/wg-nested.key",
@@ -625,10 +636,14 @@ Deno.test({
         "incus exec nested-gateway -- systemctl is-active home-orbit-orbit-apps-gateway-.env.mount home-orbit-orbit-apps-gateway-storage.mount home-orbit-orbit-apps-gateway-bootstrap-cache.mount",
         "incus exec nested-app-dev -- systemctl is-active home-orbit-orbit-apps-gateway-.env.mount home-orbit-orbit-apps-gateway-storage.mount home-orbit-orbit-apps-gateway-bootstrap-cache.mount",
         "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan migrate --force",
-        ...readyCalls,
+        // The unhealthy Doctor answer is polled once more.
+        ...readyCalls.slice(0, 3), readyCalls[2], readyCalls[3],
       ]);
       assertKeyUntouched(calls, reset.output);
       assertEquals(f.state().containers["nested-app-dev"].devices.checkout.shift, "false");
+      assertEquals(f.state().runningRestores ?? 0, 0, "a restore of a running container boots it on its own");
+      // The waits poll every second within the 300 s bound: 300 retries, where the refresh's 5 s give 60.
+      assertStringIncludes(reset.output, "FAILED - RETRYING: [localhost]: Wait for Doctor of the nested Gateway (300 retries left)");
       const g = fixture(structuredClone(shapes), { base: true });
       try {
         const refused = g.run("reset");
@@ -640,6 +655,78 @@ Deno.test({
       }
     } finally {
       f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a reset that fails after its stop starts the containers that ran again and fails with the first reason",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled(), { base: true });
+    try {
+      assert(f.run("start").ok);
+      f.calls();
+      // nested-app-prod lost its base: its restore fails after the stop of all three.
+      f.change((state) => delete state.containers["nested-app-prod"].snapshots.base);
+      const failed = f.run("reset");
+      assert(!failed.ok, failed.output);
+      assertStringIncludes(failed.output, '"msg": "nested-app-prod did not restore base: Error: Snapshot not found"');
+      // The failure keeps the name of the task that failed, which the container play writes into its `detail`.
+      assertEquals(failed.output.match(/TASK \[Check the restores\]/g)?.length, 2);
+      const calls = f.calls();
+      const stop = calls.indexOf(`incus stop --force ${names.join(" ")}`);
+      assert(stop >= 0, calls.join("\n"));
+      // Each start is its own call after the failed restore, so one that fails stops none of the others.
+      assertEquals(calls.slice(stop + 1).filter((call) => call.startsWith("incus start")), names.map((name) => `incus start ${name}`));
+      assertEquals(names.map((name) => f.state().containers[name].status), ["Running", "Running", "Running"]);
+      // The one start of the three fails for one of them: the check names the call's containers and the reason.
+      f.change((state) => {
+        state.containers["nested-app-prod"].snapshots.base = structuredClone(state.containers["nested-app-dev"].snapshots.base);
+        state.failStart = { "nested-app-dev": "Failed to start device" };
+      });
+      f.calls();
+      const unstarted = f.run("reset");
+      assert(!unstarted.ok);
+      assertStringIncludes(unstarted.output, `"msg": "${names.join(", ")} did not start: Error: nested-app-dev: Failed to start device"`);
+      f.change((state) => delete state.failStart);
+      assert(f.run("start").ok);
+      // A fleet that was stopped before the reset stays stopped.
+      f.change((state) => {
+        for (const name of names) state.containers[name].status = "Stopped";
+        delete state.containers["nested-app-prod"].snapshots.base;
+      });
+      f.calls();
+      assert(!f.run("reset").ok);
+      assert(!f.calls().some((call) => call.startsWith("incus start")));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a reset refuses an Instance that is not a clone with instance.fleet_reset_not_clone before any command",
+  ignore: !hasAnsible,
+  fn() {
+    for (const clone of [null, undefined]) {
+      const f = fixture(ruled(), { base: true });
+      try {
+        assert(f.run("start").ok);
+        f.calls();
+        // A default's intent has `clone` null (InstanceContainer::intent); a hand-made one may lack it.
+        f.intent((intent) => {
+          if (clone === null) intent.container.clone = null;
+          else delete intent.container.clone;
+        });
+        const refused = f.run("reset");
+        assert(!refused.ok, refused.output);
+        assertStringIncludes(refused.output, '"msg": "instance.fleet_reset_not_clone"');
+        assertEquals(f.calls(), []);
+        assertEquals(names.map((name) => f.state().containers[name].status), ["Running", "Running", "Running"]);
+      } finally {
+        f.cleanup();
+      }
     }
   },
 });

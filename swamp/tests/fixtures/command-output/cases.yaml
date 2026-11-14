@@ -711,6 +711,13 @@ contexts:
       - nested-gateway,RUNNING
       - nested-app-dev,STOPPED
       - nested-app-prod,RUNNING
+  fleet-reset-list:
+    fleet_names: [nested-gateway, nested-app-dev, nested-app-prod]
+    fleet_reset_list:
+      stdout_lines:
+      - nested-app-prod,RUNNING
+      - nested-gateway,RUNNING
+      - nested-app-dev,STOPPED
   fleet-stopped:
     fleet_base_targets: [nested-gateway, nested-app-dev, nested-app-prod]
     fleet_stopped:
@@ -1910,6 +1917,19 @@ cases:
   context: fleet-start-list
   expected:
   - nested-app-dev
+- file: tasks/instance-fleet-start.yml
+  task: Start the nested containers together
+  field: vars.fleet_start_stopped
+  context: fleet-start-list
+  expected:
+  - nested-app-dev
+- file: tasks/instance-fleet-reset.yml
+  task: Name the running nested containers
+  field: ansible.builtin.set_fact.fleet_reset_running
+  context: fleet-reset-list
+  expected:
+  - nested-gateway
+  - nested-app-prod
 - file: tasks/instance-fleet-refresh.yml
   task: Work out which parts are due
   field: vars.fleet_record_valid

@@ -168,6 +168,46 @@ class Fleet:
         return {'rc': done['rc'], 'json': None, 'stdout': done['text'], 'stderr': '', 'secs': round(time.time() - started, 2), 'args': ['orbit', *args]}
 
 
+# The fleet fingerprint, read before each batch's setup: what a reset to `base` must bring back each time, so the live proof of a task
+# copy compares batch 1's with batch 2's. One read-only Laravel call in the nested Gateway gives its pending migrations and the counts.
+FINGERPRINT_PHP = (
+    '$m = app("migrator"); $files = $m->getMigrationFiles(array_merge([database_path("migrations")], $m->paths()));'
+    ' echo json_encode(["pending_migrations" => count(array_diff(array_keys($files), $m->getRepository()->getRan())),'
+    ' "nodes" => App\\Models\\Node::count(), "access_grants" => App\\Models\\NodeAccess::count(),'
+    ' "firewall_rules" => App\\Models\\FirewallRule::count(), "instances" => App\\Models\\Instance::count(),'
+    ' "unended_operations" => App\\Models\\Operation::whereNotIn("status", App\\Domain\\Operations\\OperationStatus::terminalValues())->count()]), PHP_EOL;'
+)
+FINGERPRINT_KEYS = ('pending_migrations', 'nodes', 'access_grants', 'firewall_rules', 'instances', 'unended_operations')
+
+
+FINGERPRINT_SECONDS = 60
+
+
+def fingerprint(fleet, seconds=FINGERPRINT_SECONDS):
+    """Doctor through the candidate CLI (exit 0 only when healthy) and the nested Gateway's counts, within `seconds` in total. Evidence,
+    never a verdict: any read that fails or times out is named in `error`, and the batch goes on."""
+    deadline = time.monotonic() + seconds
+    found, errors = {}, []
+    try:
+        found['doctor_healthy'] = fleet.cli(['doctor'], timeout=max(1, int(seconds * 2 / 3)))['rc'] == 0
+    except Exception as error:  # evidence only: nothing here may stop the batch
+        errors.append(f'doctor: {type(error).__name__}')
+    try:
+        left = int(deadline - time.monotonic())
+        if left < 1:
+            raise TimeoutError('no time left')
+        done = fleet.incus_exec('gateway', ['php', NODE_CHECKOUT + '/apps/gateway/artisan', 'tinker', '--execute', FINGERPRINT_PHP], left)
+        lines = [line for line in done.stdout.splitlines() if line.startswith('{')]
+        counts = json.loads(lines[-1]) if done.returncode == 0 and lines else None
+        if isinstance(counts, dict) and all(isinstance(counts.get(key), int) for key in FINGERPRINT_KEYS):
+            found.update({key: counts[key] for key in FINGERPRINT_KEYS})
+        else:
+            errors.append(f'counts: exit {done.returncode}, {(done.stderr or done.stdout).strip()[-160:]}')
+    except Exception as error:  # evidence only
+        errors.append(f'counts: {type(error).__name__}')
+    return {**found, **({'error': '; '.join(errors)} if errors else {})}
+
+
 class Background:
     """A CLI call that runs while a case goes on. `started` waits for its first line: the CLI prints it when the Gateway has admitted the
     request, so the Operation exists and holds its target."""

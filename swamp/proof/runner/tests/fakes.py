@@ -58,6 +58,8 @@ class FakeFleet:
         self.operation_rows, self.operation_queries = [], []
         self.list_nodes = None          # the Nodes of a `firewall:list` answer, when a test sets them
         self.callers, self.access_removed, self.down = [], [], set()   # the Node a CLI call ran as, `node:access:remove` calls, stopped Nodes
+        # The nested Gateway's counts that the fleet fingerprint reads; None: the read fails.
+        self.counts = {'pending_migrations': 0, 'nodes': 4, 'access_grants': 3, 'firewall_rules': 6, 'instances': 0, 'unended_operations': 0}
 
     # ---- shell
     def sh(self, node, command, timeout=60, stdin_text=None):
@@ -172,6 +174,15 @@ class FakeFleet:
                 continue
             return 0 if action == 'ALLOW' else 124
         return 124
+
+    # ---- The nested Gateway's own reads (the fleet fingerprint)
+    def incus_exec(self, node, argv, timeout=60):
+        self.commands.append((node, argv))
+        if argv[2:4] == ['tinker', '--execute']:
+            if self.counts is None:
+                return completed(1, '', 'Could not open input file: artisan')
+            return completed(0, '   INFO  Psy Shell.\n' + json.dumps(self.counts) + '\n')
+        raise AssertionError('the fake fleet does not run: ' + ' '.join(argv))
 
     # ---- CLI
     def prepare_cli_callers(self, items):
