@@ -1,5 +1,6 @@
 """Exact-push deferred coverage without GitHub calls or slow fixture bodies."""
 import json
+import os
 from pathlib import Path
 import runpy
 import subprocess
@@ -7,7 +8,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 receiver = SimpleNamespace(**runpy.run_path(str(ROOT / 'bin/ci-deferred')))
@@ -21,7 +22,7 @@ class DeferredTest(unittest.TestCase):
                                  'after_merge_cases': ['explicit']},
                     'swamp/b.py': {'file': 'swamp/b.py', 'cases': ['test_whole']},
                     'swamp/c.ts': {'file': 'swamp/c.ts', 'cases': ['all'], 'after_merge': True}}
-        pr = {'deferred': ['swamp/a.ts#1/2', 'swamp/b.py', 'swamp/c.ts'],
+        pr = {'shards': [{'units': ['swamp/a.ts#0/2']}], 'deferred': ['swamp/a.ts#1/2', 'swamp/b.py', 'swamp/c.ts'],
               'excluded': [{'file': 'swamp/a.ts', 'case': 'explicit'}]}
         result = receiver.requested_cases(pr, fixtures, api)
         self.assertEqual({'swamp/a.ts': ['capacity', 'explicit'], 'swamp/b.py': None, 'swamp/c.ts': None}, result)
@@ -89,10 +90,10 @@ class DeferredTest(unittest.TestCase):
             path.write_text(json.dumps([row]))
             self.assertEqual(([], []), full.reconcile(plan, directory, 'success'))
 
-    def test_real_registry_selection_keeps_seed_and_pair_deferrals_and_systemd_routing(self):
+    def test_real_registry_selection_keeps_seed_and_pair_deferrals(self):
         budget, fixtures, defaults = api.configuration()
         config, inventory = api.registry.load(ROOT)
-        paths = ['swamp/tests/ansible_instance_container_test.ts', receiver.SYSTEMD]
+        paths = ['swamp/tests/ansible_instance_container_test.ts', full.SYSTEMD_FIXTURE]
         pr = api.plan(paths, budget, fixtures, defaults)
         wanted = receiver.requested_cases(pr, fixtures, api)
         self.assertCountEqual(fixtures[paths[0]]['after_merge_cases'], wanted[paths[0]])
@@ -105,9 +106,6 @@ class DeferredTest(unittest.TestCase):
             actual = [case for unit in plan['units'] if unit['unit'].split('#')[0] == file for case in unit['cases']]
             self.assertCountEqual(names, actual)
         self.assertEqual(len(plan['units']), len({u for s in plan['shards'] for u in s['units']}))
-        for shard in plan['shards']:
-            has_systemd = any(u.split('#')[0] == receiver.SYSTEMD for u in shard['units'])
-            self.assertEqual(['self-hosted', 'orbit-shard', 'sabre'] if has_systemd else ['ubuntu-26.04'], shard['runs_on'])
 
     def test_metadata_only_changes_select_their_deferred_fixture(self):
         file = 'swamp/tests/ansible_instance_container_test.ts'
@@ -130,6 +128,74 @@ class DeferredTest(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, 'must be an ancestor'):
             receiver.build_plan('base', 'head')
 
+    def test_wholly_capacity_deferred_file_includes_new_live_case_absent_from_inventory(self):
+        fixtures = {'swamp/a.ts': {'file': 'swamp/a.ts', 'cases': ['admitted', 'slow']}}
+        requested = receiver.requested_cases({'shards': [], 'deferred': ['swamp/a.ts']}, fixtures, api)
+        plan = self.plan(requested, lambda _file: {'cases': ['admitted', 'slow', 'new live case']})
+        self.assertCountEqual(['admitted', 'slow', 'new live case'], [c for u in plan['units'] for c in u['cases']])
+        self.assertFalse(plan['fixtures']['swamp/a.ts'].get('after_merge_cases'))
+
+    def test_receiver_self_coverage_preserves_required_admission_and_adds_exclusions(self):
+        budget, fixtures, defaults = api.configuration()
+        _, inventory = api.registry.load(ROOT)
+        paths = ['bin/ci-deferred', 'swamp/ansible/tasks/instance-host.yml']
+        required = api.plan(paths, budget, fixtures, defaults)
+        with patch.object(api.selection, 'changed_inputs', return_value=('base', paths)), \
+                patch.object(full, 'collect_current', side_effect=lambda file: inventory.get(file) or api.collect(file)):
+            plan = receiver.build_plan('base', 'head')
+        self.assertEqual(required, plan['required_plan'])
+        requested = receiver.requested_cases(required, fixtures, api)
+        for file, names in requested.items():
+            actual = [c for u in plan['units'] if u['unit'].split('#')[0] == file for c in u['cases']]
+            self.assertTrue(set(names or fixtures[file]['cases']).issubset(actual), file)
+        for file, fixture in fixtures.items():
+            if fixture.get('after_merge') or fixture.get('after_merge_cases'):
+                self.assertIn(file, plan['fixtures'])
+
+    def test_dispatch_context_cannot_overwrite_push_or_another_backfill(self):
+        with patch.dict(os.environ, {'GITHUB_EVENT_NAME': 'push'}):
+            push = receiver.initial_context('sha')['context']
+        with patch.dict(os.environ, {'GITHUB_EVENT_NAME': 'workflow_dispatch', 'GITHUB_RUN_ID': '123'}):
+            first = receiver.initial_context('sha')['context']
+        with patch.dict(os.environ, {'GITHUB_EVENT_NAME': 'workflow_dispatch', 'GITHUB_RUN_ID': '456'}):
+            second = receiver.initial_context('sha')['context']
+        self.assertEqual(3, len({push, first, second}))
+
+    def test_invalid_base_leaves_named_red_plan_and_report(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            directory = Path(scratch)
+            path = directory / 'plan.json'
+            with patch.object(full, 'git', side_effect=subprocess.CalledProcessError(128, ['git', 'rev-parse', 'gone'])), \
+                    self.assertRaises(subprocess.CalledProcessError):
+                receiver.plan_push('gone', 'tested', path)
+            plan = json.loads(path.read_text())
+            self.assertEqual('tested', plan['sha'])
+            self.assertIn('rev-parse', plan['planner_error'])
+            github = Mock()
+            github.pages.return_value = []
+            self.assertTrue(full.report(github, plan, directory, 'skipped', 'run-link', directory / 'report.json'))
+            self.assertEqual('failure', github.request.call_args.args[2]['state'])
+            self.assertEqual('statuses/tested', github.request.call_args.args[1])
+
+    def test_zero_before_uses_parent_and_missing_plan_report_never_resolves_bad_base(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            directory = Path(scratch)
+            globals_ = receiver.plan_push.__globals__
+            with patch.object(full, 'git', side_effect=['parent', 'tested']), \
+                    patch.dict(globals_, build_plan=lambda base, sha: {'empty_selection': True}):
+                receiver.plan_push('0' * 40, 'tested', directory / 'plan.json')
+                self.assertEqual(('rev-parse', 'HEAD^^{commit}'), full.git.call_args_list[0].args)
+            github = Mock(repo='repo')
+            github.pages.return_value = []
+            with patch.object(sys, 'argv', ['ci-deferred', 'report', '--base', 'gone', '--plan', str(directory / 'missing'),
+                                          '--results', scratch, '--output', str(directory / 'report.json')]), \
+                    patch.object(full, 'git', return_value='tested') as git, \
+                    patch.object(full, 'GitHub', return_value=github), \
+                    patch.dict(os.environ, {'GITHUB_RUN_ID': '123', 'GITHUB_EVENT_NAME': 'push'}):
+                self.assertTrue(receiver.main())
+            git.assert_called_once_with('rev-parse', 'HEAD')
+            self.assertEqual('failure', github.request.call_args.args[2]['state'])
+
     def test_report_context_is_separate_from_required_and_full_set(self):
         plan = {'context': receiver.CONTEXT}
         status, comments = full.report_payloads(plan, [], [], {}, 'run', api.selection)
@@ -149,7 +215,7 @@ class DeferredTest(unittest.TestCase):
         self.assertTrue(all('concurrency' not in job for job in jobs.values()))
         self.assertEqual(['main'], workflow.get('on', workflow.get(True))['push']['branches'])
         self.assertEqual(5, jobs['fixtures']['strategy']['max-parallel'])
-        self.assertEqual('${{ matrix.runs_on }}', jobs['fixtures']['runs-on'])
+        self.assertEqual(['self-hosted', 'orbit-shard', 'sabre'], jobs['fixtures']['runs-on'])
         self.assertIn("has_shards == 'true'", jobs['fixtures']['if'])
         self.assertEqual({'contents': 'read'}, workflow['permissions'])
         self.assertNotIn('pull-requests', jobs['plan']['permissions'])

@@ -57,7 +57,7 @@ jobs:
     needs: plan
     if: needs.plan.result == 'success' && needs.plan.outputs.has_shards == 'true'
     name: Deferred (${{ matrix.name }})
-    runs-on: ${{ matrix.runs_on }}
+    runs-on: [self-hosted, orbit-shard, sabre]
     timeout-minutes: 50
     strategy:
       fail-fast: false

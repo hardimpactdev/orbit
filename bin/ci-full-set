@@ -256,7 +256,7 @@ def reconcile(plan, directory, shard_result):
     expected = {u['unit']: u for u in plan['units']}
     empty = plan.get('empty_selection') is True and not expected and not plan['shards']
     if (not expected or not plan['shards']) and not empty:
-        problems.append({'unit': 'full-set plan', 'reason': 'missing or empty full-set-plan.json', 'files': []})
+        problems.append({'unit': 'full-set plan', 'reason': plan.get('planner_error', 'missing or empty full-set-plan.json'), 'files': []})
     seen = set()
     for shard in plan['shards']:
         path = directory / f'full-set-times-{shard["name"]}.json'

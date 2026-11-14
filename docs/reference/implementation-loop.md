@@ -73,7 +73,7 @@ A separate remote Node service access fixture covers exact TCP admission, proxy 
 
 The retained guard fixture pins only the source-removal step and the absence of workflow dependency checks, so unrelated Route phases can change. The withdrawal fixture runs two local Ansible applications to verify cleanup after a partial publication and after an already absent site.
 
-[Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. Its independent deferred receiver also runs each main push’s omitted cases at that push SHA, so newer pushes cannot replace their coverage. It runs two workers per Sabre shard to reduce timeouts caused by runner load. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
+[Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. Its independent deferred receiver also runs each main push’s omitted cases at that push SHA, so newer pushes cannot replace their coverage. Both receivers run two workers per Sabre shard to reduce timeouts caused by runner load. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
 
 Withdrawal fixtures also check that publication stops when the live checksum differs from the base used for composition. The Node helper tests use temporary files, fake Caddy commands and real file locks; they cover contention, holder death and reload failure.
 

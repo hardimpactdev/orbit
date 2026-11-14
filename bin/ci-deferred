@@ -5,24 +5,25 @@ import json
 import os
 from pathlib import Path
 import runpy
+import subprocess
 import sys
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 full = SimpleNamespace(**runpy.run_path(str(ROOT / 'bin/ci-full-set')))
 CONTEXT = 'Main deferred fixtures'
-SYSTEMD = full.SYSTEMD_FIXTURE
 
 
 def requested_cases(pr, fixtures, fixture_api):
     """Keep capacity deferrals and explicit exclusions; never rerun admitted cases."""
+    admitted = {unit.split('#')[0] for shard in pr.get('shards', []) for unit in shard['units']}
     requested = {}
     for unit in pr['deferred']:
         file = unit.split('#')[0]
         requested.setdefault(file, set()).update(fixture_api.case_names(unit, fixtures))
     for row in pr.get('excluded', []):
         requested.setdefault(row['file'], set()).add(row['case'])
-    return {file: None if fixtures[file].get('after_merge') or file.endswith('.py') else sorted(names)
+    return {file: None if file not in admitted or fixtures[file].get('after_merge') or file.endswith('.py') else sorted(names)
             for file, names in requested.items()}
 
 
@@ -34,18 +35,44 @@ def build_plan(base, sha):
         raise ValueError('Deferred base must be an ancestor of the tested SHA')
     inventory_changed = fixture_api.inventory_changes(base, sha) if fixture_api.registry.metadata_changed(paths) else []
     registry_changed, shared = fixture_api.registry_changes(base, sha) if fixture_api.registry.metadata_changed(paths) else ([], False)
-    # Receiver changes must prove all explicitly deferred populations themselves.
-    if any(p in ('bin/ci-deferred', 'bin/ci-full-set', '.github/workflows/ci-deferred.yml') for p in paths):
-        shared = True
     pr = fixture_api.plan(paths, budget, fixtures, defaults, inventory_changed, registry_changed, shared)
     requested = requested_cases(pr, fixtures, fixture_api)
+    # Add receiver self-coverage without changing Required's admission decisions.
+    if any(p in ('bin/ci-deferred', 'bin/ci-full-set', '.github/workflows/ci-deferred.yml') for p in paths):
+        for file, fixture in fixtures.items():
+            if fixture.get('after_merge'):
+                requested[file] = None
+            elif fixture.get('after_merge_cases') and requested.get(file, []) is not None:
+                requested[file] = sorted(set(requested.get(file, [])) | set(fixture['after_merge_cases']))
     config, inventory = fixture_api.registry.load(ROOT)
     result = full.build_plan(config, inventory, full.collect_current, fixture_api, requested=requested)
     result.update(empty_selection=not requested, required_plan=pr, changed_paths=paths)
-    for shard in result['shards']:
-        shard['runs_on'] = ['self-hosted', 'orbit-shard', 'sabre'] if any(
-            u.split('#')[0] == SYSTEMD for u in shard['units']) else ['ubuntu-26.04']
     return result
+
+
+def initial_context(sha):
+    context = CONTEXT
+    if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch':
+        context += ' (backfill ' + os.environ['GITHUB_RUN_ID'] + ')'
+    return {'sha': sha, 'base': None, 'commits': [], 'context': context,
+            'shards': [], 'units': [], 'fixtures': {}}
+
+
+def plan_push(base_ref, sha, output):
+    context = initial_context(sha)
+    context['requested_base'] = base_ref
+    # Save before resolving the base: a deleted or invalid ref still gets a red status.
+    full.save(output, context)
+    try:
+        base = full.git('rev-parse', ('HEAD^' if base_ref == '0' * 40 else base_ref) + '^{commit}')
+        result = build_plan(base, sha)
+        context.update(base=base, commits=full.git('rev-list', '--first-parent', f'{base}..{sha}').splitlines())
+    except (ValueError, OSError, subprocess.SubprocessError) as error:
+        full.save(output, {**context, 'planner_error': str(error)})
+        raise
+    plan = {**context, **result}
+    full.save(output, plan)
+    return plan
 
 
 def main():
@@ -61,20 +88,14 @@ def main():
     if args.command == 'run':
         return full.run_shard(json.loads(args.plan.read_text()), args.shard, args.output)
     sha = full.git('rev-parse', 'HEAD')
-    base = full.git('rev-parse', args.base + '^{commit}')
-    context = {'sha': sha, 'base': base, 'commits': full.git('rev-list', '--first-parent', f'{base}..{sha}').splitlines(),
-               'context': CONTEXT, 'shards': [], 'units': [], 'fixtures': {}}
     if args.command == 'plan':
-        # An interrupted/failed planner has a red report, not an empty green selection.
-        full.save(args.output, context)
-        plan = {**context, **build_plan(base, sha)}
-        full.save(args.output, plan)
+        plan = plan_push(args.base, sha, args.output)
         with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-            output.write('matrix=' + json.dumps({'include': [{'name': s['name'], 'runs_on': s['runs_on']} for s in plan['shards']]}) + '\n')
+            output.write('matrix=' + json.dumps({'include': [{'name': s['name']} for s in plan['shards']]}) + '\n')
             output.write('has_shards=' + str(bool(plan['shards'])).lower() + '\n')
         print(f'{sha}: {plan["files_total"]} files; {plan["cases_total"]} deferred cases; {len(plan["shards"])} shards')
         return 0
-    plan = json.loads(args.plan.read_text()) if args.plan.exists() else context
+    plan = json.loads(args.plan.read_text()) if args.plan.exists() else initial_context(sha)
     github = full.GitHub()
     link = f'{os.environ.get("GITHUB_SERVER_URL", "https://github.com")}/{github.repo}/actions/runs/{os.environ["GITHUB_RUN_ID"]}'
     return full.report(github, plan, args.results, args.shard_result, link, args.output)
