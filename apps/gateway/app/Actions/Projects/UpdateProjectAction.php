@@ -230,6 +230,9 @@ final readonly class UpdateProjectAction
         if ($data->mergeCheckProvided) {
             $changes['merge_check'] = $data->mergeCheck;
         }
+        if ($data->taskPrModeProvided) {
+            $changes['task_pr_mode'] = $data->taskPrMode;
+        }
         $changes = [...$changes, ...$data->taskAgents];
         if ($changes === []) {
             return $project;
