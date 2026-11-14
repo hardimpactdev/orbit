@@ -681,7 +681,7 @@ describe('the clone\'s create result', function (): void {
         $caller->accessibleNodes()->attach($node->id);
         $diagnostic = 'instance.container_sessions_failed: command php exited 1';
         $failure = app(NativeStepFailure::class)->fromRun(['status' => 'failed', 'jobs' => [['steps' => [[
-            'name' => 'clone-sessions', 'status' => 'failed',
+            'name' => 'clone-t3', 'status' => 'failed',
             'error' => 'exec failed on 1/1 host(s): target (exit 1: '.$diagnostic.')',
         ]]]]], $operation);
 
@@ -695,7 +695,7 @@ describe('the clone\'s create result', function (): void {
             ->assertOk()->assertJsonPath('data.error_code', 'instance.create_register_failed')
             ->assertJsonPath('data.error.code', 'instance.create_register_failed')
             ->assertJsonPath('data.error.detail', 'exec failed on 1/1 host(s): target (exit 1: '.$diagnostic.')')
-            ->assertJsonPath('data.failed_step', 'clone-sessions')
+            ->assertJsonPath('data.failed_step', 'clone-t3')
             ->assertJsonPath('data.result.recovery.state', 'retained_for_retry')
             ->assertJsonPath('data.result.recovery.retry.command', 'instance:create')
             ->assertJsonPath('data.result.recovery.destroy.command', 'instance:destroy');
@@ -1196,9 +1196,9 @@ it('names retained create resources and proves the advertised recovery paths', f
 })->with([
     'clone-input' => [true, 'clone', false, 'failed'],
     'clone-container' => [true, 'clone', false, 'failed'],
-    'clone-workspace' => [true, 'workspace', false, 'failed'],
-    'clone-t3' => [true, 't3', true, 'failed'],
-    'clone-sessions' => [true, 'register', true, 'failed'],
+    'clone-t3, its checkout' => [true, 'workspace', false, 'failed'],
+    'clone-t3, its T3 part' => [true, 't3', true, 'failed'],
+    'clone-t3, its sessions check' => [true, 'register', true, 'failed'],
     'clone-register' => [true, 'register', true, 'failed'],
     'default-container' => [false, 'container', false, 'failed'],
     'default-workspace' => [false, 'workspace', false, 'failed'],

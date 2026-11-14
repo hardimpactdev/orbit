@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "fd549d01467c04ed23f9f1f3a55f701d4f2d638e3d26539df45ba0e614a1e003"
+source_sha256 = "ec2bbbbe483ea1dde47f0695771fe66693bb2f5799172f7f75f1139712c53c75"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror",
@@ -78,6 +78,7 @@ cases = [
   "test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code",
   "test_a_failed_t3_part_names_t3_and_keeps_the_t3_code",
   "test_a_failed_checkout_names_the_workspace",
+  "test_a_node_command_of_the_checkout_names_the_checkout",
   "test_a_failed_sessions_check_names_the_registration",
   "test_a_timeout_names_the_part_that_was_running",
   "test_the_agent_and_sessions_phases_alone_are_no_steps",
@@ -96,7 +97,7 @@ cases = [
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 149
+cost = 150
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -209,3 +210,4 @@ inputs = [
 "test_a_failed_checkout_names_the_workspace" = 1 # added 2026-11-14 (create-baked-2); local under 1 s
 "test_a_failed_sessions_check_names_the_registration" = 1 # added 2026-11-14 (create-baked-2); local under 1 s
 "test_the_agent_and_sessions_phases_alone_are_no_steps" = 1 # added 2026-11-14 (create-baked-2); local under 1 s
+"test_a_node_command_of_the_checkout_names_the_checkout" = 1 # added 2026-11-14 (create-baked-2); local under 1 s

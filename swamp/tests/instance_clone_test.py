@@ -1361,7 +1361,7 @@ class CloneTest(unittest.TestCase):
             commands(SCRIPT), commands(SCRIPT.with_name("instance_clone_guest.py"))
         )
 
-    def invoke(self, stderr, phase="check", fail="incus", evidence=None):
+    def invoke(self, stderr, phase="check", fail="incus", evidence=None, stdin="PRIVATE-INPUT"):
         account = pwd.getpwuid(os.getuid())
         with tempfile.TemporaryDirectory() as folder:
             container = {
@@ -1395,7 +1395,7 @@ class CloneTest(unittest.TestCase):
                         phase,
                     ],
                 ),
-                patch("sys.stdin", io.StringIO("PRIVATE-INPUT")),
+                patch("sys.stdin", io.StringIO(stdin)),
                 patch("subprocess.run", command),
                 patch("os.chown") as ownership,
                 contextlib.redirect_stdout(output),
@@ -1468,8 +1468,9 @@ console.log(JSON.stringify(JSON.parse(result.stdout)));
 
     def test_node_command_failure_names_executable_and_exit_without_output(self):
         self.assertEqual(
-            self.invoke("PRIVATE-STDERR", phase="t3", fail="git"),
-            "instance.container_t3_failed: command git exited 7\n",
+            # In the T3 step only the checkout runs Git on the Node, so the failure names the checkout.
+            self.invoke("PRIVATE-STDERR", phase="t3", fail="git", stdin=json.dumps({"environment": "PRIVATE-ENV", "processes": {}})),
+            "instance.container_checkout_failed: command git exited 7\n",
         )
 
 
@@ -1569,6 +1570,9 @@ class T3PhaseTest(unittest.TestCase):
             if member is not None and member == timeout:
                 # The outer `timeout 240` ends the step here: nothing after this line of the script runs.
                 raise KeyboardInterrupt
+            if fail == "bundle" and "bundle" in argv and member is None:
+                # The Node's own Git call of the checkout fails.
+                return subprocess.CompletedProcess(argv, 1, "", "PRIVATE-STDERR")
             if member is not None and member == fail:
                 return subprocess.CompletedProcess(argv, 1, "PRIVATE-STDOUT", "instance.container_" + member + "_failed: command php exited 17")
             if member == "checkout":
@@ -1689,6 +1693,13 @@ console.log(created.stdout);
         self.assertEqual(json.loads(self.left), {"t3_part": "checkout"})
         self.assertEqual(error, "instance.container_checkout_failed: command php exited 17\n")
         self.assertEqual(self.receipt(), ("workspace", "instance.create_workspace_failed"))
+
+    def test_a_node_command_of_the_checkout_names_the_checkout(self):
+        code, guest, _, error = self.phase(fail="bundle")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(self.left), {"t3_part": "checkout"})
+        self.assertEqual(error, "instance.container_checkout_failed: command git exited 1\n")
+        self.assertNotIn("sessions", [member for member, _ in guest])
 
     def test_a_failed_sessions_check_names_the_registration(self):
         code, _, output, error = self.phase(fail="sessions")

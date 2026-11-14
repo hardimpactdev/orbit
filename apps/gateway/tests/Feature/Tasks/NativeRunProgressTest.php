@@ -29,7 +29,7 @@ it('keeps all four clone phases visible while publication runs in its own job', 
     $sequence = 0;
     $progress->apply($operation->id, 'run-1', ['kind' => 'step_started', 'jobId' => 'publication', 'stepId' => 'clone-route',
         'startedAt' => '2026-11-10T20:00:00.000Z', 'seq' => ++$sequence]);
-    foreach (['container', 'workspace', 't3', 'sessions'] as $index => $phase) {
+    foreach (['container', 't3', 'session-copy', 'register'] as $index => $phase) {
         $started = sprintf('2026-11-10T20:00:%02d.000Z', $index + 1);
         $finished = sprintf('2026-11-10T20:00:%02d.500Z', $index + 1);
         $progress->apply($operation->id, 'run-1', ['kind' => 'step_started', 'jobId' => 'clone', 'stepId' => 'clone-'.$phase,
@@ -40,7 +40,7 @@ it('keeps all four clone phases visible while publication runs in its own job', 
     }
 
     $rows = progressRows($operation);
-    expect(array_column($rows, 'name'))->toBe(['clone-route', 'clone-container', 'clone-workspace', 'clone-t3', 'clone-sessions'])
+    expect(array_column($rows, 'name'))->toBe(['clone-route', 'clone-container', 'clone-t3', 'clone-session-copy', 'clone-register'])
         ->and(array_column(array_slice($rows, 1), 'status'))->toBe(array_fill(0, 4, 'succeeded'))
         ->and(array_column(array_slice($rows, 1), 'started_at'))->not->toContain(null)
         ->and(array_column(array_slice($rows, 1), 'finished_at'))->not->toContain(null)

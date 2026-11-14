@@ -144,12 +144,13 @@ sequenceDiagram
     %%> - checks no Process unit: the units start in the completion, whose check refuses a dead one with `instance.container_process_inactive`
     %%> - the checked reply replaces the issued sessions in the private `t3.json`; the step prints the checkout's lines and T3's receipt, with when T3 answered and when the sessions passed
     %%> On failure:
-    %%> - before each part the step writes the part's name to its private `t3.json`; a failed checkout writes `checkout`, and the first failure keeps its name; `clone-session-copy` brings that file to the run
+    %%> - before each part the step writes the part's name to its private `t3.json`; the checkout's name is written only when the checkout failed and the T3 part did not; `clone-session-copy` brings that file to the run
     %%> - the result's `failed_step` follows the part: `workspace` with `instance.create_workspace_failed`, `t3` with `instance.create_agent_failed` or `instance.t3_unready`, `register` with `instance.create_register_failed` for the sessions check
     %%> - the Operation's failure detail is the part's own line, such as `instance.container_checkout_failed` or `instance.container_t3_failed`, or the timeout
-    SW->>C: Register the T3 server<br/>native clone-session-copy · clone-register
+    SW->>N: Copy the checked sessions<br/>native clone-session-copy
+    %%> What it does: brings the checked reply from the Node's private folder to the run folder; after a failure, the failed part's name
+    SW->>C: Register the T3 server<br/>native clone-register
     %%> What it does:
-    %%> - `clone-session-copy` brings the checked reply from the Node's private folder to the run folder
     %%> - see conn/environment-renew.mmd: the sessions go to the vault, and the step checks the environment id and scopes
   alt all steps pass in budget
     C-->>SW: T3 answers

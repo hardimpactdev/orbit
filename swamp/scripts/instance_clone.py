@@ -9,7 +9,6 @@ import re
 import shutil
 import subprocess
 import sys
-import threading
 import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
@@ -356,7 +355,7 @@ def main():
 
     def start_input():
         """The credential line and, from a Gateway that frames it (`model_environment.frame`), the model environment after the frame
-        line. An older Gateway sends the line alone; the T3 step then starts T3 as before."""
+        line. Without the frame the copy gets no T3 files, and the T3 step's agent part refuses: nothing else writes the model environment."""
         frame = container.get("clone", {}).get("model_environment", {}).get("frame")
         if frame:
             line, marker, model = secret.partition(frame + "\n")
@@ -938,27 +937,18 @@ def main():
         # T3's answer, then the check of both sessions against the running T3 and of the checkout. The model environment is already in
         # the copy (the container phase wrote it before the first start); stdin is the workspace's private JSON.
         cached = folder / "t3.json"
-        failed = threading.Lock()
-        marked = []
-
         def write_private(value):
             owner = private_folder()
             cached.write_text(json.dumps(value))
             cached.chmod(0o600)
             os.chown(cached, owner.pw_uid, owner.pw_gid)
 
-        def part(name, failure=False):
+        def part(name):
             # The part that runs now, written before it starts, so a failure or a timeout leaves it for the create result:
-            # clone-session-copy copies this file when this step fails. The checkout writes its name only when it fails, and the
-            # first failure keeps its name. Success replaces the file with the checked sessions.
-            with failed:
-                if marked:
-                    return
-                if failure:
-                    marked.append(name)
-                write_private({"t3_part": name})
+            # clone-session-copy copies this file when this step fails. The checkout's name is written only when it failed and the
+            # T3 part did not; a failed T3 part keeps its own name. Success replaces the file with the checked sessions.
+            write_private({"t3_part": name})
 
-        container["expected_commit"] = branch_commit()[0]
         part("agent")
         with ThreadPoolExecutor(max_workers=1) as pool:
             started = pool.submit(checkout, "checkout", secret)
@@ -969,8 +959,11 @@ def main():
                 output = inside("t3", "")
             try:
                 checked_out = started.result()
-            except BaseException:
-                part("checkout", failure=True)
+            except BaseException as error:
+                part("checkout")
+                # A Node command of the checkout names the checkout, as its guest part does.
+                if isinstance(error, RuntimeError) and str(error).startswith("instance.container_t3_failed"):
+                    raise RuntimeError(str(error).replace("instance.container_t3_failed", "instance.container_checkout_failed", 1)) from None
                 raise
         # 1 when T3 already ran as the step began: the copy's boot started it.
         timings["at_boot"] = 1 if output.pop("at_boot") else 0

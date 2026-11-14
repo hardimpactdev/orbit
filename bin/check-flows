@@ -121,7 +121,7 @@ for (const kind of list(readFileSync(`${dir}/flows-migrated.txt`, 'utf8'))) {
   if ([...labels].sort().join('\n') !== [...names].sort().join('\n')) fail(`${kind}: chart steps [${labels.join(', ')}] differ from workflow steps [${names.join(', ')}]`)
 }
 // Conn maps these stable clone phases to stage detail (docs/reference/conn.md#threads-in-an-orbit-project).
-const cloneStages = ['clone-container', 'clone-workspace', 'clone-t3', 'clone-register']
+const cloneStages = ['clone-container', 'clone-t3', 'clone-session-copy', 'clone-register']
 const cloneWorkflow = workflows.find((yaml) => /^name: operation-instance-create$/m.test(yaml)) ?? ''
 const cloneChart = readFileSync(`${dir}/instance/container/create.mmd`, 'utf8')
 const workflowStages = stepNames(cloneWorkflow, 'instance.create').filter((name) => cloneStages.includes(name))
