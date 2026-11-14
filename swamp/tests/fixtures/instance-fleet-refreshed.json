@@ -338,6 +338,15 @@
         }
       }
     },
+    "network": {
+      "name": "oe-nested",
+      "config": {
+        "ipv4.address": "10.232.2.1/24",
+        "ipv4.nat": "true",
+        "ipv6.address": "none",
+        "raw.dnsmasq": "no-resolv"
+      }
+    },
     "tunnel": {
       "addresses": [
         "10.45.0.10/24"
