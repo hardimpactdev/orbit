@@ -332,7 +332,7 @@
     ]
   },
   "swamp/tests/ansible_instance_host_updates_test.ts": {
-    "source_sha256": "5a83070f1b45b764059c926c787770c74995ff51f0c11b530e647da9414b169b",
+    "source_sha256": "64791fe490c4f78bb5dcc4f4e69b0261f31dd41401d2a3e4ea67dff462c22e22",
     "cases": [
       "a new runtime version installs beside the old one, flips current, restarts each running container's Processes and drops the old",
       "a Squid configuration that does not parse never replaces the live one, and the run fails",
