@@ -65,32 +65,32 @@
     },
     "publish_vm": {
         "intent": {
-            "check": 1,
+            "check": 2,
             "pull_request": {
                 "title": "Export orders",
                 "body": "Adds the export."
             },
-            "group_id": 1,
-            "instance_id": 1,
-            "node_id": 210,
-            "checkout_path": "/srv/workspace",
+            "group_id": 3,
+            "instance_id": 2,
+            "node_id": 212,
+            "checkout_path": "/home/orbit/apps/orbit/workspace",
             "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "tree": "4444444444444444444444444444444444444444",
-            "repository": "example/trial",
+            "repository": "hardimpactdev/orbit",
             "base": "main",
-            "branch": "task-1",
-            "remote": "https://github.com/example/trial.git",
-            "refspec": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:refs/heads/task-1",
+            "branch": "task-3",
+            "remote": "https://github.com/hardimpactdev/orbit.git",
+            "refspec": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:refs/heads/task-3",
             "object_format": "sha1",
-            "pull_head": "example:task-1",
+            "pull_head": "hardimpactdev:task-3",
             "ssh_execution": {
                 "control_node_id": 209,
                 "identity_file": "/etc/orbit/swamp-role-worker/ssh-identity",
                 "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0",
                 "target": {
                     "name": "target",
-                    "node_id": 210,
-                    "host": "10.44.0.71",
+                    "node_id": 212,
+                    "host": "10.44.0.137",
                     "user": "orbit",
                     "port": 22,
                     "host_keys": [
@@ -102,16 +102,16 @@
         "execution_secrets": {
             "github_token": {
                 "vault": "orbit-control-inputs",
-                "key": "task-publish-token-f5efc679-2a51-4648-96d9-7a61f8ea5d77"
+                "key": "task-publish-token-3bc98cb4-36a7-4196-afa3-f77ae31f7a9c"
             },
             "git_authorization": {
                 "vault": "orbit-control-inputs",
-                "key": "task-publish-token-87635945-6cae-4f84-beb9-5611b695c31c"
+                "key": "task-publish-token-6feacbdf-27e3-496c-8a95-b4aa2b7f2083"
             }
         },
-        "operation_id": null,
+        "operation_id": 4,
         "kind": "tasks.publish",
-        "node_id": 210
+        "node_id": 212
     },
     "sync_copy": {
         "intent": {

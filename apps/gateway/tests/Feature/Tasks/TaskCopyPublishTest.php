@@ -6,6 +6,7 @@ use App\Data\Tasks\StartTaskPublishData;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\InstancePlacement;
+use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
@@ -13,9 +14,15 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPublishIntent;
 use App\Domain\Tasks\TaskPublishProjection;
+use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmSize;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\NativeStepFailure;
@@ -370,8 +377,45 @@ it('keeps the Swamp start fixture equal to the inputs a copy publish and a task 
     $operation = app(TaskPublishIntent::class)->start($group, StartTaskPublishData::from(['check' => $check->id,
         'pull_request' => ['title' => 'Export orders', 'body' => 'Adds the export.']]), 'test', null);
     WorkflowStartIntents::match('publish_copy', app(DirectOperation::class)->workflowInputs($operation));
-    // TaskPublishIntent builds a task VM's intent the same way, without `workspace`.
-    $vm = $operation->replicate();
-    $vm->input = array_diff_key($operation->input, ['workspace' => true]);
+    [$vmGroup, $vmCheck] = vmPublishWorld();
+    $vm = app(TaskPublishIntent::class)->start($vmGroup, StartTaskPublishData::from(['check' => $vmCheck->id,
+        'pull_request' => ['title' => 'Export orders', 'body' => 'Adds the export.']]), 'test', null);
+    expect($vm->input)->not->toHaveKey('workspace');
     WorkflowStartIntents::match('publish_vm', app(DirectOperation::class)->workflowInputs($vm));
 });
+
+/**
+ * A running task VM group whose owned checkout has a passed handoff check, as a task VM publish admits it.
+ *
+ * @return array{Task, TaskCheck}
+ */
+function vmPublishWorld(): array
+{
+    SwampNodeFixture::ensure();
+    Queue::fake([StartAdmittedSwampRun::class]);
+    app(TaskExtensionState::class)->enable();
+    $node = static fn (string $name, string $address): Node => Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => $address, 'public_ssh_port' => 22,
+        'wireguard_ip' => $address, 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
+    ]));
+    $host = $node('shark', '10.44.0.11');
+    $guest = $node('tvm-598', '10.44.0.137');
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main']);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25', [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 5, 4, '8GiB', '40GiB')],
+        '/pi', str_repeat('a', 64), ['gpt-6']));
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'orchestration' => 'external', 'status' => TaskGroupStatus::Running]);
+    TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-598',
+        'state' => TaskVmState::Ready, 'address' => '10.251.78.33', 'wireguard_ip' => '10.44.0.137', 'size' => TaskVmSize::Normal, 'pi_token' => str_repeat('p', 64)]);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout,
+        'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id, 'status' => InstanceState::Active]);
+    $group->update(['taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id]);
+    $subtask = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Change', 'brief' => 'Change it.', 'status' => 'todo']);
+    $check = TaskCheck::query()->create(['task_id' => $subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed, 'pid' => 1, 'process_started' => 'x',
+        'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('2', 40), 'head_after' => str_repeat('b', 40), 'tree_after' => str_repeat('4', 40),
+        'commit_sha' => str_repeat('b', 40), 'exit_code' => 0, 'output' => '', 'started_at' => now(), 'finished_at' => now()]);
+    Operation::query()->create(['kind' => OperationKinds::TasksCheck, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
+        'input' => ['subtask' => $subtask->id, 'phase' => 'handoff', 'check_id' => $check->id], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1,
+        'result' => ['outcome' => 'passed', 'check_id' => $check->id, 'commit' => $check->commit_sha, 'head' => $check->head_after, 'tree' => $check->tree_after, 'ci' => null]]);
+
+    return [$group->refresh(), $check];
+}
