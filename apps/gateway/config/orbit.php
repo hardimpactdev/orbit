@@ -135,4 +135,9 @@ return [
         // Instance ids the idle sleep never puts to sleep, comma-separated.
         'container_never_sleep' => array_values(array_filter(array_map('intval', explode(',', (string) env('ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP', ''))), static fn (int $id): bool => $id > 0)),
     ],
+    // The Conn thread index (docs/reference/conn.md#thread-index): its reads of container T3 servers, the minute poll, the list's
+    // read-through and the last read before a sleep, are off until the operator turns them on. The routes and write-through always run.
+    'conn' => [
+        'thread_index_poll' => (bool) env('ORBIT_CONN_THREAD_INDEX_POLL', false),
+    ],
 ];

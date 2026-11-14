@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Power;
 
 use App\Domain\Instances\InstanceRuntimePowerState;
+use App\Domain\Instances\InstanceThreadContributions;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -26,6 +27,15 @@ final readonly class InstanceSleep extends InstancePower
     protected function powerState(): InstanceRuntimePowerState
     {
         return InstanceRuntimePowerState::Stopped;
+    }
+
+    /** The extensions read the server's threads one last time first, outside the Instance lock: a sleeping server cannot be read. */
+    #[\Override]
+    public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
+    {
+        app(InstanceThreadContributions::class)->beforeSleep($instance);
+
+        return parent::start($instance, $caller, $requestId);
     }
 
     protected function refuse(Instance $instance, InstanceRuntime $runtime): void

@@ -7,6 +7,7 @@ namespace Orbit\Extensions\Conn\Infrastructure;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Orbit\Extensions\Conn\Domain\T3AdminSession;
@@ -75,11 +76,37 @@ final readonly class HttpT3ServerClient implements T3ServerClient
             ->get($this->endpoint($baseUrl, '/api/orchestration/shell')));
     }
 
-    private function request(#[SensitiveParameter] ?string $adminSession = null): PendingRequest
+    public function shells(#[SensitiveParameter] array $servers, float $timeoutSeconds): array
     {
-        $request = Http::acceptJson()
-            ->connectTimeout(self::CONNECT_TIMEOUT_SECONDS)
-            ->timeout(self::TIMEOUT_SECONDS);
+        if ($servers === []) {
+            return [];
+        }
+        $timeout = min($timeoutSeconds, self::TIMEOUT_SECONDS);
+        $responses = Http::pool(function (Pool $pool) use ($servers, $timeout): void {
+            foreach ($servers as $key => $server) {
+                $this->request($server['session'], $pool->as((string) $key), $timeout)
+                    ->withHeaders([self::ORCHESTRATION_PROTOCOL_HEADER => '2'])->get($this->endpoint($server['url'], '/api/orchestration/shell'));
+            }
+        }, concurrency: 0);
+        $shells = [];
+        foreach ($servers as $key => $server) {
+            $response = $responses[(string) $key] ?? null;
+            try {
+                $shells[$key] = $this->json($server['url'], 'shell', static fn (): Response => $response instanceof Throwable ? throw $response
+                    : ($response instanceof Response ? $response : throw new ConnectionException('No response.')));
+            } catch (T3ServerException $exception) {
+                $shells[$key] = $exception;
+            }
+        }
+
+        return $shells;
+    }
+
+    private function request(#[SensitiveParameter] ?string $adminSession = null, ?PendingRequest $request = null, float $timeout = self::TIMEOUT_SECONDS): PendingRequest
+    {
+        $request = ($request ?? Http::createPendingRequest())->acceptJson()
+            ->connectTimeout(min(self::CONNECT_TIMEOUT_SECONDS, $timeout))
+            ->timeout($timeout);
 
         return $adminSession === null ? $request : $request->withToken($adminSession);
     }

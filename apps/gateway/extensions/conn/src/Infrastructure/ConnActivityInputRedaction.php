@@ -8,12 +8,12 @@ use App\Domain\Activity\ActivityInputRedaction;
 use Closure;
 use Orbit\Extensions\Conn\Domain\ConnProfileSections;
 
-/** Keeps admin sessions and settings documents out of Activity ([Activity](/cli/activity)). */
+/** Keeps admin sessions, settings documents and thread titles out of Activity ([Activity](/cli/activity)). */
 final readonly class ConnActivityInputRedaction implements ActivityInputRedaction
 {
     public function commands(): array
     {
-        return ['conn:environment:register', 'conn:profile:settings:update', 'conn:profile:settings:patch'];
+        return ['conn:environment:register', 'conn:profile:settings:update', 'conn:profile:settings:patch', 'conn:thread:record'];
     }
 
     public function input(string $command, Closure $input): array
@@ -23,6 +23,10 @@ final readonly class ConnActivityInputRedaction implements ActivityInputRedactio
         if ($command === 'conn:environment:register') {
             // The admin session never enters Activity.
             return array_intersect_key($values, array_flip(['environment_id', 'label', 'url']));
+        }
+        if ($command === 'conn:thread:record') {
+            // A title can name a customer, a bug or a secret: the index keeps it, Activity does not.
+            return array_intersect_key($values, ['thread_id' => true]);
         }
 
         return $this->settingsInput($command, $values);

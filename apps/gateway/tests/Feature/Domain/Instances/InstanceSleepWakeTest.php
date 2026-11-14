@@ -8,6 +8,8 @@ use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContribution;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
+use App\Domain\Instances\InstanceThreadContribution;
+use App\Domain\Instances\InstanceThreadContributions;
 use App\Domain\Instances\Power\ContainerResume;
 use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Instances\Power\InstanceWake;
@@ -94,6 +96,19 @@ it('admits a sleep with the container intent and the asleep marker under the Ins
         ->and($operation->input['container']['name'])->toBe('instance-'.$clone->id)
         ->and($operation->input['container']['clone']['t3']['unit'])->toBe(InstanceContainer::T3Unit)
         ->and(OperationRunBudgets::seconds($operation->forceFill(['state' => ['swamp_run_id' => 'r']])))->toBe(150);
+});
+
+it('lets the extensions read the threads one last time before the sleep is admitted', function (): void {
+    $clone = sleepingClone();
+    $contribution = Mockery::mock(InstanceThreadContribution::class);
+    $contribution->shouldReceive('beforeSleep')->once()->withArgs(function (Instance $sleeping) use ($clone): bool {
+        expect(Operation::query()->where('kind', InstanceSleep::Kind)->count())->toBe(0);
+
+        return $sleeping->id === $clone->id;
+    });
+    app()->instance(InstanceThreadContributions::class, new InstanceThreadContributions([$contribution]));
+
+    expect(app(InstanceSleep::class)->start($clone, null, null)->kind)->toBe(InstanceSleep::Kind);
 });
 
 it('refuses a sleep that the Instance does not allow, before any run', function (string $case, string $code): void {

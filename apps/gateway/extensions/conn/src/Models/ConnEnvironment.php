@@ -28,6 +28,8 @@ use Illuminate\Support\Carbon;
  * @property int $cleanup_completed_version
  * @property string|null $renewal_error_code
  * @property Carbon|null $renewal_checked_at
+ * @property Carbon|null $threads_read_at
+ * @property string|null $threads_read_error
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read Node|null $node
@@ -50,6 +52,8 @@ final class ConnEnvironment extends Model
         'cleanup_completed_version',
         'renewal_error_code',
         'renewal_checked_at',
+        'threads_read_at',
+        'threads_read_error',
     ];
 
     /** @var array<string, int> */
@@ -90,6 +94,7 @@ final class ConnEnvironment extends Model
             'admin_session_expires_at' => 'datetime',
             'registered_at' => 'datetime',
             'renewal_checked_at' => 'datetime',
+            'threads_read_at' => 'datetime',
         ];
     }
 }
