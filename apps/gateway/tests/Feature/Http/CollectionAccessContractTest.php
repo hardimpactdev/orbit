@@ -32,6 +32,8 @@ function collection_access_policies(): array
             'conn:instance:name:check' => ServingNode::Collection,
             // extensions/conn/src/Domain/ConnServerAccess.php:29 filters environment Nodes by accessibleNodeIds.
             'conn:environment:list' => ServingNode::Collection,
+            // extensions/conn/src/Domain/ConnThreadIndex.php:51 reads only servers ConnServerAccess::visible leaves, and only their rows.
+            'conn:thread:list' => ServingNode::Collection,
             // extensions/conn/src/Http/Controllers/ConnPairingsController.php:37 checks server access, then scopes rows at :41.
             'conn:pairing:list' => ServingNode::Collection,
             // extensions/conn/src/Http/Controllers/ConnPairingsController.php:86 checks both caller and environment ownership.

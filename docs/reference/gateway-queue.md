@@ -53,6 +53,7 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | --- | --- | --- | --- |
 | `gateway:swamp-reader:check` | hour | `problems` | 300 seconds |
 | `gateway:release:auto` | 5 minutes | `tasks` | 300 seconds |
+| `conn:threads:read` | minute | `problems` | 120 seconds |
 | `orbit:vault-sync` | minute | `tasks` | 900 seconds |
 | `orbit:activity-finalize-interrupted` | 5 minutes | `tasks` | 600 seconds |
 | `horizon:snapshot` | 5 minutes | `tasks` | 300 seconds |
@@ -61,6 +62,8 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | `queue:prune-batches` | day | `problems` | 3600 seconds |
 
 The job runs the command in its own PHP process, as the scheduler did, so a command keeps no state from an earlier run. A command that exits nonzero is logged as an error. The "unique for" time only matters when a worker is lost: the lock then frees itself after that time.
+
+`conn:threads:read` is the [Conn thread index](/reference/conn#thread-index) poll. It runs only while Conn is enabled and its switch `ORBIT_CONN_THREAD_INDEX_POLL` is on; it reads T3 servers and starts no Swamp work.
 
 The last five commands are Gateway self-maintenance. They keep the Gateway's own tables and Horizon metrics, touch no Node, and start no Swamp work. PLAN decision 9 (2026-11-01) keeps them in the Gateway: housekeeping of the Gateway's own tables is not orchestration. [Interrupted Activity finalization](/cli/activity#interrupted-requests) ends at most 500 records per run. `horizon:snapshot` records Horizon's dashboard metrics and runs only while the Gateway queue is set. `queue:prune-failed`, `activitylog:clean`, and `queue:prune-batches` delete records older than the [disk retention](/reference/gateway-recovery#disk-retention) cutoffs. Failed-job pruning and Activity cleaning also run while Tasks is disabled; batch pruning runs only while Tasks is enabled.
 
