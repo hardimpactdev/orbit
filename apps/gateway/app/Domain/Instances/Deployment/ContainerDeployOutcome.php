@@ -90,7 +90,7 @@ final readonly class ContainerDeployOutcome
      * The refresh's own words for each part (docs/reference/development-containers.md#what-a-refresh-skips), or null when the run
      * has no refresh or its words are not these.
      *
-     * @return array{migrate:string,restart:string,converge:string,converge_reason:string,converge_nodes:list<string>,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,tools:string,tools_reason:string,seconds:array<string,int>}|null
+     * @return array{migrate:string,restart:string,converge:string,converge_reason:string,converge_nodes:list<string>,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,tools:string,tools_reason:string,shrink:string,shrink_reason:string,seconds:array<string,int>}|null
      */
     private static function fleetRefresh(mixed $raw): ?array
     {

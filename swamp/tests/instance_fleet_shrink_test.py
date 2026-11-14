@@ -114,6 +114,12 @@ class FleetShrinkTest(unittest.TestCase):
         status.write_text(status.read_text() + '\nPackage: htop\nStatus: install ok installed\n')
         self.assertEqual(self.shrink('check'), {'due': True, 'reason': 'packages'})
 
+    def test_a_failed_dedupe_fails_the_run_writes_no_record_and_stays_due(self):
+        self.stub('duperemove', 'exit 1\n')
+        self.assertEqual(self.shrink('run'), {'shrink': 'failed', 'relinked': 9, 'dedupe': 'failed'})
+        self.assertFalse(self.record.exists())
+        self.assertEqual(self.shrink('check'), {'due': True, 'reason': 'record'})
+
     def test_a_check_that_cannot_read_is_not_due_and_a_failed_run_writes_no_record(self):
         self.stub('incus', 'exit 1\n')
         self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'unreadable'})

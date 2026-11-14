@@ -2398,12 +2398,15 @@ The shrink is due when no shrink is recorded, or when a nested container's dpkg 
 | No package changed since the last shrink | Checks only | `shrink: skipped`, `shrink_reason: current` |
 | No record, or a dpkg status changed | Relinks and dedupes; writes the record; `base` of all three | `shrink: ran`, `shrink_reason: record` or `packages` |
 | `duperemove` is not installed yet | Relinks only and writes no record, so the next refresh runs it again | `shrink: relinked` |
+| The inner pool is a directory pool | Relinks only (no dedupe on a directory pool) and writes the record | `shrink: ran` |
 | The check cannot read | Nothing; `base` is decided as before | `shrink: skipped`, `shrink_reason: unreadable` |
 | The run fails or times out (600 s) | Writes no record; the refresh goes on | `shrink: failed` |
 
 The first nested fleet held 116 separate copies of the coreutils binary in each machine, 1.26 GiB each. Its three machines shared no blocks. On a copy of it the shrink took the inner pool from 11.8 GiB to 3.7 GiB in 36 s, with the fleet stopped. The inner volume's own size went from 10.3 GiB to 3.2 GiB. The machines ran again, and `dpkg --verify rust-coreutils` was clean.
 
 The links were lost in that fleet's one-time hand move to the inner volume (14 November 2026). The Incus paths of a new default keep them. Each was checked: an image unpack on the btrfs pool, a start that shifts the IDs, and a move between a directory pool and a btrfs pool, with or without a snapshot. An export and import, and a snapshot restore, keep them too.
+
+A nested container's own package updates count as a change: the next refresh runs the shrink and retakes `base` of all three. A shrink that fails at every refresh costs its run and a `base` retake at every refresh; the result names it each time.
 
 A default whose tools step has not yet installed `duperemove` gets `shrink: relinked` at its first such refresh; the tools step after `base` installs `duperemove`, and the next refresh runs the whole shrink and retakes `base` once more.
 

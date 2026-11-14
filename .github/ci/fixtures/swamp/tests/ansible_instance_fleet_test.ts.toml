@@ -71,7 +71,7 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
 cost = 2618
-slices = 65
+slices = 67
 inputs = [
   "swamp/ansible/instance_fleet_shrink.py",
   "swamp/ansible/fleet-converge-inputs.json",

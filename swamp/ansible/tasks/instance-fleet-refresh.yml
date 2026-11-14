@@ -463,7 +463,7 @@
     # copy of the first nested fleet: 11.8 GiB to 3.7 GiB of the inner pool). It never fails the refresh: a failed or partial run
     # writes no shrink record, so the next refresh runs it again.
     - name: Shrink the nested root disks
-      when: fleet_shrink_check.due and fleet_base_targets | length == fleet_names | length
+      when: fleet_shrink_check.due
       ansible.builtin.command:
         argv: >-
           {{ ['timeout', '600'] + fleet_outer + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_fleet_shrink.py'),
