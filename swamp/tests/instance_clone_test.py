@@ -21,6 +21,9 @@ NETWORK_CHECK = SCRIPT.parents[1] / "ansible/instance_network.py"
 NODE_SERVICES = SCRIPT.parents[1] / "ansible/instance_node_services.py"
 # The renderer's commands: the clone runs the bundle's instance_node_services.py with these before the copy's first start.
 RENDERS = ("hosts", "proxy-files")
+# The stock image's hosts.tpl, which Incus renders into /etc/hosts at a copy's first start.
+HOSTS_TEMPLATE = ("127.0.1.1\t{name}\n127.0.0.1\tlocalhost\n::1\t\tlocalhost ip6-localhost ip6-loopback\n"
+                  "ff02::1\t\tip6-allnodes\nff02::2\t\tip6-allrouters\n")
 
 
 class BranchSelectionTest(unittest.TestCase):
@@ -171,6 +174,11 @@ class CloneTest(unittest.TestCase):
             }
             container.update(overrides or {})
             read = existing
+            # The copy's files that change while the clone runs: /etc/hosts, which file pushes write and the copy's own Incus
+            # template rewrites at its first start, as the stock image's metadata says (`/etc/hosts: when: [create, copy]`).
+            files = container.setdefault("fixture_files", {})
+            templates = {"/etc/hosts": ["create", "copy"]} if container.get("fixture_hosts_template", True) else {}
+            copied = []
 
             def command(argv, **kwargs):
                 nonlocal read
@@ -187,6 +195,18 @@ class CloneTest(unittest.TestCase):
                 if argv[0] == "openssl":
                     return real_run(argv, **kwargs)
                 output, status = "", 0
+                if argv[3:5] == ["file", "push"] and argv[-1] == container["name"] + "/etc/hosts":
+                    files["/etc/hosts"] = kwargs.get("input")
+                if argv[3:4] == ["start"] and copied and "copy" in templates.get("/etc/hosts", []):
+                    # Incus runs the `copy` templates once, at the first start after the copy, before pid 1: hosts.tpl.
+                    copied.clear()
+                    files["/etc/hosts"] = HOSTS_TEMPLATE.format(name=container["name"])
+                if argv[3:4] == ["exec"] and argv[-3:] == ["cat", "--", "/etc/hosts"]:
+                    if container.get("fixture_hosts_read_error"):
+                        return subprocess.CompletedProcess(argv, 1, "", "Error: Failed to retrieve PID of executing child process")
+                    held = files.get("/etc/hosts")
+                    return subprocess.CompletedProcess(argv, 0 if isinstance(held, str) else 1, held if isinstance(held, str) else "",
+                                                       "" if isinstance(held, str) else "cat: /etc/hosts: No such file or directory")
                 if argv[0] == "curl" and argv[3] == "-":
                     # A file's bytes and its headers on stderr: from `fixture_files` (path: content, or the headers and content),
                     # else missing.
@@ -252,6 +272,7 @@ class CloneTest(unittest.TestCase):
                     else:
                         output, status = (json.dumps(read), 0) if read else ("", 1)
                 elif "copy" in argv:
+                    copied.append(True)
                     device = {"type": "nic", "network": "orbitinst0"}
                     for arg in argv:
                         if arg.startswith("eth0,"):
@@ -297,6 +318,7 @@ class CloneTest(unittest.TestCase):
             self.assertFalse(Path(folder + "/private/git-credential").exists())
             if transcript is not None:
                 transcript.append(output.getvalue())
+            self.hosts = files.get("/etc/hosts")
             return calls, read, error.getvalue()
 
     def test_schedule_cleanup_listing_error_refuses_before_clone_boot(self):
@@ -535,43 +557,59 @@ class CloneTest(unittest.TestCase):
     def hosts_pushes(self, calls):
         return [call for call in calls if call[3:5] == ["file", "push"] and call[-1] == "instance-7/etc/hosts"]
 
-    def test_the_plans_private_names_reach_the_copys_hosts_before_its_first_start_with_env_syncs_bytes(self):
-        seed = "127.0.0.1 localhost\n# BEGIN Orbit private names\n10.44.0.3 reverb.orbit\n# END Orbit private names\n10.1.1.1 operator\n"
+    def test_the_plans_private_names_survive_the_first_starts_hosts_template_with_env_syncs_bytes(self):
+        # The seed's own block, then the copy's Incus template rewrites /etc/hosts at the first start: only a write after that start
+        # stays. The clone reads the file as env:sync does, renders it with the one renderer and pushes it with root and 0644.
+        seed = "127.0.0.1 localhost\n# BEGIN Orbit private names\n10.44.0.3 reverb.orbit\n# END Orbit private names\n"
         calls, _, error = self.clone_with({}, overrides={"private_names": self.NAMES, "fixture_files": {"/etc/hosts": seed}})
         self.assertEqual(error, "")
+        template = HOSTS_TEMPLATE.format(name="instance-7")
+        self.assertEqual(self.hosts, template + self.BLOCK)
+        self.assertEqual(self.hosts, self.renderer("hosts", {"hosts": template, "private_names": self.NAMES})["content"])
         pushes = self.hosts_pushes(calls)
         self.assertEqual([call[3:] for call in pushes],
                          [["file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", "instance-7/etc/hosts"]])
-        # The seed's block goes, the plan's comes after every other line: the bytes of the one renderer that env:sync runs.
-        expected = "127.0.0.1 localhost\n10.1.1.1 operator\n" + self.BLOCK
-        self.assertEqual(self.inputs[id(pushes[0])], expected)
-        self.assertEqual(self.renderer("hosts", {"hosts": seed, "private_names": self.NAMES})["content"], expected)
+        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+        read = calls.index(["incus", "--project", "orbit-instances", "exec", "instance-7", "--", "cat", "--", "/etc/hosts"])
+        self.assertLess(start, read)
+        self.assertLess(read, calls.index(pushes[0]))
         # The clone runs the bundle's renderer, not a copy of it.
         render = next(call for call in calls if call[:2] == ["python3", "-c"] and call[3:] == ["hosts"])
         self.assertEqual(render[2], 'print(\'{"status":"unchanged"}\')')
-        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
-        self.assertLess(calls.index(pushes[0]), start)
 
-    def test_a_clone_without_names_drops_the_seeds_block_and_leaves_a_plain_hosts_file_alone(self):
-        seed = "127.0.0.1 localhost\n"
-        calls, _, error = self.clone_with({}, overrides={"fixture_files": {"/etc/hosts": seed + self.BLOCK}})
+    def test_a_clone_without_names_writes_no_block_and_drops_a_seed_block_the_template_left(self):
+        calls, _, error = self.clone_with({}, overrides={"fixture_files": {"/etc/hosts": "127.0.0.1 localhost\n" + self.BLOCK}})
         self.assertEqual(error, "")
-        self.assertEqual([self.inputs[id(call)] for call in self.hosts_pushes(calls)], [seed])
-        for case, files in (("plain", {"/etc/hosts": seed}), ("missing", {})):
-            with self.subTest(case=case):
-                calls, _, error = self.clone_with({}, overrides={"fixture_files": files})
-                self.assertEqual(error, "")
-                self.assertEqual(self.hosts_pushes(calls), [])
-        calls, _, error = self.clone_with({}, overrides={"private_names": self.NAMES, "fixture_files": {"/etc/hosts": seed + self.BLOCK}})
+        self.assertEqual(self.hosts, HOSTS_TEMPLATE.format(name="instance-7"))
+        self.assertEqual(self.hosts_pushes(calls), [])
+        # A copy whose metadata has no hosts template keeps the seed's file: its block goes, every other line stays.
+        calls, _, error = self.clone_with({}, overrides={"fixture_hosts_template": False,
+                                                         "fixture_files": {"/etc/hosts": "127.0.0.1 localhost\n" + self.BLOCK}})
+        self.assertEqual(error, "")
+        self.assertEqual(self.hosts, "127.0.0.1 localhost\n")
+        # A copy without a hosts file and without names gets none.
+        calls, _, error = self.clone_with({}, overrides={"fixture_hosts_template": False})
         self.assertEqual(error, "")
         self.assertEqual(self.hosts_pushes(calls), [])
 
-    def test_a_linked_hosts_file_refuses_the_create(self):
-        calls, _, error = self.clone_with({}, overrides={"private_names": self.NAMES,
-                                                         "fixture_files": {"/etc/hosts": {"content": "/elsewhere", "type": "symlink"}}})
-        self.assertEqual(error, "instance.clone_private_names_refused\n")
+    def test_a_retry_on_a_running_copy_with_the_block_in_place_writes_nothing(self):
+        running = {"name": "instance-7", "status": "Running", "devices": {"t3": {}}, "config": {"volatile.uuid": "abc-123"},
+                   "expanded_devices": {"eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",
+                                                 "security.acls": "orbitinst0-proxy,instance-7",
+                                                 "security.acls.default.egress.action": "reject",
+                                                 "security.acls.default.ingress.action": "reject",
+                                                 "security.ipv4_filtering": "true", "security.mac_filtering": "true"}}}
+        held = HOSTS_TEMPLATE.format(name="instance-7") + self.BLOCK
+        calls, _, error = self.clone_with({}, existing=running, overrides={"private_names": self.NAMES, "fixture_files": {"/etc/hosts": held}})
+        self.assertEqual(error, "")
         self.assertEqual(self.hosts_pushes(calls), [])
-        self.assertNotIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
+        self.assertEqual(self.hosts, held)
+
+    def test_a_failed_hosts_read_after_the_start_fails_the_create_by_its_own_name(self):
+        calls, _, error = self.clone_with({}, overrides={"private_names": self.NAMES, "fixture_hosts_read_error": True})
+        self.assertEqual(error, "instance.clone_private_names_failed\n")
+        self.assertIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
+        self.assertEqual(self.hosts_pushes(calls), [])
 
     def test_the_composed_proxy_value_reaches_both_drop_ins_before_the_first_start_with_the_one_writers_bytes(self):
         proxy = {"NO_PROXY": "localhost,10.253.0.1,feature.tool.test", "no_proxy": "localhost,10.253.0.1,feature.tool.test"}
