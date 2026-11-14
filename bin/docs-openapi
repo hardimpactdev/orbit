@@ -805,7 +805,7 @@ DESCRIPTIONS = {
     'gateway:auto-release:disable': 'Turns automatic Gateway releases off. A release that already runs finishes.',
     'gateway:auto-release:resume': 'Clears a pause of automatic Gateway releases after the operator decided how to recover. Refuses with `gateway.release_not_paused` when nothing is paused.',
     'realtime:auth': 'A Pusher-protocol channel authorization endpoint. A client requests access to the private `orbit` channel with its `socket_id` and `channel_name`; any active WireGuard peer Node is authorized.',
-    'agent:realtime': "The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.",
+    'agent:realtime': "The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured. While the websocket role is assigned but no Reverb serves it, for example no serving report in the last 60 seconds, it answers 503 `realtime.not_serving`, so the agent retries on its back-off.",
     'agent:workspaces': "The `orbit-agent` on a managed Node calls this endpoint every 60 seconds to learn which task checkouts to watch. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and lists the Instances on that Node that hold the workspace of an unfinished task group, at most 64, with the checkout path, the Project's default branch as `base`, and the Instance's starting commit as `start`. The list is empty while the tasks extension is disabled.",
     'agent:realtime:auth': "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channels. The Gateway signs member `agent.{id}` on `presence-node.{id}` or `presence-node-logs.{id}` only for a request from that Node's WireGuard address that carries the Node's agent secret. The response carries the Pusher `auth` and `channel_data` values.",
     'instance:logs': "Returns one redacted tail of the Instance's application log, `storage/logs/laravel.log` or the newest `laravel-*.log`, read over SSH. `lines` is 1 to 1,000, default 100. Open a live log stream to follow new lines.",
@@ -2107,6 +2107,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             'member': {'type': 'string', 'description': "The agent's member ID, `agent.{id}`."},
         }, 'required': ['url', 'address', 'key', 'channel', 'log_channel', 'member']}
         responses['200'] = envelope(connection, 'The request succeeded.')
+        responses['503'] = error_response('The websocket role is assigned, but no Reverb serves it (`realtime.not_serving`).')
     elif route['name'] == 'agent:workspaces':
         workspace = {'type': 'object', 'properties': {
             'instance_id': {'type': 'integer', 'description': 'The Instance that holds the task workspace.'},

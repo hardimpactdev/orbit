@@ -495,7 +495,7 @@ The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `w
    }
    ```
 
-   Without an active `websocket` role, `url`, `address`, and `key` are null, and the agent asks again every 60 seconds.
+   Without a `websocket` role, `url`, `address`, and `key` are null, and the agent asks again every 60 seconds. While the role is assigned but no Reverb serves it, the Gateway answers HTTP 503 `realtime.not_serving`. After a cold start of the fleet that holds until Reverb sends its first serving report: an older report does not count. The agent then retries on its back-off (below), so it joins within seconds of the first serving report instead of 60 seconds later. The Gateway does not log these answers as errors.
 
 2. It opens a connection to the Reverb address on port 443 and reads its `socket_id`.
 3. It asks `POST /api/v1/agent/broadcasting/auth` to sign its membership, with `socket_id`, `channel_name`, and `version`. The Gateway signs `agent.{id}` only on the caller's own two channels.
@@ -517,6 +517,7 @@ Every agent endpoint call requires an active WireGuard peer and a valid [agent s
 | `agent.channel_forbidden` | 403 | `channel_name` is not one of the caller's own channels. |
 | `validation.failed` | 422 | `socket_id`, `channel_name`, or `version` is missing or malformed. |
 | `realtime.not_configured` | 404 | No `websocket` role is active. |
+| `realtime.not_serving` | 503 | The `websocket` role is assigned, but no Reverb serves it, for example no serving report in the last 60 seconds. Only the discovery request returns it. |
 
 The agent bounds each step, so a peer that stops answering never holds it.
 
@@ -527,7 +528,7 @@ The agent bounds each step, so a peer that stops answering never holds it.
 | A WebSocket write or close | 10 seconds; a blocked write ends the session and starts a new connection |
 | A quiet connection | After 15 seconds without a message, the agent sends `pusher:ping`. Without an answer in 10 more seconds, it reconnects. |
 
-After a reset, server close, or ping timeout, the agent reconnects with exponential backoff capped at 30 seconds. Jitter spreads retries across each delay window, including at the cap. A session that stayed joined for 60 seconds starts the backoff again in the initial 1–2 second window. Every connection repeats all steps, because Reverb gives each connection a new `socket_id`.
+After a reset, server close, ping timeout, or failed request, the agent reconnects with exponential backoff capped at 30 seconds. During a long Reverb outage each agent therefore asks for discovery once every 15 to 30 seconds. Jitter spreads retries across each delay window, including at the cap. A session that stayed joined for 60 seconds starts the backoff again in the initial 1–2 second window. Every connection repeats all steps, because Reverb gives each connection a new `socket_id`.
 
 One Node runs one agent. The agent holds an exclusive lock on `/etc/orbit/agent` while it runs, and a second process exits with `another orbit-agent already runs on this Node`. The agent also refuses to start outside `orbit-agent.service`, so a copy started from a shell never joins as the Node's agent.
 

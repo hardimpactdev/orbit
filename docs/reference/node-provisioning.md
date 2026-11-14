@@ -675,7 +675,7 @@ A new Swamp release reaches serve and its workers through the role, with one res
 
 1. Merge the pin change in the recipe and the other pins. Each task VM host then refreshes its base snapshot.
 2. Converge the role: `orbit node:role:add <node> swamp --converge`. Nothing restarts; the running processes keep their release.
-3. When `operation:list --status=running` is empty, restart serve, which drains in-flight runs, then all three workers: `systemctl restart orbit-swamp-serve`, then `systemctl restart orbit-swamp-worker@a orbit-swamp-worker@b orbit-swamp-worker@c`. The workers retry until serve listens.
+3. When `operation:list --status=running` is empty, restart serve, which drains in-flight runs, then all three workers: `systemctl restart orbit-swamp-serve`, then `systemctl restart orbit-swamp-worker@a orbit-swamp-worker@b orbit-swamp-worker@c`. Each worker waits for serve's `/ready` before it connects.
 4. Check that each process runs the pinned file (`readlink /proc/<pid>/exe`).
 
 Earlier releases stay in `/usr/local/lib/orbit-swamp`, about 400 MB each. Rollback points the link at one and restarts the same way. Remove an old release or `replaced-*` directory by hand once no process runs from it: no `/proc/*/exe` names it.
@@ -683,6 +683,8 @@ Earlier releases stay in `/usr/local/lib/orbit-swamp`, about 400 MB each. Rollba
 Another installer can put a plain file back at `/usr/local/bin/swamp`, such as the Node worker installer. The next converge renames that file into a new directory and links the path again, so no running process loses its binary. Serve's grants follow the checkout: the release's Swamp load renders them and runs `swamp access reload` ([Load Swamp](/reference/gateway-recovery#load-swamp)).
 
 The role runs three permanent Swamp workers, `orbit-swamp-worker@a`, `@b` and `@c`. Each reaches serve on loopback with one dispatch slot per CPU core (`--concurrency auto`) and the labels `role=swamp` and `node=<id>`. On Node 209 this gives twelve configured slots on four cores; two workers retain the previous eight slots while the third drains. It adds admission capacity, not CPU cores. Each worker keeps its own enrollment, server token, state and cache.
+
+`swamp worker connect` gives up after three tries in about 3 seconds, and serve listens only after its boot reconciliation, about 9 seconds after a cold start. So the template starts after `orbit-swamp-serve.service`, and its `ExecStartPre` waits for `http://127.0.0.1:9418/ready` for at most about 62 seconds (`--retry-max-time 60`), within the 90-second start timeout. A serve that never gets ready does not fail the start: the worker then fails and restarts after 30 seconds, as before. A new template takes effect at each worker's next start.
 
 Before adding or converging the role, the operator must place distinct, valid credentials for **all three** workers at `/etc/orbit/swamp-role-worker/<a|b|c>/{enrollment,server}.token`. On Node 209 the additional files are:
 

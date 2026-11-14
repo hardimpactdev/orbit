@@ -30,6 +30,17 @@ it('keeps workers persistent and limits repeated startup failures', function ():
         ->not->toContain('--max-dispatches')->not->toContain('--idle-timeout')->not->toContain('RuntimeMaxSec=');
 });
 
+it('starts each worker after serve and waits for serve to be ready, so a cold start connects at the first try', function (): void {
+    $worker = SwampRoleUnits::for('orbit', 209)['worker'];
+    $wait = 'ExecStartPre=-/usr/bin/curl -sf -o /dev/null --noproxy 127.0.0.1 -m 2 --retry 60 --retry-max-time 60 --retry-delay 1 '
+        ."--retry-connrefused --retry-all-errors http://127.0.0.1:9418/ready\n";
+
+    // Bounded under the default 90 s start timeout; the `-` keeps a serve that never gets ready from using up the start limit.
+    expect($worker)->toContain("After=network-online.target orbit-swamp-serve.service\n", $wait)
+        ->and(strpos($worker, 'ExecStartPre='))->toBeLessThan(strpos($worker, 'ExecStart=/usr/local/bin/swamp worker connect'))
+        ->and($worker)->not->toContain('TimeoutStartSec=');
+});
+
 it('renders one renewal service and one timer for three permanent workers', function (): void {
     $units = SwampRoleUnits::for('orbit', 209);
 

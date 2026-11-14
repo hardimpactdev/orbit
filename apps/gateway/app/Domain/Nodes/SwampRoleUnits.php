@@ -55,22 +55,26 @@ final class SwampRoleUnits
     }
 
     /**
-     * The worker template `orbit-swamp-worker@.service`; each instance reaches serve on loopback. It reads its token files directly, as the
-     * account it runs as: systemd credentials do nothing in a system container, so one unit form serves every swamp Node. The folder of a
-     * worker is `root:<account>` `0750` and its token files `root:<account>` `0640`.
+     * The worker template `orbit-swamp-worker@.service`; each instance reaches serve on loopback. `swamp worker connect` gives up after
+     * three tries in about 3 s, and serve listens only after its boot reconciliation (about 9 s on a cold start). So the worker starts
+     * after serve and waits for serve's `/ready`, at most about 62 s, well inside the 90 s start timeout. The `-` prefix keeps a serve
+     * that never gets ready from failing the start and using up the start limit: the worker then fails as before and restarts.
+     * It reads its token files directly, as the account it runs as: systemd credentials do nothing in a system container, so one unit
+     * form serves every swamp Node. The folder of a worker is `root:<account>` `0750` and its token files `root:<account>` `0640`.
      */
     private static function worker(string $user, int $nodeId): string
     {
         $home = self::WorkerHome;
         $control = self::WorkerSshControl;
 
-        return "[Unit]\nDescription=Orbit swamp role worker %i\nAfter=network-online.target\n"
+        return "[Unit]\nDescription=Orbit swamp role worker %i\nAfter=network-online.target orbit-swamp-serve.service\n"
             ."Wants=network-online.target\nStartLimitIntervalSec=300\nStartLimitBurst=5\n\n"
             ."[Service]\nType=exec\nUser={$user}\nStateDirectory=orbit-swamp-worker/%i orbit-swamp-worker/%i/tmp\n"
             ."RuntimeDirectory={$control}\nRuntimeDirectoryMode=0700\nBindPaths=/run/{$control}:/tmp/swamp-ssh\n"
             ."WorkingDirectory={$home}\n"
             ."Environment=HOME={$home} SWAMP_HOME={$home}/home SWAMP_CONFIG_DIR={$home}/config"
             ." TMPDIR={$home}/tmp XDG_RUNTIME_DIR=/tmp SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1\n"
+            .'ExecStartPre=-/usr/bin/curl -sf -o /dev/null --noproxy 127.0.0.1 -m 2 --retry 60 --retry-max-time 60 --retry-delay 1 --retry-connrefused --retry-all-errors http://127.0.0.1:'.self::Port."/ready\n"
             .'ExecStart=/usr/local/bin/swamp worker connect ws://127.0.0.1:'.self::Port.' --token-file='.self::Credentials.'/%i/enrollment.token'
             .' --server-token-file='.self::Credentials."/%i/server.token --cache-dir={$home}/cache"
             .' --concurrency '.self::WorkerConcurrency." --label role=swamp --label node={$nodeId}\n"
