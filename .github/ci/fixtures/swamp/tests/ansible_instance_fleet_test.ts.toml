@@ -1,5 +1,5 @@
 order = 30
-source_sha256 = "efe1b338477e65ba5b6a2bf2f30c0ef31738210d62e8a7e2329b9e973ca74446"
+source_sha256 = "96b81f2b32cf6552a0f297e9ba919250af4c4c35a9019a9a6d2bdd68c167f33f"
 cases = [
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
@@ -11,6 +11,7 @@ cases = [
   "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers",
   "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units",
   "a reset stops the three containers in one call, restores base on each stopped one, keeps the rules of base, starts the fleet and polls every second; a base without the rules is refused",
+  "a reset that fails after its stop starts the containers that ran again and fails with the first reason",
   "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts",
   "a live fleet with a foreign difference is refused by the check and by the rules before any change",
   "a fleet built from the rules has the live shape, with boot.autostart true",
@@ -62,7 +63,7 @@ cases = [
   "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2251
+cost = 2269
 slices = 59
 inputs = [
   "swamp/ansible/fleet-converge-inputs.json",
@@ -91,6 +92,7 @@ inputs = [
   "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers" = 79
   "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units" = 35
   "a reset stops the three containers in one call, restores base on each stopped one, keeps the rules of base, starts the fleet and polls every second; a base without the rules is refused" = 45 # ESTIMATE: the earlier 44 plus 1s for the added Doctor retry at the reset's 1 s delay (local 16s)
+  "a reset that fails after its stop starts the containers that ran again and fails with the first reason" = 18 # ESTIMATE: local 8s x 2.1, rounded up, plus 1s
   "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts" = 39
   "a live fleet with a foreign difference is refused by the check and by the rules before any change" = 18
   "a fleet built from the rules has the live shape, with boot.autostart true" = 31

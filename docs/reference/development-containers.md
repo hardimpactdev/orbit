@@ -2363,6 +2363,8 @@ A restore of a running container stops it and boots it again, so the reset stops
 
 On a directory pool a restore copies back only the files that changed since `base`, so its time grows with the change: 7 to 8 s for all three, Doctor healthy 33 s after. Each restore has 45 seconds.
 
+A reset that fails after its stop starts each nested container that ran before it again, one by one and best effort, then fails with the first reason. The proof's batch reports that reason. A failed restore can leave a container on its old disk or on `base`, so the fleet runs but its state is unknown. To recover, run `orbit proof` again: it resets first. When a container has lost its `base` snapshot, the reset cannot succeed; start a new task copy.
+
 ### Rebuild from stock
 
 A rebuild makes the three nested containers again from stock Ubuntu in the default Instance, as the [fleet build of a task VM](/reference/compute-drivers#build-the-nested-fleet-in-the-converge) does, applies the [fleet rules](#fleet-rules) and takes `base`. It is a rare operator action: for a new Node, or a fleet that a refresh cannot repair. The release refresh never rebuilds. How an operator starts it is planned.

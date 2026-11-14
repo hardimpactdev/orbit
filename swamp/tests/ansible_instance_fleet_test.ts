@@ -653,6 +653,40 @@ Deno.test({
   },
 });
 
+Deno.test({
+  name: "a reset that fails after its stop starts the containers that ran again and fails with the first reason",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled(), { base: true });
+    try {
+      assert(f.run("start").ok);
+      f.calls();
+      // nested-app-prod lost its base: its restore fails after the stop of all three.
+      f.change((state) => delete state.containers["nested-app-prod"].snapshots.base);
+      const failed = f.run("reset");
+      assert(!failed.ok, failed.output);
+      assertStringIncludes(failed.output, '"msg": "nested-app-prod did not restore base: Error: Snapshot not found"');
+      // The failure keeps the name of the task that failed, which the container play writes into its `detail`.
+      assertEquals(failed.output.match(/TASK \[Check the restores\]/g)?.length, 2);
+      const calls = f.calls();
+      const stop = calls.indexOf(`incus stop --force ${names.join(" ")}`);
+      assert(stop >= 0, calls.join("\n"));
+      // Each start is its own call after the failed restore, so one that fails stops none of the others.
+      assertEquals(calls.slice(stop + 1).filter((call) => call.startsWith("incus start")), names.map((name) => `incus start ${name}`));
+      assertEquals(names.map((name) => f.state().containers[name].status), ["Running", "Running", "Running"]);
+      // A fleet that was stopped before the reset stays stopped.
+      f.change((state) => {
+        for (const name of names) state.containers[name].status = "Stopped";
+      });
+      f.calls();
+      assert(!f.run("reset").ok);
+      assert(!f.calls().some((call) => call.startsWith("incus start")));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
 // The three nested containers of the first inner fleet as they run (read from Instance 2454 on 2026-11-13, without volatile keys and
 // cloud-init data), with the `club-key` device as the key move to /run sets it. step8/runbook.sh built them by hand.
 const live = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-live.json", import.meta.url)));
