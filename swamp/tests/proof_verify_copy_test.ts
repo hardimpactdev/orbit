@@ -52,6 +52,19 @@ Deno.test("a copy reads its plan and token age as agent in the copy, through roo
     });
 });
 
+Deno.test("the copy prefix is the fixed shape of a copy turn, names from the intent only, and closed stdin", () => {
+    // task-copy-turn.yml: incus --project P exec --cwd /srv/workspace NAME -- /usr/sbin/runuser -u agent -- /usr/bin/env -i HOME PATH.
+    const turn = Deno.readTextFileSync(new URL("../ansible/task-copy-turn.yml", import.meta.url));
+    const words = [...turn.match(/copy_exec: >-\n\s*\{\{ \[([\s\S]*?)\] \}\}/)![1].matchAll(/'([^']*)'|(intent\.runtime\.\w+)/g)]
+        .map((m) => m[1] ?? (m[2] === "intent.runtime.project" ? "orbit-instances" : "instance-2747"));
+    const turnPrefix = words.slice(0, words.indexOf("/usr/bin/env"));
+    // Two fixed differences: stdin is closed, as in the copy check, and the runner keeps the copy's recorded Incus environment
+    // (its proxy settings), which `env -i` would drop, because it downloads the pinned Ansible controller and the observer agent.
+    assertEquals(prefix.filter((word) => word !== "--disable-stdin"), turnPrefix);
+    const named = cel(step(parent, "Read the runner plan").task.inputs!.argv, { inputs: parentInputs(copyIntent) }) as string[];
+    assertEquals(named.slice(0, prefix.length), prefix);
+});
+
 Deno.test("a task VM keeps its argv and runs them as the SSH user", () => {
     const context = { inputs: parentInputs(vmIntent) };
     const checkout = "/home/orbit/apps/orbit/workspace";

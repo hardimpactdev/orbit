@@ -258,7 +258,14 @@ describe('orbit proof admission', function (): void {
         $refusal = verifyRefused(fn () => app(ProofVerifyIntent::class)->start($mini, 'firewall:allow', $group->id, 'mini', null));
 
         expect($refusal->errorCode)->toBe('tasks.no_workspace')->and(Operation::query()->where('kind', 'proof.verify')->count())->toBe(0);
-    })->with(['container' => ['--force', 'orbit-instances'], 'project' => [null, '-p']]);
+    })->with([
+        'a container that is an option' => ['--force', 'orbit-instances'],
+        'a container that adds an argument' => ['instance-1 --project=default', 'orbit-instances'],
+        'a container that ends the options' => ['--', 'orbit-instances'],
+        'a container on another remote' => ['beast:instance-1', 'orbit-instances'],
+        'a project that is an option' => [null, '-p'],
+        'a project that adds an argument' => [null, 'orbit-instances exec instance-1'],
+    ]);
 
     it('keeps the task VM path for a group that has a task VM and a recorded container Instance', function (): void {
         $orbit = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
