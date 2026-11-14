@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (orchestrator, 2026-11-13, plan A): a turn of a task that runs in a copy of its Project's default Instance. Swamp runs T3's own CLI in the copy as agent; stock T3 accepts only full-access MCP sessions it issues itself, so no T3 session leaves the container.
+  %% Target design (orchestrator, 2026-11-13, plan A; 2026-11-14 one ongoing thread per role): a turn of a task that runs in a copy of its Project's default Instance. Swamp runs T3's own CLI in the copy as agent; stock T3 accepts only full-access MCP sessions it issues itself, so no T3 session leaves the container. The implementer and the reviewer each keep one T3 thread that later turns continue.
   %% status: draft
   %% command: task:turn
   %% kind: tasks.copy_turn
@@ -12,18 +12,25 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve
   participant N as Task copy<br/>incus exec · T3
-  CLI->>GW: task:turn TASK<br/>--role=implementer
+  CLI->>GW: task:turn TASK<br/>--role · --thread
   %%> Command:
   %%> - `orbit task:turn SUBTASK --role=implementer --prompt="Run Doctor and commit a note." --thread=new`
-  Note over GW: Admit the turn<br/>owned copy · current subtask
+  %%> - `orbit task:turn SUBTASK --role=implementer --prompt="Fix the failing test." --thread=THREAD`
+  %%> - `orbit task:turn SUBTASK --role=reviewer --prompt="Review the checked commit." --thread=new --check=CHECK`
+  Note over GW: Admit the turn<br/>owned copy · current subtask · role's thread
   %%> What it does:
   %%> - a group that owns a task copy, or whose Project has `nested_fleet` on, turns in its copy as `tasks.copy_turn`; every other group takes the task VM turn (`turn.mmd`). A nested-fleet group without a copy refuses here with `tasks.no_workspace`
   %%> - composes the prompt as for a task VM turn: the title, brief and deliverables of the subtask, then the caller's prompt
-  %%> - records a new implementer thread with the driver `t3`, the copy's Node and the model of `ORBIT_TASKS_COPY_TURN_MODEL` (default `claudeAgent/claude-opus-5-5`); T3 picks the effort
-  %%> - the intent names the copy's container, the T3 command, the model, the 3,600 s bound and a title that names the thread; no credential and no vault key
+  %%> - `--thread=new` records a new thread of the role with the driver `t3`, the copy's Node and the role's copy model: `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` or `ORBIT_TASKS_COPY_REVIEWER_MODEL`, each `claudeAgent/claude-opus-5-5` by default. T3's CLI takes no effort, so T3 picks it
+  %%> - `--thread=ID` continues that thread: the same T3 conversation, with its model. The implementer's thread goes on the subtask, the reviewer's on the group
+  %%> - a reviewer turn names the subtask's checked candidate with `--check`, as on a task VM; the commit goes into the intent
+  %%> - the intent names the copy's container, the T3 command, whether the turn starts or continues its thread, the model, the 3,600 s bound and a title that names the Orbit thread; no credential and no vault key
   %%> Requirements:
   %%> - the group owns its copy and the copy is `active`; otherwise `tasks.no_workspace` or `tasks.copy_not_ready`, and nothing is recorded
-  %%> - a new implementer thread with the copy's model; a reviewer turn, a continued thread or a caller's model answers `tasks.copy_turn_unsupported`
+  %%> - an implementer or reviewer turn with no caller's model; a consult or `--model` answers `tasks.copy_turn_unsupported`
+  %%> - a continued thread is a `t3` thread of this group, role and copy; otherwise `tasks.thread_role_mismatch`
+  %%> - a reviewer's check is the subtask's checked candidate; otherwise `tasks.commit_not_checked`
+  %%> - the role's copy model reads `PROVIDER/MODEL`; otherwise `tasks.copy_turn_model_invalid`
   %%> - no other Operation of the group runs; otherwise `operation.target_busy`
   %%> - no earlier turn of the group may still run in the copy: a turn whose run started but whose result does not show T3's run over answers `tasks.copy_turn_unended` with its Operation in `details.operation_id`; a check of the copy refuses the same way, until `task:cancel`
   GW->>SW: Start one run<br/>operation-task-copy-turn
@@ -37,14 +44,15 @@ sequenceDiagram
   %%> What it does:
   %%> - one Ansible phase on the copy's Node: `incus exec` into the copy, then `runuser -u agent`, non-login, with the agent's groups
   %%> - first one `true` in the copy: a copy the phase cannot reach fails before anything is launched, so its group stays free
-  %%> - `t3 thread start --provider --model --title --wait --json /srv/workspace -` with the prompt on stdin, bounded by `timeout` at 3,600 s
+  %%> - a continued turn first finds its T3 thread by its title with `t3 thread list`; when T3 holds not exactly one, the phase fails with `tasks.copy_thread_missing` before anything is launched
+  %%> - a new thread: `t3 thread start --provider --model --title --wait --json /srv/workspace -`; a continued one: `t3 thread send --wait --json THREAD -`. The prompt goes on stdin, bounded by `timeout` at 3,600 s
   %%> - `t3 thread list` finds the thread by its title, also when the bound cut the wait; `t3 thread show --json` reads it back
-  %%> - writes each evidence file as soon as its command ends: the launch mark, the start's end, the read; a cut phase still tells whether a turn was launched
+  %%> - writes each evidence file as soon as its command ends: the thread found to continue, the launch mark, the start's end, the read; a cut phase still tells whether a turn was launched
   %%> - T3's CLI issues its own full-access session inside the copy and revokes it when it exits; the replies stay in the run folder, never in a log
   Note over SW: result
   %%> What it does:
-  %%> - maps the run's status: `completed` is done, `waiting` asks for input, any other status fails with `tasks.turn_failed`, a cut wait fails with `tasks.turn_timeout`, a start that T3 refused fails with `tasks.copy_turn_failed`
-  %%> - keeps the message text of the thread, redacted and bounded to 256 KiB; T3's CLI gives no tool items and no token use
+  %%> - maps the run's status: `completed` is done, `waiting` asks for input, any other status fails with `tasks.turn_failed`, a cut wait fails with `tasks.turn_timeout`, a start that T3 refused fails with `tasks.copy_turn_failed`, a thread to continue that T3 does not hold fails with `tasks.copy_thread_missing`
+  %%> - keeps the message text of the thread, all its turns, redacted and bounded to 256 KiB with the newest kept; T3's CLI gives no tool items and no token use
   %%> - records whether T3's run is over: nothing was launched, the start printed an end other than a wait for an answer, or T3 lists no thread of this title or lists it in no active state
   Note over SW: cleanup
   %%> What it does:

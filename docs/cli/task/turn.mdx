@@ -18,8 +18,12 @@ The VM receives the title, brief and deliverables of the subtask, then your prom
 
 A task that owns a [task copy](/reference/tasks#task-copy) runs its turns in it. `task:start` makes one for a Project whose default Instance is a container or that has a nested fleet; a nested-fleet task without a copy refuses with `tasks.no_workspace`. Its turn is the Operation `tasks.copy_turn`: Swamp runs the turn with T3's own CLI in the copy, as `agent`, and records it as it records a task VM turn. What differs:
 
-- Only a new implementer thread runs. A reviewer turn, `--thread=ID` and `--model` answer `tasks.copy_turn_unsupported`.
-- The model is the Gateway's `ORBIT_TASKS_COPY_TURN_MODEL`, `claudeAgent/claude-opus-5-5` by default. T3 picks the effort.
+- The implementer and the reviewer each keep one ongoing T3 thread. `--thread=new` starts the role's thread; `--thread=ID` continues it, so the agent keeps the whole earlier conversation. A thread continues only in the copy that started it, and only for its own role.
+- A reviewer turn names the subtask's checked candidate with `--check`, as on a task VM. It runs in the copy's checkout, in its own thread, which the group records.
+- A consult and `--model` answer `tasks.copy_turn_unsupported`.
+- A new thread takes its role's model from the Gateway: `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` and `ORBIT_TASKS_COPY_REVIEWER_MODEL`, each `PROVIDER/MODEL` and `claudeAgent/claude-opus-5-5` by default. An operator changes them in the Gateway's `.env`. A continued thread keeps its model.
+- T3 picks the effort: stock T3's CLI takes none.
+- The transcript is the whole thread's message text, the newest kept within its bound.
 - The turn ends after one hour with `tasks.turn_timeout`. T3's CLI cannot stop a run, so the run may go on in the copy.
 - While an earlier turn may still run, a turn or a check of the group answers `tasks.copy_turn_unended`. `task:cancel` ends the run with the copy.
 - The transcript holds message text only, and the thread has no token metrics.
@@ -43,9 +47,12 @@ A turn in a task copy adds these answers and Operation errors:
 | --- | --- |
 | `tasks.no_workspace` (409) | The group owns no task copy. |
 | `tasks.copy_not_ready` (409) | The task copy is not `active` yet: its create or its completion still runs. |
-| `tasks.copy_turn_unsupported` (422) | The turn is a reviewer turn, continues a thread or names a model. |
+| `tasks.copy_turn_unsupported` (422) | The turn is a consult or names a model. |
+| `tasks.thread_role_mismatch` (422) | `--thread=ID` names no thread of this group and role that T3 runs in this copy. |
+| `tasks.commit_not_checked` (422) | A reviewer turn's `--check` is not the subtask's checked candidate. |
 | `tasks.copy_turn_unended` (409) | An earlier turn may still run in the copy; `details.operation_id` names it. Run `task:cancel`. A check of the copy refuses the same way. |
-| `tasks.copy_turn_model_invalid` (503) | `ORBIT_TASKS_COPY_TURN_MODEL` does not read `PROVIDER/MODEL`. |
+| `tasks.copy_turn_model_invalid` (503) | The role's `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` or `ORBIT_TASKS_COPY_REVIEWER_MODEL` does not read `PROVIDER/MODEL`. |
+| `tasks.copy_thread_missing` | The Operation's error: T3 in the copy holds no single thread of the title to continue. Nothing was launched. |
 | `tasks.turn_timeout` | The Operation's error: the turn ran past its one-hour bound. |
 | `tasks.turn_failed` | The Operation's error: T3's run ended with a status other than `completed` or `waiting`. |
 | `tasks.copy_turn_failed` | The Operation's error: T3 did not report the turn's end, for example while its server was down. |

@@ -1408,14 +1408,15 @@ The phase uses these commands, as `agent` in `/srv/workspace`.
 | Purpose | Command | What Orbit sets |
 | --- | --- | --- |
 | Start a thread with its first turn and wait for its run | `t3 thread start --provider P --model M --title T --wait --json /srv/workspace -` | The composed prompt on stdin, the [turn model](#turn-model), the title `Orbit task GROUP thread THREAD`, and a 3,600-second `timeout` |
-| Find the thread | `t3 thread list --project /srv/workspace --json` | Matched by its title, also when the bound cut the wait before T3 printed the thread id |
+| Continue a thread and wait for its run | `t3 thread send --wait --json T3THREAD -` | The composed prompt on stdin and a 3,600-second `timeout`. The thread keeps its model |
+| Find the thread | `t3 thread list --project /srv/workspace --json` | Matched by its title: before a continued turn, and after every turn, also when the bound cut the wait before T3 printed the thread id |
 | Read the thread | `t3 thread show --messages 200 --json THREAD` | The thread's status and its user and assistant messages |
 
-The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input`, and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`.
+The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input`, and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`. A continued turn whose title T3 lists not exactly once launches nothing and is `failed` with `tasks.copy_thread_missing`.
 
 ### Turn model
 
-The Gateway's `ORBIT_TASKS_COPY_TURN_MODEL` names the provider and model of every turn, as `PROVIDER/MODEL`. The default is `claudeAgent/claude-opus-5-5`: a container reaches only the Claude model forwarder. T3 picks the effort.
+The Gateway's `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` and `ORBIT_TASKS_COPY_REVIEWER_MODEL` name the provider and model of a new thread of each role, as `PROVIDER/MODEL`. Both default to `claudeAgent/claude-opus-5-5`: a container reaches only the Claude model forwarder. A continued thread keeps its model. T3 picks the effort.
 
 ### Gaps of the CLI path
 
@@ -1424,8 +1425,8 @@ These hold until a T3 server gives Swamp a full-access MCP session:
 - **No stop of just the turn.** The CLI has no interrupt. A turn cut by its bound may go on in the container.
 - **Message text only.** The transcript holds the user and assistant messages, redacted and bounded to 256 KiB. It holds no tool names or states.
 - **No token metrics.** The CLI reports no token use. The thread's metrics stay null.
-- **No effort setting.** T3 runs the model at its own default effort.
-- **One new implementer thread per turn.** A reviewer turn, a continued thread and a caller's model are refused with `tasks.copy_turn_unsupported`.
+- **No effort setting.** `t3 thread start` and `t3 thread send` take no effort, so T3 runs the model at its own default effort.
+- **No consult and no caller's model.** Both are refused with `tasks.copy_turn_unsupported`.
 
 ### Hold after a turn that may still run
 
