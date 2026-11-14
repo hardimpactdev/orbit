@@ -15,6 +15,7 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\AgentThread;
 use App\Models\Operation;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use Illuminate\Support\Str;
 
 /**
@@ -26,7 +27,7 @@ final readonly class TaskCopyTurn
     /** How long the agent's turn may run before Swamp ends its wait; the bound of a task VM turn. */
     public const int TurnSeconds = 3600;
 
-    public function __construct(private TaskOperations $operations, private OperationIdempotency $idempotency) {}
+    public function __construct(private TaskOperations $operations, private OperationIdempotency $idempotency, private TaskCheckedCandidate $candidates) {}
 
     public function start(Task $group, TaskTurnData $data, string $caller, ?string $request): Operation
     {
@@ -50,29 +51,46 @@ final readonly class TaskCopyTurn
         if ($workspace->instance->status !== InstanceState::Active) {
             throw new ResourceOperationException('tasks.copy_not_ready', 'The task copy is not active yet.', 409);
         }
-        if ($data->role !== TaskThreadRole::Implementer->value || $data->thread !== 'new' || $data->model !== null || $data->check !== null) {
-            throw new ResourceOperationException('tasks.copy_turn_unsupported', 'A turn in a task copy starts a new implementer thread with the copy\'s model.', 422);
+        if ($data->role === 'consult' || $data->model !== null) {
+            throw new ResourceOperationException('tasks.copy_turn_unsupported', 'A turn in a task copy is an implementer or reviewer turn with its role\'s model.', 422);
         }
         self::refuseUnended($group);
         $task = $this->operations->requireCurrentSubtask($group, $data->subtask);
-        [$provider, $model] = self::model();
-        $target = $workspace->intent();
-        $prompt = TaskTurnPrompt::compose($task, $data->prompt);
+        $role = $data->threadRole();
         $instance = $workspace->instance;
-        $thread = AgentThread::query()->create([
-            'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $instance->node_id,
-            'driver' => 't3', 'runtime_key' => 'instance:'.$instance->id, 'external_id' => (string) Str::uuid(),
-            'role' => TaskThreadRole::Implementer->value, 'model' => $model, 'effort' => null,
-        ]);
-        $task->update(['implementer_agent_thread_id' => $thread->id]);
+        $runtime = 'instance:'.$instance->id;
+        $candidate = null;
+        if ($role === TaskThreadRole::Reviewer) {
+            $check = TaskCheck::query()->where('task_id', $task->id)->find($data->check);
+            if (! $check instanceof TaskCheck || ! $this->candidates->eligible($group, $check)) {
+                throw new ResourceOperationException('tasks.commit_not_checked', 'Review requires the current subtask checked candidate.', 422);
+            }
+            $candidate = $check->commit_sha;
+        }
+        // A continued turn sends to the role's T3 thread in this copy; T3 finds it by the title that names the Orbit thread.
+        $thread = $data->thread === 'new' ? null : AgentThread::query()->where('task_group_id', $group->id)->find((int) $data->thread);
+        if ($data->thread !== 'new' && (! $thread instanceof AgentThread || $thread->role !== $role->value || $thread->driver !== 't3' || $thread->runtime_key !== $runtime)) {
+            throw new ResourceOperationException('tasks.thread_role_mismatch', 'The thread must be a thread of this role in this task copy.', 422);
+        }
+        $provider = null;
+        if ($thread === null) {
+            [$provider, $model] = self::model($role);
+            $thread = AgentThread::query()->create([
+                'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $instance->node_id,
+                'driver' => 't3', 'runtime_key' => $runtime, 'external_id' => (string) Str::uuid(),
+                'role' => $role->value, 'model' => $model, 'effort' => null,
+            ]);
+        }
+        ($role === TaskThreadRole::Implementer ? $task : $group)->update([$role->value.'_agent_thread_id' => $thread->id]);
         app(TaskBroadcasts::class)->threadChanged($thread->id);
+        $target = $workspace->intent();
 
         return [
             ...$data->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
-            'runtime' => $target['runtime'], 'branch' => $target['branch'], 'thread_id' => $thread->id,
-            'turn' => ['t3' => InstanceContainer::T3, 'provider' => $provider, 'model' => $model, 'seconds' => self::TurnSeconds,
-                'title' => 'Orbit task '.$group->id.' thread '.$thread->id, 'prompt' => $prompt],
+            'runtime' => $target['runtime'], 'branch' => $target['branch'], 'thread_id' => $thread->id, 'candidate' => $candidate,
+            'turn' => ['t3' => InstanceContainer::T3, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
+                'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id, 'prompt' => TaskTurnPrompt::compose($task, $data->prompt)],
         ];
     }
 
@@ -93,15 +111,15 @@ final readonly class TaskCopyTurn
     }
 
     /**
-     * The provider and model of every copy turn, from `orbit.tasks.copy_turn_model`.
+     * The provider and model of a new copy thread of the role, from `orbit.tasks.copy_turn_models`. T3's CLI takes no effort.
      *
      * @return array{string, string}
      */
-    public static function model(): array
+    public static function model(TaskThreadRole $role): array
     {
-        $setting = config()->string('orbit.tasks.copy_turn_model');
+        $setting = config()->string('orbit.tasks.copy_turn_models.'.$role->value);
         if (preg_match('/\A([A-Za-z][A-Za-z0-9]{0,63})\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\z/D', $setting, $parts) !== 1) {
-            throw new ResourceOperationException('tasks.copy_turn_model_invalid', 'ORBIT_TASKS_COPY_TURN_MODEL must read <provider>/<model>.', 503);
+            throw new ResourceOperationException('tasks.copy_turn_model_invalid', 'ORBIT_TASKS_COPY_'.strtoupper($role->value).'_MODEL must read <provider>/<model>.', 503);
         }
 
         return [$parts[1], $parts[2]];

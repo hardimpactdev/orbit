@@ -8,8 +8,10 @@ const StartBytes = 16777216;
 const ReadBytes = 16777216;
 const Folder = z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/);
 
-// What `task-copy-turn.yml` writes, each file as soon as its command ended: `launch.json` before the start, `start.json` with the
-// exit code and stdout of `t3 thread start --wait --json`, and `read.json` with what `t3 thread list` found and `t3 thread show` read.
+// What `task-copy-turn.yml` writes, each file as soon as its command ended: for a continued turn `continue.json` with how many T3 threads
+// carry its title, `launch.json` before the start, `start.json` with the exit code and stdout of `t3 thread start` or `t3 thread send`
+// with `--wait --json`, and `read.json` with what `t3 thread list` found and `t3 thread show` read.
+const Resumed = z.object({ found: z.number().int() }).strict();
 const Start = z.object({ start_exit: z.number().int(), start: z.string() }).strict();
 const Read = z.object({
     list_exit: z.number().int().nullable(),
@@ -21,7 +23,7 @@ const Read = z.object({
 }).strict();
 /** Thread states in which T3's run may still change the checkout. */
 const Active = new Set(["preparing", "queued", "starting", "running", "waiting"]);
-export type Evidence = { launched: boolean; start: z.infer<typeof Start> | null; read: z.infer<typeof Read> | null };
+export type Evidence = { resumed: z.infer<typeof Resumed> | null; launched: boolean; start: z.infer<typeof Start> | null; read: z.infer<typeof Read> | null };
 const Started = z.object({
     threadId: z.string().min(1),
     runId: z.string().nullish(),
@@ -74,7 +76,7 @@ function transcript(shown: z.infer<typeof Shown> | null): Turn["transcript"] {
 }
 
 /**
- * The turn as Orbit records it. `t3 thread start --wait` ends with the run's status: `completed` is done and `waiting` asks for input.
+ * The turn as Orbit records it. `t3 thread start --wait` and `t3 thread send --wait` end with the run's status: `completed` is done and `waiting` asks for input.
  * Any other status fails the turn. No JSON after `timeout` killed the wait (124, or 137 after the kill grace) is the bound.
  */
 export function shapeTurn(evidence: Evidence): Turn {
@@ -101,6 +103,9 @@ export function shapeTurn(evidence: Evidence): Turn {
     if (evidence.start !== null && [124, 137].includes(evidence.start.start_exit)) {
         return { ...base, state: "failed", error: "The turn ran longer than its bound; T3 may still run it until the copy is destroyed.", error_code: "tasks.turn_timeout" };
     }
+    if (evidence.resumed !== null && evidence.resumed.found !== 1) {
+        return { ...base, state: "failed", error: `T3 holds ${evidence.resumed.found} threads of this title to continue, not one.`, error_code: "tasks.copy_thread_missing" };
+    }
     const exit = evidence.start === null ? "no exit" : `exit ${evidence.start.start_exit}`;
     return { ...base, state: "failed", error: `T3 did not report the turn's end (${exit}).`, error_code: "tasks.copy_turn_failed" };
 }
@@ -121,7 +126,7 @@ const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.14.1",
+    version: "2026.11.14.2",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
@@ -130,6 +135,7 @@ export const behavior = {
             async execute(args: { folder: string }, ctx: Context) {
                 const launched = await Deno.stat(args.folder + "/launch.json").then(() => true, () => false);
                 const turn = Turn.parse(shapeTurn({
+                    resumed: await evidence(args.folder + "/continue.json", 1024, Resumed),
                     launched,
                     start: await evidence(args.folder + "/start.json", StartBytes, Start),
                     read: await evidence(args.folder + "/read.json", ReadBytes, Read),

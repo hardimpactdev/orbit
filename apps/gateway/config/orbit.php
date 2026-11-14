@@ -103,8 +103,12 @@ return [
         // Effort for new threads. Existing threads keep their stored value.
         'implementer_effort' => $implementerEffort === null || $implementerEffort === '' ? 'high' : $implementerEffort,
         'reviewer_effort' => $reviewerEffort === null || $reviewerEffort === '' ? 'high' : $reviewerEffort,
-        // The T3 provider and model of a turn in a task copy, as `<provider>/<model>`. A copy reaches Claude Code only; T3 picks the effort.
-        'copy_turn_model' => (string) env('ORBIT_TASKS_COPY_TURN_MODEL', 'claudeAgent/claude-opus-5-5'),
+        // The T3 provider and model of a new thread in a task copy, per role, as `<provider>/<model>`. A copy reaches Claude Code only.
+        // Stock T3's CLI takes no effort, so T3 picks it.
+        'copy_turn_models' => [
+            'implementer' => (string) env('ORBIT_TASKS_COPY_IMPLEMENTER_MODEL', 'claudeAgent/claude-opus-5-5'),
+            'reviewer' => (string) env('ORBIT_TASKS_COPY_REVIEWER_MODEL', 'claudeAgent/claude-opus-5-5'),
+        ],
         // A group reserved longer than this returns to todo on the next tick. Keep it well above the slowest workspace provision.
         'reserved_timeout_seconds' => max(60, (int) env('ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS', 3600)),
         // How many task copies (docs/cli/task/start.mmd) one Node holds at once, counted at each task start. Set in the Gateway's .env.

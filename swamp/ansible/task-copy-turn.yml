@@ -1,8 +1,9 @@
 ---
-# One agent turn in a task copy (docs/cli/task/turn.mmd). T3's own CLI starts a thread with the admitted prompt, waits for its
-# run and reads the thread back. The CLI issues its T3 session inside the container and revokes it at exit, so no credential
-# reaches the Node, Swamp or the Gateway. The title names the Orbit thread, so a run cut by its bound is still found. Ansible keeps the raw replies out of its log and writes them to the run folder only;
-# `@nckrtl/task-copy-turn` bounds and redacts them.
+# One agent turn in a task copy (docs/cli/task/copy-turn.mmd). T3's own CLI starts a thread with the admitted prompt, or sends it to
+# the role's thread to continue it, waits for its run and reads the thread back. The CLI issues its T3 session inside the container
+# and revokes it at exit, so no credential reaches the Node, Swamp or the Gateway. The title names the Orbit thread, so a run cut by
+# its bound is still found, and a continued turn finds its thread. Ansible keeps the raw replies out of its log and writes them to
+# the run folder only; `@nckrtl/task-copy-turn` bounds and redacts them.
 - name: Address the recorded copy Node
   hosts: localhost
   connection: local
@@ -36,8 +37,9 @@
           - intent.runtime.project | default('') is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$')
           - intent.runtime.name | default('') is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$')
           - intent.turn.t3 | default('') is match('^/opt/orbit-agent/current/agent/bin/t3$')
-          - intent.turn.provider | default('') is match('^[A-Za-z][A-Za-z0-9]{0,63}$')
-          - intent.turn.model | default('') is match('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
+          - intent.turn.thread | default('') in ['new', 'continue']
+          - intent.turn.thread != 'new' or intent.turn.provider | default('', true) is match('^[A-Za-z][A-Za-z0-9]{0,63}$')
+          - intent.turn.thread != 'new' or intent.turn.model | default('', true) is match('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
           - intent.turn.title | default('') is match('^Orbit task [1-9][0-9]* thread [1-9][0-9]*$')
           - intent.turn.seconds | default(0) | int >= 60 and intent.turn.seconds | int <= 3600
           - intent.turn.prompt | default('') | length > 0
@@ -47,6 +49,43 @@
       ansible.builtin.command:
         argv: "{{ copy_exec + ['/usr/bin/true'] }}"
       changed_when: false
+    # A continued turn sends to the T3 thread whose title names the Orbit thread. Without exactly one, nothing is launched.
+    - name: Find the thread to continue
+      when: intent.turn.thread == 'continue'
+      block:
+        - name: List the threads
+          ansible.builtin.command:
+            argv: "{{ copy_exec + ['/usr/bin/timeout', '120', intent.turn.t3, 'thread', 'list', '--project', '/srv/workspace', '--json'] }}"
+          register: turn_threads
+          failed_when: false
+          changed_when: false
+          no_log: true
+        - name: Name the thread to continue
+          ansible.builtin.set_fact:
+            turn_resumed: >-
+              {{ ((turn_threads.stdout | from_json) if turn_threads.rc == 0 else [])
+                 | selectattr('title', 'equalto', intent.turn.title) | map(attribute='threadId') | list }}
+          no_log: true
+      rescue:
+        - name: Name no thread
+          ansible.builtin.set_fact:
+            turn_resumed: []
+      always:
+        - name: Write the thread evidence
+          ansible.builtin.copy:
+            content: "{{ {'found': turn_resumed | default([]) | length} | to_json }}"
+            dest: "{{ run }}/continue.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          no_log: true
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        - name: Require one thread to continue
+          ansible.builtin.assert:
+            that: turn_resumed | default([]) | length == 1
+            fail_msg: tasks.copy_thread_missing
     # Each evidence file is written as soon as its command ends, so a phase that the outer bound or a cancel cuts still tells
     # whether a turn was launched and how far it came.
     - name: Mark the turn as launched
@@ -60,12 +99,12 @@
       vars:
         ansible_connection: local
         ansible_python_interpreter: "{{ ansible_playbook_python }}"
-    - name: Start the thread and wait for its run
+    - name: Start or continue the thread and wait for its run
       ansible.builtin.command:
         argv: >-
-          {{ copy_exec + ['/usr/bin/timeout', '--kill-after=30', intent.turn.seconds | string, intent.turn.t3, 'thread', 'start',
-              '--provider', intent.turn.provider, '--model', intent.turn.model, '--title', intent.turn.title, '--wait', '--json',
-              '/srv/workspace', '-'] }}
+          {{ copy_exec + ['/usr/bin/timeout', '--kill-after=30', intent.turn.seconds | string, intent.turn.t3, 'thread']
+             + (['start', '--provider', intent.turn.provider, '--model', intent.turn.model, '--title', intent.turn.title, '--wait', '--json',
+                 '/srv/workspace', '-'] if intent.turn.thread == 'new' else ['send', '--wait', '--json', turn_resumed | first, '-']) }}
         stdin: "{{ intent.turn.prompt }}"
         stdin_add_newline: false
       register: turn_start

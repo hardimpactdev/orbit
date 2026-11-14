@@ -15,7 +15,7 @@ const transcript: { id: string; kind: "message"; label: string; text: string; at
 const started = (status: string, error: string | null = null) =>
     JSON.stringify({ threadId: thread, runId: run, status, reply: status === "completed" ? "Committed d867aba2." : null, error });
 const read = { list_exit: 0, found: 1, status: "completed", show_exit: 0, show };
-const turn = (start_exit: number, start: string, change: Partial<Evidence> = {}) => shapeTurn({ launched: true, start: { start_exit, start }, read, ...change });
+const turn = (start_exit: number, start: string, change: Partial<Evidence> = {}) => shapeTurn({ resumed: null, launched: true, start: { start_exit, start }, read, ...change });
 
 Deno.test("a completed run is done and over, and records the message transcript and the T3 thread", () => {
     assertEquals(turn(0, started("completed")), { state: "done", error: null, ended: true, t3_thread_id: thread, run_id: run, transcript });
@@ -42,15 +42,25 @@ Deno.test("a wait that the bound killed is tasks.turn_timeout, records the threa
 });
 
 Deno.test("a phase cut before the start's end is over only when nothing was launched or T3 holds no such thread", () => {
-    const cut = shapeTurn({ launched: true, start: null, read: null });
+    const cut = shapeTurn({ resumed: null, launched: true, start: null, read: null });
     assertEquals([cut.state, cut.error_code, cut.ended], ["failed", "tasks.copy_turn_failed", false]);
-    assertEquals(shapeTurn({ launched: false, start: null, read: null }).ended, true);
-    assertEquals(shapeTurn({ launched: true, start: { start_exit: 1, start: "" }, read: { list_exit: 0, found: 0, status: null, show_exit: null, show: "" } }), {
+    assertEquals(shapeTurn({ resumed: null, launched: false, start: null, read: null }).ended, true);
+    assertEquals(shapeTurn({ resumed: null, launched: true, start: { start_exit: 1, start: "" }, read: { list_exit: 0, found: 0, status: null, show_exit: null, show: "" } }), {
         state: "failed", error: "T3 did not report the turn's end (exit 1).", error_code: "tasks.copy_turn_failed", ended: true, t3_thread_id: null, run_id: null, transcript: [],
     });
-    assertEquals(shapeTurn({ launched: true, start: { start_exit: 1, start: "" }, read: { list_exit: null, found: 0, status: null, show_exit: null, show: "" } }).ended, false);
+    assertEquals(shapeTurn({ resumed: null, launched: true, start: { start_exit: 1, start: "" }, read: { list_exit: null, found: 0, status: null, show_exit: null, show: "" } }).ended, false);
     // T3 made the thread but refused its run: the listed thread is idle.
-    assertEquals(shapeTurn({ launched: true, start: { start_exit: 1, start: "" }, read: { ...read, status: "idle" } }).ended, true);
+    assertEquals(shapeTurn({ resumed: null, launched: true, start: { start_exit: 1, start: "" }, read: { ...read, status: "idle" } }).ended, true);
+});
+
+Deno.test("a continued turn reads like a new one, and one whose thread T3 does not hold is tasks.copy_thread_missing with nothing launched", () => {
+    assertEquals(turn(0, started("completed"), { resumed: { found: 1 } }), { state: "done", error: null, ended: true, t3_thread_id: thread, run_id: run, transcript });
+    for (const found of [0, 2]) {
+        assertEquals(shapeTurn({ resumed: { found }, launched: false, start: null, read: null }), {
+            state: "failed", error: `T3 holds ${found} threads of this title to continue, not one.`, error_code: "tasks.copy_thread_missing", ended: true,
+            t3_thread_id: null, run_id: null, transcript: [],
+        });
+    }
 });
 
 Deno.test("a message without a run id keeps the transcript", () => {
@@ -77,11 +87,15 @@ Deno.test("the method reads each evidence file on its own, so an oversized read 
         const context = { writeResource: (_spec: string, _name: string, value: unknown) => Promise.resolve(written.push(value)) };
         const nothing = await behavior.methods.result.execute({ folder }, context);
         assertEquals([nothing.successful, nothing.turn.error_code, nothing.turn.ended], [false, "tasks.copy_turn_failed", true]);
+        Deno.writeTextFileSync(`${folder}/continue.json`, JSON.stringify({ found: 0 }));
+        const missing = await behavior.methods.result.execute({ folder }, context);
+        assertEquals([missing.successful, missing.turn.error_code, missing.turn.ended], [false, "tasks.copy_thread_missing", true]);
+        Deno.writeTextFileSync(`${folder}/continue.json`, JSON.stringify({ found: 1 }));
         Deno.writeTextFileSync(`${folder}/launch.json`, "{}");
         Deno.writeTextFileSync(`${folder}/start.json`, JSON.stringify({ start_exit: 0, start: started("completed") }));
         Deno.writeTextFileSync(`${folder}/read.json`, JSON.stringify({ ...read, show: "x".repeat(16777217) }));
         const done = await behavior.methods.result.execute({ folder }, context);
-        assertEquals([done.successful, done.turn.state, done.turn.ended, done.turn.transcript.length, written.length], [true, "done", true, 0, 2]);
+        assertEquals([done.successful, done.turn.state, done.turn.ended, done.turn.transcript.length, written.length], [true, "done", true, 0, 3]);
     } finally {
         Deno.removeSync(folder, { recursive: true });
     }

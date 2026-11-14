@@ -19,6 +19,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -26,6 +27,7 @@ use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCheckIntent;
 use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\Tasks\TaskCopyTurnProjection;
@@ -50,6 +52,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -600,6 +603,27 @@ function copyTurnEnded(Operation $turn, string $status, array $shaped): Operatio
         'finished_at' => now()->toIso8601String(), 'result' => ['turn' => $shaped]]);
 }
 
+/** The shaped turn of a completed run in T3 thread THREAD. */
+function copyTurnDone(string $thread): array
+{
+    return ['state' => 'done', 'error' => null, 'ended' => true, 't3_thread_id' => $thread, 'run_id' => 'run:1', 'transcript' => []];
+}
+
+/** A passed handoff check of the group's subtask in its copy, with the check Operation that records it: the reviewer's candidate. */
+function copyCandidate(Task $group): TaskCheck
+{
+    $subtask = $group->tasks()->firstOrFail();
+    $head = str_repeat('d', 40);
+    $check = TaskCheck::query()->create(['task_id' => $subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed, 'pid' => 1, 'process_started' => 'x',
+        'head_before' => str_repeat('1', 40), 'tree_before' => str_repeat('2', 40), 'head_after' => str_repeat('3', 40), 'tree_after' => str_repeat('4', 40),
+        'commit_sha' => $head, 'exit_code' => 0, 'output' => '', 'started_at' => now(), 'finished_at' => now()]);
+    Operation::query()->create(['kind' => OperationKinds::TasksCheck, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
+        'input' => ['subtask' => $subtask->id, 'phase' => 'handoff', 'check_id' => $check->id], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1,
+        'result' => ['outcome' => 'passed', 'check_id' => $check->id, 'commit' => $head, 'head' => $check->head_after, 'tree' => $check->tree_after, 'ci' => null]]);
+
+    return $check;
+}
+
 describe('a turn of a group that owns a copy', function (): void {
     it('admits one tasks.copy_turn on the copy\'s Node with the composed prompt and the copy\'s model, and names no credential', function (): void {
         $group = copyGroup(copySource()->project);
@@ -612,7 +636,7 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and($turn->node_id)->toBe($copy->node_id)
             ->and($turn->input['runtime'])->toBe(['project' => InstancePlacement::NestedProject, 'name' => $copy->runtime->container_name])
             ->and($turn->input['branch'])->toBe('task-'.$group->id)
-            ->and(Arr::except($turn->input['turn'], 'prompt'))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/t3', 'provider' => 'claudeAgent',
+            ->and(Arr::except($turn->input['turn'], 'prompt'))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/t3', 'thread' => 'new', 'provider' => 'claudeAgent',
                 'model' => 'claude-opus-5-5', 'seconds' => 3600, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id])
             ->and($turn->input['turn']['prompt'])->toBe("Subtask: Step\n\nBrief:\nDo it\n\nPrompt of this turn:\nRun Doctor and commit a note.")
             ->and($thread->only(['driver', 'role', 'model', 'effort', 'node_id']))->toBe(['driver' => 't3', 'role' => 'implementer', 'model' => 'claude-opus-5-5',
@@ -636,16 +660,93 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(TaskVm::query()->count())->toBe(0);
     });
 
-    it('reads its model from the one setting and refuses a setting it cannot read', function (): void {
+    it('reads the model of a new thread from its role\'s setting and refuses a setting it cannot read', function (): void {
+        Storage::fake('local');
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
-        config(['orbit.tasks.copy_turn_model' => 'claudeAgent']);
+        config(['orbit.tasks.copy_turn_models.implementer' => 'claudeAgent']);
         expect(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.copy_turn_model_invalid 503')
             ->and(AgentThread::query()->count())->toBe(0);
-        config(['orbit.tasks.copy_turn_model' => 'claudeAgent/claude-sonnet-5-5']);
+        config(['orbit.tasks.copy_turn_models' => ['implementer' => 'claudeAgent/claude-sonnet-5-5', 'reviewer' => 'claudeAgent/claude-haiku-5-5']]);
 
-        expect(copyTurn($group)->input['turn']['model'])->toBe('claude-sonnet-5-5');
+        $implementer = copyTurn($group);
+        copyTurnEnded($implementer, 'succeeded', copyTurnDone('mcp:1'));
+        $reviewer = copyTurn($group, ['role' => 'reviewer', 'check' => copyCandidate($group)->id]);
+
+        expect($implementer->input['turn']['model'])->toBe('claude-sonnet-5-5')
+            ->and($reviewer->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => 'claudeAgent', 'model' => 'claude-haiku-5-5'])
+            ->and(AgentThread::query()->findOrFail($reviewer->input['thread_id'])->model)->toBe('claude-haiku-5-5');
     });
+
+    it('continues the role\'s thread: the same Orbit thread and T3 title, its own model, and no new thread', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $first = copyTurn($group);
+        copyTurnEnded($first, 'succeeded', copyTurnDone('mcp:66105c2c'));
+        config(['orbit.tasks.copy_turn_models.implementer' => 'claudeAgent/claude-sonnet-5-5']);
+
+        $next = copyTurn($group, ['thread' => (string) $first->input['thread_id'], 'prompt' => 'Fix the failing test.']);
+
+        expect($next->input['thread_id'])->toBe($first->input['thread_id'])
+            ->and(Arr::except($next->input['turn'], 'prompt'))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/t3', 'thread' => 'continue', 'provider' => null,
+                'model' => 'claude-opus-5-5', 'seconds' => 3600, 'title' => $first->input['turn']['title']])
+            ->and($next->input['turn']['prompt'])->toEndWith("Prompt of this turn:\nFix the failing test.")
+            ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(1)
+            ->and($group->tasks()->firstOrFail()->implementer_agent_thread_id)->toBe($first->input['thread_id']);
+    });
+
+    it('runs a reviewer turn on the checked candidate in its own thread, recorded on the group, and continues it', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $implementer = copyTurn($group);
+        copyTurnEnded($implementer, 'succeeded', copyTurnDone('mcp:1'));
+        $check = copyCandidate($group);
+
+        $review = copyTurn($group, ['role' => 'reviewer', 'check' => $check->id, 'prompt' => 'Review the checked commit.']);
+        copyTurnEnded($review, 'succeeded', copyTurnDone('mcp:2'));
+        $again = copyTurn($group, ['role' => 'reviewer', 'check' => $check->id, 'thread' => (string) $review->input['thread_id']]);
+
+        $thread = AgentThread::query()->findOrFail($review->input['thread_id']);
+        expect($thread->id)->not->toBe($implementer->input['thread_id'])
+            ->and($thread->only(['driver', 'role', 'model', 'effort', 'external_id']))->toBe(['driver' => 't3', 'role' => 'reviewer', 'model' => 'claude-opus-5-5',
+                'effort' => null, 'external_id' => 'mcp:2'])
+            ->and($review->input)->toMatchArray(['role' => 'reviewer', 'check' => $check->id, 'candidate' => $check->commit_sha])
+            ->and($review->input['turn']['thread'])->toBe('new')
+            ->and($group->refresh()->reviewer_agent_thread_id)->toBe($thread->id)
+            ->and($again->input['thread_id'])->toBe($thread->id)->and($again->input['turn']['thread'])->toBe('continue');
+    });
+
+    it('continues only a T3 thread of the same role in this copy', function (Closure $thread): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $own = copyTurn($group);
+        copyTurnEnded($own, 'succeeded', copyTurnDone('mcp:1'));
+        $other = $thread($group, $copy, AgentThread::query()->findOrFail($own->input['thread_id']));
+        $before = Operation::query()->count();
+
+        expect(copyRefusal(fn () => copyTurn($group, ['thread' => (string) $other])))->toBe('tasks.thread_role_mismatch 422')
+            ->and(Operation::query()->count())->toBe($before);
+    })->with([
+        'the implementer\'s thread for a reviewer turn' => [function (Task $group, Instance $copy, AgentThread $own): int {
+            $own->update(['role' => 'reviewer']);
+
+            return $own->id;
+        }],
+        'a task VM thread' => [fn (Task $group, Instance $copy, AgentThread $own): int => AgentThread::query()->create(['task_group_id' => $group->id, 'driver' => 'pi',
+            'runtime_key' => 'node:'.$copy->node_id, 'external_id' => 'pi-session', 'role' => 'implementer'])->id],
+        'a thread of an earlier copy' => [fn (Task $group, Instance $copy, AgentThread $own): int => AgentThread::query()->create(['task_group_id' => $group->id, 'driver' => 't3',
+            'runtime_key' => 'instance:'.($copy->id + 1000), 'external_id' => 'mcp:old', 'role' => 'implementer'])->id],
+        'a thread of another group' => [function (Task $group, Instance $copy, AgentThread $own): int {
+            $elsewhere = Task::query()->create(['project_id' => $group->project_id, 'title' => 'Other', 'brief' => 'Other', 'status' => TaskGroupStatus::Todo]);
+
+            return AgentThread::query()->create(['task_group_id' => $elsewhere->id, 'driver' => 't3', 'runtime_key' => 'instance:'.$copy->id,
+                'external_id' => 'mcp:other', 'role' => 'implementer'])->id;
+        }],
+        'no such thread' => [fn (Task $group, Instance $copy, AgentThread $own): int => $own->id + 1000],
+    ]);
 
     it('replays the same turn for a retry with the request\'s key', function (): void {
         $group = copyGroup(copySource()->project);
@@ -672,8 +773,8 @@ describe('a turn of a group that owns a copy', function (): void {
         'a copy not fully set up' => [function (Task $group, Operation $create): void {
             finishedCopy($group, $create)->update(['status' => InstanceState::Reserved]);
         }, [], 'tasks.copy_not_ready 409'],
-        'a reviewer turn' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['role' => 'reviewer', 'check' => 1], 'tasks.copy_turn_unsupported 422'],
-        'a continued thread' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['thread' => '12'], 'tasks.copy_turn_unsupported 422'],
+        'a consult' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['role' => 'consult'], 'tasks.copy_turn_unsupported 422'],
+        'a reviewer turn on no checked candidate' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['role' => 'reviewer', 'check' => 1], 'tasks.commit_not_checked 422'],
         'a model of the caller' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['model' => 'gpt-5.6-luna'], 'tasks.copy_turn_unsupported 422'],
     ]);
 

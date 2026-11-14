@@ -11,7 +11,7 @@ const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn
 const shipped = new URL("../ansible/", import.meta.url).pathname.replace(/\/$/, "");
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 const ssh = { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } };
-const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", provider: "claudeAgent", model: "claude-opus-5-5", seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
+const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", thread: "new", provider: "claudeAgent", model: "claude-opus-5-5", seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
 // What TaskCopyTurn admits; the workflow passes only the runtime, the SSH target and the turn to the phase.
 const intent = { subtask: 4971, role: "implementer", thread: "new", group_id: 4970, instance_id: 2685, node_id: 9, ssh_execution: ssh,
     runtime: { project: "orbit-instances-nested", name: "instance-2685" }, branch: "task-4970", thread_id: 77, turn };
@@ -49,7 +49,8 @@ Deno.test("the turn's lock is its copy's: two copies on one Node turn side by si
 
 const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 
-// Validates the Incus boundary, then answers as T3's CLI would. `T3_START` picks the start's behaviour.
+// Validates the Incus boundary, then answers as T3's CLI would. `T3_START` picks the start's or the send's behaviour; `missing` lists
+// no thread of the turn's title.
 const SHIM = `#!/usr/bin/env python3
 import json, os, sys
 args = sys.argv[1:]
@@ -64,8 +65,8 @@ thread = 'mcp:66105c2c'
 if rest == ['/usr/bin/true']:
     sys.exit(1 if os.environ['T3_START'] == 'unreachable' else 0)
 if rest[0] == '/usr/bin/timeout' and rest[1] == '--kill-after=30':
-    assert rest[2] == '3600' and rest[3] == '/opt/orbit-agent/current/agent/bin/t3' and rest[4:6] == ['thread', 'start'], rest
-    assert rest[-4:] == ['--wait', '--json', '/srv/workspace', '-'], rest
+    assert rest[2] == '3600' and rest[3] == '/opt/orbit-agent/current/agent/bin/t3', rest
+    assert rest[4:] == ['thread', 'send', '--wait', '--json', thread, '-'] or (rest[4:6] == ['thread', 'start'] and rest[-4:] == ['--wait', '--json', '/srv/workspace', '-']), rest
     mode = os.environ['T3_START']
     if mode == 'garbled':
         mode = 'completed'
@@ -78,7 +79,7 @@ if rest[0] == '/usr/bin/timeout' and rest[1] == '--kill-after=30':
     sys.exit(0 if mode == 'completed' else 1)
 assert rest[0] == '/usr/bin/timeout' and rest[1] == '120' and rest[2] == '/opt/orbit-agent/current/agent/bin/t3', rest
 if rest[3:5] == ['thread', 'list']:
-    titles = [] if os.environ['T3_START'] == 'refused' else ['Orbit task 4970 thread 77']
+    titles = [] if os.environ['T3_START'] in ('refused', 'missing') else ['Orbit task 4970 thread 77']
     if os.environ['T3_START'] == 'garbled':
         print('not json')
         sys.exit(0)
@@ -88,7 +89,7 @@ assert rest[3:8] == ['thread', 'show', '--messages', '200', '--json'] and rest[8
 print(json.dumps({'thread': {'threadId': thread, 'status': 'running'}, 'messages': [{'role': 'user', 'runId': 'run:1', 'text': 'Subtask: Doctor note'}]}))
 `;
 
-async function phase(start: string, change: Record<string, unknown> = {}): Promise<{ ok: boolean; output: string; launched: boolean; start: Record<string, unknown> | null; read: Record<string, unknown> | null; calls: { args: string[]; stdin: string }[] }> {
+async function phase(start: string, change: Record<string, unknown> = {}): Promise<{ ok: boolean; output: string; resumed: Record<string, unknown> | null; launched: boolean; start: Record<string, unknown> | null; read: Record<string, unknown> | null; calls: { args: string[]; stdin: string }[] }> {
     const folder = Deno.makeTempDirSync();
     try {
         Deno.mkdirSync(`${folder}/bin`);
@@ -107,6 +108,7 @@ async function phase(start: string, change: Record<string, unknown> = {}): Promi
         return {
             ok: done.success,
             output: new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr),
+            resumed: json("continue.json"),
             launched: read(`${folder}/run/launch.json`) !== null,
             start: json("start.json"),
             read: json("read.json"),
@@ -130,6 +132,22 @@ Deno.test({ name: "a completed turn sends the prompt on stdin with the copy's mo
     assertEquals(done.output.includes("Subtask: Doctor note"), false);
 } });
 
+Deno.test({ name: "a continued turn finds its thread by title and sends the prompt to it, with no model and no title", ignore: !available, async fn() {
+    const done = await phase("completed", { thread: "continue", provider: null, model: "claude-opus-5-5" });
+    assert(done.ok, done.output);
+    assertEquals(done.calls.length, 5);
+    assertEquals(done.calls[1].args.slice(18), ["thread", "list", "--project", "/srv/workspace", "--json"]);
+    assertEquals([done.calls[2].args.slice(19), done.calls[2].stdin], [["thread", "send", "--wait", "--json", "mcp:66105c2c", "-"], turn.prompt]);
+    assertEquals([done.resumed, done.launched, JSON.parse(done.start!.start as string).status, done.read!.found], [{ found: 1 }, true, "completed", 1]);
+} });
+
+Deno.test({ name: "a continued turn whose thread T3 does not hold launches nothing and says so", ignore: !available, async fn() {
+    const missing = await phase("missing", { thread: "continue", provider: null });
+    assert(!missing.ok, missing.output);
+    assert(missing.output.includes("tasks.copy_thread_missing"), missing.output);
+    assertEquals([missing.resumed, missing.launched, missing.start, missing.read, missing.calls.length], [{ found: 0 }, false, null, null, 2]);
+} });
+
 Deno.test({ name: "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing", ignore: !available, async fn() {
     const cut = await phase("timeout");
     assert(cut.ok, cut.output);
@@ -144,7 +162,7 @@ Deno.test({ name: "a turn cut by its bound still reads the thread it started; a 
 } });
 
 Deno.test({ name: "an intent outside the admitted shape runs nothing in the copy", ignore: !available, async fn() {
-    for (const change of [{ t3: "/tmp/t3" }, { title: "Something else" }, { seconds: 7200 }, { model: "a b" }]) {
+    for (const change of [{ t3: "/tmp/t3" }, { title: "Something else" }, { seconds: 7200 }, { model: "a b" }, { thread: "resume" }, { provider: null }, { model: null }]) {
         const refused = await phase("completed", change);
         assert(!refused.ok, JSON.stringify(change));
         assertEquals([refused.launched, refused.start, refused.read, refused.calls.length], [false, null, null, 0]);
