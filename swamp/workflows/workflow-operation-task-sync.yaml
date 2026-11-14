@@ -88,6 +88,7 @@ jobs:
       workflowIdOrName: task-copy-base
       inputs:
         node_id: ${{ inputs.intent.node_id }}
+        group_id: ${{ inputs.intent.group_id }}
         phase: base
         intent: '${{ {"runtime": inputs.intent.copy.runtime, "branch": inputs.intent.copy.branch, "snapshot_id": inputs.intent.copy.snapshot_id, "instance_id": inputs.intent.instance_id, "default_branch": inputs.intent.workspace.default_branch, "repository": inputs.intent.workspace.repository, "mirror": inputs.intent.copy.mirror, "source_mirror": inputs.intent.copy.source_mirror, "start": inputs.intent.copy.start, "ssh_execution": inputs.intent.ssh_execution} }}'
         git_authorization: ${{ inputs.intent.git_authorization }}
@@ -303,6 +304,7 @@ jobs:
       workflowIdOrName: task-copy-base
       inputs:
         node_id: ${{ inputs.intent.node_id }}
+        group_id: ${{ inputs.intent.group_id }}
         phase: base-cleanup
         intent: '${{ {"runtime": inputs.intent.copy.runtime, "branch": inputs.intent.copy.branch, "snapshot_id": inputs.intent.copy.snapshot_id, "instance_id": inputs.intent.instance_id, "ssh_execution": inputs.intent.ssh_execution} }}'
         git_authorization: ${{ inputs.intent.git_authorization }}

@@ -12,6 +12,9 @@ inputs:
   type: object
   properties:
     node_id: {type: integer, minimum: 1}
+    # The task group: the base phase, up to 600 s, locks a behavior of its group, so copies of two groups on one Node never wait for
+    # each other's lock (docs/reference/tasks.md#two-groups-on-one-node).
+    group_id: {type: integer, minimum: 1}
     phase: {type: string, enum: [base, base-cleanup]}
     intent:
       type: object
@@ -46,7 +49,7 @@ inputs:
         key: {type: string, pattern: '^task-sync-token-[a-f0-9-]{36}$'}
       required: [vault, key]
       additionalProperties: false
-  required: [node_id, phase, intent, git_authorization]
+  required: [node_id, group_id, phase, intent, git_authorization]
   additionalProperties: false
 jobs:
   - name: base
@@ -70,7 +73,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "task-copy-base-" + string(inputs.node_id) }}'
+          behaviorName: '${{ ("task-copy-base-" + string(inputs.node_id) + "-" + string(inputs.group_id)).split(".").join("-") }}'
           methodName: execute
           inputs:
             run: timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags base "$ORBIT_ANSIBLE/task-instance-workspace.yml"
