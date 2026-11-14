@@ -1176,6 +1176,18 @@ git merge origin/main        # or: git rebase origin/main
 
 The branch then holds that main, so the start commit is that main, and main's own commits are not counted as the task's changes. If `origin/main` stays at the seed, the merged commits count as changed paths.
 
+#### Docs-impact waivers in a copy
+
+The `docs-impact` part reads waivers from the branch's proposed PR body in the copy, `.git/orbit/proposed-pr-bodies/task-<id>.md` under `/srv/workspace`. Nothing else puts that file there: the implementer writes it before the handoff check, with one line for each impacted page that needs no change:
+
+```text
+Docs-unaffected: docs/reference/tasks.md: <the specific reason>
+```
+
+When a page is neither changed nor waived, the part's output names the file and says whether it is absent or holds no valid line for the page. The reviewer confirms the reason.
+
+#### Parts
+
 [The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check, and the last lines of its output name each part's result.
 
 ## Review a subtask

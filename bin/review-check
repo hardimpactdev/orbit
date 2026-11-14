@@ -233,15 +233,14 @@ def report_directory(reports):
 
 
 def docs_impact_command(root, base, common):
-    """A fresh SSH handoff reads this branch's proposed PR body from its checkout."""
+    """A fresh SSH handoff reads this branch's proposed PR body from its checkout, its waiver file. The gate names the
+    file when a page is missing, also when the file is absent."""
     command = [str(root / 'bin/docs-impact'), '--gate', '--base', base]
     if os.environ.get('ORBIT_DOCS_PR_BODY_FILE'):
         return command  # The gate consumes an explicitly supplied local environment input.
     branch = git(root, 'branch', '--show-current')
     if branch:
-        body = common / 'orbit/proposed-pr-bodies' / (branch + '.md')
-        if body.is_file():
-            command.extend(['--pr-body-file', str(body)])
+        command.extend(['--waiver-file', str(common / 'orbit/proposed-pr-bodies' / (branch + '.md'))])
     return command
 
 

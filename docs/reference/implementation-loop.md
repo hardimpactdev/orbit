@@ -590,7 +590,7 @@ The [start commit](/reference/tasks#start-commit) has one rule, which the tasks 
 
 | Part | Runs when | What it runs |
 | --- | --- | --- |
-| `docs-impact` | Always | `bin/docs-impact --gate` against the start commit, with the proposed PR body as the candidate gate passes it |
+| `docs-impact` | Always | `bin/docs-impact --gate` against the start commit, with the branch's [waiver file](/reference/tasks#docs-impact-waivers-in-a-copy) as the candidate gate passes it |
 | `check-flows` | The plan selects the Docs job | `node bin/check-flows`, with `BASE` set to the start commit, as CI runs it |
 | `docs-lint` | The plan selects the Docs job | `bin/docs-openapi` when the plan selects the API reference job, as root `composer check` does, then `composer docs-build` and `composer docs-lint`, which is strict |
 | `pint <project>` | A PHP file of the project changed | `vendor/bin/pint --test` on the changed PHP files of that project |
@@ -632,7 +632,7 @@ Each part prints its output when it fails. The run ends with one line per part: 
 
 A part whose program is missing fails with `<program>: required tool not found`. The command installs nothing.
 
-A fixture unit whose fixture declares a host program in `host_programs` does not run when the copy lacks that program. The `fixtures` line counts and names it, for example `1 skipped: zip missing in this copy (swamp/tests/ansible_instance_host_runtime_test.ts#0/2)`. Such a skip does not fail the check. The [fleet refresh](/reference/development-containers#the-pinned-shape-tools) installs `zip`, `unzip` and `jq` in the default, so a copy of a refreshed seed has them. A Pest test that needs a program the copy lacks still fails as its test fails.
+A fixture unit whose fixture declares a host program in `host_programs` does not run when the copy lacks that program. The `fixtures` line counts and names it, for example `1 skipped: zip missing in this copy (swamp/tests/ansible_instance_host_runtime_test.ts#0/2)`. Such a skip does not fail the check. The [fleet refresh](/reference/development-containers#the-pinned-shape-tools) installs `zip`, `unzip` and `jq` in the default, so a copy of a refreshed seed has them. In an older copy without `jq`, `swamp/tests/swamp_node_schedules_test.ts` is skipped this way: its release load script needs `jq` and `timeout`. A Pest test that needs a program the copy lacks still fails as its test fails.
 
 #### What it leaves to CI
 

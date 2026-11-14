@@ -110,6 +110,19 @@ class BudgetTest(unittest.TestCase):
         self.assertEqual(part.status, 'skipped')
         self.assertEqual(part.detail, f'1 skipped: zip missing in this copy ({runtime}#0/2); budget skipped: {load} (budget: declared 60s)')
 
+    def test_the_schedules_fixture_is_named_not_runnable_in_a_copy_without_jq(self):
+        budget, table, _defaults = check['units'].configuration()
+        schedules = 'swamp/tests/swamp_node_schedules_test.ts'
+        # Its release load script exits 127 in 4 of its 8 cases without jq.
+        self.assertEqual(table[schedules]['host_programs'], ['jq', 'timeout'])
+        plan = {'shards': [{'units': [schedules]}], 'deferred': [], 'budget': budget,
+                'units': {schedules: {'declared_seconds': 7}}}
+        with patch.object(check['shutil'], 'which', side_effect={'timeout': '/usr/bin/timeout'}.get), \
+                patch.dict(check['fixtures'].__globals__, {'run': self.fail}):
+            part = check['fixtures'](plan, time.monotonic() + 5, table)
+        self.assertEqual(part.status, 'skipped')
+        self.assertEqual(part.detail, f'1 skipped: jq missing in this copy ({schedules})')
+
 
 class FixtureRunTest(unittest.TestCase):
     UNITS = ['swamp/tests/a_test.ts', 'swamp/tests/b_test.ts', 'swamp/tests/c_test.ts']
