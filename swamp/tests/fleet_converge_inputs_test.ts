@@ -32,11 +32,14 @@ function methodBlocks(lines: string[]) {
   const blocks: { name: string; from: number; to: number }[] = [];
   const start = lines.findIndex((line) => line === "    methods: {");
   assert(start >= 0, "the behavior file has a methods block");
-  for (let index = start + 1; index < lines.length && !/^ {4}\},?$/.test(lines[index]); index++) {
+  let index = start + 1;
+  for (; index < lines.length && !/^ {4}\},?$/.test(lines[index]); index++) {
     const match = lines[index].match(/^ {8}([A-Za-z]+): \{$/);
     if (match) blocks.push({ name: match[1], from: index, to: lines.length });
     if (match && blocks.length > 1) blocks[blocks.length - 2].to = index;
   }
+  // The last method ends where `methods` closes; nothing after it counts as inside a method.
+  if (blocks.length > 0) blocks[blocks.length - 1].to = index;
   return blocks;
 }
 
@@ -47,8 +50,11 @@ function methodBlocks(lines: string[]) {
 function checkCutImport(cut: (typeof list.cut_imports)[number]) {
   const source = read(cut.file);
   const lines = source.split("\n");
-  const line = lines.findIndex((text) => new RegExp(`^import \\{([^}]*)\\} from "${cut.import.replaceAll(".", "\\.")}";$`).test(text));
+  const path = cut.import.replaceAll(".", "\\.");
+  const line = lines.findIndex((text) => new RegExp(`^import \\{([^}]*)\\} from "${path}";$`).test(text));
   assert(line >= 0, `${cut.file}: the cut import ${cut.import} is no longer a named import`);
+  // One named import of the path, and no other import or re-export of it, so every name it brings in is checked below.
+  assertEquals(lines.filter((text) => new RegExp(`from\\s+["']${path}["']`).test(text)).length, 1, `${cut.file}: ${cut.import} is imported or re-exported more than once`);
   const names = lines[line].match(/\{([^}]*)\}/)![1].split(",").map((name) => name.trim()).filter(Boolean);
   const blocks = methodBlocks(lines);
   const called = calledMethods();
@@ -64,7 +70,11 @@ function checkCutImport(cut: (typeof list.cut_imports)[number]) {
       uses++;
       const block = blocks.find((entry) => index > entry.from && index < entry.to);
       assert(block && cut.methods.includes(block.name), `${cut.file}:${index + 1}: ${name} is used outside ${cut.methods.join(", ")}`);
-      if (cut.guard !== undefined) assert(text.includes(cut.guard), `${cut.file}:${index + 1}: ${name} is used without the guard ${cut.guard}`);
+      // The use follows the guard's `?` directly, so it is the guarded branch, not the other one.
+      if (cut.guard !== undefined) {
+        const guarded = new RegExp(`${cut.guard.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*(?:await\\s+)?${name}\\(`);
+        assert(guarded.test(text), `${cut.file}:${index + 1}: ${name} is used without the guard ${cut.guard}`);
+      }
     }
   });
   assert(uses > 0, `${cut.file}: nothing uses the cut import ${cut.import}`);
@@ -173,13 +183,11 @@ Deno.test("each cut import is used only by methods a converge never runs, or onl
 });
 
 Deno.test("a cut import fails when the converge workflow calls its method or a use leaves its guard", () => {
-  const original = read;
   const cut = list.cut_imports.find((entry) => entry.guard === undefined)!;
   assertThrows(() => checkCutImport({ ...cut, methods: [...cut.methods, "convergeResult"] }), Error, "the converge workflow now calls convergeResult");
   const guarded = list.cut_imports.find((entry) => entry.guard !== undefined)!;
   assertThrows(() => checkCutImport({ ...guarded, guard: guarded.guard + " never" }), Error, "without the guard");
   assertThrows(() => checkCutImport({ ...guarded, methods: ["convergeInput"] }), Error, "is used outside convergeInput");
-  assertEquals(read, original);
 });
 
 Deno.test("the refresh hashes the listed inputs and the inner Gateway's base intent digests", () => {

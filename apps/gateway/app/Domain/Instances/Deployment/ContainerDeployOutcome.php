@@ -113,7 +113,8 @@ final readonly class ContainerDeployOutcome
             return null;
         }
         $nodes = $raw['converge_nodes'] ?? null;
-        if (! is_array($nodes) || ! array_is_list($nodes) || array_diff($nodes, ['gateway', 'app-dev', 'app-prod']) !== [] || count(array_unique($nodes)) !== count($nodes)) {
+        if (! is_array($nodes) || ! array_is_list($nodes) || array_filter($nodes, static fn (mixed $name): bool => ! in_array($name, ['gateway', 'app-dev', 'app-prod'], true)) !== []
+            || count(array_unique($nodes)) !== count($nodes) || ($refresh['converge'] === 'skipped') !== ($nodes === [])) {
             return null;
         }
         $containers = $raw['base_containers'] ?? [];

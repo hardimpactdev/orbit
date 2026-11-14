@@ -313,6 +313,10 @@ describe('the result of a start', function (): void {
             // The converged Nodes are the inner fleet's own role names, each once; a refresh that does not name them is not recorded.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_nodes' => ['app-dev', 'app-dev']]])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_nodes' => ['beast']]])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_nodes' => [['app-dev']]]])->result)->not->toHaveKey('fleet_refresh')
+            // A converge that ran names its Nodes; a skipped one names none.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_nodes' => []]])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge' => 'skipped']])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => array_diff_key($refresh, ['converge_nodes' => true])])->result)->not->toHaveKey('fleet_refresh')
             // What the refresh did with the nested Gateway's Swamp tokens, and why, are its own words too.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'tokens' => 'renewed']])->result)->not->toHaveKey('fleet_refresh')

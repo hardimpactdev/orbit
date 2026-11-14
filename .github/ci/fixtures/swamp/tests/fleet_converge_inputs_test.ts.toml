@@ -1,5 +1,5 @@
 order = 1490
-source_sha256 = "8019f28cc459baeee33d090d66e47d7c480d625c6ac4629bd1a27936afdca535"
+source_sha256 = "4faa49aa8fe8a4e5f737dd52b4fac8669ceff8a2e34d90e2ab594be67df0f372"
 cases = [
   "every file a nested Node's base converge reads is in the converge digest's list",
   "the list holds only files a base converge reads, each exists, ships in the manifest, and each cut still guards its include",
