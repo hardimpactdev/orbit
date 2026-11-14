@@ -33,6 +33,8 @@ A task that owns a [task copy](/reference/tasks#task-copy) runs its turns in it.
 
 <div className="flow-at" data-chart="task/copy-turn"></div>
 
+Swamp locks the step that runs the turn for the whole turn, and a second run that needs the same lock waits 60 seconds and then fails. The lock carries the copy's Instance id: a turn acts only inside its copy and its own run folder. So turns in two copies on one Node run side by side, and one copy still takes one turn at a time.
+
 ## Errors
 
 A turn in a task copy adds these answers and Operation errors:
