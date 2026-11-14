@@ -19,7 +19,8 @@ from unittest.mock import patch
 SCRIPT = Path(__file__).parents[1] / "scripts/instance_clone.py"
 NETWORK_CHECK = SCRIPT.parents[1] / "ansible/instance_network.py"
 NODE_SERVICES = SCRIPT.parents[1] / "ansible/instance_node_services.py"
-# The renderer's commands: the clone runs the bundle's instance_node_services.py with these before the copy's first start.
+# The renderer's commands: the clone runs the bundle's instance_node_services.py with `proxy-files` before the copy's first start
+# and with `hosts` right after it, once Incus has rendered the hosts template.
 RENDERS = ("hosts", "proxy-files")
 # The stock image's hosts.tpl, which Incus renders into /etc/hosts at a copy's first start.
 HOSTS_TEMPLATE = ("127.0.1.1\t{name}\n127.0.0.1\tlocalhost\n::1\t\tlocalhost ip6-localhost ip6-loopback\n"
