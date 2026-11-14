@@ -577,6 +577,8 @@ The hub step marks the `vpn` role active. After serve and both workers run, the 
 
 `orbit:node-converge NODE` admits `node.converge` from the Gateway itself. The Gateway converges its own Node this way, which installs the agent and removes the packaged CLI from its machine.
 
+`orbit:node-converge-digest --base NODE...` prints one JSON object with the SHA-256 digest of each named Node's base converge intent. It builds the intent as `node.converge` with `base: true` does, but it admits no Operation, makes no execution copy and writes nothing. An unknown Node, or an intent it cannot build, fails the command with no digest. The nested-fleet refresh compares these digests to decide whether the inner Nodes need a converge ([what a refresh skips](/reference/development-containers#what-a-refresh-skips)).
+
 The Swamp role's own steps are workflow steps bound to worker labels, so a Gateway without a worker cannot run them; once its own Swamp serves, `node:role:add` converges the roles through it.
 
 ## Role compatibility
