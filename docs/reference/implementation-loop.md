@@ -897,6 +897,8 @@ Its `checkout`, `services` and `check` cases check that each part gets only its 
 
 The `instance:complete` workflow fixture runs `operation-instance-complete` on the pinned engine's levels, with the real `finish` receipt, for a plain clone, a database clone and a nested-fleet clone, and for each failure. Its native fixture runs the real workflow on the pinned Swamp binary with local stubs for the machine steps and the Route children; it needs `ORBIT_SWAMP_PROOF_BINARY`, so CI runs it after merge. The create's level fixture in `workflow_absent_secrets_test.ts` and its native fixture, `instance_create_native_test.ts`, do the same for a clone's create, which ends at `clone-register`.
 
+The create fixtures also run the clone's Route beside the copy: published, a failed CSR or Route child that leaves the run succeeded, a cancel during `clone-route`, and a later clone failure that keeps a published address. The native complete fixture covers a completion of a Route its create published, which runs no Route step.
+
 The `instance:restore` workflow fixture evaluates every expression of `operation-instance-restore` against the input its projection renders. It needs no Node, database or playbook.
 
 The destroy release fixture evaluates the guard and environment of `Release the Route Nodes` and the retry guard of `Withdraw the Route`, then runs the release command with a stand-in `curl` for a granted, a refused and an unreachable call. It needs no Node or Gateway.
