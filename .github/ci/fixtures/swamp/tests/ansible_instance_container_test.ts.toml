@@ -135,8 +135,8 @@ after_merge_cases = [
 # Each retained case cost is the 90th percentile of its completed hosted PR times across the runs listed in
 # docs/reference/implementation-loop.md (2026-11-13), rounded up plus one second; startup is added per slice.
 # Cases with fewer than five hosted runs keep an estimate. The 190-second shard deadline is the headroom above p90.
-# 71 slices give each of the 71 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 71
+# 72 slices give each of the 72 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 72
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
