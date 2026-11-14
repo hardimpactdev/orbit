@@ -32,7 +32,11 @@ class TaskInstanceCheckTest(SUPPORT["CheckHarness"]):
         self.assertEqual(list((self.folder / 'output').iterdir()), [])
         self.assertNotIn('checked new', json.dumps(evidence))
         self.assertFalse(self.scratch.exists(), 'guest check scratch leaked')
-        self.assertEqual(set(Path('/var/tmp').glob('orbit-task-check-*')), self.node_scratch, 'Node output scratch leaked')
+        # The Node folders this check's own run made, by the targets its Incus shim recorded; never another unit's folder.
+        pulled = {json.loads(line)[-1] for line in self.calls.read_text().splitlines()
+                  if json.loads(line)[2:5] == ['file', 'pull', '--recursive']}
+        self.assertTrue(pulled and all(target.startswith('/var/tmp/orbit-task-check-') for target in pulled), pulled)
+        self.assertEqual([target for target in pulled if Path(target).exists()], [], 'Node output scratch leaked')
         self.assertEqual((self.checkout / '.git/index').read_bytes(), index)
         self.assertEqual((self.decoy / 'app.txt').read_text(), 'decoy\n')
         calls = [json.loads(line) for line in self.calls.read_text().splitlines()]

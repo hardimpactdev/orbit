@@ -35,6 +35,13 @@ class CopyExportTest(unittest.TestCase):
     git = base.WorkspaceHarness.git
     phase = base.WorkspaceHarness.phase
 
+    def assert_node_scratch_removed(self):
+        """The Node folders this test's own export made, by the targets its Incus shim recorded; never another unit's folder."""
+        folders = {str(Path(json.loads(line)[-1]).parent) for line in self.calls.read_text().splitlines()
+                   if json.loads(line)[2:4] == ['file', 'pull'] and json.loads(line)[-1].startswith('/var/tmp/orbit-task-export-')}
+        self.assertTrue(folders, 'the export made no Node scratch')
+        self.assertEqual([folder for folder in folders if Path(folder).exists()], [], 'Node export scratch leaked')
+
     def test_a_publication_export_fetches_the_bundle_to_the_worker_and_keeps_no_node_scratch(self):
         self.git('add', '--all')
         self.git('commit', '--quiet', '-m', 'Candidate')
@@ -46,12 +53,11 @@ class CopyExportTest(unittest.TestCase):
         scratch.mkdir(mode=0o700)
         self.addCleanup(shutil.rmtree, scratch, True)
         self.intent['worker_bundle'] = str(scratch / 'candidate.bundle')
-        node_before = set(Path('/var/tmp').glob('orbit-task-export-*'))
         exported, _ = self.phase('export')
         self.assertEqual(exported['bundle'], self.intent['worker_bundle'])
         self.assertNotIn('node_scratch', exported)
         self.assertEqual(hashlib.sha256(Path(exported['bundle']).read_bytes()).hexdigest(), exported['sha256'])
-        self.assertEqual(set(Path('/var/tmp').glob('orbit-task-export-*')), node_before, 'Node export scratch leaked')
+        self.assert_node_scratch_removed()
         self.assertFalse((self.scratch / 'export.bundle').exists())
         # The production evidence reader accepts exactly this result.
         folder = Path('/tmp/orbit-ansible-' + str(uuid.uuid4()))
@@ -64,6 +70,43 @@ class CopyExportTest(unittest.TestCase):
                           '{writeResource: async (_spec, _name, value) => value}); console.log(JSON.stringify(value));')
         read = subprocess.run(['deno', 'run', '-A', str(script), str(folder)], capture_output=True, text=True, check=True, timeout=60)
         self.assertEqual(json.loads(read.stdout), {'phase': 'export', 'evidence': exported})
+
+
+    def publication(self):
+        self.git('add', '--all')
+        self.git('commit', '--quiet', '-m', 'Candidate')
+        self.intent['head'] = self.git('rev-parse', 'HEAD')
+        value, _ = self.phase('preflight')
+        self.intent['checkout_fingerprint'] = value['checkout_fingerprint']
+        self.intent['candidate'] = {'head': self.intent['head'], 'tree': self.git('rev-parse', 'HEAD^{tree}')}
+        scratch = Path('/tmp/orbit-task-publish-' + uuid.uuid4().hex)
+        scratch.mkdir(mode=0o700)
+        self.addCleanup(shutil.rmtree, scratch, True)
+        self.intent.update({'worker_bundle': str(scratch / 'candidate.bundle'), 'environment_path': 'apps/web/.env',
+                            'worker_environment': str(scratch / 'environment')})
+        return scratch
+
+    def test_a_publication_export_fetches_the_copy_environment_file_to_the_worker_and_never_returns_it(self):
+        (self.checkout / 'apps/web').mkdir(parents=True)
+        (self.checkout / 'apps/web/.gitignore').write_text('.env\n')
+        (self.checkout / 'apps/web/.env').write_bytes(b'APP_KEY=base64:not-a-real-key\r\n')
+        scratch = self.publication()
+        exported, output = self.phase('export')
+        self.assertEqual((scratch / 'environment').read_bytes(), b'APP_KEY=base64:not-a-real-key\r\n')
+        self.assertNotIn('not-a-real-key', json.dumps(exported) + output)
+        self.assert_node_scratch_removed()
+
+    def test_a_publication_export_refuses_a_copy_without_a_regular_environment_file(self):
+        (self.checkout / 'apps/web').mkdir(parents=True)
+        (self.checkout / 'apps/web/.gitignore').write_text('.env\n')
+        self.publication()
+        self.phase('export', ok=False)
+        self.assert_node_scratch_removed()
+        (self.checkout / 'apps/web/.env').symlink_to('/etc/hostname')
+        self.phase('export', ok=False)
+        self.assert_node_scratch_removed()
+        bad = dict(self.intent, environment_path='../outside/.env')
+        self.phase('export', intent=bad, ok=False)
 
 
 class CopyCheckTest(unittest.TestCase):
@@ -215,6 +258,153 @@ class TaskCopyPublishTest(unittest.TestCase):
         self.assertNotEqual(self.environment_check(self.candidate(work), 'f' * 40).returncode, 0)
 
 
+
+    def test_a_copy_mints_only_after_its_content_check_succeeded(self):
+        step = 'Check the .env content'
+        self.assertFalse(self.cel(step, 'guard', self.copy, {}))
+        self.assertTrue(self.cel(step, 'guard', self.vm, {}))
+        mint = 'Mint the push token'
+        self.assertFalse(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}}))
+        for status in ['skipped', 'failed']:
+            self.assertTrue(self.cel(mint, 'guard', self.copy, {step: {'status': status}}), status)
+        self.assertTrue(self.cel(mint, 'guard', self.copy, {}))
+        self.assertFalse(self.cel(mint, 'guard', self.vm, {step: {'status': 'skipped'}}))
+        steps = {item['name']: item for job in yaml.safe_load(PUBLISH.read_text())['jobs'] for item in job['steps']}
+        self.assertIn({'step': step, 'condition': {'type': 'or', 'conditions': [{'type': 'succeeded'}, {'type': 'skipped'}]}},
+                      steps[mint]['dependsOn'])
+        self.assertEqual(steps[step]['dependsOn'], [{'step': 'Check the environment file', 'condition': {'type': 'succeeded'}}])
+        self.assertEqual(steps[step]['task']['inputs']['env']['ORBIT_ENVIRONMENT'],
+                         '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}')
+
+    ENV = 'APP_NAME=Orbit\nAPP_DEBUG=true\nDB_PORT=8080\nexport APP_KEY="base64:c2VjcmV0LWtleS1ub3QtcmVhbA=="\r\nDB_PASSWORD=\'pa55-w0rd-xyz\'\nPEM="line-one-abcdefgh\\nline-two-ijklmnop"\n# old token-in-a-comment-123\n'
+
+    def content_check(self, repository, start, copy=None, rendered='', pull_request=None):
+        directory = Path(tempfile.mkdtemp(prefix='orbit-task-publish-', dir=self.root))
+        (directory / 'environment').write_text(self.ENV if copy is None else copy)
+        step = 'Check the .env content'
+        intent = {**self.copy, 'pull_request': pull_request}
+        run = self.cel(step, 'run', intent, {})
+        # The pull request text comes through the step's own expressions, with the pinned CEL engine.
+        pull = {name: self.cel(step, 'env.' + name, intent, {}) for name in ['ORBIT_PULL_TITLE', 'ORBIT_PULL_BODY']}
+        return subprocess.run(['/bin/sh', '-c', run], capture_output=True, text=True, check=False, timeout=120,
+                              env={'PATH': os.environ['PATH'], 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1',
+                                   'ORBIT_REPOSITORY': str(repository), 'ORBIT_DIRECTORY': str(directory),
+                                   'ORBIT_FILE': str(directory / 'environment'), 'ORBIT_START': start, 'ORBIT_ENVIRONMENT': rendered,
+                                   **pull})
+
+    def copy_repository(self, files=None):
+        work = self.root / ('work-' + uuid.uuid4().hex)
+        work.mkdir()
+        self.git('init', '--quiet', '--initial-branch=task-1', cwd=work)
+        start = self.commit(work, 'seed', {'app.txt': 'seed\n', '.env.example': 'APP_NAME=Orbit\nDB_PORT=8080\n', **(files or {})})
+        return work, start
+
+    def refused(self, done, *names):
+        self.assertEqual(done.returncode, 3, done.stdout + done.stderr)
+        self.assertTrue(done.stderr.startswith('tasks.publish_secret_content: '), done.stderr)
+        for name in names:
+            self.assertIn(name, done.stderr)
+        for value in ['c2VjcmV0', 'pa55-w0rd', 'line-one', 'line-two', 'token-in-a-comment', 'rendered-only']:
+            self.assertNotIn(value, done.stdout + done.stderr)
+
+    def test_the_content_check_passes_a_clean_range_and_public_or_short_values(self):
+        work, start = self.copy_repository()
+        self.commit(work, 'agent work', {'app.txt': 'changed\n', 'docs/note.md': 'APP_DEBUG=true and port 8080, app Orbit\n',
+                                         'config/example.env': 'APP_NAME=Orbit\nDB_PORT=8080\n', 'empty.txt': ''})
+        done = self.content_check(self.candidate(work), start)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        # An empty .env and render check nothing, also when the range adds an empty file.
+        self.assertEqual(self.content_check(self.candidate(work), start, copy='').returncode, 0)
+
+    def test_the_content_check_refuses_the_whole_file_under_another_name_also_when_removed_later(self):
+        work, start = self.copy_repository()
+        add = self.commit(work, 'backup', {'env.backup': self.ENV})
+        (work / 'env.backup').unlink()
+        self.commit(work, 'remove the backup')
+        self.refused(self.content_check(self.candidate(work), start), "the whole .env is the file 'env.backup'", add)
+
+    def test_the_content_check_refuses_one_value_in_another_file_a_message_or_a_file_name(self):
+        cases = {'value in a file': ({'config/local.txt': 'key: base64:c2VjcmV0LWtleS1ub3QtcmVhbA==\n'}, 'x', "file 'config/local.txt'"),
+                 'single-quoted value': ({'tests/fixture.json': '{"password": "pa55-w0rd-xyz"}'}, 'x', "file 'tests/fixture.json'"),
+                 'one line of a multi-line value': ({'key.pem': 'line-two-ijklmnop\n'}, 'x', "file 'key.pem'"),
+                 'a comment line': ({'notes.txt': 'old token-in-a-comment-123\n'}, 'x', "file 'notes.txt'"),
+                 'commit message': ({'app.txt': 'other\n'}, 'use pa55-w0rd-xyz', 'message or author of commit'),
+                 'file name': ({'logs/pa55-w0rd-xyz.log': 'x\n'}, 'x', "file name in folder 'logs'")}
+        for name, (files, message, text) in cases.items():
+            with self.subTest(name):
+                work, start = self.copy_repository()
+                commit = self.commit(work, message, files)
+                done = self.content_check(self.candidate(work), start)
+                self.refused(done, text)
+                if name != 'commit message':
+                    self.assertIn(commit, done.stderr)
+
+    def test_the_content_check_refuses_a_value_of_the_render_that_the_copy_file_no_longer_holds(self):
+        work, start = self.copy_repository()
+        self.commit(work, 'agent work', {'data.txt': 'DB_PASSWORD=rendered-only-value-9\n'})
+        # The agent rewrote the copy's file; the render of the stored values still holds the value.
+        self.refused(self.content_check(self.candidate(work), start, copy='APP_NAME=Orbit\n',
+                                        rendered='DB_PASSWORD=rendered-only-value-9\n'), "file 'data.txt'")
+
+    def test_the_content_check_passes_a_value_that_the_start_tree_already_holds(self):
+        work, start = self.copy_repository({'docs/known.txt': 'pa55-w0rd-xyz\n'})
+        self.commit(work, 'agent work', {'docs/again.txt': 'pa55-w0rd-xyz\n'})
+        self.assertEqual(self.content_check(self.candidate(work), start).returncode, 0)
+
+    def test_the_content_check_reads_values_as_the_renderer_and_a_default_file_write_them(self):
+        """Escaped characters of a rendered value, inline comments, and keys in comment lines."""
+        env = ('DB_PASSWORD="pa\\$\\$w0rd\\"xy\\\\z9"\n'
+               'STRIPE=sk_live_abcdef123456 # prod key\n'
+               'OTHER="quoted-secret-99" # note\n'
+               '# OLD_PASSWORD=old-secret-value-77\n'
+               '#export LEGACY="another-old-999"\n')
+        for name, text in {'unescaped double-quoted value': 'pa$$w0rd"xy\\z9', 'unquoted value before a comment': 'sk_live_abcdef123456',
+                           'quoted value before a comment': 'quoted-secret-99', 'key in a comment line': 'old-secret-value-77',
+                           'export key in a comment line': 'another-old-999'}.items():
+            with self.subTest(name):
+                work, start = self.copy_repository()
+                self.commit(work, 'agent work', {'leak.txt': 'x ' + text + ' y\n'})
+                done = self.content_check(self.candidate(work), start, copy=env)
+                self.assertEqual(done.returncode, 3, done.stderr)
+                self.assertNotIn(text, done.stderr)
+
+    def test_a_refusal_never_names_a_path_that_holds_a_value(self):
+        for name, files in {'whole file': {'backups/env-pa55-w0rd-xyz.bak': self.ENV},
+                            'value split over folders': {'pa55-w/0rd-xyz': 'base64:c2VjcmV0LWtleS1ub3QtcmVhbA==\n'}}.items():
+            with self.subTest(name):
+                work, start = self.copy_repository()
+                commit = self.commit(work, 'x', files)
+                done = self.content_check(self.candidate(work), start)
+                self.refused(done, 'a path that holds a value', commit)
+
+    def test_a_file_name_at_the_top_names_its_commit(self):
+        work, start = self.copy_repository()
+        commit = self.commit(work, 'x', {'pa55-w0rd-xyz.txt': 'x\n'})
+        self.refused(self.content_check(self.candidate(work), start), "file name in folder '.'", commit)
+
+    def test_the_content_check_refuses_a_value_in_the_pull_request_text(self):
+        work, start = self.copy_repository()
+        self.commit(work, 'agent work', {'app.txt': 'changed\n'})
+        repository = self.candidate(work)
+        self.assertEqual(self.content_check(repository, start, pull_request={'title': 'Fix', 'body': 'Done.', 'draft': True}).returncode, 0)
+        for pull in [{'title': 'Use pa55-w0rd-xyz', 'body': 'Done.'}, {'title': 'Fix', 'body': 'Key base64:c2VjcmV0LWtleS1ub3QtcmVhbA== set'}]:
+            self.refused(self.content_check(repository, start, pull_request=pull), 'pull request title or body')
+
+    def test_an_error_in_the_content_check_refuses_without_the_content_code(self):
+        work, start = self.copy_repository()
+        self.commit(work, 'agent work', {'app.txt': 'changed\n'})
+        repository = self.candidate(work)
+        missing = self.content_check(repository, 'f' * 40)
+        self.assertNotIn(missing.returncode, [0, 3])
+        self.assertNotIn('tasks.publish_secret_content', missing.stderr)
+        directory = Path(tempfile.mkdtemp(prefix='orbit-task-publish-', dir=self.root))
+        run = self.cel('Check the .env content', 'run', self.copy, {})
+        absent = subprocess.run(['/bin/sh', '-c', run], capture_output=True, text=True, check=False, timeout=60,
+                                env={'PATH': os.environ['PATH'], 'ORBIT_REPOSITORY': str(repository), 'ORBIT_DIRECTORY': str(directory),
+                                     'ORBIT_FILE': str(directory / 'environment'), 'ORBIT_START': start, 'ORBIT_ENVIRONMENT': '',
+                                     'ORBIT_PULL_TITLE': '', 'ORBIT_PULL_BODY': ''})
+        self.assertEqual(absent.returncode, 1)
+        self.assertTrue(absent.stderr.startswith('tasks.publish_secret_unchecked'), absent.stderr)
 
 if __name__ == '__main__':
     unittest.main()

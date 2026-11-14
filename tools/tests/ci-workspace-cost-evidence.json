@@ -32,7 +32,7 @@
       }
     },
     "swamp/tests/task_instance_check_test.py": {
-      "source_sha256": "21efb1f232c25d305d3fce233c7af0e768b172396a19da97b632334655ffea09",
+      "source_sha256": "5672e374d64f77c65b62e5b307f120f527fc56a59447cdc835380270be577602",
       "case_seconds": {
         "test_check_runs_in_the_guest_and_commits_the_exact_candidate": 10.987,
         "test_failed_setup_keeps_output_skips_the_check_and_commits_nothing": 5.22,

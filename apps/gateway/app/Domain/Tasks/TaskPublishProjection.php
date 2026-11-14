@@ -42,6 +42,13 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
         return [...$input, 'execution_secrets' => [...ValidatedData::object($input['execution_secrets']), 'environment' => $environment]];
     }
 
+    /** Only the check's own refusal line names content; any other failure of the check refuses as unchecked. */
+    private static function contentCode(mixed $detail): string
+    {
+        return is_string($detail) && preg_match('/^tasks\.publish_secret_content: /m', $detail) === 1
+            ? 'tasks.publish_secret_content' : 'tasks.publish_secret_unchecked';
+    }
+
     public function apply(Operation $operation, array $data): Operation
     {
         return DB::transaction(function () use ($operation, $data): Operation {
@@ -58,7 +65,7 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
                 $detail = $failure['detail'] ?? null;
                 $step = $failure['failed_step'] ?? null;
                 $code = in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
-                    ? $detail : ($step === 'Check the environment file' ? 'tasks.publish_secret_path' : ($step === 'Push the branch' ? 'tasks.push_failed' : (in_array($step, ['Init the bare repo', 'Import the bundle', 'Read bundle contents'], true) ? 'tasks.repository_execution_unknown' : 'tasks.publish_failed')));
+                    ? $detail : ($step === 'Check the environment file' ? 'tasks.publish_secret_path' : ($step === 'Check the .env content' ? self::contentCode($detail) : ($step === 'Push the branch' ? 'tasks.push_failed' : (in_array($step, ['Init the bare repo', 'Import the bundle', 'Read bundle contents'], true) ? 'tasks.repository_execution_unknown' : 'tasks.publish_failed'))));
                 $data['error_code'] = $code;
                 $result = ['error_code' => $code];
             } else {

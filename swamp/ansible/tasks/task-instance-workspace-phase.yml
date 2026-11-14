@@ -13,6 +13,9 @@
       - workspace_phase in ['preflight', 'before', 'after', 'receipt', 'export', 'discard'] + workspace_check_phases
       - workspace_phase not in ['check', 'commit'] or intent.check | default(none) is mapping
       - workspace_phase != 'commit-ref' or intent.candidate_commit | default('') | length in [40, 64]
+      # A publication's content check also takes the copy's .env, by its path under the fixed workspace root.
+      - intent.worker_environment is not defined or (intent.environment_path | default('') is match('^[^/]')
+        and '..' not in intent.environment_path.split('/'))
     fail_msg: tasks.workspace_target_invalid
   vars:
     workspace_check_phases: [check, commit, commit-ref]
@@ -384,6 +387,38 @@
       ansible.builtin.assert:
         that: workspace_bundle_stat.stat.checksum == workspace_result.sha256
         fail_msg: tasks.workspace_phase_failed
+    # The publish checks the candidate against the copy's .env on the worker. Its bytes never enter a result or a log.
+    - name: Copy the copy's .env to the Node
+      when: intent.worker_environment is defined
+      ansible.builtin.command:
+        argv: [incus, --project, "{{ intent.runtime.project }}", file, pull,
+               "{{ intent.runtime.name }}/srv/workspace/{{ intent.environment_path }}", "{{ workspace_export.path }}/environment"]
+        expand_argument_vars: false
+        stdin: ''
+        stdin_add_newline: false
+      changed_when: false
+    - name: Read the copied .env on the Node
+      when: intent.worker_environment is defined
+      ansible.builtin.stat:
+        path: "{{ workspace_export.path }}/environment"
+        follow: false
+        get_checksum: false
+      register: workspace_environment_stat
+    - name: Require a regular .env file
+      when: intent.worker_environment is defined
+      ansible.builtin.assert:
+        that: workspace_environment_stat.stat.isreg | default(false)
+        fail_msg: tasks.publish_secret_unchecked
+    - name: Fetch the .env to the worker
+      when: intent.worker_environment is defined
+      ansible.builtin.fetch:
+        src: "{{ workspace_export.path }}/environment"
+        dest: "{{ intent.worker_environment }}"
+        flat: true
+        fail_on_missing: true
+        validate_checksum: true
+      changed_when: false
+      no_log: true
     - name: Return the Node export path
       when: intent.worker_bundle is not defined
       ansible.builtin.set_fact:
