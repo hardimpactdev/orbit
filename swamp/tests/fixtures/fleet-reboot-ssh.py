@@ -14,7 +14,8 @@ state.setdefault('argv', []).append(sys.argv[1:])
 if state['calls'] <= state['failures']:
     # Ansible writes its pipelined module before reading the SSH diagnostic.
     # Drain it so this synthetic refusal cannot become a local BrokenPipeError.
-    while sys.stdin.buffer.read(65536):
+    # A non-pipelined command has a terminal that Ansible keeps open until exit.
+    while not sys.stdin.isatty() and sys.stdin.buffer.read(65536):
         pass
     print('ssh: connect to host 192.0.2.9 port 22: Connection timed out', file=sys.stderr)
     print('Authorization: Bearer fixture-private-credential', file=sys.stderr)

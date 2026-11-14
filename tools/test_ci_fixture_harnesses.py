@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import pty
 import runpy
 import subprocess
 import sys
@@ -14,6 +15,21 @@ SSH = ROOT / 'swamp/tests/fixtures/fleet-reboot-ssh.py'
 
 
 class RebootSshTest(unittest.TestCase):
+    def test_synthetic_connection_failure_does_not_wait_for_terminal_input(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            (Path(scratch) / 'ssh.json').write_text(json.dumps({'calls': 0, 'failures': 1}))
+            master, slave = pty.openpty()
+            try:
+                # Ansible keeps the terminal open until a non-pipelined command exits.
+                result = subprocess.run([sys.executable, str(SSH), 'unused'], stdin=slave,
+                                        capture_output=True, timeout=3,
+                                        env={**os.environ, 'REBOOT_SSH_FIXTURE': scratch})
+                self.assertEqual(255, result.returncode)
+                self.assertIn(b'Connection timed out', result.stderr)
+            finally:
+                os.close(slave)
+                os.close(master)
+
     def test_synthetic_connection_failure_drains_a_large_pipelined_module(self):
         with tempfile.TemporaryDirectory() as scratch:
             state = Path(scratch) / 'ssh.json'
@@ -59,6 +75,9 @@ class InputClosureTest(unittest.TestCase):
         budget, fixtures, defaults = api['configuration']()
         for helper, file in [('swamp/ansible/instance_node_services.py', 'swamp/tests/ansible_instance_migrate_test.ts'),
                              ('swamp/ansible/tasks/instance-private-names.yml', 'swamp/tests/ansible_instance_migrate_test.ts'),
+                             ('swamp/ansible/library/orbit_migrate_env.py', 'swamp/tests/ansible_instance_migrate_test.ts'),
+                             ('swamp/ansible/templates/instance-migrate-schedule.j2', 'swamp/tests/ansible_instance_migrate_test.ts'),
+                             ('swamp/extensions/behaviors/operations/processes-schedules/unit-templates.json', 'swamp/tests/ansible_instance_migrate_test.ts'),
                              ('swamp/tests/fixtures/fleet-reboot-ssh.py', 'swamp/tests/fleet_reboot_unreachable_test.ts')]:
             with self.subTest(helper=helper):
                 plan = api['plan']([helper], budget, fixtures, defaults)
