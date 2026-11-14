@@ -37,7 +37,7 @@
           (process_result if process_result is defined else
            (node_runtime_result if node_runtime_result is defined and container_phase in ['node-store', 'node-runtime']
             else {'commit': container_commit | default(none)})))) | combine(club_key_carried)
-         | combine(wake_result | default({})) | combine(fleet_refresh_carried)
+         | combine(wake_result | default({})) | combine(fleet_refresh_carried) | combine(workspace_repack_result | default({}))
          | combine({'phases_passed': container_phases_passed} if phases is defined else {}) | to_json }}
     dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
     mode: "0600"

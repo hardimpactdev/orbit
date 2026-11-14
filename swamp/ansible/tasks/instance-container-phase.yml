@@ -32,7 +32,7 @@
     # Orbit's own Git calls in the workspace start no automatic maintenance: after a fetch Git would repack in the background, and
     # the repack removes pack files while later tasks run (the group mode pass, the deploy steps). In the foreground a repack of a
     # large repository would outlast the checkout's time limit. The Git commands of the people and agents who work in the workspace
-    # still repack it; a workspace that only deployments write gains one pack per deployment until a bounded repack is added.
+    # still repack it. A deployment's checkout runs its own bounded repack in the foreground ("Repack the workspace").
     in_workspace: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/orbit', container.name,
           '--', 'runuser', '-u', 'orbit', '--', 'git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
@@ -878,6 +878,24 @@
     - name: Check out the commit
       ansible.builtin.command: { argv: "{{ in_workspace + ['checkout', '--quiet', '-B', container.branch, target] }}" }
       changed_when: true
+    # Each fetch of a bundle adds one pack, and Orbit's Git calls start no automatic maintenance, so a workspace that only deployments
+    # write gains a pack per deployment for ever. A geometric repack rolls the small packs into the next larger one until the pack sizes
+    # at least double: it rewrites only the packs that break the progression, so a workspace with nothing to merge costs milliseconds and
+    # the pack count stays near log2 of the history's size. It runs here, in the foreground before the group mode pass, so it never
+    # removes a pack while that pass or a deploy step runs. It keeps every object (no prune) and writes its packs with the workspace's
+    # shared group mode. It may take 30 seconds: a killed repack removes its temporary pack and keeps the old ones. A repack that fails
+    # or runs out of time never fails the deployment: the result names it as `workspace_repack`.
+    - name: Repack the workspace
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['timeout', '30'] + in_workspace[in_workspace.index('git'):] + ['repack', '-d', '-q', '--geometric=2'] }}"
+      register: workspace_repack
+      changed_when: false
+      failed_when: false
+    - name: Note a repack that did not pass
+      when: workspace_repack.rc != 0
+      ansible.builtin.set_fact:
+        workspace_repack_result:
+          workspace_repack: "{{ 'timed_out' if workspace_repack.rc == 124 else 'failed: ' ~ (workspace_repack.stderr | default('') | trim)[-400:] }}"
   always:
     - name: Remove the bundle in the container
       ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_bundle] }}" }
