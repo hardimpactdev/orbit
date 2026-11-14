@@ -34,7 +34,7 @@ final class ConnOperationsController extends Controller
     public function cancel(EmptyOperationRequest $request, Operation $operation, CancelOperationAction $cancel): JsonResponse
     {
         // The caller cancels what it may read here, through the core cancel: its create and the clone's completion end retained for a
-        // retry or a removal. A removal is not cancelled (docs/reference/conn.md#cancel-an-operation).
+        // retry or a removal. A removal is not cancelled (docs/reference/conn.md#cancel-a-create-or-a-completion).
         abort_if($operation->kind === 'instance.destroy', 404);
         $this->assertOwner($request, $operation);
 
