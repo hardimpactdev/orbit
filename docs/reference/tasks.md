@@ -83,7 +83,7 @@ Typed comments record the workflow. A stored turn receipt is a comment whose typ
 
 `GET /api/v1/tasks/{task}/comments` and the MCP tool `task-comment-list` accept optional `type` and `limit` query inputs. `type` must be a task comment type, such as `resolution` or `assistance_requested`. `limit` must be an integer from 1 to 100. The endpoint returns comments newest first, filters by type before applying the limit, and preserves each comment's full body and response shape. With neither input, it returns all comments as before. An unknown type or an invalid limit returns HTTP 422 with `validation.failed`. Use `type=resolution` and `limit=1` to read the newest resolution without returning the full comment history; the limit bounds the number of comments, not the byte size of an individual body.
 
-`GET /api/v1/tasks` and `GET /api/v1/tasks/{task}`, and their MCP tools `task-list` and `task-show`, accept an optional boolean `compact` query input. With `compact=true`, each group omits `brief`, `assistance_question`, and `assistance_reason`; each subtask omits those fields plus `completion_summary`, `deliverables`, and `fixup_problem`. The latest check keeps its metadata but omits `output`. Omitted keys are absent, not null. Ids, titles, statuses, positions, assistance flags and kinds, and counters remain available. Without `compact`, or with `compact=false`, the response is unchanged. Invalid boolean input returns HTTP 422 with `validation.failed`. Use compact reads to avoid returning long text in the MCP output; this reduces the response size but does not impose a byte limit or paginate the results.
+`GET /api/v1/tasks` and `GET /api/v1/tasks/{task}`, and their MCP tools `task-list` and `task-show`, accept an optional boolean `compact` query input. With `compact=true`, each group omits `brief`, `assistance_question`, and `assistance_reason`; each subtask omits those fields plus `completion_summary`, `deliverables`, and `fixup_problem`. The latest check keeps its metadata but omits `output`. Omitted keys are absent, not null. Ids, titles, statuses, positions, assistance flags and kinds, and counters remain available. Without `compact`, or with `compact=false`, the response is unchanged. Invalid boolean input returns HTTP 422 with `validation.failed`. Use compact reads to avoid returning long text in the MCP output; this reduces the response size but does not impose a byte limit. [List tasks](#list-tasks) says how the list pages.
 
 ### External orchestration
 
@@ -556,13 +556,21 @@ Parent creation requires `project_id`, `title` (at most 160 characters), and `br
 
 Parent creation accepts an ordered `subtasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Creating in Todo changes board state only; `task:start` starts the parent's VM. Parent creation accepts only `orchestration: external`, which is also the default. The API, PHP SDK, CLI option `task:create --orchestration`, and MCP expose this field. Update cannot change it.
 
-Create also accepts `review`, `manual` (default) or `automatic`, the mode of the gate of the group's pull request; update cannot change it, and show returns it. Create also accepts a strict boolean `current_recipe` (CLI `--current-recipe`, default `false`) for a task that needs the current machine recipe; update cannot change it. List accepts `project_id` and `status` filters. Show returns the task and its subtasks in position order.
+Create also accepts `review`, `manual` (default) or `automatic`, the mode of the gate of the group's pull request; update cannot change it, and show returns it. Create also accepts a strict boolean `current_recipe` (CLI `--current-recipe`, default `false`) for a task that needs the current machine recipe; update cannot change it. [List tasks](#list-tasks) pages the groups. Show returns the task and its subtasks in position order.
 
 Update changes a task's `title`, `brief`, or `status`. Title and brief change only in `backlog`. Status updates start no work.
 
 For an external group, `task:update` also accepts `status` moves among `running`, `reviewing`, `settling`, and `waiting_for_review`. It still moves between `backlog` and `todo`, with the same deliverable requirements, but starts no work. A status update cannot enter `reserved`, leave `reserved`, cross between preparation and active work, or end the group. Only provision moves `todo` to `reserved`. Use `task:cancel` or `task:complete` to end a group. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing, including on an ended group. These updates need no idempotency key.
 
 A task moves to `todo`, by create or update, only when it has subtasks and every subtask has at least one deliverable.
+
+### List tasks
+
+`GET /api/v1/tasks` returns at most `limit` groups, newest first. `limit` is 1 to 100; the default is 20. `meta.next_cursor` names the next page, or is null on the last page. Send it back as `cursor` with the same filters to read the next page. A cursor is an opaque string; one in another form answers `422` with `validation.failed`. This is the paging of [`operation:list`](/reference/operations#page-the-list). A page is not a snapshot: a group created after the first page appears on no later page. The list orders by id alone, so a page boundary never moves when a group changes status.
+
+`project_id` and `status` filter the groups before the page is cut, so a filtered list pages the same way. With `parent_id`, the list returns that group's subtasks in position order, whole and unpaged; `limit` and `cursor` are refused with it. With `parent_id`, `status` takes a subtask status, and a `project_id` other than the group's Project lists nothing.
+
+A list row has every field of `task:show` except, on each subtask, `completion_summary`, `fixup_problem` and the latest check's `output`. A summary is stored in full and a check keeps 16 KiB of output, so a page of full rows grows without bound. Read one group with `task:show` to get them. The list reads each row's columns, subtasks, latest checks, task VM, reviewed commits, workspace route, thread tokens, activity and capacity wait in a fixed number of queries per page, whatever the number of groups. `compact` still applies on top of a list row.
 
 ### Change subtasks
 
