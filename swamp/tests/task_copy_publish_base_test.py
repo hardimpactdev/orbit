@@ -103,12 +103,19 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
             return None, done.stderr
         return json.loads(json.loads(done.stdout)['stdout']), ''
 
-    def planned_body(self, statement, body='Adds the export.'):
-        """The production plan of the pull request write, with the statement as "Plan the PR" passes it."""
+    def planned_body(self, statement, body='Adds the export.', proposed=None):
+        """The production plan of the pull request write, with the statement as "Plan the PR" passes it. With `proposed`, the copy
+        held a proposed body: "Add the waiver lines" wrote the text the .env check read, and the plan publishes that text."""
         (self.scratch / 'pulls.json').write_text('[]')
+        for name in ('proposed-body', 'pull-title', 'pull-body'):
+            (self.scratch / name).unlink(missing_ok=True)
         steps = {CHECK: {'status': 'succeeded', 'outputs': {'stdout': statement}}}
         self.assertEqual(self.cel(PLAN, 'base', self.copy, steps), statement)
         intent = {**self.vm, 'pull_request': {'title': 'Export orders', 'body': body}}
+        if proposed is not None:
+            (self.scratch / 'proposed-body').write_text(proposed)
+            done = self.behavior('waivers', {'input': intent, 'directory': str(self.scratch)})
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         done = self.behavior('pull', {'directory': str(self.scratch), 'exit_code': 0, 'input': intent, 'base': statement})
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         return json.loads((self.scratch / 'pull-body.json').read_text())['body']
@@ -151,6 +158,13 @@ class TaskCopyPublishBaseTest(unittest.TestCase):
         # A re-publish whose caller body carries the earlier section states it once.
         self.assertEqual(self.planned_body(json.dumps(facts), body), body)
         self.assertEqual(body.count('## Base'), 1)
+        # With the copy's proposed body, the PR gets the caller's text, then its waiver lines, then one Base section, also when
+        # the caller's body carries the earlier section and the waiver line lands after it.
+        waiver = 'Docs-unaffected: docs/reference/tasks.md: no change.'
+        for caller in ('Adds the export.', body):
+            waived = self.planned_body(json.dumps(facts), caller, proposed='Notes.\n' + waiver + '\n')
+            self.assertEqual(waived.count('## Base'), 1, waived)
+            self.assertTrue(waived.startswith('Adds the export.\n\n' + waiver + '\n\n<!-- orbit:base -->\n## Base\n'), waived)
 
     def test_a_real_conflict_is_refused_with_its_paths_before_the_push(self):
         self.commit(self.work, 'agent work', {'a.txt': 'one\ntask\nthree\nfour\nfive\n', 'b.txt': 'task\n'})

@@ -191,13 +191,37 @@ export function baseFacts(
 /** Marks Orbit's own section, so a body that carries an earlier one gets it replaced, never twice. */
 export const BASE_MARK = "<!-- orbit:base -->";
 
-/** The caller's body, then the fixed `## Base` section of a task copy's publish; without facts the body is left as it is. */
+/**
+ * The body without an earlier Orbit section: its marker, heading and list lines go, and any text after it stays, such as the waiver
+ * lines a copy's publish appends to the caller's body (withWaivers), which may follow a section the caller's body carried.
+ */
+function withoutBase(body: string): string {
+    const lines = body.split("\n");
+    const at = lines.findIndex((line) => line.replace(/\r$/, "") === BASE_MARK);
+    if (at === -1) return body.trimEnd();
+    let end = at + 1;
+    if (lines[end]?.replace(/\r$/, "") === "## Base") end++;
+    if (lines[end]?.replace(/\r$/, "") === "") end++;
+    while (end < lines.length && /^(?:- |  - )/.test(lines[end])) end++;
+    return [
+        lines.slice(0, at).join("\n").trimEnd(),
+        lines.slice(end).join("\n").trim(),
+    ]
+        .filter((part) => part !== "").join("\n\n");
+}
+
+/**
+ * The body, then the fixed `## Base` section of a task copy's publish; without facts the body is left as it is. The body is the one
+ * the copy's .env content check read: the caller's text and the waiver lines (withWaivers). The whole stays within BodyLimit: a
+ * section whose path list does not fit names only their count, and one that does not fit at all is left out; the publish result
+ * states the base either way.
+ */
 export function withBase(body: string, facts: BaseFacts | null): string {
     if (facts === null) return body;
-    const at = body.indexOf(BASE_MARK);
-    const kept = (at === -1 ? body : body.slice(0, at)).trimEnd();
+    const kept = withoutBase(body);
     const code = (text: string) => "`" + text.replaceAll("`", "'") + "`";
-    const paths = facts.overlapping_paths.length === 0
+    const count = facts.overlapping_paths.length + facts.overlapping_more;
+    const listed = facts.overlapping_paths.length === 0
         ? ["- Overlapping paths: none"]
         : [
             "- Overlapping paths:",
@@ -206,18 +230,26 @@ export function withBase(body: string, facts: BaseFacts | null): string {
                 ? [`  - and ${facts.overlapping_more} more`]
                 : []),
         ];
-    const section = [
-        BASE_MARK,
-        "## Base",
-        "",
-        `- Checked base: ${code(facts.base_commit)}`,
-        `- Default branch head: ${code(facts.default_commit)}`,
-        `- Behind by: ${facts.behind_by} ${
-            facts.behind_by === 1 ? "commit" : "commits"
-        }`,
-        ...paths,
-    ].join("\n");
-    return (kept === "" ? "" : kept + "\n\n") + section + "\n";
+    const counted = [
+        `- Overlapping paths: ${count}, listed in the publish result`,
+    ];
+    const section = (paths: string[]) =>
+        (kept === "" ? "" : kept + "\n\n") + [
+            BASE_MARK,
+            "## Base",
+            "",
+            `- Checked base: ${code(facts.base_commit)}`,
+            `- Default branch head: ${code(facts.default_commit)}`,
+            `- Behind by: ${facts.behind_by} ${
+                facts.behind_by === 1 ? "commit" : "commits"
+            }`,
+            ...paths,
+        ].join("\n") + "\n";
+    for (const paths of count === 0 ? [listed] : [listed, counted]) {
+        const result = section(paths);
+        if (result.length <= BodyLimit) return result;
+    }
+    return body;
 }
 
 /** One open PR lookup decides one update or one creation, with caller prose unchanged but for the base section. */

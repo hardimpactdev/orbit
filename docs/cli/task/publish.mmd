@@ -160,6 +160,7 @@ sequenceDiagram
     %%> - with `--draft` the creation carries `draft: true`; an update of an open PR sends only title and body, so a PR keeps its state
     %%> - for a task copy, a fixed `## Base` section follows the caller's body: the base commit, the default head, how far behind, and the overlapping paths or none
     %%> - an Orbit marker opens the section, so a caller body that carries an earlier one gets it replaced: a re-publish states it once
+    %%> - the section follows the text the .env check read: the caller's body and its waiver lines; the whole stays within 65,536 characters, naming only the count of the paths when their list does not fit
     SW->>GH: Write the PR
     %%> How:
     %%> - one bounded native command on the worker; no shipped script

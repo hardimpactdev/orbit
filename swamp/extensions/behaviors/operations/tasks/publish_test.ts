@@ -360,3 +360,42 @@ Deno.test("the waiver lines stop where the body would pass the publish limit", (
     assertEquals(result, `${body}\n\n${short}`);
     assertEquals(result.length <= BodyLimit, true);
 });
+
+Deno.test("waiver lines after an earlier Base section stay, before the one new section", () => {
+    const facts = baseFacts(0, files({ overlap: "app/a.php\0" })).facts;
+    const waiver = "Docs-unaffected: docs/reference/x.md: no change.";
+    const earlier = withBase("Adds the export.", facts);
+    // A re-publish: the caller's body carries the earlier section, and withWaivers appends a line after it.
+    const body = withWaivers(earlier, waiver);
+    assertEquals(body.endsWith(waiver), true);
+    const republished = withBase(body, facts);
+    assertEquals(republished, withBase("Adds the export.\n\n" + waiver, facts));
+    assertEquals(republished.split(BASE_MARK).length, 2);
+    assertEquals(
+        republished.indexOf(waiver) < republished.indexOf(BASE_MARK),
+        true,
+    );
+});
+
+Deno.test("the Base section keeps the body within its limit", () => {
+    const paths = Array.from(
+        { length: 5 },
+        (_, index) => `apps/gateway/app/Domain/Tasks/Changed${index}.php`,
+    );
+    const facts = baseFacts(0, files({ overlap: paths.join("\0") + "\0" }))
+        .facts;
+    const full = withBase("x", facts);
+    // A body that leaves no room for the path list states their count instead.
+    const tight = "x".repeat(BodyLimit - (full.length - 1) + 1);
+    const counted = withBase(tight, facts);
+    assertEquals(counted.length <= BodyLimit, true);
+    assertEquals(
+        counted.endsWith(
+            "- Overlapping paths: 5, listed in the publish result\n",
+        ),
+        true,
+    );
+    // A body at the limit gets no section; the publish result still states the base.
+    const limit = "x".repeat(BodyLimit);
+    assertEquals(withBase(limit, facts), limit);
+});
