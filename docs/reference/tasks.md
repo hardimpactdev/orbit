@@ -1401,7 +1401,9 @@ A task that holds no VM and no workspace, such as one in `todo` or one that wait
 
 Cancel asks a running group Operation to stop. If it is still running, the call returns HTTP 409 `operation.target_busy` with its id and confirms the stop request. Run `task:cancel` again once that Operation has ended. A timed-out Operation whose run nothing has proven ended still holds the group, for up to an hour; the cancel then returns the same 409 before it admits the destroy of the task's copy.
 
-- **Work only a task copy holds.** A cancel of a [task copy](#task-copy) that holds unpushed commits, uncommitted or untracked files, or stashes refuses with HTTP 409 `tasks.copy_unpublished_work`; its details carry the counts and the head. A copy whose workspace cannot be read refuses with `tasks.copy_workspace_unknown` and its reason. The caller's `discard: true` (CLI `--discard`) destroys that work; `--yes` never does. Complete needs no discard: it has proved that origin has the approved work.
+- **Work only a task copy holds.** A cancel refuses a [task copy](#task-copy) with work origin lacks: HTTP 409 `tasks.copy_unpublished_work`, with the counts.
+- **Unread task copy.** A cancel refuses a copy it cannot read: HTTP 409 `tasks.copy_workspace_unknown`, with the reason.
+- **Discard.** `discard: true` (CLI `--discard`) lets the cancel destroy that work; `--yes` never does. Complete needs no discard, because origin has the approved work.
 - **Approved work not on origin.** Cancel and complete refuse with HTTP 409 `tasks.approved_work_unpublished` and change nothing. Run `task:publish` first; it resumes a parked VM.
 - **Parked VM.** Neither cancel nor complete starts a parked VM. The release deletes it as it is.
 - **Refused admission.** `tasks.not_cancellable`, `task_vm.release_refused` and a busy VM Operation change nothing.
