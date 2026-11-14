@@ -972,7 +972,7 @@ The copy's `.env` holds its secrets. Git never takes it: every container create 
 | Part | Rule |
 | --- | --- |
 | Source | The Project's default Instance, active with a seed, whose container runs: `task:start` reads it once before it admits the copy, because the power record can be stale |
-| Cap | `ORBIT_TASKS_COPIES_MAX`, default 1: the nested-fleet task copies one Node holds at once. A start over it fails with `tasks.copy_capacity_full`, with no wait. Other copies have no task cap |
+| Cap | A start needs a free [isolated ID range](/reference/development-containers#isolated-id-ranges) for the copy and one for the default's next seed, else `tasks.copy_id_range_full`. `ORBIT_TASKS_COPIES_MAX` (default 1) caps nested-fleet copies per Node: `tasks.copy_capacity_full`. Neither waits |
 | Publish | Only for a nested-fleet trial Project or a Project on `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`. Otherwise `tasks.copy_publish_held` (409), before any Operation |
 | Model key | The copy's agent gets the fixed task model key, as every clone does. It is not per task. Per-task model keys are an open decision |
 | Ready | The task runs when its copy is `active`: after the copy's [completion](/reference/development-containers#complete-a-clone) succeeded. A create that succeeds leaves the task `reserved` until then |

@@ -193,15 +193,25 @@ if (family === "list") {
   if (!volume) fail("Storage pool volume not found");
   volume.snapshots ??= [];
   if (verb === "create") {
-    if (state.volume_snapshot_fails) fail("Failed to create volume snapshot");
     if (volume.snapshots.includes(snapshot) && !args.includes("--reuse")) fail("Snapshot already exists");
-    volume.snapshots = [...volume.snapshots.filter((s: string) => s !== snapshot), snapshot];
+    // `--reuse` deletes the old snapshot first, and only then creates the new one, as for a container.
+    volume.snapshots = volume.snapshots.filter((s: string) => s !== snapshot);
+    if (state.volume_snapshot_fails) {
+      save();
+      fail("Failed to create volume snapshot");
+    }
+    volume.snapshots = [...volume.snapshots, snapshot];
   } else if (verb === "restore") {
     if (!volume.snapshots.includes(snapshot)) fail("Snapshot not found");
     volume.restored = [...(volume.restored ?? []), snapshot];
   } else if (verb === "delete") {
     if (!volume.snapshots.includes(snapshot)) fail("Snapshot not found");
     volume.snapshots = volume.snapshots.filter((s: string) => s !== snapshot);
+  } else if (verb === "rename") {
+    const target = args[7];
+    if (!volume.snapshots.includes(snapshot)) fail("Snapshot not found");
+    if (volume.snapshots.includes(target)) fail("Name already in use");
+    volume.snapshots = volume.snapshots.map((s: string) => s === snapshot ? target : s);
   } else fail(`Unexpected volume snapshot ${verb}`);
 } else if (family === "config" && args[1] === "device" && args[2] === "add") {
   const [, , , name, device, type, ...settings] = args;
@@ -265,7 +275,13 @@ if (family === "list") {
   const container = state.containers[name];
   if (verb === "create") {
     if (container.snapshots.includes(snapshot) && !args.includes("--reuse")) fail("Snapshot already exists");
+    // `--reuse` deletes the old snapshot first, and only then creates the new one (Incus 7.0.2).
     container.snapshots = container.snapshots.filter((s: string) => s !== snapshot);
+    // Incus maps a new snapshot like a new container: it needs a free isolated ID range, which `no_id_range` takes away.
+    if (state.no_id_range === true) {
+      save();
+      fail(`Failed creating instance snapshot record "${snapshot}": Failed initializing instance: Not enough uid/gid available for the container`);
+    }
     container.snapshots.push(snapshot);
     // The snapshot's content: the root file system as it is now, never the tmpfs.
     Deno.mkdirSync(`${folder}/snapshots/${name}`, { recursive: true });
@@ -276,8 +292,19 @@ if (family === "list") {
   } else if (verb === "restore") {
     if (!container.snapshots.includes(snapshot)) fail("Snapshot not found");
     container.restored = [...(container.restored ?? []), snapshot];
+  } else if (verb === "rename") {
+    const target = args[4];
+    if (!container.snapshots.includes(snapshot)) fail("Snapshot not found");
+    if (container.snapshots.includes(target)) fail("Name already in use");
+    container.snapshots = container.snapshots.map((s: string) => s === snapshot ? target : s);
+    container.created_at = { ...(container.created_at ?? {}), [target]: container.created_at?.[snapshot] };
+    Deno.renameSync(`${folder}/snapshots/${name}/${snapshot}`, `${folder}/snapshots/${name}/${target}`);
   } else {
+    if (!container.snapshots.includes(snapshot)) fail("Snapshot not found");
     container.snapshots = container.snapshots.filter((s: string) => s !== snapshot);
+    try {
+      Deno.removeSync(`${folder}/snapshots/${name}/${snapshot}`, { recursive: true });
+    } catch { /* a snapshot that a test listed without content */ }
   }
 } else if (family === "file" && args[1] === "delete") {
   for (const target of args.slice(2).filter((arg) => !arg.startsWith("-"))) {

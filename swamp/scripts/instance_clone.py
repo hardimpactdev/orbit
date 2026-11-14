@@ -384,7 +384,12 @@ def main():
                         ]
                     ).stdout
                 )
-                if clone["snapshot"] not in [row["name"] for row in snapshots]:
+                names = [row["name"] for row in snapshots]
+                # A default with no seed at all refuses by its own code; a replaced seed means a deployment moved it, and a `next-`
+                # snapshot is a retake between its delete and its rename.
+                if not any(name.startswith(("seed-", "next-")) for name in names):
+                    raise RuntimeError("instance.default_seed_missing")
+                if clone["snapshot"] not in names:
                     raise RuntimeError("instance.default_seed_moved")
                 # A copy of a default with an inner volume copies the volume's snapshot of the same seed name first, then the container
                 # with its disk on the new volume (docs/reference/development-containers.md#the-inner-volume). Every other copy has no

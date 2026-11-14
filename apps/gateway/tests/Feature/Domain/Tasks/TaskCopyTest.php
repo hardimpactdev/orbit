@@ -102,13 +102,24 @@ beforeEach(function (): void {
             'untracked' => ['count' => 0, 'names' => []], 'stashes' => ['count' => 0, 'names' => []],
             'commits' => ['count' => 0, 'branch_count' => 0, 'branches' => []]];
 
+        /** @var array<string, mixed>|null The ID map read's answer: a roomy host with no container; null fails the read. */
+        public ?array $ids = ['uid' => [1000000, 1000000000], 'gid' => [1000000, 1000000000], 'containers' => []];
+
         public int $calls = 0;
+
+        public int $idReads = 0;
 
         /** @var list<?string> */
         public array $inputs = [];
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
+            if (str_contains((string) $command->input, 'ID map facts')) {
+                $this->idReads++;
+
+                return $this->ids === null ? new CommandResult(255, '', 'ssh: connect timed out', 5, false)
+                    : new CommandResult(0, json_encode($this->ids, JSON_THROW_ON_ERROR), '', 5, false);
+            }
             $this->calls++;
             $this->inputs[] = $command->input;
 
@@ -424,6 +435,99 @@ describe('a task start on the copy path', function (): void {
         config(['orbit.tasks.copies_max' => 0]);
         expect(startCopy(copyGroup($plain->project))->kind)->toBe('instance.create')
             ->and(copyRefusal(fn () => startCopy(copyGroup($nested->project))))->toBe('tasks.copy_capacity_full 409');
+    });
+
+    it('refuses a copy that would leave no free ID range for the default\'s next seed, by the host\'s real ranges', function (): void {
+        $default = copySource();
+        $group = copyGroup($default->project);
+        config(['orbit.tasks.copies_max' => 50]);
+        $nested = static fn (string $name, int $base): array => ['name' => $name, 'project' => 'orbit-instances-nested',
+            'config' => ['security.idmap.isolated' => 'true', 'security.idmap.size' => '101000000', 'volatile.idmap.base' => (string) $base]];
+        // Root's 1,000,000,000 IDs hold nine maps of 101,000,000 past the first 65,536: eight held leave one, which the copy would take.
+        $containers = [];
+        foreach (range(0, 7) as $i) {
+            $containers[] = $nested($i === 0 ? $default->runtime->container_name : 'instance-'.(100 + $i), 1065536 + $i * 101000000);
+        }
+        $this->ssh->ids = ['uid' => [1000000, 1000000000], 'gid' => [1000000, 1000000000], 'containers' => $containers];
+        $before = copyRows();
+
+        try {
+            startCopy($group);
+            $this->fail('admitted');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode)->toBe('tasks.copy_id_range_full')->and($error->status)->toBe(409)
+                ->and($error->details)->toMatchArray(['free' => 1, 'size' => 101000000, 'seed_sizes_short' => [101000000]]);
+        }
+        expect(copyRows())->toBe($before)->and($group->refresh()->status)->toBe(TaskGroupStatus::Todo);
+
+        // A stopped container holds its range too; with one fewer held, two are free and the copy is admitted.
+        array_pop($containers);
+        expect($containers[0]['name'])->toBe($default->runtime->container_name);
+        $this->ssh->ids['containers'] = $containers;
+        expect(startCopy($group)->kind)->toBe('instance.create');
+
+        // The copy just admitted has no container yet: it counts as held, so the next start is refused before Incus would fail it.
+        expect(copyRefusal(fn () => startCopy(copyGroup($default->project))))->toBe('tasks.copy_id_range_full 409');
+    });
+
+    it('keeps a range for another default\'s seed: a plain copy may not fill the last nested-sized gap', function (): void {
+        $nested = copySource();
+        $plain = copySource('app', nested: false);
+        $map = static fn (string $name, string $project, int $base, int $size): array => ['name' => $name, 'project' => $project,
+            'config' => ['security.idmap.isolated' => 'true', 'security.idmap.size' => (string) $size, 'volatile.idmap.base' => (string) $base]];
+        // Past the host's share: the plain default, the nested default, then one nested-sized gap and nothing else.
+        $containers = [$map($plain->runtime->container_name, 'orbit-instances', 1065536, 65536),
+            $map($nested->runtime->container_name, 'orbit-instances-nested', 1131072, 101000000)];
+        $root = [1000000, 65536 + 65536 + 2 * 101000000];
+        $this->ssh->ids = ['uid' => $root, 'gid' => $root, 'containers' => $containers];
+
+        // The plain copy would sit in the only gap, and the nested default's next seed would find none.
+        expect(copyRefusal(fn () => startCopy(copyGroup($plain->project))))->toBe('tasks.copy_id_range_full 409');
+        // Room for a small range besides the nested gap: the plain copy and its own seed take small gaps, so it is admitted.
+        $root[1] += 2 * 65536;
+        $this->ssh->ids = ['uid' => $root, 'gid' => $root, 'containers' => [$map($plain->runtime->container_name, 'orbit-instances', 1065536 + 2 * 65536, 65536),
+            $map($nested->runtime->container_name, 'orbit-instances-nested', 1065536 + 3 * 65536, 101000000)]];
+        expect(startCopy(copyGroup($plain->project))->kind)->toBe('instance.create');
+    });
+
+    it('counts a runtime without a container as held only while its create is open', function (): void {
+        $default = copySource();
+        config(['orbit.tasks.copies_max' => 50]);
+        $nested = static fn (string $name, int $base): array => ['name' => $name, 'project' => 'orbit-instances-nested',
+            'config' => ['security.idmap.isolated' => 'true', 'security.idmap.size' => '101000000', 'volatile.idmap.base' => (string) $base]];
+        $containers = [];
+        foreach (range(0, 6) as $i) {
+            $containers[] = $nested($i === 0 ? $default->runtime->container_name : 'instance-'.(100 + $i), 1065536 + $i * 101000000);
+        }
+        $this->ssh->ids = ['uid' => [1000000, 1000000000], 'gid' => [1000000, 1000000000], 'containers' => $containers];
+        // Two free ranges: the first copy is admitted, and its open create holds one until Incus makes its container.
+        $first = startCopy(copyGroup($default->project));
+        expect(copyRefusal(fn () => startCopy(copyGroup($default->project))))->toBe('tasks.copy_id_range_full 409');
+        // Its create failed before the copy: the row holds nothing, and the next start is admitted.
+        $first->forceFill(['status' => 'failed', 'finished_at' => now()])->save();
+        expect(startCopy(copyGroup($default->project))->kind)->toBe('instance.create');
+    });
+
+    it('refuses with its own code when the host\'s ID ranges cannot be read, and admits nothing on the hand-set cap alone', function (): void {
+        $group = copyGroup(copySource()->project);
+        config(['orbit.tasks.copies_max' => 50]);
+        $this->ssh->ids = null;
+        $before = copyRows();
+
+        expect(copyRefusal(fn () => startCopy($group)))->toBe('tasks.copy_id_ranges_unreadable 409')
+            ->and(copyRows())->toBe($before)->and($this->ssh->idReads)->toBe(1);
+    });
+
+    it('counts a plain container Project\'s copy and seed in ranges of 65,536', function (): void {
+        $plain = copySource('app', nested: false);
+        config(['orbit.tasks.copies_max' => 0]);
+        $default = [['name' => $plain->runtime->container_name, 'project' => 'orbit-instances',
+            'config' => ['security.idmap.isolated' => 'true', 'volatile.idmap.base' => '1065536']]];
+        // Past the host's share and the default's own map, room for one more map of 65,536: the copy fits, the seed retake would not.
+        $this->ssh->ids = ['uid' => [1000000, 65536 * 3], 'gid' => [1000000, 65536 * 3], 'containers' => $default];
+        expect(copyRefusal(fn () => startCopy(copyGroup($plain->project))))->toBe('tasks.copy_id_range_full 409');
+        $this->ssh->ids = ['uid' => [1000000, 65536 * 4], 'gid' => [1000000, 65536 * 4], 'containers' => $default];
+        expect(startCopy(copyGroup($plain->project))->kind)->toBe('instance.create');
     });
 
     it('refuses a group that is not todo, and a name that an Instance already holds', function (): void {

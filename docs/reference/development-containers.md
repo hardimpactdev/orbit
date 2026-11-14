@@ -3,12 +3,12 @@ title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
   - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,NestedFleetIntent,NestedFleetRefresh}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
-  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py},app/Infrastructure/Instances/ContainerWorkspaceRead.php}
+  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
 ---
 
@@ -794,6 +794,14 @@ A converted store replaces the same-commit seed too: an immutable old snapshot c
 
 After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. It retakes the snapshot at the same commit too, so a clone gets the default's current caches and built files. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
 
+#### A retake keeps the seed
+
+A retake never leaves the default without a seed. It takes the new snapshot first, beside the old one. When `seed-<commit>` exists already, the new snapshot waits under `next-<commit>`. Only when the new snapshot exists does the old `seed-<commit>` go, and `next-<commit>` takes its name. Older seeds go last. The seed of a default with an [inner volume](#the-seed-pair) is a pair, and both halves follow the same order.
+
+Incus maps a new snapshot as it maps a new container: it needs a free [isolated ID range](#isolated-id-ranges) for a moment, but a delete or a rename needs none. So the step never uses `incus snapshot create --reuse`, which deletes the old snapshot before it creates the new one. On 2026-11-14 a retake with `--reuse` on a host with no free range left Instance 2454 without a seed for seven minutes.
+
+A failed snapshot deletes only what this take made, a new name or `next-<commit>`, and fails the step with `instance.container_seed_failed`. The Operation's error detail names the cause: `No free ID range for the new seed`, or the failed command's error output. The old seed stays, and clones keep copying it. A run that stopped after its new seed was whole, but before the rename, leaves the new seed under `next-<commit>`; the next seed step gives it the seed's name. So does a volume half still under `next-` after its container half took the name. Any other `next-` snapshot goes.
+
 There are no development setup steps. The default Instance has them done already, so a clone needs none. A clone prepares its container in four direct command phases: container, workspace and Processes, T3 with the agent's files before it, and sessions.
 
 The workspace phase prepares Node and fetches a changed branch pin before starting any Process, with no separate Node-store playbook. A prepared seed keeps its existing recipe and downloaded versions. Every clone gets a private writable store, including one with no Processes, so a Process added later can install its pin. Without a recognized Node/Vite consumer, only the pin fetch is skipped. Each native step reports its timestamps through the existing Operation progress.
@@ -1011,7 +1019,7 @@ When the mark names this Instance, a resume skips the fetch and the checkout, an
 
 A clone's create checks no Process unit. A dead Process fails the completion's `check` step with `instance.container_process_inactive` and its `process_failure` receipt. When the Process comes from a Project definition, the completion's recovery says `retry.requires=project_process_definition`: change or remove the definition, then run `instance:complete`. Its admission installs the Project's development definitions as they are then.
 
-A deployment of the default can replace the admitted seed before the copy. The copy then refuses with `instance.default_seed_moved`, and the same command takes the new seed. A clone already copied does not need its seed: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them.
+A deployment of the default can replace the admitted seed before the copy. The copy then refuses with `instance.default_seed_moved`, and the same command takes the new seed. A default with no `seed-` snapshot at all refuses with `instance.default_seed_missing`: deploy the default to take a seed. A default with only a `next-` snapshot is a retake between its delete and its rename, so it refuses with `instance.default_seed_moved`. A clone already copied does not need its seed: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them.
 
 #### What a clone has at its first start
 
@@ -1694,7 +1702,7 @@ In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:10000
 
 The seed of such a default is a pair: the container snapshot `seed-<commit>` and the volume snapshot of the same name. A container snapshot does not hold an attached custom volume, so the name ties the two. The [seed step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) takes the volume's half right after the container's, with the Processes still stopped, wherever it takes the seed. It retakes the pair when the volume's half is missing.
 
-A failed volume snapshot deletes both halves of that name and fails with `instance.seed_volume_snapshot_failed`, so no reader finds half a pair. Older pairs go only after both new halves exist. A retake at the same commit has no older pair: the default then has no seed, and clones refuse, until its next passed deployment. A failed refresh checks that both halves exist before it restores anything; a failed restore of the volume after the container's fails the run.
+A [retake](#a-retake-keeps-the-seed) takes both new halves under `next-<commit>` when the seed's name is taken. A failed volume snapshot deletes both new halves and fails with `instance.seed_volume_snapshot_failed`, so no reader finds half a pair. The old pair stays whole, also at the same commit. Older pairs go only after both new halves exist. A failed refresh checks that both halves exist before it restores anything; a failed restore of the volume after the container's fails the run.
 
 A deployment retakes the two halves one after the other. So a clone of such a default is not admitted while a deployment of the default is open (`instance.default_seed_in_flight`), as the refresh waits for an open clone (`instance.clone_in_flight`). A default without an inner volume has no such wait.
 
@@ -1817,7 +1825,9 @@ The run deploys the release commit itself. A commit missing from the Project's r
 | Migrate before Doctor | The start checks only the containers and the tunnel. The refresh migrates the nested Gateway before its Doctor wait |
 | The fleet runs after the run | A passed run starts the fleet again after the seed. After a restore, the run starts the restored fleet |
 
-A Swamp step that exits nonzero keeps no output. So a failed fleet phase writes why into the run's result file, and the Gateway shows it as `error.detail`. For the readiness wait, that is the Doctor body.
+A Swamp step that exits nonzero keeps no output. So a failed fleet phase or seed step writes why into the run's result file, and the Gateway shows it as `error.detail`. For the readiness wait, that is the Doctor body. For a seed, it is the [cause](#a-retake-keeps-the-seed), such as no free ID range.
+
+The release step that admits the refresh ends before the refresh does. So a failed refresh that a release admitted also writes the Activity row `instance.refresh_failed`: status failed, command `instances:refresh-nested-fleets`, with the Operation, its code and its detail. `activity:list` and the problem collector show it.
 
 The checkout moves under the running nested Gateway, with its old schema and processes. So the start of the fleet checks only that the containers run and the tunnel reaches the hub. The refresh migrates and restarts the nested Gateway. When the converge is due, it waits for the three agents and converges the Nodes. Only then does it wait for Doctor.
 
@@ -2126,6 +2136,20 @@ The database keeps these rules:
 
 The T3 server's record in the Conn layer names its Instance. Only the Instance's create flow registers that server; a Node that registers it itself is refused ([Registration](/reference/conn#registration)).
 
+## Isolated ID ranges
+
+Each container takes an isolated ID map from root's one subordinate range in `/etc/subuid` and `/etc/subgid`: 65,536 IDs for an Instance container, 101,000,000 for a nested-fleet container (`InstanceHostIntent::TaskPlaceIds`). A stopped container keeps its range. Incus places a new range in the first gap that fits, from 65,536 IDs past root's base, and a new snapshot needs one for a moment.
+
+On a host with 1,000,000,000 subordinate IDs, nine nested-fleet ranges fit. A small range can sit in a gap a destroyed copy left, so only the bases that Incus chose say which gaps are free.
+
+### The check at a task start
+
+A [task copy](/cli/task/start) start reads them. One bounded SSH call (at most about 4 s) runs a fixed reader on the default's Node. The reader reads root's range and the ID map keys of every container in every Incus project. The Gateway then places ranges as Incus 7.0.2 does (`IsolatedIdRanges`). A container that an open create admitted but has not made yet counts as held.
+
+The copy needs one range of its default's size. With the copy placed, a range must stay free for the next seed of this default and of every other default on the Node, so a small copy never fills the last nested-sized gap. Otherwise the start refuses with `tasks.copy_id_range_full`, before any record. A runtime whose container is not on the host counts only while its create is open. An unreadable host refuses with `tasks.copy_id_ranges_unreadable`: the Gateway cannot show a free range. `ORBIT_TASKS_COPIES_MAX` stays an upper bound for nested-fleet copies that an operator may lower.
+
+However, two starts within the same moment can still both pass. Then the later create or seed fails at Incus. The seed step keeps the old seed and names the cause, so the default stays copyable.
+
 ## Errors
 
 The container runtime adds these codes. The other codes of create and destroy stay as they are.
@@ -2153,7 +2177,10 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.fleet_seed_missing` | 502 | A failed refresh found no seed to restore, or the [inner volume](#the-inner-volume) lacks the seed's half. Nothing is restored, and the default stays as the run left it |
 | `instance.container_fleet_drift` | 502 | The inner fleet of a nested-fleet default differs from its rules where Orbit does not write, such as `raw.idmap`. The Operation's result `fleet_drift` names each difference. Nothing changed |
 | `instance.default_seed_moved` | 409 | A deployment of the default replaced the seed that a clone's create admitted, before the copy. The step's report names it; run the same command again |
-| `instance.seed_volume_snapshot_failed` | 502 | The snapshot of the [inner volume](#the-inner-volume) failed after the container's. Both halves of that name are deleted; see [The seed pair](#the-seed-pair) |
+| `instance.default_seed_missing` | 409 | The default has no seed snapshot at all. Deploy the default; its seed step takes one |
+| `instance.refresh_failed` | none | An Activity row, not an API error: a refresh that a release admitted failed. It names the Operation, its code and its detail; see [Refresh after a release](#refresh-after-a-release) |
+| `instance.container_seed_failed` | 502 | The seed step could not take the new snapshot. The error detail names why, such as `No free ID range for the new seed`. The old seed stays; see [A retake keeps the seed](#a-retake-keeps-the-seed) |
+| `instance.seed_volume_snapshot_failed` | 502 | The snapshot of the [inner volume](#the-inner-volume) failed after the container's. Both new halves are deleted and the old pair stays; see [The seed pair](#the-seed-pair) |
 | `instance.default_seed_incomplete` | 409 | The default's seed has no half on its [inner volume](#the-inner-volume), such as a seed taken before the pair existed. Deploy the default once |
 | `instance.default_seed_in_flight` | 409 | A clone of a default with an [inner volume](#the-inner-volume) while a deployment of the default is open. Create the clone when it ends |
 | `instance.container_process_inactive` | 502 | A required unit is inactive when a clone records its sessions. The Operation names the unit and records its states, exit status and restart count |
