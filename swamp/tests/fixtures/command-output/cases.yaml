@@ -837,6 +837,28 @@ contexts:
     fleet_intents_read:
       rc: 1
       stdout_lines: []
+  # `swamp access token list --json` on the nested Gateway: names and dates, no secret (shape read on 2026-11-14).
+  fleet-tokens-read:
+    fleet_tokens_read:
+      rc: 0
+      stdout: |-
+        [
+          {
+            "name": "serve-driver",
+            "principalId": "user:nckrtl",
+            "principalEmail": "user:nckrtl",
+            "createdAt": "2026-11-07T22:58:48.977Z",
+            "expiresAt": "2026-12-07T22:58:48.977Z"
+          }
+        ]
+  fleet-tokens-failed:
+    fleet_tokens_read:
+      rc: 1
+      stdout: ''
+  fleet-tokens-not-a-list:
+    fleet_tokens_read:
+      rc: 0
+      stdout: 'Error: the token store is locked'
   fleet-converged-malformed:
     fleet_recorded:
       code: 4f1c2a6b
@@ -1734,6 +1756,26 @@ cases:
   task: Work out whether the converge is due
   field: vars.fleet_converged_age
   context: fleet-converged-malformed
+  expected: null
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out whether the tokens are due
+  field: vars.fleet_token_list
+  context: fleet-tokens-read
+  expected:
+  - name: serve-driver
+    principalId: user:nckrtl
+    principalEmail: user:nckrtl
+    createdAt: '2026-11-07T22:58:48.977Z'
+    expiresAt: '2026-12-07T22:58:48.977Z'
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out whether the tokens are due
+  field: vars.fleet_token_list
+  context: fleet-tokens-failed
+  expected: null
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out whether the tokens are due
+  field: vars.fleet_token_list
+  context: fleet-tokens-not-a-list
   expected: null
 - file: tasks/instance-fleet-refresh.yml
   task: Reconcile the Swamp grants

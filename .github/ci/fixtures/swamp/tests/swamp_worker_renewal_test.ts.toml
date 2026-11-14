@@ -1,5 +1,5 @@
 order = 1110
-source_sha256 = "65bd44f85554d816b713604d53a71a0e1b0b6e51246b5a4757f0c71e962a7460"
+source_sha256 = "2e3a4a2b9c9a08e5c8e6c48e1c96c247f36f0b2478f9bb718e027690dc08c979"
 cases = [
   "worker renewal: two permanent peers accept before a drains and c stays running",
   "worker renewal: b renews next while fresh a and permanent c stay connected",
@@ -26,10 +26,11 @@ cases = [
   "worker renewal: old stop allowance prevents any drain",
   "worker renewal: peer approaching eight-hour cap during probe blocks drain",
   "worker renewal: same-process reconnect clears old enrolledAt lockout and renews on connection age",
-  "worker renewal: proof remint with missing c directory fails before any service stops",
   "worker renewal: proof remint with missing c enrollment fails before any service stops",
   "worker renewal: proof remint with missing c server fails before any service stops",
   "worker renewal: proof remint with missing c empty server fails before any service stops",
+  "worker renewal: proof remint preflight passes a c without directory, which the remint makes after serve stops",
+  "worker renewal: proof remint preflight passes a c without files, which the remint makes after serve stops",
   "worker renewal: proof remint preflight accepts c without exposing tokens",
   "worker renewal: proof remint preflight accepts c-1794127800 without exposing tokens",
   "worker renewal: recovers a failed unit past its restart limit before voluntary renewal",
@@ -40,6 +41,7 @@ cases = [
   "worker renewal: proof remint rejects c bare server before any service stops",
   "worker renewal: proof remint rejects c wrong server name before any service stops",
   "worker renewal: proof remint rejects c empty secret before any service stops",
+  "worker renewal: the worker set is made whole: only a worker without token files is minted and placed, with no secret in output",
 ]
 file = "swamp/tests/swamp_worker_renewal_test.ts"
 cost = 233
@@ -54,5 +56,6 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/swamp-worker-renewal.yml",
   "swamp/ansible/tasks/gateway-swamp-remint.yml",
+  "swamp/ansible/tasks/gateway-swamp-workers.yml",
   "swamp/ansible/tasks/gateway-swamp.yml",
 ]
