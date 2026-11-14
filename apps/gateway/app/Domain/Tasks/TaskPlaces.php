@@ -49,19 +49,39 @@ final readonly class TaskPlaces
         if ($operation->status !== OperationStatus::Waiting || $operation->target_type !== 'task_group' || ! isset($operation->input['capacity_request'])) {
             return null;
         }
-        $hosts = array_map(static fn (array $pair): int => $pair[0]->nodeId, $this->capacity->activeHosts());
-        $holders = array_values(array_filter(array_merge(...array_values($this->holders($hosts))),
-            static fn (TaskPlaceHolderData $holder): bool => $holder->pool === 'task'));
 
-        return new TaskPlaceWaitData($operation->id, TaskVmAdmission::queue()->where('id', '<=', $operation->id)->count(), $holders);
+        return new TaskPlaceWaitData($operation->id, TaskVmAdmission::queue()->where('id', '<=', $operation->id)->count(), $this->taskHolders());
     }
 
-    /** The place in the task queue of the group's waiting admission, or null when the group waits for none. */
-    public function waitOfGroup(Task $group): ?TaskPlaceWaitData
+    /**
+     * The place in the task queue of each group's first waiting admission, in a fixed number of queries whatever the number of groups.
+     *
+     * @param  list<int>  $groups
+     * @return array<int, TaskPlaceWaitData> group id => its wait, for the groups that wait
+     */
+    public function waitsOfGroups(array $groups): array
     {
-        $operation = TaskVmAdmission::queue()->where('target_id', $group->id)->first();
+        if ($groups === []) {
+            return [];
+        }
+        $waits = [];
+        $holders = null;
+        foreach (TaskVmAdmission::queue()->get(['id', 'target_id'])->values() as $index => $operation) {
+            if (in_array($operation->target_id, $groups, true) && ! isset($waits[$operation->target_id])) {
+                $waits[$operation->target_id] = new TaskPlaceWaitData($operation->id, $index + 1, $holders ??= $this->taskHolders());
+            }
+        }
 
-        return $operation instanceof Operation ? $this->waitOf($operation) : null;
+        return $waits;
+    }
+
+    /** @return list<TaskPlaceHolderData> the VMs that hold task places on the active hosts */
+    private function taskHolders(): array
+    {
+        $hosts = array_map(static fn (array $pair): int => $pair[0]->nodeId, $this->capacity->activeHosts());
+
+        return array_values(array_filter(array_merge(...array_values($this->holders($hosts))),
+            static fn (TaskPlaceHolderData $holder): bool => $holder->pool === 'task'));
     }
 
     /** @return list<TaskPlaceQueueData> */

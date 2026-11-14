@@ -1,5 +1,7 @@
-import { expect, it } from "vite-plus/test";
+import { afterEach, expect, it } from "vite-plus/test";
+import { setTransport } from "./client";
 import {
+    allTaskGroups,
     accumulatedLineChanges,
     checkDurationMs,
     formatRelativeTime,
@@ -230,4 +232,21 @@ it("counts an active group's duration forward from the response and keeps a fini
     // A clock read before the response never counts backwards, and an unfetched query adds nothing.
     expect(liveDurationMs(group("running", 90_000), fetchedAt, fetchedAt - 5_000)).toBe(90_000);
     expect(liveDurationMs(group("running", 90_000), 0, fetchedAt)).toBe(90_000);
+});
+
+afterEach(() => setTransport(null));
+
+it("reads every page of task groups at the largest page size", async () => {
+    const paths: string[] = [];
+    const group = (id: number) => ({ id, status: "backlog", subtasks: [] }) as unknown as TaskGroup;
+    setTransport(async (_method, path) => {
+        paths.push(path);
+
+        return path.endsWith("cursor=3")
+            ? { status: 200, payload: { data: [group(2)], meta: { next_cursor: null } } }
+            : { status: 200, payload: { data: [group(4), group(3)], meta: { next_cursor: "3" } } };
+    });
+
+    expect((await allTaskGroups()).map((found) => found.id)).toEqual([4, 3, 2]);
+    expect(paths).toEqual(["/api/v1/tasks?limit=100", "/api/v1/tasks?limit=100&cursor=3"]);
 });

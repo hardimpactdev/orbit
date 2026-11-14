@@ -27,7 +27,7 @@ final class TaskReviewAndMergeData extends Data
 
     public static function fromModel(Task $group): ?self
     {
-        $commits = $group->reviewedCommits()->get();
+        $commits = $group->reviewedCommits;
         $enabled = $group->reviewsBeforePush();
         if (! $enabled && $commits->isEmpty() && $group->pr_branch === null && $group->merge_status === null) {
             return null;

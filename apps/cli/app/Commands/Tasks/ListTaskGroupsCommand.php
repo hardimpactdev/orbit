@@ -19,10 +19,12 @@ final class ListTaskGroupsCommand extends TaskCommand
         {--parent= : Numeric parent Task ID}
         {--project= : Only groups of this numeric Project ID}
         {--status= : Only groups in this status}
+        {--limit= : Groups per page, 1 to 100 (default 20)}
+        {--cursor= : Read the page after the one that returned this cursor}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'List task groups.';
+    protected $description = 'List task groups, newest first.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -47,6 +49,21 @@ final class ListTaskGroupsCommand extends TaskCommand
             return $this->renderGatewayFailure('task.status_invalid', 'Status must be one of '.implode(', ', self::GROUP_STATUSES).'.');
         }
 
+        $limit = $this->option('limit');
+        $cursor = $this->option('cursor');
+
+        if ($limit !== null && (preg_match('/\A[1-9][0-9]*\z/', $limit) !== 1 || (int) $limit > 100)) {
+            return $this->renderGatewayFailure('input.invalid', '--limit must be a whole number from 1 to 100.', details: ['field' => 'limit']);
+        }
+
+        if ($cursor !== null && preg_match('/\A[1-9][0-9]*\z/', $cursor) !== 1) {
+            return $this->renderGatewayFailure('input.invalid', '--cursor must be the next_cursor of an earlier page.', details: ['field' => 'cursor']);
+        }
+
+        if ($parentId !== null && ($limit !== null || $cursor !== null)) {
+            return $this->renderGatewayFailure('input.invalid', '--limit and --cursor page task groups; --parent lists every subtask of one group.', details: ['field' => $limit !== null ? 'limit' : 'cursor']);
+        }
+
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
@@ -55,7 +72,7 @@ final class ListTaskGroupsCommand extends TaskCommand
 
         $groups = $this->sendWithProgress(
             $connector,
-            new ListTasksRequest($projectId, is_string($status) ? $status : null, $parentId),
+            new ListTasksRequest($projectId, is_string($status) ? $status : null, $parentId, $limit === null ? null : (int) $limit, $cursor),
             TaskGroupsResponse::class,
             ['List task groups', 'Loading task groups', 'Loaded task groups'],
         );
@@ -95,6 +112,11 @@ final class ListTaskGroupsCommand extends TaskCommand
             $rows,
             'No task groups.',
         ));
+
+        if ($groups->nextCursor !== null) {
+            $this->line("More task groups: --cursor={$groups->nextCursor}");
+        }
+
         $this->writeHumanMessage("Request ID: {$groups->requestId}");
 
         return self::SUCCESS;

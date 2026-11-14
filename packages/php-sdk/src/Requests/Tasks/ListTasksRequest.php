@@ -11,6 +11,7 @@ use Orbit\Sdk\Responses\Tasks\TaskGroupsResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
+/** Lists one page of task groups, newest first, or the subtasks of one parent. Subtask rows carry no completion summary, fixup problem or check output. */
 final class ListTasksRequest extends GatewayRequest
 {
     #[\Override]
@@ -20,6 +21,8 @@ final class ListTasksRequest extends GatewayRequest
         private readonly ?int $projectId = null,
         private readonly ?string $status = null,
         private readonly ?int $parentId = null,
+        private readonly ?int $limit = null,
+        private readonly ?string $cursor = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -31,7 +34,7 @@ final class ListTasksRequest extends GatewayRequest
     protected function defaultQuery(): array
     {
         return array_filter(
-            ['project_id' => $this->projectId, 'status' => $this->status, 'parent_id' => $this->parentId],
+            ['project_id' => $this->projectId, 'status' => $this->status, 'parent_id' => $this->parentId, 'limit' => $this->limit, 'cursor' => $this->cursor],
             static fn (int|string|null $value): bool => $value !== null,
         );
     }
@@ -45,6 +48,6 @@ final class ListTasksRequest extends GatewayRequest
             $taskGroups[] = ($entry['parent_id'] ?? null) === null ? TaskGroupResponse::fromGatewayData($entry, $requestId) : SubtaskResponse::fromGatewayData($entry, $requestId);
         }
 
-        return new TaskGroupsResponse($taskGroups, $requestId);
+        return new TaskGroupsResponse($taskGroups, $requestId, is_string($response->json('meta.next_cursor')) ? $response->json('meta.next_cursor') : null);
     }
 }

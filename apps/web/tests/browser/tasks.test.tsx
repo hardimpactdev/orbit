@@ -118,7 +118,7 @@ it("groups every status, opens details, and keeps unsuccessful outcomes visible"
     const groups = statuses.map((status, index) => group(index + 1, status));
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/tasks" ? groups : groups[0] },
+        payload: { data: path === "/api/v1/tasks?limit=100" ? groups : groups[0] },
     }));
     await expect
         .element(pane("Todo").getByRole("link", { name: "Open task: Feature 1", exact: true }))
@@ -151,7 +151,7 @@ it.each(["running", "stopped", "destroyed", null, undefined] as const)(
         const task = { ...group(1, "waiting_for_review"), vm_power: power };
         await openTasks(async (_, path) => ({
             status: 200,
-            payload: { data: path === "/api/v1/tasks" ? [task] : task },
+            payload: { data: path === "/api/v1/tasks?limit=100" ? [task] : task },
         }));
         await pane("In progress").getByRole("link").click();
         await expect
@@ -196,7 +196,7 @@ it("distinguishes direction requests from failures on task and subtask cards", a
     const app = await openTasks(async (_, path) => ({
         status: 200,
         payload: {
-            data: path === "/api/v1/tasks" ? [direction, failure, resolved] : direction,
+            data: path === "/api/v1/tasks?limit=100" ? [direction, failure, resolved] : direction,
         },
     }));
     const card = (title: string) =>
@@ -227,7 +227,7 @@ it("leads a direction request with its question and shows question and escalatio
     task.subtasks[0] = { ...task.subtasks[0]!, questions: 3, escalations: 1 };
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/tasks" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks?limit=100" ? [task] : task },
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
     await expect.element(pane("Needs your direction")).toMatchTextContent(task.assistance_question);
@@ -267,7 +267,7 @@ it.each(["failure", "direction"] as const)(
         };
         const app = await openTasks(async (_, path) => ({
             status: 200,
-            payload: { data: path === "/api/v1/tasks" ? [task] : task },
+            payload: { data: path === "/api/v1/tasks?limit=100" ? [task] : task },
         }));
         await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
         await expect.element(pane("Task")).toBeVisible();
@@ -330,7 +330,7 @@ it("hides empty subtask lanes, shares their width, and explains an empty board",
     ];
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/tasks" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks?limit=100" ? [task] : task },
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
     await expect.element(pane("In progress")).toMatchTextContent("First step");
@@ -394,7 +394,7 @@ it("shows completed subtask counts on in-progress cards instead of a running lab
     ];
     await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/tasks" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks?limit=100" ? [task] : task },
     }));
     await expect.element(pane("In progress")).toMatchTextContent("2/5");
     await expect.element(pane("In progress")).not.toMatchTextContent("Running");
@@ -407,7 +407,7 @@ it("lets the keyboard activate a focused card", async () => {
     await openTasks(async (_, path) => ({
         status: 200,
         payload: {
-            data: path === "/api/v1/tasks" ? [group(1, "running")] : group(1, "running"),
+            data: path === "/api/v1/tasks?limit=100" ? [group(1, "running")] : group(1, "running"),
         },
     }));
     await expect.element(pane("In progress").getByRole("link")).toBeVisible();
@@ -439,7 +439,7 @@ it("groups subtasks by status and keeps their sequence within columns", async ()
         .reverse();
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/tasks" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks?limit=100" ? [task] : task },
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
     await expect.element(pane("Todo")).toMatchTextContent("Step 2");
@@ -473,7 +473,7 @@ it("shows card identity, separate line changes and elapsed time, with tokens in 
     ];
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/tasks" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks?limit=100" ? [task] : task },
     }));
     await expect.element(pane("In progress")).toMatchTextContent("EXA-1");
     await expect.element(pane("In progress")).toMatchTextContent("+23.32K");
@@ -506,7 +506,7 @@ it("opens a subtask with its own detail and returns to the parent board", async 
     const task = group(1, "running");
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/tasks" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks?limit=100" ? [task] : task },
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
     await pane("Todo").getByRole("link", { name: "Open subtask: First step" }).click();
@@ -531,7 +531,7 @@ it("links the group's pull request in the task properties", async () => {
     };
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/tasks" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks?limit=100" ? [task] : task },
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
 
@@ -546,7 +546,7 @@ it("loads a subtask URL directly and refuses an unknown subtask", async () => {
     const task = group(1, "running");
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/tasks" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks?limit=100" ? [task] : task },
     }));
     await app.router.navigate({
         to: "/tasks/$id/subtasks/$subtaskId",
@@ -578,7 +578,7 @@ it("shows Instance overview and an Instance-scoped Tasks board with keyboard tab
     const unassigned = { ...group(82, "todo"), title: "Unassigned task" };
     await openApp("/instances/1", {
         wrapTransport: (inner) => (method, path, body) =>
-            path === "/api/v1/tasks"
+            path === "/api/v1/tasks?limit=100"
                 ? Promise.resolve({ status: 200, payload: { data: [owned, other, unassigned] } })
                 : inner(method, path, body),
     });
@@ -632,7 +632,9 @@ it("hides the Instance Tasks tab and skips task queries when the extension start
         .toHaveAttribute("aria-selected", "true");
     await expect.element(page.getByRole("tab", { name: /^Tasks/ })).not.toBeInTheDocument();
     expect(queryClient.getQueryData(["tasks"])).toBeUndefined();
-    expect(app.gateway.requests.some((request) => request.path === "/api/v1/tasks")).toBe(false);
+    expect(app.gateway.requests.some((request) => request.path === "/api/v1/tasks?limit=100")).toBe(
+        false,
+    );
 });
 
 it("returns an Instance to Overview when tasks are disabled with task data cached", async () => {
@@ -645,7 +647,7 @@ it("returns an Instance to Overview when tasks are disabled with task data cache
     let taskRequests = 0;
     const app = await openApp("/instances/1", {
         wrapTransport: (inner) => (method, path, body) => {
-            if (path === "/api/v1/tasks") {
+            if (path === "/api/v1/tasks?limit=100") {
                 taskRequests++;
 
                 return Promise.resolve({ status: 200, payload: { data: [owned] } });
@@ -699,5 +701,7 @@ it("does not load cached Tasks data on a direct route when the extension is disa
         .element(page.getByText("The tasks extension is disabled on this Gateway."))
         .toBeVisible();
     expect(queryClient.getQueryData(["tasks"])).toBeUndefined();
-    expect(app.gateway.requests.some((request) => request.path === "/api/v1/tasks")).toBe(false);
+    expect(app.gateway.requests.some((request) => request.path === "/api/v1/tasks?limit=100")).toBe(
+        false,
+    );
 });

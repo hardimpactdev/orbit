@@ -177,7 +177,9 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
             'preview' => $this->preview,
             'current_recipe' => $this->currentRecipe,
             'review' => $this->review,
-            ...($this->publication === null ? [] : ['pr_mode' => $this->prMode, 'pr_mode_source' => $this->prModeSource, 'publication' => $this->publication->toArray()]),
+            // Only a task copy's group has a mode; a list row carries the mode without the show-only publication.
+            ...($this->publication === null && $this->prModeSource === null ? [] : ['pr_mode' => $this->prMode, 'pr_mode_source' => $this->prModeSource]),
+            ...($this->publication === null ? [] : ['publication' => $this->publication->toArray()]),
             'last_activity_at' => $this->lastActivityAt,
             'preview_url' => $this->previewUrl,
             'capacity_wait' => $this->capacityWait?->toArray(),
