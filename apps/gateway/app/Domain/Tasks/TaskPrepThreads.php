@@ -34,7 +34,7 @@ final readonly class TaskPrepThreads
 
     public static function create(Task $group, Task $subtask, Instance $instance, string $role): AgentThread
     {
-        $model = PiModel::onlyProvider($role === 'implementer' ? $group->implementer_model : $group->reviewer_model, 'orbit-task-vm');
+        $model = PiModel::onlyProvider(TaskAgentDefaults::vmModel($group, $role), 'orbit-task-vm');
 
         return AgentThread::query()->create([
             'task_group_id' => $group->id, 'task_id' => $subtask->id, 'node_id' => $instance->node_id,

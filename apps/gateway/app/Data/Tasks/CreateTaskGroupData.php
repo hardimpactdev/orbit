@@ -16,6 +16,7 @@ final class CreateTaskGroupData extends Data
 {
     /**
      * @param  list<TaskInputData>  $tasks
+     * @param  array<string, string|null>  $agents  the copy turn agent values the group names, keyed by column (TaskCopyAgent)
      */
     public function __construct(
         public int $projectId,
@@ -27,5 +28,6 @@ final class CreateTaskGroupData extends Data
         public bool $currentRecipe = false,
         public TaskOrchestration $orchestration = TaskOrchestration::External,
         public TaskReviewMode $review = TaskReviewMode::Manual,
+        public array $agents = [],
     ) {}
 }

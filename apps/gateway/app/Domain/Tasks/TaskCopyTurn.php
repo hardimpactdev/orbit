@@ -82,12 +82,12 @@ final readonly class TaskCopyTurn
         }
         $provider = null;
         if ($thread === null) {
-            [$model, $effort] = self::modelAndEffort($role);
-            $provider = InstanceContainer::claudeInstance($effort);
+            $agent = TaskCopyAgent::forNewThread($group, $role);
+            $provider = $agent['instance'];
             $thread = AgentThread::query()->create([
                 'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $instance->node_id,
                 'driver' => self::Driver, 'runtime_key' => $runtime, 'external_id' => (string) Str::uuid(),
-                'role' => $role->value, 'model' => $model, 'effort' => $effort,
+                'role' => $role->value, 'model' => $agent['model'], 'effort' => $agent['effort'], 'provider_instance' => $provider,
             ]);
         }
         ($role === TaskThreadRole::Implementer ? $task : $group)->update([$role->value.'_agent_thread_id' => $thread->id]);
@@ -128,26 +128,5 @@ final readonly class TaskCopyTurn
             throw new ResourceOperationException('tasks.copy_turn_unended', 'An earlier turn may still run in the task copy or left its checkout unrestored. Run task:cancel to end it with the copy.', 409,
                 details: ['operation_id' => $unended->id]);
         }
-    }
-
-    /**
-     * The model and effort of a new copy thread of the role: the model from `orbit.tasks.copy_turn_models`, the effort from the role's
-     * effort setting, which a task VM thread reads too. The effort must be one the copy's T3 has a provider instance for.
-     *
-     * @return array{string, string}
-     */
-    public static function modelAndEffort(TaskThreadRole $role): array
-    {
-        $model = config()->string('orbit.tasks.copy_turn_models.'.$role->value);
-        if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\z/D', $model) !== 1) {
-            throw new ResourceOperationException('tasks.copy_turn_model_invalid', 'ORBIT_TASKS_COPY_'.strtoupper($role->value).'_MODEL must be a model name.', 503);
-        }
-        $effort = config('orbit.tasks.'.$role->value.'_effort');
-        if (! in_array($effort, InstanceContainer::ClaudeEfforts, true)) {
-            throw new ResourceOperationException('tasks.copy_turn_effort_invalid', 'ORBIT_TASKS_'.strtoupper($role->value).'_EFFORT must be one of '
-                .implode(', ', InstanceContainer::ClaudeEfforts).' for a turn in a task copy.', 503);
-        }
-
-        return [$model, $effort];
     }
 }

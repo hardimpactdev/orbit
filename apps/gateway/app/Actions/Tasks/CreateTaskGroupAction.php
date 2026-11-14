@@ -10,7 +10,6 @@ use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
-use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
@@ -69,8 +68,7 @@ final readonly class CreateTaskGroupAction
             'status' => $data->status,
             'preview' => $data->preview,
             'current_recipe' => $data->currentRecipe,
-            'implementer_model' => $this->model('implementer_model', TaskAgentDefaults::ImplementerModel),
-            'reviewer_model' => $this->model('reviewer_model', TaskAgentDefaults::ReviewerModel),
+            ...$data->agents,
         ]);
 
         foreach ($data->tasks as $index => $task) {
@@ -86,13 +84,6 @@ final readonly class CreateTaskGroupAction
         }
 
         return $group->refresh()->load(['project', 'tasks', 'taskable']);
-    }
-
-    private function model(string $key, string $default): string
-    {
-        $model = config('orbit.tasks.'.$key);
-
-        return is_string($model) && $model !== '' ? $model : $default;
     }
 
     private function configuredDriver(string $key): string

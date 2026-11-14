@@ -7,7 +7,6 @@ namespace App\Models;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskableType;
-use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskDeliverable;
@@ -690,8 +689,6 @@ final class Task extends Model
                 'current_recipe' => false,
                 'review_mode' => TaskReviewMode::Manual->value,
                 'assistance_requested' => false,
-                'implementer_model' => TaskAgentDefaults::ImplementerModel,
-                'reviewer_model' => TaskAgentDefaults::ReviewerModel,
             ]);
 
             return;

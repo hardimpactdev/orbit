@@ -97,17 +97,25 @@ return [
         'review_request_logins' => (string) env('ORBIT_TASKS_REVIEW_REQUEST_LOGINS', ''),
         'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', 'pi'),
         'reviewer_agent_driver' => env('ORBIT_TASKS_REVIEWER_AGENT_DRIVER', 'pi'),
-        // Models for new groups. Unset keeps TaskAgentDefaults.
+        // The Pi models of a new task VM thread whose group names none. Unset keeps TaskAgentDefaults.
         'implementer_model' => env('ORBIT_TASKS_IMPLEMENTER_MODEL'),
         'reviewer_model' => env('ORBIT_TASKS_REVIEWER_MODEL'),
-        // Effort for new threads, on a task VM and in a task copy. Existing threads keep their stored value.
+        // Effort for new task VM threads. Existing threads keep their stored value.
         'implementer_effort' => $implementerEffort === null || $implementerEffort === '' ? 'medium' : $implementerEffort,
         'reviewer_effort' => $reviewerEffort === null || $reviewerEffort === '' ? 'high' : $reviewerEffort,
-        // The Claude model of a new thread in a task copy, per role. A copy reaches Claude Code only. The role's effort above picks
-        // the T3 provider instance the thread starts on.
-        'copy_turn_models' => [
-            'implementer' => (string) env('ORBIT_TASKS_COPY_IMPLEMENTER_MODEL', 'claude-opus-5-5'),
-            'reviewer' => (string) env('ORBIT_TASKS_COPY_REVIEWER_MODEL', 'claude-opus-5-5'),
+        // The Gateway's agent of a new thread in a task copy, per role: the last fallback after the group and the Project
+        // (TaskCopyAgent). The provider and the effort pick the copy's T3 provider instance.
+        'copy_agents' => [
+            'implementer' => [
+                'provider' => (string) env('ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER', 'claude'),
+                'model' => (string) env('ORBIT_TASKS_COPY_IMPLEMENTER_MODEL', 'claude-opus-5-5'),
+                'effort' => (string) env('ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT', 'medium'),
+            ],
+            'reviewer' => [
+                'provider' => (string) env('ORBIT_TASKS_COPY_REVIEWER_PROVIDER', 'claude'),
+                'model' => (string) env('ORBIT_TASKS_COPY_REVIEWER_MODEL', 'claude-opus-5-5'),
+                'effort' => (string) env('ORBIT_TASKS_COPY_REVIEWER_EFFORT', 'high'),
+            ],
         ],
         // A group reserved longer than this returns to todo on the next tick. Keep it well above the slowest workspace provision.
         'reserved_timeout_seconds' => max(60, (int) env('ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS', 3600)),
