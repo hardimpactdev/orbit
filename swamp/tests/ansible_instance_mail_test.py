@@ -77,7 +77,7 @@ class MailPhase(unittest.TestCase):
         )
 
         self.sockets = {}
-        self.disabled = set()
+        self.unanswered = False
         self.services = {}
         self.loaded = {}
         self.calls = []
@@ -91,20 +91,22 @@ class MailPhase(unittest.TestCase):
         )
         self.before = (workspace / ".env").read_bytes()
 
+    def link(self, port):
+        return self.guest / f"etc/systemd/system/sockets.target.wants/orbit-mail-{port}.socket"
+
     def guest_run(self, argv, content=None):
         self.calls.append(argv)
         if argv[:2] == ["systemctl", "show"]:
+            # A copy right after `incus start`: its manager does not answer yet, and `systemctl show` prints nothing.
+            if self.unanswered:
+                return ""
             return "\n\n".join(
                 "Id=orbit-mail-"
                 + str(p)
                 + ".socket\nActiveState="
                 + ("active" if self.sockets.get(p) else "inactive")
                 + "\nUnitFileState="
-                + (
-                    "enabled"
-                    if self.sockets.get(p) and p not in self.disabled
-                    else "disabled"
-                )
+                + ("enabled" if self.link(p).is_symlink() else "disabled")
                 + (
                     "\nListen=127.0.0.1:" + str(p) + " (Stream)"
                     if self.sockets.get(p)
@@ -120,6 +122,8 @@ class MailPhase(unittest.TestCase):
                 for p in MAIL.PORTS
                 if self.sockets.get(p)
             )
+        if argv[0] == "systemctl" and self.unanswered:
+            raise RuntimeError("fixture: systemd does not answer")
         if argv == ["systemctl", "daemon-reload"]:
             if self.failure == "reload":
                 raise RuntimeError("fixture reload failed")
@@ -133,7 +137,14 @@ class MailPhase(unittest.TestCase):
             for name in argv[4:]:
                 port = int(name.split("-")[-1].split(".")[0])
                 self.sockets[port] = True
-                self.disabled.discard(port)
+                self.link(port).parent.mkdir(parents=True, exist_ok=True)
+                self.link(port).unlink(missing_ok=True)
+                self.link(port).symlink_to("/etc/systemd/system/" + name)
+        elif argv[:3] == ["systemctl", "start", "--"]:
+            for name in argv[3:]:
+                port = int(name.split("-")[-1].split(".")[0])
+                self.assertTrue(self.link(port).is_symlink())
+                self.sockets[port] = True
         else:
             raise AssertionError(argv)
         return ""
@@ -207,12 +218,13 @@ class MailPhase(unittest.TestCase):
                 MAIL.guest(action, json.loads(content), self.guest, self.guest_run)
             )
 
-    def apply(self):
+    def apply(self, started=False):
         result = MAIL.apply(
             self.plan,
             {"mail": "shipped mail source", "bridge": "shipped bridge source"},
             self.node_run,
             self.root / "state",
+            started,
         )
         self.assertEqual((self.guest / "srv/workspace/.env").read_bytes(), self.before)
         return result
@@ -235,7 +247,8 @@ class MailPhase(unittest.TestCase):
             ],
         )
         self.assertEqual(self.sockets, {1025: True, 2525: True})
-        self.assertEqual(len(list((self.guest / "etc/systemd/system").iterdir())), 4)
+        units = [p for p in (self.guest / "etc/systemd/system").iterdir() if p.is_file()]
+        self.assertEqual(len(units), 4)
         network = next(
             i
             for i, c in enumerate(self.calls)
@@ -243,7 +256,7 @@ class MailPhase(unittest.TestCase):
         )
         reload = self.calls.index(["systemctl", "daemon-reload"])
         self.assertLess(network, reload)
-        for path in (self.guest / "etc/systemd/system").iterdir():
+        for path in units:
             self.assertEqual(path.stat().st_mode & 0o777, 0o644)
         self.assertFalse(any("php" in c or "/srv/workspace" in c for c in self.calls))
         record = next((self.root / "bridge/endpoints").glob("*.json"))
@@ -403,14 +416,61 @@ class MailPhase(unittest.TestCase):
         self.assertEqual(self.apply(), {"status": "applied"})
         self.assertEqual(self.sockets, {1025: True, 2525: True})
 
+    def test_a_clone_of_a_seed_with_the_units_reads_unchanged_at_boot(self):
+        # A clone's mail part runs right after `incus start` (instance_clone.py, container phase). The seed holds the units and their
+        # links. While the copy's systemd does not answer yet, the boot starts the linked sockets: no install, no guest write.
+        self.apply()
+        self.sockets.clear()
+        self.unanswered = True
+        self.plan["bridge_admitted_at"] += 1000
+        self.calls.clear()
+        self.assertEqual(self.apply(started=True), {"status": "unchanged"})
+        self.assertEqual(sum(c[:2] == ["incus", "exec"] for c in self.calls), 1)
+        self.assertFalse(any(c[0] == "systemctl" and c[1] != "show" for c in self.calls))
+        # systemd answers, but the boot has not reached sockets.target: `enable` would reload systemd in the middle of the boot.
+        self.unanswered = False
+        self.plan["bridge_admitted_at"] += 1000
+        self.calls.clear()
+        self.assertEqual(self.apply(started=True), {"status": "unchanged"})
+        self.assertEqual(self.sockets, {1025: True, 2525: True})
+        self.assertIn(["systemctl", "start", "--", "orbit-mail-1025.socket", "orbit-mail-2525.socket"], self.calls)
+        self.assertFalse(any(c[:2] in (["systemctl", "enable"], ["systemctl", "daemon-reload"]) for c in self.calls))
+        # A relative link is the same enablement.
+        self.link(1025).unlink()
+        self.link(1025).symlink_to("../orbit-mail-1025.socket")
+        self.calls.clear()
+        self.assertEqual(self.apply(), {"status": "unchanged"})
+        self.assertFalse(any(c[:2] == ["systemctl", "enable"] for c in self.calls))
+        # A silent systemd is a boot only for a copy this run started.
+        self.sockets.clear()
+        self.unanswered = True
+        # A running container whose systemd does not answer: the install runs and fails, as it did before.
+        with self.assertRaises(RuntimeError):
+            self.apply()
+        # A clone of a seed whose Node endpoint changed: the units differ, so the install runs after the network part. By then systemd
+        # answers but the boot has not reached sockets.target yet: the install reloads, restarts nothing idle and starts the sockets.
+        self.endpoint["port"] = 1026
+        for unit in self.units:
+            unit["content"] = unit["content"].replace("10.253.0.1:1025", "10.253.0.1:1026")
+        inspect = MAIL.guest
+
+        def answer_after_inspect(action, plan, root, run):
+            result = inspect(action, plan, root, run)
+            self.unanswered = False
+            return result
+
+        with patch.object(MAIL, "guest", side_effect=answer_after_inspect):
+            self.unanswered = True
+            self.assertEqual(self.apply(started=True), {"status": "applied"})
+        self.assertEqual(self.sockets, {1025: True, 2525: True})
+        self.assertIn("10.253.0.1:1026", (self.guest / "etc/systemd/system/orbit-mail-1025.service").read_text())
+
     def test_active_owned_socket_with_missing_enable_link_is_repaired(self):
         self.assertEqual(self.apply(), {"status": "applied"})
-        self.disabled.add(
-            1025
-        )  # disable without stopping: the listener is still Orbit's.
+        self.link(1025).unlink()  # disable without stopping: the listener is still Orbit's.
         self.calls.clear()
         self.assertEqual(self.apply(), {"status": "applied"})
-        self.assertEqual(self.disabled, set())
+        self.assertTrue(self.link(1025).is_symlink())
         self.assertEqual(self.sockets, {1025: True, 2525: True})
         self.assertIn(
             ["systemctl", "enable", "--now", "--", "orbit-mail-1025.socket"], self.calls
@@ -473,6 +533,7 @@ class MailPhase(unittest.TestCase):
             plan = self.plan | {
                 "changed_units": [],
                 "activation_units": [],
+                "linked": {"orbit-mail-1025.socket": True, "orbit-mail-2525.socket": True},
                 "sockets": {
                     f"orbit-mail-{p}.socket": {
                         "ActiveState": "active",
