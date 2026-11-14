@@ -31,8 +31,10 @@ A task that owns a [task copy](/reference/tasks#task-copy) runs its turns in it.
 - The role's next turn answers the question. Its prompt quotes the questions first, then your prompt as the answer. A message to the thread from a T3 client answers it too.
 - A question Orbit could not read, or a run that Orbit could not stop, fails the Operation and holds the group like a turn that may still run.
 - The turn ends after one hour with `tasks.turn_timeout`. Orbit does not stop that run, so it may go on in the copy, and its work stays there.
-- The next turn settles an earlier turn that may still run. Its phase first reads T3 in the copy: the earlier turn is settled when T3 shows its thread with no active run and, for a reviewer's turn, the checkout is clean on the task branch. Then the turn runs. While the earlier run goes on, the turn launches nothing and fails with `tasks.copy_turn_unended`.
-- A check, a publish or a proof of the copy cannot read T3. While an earlier turn is not settled, it answers `tasks.copy_turn_unended`: run the next turn to settle it, or `task:cancel` to end it with the copy.
+- The next turn settles an earlier turn that may still run. Its phase first reads T3 in the copy: the earlier turn is settled when T3 shows its thread with no active run. For a reviewer's turn, the phase then restores the checkout and requires it clean on the task branch at the commit it had. Then the turn runs. While the earlier run goes on, the turn touches nothing, launches nothing and fails with `tasks.copy_turn_unended`.
+- A check, a publish or a proof of the copy cannot read T3. While an earlier turn is not settled, it answers `tasks.copy_turn_unended`. Only a turn settles it: run the role's next turn once the earlier run has ended.
+- When no turn can run, `task:cancel` is the only way out, and it ends the copy with its work. That happens when the subtask is completed, or when the only turn left is a reviewer turn that needs a check first.
+- Orbit stops a run that asks only while it waits for exactly the questions Orbit stored. A run that someone answered meanwhile, or that now asks for an approval or something else, goes on, and the turn fails with `tasks.copy_question_unstopped` or `tasks.copy_question_unread`.
 - The transcript holds message text only, and the thread has no token metrics.
 
 
