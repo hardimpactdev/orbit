@@ -21,7 +21,7 @@ orbit project:update <project> [--name=NAME] [--type=TYPE] [--slug=SLUG] [--repo
 | `--task-check=COMMAND` | New command that task baselines and handoffs run. A type change does not change it. |
 | `--clear-task-check` | Remove the task check so tasks run no check command. Combining it with `--task-check` fails with `project.task_check_conflict`. |
 | `--task-workspace-routed=true\|false` | Change routing for future task workspaces. Invalid values return `project.task_workspace_routed_invalid` before a request. Existing workspaces keep their mode. |
-| `--task-pr-mode=MODE` | `review_before_pr` or `pr_when_done`: the [mode](/reference/tasks#task-group-modes) of the Project's task groups that set none of their own. Applies when Orbit next reads a group's mode; a group whose work was done before the change is not published by itself. Any other value returns `tasks.pr_mode_invalid`. |
+| `--task-pr-mode=MODE` | `review_before_pr` or `pr_when_done`: the [mode](/reference/tasks#task-group-modes) of the Project's task groups that set none of their own. Applies when Orbit next reads a group's mode; a group whose work was done before the change is not published by itself. Any other value returns `project.task_pr_mode_invalid`. |
 | `--clear-task-pr-mode` | Remove the Project's mode, so its task groups use the Gateway's default. Combining it with `--task-pr-mode` fails with `project.task_pr_mode_conflict`. |
 | `--merge-check=NAME` | The check that must pass on a head before Orbit merges it, such as `Required checks`. |
 | `--clear-merge-check` | Remove the merge check. Combining it with `--merge-check` fails with `project.merge_check_conflict`. The Gateway refuses it while the flow is on. |

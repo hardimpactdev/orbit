@@ -24,7 +24,7 @@ orbit task:create [title] [--project=ID | --parent=ID] [--deliverables=FILE] [--
 | `--reviewer-provider=NAME` | Project's, else Gateway's | The reviewer's provider in a task copy. |
 | `--reviewer-model=MODEL` | Project's, else Gateway's | The reviewer's model in a task copy. |
 | `--reviewer-effort=LEVEL` | Project's, else Gateway's | The reviewer's effort in a task copy. |
-| `--pr-mode=MODE` | the Project's, else the Gateway's | What Orbit does once the work of a task in a task copy is done. `review_before_pr`: it waits for `task:publish <task>`. `pr_when_done`: it opens a ready pull request by itself. Any other value returns `tasks.pr_mode_invalid`. `task:show` returns the mode as `pr_mode` with its source. See [Task group modes](/reference/tasks#task-group-modes). |
+| `--pr-mode=MODE` | the Project's, else the Gateway's | What Orbit does once the work of a task in a task copy is done. `review_before_pr`: it waits for `task:publish <task>`. `pr_when_done`: it opens a ready pull request by itself. Any other value returns `task.pr_mode_invalid`. `task:show` returns the mode as `pr_mode` with its source. See [Task group modes](/reference/tasks#task-group-modes). |
 | `--current-recipe` | off | The task needs the current machine recipe. Its VM waits for the current recipe image and never starts from a fallback image. See [Image fallback](/reference/compute-drivers#image-fallback). |
 
 ```bash
@@ -43,7 +43,7 @@ The CLI does not prompt for the status, the subtasks, or the notification. After
 | `task.subtasks_invalid` | The CLI cannot read the subtasks file, or its content is not an array of at most 50 entries with a valid title and brief and, when present, a `deliverables` array. |
 | `tasks.no_subtasks` | `--status=todo` without subtasks. |
 | `tasks.subtask_deliverables_missing` | `--status=todo` while a subtask has no deliverables. |
-| `tasks.pr_mode_invalid` | `--pr-mode` is not `review_before_pr` or `pr_when_done`. |
+| `task.pr_mode_invalid` | `--pr-mode` is not `review_before_pr` or `pr_when_done`. The API answers `validation.failed` on `pr_mode`. |
 | `tasks.agent_driver_unavailable` | The Gateway's configured agent driver is unknown. The Gateway stores no task. |
 | `task.agent_invalid` | An agent option is empty. |
 | `validation.failed` | A provider or effort the task copy does not offer, or a model that is no model name. |

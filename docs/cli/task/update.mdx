@@ -42,7 +42,7 @@ In a terminal, the task list includes active tasks for a status update. Title an
 | `tasks.not_in_backlog` | A title or brief change outside `backlog`. |
 | `tasks.no_subtasks` | A move to `todo` for a task without subtasks. |
 | `tasks.subtask_deliverables_missing` | A move to `todo` while a subtask has no deliverables. The error details name the subtasks. |
-| `tasks.pr_mode_invalid` | `--pr-mode` is not `review_before_pr` or `pr_when_done`. |
+| `task.pr_mode_invalid` | `--pr-mode` is not `review_before_pr` or `pr_when_done`. The API answers `validation.failed` on `pr_mode`. |
 | `tasks.pr_mode_locked` | The group has a pull request, a publish of it runs, or it has ended. |
 | `tasks.already_claimed` | The scheduler claimed the task before the status change. |
 | `tasks.copy_turn_unended` | A move of a task copy's subtask to `completed` while a turn of its group still runs. Complete it once the turn has ended. |
