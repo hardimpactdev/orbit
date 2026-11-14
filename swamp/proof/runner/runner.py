@@ -308,10 +308,17 @@ def command_batch(args):
 
 
 def record_fingerprint(fleet, directory, batch):
-    """The fleet as the batch finds it, before its setup: `fingerprint.json` in the batch's evidence, and one JSON line after the setup line."""
-    mark = fleet_module.fingerprint(fleet)
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / 'fingerprint.json').write_text(json.dumps({'batch': batch, 'at': round(time.time(), 1), **mark}) + '\n')
+    """The fleet as the batch finds it, before its setup: `fingerprint.json` in the batch's evidence, and one JSON line after the setup line.
+    Evidence, never a verdict: a read or a write that fails is named in `error`."""
+    try:
+        mark = fleet_module.fingerprint(fleet)
+    except Exception as error:  # evidence only: nothing here may stop the batch
+        mark = {'error': f'fingerprint: {type(error).__name__}'}
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / 'fingerprint.json').write_text(json.dumps({'batch': batch, 'at': round(time.time(), 1), **mark}) + '\n')
+    except Exception as error:  # evidence only
+        mark = {**mark, 'error': '; '.join(filter(None, [mark.get('error'), f'fingerprint.json: {type(error).__name__}']))}
     return mark
 
 

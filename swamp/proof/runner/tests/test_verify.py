@@ -122,6 +122,48 @@ class SetupTest(unittest.TestCase):
         self.assertNotIn('nodes', mark)
         self.assertIn('counts: exit 1, Could not open input file', mark['error'])
 
+    def test_a_fingerprint_read_that_raises_or_a_write_that_fails_never_stops_the_batch(self):
+        fake = FakeFleet()
+        def broken(node, argv, timeout=60):
+            raise OSError('incus is gone')
+        fake.incus_exec = broken
+        with patch.object(fleet_module, 'prepare', return_value=fake):
+            code, lines = self.setup_batch('fresh-fleet')
+        self.assertEqual((code, json.loads(lines[0])['setup']), (0, 'ok'))
+        self.assertEqual(json.loads(lines[1])['fingerprint'], {'doctor_healthy': True, 'error': 'counts: OSError'})
+        # The evidence directory cannot hold the file: the line still comes, and names the write.
+        with patch.object(fleet_module, 'prepare', return_value=FakeFleet()), \
+                patch.object(Path, 'write_text', side_effect=OSError('read-only file system')):
+            code, lines = self.setup_batch('fresh-fleet')
+        self.assertEqual((code, json.loads(lines[0])['setup']), (0, 'ok'))
+        self.assertEqual(json.loads(lines[1])['fingerprint']['error'], 'fingerprint.json: OSError')
+        # Anything the fingerprint itself raises is named too.
+        with patch.object(fleet_module, 'prepare', return_value=FakeFleet()), patch.object(fleet_module, 'fingerprint', side_effect=OSError('x')):
+            code, lines = self.setup_batch('fresh-fleet')
+        self.assertEqual((code, json.loads(lines[1])['fingerprint']), (0, {'error': 'fingerprint: OSError'}))
+
+    def test_the_fingerprint_reads_take_60_seconds_at_most_in_total(self):
+        fake = FakeFleet()
+        given = []
+        real_cli = fake.cli
+        fake.cli = lambda args, timeout=240, **rest: given.append(('doctor', timeout)) or real_cli(args, timeout, **rest)
+        real_exec = fake.incus_exec
+        fake.incus_exec = lambda node, argv, timeout=60: given.append(('counts', timeout)) or real_exec(node, argv, timeout)
+        clock = [0.0]
+        with patch.object(fleet_module.time, 'monotonic', side_effect=lambda: clock[0]):
+            clock[0] = 0.0
+            mark = fleet_module.fingerprint(fake)
+        self.assertEqual(given, [('doctor', 40), ('counts', 60)])
+        self.assertNotIn('error', mark)
+        # A Doctor call that used the whole budget leaves no time for the counts: they are named, not read.
+        given.clear()
+        fake.cli = lambda args, timeout=240, **rest: (clock.__setitem__(0, 60.0), real_cli(args, timeout, **rest))[1]
+        clock[0] = 0.0
+        with patch.object(fleet_module.time, 'monotonic', side_effect=lambda: clock[0]):
+            mark = fleet_module.fingerprint(fake)
+        self.assertEqual(mark['error'], 'counts: TimeoutError')
+        self.assertTrue(sum(timeout for _, timeout in given) <= 60)
+
     def test_an_unknown_batch_is_refused(self):
         code, _ = self.setup_batch('nope')
         self.assertEqual(code, 3)
