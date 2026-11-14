@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Run the bounded main plan's omitted cases at its exact push SHA, outside Required."""
+import argparse
+import json
+import os
+from pathlib import Path
+import runpy
+import sys
+from types import SimpleNamespace
+
+ROOT = Path(__file__).resolve().parents[1]
+full = SimpleNamespace(**runpy.run_path(str(ROOT / 'bin/ci-full-set')))
+CONTEXT = 'Main deferred fixtures'
+SYSTEMD = full.SYSTEMD_FIXTURE
+
+
+def requested_cases(pr, fixtures, fixture_api):
+    """Keep capacity deferrals and explicit exclusions; never rerun admitted cases."""
+    requested = {}
+    for unit in pr['deferred']:
+        file = unit.split('#')[0]
+        requested.setdefault(file, set()).update(fixture_api.case_names(unit, fixtures))
+    for row in pr.get('excluded', []):
+        requested.setdefault(row['file'], set()).add(row['case'])
+    return {file: None if fixtures[file].get('after_merge') or file.endswith('.py') else sorted(names)
+            for file, names in requested.items()}
+
+
+def build_plan(base, sha):
+    fixture_api = full.api()
+    budget, fixtures, defaults = fixture_api.configuration()
+    changed_base, paths = fixture_api.selection.changed_inputs(base, sha)
+    if changed_base != base:
+        raise ValueError('Deferred base must be an ancestor of the tested SHA')
+    inventory_changed = fixture_api.inventory_changes(base, sha) if fixture_api.registry.metadata_changed(paths) else []
+    registry_changed, shared = fixture_api.registry_changes(base, sha) if fixture_api.registry.metadata_changed(paths) else ([], False)
+    # Receiver changes must prove all explicitly deferred populations themselves.
+    if any(p in ('bin/ci-deferred', 'bin/ci-full-set', '.github/workflows/ci-deferred.yml') for p in paths):
+        shared = True
+    pr = fixture_api.plan(paths, budget, fixtures, defaults, inventory_changed, registry_changed, shared)
+    requested = requested_cases(pr, fixtures, fixture_api)
+    config, inventory = fixture_api.registry.load(ROOT)
+    result = full.build_plan(config, inventory, full.collect_current, fixture_api, requested=requested)
+    result.update(empty_selection=not requested, required_plan=pr, changed_paths=paths)
+    for shard in result['shards']:
+        shard['runs_on'] = ['self-hosted', 'orbit-shard', 'sabre'] if any(
+            u.split('#')[0] == SYSTEMD for u in shard['units']) else ['ubuntu-26.04']
+    return result
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=['plan', 'run', 'report'])
+    parser.add_argument('--base', default='HEAD^')
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--plan', type=Path)
+    parser.add_argument('--shard')
+    parser.add_argument('--results', type=Path)
+    parser.add_argument('--shard-result', default='failure')
+    args = parser.parse_args()
+    if args.command == 'run':
+        return full.run_shard(json.loads(args.plan.read_text()), args.shard, args.output)
+    sha = full.git('rev-parse', 'HEAD')
+    base = full.git('rev-parse', args.base + '^{commit}')
+    context = {'sha': sha, 'base': base, 'commits': full.git('rev-list', '--first-parent', f'{base}..{sha}').splitlines(),
+               'context': CONTEXT, 'shards': [], 'units': [], 'fixtures': {}}
+    if args.command == 'plan':
+        # An interrupted/failed planner has a red report, not an empty green selection.
+        full.save(args.output, context)
+        plan = {**context, **build_plan(base, sha)}
+        full.save(args.output, plan)
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write('matrix=' + json.dumps({'include': [{'name': s['name'], 'runs_on': s['runs_on']} for s in plan['shards']]}) + '\n')
+            output.write('has_shards=' + str(bool(plan['shards'])).lower() + '\n')
+        print(f'{sha}: {plan["files_total"]} files; {plan["cases_total"]} deferred cases; {len(plan["shards"])} shards')
+        return 0
+    plan = json.loads(args.plan.read_text()) if args.plan.exists() else context
+    github = full.GitHub()
+    link = f'{os.environ.get("GITHUB_SERVER_URL", "https://github.com")}/{github.repo}/actions/runs/{os.environ["GITHUB_RUN_ID"]}'
+    return full.report(github, plan, args.results, args.shard_result, link, args.output)
+
+
+if __name__ == '__main__':
+    sys.exit(main())
