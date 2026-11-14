@@ -1,17 +1,84 @@
 /** Exercise the shipped Instance host tasks against disposable local boundaries. */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1";
-import { fixture, hasAnsible } from "./_support/instance_host.ts";
+import { fixture as rawFixture, hasAnsible } from "./_support/instance_host.ts";
+
+import { capture, restore, stages, type Boundary, type Stage } from "./_support/host_image_boundary.ts";
+// Store only changed entries between boundaries; restore still creates each test's complete independent filesystem.
+const saved = JSON.parse(Deno.readTextFileSync(new URL("fixtures/host-image-boundaries.json", import.meta.url)));
+const boundaries: Record<string, Boundary> = {};
+for (const [name, row] of Object.entries(saved) as [string, { from: string | null; entries: Record<string, Boundary["entries"][string] & { append?: string } | null> }][]) {
+    const entries = { ...(row.from ? boundaries[row.from].entries : {}) };
+    for (const [path, entry] of Object.entries(row.entries)) {
+        if (entry === null) delete entries[path];
+        else entries[path] = entry.append !== undefined ? { mode: entry.mode, text: entries[path].text! + entry.append } : entry;
+    }
+    boundaries[name] = { entries };
+}
+type Kind = "dir" | "zfs" | "nested";
+const options = (kind: Kind) => ({ pool: kind === "zfs" ? "zfs" : "dir", nested: kind === "nested" });
+async function fixture(opts: Parameters<typeof rawFixture>[0] = {}, boundary = "prepare", phases: Stage[] = ["normal", "nested", "finish"]) {
+    const kind: Kind = opts?.nested ? "nested" : opts?.pool === "dir" ? "dir" : "zfs";
+    const f = await rawFixture(opts);
+    let run: ReturnType<typeof stages>;
+    try { run = stages(f); restore(f, boundaries[`${kind}-${boundary}`]); } catch (error) { f.cleanup(); throw error; }
+    return { ...f, async run() {
+        let output = "";
+        for (const phase of phases) {
+            const result = await run(phase); output += result.output;
+            if (!result.ok) return { ok: false, output };
+        }
+        return { ok: true, output };
+    } };
+}
+// Regenerate a boundary from capture(f) after the named production stage, never by editing its state by hand.
+// Every consumed successful boundary has a producer below. The original full normal command trace also remains pinned.
+for (const kind of ["dir", "zfs", "nested"] as const) {
+    for (const phase of ["system", "prepare"] as const) {
+        Deno.test({
+            name: `the saved ${kind} host ${phase} boundary matches the shipped tasks`,
+            ignore: !hasAnsible,
+            async fn() {
+                const f = await rawFixture(options(kind));
+                try {
+                    const run = stages(f);
+                    if (phase === "prepare") restore(f, boundaries[`${kind}-system`]);
+                    const result = await run(phase); assert(result.ok, result.output);
+                    assertEquals(capture(f), boundaries[`${kind}-${phase}`]);
+                } finally { f.cleanup(); }
+            },
+        });
+    }
+}
+Deno.test({
+    name: "the normal image on a nested host reaches the verified nested-build boundary",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture(options("nested"), "prepare", ["normal"]);
+        try { const result = await f.run(); assert(result.ok, result.output); assertEquals(capture(f), boundaries["nested-normal"]); }
+        finally { f.cleanup(); }
+    },
+});
+// Together these five cases repeat every top-level task of the host role and require zero changes in each range.
+for (const phase of ["system", "prepare", "normal", "nested", "finish"] as const) {
+    Deno.test({
+        name: `a passed nested-fleet image build repeats the host ${phase} stage without changes`,
+        ignore: !hasAnsible,
+        async fn() {
+            const f = await fixture(options("nested"), "finish", [phase]);
+            try { const result = await f.run(); assert(result.ok, result.output); assertStringIncludes(result.output, "changed=0"); }
+            finally { f.cleanup(); }
+        },
+    });
+}
 
 Deno.test({
     name:
         "a new image definition takes the stable alias while retaining the old image",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture();
+        const f = await fixture({}, "finish");
         try {
-            let result = await f.run();
-            assert(result.ok, result.output);
             f.write({
                 ...f.instances,
                 image: {
@@ -19,7 +86,7 @@ Deno.test({
                     alias: "orbit-instance-bbbbbbbbbbbb",
                 },
             });
-            result = await f.run();
+            const result = await f.run();
             assert(result.ok, result.output);
             const images = f.state().images.filter((i: { aliases: { name: string }[] }) =>
                 i.aliases.some((alias) => alias.name.startsWith("orbit-instance"))
@@ -38,7 +105,7 @@ Deno.test({
     name: "a Node without its Instance pool is refused before anything changes",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture({ pool: null });
+        const f = await rawFixture({ pool: null });
         try {
             const result = await f.run();
             assert(!result.ok);
@@ -54,7 +121,7 @@ Deno.test({
     name: "a directory pool skips the clone probe: a copy there is a full copy",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture({ pool: "dir" });
+        const f = await fixture({ pool: "dir" }, "system", ["prepare"]);
         try {
             const result = await f.run();
             assert(result.ok, result.output);
@@ -102,7 +169,7 @@ for (const [pool, temporary] of [["dir", "orbit-instance-build"], ["zfs", "orbit
         name: `${temporary} refuses an inherited unguarded profile NIC before starting`,
         ignore: !hasAnsible,
         async fn() {
-            const f = await fixture({pool});
+            const f = pool === "zfs" ? await fixture({pool}, "system", ["prepare"]) : await fixture({pool}, "system", ["prepare", "normal", "nested", "finish"]);
             try {
                 const state = f.state();
                 state.projects.push({name: "orbit-instances", config: {"features.networks": "false", "features.profiles": "true", "features.images": "true"}});
@@ -113,6 +180,8 @@ for (const [pool, temporary] of [["dir", "orbit-instance-build"], ["zfs", "orbit
 
                 assert(!result.ok, result.output);
                 assertStringIncludes(result.output, "instance.container_network_unsafe");
+                assert(f.state().profiles["orbit-instances"].devices.eth0);
+                assert(f.state().profiles["orbit-instances"].devices.eth1);
                 assert(f.calls().some((call) => call.includes(temporary) && call.includes(temporary === "orbit-instance-build" ? "init" : "copy")));
                 assert(!f.calls().some((call) => call.includes("start") && call.includes(temporary)));
                 assert(!f.state().instances.some((row: {name: string}) => ["orbit-instance-build", "orbit-clone-probe", "orbit-clone-probe-copy"].includes(row.name)));
@@ -146,101 +215,54 @@ Deno.test({
             );
             assertEquals(prepared.properties["user.orbit.stock-build"], "");
             assertEquals(state.instances, []);
+            assertEquals(capture(f), boundaries["zfs-finish"]);
         } finally {
             f.cleanup();
         }
     },
 });
 
+function assertLocalEffects(f: Awaited<ReturnType<typeof fixture>>, before: number) {
+    const targets = Deno.readTextFileSync(`${f.folder}/targets`).trim().split("\n").map((line) => JSON.parse(line)).slice(before);
+    const effects = targets.filter((target) => target.args.some((arg: string) =>
+        ["image", "init", "publish", "copy", "start", "stop", "delete", "exec", "file"].includes(arg)));
+    assert(effects.length > 0);
+    assert(effects.every((target) => !target.remote && target.configRemote === "local" && target.socket === `${f.folder}/unix.socket`));
+}
 Deno.test({
-    name:
-        "the full prepared-image replacement and failure cleanup use the verified local socket despite the default remote",
+    name: "a prepared-image replacement rechecks the local socket despite the default remote",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture();
+        const f = await fixture({}, "finish", ["prepare", "normal", "nested", "finish"]);
         try {
-            let result = await f.run();
-            assert(result.ok, result.output);
             const remote = f.state();
-            Deno.writeTextFileSync(
-                `${f.folder}/remote-state.json`,
-                JSON.stringify(remote),
-            );
-            Deno.writeTextFileSync(
-                `${f.folder}/state.json`,
-                JSON.stringify({ ...remote, default_remote: true }),
-            );
+            Deno.writeTextFileSync(`${f.folder}/remote-state.json`, JSON.stringify(remote));
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify({ ...remote, default_remote: true }));
             const before = f.calls().length;
-            f.write({
-                ...f.instances,
-                image: {
-                    ...f.instances.image,
-                    alias: "orbit-instance-bbbbbbbbbbbb",
-                },
-            });
-            result = await f.run();
-            assert(result.ok, result.output);
-            assertEquals(
-                JSON.parse(
-                    Deno.readTextFileSync(`${f.folder}/remote-state.json`),
-                ),
-                remote,
-            );
-            assert(
-                f.state().images.some((i: { aliases: { name: string }[] }) =>
-                    i.aliases.some((a) =>
-                        a.name === "orbit-instance-bbbbbbbbbbbb"
-                    )
-                ),
-            );
-            const local = f.state();
-            Deno.writeTextFileSync(
-                `${f.folder}/state.json`,
-                JSON.stringify({ ...local, sudo_paths: "user:ubuntu" }),
-            );
-            f.write({
-                ...f.instances,
-                image: {
-                    ...f.instances.image,
-                    alias: "orbit-instance-cccccccccccc",
-                },
-            });
-            result = await f.run();
-            assert(!result.ok, result.output);
+            f.write({ ...f.instances, image: { ...f.instances.image, alias: "orbit-instance-bbbbbbbbbbbb" } });
+            const result = await f.run(); assert(result.ok, result.output);
+            assertEquals(JSON.parse(Deno.readTextFileSync(`${f.folder}/remote-state.json`)), remote);
+            assert(f.state().images.some((i: { aliases: { name: string }[] }) => i.aliases.some((a) => a.name === "orbit-instance-bbbbbbbbbbbb")));
+            assertLocalEffects(f, before);
+            assertEquals(capture(f), boundaries["zfs-remote-replaced"]);
+        } finally { f.cleanup(); }
+    },
+});
+Deno.test({
+    name: "a failed replacement cleans up through the rechecked local socket and leaves the default remote intact",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture({}, "remote-replaced", ["prepare", "normal", "nested", "finish"]);
+        try {
+            const remote = JSON.parse(Deno.readTextFileSync(`${f.folder}/remote-state.json`));
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify({ ...f.state(), sudo_paths: "user:ubuntu" }));
+            f.write({ ...f.instances, image: { ...f.instances.image, alias: "orbit-instance-cccccccccccc" } });
+            const before = f.calls().length;
+            const result = await f.run(); assert(!result.ok, result.output);
             assertEquals(f.state().instances, []);
-            assertEquals(
-                JSON.parse(
-                    Deno.readTextFileSync(`${f.folder}/remote-state.json`),
-                ),
-                remote,
-            );
-            const targets = Deno.readTextFileSync(`${f.folder}/targets`).trim()
-                .split("\n").map((line) => JSON.parse(line)).slice(before);
-            const effects = targets.filter((target) =>
-                target.args.some((arg: string) =>
-                    [
-                        "image",
-                        "init",
-                        "publish",
-                        "copy",
-                        "start",
-                        "stop",
-                        "delete",
-                        "exec",
-                        "file",
-                    ].includes(arg)
-                )
-            );
-            assert(effects.length > 0);
-            assert(
-                effects.every((target) =>
-                    !target.remote && target.configRemote === "local" &&
-                    target.socket === `${f.folder}/unix.socket`
-                ),
-            );
-        } finally {
-            f.cleanup();
-        }
+            assertEquals(JSON.parse(Deno.readTextFileSync(`${f.folder}/remote-state.json`)), remote);
+            assertLocalEffects(f, before);
+        } finally { f.cleanup(); }
     },
 });
 
@@ -300,6 +322,7 @@ Deno.test({
             assert(f.calls().some((call) => call[0] === "query" && call.at(-1) === "/1.0/instances?all-projects=true&recursion=1"));
             assertEquals(f.state().images.flatMap((image: {project: string; aliases: {name: string}[]}) =>
                 image.aliases.map((alias) => `${image.project}/${alias.name}`)).filter((name: string) => name.includes("orbit-instance-nested")), []);
+            assertEquals(capture(f), boundaries["dir-finish"]);
         } finally {
             f.cleanup();
         }
@@ -313,7 +336,7 @@ Deno.test({
     name: "a switched-on Node builds the nested-fleet image in its project from the verified pinned packages",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture({ pool: "dir", nested: true });
+        const f = await fixture({ pool: "dir", nested: true }, "normal", ["nested", "finish"]);
         try {
             const result = await f.run();
             assert(result.ok, result.output);
@@ -355,9 +378,7 @@ Deno.test({
             const normalAudit = f.calls().filter((call) => call.includes("orbit-instances") && call[0] === "exec" && call.at(-1)!.includes("getent passwd ubuntu"));
             assertEquals(normalAudit.map((call) => call.at(-1)!.includes("orbit-agent")), [false]);
             assertEquals(nestedRecord(f.folder), null);
-            const repeat = await f.run();
-            assert(repeat.ok, repeat.output);
-            assertStringIncludes(repeat.output, "changed=0");
+            assertEquals(capture(f), boundaries["nested-finish"]);
         } finally {
             f.cleanup();
         }
@@ -391,12 +412,11 @@ const nestedFailures: [string, string, boolean, (f: Awaited<ReturnType<typeof fi
 
 for (const [failure, task, repair, breakIt] of nestedFailures) {
     Deno.test({
-        name: `${failure} fails only the nested-fleet image: the role succeeds and records the failed task${repair ? ", and a later good build clears it" : ""}`,
+        name: `${failure} fails only the nested-fleet image: the role succeeds and records the failed task`,
         ignore: !hasAnsible,
         async fn() {
-            const f = await fixture({ pool: "dir", nested: true });
+            const f = await fixture({ pool: "dir", nested: true }, "normal", ["nested", "finish"]);
             try {
-                const good = structuredClone(f.instances);
                 breakIt(f);
                 const result = await f.run();
                 assert(result.ok, result.output.slice(-6000));
@@ -412,22 +432,26 @@ for (const [failure, task, repair, breakIt] of nestedFailures) {
                 assertEquals(nestedRecord(f.folder),
                     { error: "nested image build failed", alias: "orbit-instance-nested-aaaaaaaaaaaa", task });
                 assertStringIncludes(result.output, `nested image build failed: ${task}`);
-                if (!repair) return;
-                // A later converge with a good build publishes the image and clears the record.
-                const state = f.state();
-                delete state.sudo_paths_by_project;
-                Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-                f.write(good);
-                const repaired = await f.run();
-                assert(repaired.ok, repaired.output);
-                assert(aliasesOf(f.state()).includes("orbit-instances-nested/orbit-instance-nested-aaaaaaaaaaaa"));
-                assertEquals(nestedRecord(f.folder), null);
+                if (repair) assertEquals(capture(f), boundaries["nested-bad-digest"]);
             } finally {
                 f.cleanup();
             }
         },
     });
 }
+
+Deno.test({
+    name: "a good nested-fleet image build after a failed digest publishes the image and clears the record",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture(options("nested"), "bad-digest", ["nested", "finish"]);
+        try {
+            const repaired = await f.run(); assert(repaired.ok, repaired.output);
+            assert(aliasesOf(f.state()).includes("orbit-instances-nested/orbit-instance-nested-aaaaaaaaaaaa"));
+            assertEquals(nestedRecord(f.folder), null);
+        } finally { f.cleanup(); }
+    },
+});
 
 Deno.test({
     name: "a failed normal image build on a switched-on Node still fails the role and builds no nested-fleet image",
