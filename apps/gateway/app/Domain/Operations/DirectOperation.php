@@ -31,9 +31,12 @@ final readonly class DirectOperation
         foreach ($families as $family) {
             foreach ($family as $kind => $definition) {
                 if (isset($definitions[$kind]) || preg_match(OperationKinds::NamePattern, $kind) !== 1
-                    || array_diff(array_keys($definition), ['workflow', 'workflow_inputs', 'execution_copies', 'terminal_result', 'scheduled_result', 'writer_config', 'writer_state', 'projection', 'child_projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs', 'github_token_issuer', 'result_hook']) !== []
+                    || array_diff(array_keys($definition), ['workflow', 'alternate_workflows', 'workflow_inputs', 'execution_copies', 'terminal_result', 'scheduled_result', 'writer_config', 'writer_state', 'projection', 'child_projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs', 'github_token_issuer', 'result_hook']) !== []
                     || (array_key_exists('workflow_inputs', $definition) && ! is_bool($definition['workflow_inputs']))
                     || ! is_string($definition['workflow'] ?? null) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $definition['workflow']) !== 1
+                    || (isset($definition['alternate_workflows']) && (! is_array($definition['alternate_workflows']) || ! array_is_list($definition['alternate_workflows'])
+                        || $definition['alternate_workflows'] === [] || array_any($definition['alternate_workflows'], static fn (mixed $name): bool => ! is_string($name) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $name) !== 1 || $name === $definition['workflow'])
+                        || ! is_string($definition['projection'] ?? null) || ! is_a($definition['projection'], DirectOperationWorkflowChoice::class, true)))
                     || ! isset($definition['projection'])
                     || (isset($definition['writer_scope']) && (! is_array($definition['writer_scope']) || array_any(array_keys($definition['writer_scope']), static fn (mixed $key): bool => ! is_string($key) || preg_match('/\A[a-z][a-z0-9_]*\z/D', $key) !== 1) || array_any($definition['writer_scope'], static fn (mixed $value): bool => ! is_null($value) && ! is_bool($value) && ! is_int($value) && ! is_string($value))))
                     || ! self::validSecretMap($definition['private_material'] ?? []) || ! self::validSecretMap($definition['secret_outputs'] ?? [])
@@ -213,10 +216,38 @@ final readonly class DirectOperation
         return $this->definitions;
     }
 
-    /** @return array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string},rows:string}, projection: class-string<DirectOperationProjection>, child_projection?: class-string<DirectOperationChildProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}|null */
+    /** @return array{workflow: string, alternate_workflows?: list<string>, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string},rows:string}, projection: class-string<DirectOperationProjection>, child_projection?: class-string<DirectOperationChildProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}|null */
     public function definition(string $kind): ?array
     {
         return $this->definitions[$kind] ?? null;
+    }
+
+    /**
+     * The workflow that runs this Operation: the one admission recorded in `state.swamp_start`, else the declared one, or for a kind
+     * with alternate workflows the one its projection chooses for the admitted intent. Admission records it once; every start, search
+     * and read of the run takes its name from here, so an Operation admitted by an older Gateway keeps the workflow it recorded.
+     */
+    public function workflowFor(Operation $operation): ?string
+    {
+        $definition = $this->definition($operation->kind);
+        if ($definition === null) {
+            return null;
+        }
+        $start = $operation->state['swamp_start'] ?? null;
+        $recorded = is_array($start) ? ($start['workflow'] ?? null) : null;
+        if (is_string($recorded) && $recorded !== '') {
+            return $recorded;
+        }
+        if (! isset($definition['alternate_workflows'])) {
+            return $definition['workflow'];
+        }
+        $projection = app($definition['projection']);
+        $workflow = $projection instanceof DirectOperationWorkflowChoice ? $projection->workflow($operation) : null;
+        if (! in_array($workflow, [$definition['workflow'], ...$definition['alternate_workflows']], true)) {
+            throw new LogicException('A direct Operation chose an undeclared workflow.');
+        }
+
+        return $workflow;
     }
 
     public function assertRun(Operation $operation, string $runId): void

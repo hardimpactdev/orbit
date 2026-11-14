@@ -46,7 +46,11 @@ inputs:
     ORBIT_BOOTSTRAP_IDENTITY: '${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key) }}'
 ```
 
-Choose the key from the intent, never by testing `execution_secrets`: Swamp refuses an expression that calls `vault.get` with a container comparison, such as `"name" in inputs.execution_secrets` (`secret_operation_unsupported`). Swamp evaluates a skipped step's inputs too, so a reference to an absent key falls back to a key every run has.
+Choose the key from the intent, never by testing `execution_secrets`. Swamp refuses as a whole an expression that calls `vault.get` and holds a container comparison anywhere in it (`secret_operation_unsupported`). Any `in` counts, such as `"name" in inputs.execution_secrets` or `"workspace" in inputs.intent`, and so does `==` or `!=` unless one side is a scalar literal, such as `null`, `"x"` or `-1`: `inputs.intent.a == inputs.intent.b` is refused. Test a key with `has()`, which is not a container comparison. Swamp evaluates a skipped step's inputs too, so a reference to an absent key falls back to a key every run has.
+
+The same holds for every expression that reads only the run's inputs. Step inputs, guards, `forEach` and names resolve when the run starts, also for a step that a guard will skip. An absent intent key fails the run before it starts. Serve rejects the start, and the Gateway fails the Operation with `swamp.start_refused` ([Direct Swamp starts](/reference/operations#direct-swamp-starts)); Operation 22250 waited out its confirmation as `swamp.start_uncertain` before the Gateway knew that reply. Guard such a read with `has()`, as `has(inputs.intent.workspace) ? … : …`, or give an intent of another shape its own workflow through `alternate_workflows` ([operations](/reference/operations)).
+
+`swamp/tests/workflow_start_resolution_test.ts` resolves these expressions against the inputs the Gateway starts each run with, follows each child workflow that a run starts with the inputs its caller builds, and applies the secret rule to every workflow.
 
 Swamp resolves the value. The script uses stdin or a protected config file when handing it to a tool. It must not expand a secret into `run:`, argv or shell tracing. Environment delivery does not isolate the value from the worker user: `/proc` can expose the environment.
 

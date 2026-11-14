@@ -1,0 +1,127 @@
+id: e1b781af-f4b7-4e62-9ecd-94d61fb1e86f
+name: operation-task-sync-copy
+description: >-
+  task:sync of a task copy (docs/cli/task/sync.mmd): the workspace phase base brings the Project's default branch into the copy
+  through the copy's Node mirror and one bundle of what it lacks, into refs/remotes/origin/<default branch>; no credential reaches
+  the copy and HEAD, the working tree and the local branches stay as they are. The Gateway starts this workflow for an intent with
+  `copy` and operation-task-sync for a task VM: Swamp resolves every step's inputs when a run starts, so each reads only the keys
+  of its own intent.
+queueTimeout: 30
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, const: tasks.sync}
+    intent:
+      type: object
+      properties:
+        group_id: {type: integer, minimum: 1}
+        instance_id: {type: integer, minimum: 1}
+        project_id: {type: integer, minimum: 1}
+        node_id: {type: integer, minimum: 1}
+        workspace:
+          type: object
+          properties:
+            repository: {type: string, pattern: '^https://'}
+            default_branch: {type: string, pattern: '^[A-Za-z0-9._/-]+$'}
+            branch: {type: string, pattern: '^task-[1-9][0-9]*$'}
+          required: [repository, default_branch, branch]
+          additionalProperties: false
+        # The copy's guest target, its own and the default's Node mirrors and its start commit.
+        copy:
+          type: object
+          properties:
+            runtime:
+              type: object
+              properties:
+                project: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$'}
+                name: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$'}
+              required: [project, name]
+              additionalProperties: false
+            branch: {type: string, pattern: '^task-[1-9][0-9]*$'}
+            snapshot_id: {type: string, format: uuid}
+            start: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
+            mirror: {type: string, pattern: '^/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git$'}
+            # Empty when the default is gone: then only a copy whose mirror exists can sync.
+            source_mirror: {type: string, pattern: '^(/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git)?$'}
+          required: [runtime, branch, snapshot_id, start, mirror, source_mirror]
+          additionalProperties: false
+        # The sync's read token as a Git header, minted when the run starts.
+        git_authorization:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-sync-token-[a-f0-9-]{36}$'}
+          required: [vault, key]
+          additionalProperties: false
+        ssh_execution: {type: object}
+      required: [group_id, instance_id, project_id, node_id, workspace, copy, git_authorization, ssh_execution]
+      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: sync
+  labels: {role: swamp}
+  steps:
+  - name: Bring in the base
+    # One workspace phase on the copy's Node, through the child that only this workflow calls.
+    labels: {role: swamp}
+    queueTimeout: 30
+    task:
+      type: workflow
+      workflowIdOrName: task-copy-base
+      inputs:
+        node_id: ${{ inputs.intent.node_id }}
+        group_id: ${{ inputs.intent.group_id }}
+        phase: base
+        intent: '${{ {"runtime": inputs.intent.copy.runtime, "branch": inputs.intent.copy.branch, "snapshot_id": inputs.intent.copy.snapshot_id, "instance_id": inputs.intent.instance_id, "default_branch": inputs.intent.workspace.default_branch, "repository": inputs.intent.workspace.repository, "mirror": inputs.intent.copy.mirror, "source_mirror": inputs.intent.copy.source_mirror, "start": inputs.intent.copy.start, "ssh_execution": inputs.intent.ssh_execution} }}'
+        git_authorization: ${{ inputs.intent.git_authorization }}
+- name: cleanup
+  labels: {role: swamp}
+  dependsOn:
+  - job: sync
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  steps:
+  - name: Discard the base scratch
+    # Removes the bundle on the Node and in the copy. A cancelled run may skip it; the next base of the copy removes the same scratch
+    # first and the copy's destroy removes its Node folder. No credential is ever written.
+    labels: {role: swamp}
+    queueTimeout: 30
+    task:
+      type: workflow
+      workflowIdOrName: task-copy-base
+      inputs:
+        node_id: ${{ inputs.intent.node_id }}
+        group_id: ${{ inputs.intent.group_id }}
+        phase: base-cleanup
+        intent: '${{ {"runtime": inputs.intent.copy.runtime, "branch": inputs.intent.copy.branch, "snapshot_id": inputs.intent.copy.snapshot_id, "instance_id": inputs.intent.instance_id, "ssh_execution": inputs.intent.ssh_execution} }}'
+        git_authorization: ${{ inputs.intent.git_authorization }}
+  - name: Confirm the sync
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - step: Discard the base scratch
+      condition:
+        type: completed
+    task:
+      type: assert
+      expr: '"Bring in the base" in steps && steps["Bring in the base"].status == "succeeded" && "Discard the base scratch" in steps && steps["Discard the base scratch"].status == "succeeded"'
+      message: tasks.sync_failed
+      severity: high

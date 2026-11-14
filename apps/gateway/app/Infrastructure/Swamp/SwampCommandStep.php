@@ -45,7 +45,7 @@ final readonly class SwampCommandStep
     public function recoverUnbound(Operation $operation): void
     {
         $direct = app(DirectOperation::class);
-        $workflow = $direct->definition($operation->kind)['workflow'] ?? null;
+        $workflow = $direct->workflowFor($operation);
         $start = ['key' => 'operation:'.$operation->id, 'workflow' => $workflow];
         $timedOut = ExpireOperationAction::awaitsSettlement($operation) || InstanceMigrateProjection::unsettled($operation);
         if ($workflow === null || ! $direct->usesNativeTerminal($operation) || isset($operation->state['swamp_run_id'])
@@ -128,7 +128,7 @@ final readonly class SwampCommandStep
         }
         $run = $this->history($runId);
         $inputs = $run['inputs'] ?? null;
-        $workflow = $direct->definition($operation->kind)['workflow'] ?? throw $this->unavailable();
+        $workflow = $direct->workflowFor($operation) ?? throw $this->unavailable();
         if (($run['id'] ?? null) !== $runId || ($run['workflowName'] ?? null) !== $workflow
             || ! in_array($run['status'] ?? null, [...$terminalStatuses, 'pending', 'running', 'suspended'], true)
             || ($hasStatus && $run['status'] !== $terminalRun['status']) || ! is_array($inputs)
