@@ -75,11 +75,23 @@ final readonly class NestedFleetClubKey
         if ($container === null || ! is_array($container['club_key'] ?? null)) {
             return ['container' => $container, 'copies' => []];
         }
-        $value = self::value();
-        $container['club_key']['available'] = $value !== null;
+        $reference = self::reference();
+        $container['club_key']['available'] = $reference !== null;
 
-        return ['container' => $container, 'copies' => $value === null ? []
-            : ['club_key' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', self::VaultKey, $value)]];
+        return ['container' => $container, 'copies' => $reference === null ? [] : ['club_key' => $reference]];
+    }
+
+    /**
+     * The run's one read of the value, as the vault reference to the one entry, or null when the Gateway holds no value. A task
+     * copy's publish reads it too: its content check refuses a commit that holds the key (docs/reference/tasks.md#task-copy).
+     *
+     * @return array{vault:string,key:string}|null
+     */
+    public static function reference(): ?array
+    {
+        $value = self::value();
+
+        return $value === null ? null : app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', self::VaultKey, $value);
     }
 
     /**
