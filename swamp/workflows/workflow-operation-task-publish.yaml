@@ -231,7 +231,7 @@ jobs:
       inputs:
         node_id: ${{ inputs.intent.node_id }}
         phase: export
-        intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution, "checkout_fingerprint": steps["Preflight the copy"].outputs.evidence.evidence.checkout_fingerprint, "candidate": {"head": inputs.intent.commit, "tree": inputs.intent.tree}, "worker_bundle": steps["Create publication scratch"].outputs.stdout.trim() + "/candidate.bundle"} }}'
+        intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution, "checkout_fingerprint": steps["Preflight the copy"].outputs.evidence.evidence.checkout_fingerprint, "candidate": {"head": inputs.intent.commit, "tree": inputs.intent.tree}, "worker_bundle": steps["Create publication scratch"].outputs.stdout.trim() + "/candidate.bundle", "environment_path": inputs.intent.workspace.environment_path, "worker_environment": steps["Create publication scratch"].outputs.stdout.trim() + "/environment"} }}'
     dependsOn:
     - step: Preflight the copy
       condition:
@@ -589,10 +589,125 @@ jobs:
     - step: Check imported commit
       condition:
         type: succeeded
+  - name: Check the .env content
+    # The .env content leaves a copy under no name: neither the whole file nor one of its values of 8 bytes or more that the start
+    # tree does not already hold, in any object new in the range or in the pull request text. Both references count: the copy's file,
+    # which the agent can change, and the render of the Instance's stored values (docs/reference/tasks.md#task-copy). An error refuses
+    # too. A refusal names a path only when the path holds no value.
+    labels:
+      role: swamp
+    queueTimeout: 30
+    guard: '${{ !("workspace" in inputs.intent) }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publish-content-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          umask 077
+          export LC_ALL=C
+          work=$ORBIT_DIRECTORY/content
+          mkdir "$work"
+          range="$ORBIT_START..refs/heads/candidate"
+          repo() { git -C "$ORBIT_REPOSITORY" "$@"; }
+          refuse() { printf 'tasks.publish_secret_content: %s\n' "$1" >&2; exit 3; }
+          # A path or folder is named only when it holds no checked value, also with its slashes removed.
+          named() {
+            if [ -s "$work/checked" ] && { printf '%s\n' "$1" | grep -q -F -f "$work/checked" || printf '%s\n' "$1" | tr -d / | grep -q -F -f "$work/checked"; }; then
+              echo "a path that holds a value"
+            else
+              echo "'${1:-.}'"
+            fi
+          }
+          first() {
+            repo log -m -t --reverse --format=%H --find-object="$1" "$range" -- >"$work/first"
+            repo log --reverse --format='%H %T' "$range" -- >>"$work/first"
+            awk -v id="$1" 'NF == 1 { print; exit } $2 == id { print $1; exit }' "$work/first"
+          }
+          if [ ! -f "$ORBIT_FILE" ] || [ -L "$ORBIT_FILE" ]; then echo 'tasks.publish_secret_unchecked: the copy has no .env file' >&2; exit 1; fi
+          printf '%s' "$ORBIT_ENVIRONMENT" >"$work/rendered"
+          printf '%s\n%s\n' "$ORBIT_PULL_TITLE" "$ORBIT_PULL_BODY" >"$work/pull"
+          # Each value as written and unescaped: KEY=VALUE also in a comment line, quotes and inline comments removed; other lines whole.
+          awk -v quote="'" '
+            function out(text, parts, count, i) { count = split(text, parts, /\\n/); for (i = 1; i <= count; i++) if (length(parts[i]) >= 8) print parts[i] }
+            function value(text, opening, i, c, raw, plain) {
+              opening = substr(text, 1, 1)
+              if (opening == "\"") {
+                raw = ""; plain = ""
+                for (i = 2; i <= length(text); i++) {
+                  c = substr(text, i, 1)
+                  if (c == "\\" && i < length(text)) {
+                    raw = raw c substr(text, i + 1, 1)
+                    plain = plain (substr(text, i + 1, 1) == "n" ? "\\n" : substr(text, i + 1, 1)); i++; continue
+                  }
+                  if (c == "\"") break
+                  raw = raw c; plain = plain c
+                }
+                out(raw); out(plain); return
+              }
+              if (opening == quote) { i = index(substr(text, 2), quote); out(i ? substr(text, 2, i - 1) : substr(text, 2)); return }
+              sub(/[ \t]+#.*$/, "", text); out(text)
+            }
+            { sub(/\r$/, ""); line = $0; sub(/^[ \t]+/, "", line); sub(/[ \t]+$/, "", line) }
+            line == "" { next }
+            substr(line, 1, 1) == "#" { line = substr(line, 2); sub(/^[ \t]+/, "", line) }
+            match(line, /^(export[ \t]+)?[A-Za-z_][A-Za-z0-9_.-]*[ \t]*=[ \t]*/) { value(substr(line, RLENGTH + 1)); next }
+            { out(line); last = substr(line, length(line), 1); if (last == "\"" || last == quote) out(substr(line, 1, length(line) - 1)) }
+          ' "$ORBIT_FILE" "$work/rendered" >"$work/all"
+          sort -u "$work/all" >"$work/values"
+          : >"$work/checked"
+          if [ -s "$work/values" ]; then
+            timeout 60 git -C "$ORBIT_REPOSITORY" grep -a -h -o -F -f "$work/values" "$ORBIT_START" -- >"$work/public" || [ $? -eq 1 ]
+            grep -v -x -F -f "$work/public" "$work/values" >"$work/checked" || [ $? -eq 1 ]
+          fi
+          timeout 60 git -C "$ORBIT_REPOSITORY" rev-list --objects "$range" -- >"$work/objects"
+          for file in "$ORBIT_FILE" "$work/rendered"; do
+            if [ -s "$file" ]; then
+              id=$(repo hash-object --no-filters --stdin <"$file")
+              match=$(awk -v id="$id" '$1 == id { print; exit }' "$work/objects")
+              if [ -n "$match" ]; then refuse "the whole .env is the file $(named "${match#* }") ($id) in commit $(first "$id")"; fi
+            fi
+          done
+          if [ ! -s "$work/checked" ]; then exit 0; fi
+          if grep -q -a -F -f "$work/checked" "$work/pull"; then refuse "a value of the .env is in the pull request title or body"; fi
+          cut -d ' ' -f 1 "$work/objects" >"$work/ids"
+          { timeout 120 git -C "$ORBIT_REPOSITORY" cat-file --batch <"$work/ids"; echo $? >"$work/batch"; } | grep -c -a -F -f "$work/checked" >"$work/hits" || [ $? -eq 1 ]
+          [ "$(cat "$work/batch")" = 0 ]
+          if [ "$(cat "$work/hits")" = 0 ]; then exit 0; fi
+          while read -r id path; do
+            kind=$(repo cat-file -t "$id")
+            if repo cat-file "$kind" "$id" | grep -q -a -F -f "$work/checked"; then
+              case $kind in
+                commit) refuse "a value of the .env is in the message or author of commit $id" ;;
+                tree) refuse "a value of the .env is in a file name in folder $(named "$path") ($id) in commit $(first "$id")" ;;
+                *) refuse "a value of the .env is in the file $(named "$path") ($id) in commit $(first "$id")" ;;
+              esac
+            fi
+          done <"$work/objects"
+          refuse "a value of the .env is in an object of the range"
+        env:
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_NOSYSTEM: '1'
+          ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
+          ORBIT_DIRECTORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
+          ORBIT_FILE: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/environment" }}
+          ORBIT_START: ${{ inputs.intent.workspace.start }}
+          ORBIT_ENVIRONMENT: ${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}
+          ORBIT_PULL_TITLE: '${{ inputs.intent.pull_request == null ? "" : inputs.intent.pull_request.title }}'
+          ORBIT_PULL_BODY: '${{ inputs.intent.pull_request == null ? "" : inputs.intent.pull_request.body }}'
+    dependsOn:
+    - step: Check the environment file
+      condition:
+        type: succeeded
+    writes: true
   - name: Mint the push token
     labels:
       role: swamp
     queueTimeout: 30
+    # A copy mints only after its content check succeeded; a skip of that check is never a pass.
+    guard: '${{ "workspace" in inputs.intent && !("Check the .env content" in steps && steps["Check the .env content"].status == "succeeded") }}'
     task:
       type: workflow
       workflowIdOrName: task-github-mint
@@ -605,6 +720,8 @@ jobs:
       condition:
         type: succeeded
     - step: Check the environment file
+      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
+    - step: Check the .env content
       condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
   - name: Push the branch
     labels:

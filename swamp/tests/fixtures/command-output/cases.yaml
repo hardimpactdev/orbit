@@ -1920,6 +1920,10 @@ non_command_output:
   task: Validate the recorded workspace target
   field: ansible.builtin.assert.that[5]
   reason: Validates the admitted candidate commit, not command output.
+- file: tasks/task-instance-workspace-phase.yml
+  task: Validate the recorded workspace target
+  field: ansible.builtin.assert.that[9]
+  reason: Validates the admitted relative path of the copy's .env, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[0]

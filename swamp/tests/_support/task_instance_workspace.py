@@ -46,6 +46,10 @@ elif args[4] == '--recursive':
     assert len(args) == 7 and args[5].startswith('proof-instance/tmp/orbit-task-workspace-'), args
     source = '/' + args[5].split('/', 1)[1]
     shutil.copytree(source, os.path.join(args[6], os.path.basename(source)))
+elif args[4].startswith('proof-instance/srv/workspace/'):
+    # A file of the checkout, as the Node pulls it: a link stays a link.
+    assert len(args) == 6, args
+    shutil.copyfile(os.path.join(os.environ['T1_GUEST'], args[4][len('proof-instance/srv/workspace/'):]), args[5], follow_symlinks=False)
 else:
     assert len(args) == 6 and args[4].startswith('proof-instance/tmp/orbit-task-workspace-'), args
     shutil.copyfile('/' + args[4].split('/', 1)[1], args[5])
@@ -197,7 +201,6 @@ class CheckHarness(unittest.TestCase):
         self.play = self.root / 'play.yml'
         self.play.write_text(json.dumps([{'name': 'Exercise the production phase', 'hosts': 'localhost', 'connection': 'local',
             'gather_facts': False, 'tasks': [{'name': 'Run workspace phase', 'ansible.builtin.import_tasks': str(TASKS)}]}]))
-        self.node_scratch = set(Path('/var/tmp').glob('orbit-task-check-*'))
         self.checkout = self.root / 'instance'
         self.checkout.mkdir()
         self.git('init', '--quiet', '--initial-branch=' + FIXTURE['branch'])
