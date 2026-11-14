@@ -1,5 +1,5 @@
 order = 820
-source_sha256 = "f657f2d3c5ebad78d341ad3cd16d847a5e76f198a4bea0a3ffeb562bd6066c71"
+source_sha256 = "5b40dc40db3e744498bf2c0fcb2dcd9931f89cd354a2ab56d5809430755817f7"
 cases = [
   "test_a_clone_keeps_its_defaults_hand_set_keys_and_owns_its_connections",
   "test_a_dropped_key_of_the_default_goes_even_when_the_clone_does_not_own_it",
@@ -49,6 +49,8 @@ cases = [
   "test_the_check_names_unit_states_of_a_dead_process_and_exits_without_private_log",
   "test_check_passes_a_good_clone_and_refuses_a_dead_unit_with_the_sessions_code",
   "test_non_php_sessions_keep_both_authenticated_sessions_without_php",
+  "test_sessions_without_the_t3_steps_sessions_fail_and_issue_none",
+  "test_the_t3_step_issues_both_sessions_and_adds_the_project_while_t3_starts",
   "test_non_php_check_has_no_php_probe",
   "test_php_readiness_still_checks_the_project_runtime",
   "test_command_failure_names_command_and_exit_code_without_private_output",
