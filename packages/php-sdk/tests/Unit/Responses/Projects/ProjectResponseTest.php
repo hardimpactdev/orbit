@@ -34,6 +34,16 @@ describe(ProjectResponse::class, function (): void {
         ]);
     });
 
+    it('maps the copy turn agent defaults and labels each role', function (): void {
+        $response = ProjectResponse::fromGatewayData(['id' => 3, 'task_implementer_provider' => 'claude', 'task_implementer_model' => 'claude-sonnet-5-5',
+            'task_implementer_effort' => null, 'task_reviewer_provider' => null, 'task_reviewer_model' => null, 'task_reviewer_effort' => null], 'request-id');
+
+        expect($response->taskAgentLabel('implementer'))->toBe('claude / claude-sonnet-5-5 / -')
+            ->and($response->taskAgentLabel('reviewer'))->toBeNull()
+            ->and($response->toArray())->toMatchArray(['task_implementer_model' => 'claude-sonnet-5-5', 'task_reviewer_effort' => null])
+            ->and(ProjectResponse::fromGatewayData(['id' => 3], 'request-id')->toArray())->not->toHaveKey('task_implementer_model');
+    });
+
     it('normalizes invalid optional source defaults to null', function (): void {
         $response = ProjectResponse::fromGatewayData(['default_branch' => ['invalid'], 'root' => ['invalid']], 'request-id');
 

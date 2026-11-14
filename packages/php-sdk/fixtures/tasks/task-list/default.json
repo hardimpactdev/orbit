@@ -24,8 +24,42 @@
                 "assistance_kind": null,
                 "assistance_question": null,
                 "assistance_reason": null,
-                "implementer_model": "gpt-5.6-luna",
-                "reviewer_model": "gpt-5.6-luna",
+                "implementer_provider": null,
+                "implementer_model": null,
+                "implementer_effort": null,
+                "reviewer_provider": null,
+                "reviewer_model": null,
+                "reviewer_effort": null,
+                "resolved_agents": {
+                    "implementer": {
+                        "provider": {
+                            "value": "claude",
+                            "source": "gateway"
+                        },
+                        "model": {
+                            "value": "claude-opus-5-5",
+                            "source": "gateway"
+                        },
+                        "effort": {
+                            "value": "medium",
+                            "source": "gateway"
+                        }
+                    },
+                    "reviewer": {
+                        "provider": {
+                            "value": "claude",
+                            "source": "gateway"
+                        },
+                        "model": {
+                            "value": "claude-opus-5-5",
+                            "source": "gateway"
+                        },
+                        "effort": {
+                            "value": "high",
+                            "source": "gateway"
+                        }
+                    }
+                },
                 "tokens": 182400,
                 "line_diff": 1240,
                 "lines_added": 1010,
@@ -89,8 +123,42 @@
                 "assistance_kind": null,
                 "assistance_question": null,
                 "assistance_reason": null,
-                "implementer_model": "gpt-5.6-luna",
-                "reviewer_model": "gpt-5.6-luna",
+                "implementer_provider": null,
+                "implementer_model": null,
+                "implementer_effort": null,
+                "reviewer_provider": null,
+                "reviewer_model": null,
+                "reviewer_effort": null,
+                "resolved_agents": {
+                    "implementer": {
+                        "provider": {
+                            "value": "claude",
+                            "source": "gateway"
+                        },
+                        "model": {
+                            "value": "claude-opus-5-5",
+                            "source": "gateway"
+                        },
+                        "effort": {
+                            "value": "medium",
+                            "source": "gateway"
+                        }
+                    },
+                    "reviewer": {
+                        "provider": {
+                            "value": "claude",
+                            "source": "gateway"
+                        },
+                        "model": {
+                            "value": "claude-opus-5-5",
+                            "source": "gateway"
+                        },
+                        "effort": {
+                            "value": "high",
+                            "source": "gateway"
+                        }
+                    }
+                },
                 "tokens": null,
                 "line_diff": null,
                 "lines_added": null,

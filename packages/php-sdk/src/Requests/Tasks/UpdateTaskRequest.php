@@ -32,6 +32,7 @@ final class UpdateTaskRequest extends GatewayRequest implements HasBody
         private readonly ?int $position = null,
         private readonly ?array $deliverables = null,
         private readonly ?array $topology = null,
+        private readonly ?TaskAgentsInput $agents = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -67,7 +68,7 @@ final class UpdateTaskRequest extends GatewayRequest implements HasBody
                 'topology' => $this->topology,
             ],
             static fn (mixed $value): bool => $value !== null,
-        );
+        ) + ($this->agents?->toArray() ?? []);
 
         return json_encode($body === [] ? new \stdClass : $body, JSON_THROW_ON_ERROR);
     }

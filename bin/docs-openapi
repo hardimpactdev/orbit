@@ -279,10 +279,36 @@ def resolve_rule_constants(source, path):
     return in_pattern.sub(resolve_in, source)
 
 
+TASK_COPY_AGENT_RULES = re.compile(r"\.\.\.TaskCopyAgent::rules\(\s*(?:'([a-z_]*)')?\s*\)")
+
+
+def expand_task_copy_agent_rules(source):
+    """Inline `...TaskCopyAgent::rules()` and `...TaskCopyAgent::rules('task_')` as the entries PHP gives them, so the copy
+    turn agent fields of task and Project requests keep their offered values and model pattern."""
+    prefixes = sorted({match.group(1) or '' for match in TASK_COPY_AGENT_RULES.finditer(source)})
+    if not prefixes:
+        return source
+    script = ("require 'vendor/autoload.php'; echo json_encode(array_map(static fn (string $prefix): array => array_map("
+              "static fn (array $rules): array => array_map(static fn (mixed $rule): string => (string) $rule, $rules), "
+              "\\App\\Domain\\Tasks\\TaskCopyAgent::rules($prefix)), " + json.dumps(prefixes).replace('"', "'") + "), JSON_THROW_ON_ERROR);")
+    expanded = dict(zip(prefixes, run_json(['php', '-r', script], GW)))
+
+    def literal(rule):
+        if rule.startswith('in:'):
+            return 'Rule::in([' + ', '.join("'" + value + "'" for value in re.findall(r'"([^"]*)"', rule)) + '])'
+        return "'" + rule.replace("'", "\\'") + "'"
+
+    def entries(match):
+        rules = expanded[match.group(1) or '']
+        return ', '.join(f"'{key}' => [" + ', '.join(literal(rule) for rule in value) + ']' for key, value in rules.items())
+
+    return TASK_COPY_AGENT_RULES.sub(entries, source)
+
+
 def load_form_requests():
     reqs = {}
     for f in sorted(gateway_files('app/Http/Requests', 'Http/Requests')):
-        s = resolve_rule_constants(f.read_text(), f)
+        s = expand_task_copy_agent_rules(resolve_rule_constants(f.read_text(), f))
         i = s.find('function rules(')
         if i < 0:
             continue

@@ -23,6 +23,7 @@ use Orbit\Sdk\Requests\Tasks\ShowTaskRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\StartTaskRequest;
 use Orbit\Sdk\Requests\Tasks\SubtaskInput;
+use Orbit\Sdk\Requests\Tasks\TaskAgentsInput;
 use Orbit\Sdk\Requests\Tasks\TurnTaskRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
@@ -110,6 +111,32 @@ describe('task transport', function (): void {
             ->and(new UpdateTaskRequest(57, position: 2)->body()->all())->toBe('{"position":2}')
             ->and(new UpdateTaskRequest(57, deliverables: [['id' => 'done', 'type' => 'review', 'description' => 'Done.']])->body()->all())
             ->toBe('{"deliverables":[{"id":"done","type":"review","description":"Done."}]}');
+    });
+
+    it('sends the copy turn agent values a create or update names, with null to clear one', function (): void {
+        $agents = new TaskAgentsInput(['implementer_model' => 'claude-sonnet-5-5', 'reviewer_effort' => 'max']);
+
+        expect(new CreateTaskRequest(1, 'Title', 'Brief', agents: $agents)->body()->all())
+            ->toBe('{"project_id":1,"title":"Title","brief":"Brief","implementer_model":"claude-sonnet-5-5","reviewer_effort":"max"}')
+            ->and(new UpdateTaskRequest(13, agents: TaskAgentsInput::clearRole('reviewer')->with(new TaskAgentsInput(['implementer_effort' => 'low'])))->body()->all())
+            ->toBe('{"implementer_effort":"low","reviewer_provider":null,"reviewer_model":null,"reviewer_effort":null}');
+    });
+
+    it('refuses an agent value it does not know', function (): void {
+        expect(fn () => new TaskAgentsInput(['implementer_driver' => 'pi']))->toThrow(InvalidArgumentException::class, 'implementer_driver');
+    });
+
+    it('reads each role\'s resolved agent and its sources from a task', function (): void {
+        $group = task_fixture_send('task-show/default', new ShowTaskRequest(1));
+        assert($group instanceof TaskGroupResponse);
+
+        expect($group->implementerModel)->toBe('claude-sonnet-5-5')
+            ->and($group->reviewerEffort)->toBeNull()
+            ->and($group->implementerAgent?->label())->toBe('claude / claude-sonnet-5-5 / medium')
+            ->and($group->implementerAgent?->modelSource)->toBe('group')
+            ->and($group->reviewerAgent?->effort)->toBe('xhigh')
+            ->and($group->reviewerAgent?->effortSource)->toBe('project')
+            ->and($group->toArray()['resolved_agents']['reviewer']['provider'])->toBe(['value' => 'claude', 'source' => 'gateway']);
     });
 
     it('sends subtask and comment bodies', function (): void {
