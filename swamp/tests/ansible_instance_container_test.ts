@@ -13,7 +13,7 @@ import { fixture as hostFixture } from "./_support/instance_host.ts";
 // `update-ca-certificates` in the definition's finish); the host files stay as they were. The NIC address filters add two `--device`
 // keys to the build container's init (digest 4f193b4c… → b21a521d…). The strict filter check has no report task, so the tasks are
 // 174 again and the digest, which covers the task names, is 20b1670d…; the Incus calls stay the same.
-const MAIN_NORMAL_HOST = {calls: 66, tasks: 174, digest: "20b1670d13063394dc5ab1b3cea358656abf704875a068b4533ca9d15f6192fa"};
+const MAIN_NORMAL_HOST = {calls: 66, tasks: 175, digest: "2e6fc2fde5b6f09a3429faf934f652016cbf73d6ed2d2c8c7d2e2a5ca69131f8"};
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -1860,7 +1860,8 @@ Deno.test({
       const seen = await hostTranscript(f, result.output);
       if (Deno.env.get("ORBIT_PRINT_HOST_TRANSCRIPT")) console.log(JSON.stringify(seen));
       // Captured by this same case from the tasks of origin/main 77f6bf5c22 (2a-local 7b9e25ba02 changes no task), plus the five tasks
-      // that install the fast wake of a frozen container (#3639); its Incus calls and host files are unchanged.
+      // that install the fast wake of a frozen container (#3639); its Incus calls and host files are unchanged. Plus the one task that
+      // admits the containers to their own sites, with its two UFW rule files (443 and the development listener); no Incus call changes.
       assertEquals({calls: seen.calls, tasks: seen.tasks, digest: seen.digest}, MAIN_NORMAL_HOST);
       assertEquals(f.state().projects.map((row: {name: string}) => row.name), ["orbit-instances"]);
       assert(!f.has("modules-load/orbit-instances.conf"));
