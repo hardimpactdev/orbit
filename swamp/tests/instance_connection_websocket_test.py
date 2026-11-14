@@ -19,7 +19,7 @@ TASKS = ('Reconcile the described egress rules', 'Find the websocket firewall ru
 DESCRIPTIONS = ['Orbit websocket app', 'Orbit own site', 'Orbit own development ports']
 OWN_SITE = {'action': 'allow', 'destination': '10.253.0.1/32', 'protocol': 'tcp', 'destination_port': '443', 'state': 'enabled',
             'description': 'Orbit own site'}
-OWN_DEV = {'action': 'allow', 'destination': '10.253.0.1/32', 'protocol': 'tcp', 'destination_port': '1024-3127,3129-8318,8320-65535',
+OWN_DEV = {'action': 'allow', 'destination': '10.253.0.1/32', 'protocol': 'tcp', 'destination_port': '5173-5199',
            'state': 'enabled', 'description': 'Orbit own development ports'}
 COMMENT = 'orbit:instance-7-websocket'
 DATABASE = {'action': 'allow', 'destination': '10.44.0.7/32', 'protocol': 'tcp', 'destination_port': '3306', 'state': 'enabled'}
