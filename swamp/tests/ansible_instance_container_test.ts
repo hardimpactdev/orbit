@@ -1317,6 +1317,8 @@ function wakeFrom(f: ReturnType<typeof fixture>, status: "Frozen" | "Stopped" | 
     f.write();
   }
   const sleeping = asleep(f, { web: options.web ?? [200] });
+  // Only a nested-fleet container's intent has `allowed_devices`; the container exists already, so its create path is not involved.
+  if (options.nested) (f.container as Record<string, unknown>).allowed_devices = {};
   if (options.marker === false) Deno.removeSync(sleeping.marker);
   const state = f.state();
   state.containers["instance-7"].status = status;

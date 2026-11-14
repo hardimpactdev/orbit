@@ -77,7 +77,7 @@
 # Frozen, the sleep's state: resume it, close swap again, and wait a short time for the web unit; a silent one gets a stop and the
 # boot below, as a visitor would rather wait for a boot than for ever. Stopped (after a host reboot or a sleep that fell back to a
 # stop): the boot below. Running: no start and no resume. A Frozen container without its marker is a defect that the result names.
-# A deployment's start resumes a Frozen container too, then converges as usual. A nested-fleet container (`orbit-instances-nested`)
+# A deployment's start resumes a Frozen container too, then converges as usual. A nested-fleet container
 # is never stopped or booted by a wake: only a deployment or a start gives back its Club key and its tunnel `wg-nested`.
 - name: Read the asleep marker
   tags: [start]
@@ -90,7 +90,8 @@
   when: phase == 'start'
   ansible.builtin.set_fact:
     start_found: "{{ (container_read.stdout | from_json).status if container_read.rc == 0 else 'Missing' }}"
-    start_nested: "{{ container.project == 'orbit-instances-nested' }}"
+    # Only a nested-fleet container's intent has `allowed_devices`, as the Gateway places it in the nested Incus project.
+    start_nested: "{{ container.allowed_devices is defined }}"
 
 - name: Refuse the wake of a stopped nested-fleet container
   tags: [start]

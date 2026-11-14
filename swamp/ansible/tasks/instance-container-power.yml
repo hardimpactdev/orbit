@@ -4,9 +4,10 @@
 # instance-container.yml, which includes this file when its intent names the marker).
 
 # Caddy's site of a container Instance checks the marker only once a publish of the Node's sites rendered the check. A marker without
-# the check would leave the Route proxying to a stopped container, so the sleep refuses before it changes anything.
+# the check would leave the Route proxying to a stopped container, so the sleep refuses before it changes anything. An Instance without
+# a published Route has no site (the intent's `route` is false): nothing proxies to it, so there is nothing to check.
 - name: Read Caddy's loaded configuration
-  when: power == 'asleep'
+  when: power == 'asleep' and intent.route | default(true) | bool
   ansible.builtin.uri:
     url: "{{ caddy_admin }}/config/"
     return_content: true
@@ -16,7 +17,7 @@
   failed_when: false
 
 - name: Refuse a sleep while the site has no asleep check
-  when: power == 'asleep'
+  when: power == 'asleep' and intent.route | default(true) | bool
   ansible.builtin.assert:
     that:
       - caddy_config.status | default(0) == 200
@@ -49,7 +50,8 @@
   ansible.builtin.set_fact:
     container_cgroup: "{{ cgroup_root | default('/sys/fs/cgroup') }}/lxc.payload.{{ container.project }}_{{ container.name }}"
     # A nested-fleet container holds the Club key in /run and the tunnel `wg-nested`, which only a deployment or a start gives back.
-    freeze_nested: "{{ container.project == 'orbit-instances-nested' }}"
+    # Only a nested-fleet container's intent has `allowed_devices`, as the Gateway places it in the nested Incus project.
+    freeze_nested: "{{ container.allowed_devices is defined }}"
 
 - name: Freeze the container
   when: power == 'freeze' and (freeze_read.stdout | from_json).status == 'Running'
@@ -138,6 +140,12 @@
       ansible.builtin.file: { path: "{{ marker }}", state: absent }
     - name: Refuse the failed stop
       ansible.builtin.fail: { msg: instance.container_freeze_failed }
+
+# A container that an earlier sleep froze keeps that sleep's record: the result reports what it opened, so the wake closes it.
+- name: Count what the earlier sleep opened
+  when: power == 'freeze' and (freeze_read.stdout | from_json).status == 'Frozen'
+  ansible.builtin.include_tasks: { file: instance-container-swap.yml, apply: {tags: [always]} }
+  vars: { swap: count }
 
 - name: Note how the container sleeps
   when: power == 'freeze'

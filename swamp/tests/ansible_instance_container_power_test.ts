@@ -102,7 +102,7 @@ const group = new TextDecoder().decode(new Deno.Command("id", { args: ["-gn"] })
 async function part(
     tag: "asleep" | "freeze",
     options: { caddy?: string; t3?: boolean; clone?: boolean; marker?: boolean; status?: string; anonAfter?: number; pauseFails?: boolean; stopFails?: boolean; resumeFails?: boolean; unreadable?: boolean;
-        nested?: boolean; inner?: Record<string, string>; record?: string },
+        nested?: boolean; inner?: Record<string, string>; record?: string; route?: boolean; recordFolderMissing?: boolean; locked?: string },
 ): Promise<{ ok: boolean; output: string; result: Record<string, unknown>; marker: boolean; status: string; swap: string; reclaim: string; calls: string[];
     inner: Record<string, string>; record: string | null }> {
     const folder = Deno.makeTempDirSync();
@@ -120,7 +120,15 @@ async function part(
             Deno.mkdirSync(`${cgroup}/${path.split("/").slice(0, -1).join("/")}`, { recursive: true });
             Deno.writeTextFileSync(`${cgroup}/${path}`, value);
         }
-        const record = `${folder}/shm/app-instance-7.swap`;
+        // After a Node's reboot /dev/shm holds no record folder until something makes it.
+        const recordFolder = options.recordFolderMissing ? `${folder}/shm/after-reboot/hibernation` : `${folder}/shm`;
+        const record = `${recordFolder}/app-instance-7.swap`;
+        // A cgroup folder find cannot read (as a unit's cgroup that goes during the walk): find fails part way and walks on.
+        if (options.locked) {
+            Deno.mkdirSync(`${cgroup}/${options.locked}`, { recursive: true });
+            Deno.writeTextFileSync(`${cgroup}/${options.locked}/memory.swap.max`, "0");
+            Deno.chmodSync(`${cgroup}/${options.locked}`, 0o000);
+        }
         if (options.record !== undefined) Deno.writeTextFileSync(record, options.record);
         Deno.writeTextFileSync(`${cgroup}/memory.swap.max`, "0");
         Deno.writeTextFileSync(`${cgroup}/memory.reclaim`, "");
@@ -140,15 +148,16 @@ async function part(
             `${folder}/run/intent.json`,
             JSON.stringify({
                 ssh_execution: { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } },
-                container: { instance_id: 7, project, name: "instance-7", clone },
+                container: { instance_id: 7, project, name: "instance-7", clone, ...(options.nested ? { allowed_devices: {} } : {}) },
                 marker,
+                route: options.route ?? true,
                 freeze: { resident_anon_mib: 32 },
             }),
         );
         const done = await new Deno.Command("ansible-playbook", {
             args: ["-i", "localhost,", "--tags", tag, "-e", "ansible_connection=local", "-e", "ansible_become=false",
                 "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", `caddy_admin=http://127.0.0.1:${caddy.addr.port}`,
-                "-e", `marker_owner=${user}`, "-e", `marker_group=${group}`, "-e", `cgroup_root=${folder}/cgroup`, "-e", `swap_record_directory=${folder}/shm`,
+                "-e", `marker_owner=${user}`, "-e", `marker_group=${group}`, "-e", `cgroup_root=${folder}/cgroup`, "-e", `swap_record_directory=${recordFolder}`,
                 `${shipped}/instance-container-power.yml`],
             env: { HOST_FIXTURE: folder, ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
                 ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
@@ -167,6 +176,7 @@ async function part(
         };
     } finally {
         for (const server of servers) await server.shutdown();
+        if (options.locked) Deno.chmodSync(`${folder}/cgroup/lxc.payload.${options.nested ? "orbit-instances-nested" : "orbit-instances"}_instance-7/${options.locked}`, 0o755);
         Deno.removeSync(folder, { recursive: true });
     }
 }
@@ -323,4 +333,40 @@ Deno.test({ name: "a resume's swap close writes 0 to the container and to each r
     } finally {
         Deno.removeSync(folder, { recursive: true });
     }
+} });
+
+Deno.test({ name: "a sleep of an Instance without a published Route has no Caddy site to check and still writes the marker", ignore: !available, async fn() {
+    const done = await part("asleep", { caddy: JSON.stringify({ apps: { http: {} } }), route: false });
+    assert(done.ok, done.output);
+    assertEquals(done.result, {});
+    assert(done.marker);
+} });
+
+Deno.test({ name: "a find that fails part way still records what it opened, and a failed freeze closes every inner cgroup it opened", ignore: !available, async fn() {
+    // As root find reads the locked folder too; the case then still proves the rescue's close of the recorded cgroups.
+    const failed = await part("freeze", { marker: true, inner: { "a.slice/memory.swap.max": "0", "b.slice/memory.swap.max": "0" }, locked: "gone.scope", pauseFails: true });
+    assert(!failed.ok, failed.output);
+    assertEquals(failed.result, { error_code: "instance.container_freeze_failed" });
+    assertEquals([failed.status, failed.swap, failed.record], ["Running", "0", null]);
+    assertEquals(failed.inner, { "a.slice/memory.swap.max": "0", "b.slice/memory.swap.max": "0" });
+    assert(!failed.marker);
+
+    const frozen = await part("freeze", { marker: true, inner: { "a.slice/memory.swap.max": "0" }, locked: "gone.scope" });
+    assert(frozen.ok, frozen.output);
+    assertEquals(frozen.result.sleep, "frozen");
+    assert(frozen.record?.includes("a.slice/memory.swap.max"), String(frozen.record));
+} });
+
+Deno.test({ name: "a freeze makes the record's folder that a Node's reboot emptied", ignore: !available, async fn() {
+    const frozen = await part("freeze", { marker: true, nested: true, inner: nestedCgroups, recordFolderMissing: true });
+    assert(frozen.ok, frozen.output);
+    assertEquals(frozen.result, { sleep: "frozen", swap_subtree: 3 });
+    assertEquals(frozen.record?.split("\n").filter(Boolean).length, 3);
+} });
+
+Deno.test({ name: "a sleep of a container an earlier sleep froze reports what that sleep opened, so its wake closes it", ignore: !available, async fn() {
+    const again = await part("freeze", { marker: true, status: "Frozen", record: "lxc.payload.nested-gateway/memory.swap.max\nlxc.payload.nested-app-dev/memory.swap.max\n" });
+    assert(again.ok, again.output);
+    assertEquals(again.result, { sleep: "frozen", swap_subtree: 2 });
+    assertEquals(again.calls.filter((call) => call !== "query"), []);
 } });
