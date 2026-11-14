@@ -64,6 +64,14 @@ reverb.orbit {
     abort @orbit_outside
     ...
 }
+
+# orbit: websocket reverb.orbit:8443
+reverb.orbit:8443 {
+    bind 10.44.0.3
+    @orbit_outside not remote_ip 10.44.0.0/24
+    abort @orbit_outside
+    ...
+}
 ```
 
 The global options block is the same on every Node. Nothing else on a Node can add global options.
@@ -92,6 +100,7 @@ The `websocket`, `analytics`, AI router, and Metrics sites also wait for their c
 | `metrics.orbit` | The Node with the `gateway` role, while a Metrics role renders | The WireGuard address |
 | Service metrics scrape site on port 9103 | A selected Ingress Node | The WireGuard address |
 | `reverb.orbit`, `analytics.orbit`, and `collector.ai-router.orbit` | The Node that runs the role or collector | The WireGuard address |
+| `reverb.orbit` on port 8443, the only site on that port, for [container Instances](/reference/websocket-apps#reach-from-a-container) | The Node that runs the `websocket` role | The WireGuard address |
 
 An extension adds its own site source through the [Caddy site source plug-in point](/reference/extensions#plug-in-points). The build renders it after core's sources. Its sites must not use a core source name, such as `gateway`, and its certificate record must not use a core slug. The contribution's test pins those identities; the build does not reject them at runtime. The AI router collector site comes from such a source.
 

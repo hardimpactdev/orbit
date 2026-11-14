@@ -125,6 +125,12 @@ final readonly class StartInstanceMigrateAction
 
                 return ['host' => ValidatedData::string($target['host']), 'port' => ValidatedData::integer($target['port'])];
             }, array_values($endpoints));
+            // A private name of the plan, such as `reverb.orbit`, is admitted at exactly the port the plan gives it.
+            $privateNames = $container['private_names'] ?? [];
+            foreach (is_array($privateNames) ? $privateNames : [] as $value) {
+                $name = ValidatedData::object($value);
+                $environmentTargets[] = ['host' => ValidatedData::string($name['name']), 'port' => ValidatedData::integer($name['port'])];
+            }
             $reach = array_map($this->endpoint(...), $databases['servers']);
             $publication = $route === null || $before === null ? null : $this->routes->capture($instance, $route, $runtime, $before);
 

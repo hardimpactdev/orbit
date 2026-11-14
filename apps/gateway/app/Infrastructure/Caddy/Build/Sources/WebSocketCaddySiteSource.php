@@ -46,14 +46,19 @@ final readonly class WebSocketCaddySiteSource implements NodeCaddySiteSource
 
         $gateway = NodeRole::query()->where('role', RoleName::Gateway->value)->where('status', LifecycleStatus::Active->value)->with('node')->first();
 
-        return [new CaddySite(
+        $upstream = $this->port > 0 ? $this->port : StoredValue::integer(config('orbit.websocket.port'));
+        $gatewayAddress = $gateway === null ? null : app(RouteRenderContext::class)->wireguardIp($gateway->node);
+
+        // The shared 443 listener for the Gateway, task VMs and browsers, and a listener of its own on the Instance port: Caddy routes
+        // the shared one by Host whatever the SNI, so an Instance container's exact path admits only the second.
+        return array_map(fn (int $listen): CaddySite => new CaddySite(
             source: 'websocket',
-            name: WebSocketFootprint::Hostname,
+            name: WebSocketFootprint::Hostname.($listen === 443 ? '' : ':'.$listen),
             listener: CaddyListenerRule::Shared,
             hosts: [WebSocketFootprint::Hostname],
-            port: 443,
-            body: $this->renderer->render($this->port > 0 ? $this->port : StoredValue::integer(config('orbit.websocket.port')), ($gateway === null ? null : app(RouteRenderContext::class)->wireguardIp($gateway->node))),
+            port: $listen,
+            body: $this->renderer->render($upstream, $gatewayAddress, $listen),
             bindPlaceholder: WebSocketFootprint::CaddyBindPlaceholder,
-        )];
+        ), [443, WebSocketFootprint::InstancePort]);
     }
 }

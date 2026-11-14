@@ -522,6 +522,7 @@ A container reaches only what this table lists. Everything else is dropped by it
 | Development ports | Any port from 1024 of a private Route, redirected to the Node's Caddy and proxied to the same port in a clone. Only the Node's Caddy reaches them in the container |
 | Database | The Instance's own database server and port, on the Node or over WireGuard. A rule on the container's NIC, from the create flow. The server admits the Instance's role only |
 | Models | The forwarder at the bridge's gateway address |
+| Realtime | For an Instance that holds a private [websocket app](/reference/websocket-apps#reach-from-a-container): `reverb.orbit` on port 8443 only, at the address private DNS gives the name, by its [private name](#private-names-of-the-access-plan) |
 | Internet | The [egress proxy](#egress-and-dns) at port 3128 of the bridge's gateway address: every public host and port, over HTTP and `CONNECT` |
 | DNS | None. The proxy resolves every name |
 | Everything else | Dropped, including the Gateway, WireGuard peers and other Nodes' private services |
@@ -535,6 +536,18 @@ For a target on another Node, Orbit also adds the exact route allowance from the
 With only its own NIC ACL, 8080 answered and 3773 and 5173 were refused. With the shipped common-plus-own ACLs and `security.port_isolation=true`, neither scratch container reached the other's 3773 or 8080. A follow-up must separate the common egress rules from broad bridge ingress in the host ACL layout and NIC ACL composition; a default's own ACL does not yet narrow the common ingress.
 
 A container cannot reach the Gateway: its traffic would leave as its Node's WireGuard address, with the Node's Gateway access. The proxy refuses that path too.
+
+### Private names of the access plan
+
+A target of the access plan can carry a fleet private name. Today only an attached private websocket app does: `reverb.orbit` at port 8443. The plan lists each one under `private_names`, with the exact address and port it admits; the key is absent for every other Instance, so their plans stay as they were.
+
+- **Hosts file.** The container has no DNS server, and the egress proxy refuses private names. So Orbit writes each name with its address into the container's `/etc/hosts`.
+- **When.** The create, migrate and start phases write the names; deploy and wake run the start phase. `env:sync` writes them in a running container.
+- **Clones.** A clone holds no app of its default, so its create writes no name.
+- **Seed leftovers.** A clone resets the seed's proxy bypass before its first start. Its first start phase removes a hosts block from the seed.
+- **Owned lines.** Orbit owns only the lines between `# BEGIN Orbit private names` and `# END Orbit private names`. With no name, it removes them.
+- **No proxy.** Each name goes into `NO_PROXY` through the one place that composes the container's proxy settings, so the client connects on the exact path and not through the proxy.
+- **Env check.** The migrate's env check admits a name only at the port the plan gives it. Every other private name stays refused.
 
 ## Egress and DNS
 
@@ -604,9 +617,9 @@ Orbit sets the proxy for everything that runs in a container. Tools read the upp
 
 - each attached [Node service](/reference/processes-and-schedules#node-service-target-records) host that is not on the bridge;
 - for a [nested-fleet](#nested-fleet) container, its inner fleet (`10.45.0.1`, `10.45.0.0/24` and `10.232.2.0/24`): the container's own CLI then reaches its inner Gateway;
-- each name of the container intent's `private_names` list. No intent has that list yet, so it adds nothing today.
+- each name of the container intent's [`private_names`](#private-names-of-the-access-plan) list, such as `reverb.orbit` for an attached private websocket app.
 
-A normal container without these keeps the image's value only. Every writer of the value takes it from this builder.
+A normal container without these keeps the image's value only. Every writer of the value takes it from this builder. When the value is not the image's base, the intent carries it as `proxy_environment`. The create, migrate and start phases then hand it to the one guest writer, and so does `env:sync`. Units read it at their next start. `env:sync` restarts the web unit and the running Process units only when `.env` changed, as for a database attach, and never T3.
 
 | Reader | Source | When it reads a new value |
 | --- | --- | --- |
@@ -620,7 +633,7 @@ A nested-fleet container made before these keys, such as the Orbit default, keep
 
 A container takes no DNS server from DHCP (`/etc/netplan/90-orbit-no-dns.yaml`), and its resolver has no fallback (`/etc/systemd/resolved.conf.d/90-orbit-no-dns.conf`). So a name lookup in a container fails at once.
 
-So Composer, npm, Bun, Vite+, Git over HTTPS, curl, apt, Guzzle and Node's `fetch` use the proxy without further settings. A tool that ignores the variables fails at its name lookup, such as PHP's `file_get_contents` on a URL or a headless browser. An Instance's own HTTP services, such as a private Reverb host, are not in `NO_PROXY` yet: the `private_names` source above will carry them. UDP, so also QUIC, and other protocols get no route out. Git over SSH does not work. The container holds no GitHub credentials, so [Git in and out](#git-in-and-out) still goes through the Node.
+So Composer, npm, Bun, Vite+, Git over HTTPS, curl, apt, Guzzle and Node's `fetch` use the proxy without further settings. A tool that ignores the variables fails at its name lookup, such as PHP's `file_get_contents` on a URL or a headless browser. The [private names of the access plan](#private-names-of-the-access-plan), such as `reverb.orbit` for an attached websocket app, are in `NO_PROXY`; other private hosts are not. UDP, so also QUIC, and other protocols get no route out. Git over SSH does not work. The container holds no GitHub credentials, so [Git in and out](#git-in-and-out) still goes through the Node.
 
 ## Lifecycle
 
