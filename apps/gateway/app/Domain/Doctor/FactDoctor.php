@@ -35,6 +35,12 @@ final readonly class FactDoctor
     /** At least this much free space on `/`, and at least a tenth of it. */
     private const int MinimumFreeKib = 2_097_152;
 
+    /**
+     * How long a kept `/` reading counts: three host intervals of the agent (60 s each). A running agent reads `/`
+     * within one interval, so a reading kept for longer is old, and the disk check is unverifiable.
+     */
+    public const int KeptRootSeconds = 180;
+
     public function __construct(
         private NodeAgentLiveness $liveness,
         private ManagedNodeEligibility $eligibility,
@@ -114,6 +120,11 @@ final readonly class FactDoctor
             $root = array_find(is_array($host['filesystems'] ?? null) ? $host['filesystems'] : [], static fn (mixed $fs): bool => is_array($fs) && ($fs['mount'] ?? null) === '/');
             $size = is_array($root) && is_int($root['size'] ?? null) ? intdiv($root['size'], 1024) : throw new UnexpectedValueException('disk');
             $free = is_int($root['free'] ?? null) ? intdiv($root['free'], 1024) : throw new UnexpectedValueException('disk');
+            // A `/` reading kept from before the agent's first reading of `/` counts only for a short time.
+            $kept = $root['kept_since'] ?? null;
+            if ($kept !== null && (! is_string($kept) || CarbonImmutable::parse($kept)->addSeconds(self::KeptRootSeconds)->isBefore(CarbonImmutable::now()))) {
+                throw new UnexpectedValueException('disk');
+            }
             if ($size <= 0 || $free < 0 || $free > $size) {
                 throw new UnexpectedValueException('disk');
             }

@@ -92,6 +92,10 @@ Retained Schedule log reads, Node-timer account resolution, and named-user resol
 
 The Gateway stores a host's `free` bytes rounded down to 256 MiB. Free space moves with every log line, so without the rounding each `host` report would write a row.
 
+A `host` report without a `/` entry keeps the stored `/` entry. The agent leaves out a filesystem it has not read yet, so its first report after a start can lack `/`. That happens on a Gateway Node at boot: its first reports fail at once, before the disk sampler's first pass, and the retry sends the same report again.
+
+The kept entry gets `observed_at`, the observation time of the stored report that held it, and `kept_since`, when the first report without `/` arrived. A repeated report without `/` keeps both times. The next report with `/` replaces the entry. Doctor uses a kept entry for 180 seconds (three host intervals) after `kept_since`; after that the disk check is unverifiable. A Node that never reported `/` has nothing to keep.
+
 The agent sends a fact when it changed, and again every 10 minutes.
 
 `metrics` reads `/proc/stat`, `/proc/meminfo`, `/proc/loadavg`, `/proc/uptime`, `/proc/pressure/*` and data filesystem sizes with `statvfs`. CPU ratios compare per-core counters between readings; guest time is not counted twice. Used memory is total minus available, and used swap is total minus free. Missing kernel pressure data reads as zero. Disks and `host` share one background sampler, with `/` first and pseudo and network filesystems excluded. It streams at most 256 KiB of the mount table and stops at 64 distinct data mounts. An incomplete required reading sends nothing.
