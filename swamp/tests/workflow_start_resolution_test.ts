@@ -117,6 +117,13 @@ Deno.test("serve's secret rule: a vault.get expression with any container compar
   assertEquals(refused('vault.get(inputs.v, has(inputs.intent.workspace) ? inputs.a.key : inputs.b.key)'), false);
   assertEquals(refused('vault.get(inputs.v, inputs.kind == "tasks.publish" ? inputs.a.key : inputs.b.key)'), false);
   assertEquals(refused('"workspace" in inputs.intent'), false);
+  // An equality refused unless one side is a scalar literal (a value, or minus over one); a call such as uint(1) is not one.
+  assertEquals(refused('vault.get(inputs.v, inputs.intent.a == inputs.intent.b ? inputs.k : inputs.j)'), true);
+  assertEquals(refused('vault.get(inputs.v, uint(1) == inputs.intent.n ? inputs.k : inputs.j)'), true);
+  assertEquals(refused('vault.get(inputs.v, "x" in inputs.intent.list ? inputs.k : inputs.j)'), true);
+  assertEquals(refused('vault.get(inputs.v, inputs.intent.a == null ? inputs.k : inputs.j)'), false);
+  assertEquals(refused('vault.get(inputs.v, inputs.intent.a == "x" ? inputs.k : inputs.j)'), false);
+  assertEquals(refused('vault.get(inputs.v, inputs.intent.n != -1 ? inputs.k : inputs.j)'), false);
 });
 
 Deno.test("no workflow holds a vault.get expression that serve refuses at run start", () => {
