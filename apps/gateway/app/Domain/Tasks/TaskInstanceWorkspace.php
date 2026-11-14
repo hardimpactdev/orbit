@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -43,7 +44,7 @@ final readonly class TaskInstanceWorkspace
      */
     public function intent(): array
     {
-        $this->refuseFailedCompletion();
+        $this->requireReady();
         if ($this->runtime->power_state !== InstanceRuntimePowerState::Running) {
             throw new ResourceOperationException('tasks.instance_not_running', 'The container of the task workspace is not running.', 409);
         }
@@ -56,15 +57,19 @@ final readonly class TaskInstanceWorkspace
     }
 
     /**
-     * Refuses a turn, a check, a publish and a proof of a task copy whose completion failed (TaskCopyLifecycle::completionFailure): the completion
-     * did not start the copy's Processes or a nested copy's inner fleet, and its retry may run at the same time
-     * (docs/reference/tasks.md#a-failed-completion).
+     * Refuses a turn, a check, a publish and a proof of a task copy that is not ready (docs/reference/tasks.md#a-failed-completion). A
+     * copy whose completion failed (TaskCopyLifecycle::completionFailure) answers `tasks.copy_completion_failed`: the completion did not
+     * start its Processes or a nested copy's inner fleet, and its retry may run at the same time. Any other copy that is not `active`
+     * yet, because its create, its completion or a retry still runs, answers `tasks.copy_not_ready`.
      */
-    public function refuseFailedCompletion(): void
+    public function requireReady(): void
     {
         $failure = TaskCopyLifecycle::completionFailure($this->instance);
         if ($failure !== null) {
             throw new ResourceOperationException('tasks.copy_completion_failed', "The completion of the task copy failed. Retry it with `{$failure['retry']}`.", 409, details: $failure);
+        }
+        if ($this->instance->status !== InstanceState::Active) {
+            throw new ResourceOperationException('tasks.copy_not_ready', 'The task copy is not active yet.', 409);
         }
     }
 

@@ -55,7 +55,7 @@ A turn in a task copy adds these answers and Operation errors:
 | Code | When |
 | --- | --- |
 | `tasks.no_workspace` (409) | The group owns no task copy. |
-| `tasks.copy_not_ready` (409) | The task copy is not `active` yet: its create or its completion still runs. |
+| `tasks.copy_not_ready` (409) | A turn, a check, a publish or a proof of the copy: the copy is not `active` yet, because its create, its completion or a retry of the completion still runs. |
 | `tasks.copy_completion_failed` (409) | A turn, a check, a publish or a proof of the copy: its last completion failed or was cancelled, so its Processes and inner fleet did not start. The details name `operation_id`, `failed_step`, `error_code` and `retry`, the command `orbit instance:complete <copy-id>`. See [when the start fails](/cli/task/start#when-the-start-fails). |
 | `tasks.copy_turn_unsupported` (422) | The turn is a consult or names a model. |
 | `tasks.thread_role_mismatch` (422) | `--thread=ID` is not the role's thread that the turn would continue in this copy. |

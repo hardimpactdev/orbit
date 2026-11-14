@@ -50,17 +50,22 @@ final class DestroyTaskCopy implements ShouldQueue
             return;
         }
         if (! self::neverUsable($instance, $contributions)) {
-            // One bounded SSH read, outside any transaction; the guards are read again after it.
+            // One bounded SSH read, outside any transaction. The guards are read again after it: a cancel, a destroy or a retried
+            // create may have taken the copy meanwhile, and then this job neither destroys nor asks.
             $workspace = $end->workspace($group, $instance);
+            $kept = null;
             try {
                 TaskCopyEnd::assertDiscardable($workspace, false);
-            } catch (ResourceOperationException $refusal) {
-                TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: self::keptReason($group, $workspace), replaceFailure: true);
-
+            } catch (ResourceOperationException) {
+                $kept = self::keptReason($group, $workspace);
+            }
+            [$instance, $group] = $this->destroyable() ?? [null, null];
+            if ($instance === null || $group === null) {
                 return;
             }
-            [$instance] = $this->destroyable() ?? [null];
-            if ($instance === null) {
+            if ($kept !== null) {
+                TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: $kept, replaceFailure: true);
+
                 return;
             }
         }
@@ -69,7 +74,9 @@ final class DestroyTaskCopy implements ShouldQueue
 
     /**
      * Whether the records prove that no agent could have worked in the copy: its create did not succeed and no T3 server is registered
-     * for it. A create that succeeded registered T3, so its thread was usable.
+     * for it. A create that succeeded registered T3, so its thread was usable. Today a failed create never registers T3
+     * (DevelopmentInstanceCreateProjection records the server only on success), so every copy this job sees is proven unused and the
+     * read never runs. The read guards a future create that fails after its registration.
      */
     public static function neverUsable(Instance $copy, InstanceLifecycleContributions $contributions): bool
     {

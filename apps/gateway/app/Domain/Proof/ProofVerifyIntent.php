@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Proof;
 
 use App\Domain\Fleet\FleetReboot;
-use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyTurn;
@@ -91,10 +90,7 @@ final readonly class ProofVerifyIntent
         if (! $group->project->nested_fleet) {
             throw new ResourceOperationException('proof.wrong_project', 'Proof cases in a task copy need a Project with a nested fleet.', 409);
         }
-        $copy->refuseFailedCompletion();
-        if ($copy->instance->status !== InstanceState::Active) {
-            throw new ResourceOperationException('tasks.copy_not_ready', 'The task copy is not active yet.', 409);
-        }
+        $copy->requireReady();
         TaskCopyTurn::refuseUnended($group);
         // A copy cannot restore `base` yet, and cases undo nothing: its fleet is in its start state only until a proof or a turn has run in it.
         if (Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)

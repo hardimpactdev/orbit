@@ -55,10 +55,10 @@ final readonly class TaskCopyLifecycle
             if ($failure === null || ! in_array($group->status, TaskGroupStatus::active(), true)) {
                 return;
             }
-            // A failure never replaces an open direction request; a later failure of the completion replaces an earlier one's.
+            // It replaces any open failure, so the held copy always shows; it never replaces an open direction request.
+            $requires = isset($failure['requires']) ? ' Fix the Project\'s Process definition first: the retry installs the definitions as they are.' : '';
             TaskAssistance::apply($group, AssistanceKind::Failure, reason: self::CompletionFailedReason."Operation {$failure['operation_id']} "
-                ."ended at step {$failure['failed_step']} with {$failure['error_code']}. Retry: {$failure['retry']}.",
-                replaceFailure: str_starts_with((string) $group->assistance_reason, self::CompletionFailedReason));
+                ."ended at step {$failure['failed_step']} with {$failure['error_code']}.{$requires} Retry: {$failure['retry']}.", replaceFailure: true);
 
             return;
         }
@@ -71,9 +71,10 @@ final readonly class TaskCopyLifecycle
     /**
      * The failed completion that holds the copy, or null: the one place that decides it. The copy is still `source_resolved` and its last
      * `instance.complete` ended other than succeeded and other than by an expired budget. A completion that still runs, or a retry that
-     * runs, is no failure: the copy is then only not ready.
+     * runs, is no failure: the copy is then only not ready. A copy that a removal owns, or that is active, has none. `requires` is there
+     * only when the retry needs a changed Process definition first (InstanceCompleteProjection::recovery).
      *
-     * @return array{operation_id: int, failed_step: string, error_code: string, retry: string}|null
+     * @return array{operation_id: int, failed_step: string, error_code: string, retry: string, requires?: string}|null
      */
     public static function completionFailure(Instance $copy): ?array
     {
@@ -86,10 +87,14 @@ final readonly class TaskCopyLifecycle
             || $completion->error_code === 'operation.timed_out') {
             return null;
         }
-        $step = $completion->failed_step ?? $completion->result['failed_step'] ?? null;
+        $result = $completion->result ?? [];
+        $step = $completion->failed_step ?? $result['failed_step'] ?? null;
+        $code = $completion->error_code ?? $result['error_code'] ?? null;
+        $requires = $result['recovery']['retry']['requires'] ?? null;
 
         return ['operation_id' => $completion->id, 'failed_step' => is_string($step) ? $step : 'complete',
-            'error_code' => $completion->error_code ?? 'operation.cancelled', 'retry' => 'orbit instance:complete '.$copy->id];
+            'error_code' => is_string($code) ? $code : 'operation.'.$completion->status->value, 'retry' => 'orbit instance:complete '.$copy->id,
+            ...(is_string($requires) ? ['requires' => $requires] : [])];
     }
 
     /**
@@ -104,7 +109,8 @@ final readonly class TaskCopyLifecycle
 
     /**
      * The destroy of a copy succeeded, before its row goes. The group lets go of it; a group that still runs is cancelled with its open
-     * subtasks, because its work place is gone.
+     * subtasks, because its work place is gone. A request that DestroyTaskCopy recorded when it kept the copy has no cause left, and
+     * only that request ends, as a task VM release ends its own.
      */
     public function destroyed(int $instanceId): void
     {
@@ -119,6 +125,9 @@ final readonly class TaskCopyLifecycle
         }
         $group->taskable()->dissociate();
         $group->save();
+        if ($group->assistance_kind === AssistanceKind::RemovalFailure && str_starts_with((string) $group->assistance_reason, DestroyTaskCopy::KeptReason)) {
+            TaskAssistance::apply($group);
+        }
     }
 
     /** @return array{0: Instance, 1: Task}|null The copy and the group that owns it and is bound to it. */

@@ -17,6 +17,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
+use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceDestroyReplicationSlots;
 use App\Domain\Instances\InstanceHostIntent;
@@ -773,15 +774,15 @@ describe('the end of the copy\'s create', function (): void {
         [$copy, $completion] = copyCompleting($group);
         app(OperationStore::class)->change($completion, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'instance.container_fleet_drift']);
         $first = $group->refresh()->assistance_reason;
-        if ($other) {
-            // Another failure that someone else recorded in between stays.
-            TaskAssistance::apply($group, AssistanceKind::Failure, reason: 'The check failed.', replaceFailure: true);
-        }
 
         $retry = copyCompletion($copy);
         app(OperationStore::class)->change($retry, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'instance.container_process_inactive']);
-        expect($group->refresh()->assistance_reason)->toBe($other ? 'The check failed.' : str_replace(
+        expect($group->refresh()->assistance_reason)->toBe(str_replace(
             ["Operation {$completion->id}", 'instance.container_fleet_drift'], ["Operation {$retry->id}", 'instance.container_process_inactive'], $first));
+        if ($other) {
+            // Another failure that someone recorded after the completion's stays.
+            TaskAssistance::apply($group, AssistanceKind::Failure, reason: 'The check failed.', replaceFailure: true);
+        }
 
         $success = copyCompletion($copy);
         $copy->update(['status' => InstanceState::Active]);
@@ -792,6 +793,48 @@ describe('the end of the copy\'s create', function (): void {
             ->and($group->assistance_reason)->toBe($other ? 'The check failed.' : null);
         Queue::assertNotPushed(DestroyTaskCopy::class);
     })->with(['only the completion\'s request' => false, 'another failure request' => true]);
+
+    it('replaces an unrelated open failure with the failed completion\'s request, so the held copy always shows', function (): void {
+        $group = copyGroup(copySource()->project);
+        [$copy, $completion] = copyCompleting($group);
+        TaskAssistance::apply($group, AssistanceKind::Failure, reason: 'The check failed.');
+
+        app(OperationStore::class)->change($completion, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'instance.container_fleet_drift']);
+
+        expect($group->refresh()->assistance_kind)->toBe(AssistanceKind::Failure)
+            ->and($group->assistance_reason)->toStartWith(TaskCopyLifecycle::CompletionFailedReason."Operation {$completion->id} ");
+    });
+
+    it('names the real code of an interrupted completion and a Process definition the retry needs first', function (): void {
+        $group = copyGroup(copySource()->project);
+        [$copy, $completion] = copyCompleting($group);
+
+        app(OperationStore::class)->change($completion, ['status' => OperationStatus::Interrupted, 'finished_at' => now(), 'error_code' => 'operation.worker_lost',
+            'result' => ['recovery' => InstanceCompleteProjection::recovery($copy, true)]]);
+
+        expect(TaskCopyLifecycle::completionFailure($copy->refresh()))->toBe(['operation_id' => $completion->id, 'failed_step' => 'complete',
+            'error_code' => 'operation.worker_lost', 'retry' => 'orbit instance:complete '.$copy->id, 'requires' => 'project_process_definition'])
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)
+            ->and($group->assistance_reason)->toBe(TaskCopyLifecycle::CompletionFailedReason."Operation {$completion->id} ended at step complete with operation.worker_lost. "
+                ."Fix the Project's Process definition first: the retry installs the definitions as they are. Retry: orbit instance:complete {$copy->id}.");
+        Queue::assertNotPushed(DestroyTaskCopy::class);
+
+        // An interrupted end without a code names its status, not a cancel.
+        $completion->forceFill(['error_code' => null, 'result' => []])->save();
+        expect(TaskCopyLifecycle::completionFailure($copy)['error_code'] ?? null)->toBe('operation.interrupted');
+    });
+
+    it('finds no completion failure on a copy that is not source_resolved: one a removal owns, or an active one', function (bool $removal): void {
+        $group = copyGroup(copySource()->project);
+        [$copy, $completion] = copyCompleting($group);
+        app(OperationStore::class)->change($completion, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'instance.container_fleet_drift', 'lock_key' => null]);
+        expect(TaskCopyLifecycle::completionFailure($copy->refresh()))->not->toBeNull();
+
+        $removal ? app(StartInstanceDestroyAction::class)->execute($copy, true, 'test') : $copy->update(['status' => InstanceState::Active]);
+
+        expect($copy->refresh()->status)->toBe($removal ? InstanceState::Removing : InstanceState::Active)
+            ->and(TaskCopyLifecycle::completionFailure($copy))->toBeNull();
+    })->with(['a removal' => true, 'an active copy' => false]);
 
     it('changes no group when the completion of a clone that no task owns fails', function (): void {
         $default = copySource();
@@ -920,6 +963,56 @@ describe('the end of the copy\'s create', function (): void {
             ->and($this->ssh->calls)->toBe($calls + 1)
             ->and($group->refresh()->assistance_requested)->toBeFalse();
     });
+    it('reads the guards again after the read and neither destroys nor asks when another Operation took the copy meanwhile', function (string $state): void {
+        $group = copyGroup(copySource()->project);
+        $operation = startCopy($group);
+        $copy = Instance::query()->findOrFail($operation->target_id);
+        $operation->forceFill(['status' => 'failed', 'finished_at' => now(), 'lock_key' => null])->save();
+        copyT3Registered();
+        $group->update(['status' => TaskGroupStatus::Failed]);
+        $this->ssh->answer = $state === 'clean' ? $this->ssh->answer : ['state' => 'unknown', 'reason' => 'stopped'];
+        // During the read, a person's destroy of the copy is admitted.
+        $read = $this->ssh;
+        app()->instance(SshExecutor::class, new class($read, $copy) implements SshExecutor
+        {
+            public function __construct(private SshExecutor $read, private Instance $copy) {}
+
+            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+            {
+                Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => $this->copy->id, 'node_id' => $this->copy->node_id,
+                    'input' => [], 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0]);
+
+                return $this->read->execute($connection, $command);
+            }
+        });
+
+        destroyTaskCopy($copy);
+
+        expect(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(1)
+            ->and($group->refresh()->assistance_requested)->toBeFalse();
+    })->with(['a clean read' => 'clean', 'an unknown read' => 'unknown']);
+
+    it('ends the request it recorded when the kept copy\'s destroy succeeds, and only that request', function (bool $own): void {
+        $group = copyGroup(copySource()->project);
+        $operation = startCopy($group);
+        $copy = Instance::query()->findOrFail($operation->target_id);
+        $operation->forceFill(['status' => 'failed', 'finished_at' => now(), 'lock_key' => null])->save();
+        copyT3Registered();
+        $group->update(['status' => TaskGroupStatus::Failed]);
+        $this->ssh->answer = ['state' => 'unknown', 'reason' => 'stopped'];
+        destroyTaskCopy($copy);
+        expect($group->refresh()->assistance_kind)->toBe(AssistanceKind::RemovalFailure);
+        if (! $own) {
+            TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: 'The branch could not be deleted.', replaceFailure: true);
+        }
+
+        destroySucceeded(app(StartInstanceDestroyAction::class)->execute($copy->refresh(), true, 'test'));
+
+        expect($group->refresh()->taskable_id)->toBeNull()
+            ->and($group->status)->toBe(TaskGroupStatus::Failed)
+            ->and($group->assistance_requested)->toBe(! $own)
+            ->and($group->assistance_reason)->toBe($own ? null : 'The branch could not be deleted.');
+    })->with(['its own request' => true, 'another removal failure' => false]);
 });
 
 describe('a cancel of a group that owns a copy', function (): void {
@@ -1466,7 +1559,7 @@ describe('a turn of a group that owns a copy', function (): void {
         'a model of the caller' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['model' => 'gpt-5.6-luna'], 'tasks.copy_turn_unsupported 422'],
     ]);
 
-    it('refuses a turn, a check and a publish while the copy\'s completion failed, and a turn is only not ready while a retry runs', function (): void {
+    it('refuses a turn, a check and a publish while the copy\'s completion failed, and each is only not ready while a retry runs', function (): void {
         $group = copyGroup(copySource()->project);
         [$copy, $completion] = copyCompleting($group);
         $copy->runtime->update(['power_state' => InstanceRuntimePowerState::Running]);
@@ -1496,9 +1589,12 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(TaskCheck::query()->count())->toBe(0)
             ->and(AgentThread::query()->count())->toBe(0);
 
-        // The retry runs: the copy is only not ready for a turn.
+        // The retry runs: the copy is only not ready, for a turn, a check and a publish alike.
         copyCompletion($copy);
-        expect($refusal(fn () => copyTurn($group))[0])->toBe('tasks.copy_not_ready');
+        expect($refusal(fn () => copyTurn($group))[0])->toBe('tasks.copy_not_ready')
+            ->and($refusal($check)[0])->toBe('tasks.copy_not_ready')
+            ->and($refusal($publish)[0])->toBe('tasks.copy_not_ready')
+            ->and(TaskCheck::query()->count())->toBe(0);
     });
 
     it('refuses a nested-fleet group without a copy instead of reaching for a task VM', function (): void {

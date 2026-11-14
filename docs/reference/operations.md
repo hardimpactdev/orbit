@@ -181,7 +181,7 @@ Instance migration settles [deferred Schedule fires](/reference/schedules#checko
 
 An `instance.create` or `instance.complete` moves the task that owns its Instance, a [task copy](/reference/tasks#task-copy), in the same transaction that first marks it terminal. So a run's report, a start that Swamp refuses and a cancel before the run all count.
 
-Success makes the task run only when the copy is `active`, so a clone's create leaves it `reserved` and its completion starts it. A failed create fails the task. A failed completion keeps the copy and leaves the task `reserved` with an assistance request ([failed completion](/reference/tasks#task-copy)). An expired budget leaves the task `reserved`, because its run may still be stopping. An Operation on an Instance that no task owns changes no task.
+Success makes the task run only when the copy is `active`, so a clone's create leaves it `reserved` and its completion starts it. A failed create fails the task. A failed completion keeps the copy and leaves the task `reserved` with an assistance request ([a failed completion](/reference/tasks#a-failed-completion)). An expired budget leaves the task `reserved`, because its run may still be stopping. An Operation on an Instance that no task owns changes no task.
 
 The submission boundary records whether a native start was sent or explicitly refused; proven no-start outcomes, including failed execution-copy preparation, free a new runtime reservation.
 

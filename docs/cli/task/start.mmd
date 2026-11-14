@@ -40,7 +40,7 @@ sequenceDiagram
       Note over GW: Keep the task reserved<br/>the completion runs
       %%> What it does:
       %%> - a succeeded create means the copy's thread is usable: its T3 server is registered; the copy stays `source_resolved` and its `instance.complete` sets up the database, the Processes and a nested copy's inner fleet
-      %%> - while the completion runs, a turn answers `tasks.copy_not_ready`
+      %%> - while the completion runs, a turn, a check, a publish and a proof answer `tasks.copy_not_ready`
       alt the completion succeeds
         SW-->>GW: Run succeeded<br/>copy active
         Note over GW: Run the task<br/>running
@@ -56,7 +56,7 @@ sequenceDiagram
         %%> - the task stays `reserved` and keeps its copy; `task:cancel` still works, with its read of the copy's work
         %%> - the task records a failure assistance request, unless a direction request is open: it names the completion Operation, its failed step, its error code and the retry `orbit instance:complete ID`; `task:show` and `task:status` show it
         %%> - a turn, a check, a publish and a proof of the task answer HTTP 409 `tasks.copy_completion_failed`, with `operation_id`, `failed_step`, `error_code` and `retry` in the details: the copy's Processes and inner fleet did not start, and a retry may run at the same time
-        %%> - `task:start` keeps refusing the reserved task; the retry is `orbit instance:complete ID`, and while it runs a turn answers `tasks.copy_not_ready`
+        %%> - `task:start` keeps refusing the reserved task; the retry is `orbit instance:complete ID`, and while it runs a turn, a check, a publish and a proof answer `tasks.copy_not_ready`
         %%> - an expired budget changes nothing: the run may still be stopping, so the task stays `reserved` with its copy
       end
     else the create fails

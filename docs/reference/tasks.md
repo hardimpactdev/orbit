@@ -368,7 +368,7 @@ After cleanup removes scratch, start a fresh command. Its push step mints a fres
 
 Token revocation (`gh api --method DELETE installation/token`) and scratch cleanup on the VM and on 209 are separate native steps. Publication requests no reviewers and runs no brief coverage. A native assert confirms publication and worker cleanup. The Gateway projects the PR step’s public metadata into `pr_url` and the watched PR fields and releases the VM after successful publication. Raw Git and GitHub replies stay in the private scratch directory. Typed data readers preserve public refusal codes without retaining those replies in run history.
 
-A group whose workspace is a [task copy](#task-copy) publishes the same way, with the same result. The Gateway admits it without a task VM, while its last completion did not fail (`tasks.copy_completion_failed`), its container runs (`tasks.instance_not_running`) and no earlier copy turn may still run (`tasks.copy_turn_unended`). The intent adds the copy's container, its start commit and the path of its `.env`, from the Instance's record.
+A group whose workspace is a [task copy](#task-copy) publishes the same way, with the same result. The Gateway admits it without a task VM, while its last completion did not fail (`tasks.copy_completion_failed`), it is `active` (`tasks.copy_not_ready`), its container runs (`tasks.instance_not_running`) and no earlier copy turn may still run (`tasks.copy_turn_unended`). The intent adds the copy's container, its start commit and the path of its `.env`, from the Instance's record.
 
 When the run starts, the Gateway also renders the `.env` from the Instance's stored values and passes it as a vault copy (`execution_secrets.environment`, key `task-publish-environment-<operation>`), never as a run input. The agent cannot change that copy, unlike the file in the copy. It holds the copy's own keys as Orbit stored them; it is not the copy's file byte for byte, because a clone keeps the default's file from the seed and rewrites only its own keys ([the environment of a clone](/reference/development-containers#the-environment-of-a-clone)). When the copy is destroyed, these copies are deleted with the Instance's other execution copies.
 
@@ -987,9 +987,9 @@ The copy's `.env` holds its secrets. Git never takes it: every container create 
 
 A failed, cancelled, interrupted or unadmitted `instance.complete` of a copy keeps the copy, and the task stays `reserved`. Its create succeeded, so its thread was usable and an agent may have worked in it.
 
-The task asks for assistance with kind `failure`, unless a direction request is open. The reason names the completion Operation, its failed step, its error code and the retry `orbit instance:complete <copy-id>`. `task:show` and `task:status` show it.
+The task asks for assistance with kind `failure`, unless a direction request is open. The reason names the completion Operation, its failed step, its error code and the retry `orbit instance:complete <copy-id>`. When a Process of the Project's definitions died, it says to fix that definition before the retry. The request replaces any other open failure, so the held copy always shows. `task:show` and `task:status` show it.
 
-Until a completion succeeds, a turn, a check, a publish and a proof answer `tasks.copy_completion_failed` (409). The details name `operation_id`, `failed_step`, `error_code` and `retry`. The copy's Processes and inner fleet did not start, and a retry may run at the same time. While a retry runs, a turn answers `tasks.copy_not_ready`. A retry that succeeds runs the task and clears that assistance request, and only that one.
+Until a completion succeeds, a turn, a check, a publish and a proof answer `tasks.copy_completion_failed` (409). The details name `operation_id`, `failed_step`, `error_code` and `retry`. The copy's Processes and inner fleet did not start, and a retry may run at the same time. While a retry runs, a turn, a check, a publish and a proof answer `tasks.copy_not_ready`. A retry that succeeds runs the task and clears that assistance request, and only that one.
 
 #### Removal by Orbit
 
