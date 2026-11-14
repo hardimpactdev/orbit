@@ -317,22 +317,27 @@ The `Orbit Swamp` session of the container is not renewed: nothing uses it yet. 
 
 A container T3 server reads its label, the [machine name](/reference/development-containers#the-machine-name), only when it starts. [`conn:environment-restart`](/cli/conn/environment-restart) and [`conn:node-environments-restart`](/cli/conn/node-environments-restart) restart a running server whose label is not the name yet. [Existing Instances](/reference/development-containers#existing-instances) says when to run them. The Gateway's own label of the server, `<project> / <instance>`, does not change.
 
-For each container Instance, the Gateway decides in this order:
+For each container Instance, the Gateway first answers what needs no thread read:
 
-1. A sleeping container (`power_state` `stopped`) is `skipped`. The reason is `frozen` after a succeeded sleep that froze it. Any other sleeping container reads as `stopped`.
+1. A sleeping container (`power_state` `stopped`) is `skipped`. Its reason comes from `ContainerResume::frozenBySleep()`, the wake's rule: `frozen` after a sleep that froze it, else `stopped`.
 2. An Instance with no T3 port or no server row is `skipped` with `no_t3`.
-3. The Gateway reads the label from `GET /.well-known/t3/environment`, with no session. No answer is `skipped` with `t3_unreadable`.
+3. The Gateway reads the labels of all candidates at once from `GET /.well-known/t3/environment`, with no session, in at most 5 seconds. No answer is `skipped` with `t3_unreadable`.
 4. A label that equals `<instance>.<project slug>` is `current`.
-5. The Gateway reads the threads from `GET /api/orchestration/shell` with its admin session. An unreadable answer is `skipped` with `t3_unreadable`.
-6. `ConnAgentActivity::restartBlocked()` reads the threads. A run that works by the idle sleep's rule makes them busy. So does any pending runtime request, blocking or not. A busy server is `busy` with `t3_working`.
-7. Otherwise the Gateway admits `conn.environment_restart` at once, on the Instance's lock.
-8. A refused admission is `busy` with its error code, such as `operation.target_busy`.
 
-The intent holds the Instance, its container, the server's URL and the name. It holds no session.
+Then it takes each candidate left, by Instance ID:
+
+1. Past 120 seconds, or past four restarts in one call, the rest are `skipped` with `deadline` or `next_run`.
+2. Another open Conn Operation on the server, such as a renewal, a pairing or a held session, is `busy` with `conn_operation`.
+3. The Gateway reads the threads from `GET /api/orchestration/shell` with its admin session. An unreadable answer is `skipped` with `t3_unreadable`.
+4. `ConnAgentActivity::restartBlocked()` reads the threads. A run that works by the idle sleep's rule makes them busy. So does any pending runtime request, blocking or not. A busy server is `busy` with `t3_working`.
+5. Otherwise the Gateway admits `conn.environment_restart` at once, on the Instance's lock.
+6. A refused admission is `busy` with its error code, such as `operation.target_busy`. Any other failure answers that Instance `failed`, and the walk goes on.
+
+The intent holds the Instance, its container, T3's port in the container, the name and the time of the read. It holds no session.
 
 The Node form walks the Node's container Instances by ID and reads each one right before its own admission.
 
-The run restarts T3 in the container and checks that it is active again and shows the name. It succeeds as `restarted`, or fails as `failed` with `conn.t3_inactive` or `conn.t3_label_mismatch`. The Operation does not retry. T3's environment ID, threads, sessions and pairings stay, so devices keep their pairings. A connected client reconnects, and an unsent draft stays in its browser. A turn that started after the read is cut, and T3 continues it after its start.
+The run checks that `/etc/machine-info` holds the name (else `skipped` with `name_not_written`), restarts T3 in the container, and reads its label inside the container until it is the name. It succeeds as `restarted` with `window_ms`, or fails as `failed` with `conn.t3_unready` or `conn.t3_label_mismatch`. T3 terminals end with T3. The Operation does not retry. T3's environment ID, threads, sessions and pairings stay, so devices keep their pairings. A connected client reconnects, and an unsent draft stays in its browser. A turn that started after the read is cut, and T3 continues it after its start.
 
 ## Thread index
 

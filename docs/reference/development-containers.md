@@ -531,15 +531,17 @@ A container that ran before the name existed keeps showing `instance-<id>` as T3
 
 Only an idle T3 restarts. The Gateway reads T3's threads with its admin session, the read the idle sleep uses. While a turn works, or any runtime request is pending, it restarts nothing and answers `busy`. A later run takes that container.
 
-Only T3 restarts. The run runs `systemctl try-restart t3.service` in the container. Then it waits a bounded time until T3 is active and shows the name. A T3 that does not come back is reported `failed`, and nothing retries it. The kernel hostname stays until the next boot.
+Only T3's service restarts. The run first checks that `/etc/machine-info` holds the name; without it, it answers `skipped` with `name_not_written`. Then it runs `systemctl try-restart t3.service` in the container and reads T3's label inside the container until it is the name. A T3 that does not come back is reported `failed`, and nothing retries it. The kernel hostname stays until the next boot.
+
+`t3.service` sets no `KillMode`, so systemd ends every process of the service. T3 terminals and every process started in them end, such as a development server started in a T3 terminal. Orbit Processes run in their own `orbit-*` units and do not restart.
 
 A frozen or stopped container is skipped. T3 reads the name at its next start.
 
 #### The restart window
 
-The thread read and the restart are two steps. The Gateway holds the session, and a run may not call back for it. So the Gateway admits the Operation right after the read. The Node form reads each container right before its own admission.
+The thread read and the restart are two steps. The read stays in the Gateway so the busy rule has one place. A read inside the run would need the admin session as a vault execution copy, as `conn.session_hold` has, and a second copy of the busy rule outside PHP. So the Gateway admits the Operation right after the read. The Node form reads every label at once and each container's threads right before its own admission.
 
-About 5 to 15 seconds pass from the read to the restart: the dispatch, the run's input step and the start of its Ansible phase. The proof of the command measures it. The intent carries `read_at`, the end of the Gateway's read. The run notes `restart_at` just before the restart. A restarted Operation's result keeps both and `window_ms`, the time between them.
+An estimate, until the proof of the command measures it: about 5 to 15 seconds pass from the read to the restart, for the dispatch, the run's input step, the start of its Ansible phase and its two reads. One call of the Node form admits at most four restarts, so the Swamp queue does not widen it. The intent carries `read_at`, the end of the Gateway's read. The run notes `restart_at` just before the restart. A restarted Operation's result keeps both and `window_ms`, the time between them.
 
 What a user sees:
 

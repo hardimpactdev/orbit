@@ -2,6 +2,10 @@
 title: "orbit conn:node-environments-restart"
 sidebarTitle: "conn:node-environments-restart"
 description: "Restart the idle T3 server of each container Instance on one Node whose label is not yet its machine name."
+covers:
+  - apps/gateway/extensions/conn/src/Domain/ConnEnvironmentRestart.php
+  - apps/cli/app/Commands/Conn/RestartNodeConnEnvironmentsCommand.php
+  - packages/php-sdk/src/Requests/Conn/RestartNodeConnEnvironmentsRequest.php
 ---
 
 Run [`conn:environment-restart`](/cli/conn/environment-restart) for each container Instance on one Node, in order of Instance ID. Run it once on each app-dev Node after the release that brought the [machine name](/reference/development-containers#the-machine-name).
@@ -20,7 +24,9 @@ orbit conn:node-environments-restart 7 --json
 
 The command prints one line for each container Instance on the Node, with the same answers as `conn:environment-restart`: `restarted`, `current`, `busy`, `skipped` or `failed`, with their reasons.
 
-The Gateway reads each Instance's T3 label and threads right before it admits that Instance's own `conn.environment_restart` Operation. So the read is as close to the restart as for one Instance, however many containers come before it. One busy, sleeping or failed Instance does not hold back the others. Run the command again later to take the ones that were busy.
+The Gateway reads every T3 label at once, in at most 5 seconds. Then it reads each candidate's threads right before it admits that Instance's own `conn.environment_restart` Operation, so the read is as close to the restart as for one Instance. One busy, sleeping or failed Instance does not hold back the others.
+
+One call admits at most four restarts, so a large Node does not fill the Swamp workers and widen the window with a queue wait. Later candidates answer `skipped` with `next_run`. A call also stops reading after 120 seconds, well inside the request's limit; the Instances left answer `skipped` with `deadline`. Run the command again until no Instance answers `busy`, `next_run` or `deadline`.
 
 The API is `POST /api/v1/conn/nodes/{node}/t3-restart`. The Conn extension must be on.
 
