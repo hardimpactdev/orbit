@@ -1374,9 +1374,13 @@ The Instance's create flow registers its T3 server with the [Conn layer](/refere
 
 In the container, as `agent`:
 
-1. The T3 step starts T3. While T3 starts, T3's own CLI issues a session with `t3 auth session issue --label "Orbit Gateway" --token-only`, as `agent`.
-2. At the same time it issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3), and `t3 project add` adds the workspace once. Stock T3's CLI writes T3's store before and during the server's first start, so the three calls cost the create no time of their own. The tokens wait in the run's private folder, mode 0600, and never reach a log or a result. PR 8 narrows the Swamp session's scopes.
-3. The sessions step reads the served environment and asks T3 about both sessions at `/api/auth/session`. It issues none. Its reply replaces the tokens in the private folder.
+1. The T3 step starts T3. T3's own CLI then issues the `Orbit Gateway` session, as `agent`: `t3 auth session issue --label "Orbit Gateway" --token-only`.
+2. In parallel, the CLI issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3). PR 8 narrows its scopes.
+3. In parallel, `t3 project add` adds the workspace, once.
+4. The tokens wait in the run's private folder, mode 0600. They never reach a log or a result.
+5. The sessions step reads the served environment and asks T3 about both sessions at `/api/auth/session`. It issues none. Its reply replaces the tokens in the private folder.
+
+Stock T3's CLI writes T3's store before and during the server's first start. So the three calls run while T3 starts and add no time of their own.
 
 A session issue that fails fails the T3 step: `instance.t3_unready`, with `instance.container_t3_failed: command t3 exited <code>` as its detail.
 
@@ -2224,7 +2228,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.migrate_process_binary_unavailable` | 409 | A moved Process needs an unavailable PHP version or executable path. The error names the Process and path; the checkout keeps serving |
 | `instance.migrate_<step>_failed` | 502 | A step of a move failed, such as `instance.migrate_workspace_failed`. The checkout serves as before |
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
-| `instance.t3_unready` | 502 | The T3 server did not answer within 30 seconds of its first start in a clone, or of a wake, or T3's CLI failed to issue a clone's session or add its project. After a wake, the app already serves |
+| `instance.t3_unready` | 502 | T3 did not answer within 30 seconds of a clone's first start or a wake, or its CLI failed in a clone's T3 step. After a wake, the app serves |
 | `instance.web_unready` | 502 | FrankenPHP gave no answer within 30 seconds of a wake. The asleep marker stays |
 | `instance.clone_in_flight` | 409 | The refresh of a nested-fleet default while the create of a clone of it is open. The next release tries again |
 | `instance.fleet_key_on_disk` | 502 | The seed of a nested-fleet default found the Club key as a file on the container's disk. The run's first seed refuses before it changes anything |
