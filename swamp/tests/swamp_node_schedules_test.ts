@@ -1,25 +1,42 @@
 import { assert, assertEquals, assertFalse } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
+import { expandGlob } from "jsr:@std/fs@1.0.19/expand-glob";
 import { ROOT } from "../bin/gate-test-support.ts";
 
-// The release Swamp load sets the production Swamp Node's schedules on serve as trigger overrides
-// (docs/reference/operations.md#schedules-of-the-swamp-node). Until a later change removes their built-in triggers, an override
-// must keep the built-in cron, so Node 209's serve merges both into one schedule that fires as before.
+// Every serve loads the same `swamp/workflows`: the production Swamp Node's and a nested fleet's. A built-in trigger is therefore
+// registered on every serve, so it may not read the production checkout or serve's TLS certificate. The production Swamp Node's
+// own schedules have no built-in trigger: only the release Swamp load sets them, as serve trigger overrides
+// (docs/reference/operations.md#schedules-of-the-swamp-node).
+const production = ["/apps/orbit-monorepo-staging/checkout", "/serve-tls/"];
+
 const schedules = JSON.parse(
     await Deno.readTextFile(`${ROOT}/config/swamp-node-schedules.json`),
 ) as Record<string, string>;
 
-Deno.test("each production Swamp Node schedule keeps its workflow's built-in cron", async () => {
+Deno.test("a workflow with a built-in trigger reads nothing of the production Swamp Node", async () => {
+    for await (const path of expandGlob(`${ROOT}/workflows/*.yaml`)) {
+        const source = await Deno.readTextFile(path.path);
+        const flow = parse(source) as { trigger?: { schedule?: unknown } };
+        if (!flow.trigger?.schedule) continue;
+        for (const part of production) {
+            assertFalse(source.includes(part), `${path.path} names ${part}`);
+        }
+    }
+});
+
+Deno.test("the production Swamp Node's schedules have no built-in trigger", async () => {
     assertEquals(Object.keys(schedules).sort(), [
         "swamp-credential-monitor",
         "swamp-datastore-watch",
     ]);
-    for (const [name, cron] of Object.entries(schedules)) {
+    assertEquals(schedules["swamp-credential-monitor"], "0 7 * * * *");
+    assertEquals(schedules["swamp-datastore-watch"], "0 */15 * * * *");
+    for (const name of Object.keys(schedules)) {
         const flow = parse(
             await Deno.readTextFile(`${ROOT}/workflows/workflow-${name}.yaml`),
-        ) as { name: string; trigger?: { schedule?: string } };
+        ) as { name: string; trigger?: unknown };
         assertEquals(flow.name, name);
-        assertEquals(flow.trigger?.schedule, cron, name);
+        assertEquals(flow.trigger, undefined, name);
     }
 });
 

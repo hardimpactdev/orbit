@@ -40,7 +40,7 @@ The alert uses the existing [signed release webhook](/reference/gateway-recovery
 
 `swamp-datastore-watch` and `swamp-credential-monitor` read the serve checkout at `/home/orbit/apps/orbit-monorepo-staging/checkout`, the `swamp.orbit` certificate under `~/.config/swamp/serve-tls` and the Node 209 token names. Only the production Swamp Node has them.
 
-Every serve loads the same `swamp/workflows`. Swamp registers each workflow's built-in `trigger` on every serve, a [nested fleet's](/reference/development-containers#nested-fleet) too. The release sets these two schedules on Node 209 as well:
+Every serve loads the same `swamp/workflows`, and Swamp registers each workflow's built-in `trigger` on every serve, a [nested fleet's](/reference/development-containers#nested-fleet) too. These two workflows therefore have no built-in trigger. Only the release sets their schedules, on Node 209:
 
 1. `swamp/config/swamp-node-schedules.json` holds the cron of each workflow.
 2. The `load` step of the [release Swamp load](/reference/gateway-recovery#load-swamp) runs `swamp workflow trigger set` for each entry. It runs after `swamp serve reload`.
@@ -48,13 +48,9 @@ Every serve loads the same `swamp/workflows`. Swamp registers each workflow's bu
 
 A schedule that serve does not confirm fails the load.
 
-Only the production release runs that load. Serve merges an override with the built-in trigger into one schedule. The cron in the file equals the built-in one, so Node 209 runs each workflow once, at the same time as before.
+Only the production release runs that load, so only Node 209 runs these schedules. A nested fleet's serve does not register them. A serve with no overrides, such as a new Swamp Node before its first release, runs neither schedule until a release sets them.
 
-### Built-in triggers
-
-For now, the two workflows keep their built-in `trigger`. A nested fleet's serve therefore still registers them, and their runs fail there. A later change removes the built-in triggers, after a release has set the overrides on Node 209. From then on, only the production release sets these schedules.
-
-They stay until then because a release reloads with the load workflow that serve already has. If one commit dropped them and added the overrides, Node 209 would run neither schedule until the next release.
+A workflow that keeps a built-in trigger may not read the production checkout or `serve-tls`; `swamp/tests/swamp_node_schedules_test.ts` checks this.
 
 ### Changing the file
 
