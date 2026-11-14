@@ -1,4 +1,4 @@
-// Draws each chart a page places with <div className="flow-at" data-chart="<family>/<name>">, with a step-detail panel.
+// Draws each chart a page places with <div className="flow-at" data-chart="<family>/<name>"> (or <family>/<folder>/<name>), with a step-detail panel.
 // Mintlify loads every .js file in docs/ on every page. bin/docs-flows writes window.orbitFlows to
 // flows-data.js from the docs/cli/<family>/<name>.mmd charts that pages place.
 // renderFlow is the migration dashboard's renderer, with `par … and … end` frames added; the panel ports its FlowPage.

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Checks every docs/cli/<family>/<name>.mmd against the subset the renderer supports and the text limits,
-// checks the `%% kind:` lines and the chart placements in the pages, keeps flows-pending.txt shrinking,
-// and holds the kinds in flows-migrated.txt to their Swamp workflow step names.
+// Checks every docs/cli/<family>/<name>.mmd, and each sub-folder chart a page places, against the subset the renderer
+// supports and the text limits, checks the `%% kind:` lines and the chart placements in the pages, keeps flows-pending.txt
+// shrinking, and holds the kinds in flows-migrated.txt to their Swamp workflow step names.
 const { existsSync, readdirSync, readFileSync } = require('node:fs')
 const { execFileSync } = require('node:child_process')
 const root = `${__dirname}/..`, dir = `${root}/docs/cli`
