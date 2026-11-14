@@ -219,4 +219,6 @@ An extension is not a Composer package, a separate process, or something to inst
 
 A native family may declare `terminal_result.captures` beside its fixed terminal step. Each named capture selects one fixed job and step, and optionally one output field. The shared terminal reader includes only successful selected outputs from the same bound run. Existing terminal fields take precedence. This preserves public source and environment-key facts when cancellation skips the final aggregate. Private values remain in their named vault output; no family history reader or progress callback runs.
 
+A family with a result-reporting step may declare `terminal_result.fallback`: one step of the same job whose status and stdout are the result when the reporting step was skipped. A native declaration takes none ([Swamp command steps](/reference/swamp-command-steps#terminal-outputs)).
+
 The `tasks` extension registers the singular [`task:*` family](/cli/task). Its `task` route binding resolves parent and child IDs from the same table. The extension slug stays `tasks`.

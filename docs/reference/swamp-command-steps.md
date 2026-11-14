@@ -84,6 +84,8 @@ Missing, mismatched or unreadable history leaves the Operation unchanged and rai
 
 Queued projection explicitly fails on permanent or unexpected errors, including a stale binding or missing Operation; unlimited attempts apply only to the delayed transport retry, never automatic exception retries. Direct invocation still raises the error. Terminal reads reuse the admission connection owner's endpoint-and-authority matching within one job. A failed request drops the connection; replies still match the exact request ID.
 
+A result-reporting declaration may name one `fallback` step of the same job. When `step` was skipped, the fallback's status and its stdout are the result. When `step` ran, the fallback is not read. `instance.create` reads `finish`, or `clone-register` when a ready clone skipped `finish`. A native declaration takes no `fallback`.
+
 ### Read Swamp's run data instead of a result step
 
 Flow-tighten rule 14 removes the step that reports a result. A kind without one declares `terminal_result` with `native => true`; `job` and `step` name its real end check, for example `['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true]`. The same single history read then gives the family projector:
@@ -94,8 +96,6 @@ Flow-tighten rule 14 removes the step that reports a result. A kind without one 
 Status and summary counts cover the full fan-out. Stderr is excluded. This lets a family record completed effects after a later failure.
 
 When one action runs as one of several guarded steps, such as one per placement, `alternatives` lists the other steps beside `step`. The step that ran is the end check: when the run succeeds, it must have succeeded. Only native declarations take `alternatives`. `database.read` uses it for its SSH read and its read on 209.
-
-A result-reporting declaration may name one `fallback` step of the same job. When `step` was skipped or did not run, the fallback's status and its stdout are the result. When `step` ran, the fallback is not read. `instance.create` reads `finish`, or `clone-register` when a ready clone skipped `finish`. A native declaration takes no `fallback`.
 
 The summary holds the facts of Swamp's `@swamp/workflow-summary` report. It comes from the same history, so there is no second read.
 

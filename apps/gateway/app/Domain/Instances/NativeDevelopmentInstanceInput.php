@@ -77,7 +77,7 @@ final readonly class NativeDevelopmentInstanceInput
         // A clone's stage copy: the release scripts and this run's container intent, then the private text of its clone copy.
         $stage = $clone ? new CloneStage : null;
         app(InstanceGitHubReadTokens::class)->start($operation, $model === null ? '' : InstanceContainer::ModelEnvironmentFrame."\n".$model,
-            $stage === null || $club['container'] === null ? '' : $stage->payload($club['container'],
+            $stage === null ? '' : $stage->payload(ValidatedData::object($club['container']),
                 ValidatedData::string(ValidatedData::object(ValidatedData::object($input['ssh_execution'])['target'])['user'])));
 
         return ['intent' => [...$plan, 'container' => $club['container'], 'ssh_execution' => $input['ssh_execution'],

@@ -592,8 +592,8 @@ final readonly class SwampCommandStep
                 }
             }
         }
-        // The fallback reports only when the reporting step was skipped or absent: then its status and its stdout are the result.
-        if ($fallback !== null && ($selected === null || $selected === 'skipped') && ($fallback['status'] ?? 'skipped') !== 'skipped') {
+        // The fallback reports only when the reporting step was skipped: then its status and its stdout are the result.
+        if ($fallback !== null && $selected === 'skipped' && ($fallback['status'] ?? 'skipped') !== 'skipped') {
             $outputs = $fallback['outputs'] ?? [];
             $stdout = is_array($outputs) ? ($outputs['stdout'] ?? null) : null;
             $selected = $fallback['status'];
