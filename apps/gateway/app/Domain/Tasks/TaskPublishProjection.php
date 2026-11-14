@@ -4,21 +4,42 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\OperationStatus;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Projects native publication metadata onto the board. No GitHub calls or execution. */
-final readonly class TaskPublishProjection implements DirectOperationProjection
+final readonly class TaskPublishProjection implements DirectOperationProjection, DirectOperationWorkflowInput
 {
     public function input(Operation $operation): array
     {
         return ['intent' => array_diff_key($operation->input, ['execution_secrets' => true]),
             'execution_secrets' => $operation->input['execution_secrets']];
+    }
+
+    /**
+     * A task copy's publish also gets the .env Orbit renders from the Instance's stored values, as a vault copy: the worker checks
+     * the candidate against it as well as against the copy's own file, which the agent can change (docs/reference/tasks.md#task-copy).
+     */
+    public function workflowInput(Operation $operation): array
+    {
+        $input = $this->input($operation);
+        if (! isset($operation->input['workspace'])) {
+            return $input;
+        }
+        $instance = Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id']));
+        $environment = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
+            'task-publish-environment-'.$operation->id, app(DevelopmentCreateEnvironment::class)->content($instance));
+
+        return [...$input, 'execution_secrets' => [...ValidatedData::object($input['execution_secrets']), 'environment' => $environment]];
     }
 
     public function apply(Operation $operation, array $data): Operation

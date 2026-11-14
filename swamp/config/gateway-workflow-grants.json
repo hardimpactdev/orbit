@@ -36,6 +36,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^pr-merge-write-[a-f0-9-]{36}$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^pr-comment-write-[a-f0-9-]{36}$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-publish-token-[a-f0-9-]{36}$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^task-publish-environment-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-sync-token-[a-f0-9-]{36}$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-check-write-[a-f0-9-]{36}$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-check-git-[a-f0-9-]{36}$", "actions": ["write", "read"]},
