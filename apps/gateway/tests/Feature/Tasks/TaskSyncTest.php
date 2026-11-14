@@ -19,6 +19,7 @@ use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -291,6 +292,51 @@ it('starts operation-task-sync-copy for a task copy and operation-task-sync for 
         ->and($vm->state['swamp_start']['workflow'])->toBe('operation-task-sync')
         ->and($vm->input)->toHaveKey('checkout_path')
         ->and($copy->input)->not->toHaveKey('checkout_path');
+});
+
+it('keeps the workflow that admission recorded, so a copy sync an older Gateway admitted is still searched and settled', function (): void {
+    [$group] = syncCopyWorld();
+    $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+    // As the Gateway before the copy workflow recorded it: one workflow for every sync, and a lost start confirmation.
+    $operation->forceFill(['status' => OperationStatus::Running, 'started_at' => now(), 'error_code' => 'swamp.start_uncertain',
+        'state' => [...$operation->state, 'swamp_start' => ['key' => 'operation:'.$operation->id, 'workflow' => 'operation-task-sync']]])->save();
+    config(['swamp.read_token' => 'read-token', 'swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem']);
+    $socket = new class implements WebSocketClient
+    {
+        /** @var list<array<string, mixed>> */
+        public array $sent = [];
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
+
+        public function send(array $message): void
+        {
+            $this->sent[] = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = end($this->sent);
+
+            return [['type' => 'workflow.run.search', 'id' => is_array($frame) ? $frame['id'] : null, 'payload' => ['total' => 0, 'data' => ['results' => []]]]];
+        }
+
+        public function close(): void {}
+
+        public function isConnected(): bool
+        {
+            return true;
+        }
+    };
+    app()->instance(WebSocketClient::class, $socket);
+
+    expect(app(DirectOperation::class)->workflowFor($operation))->toBe('operation-task-sync');
+    // Before, the computed name differed from the recorded one and recovery returned before any search, holding the group lock.
+    expect(fn () => app(SwampCommandStep::class)->recoverUnbound($operation))->toThrow(ResourceOperationException::class);
+
+    expect($socket->sent)->toHaveCount(1)
+        ->and($socket->sent[0]['type'])->toBe('workflow.run.search')
+        ->and($socket->sent[0]['payload']['workflow'])->toBe('operation-task-sync')
+        ->and($socket->sent[0]['payload']['tags'])->toBe(['orbit_start_key' => 'operation:'.$operation->id]);
 });
 
 it('keeps the Swamp start fixture equal to the inputs a copy sync and a task VM sync start with', function (): void {

@@ -223,14 +223,19 @@ final readonly class DirectOperation
     }
 
     /**
-     * The workflow that runs this Operation: the declared one, or for a kind with alternate workflows the one its projection chooses
-     * for the admitted intent. Every start, search and read of the run takes its name from here.
+     * The workflow that runs this Operation: the one admission recorded in `state.swamp_start`, else the declared one, or for a kind
+     * with alternate workflows the one its projection chooses for the admitted intent. Admission records it once; every start, search
+     * and read of the run takes its name from here, so an Operation admitted by an older Gateway keeps the workflow it recorded.
      */
     public function workflowFor(Operation $operation): ?string
     {
         $definition = $this->definition($operation->kind);
         if ($definition === null) {
             return null;
+        }
+        $recorded = $operation->state['swamp_start']['workflow'] ?? null;
+        if (is_string($recorded) && $recorded !== '') {
+            return $recorded;
         }
         if (! isset($definition['alternate_workflows'])) {
             return $definition['workflow'];
