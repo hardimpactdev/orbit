@@ -288,7 +288,7 @@ describe('the result of a start', function (): void {
         SwampNodeFixture::ensure();
         placeClubKey($this->clubEnvironment, FakeNestedClubKey);
         $instance = Instance::query()->findOrFail(containerCreate(clubProject('trial', true), clubSwitchedOnNode())->target_id);
-        $refresh = ['migrate' => 'nothing', 'restart' => 'yes', 'converge' => 'ran', 'converge_reason' => 'stale', 'changed' => 0, 'tokens' => 'reminted', 'tokens_reason' => 'incomplete',
+        $refresh = ['migrate' => 'nothing', 'restart' => 'yes', 'converge' => 'ran', 'converge_reason' => 'stale', 'converge_nodes' => ['app-prod'], 'changed' => 0, 'tokens' => 'reminted', 'tokens_reason' => 'incomplete',
             'base' => 'kept', 'base_containers' => [], 'record' => 'present', 'tools' => 'built', 'tools_reason' => 'missing',
             'seconds' => ['gateway' => 14, 'converge' => 70, 'ready' => 3, 'base' => 1, 'tools' => 34]];
         $deploy = static function (array $file) use ($instance): Operation {
@@ -310,6 +310,10 @@ describe('the result of a start', function (): void {
             // Why the converge ran or was skipped is one of the refresh's own words.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reason' => 'because']])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'changed' => '3']])->result)->not->toHaveKey('fleet_refresh')
+            // The converged Nodes are the inner fleet's own role names, each once; a refresh that does not name them is not recorded.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_nodes' => ['app-dev', 'app-dev']]])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_nodes' => ['beast']]])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => array_diff_key($refresh, ['converge_nodes' => true])])->result)->not->toHaveKey('fleet_refresh')
             // What the refresh did with the nested Gateway's Swamp tokens, and why, are its own words too.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'tokens' => 'renewed']])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'tokens_reason' => 'expired']])->result)->not->toHaveKey('fleet_refresh')

@@ -951,10 +951,20 @@ contexts:
       rc: 0
       stdout_lines:
       - '{"tools": "built", "reason": "missing", "venv": "venv-4f0'
+  # A recorded converge time that is no number: that Node is stale, never a failed refresh. app-dev has no recorded digest: changed.
   fleet-converged-malformed:
+    fleet_roles: [gateway, app-dev]
+    fleet_record_state: present
+    fleet_swamp_ids: [c3]
+    intent: {fleet: {}}
+    fleet_intents_read:
+      rc: 0
+      stdout_lines:
+      - '{"gateway":"1111111111111111111111111111111111111111111111111111111111111111","app-dev":"2222222222222222222222222222222222222222222222222222222222222222"}'
     fleet_recorded:
       code: 4f1c2a6b
-      converged: 12ab
+      converge_gateway: 01e408728ddddc7666da81bd31db5c37e0faaa722158a9dfa9ea60d1759e6aeb
+      converged_gateway: 12ab
   # The record's creation time of the oldest token (`YYYYMMDDHHMMSS`, UTC), far from today so the 20-day bound decides the same way always.
   fleet-tokens-recorded-young:
     fleet_recorded:
@@ -986,15 +996,18 @@ contexts:
     fleet_recorded: {}
     fleet_token_names: [serve-driver]
     fleet_tokens_read: {skipped: true}
+  # No Node converged in this run: each keeps its recorded time.
   fleet-record-write:
     fleet_now: {code: a1, grants: b2}
-    fleet_due: {converge: false}
-    fleet_recorded: {converged: '1794610740'}
+    fleet_roles: [gateway, app-dev, app-prod]
+    fleet_converge_roles: []
+    fleet_recorded: {converged_gateway: '1794610740', converged_app_dev: '1794610741', converged_app_prod: '1794610742'}
     fleet_tokens_mark: '29991101100000'
   fleet-record-write-no-tokens:
     fleet_now: {code: a1}
-    fleet_due: {converge: false}
-    fleet_recorded: {converged: '1794610740'}
+    fleet_roles: [gateway, app-dev, app-prod]
+    fleet_converge_roles: []
+    fleet_recorded: {converged_gateway: '1794610740', converged_app_dev: '1794610741', converged_app_prod: '1794610742'}
     fleet_tokens_mark: null
   # The inner Doctor's body at the end of refresh 21617 (one issue, its numbers made up), and a body that is no Doctor body.
   fleet-doctor-disk-low:
@@ -1899,7 +1912,7 @@ cases:
   context: fleet-record-absent
   expected: false
 - file: tasks/instance-fleet-refresh.yml
-  task: Work out whether the converge is due
+  task: Work out which nested Nodes the converge is due for
   field: vars.fleet_intents
   context: fleet-intents-read
   expected:
@@ -1907,20 +1920,22 @@ cases:
     app-dev: '2222222222222222222222222222222222222222222222222222222222222222'
     app-prod: '3333333333333333333333333333333333333333333333333333333333333333'
 - file: tasks/instance-fleet-refresh.yml
-  task: Work out whether the converge is due
+  task: Work out which nested Nodes the converge is due for
   field: vars.fleet_intents
   context: fleet-intents-short
   expected: {}
 - file: tasks/instance-fleet-refresh.yml
-  task: Work out whether the converge is due
+  task: Work out which nested Nodes the converge is due for
   field: vars.fleet_intents
   context: fleet-intents-failed
   expected: {}
 - file: tasks/instance-fleet-refresh.yml
-  task: Work out whether the converge is due
-  field: vars.fleet_converged_age
+  task: Work out which nested Nodes the converge is due for
+  field: vars.fleet_converge_reasons
   context: fleet-converged-malformed
-  expected: null
+  expected:
+    gateway: stale
+    app-dev: changed
 - file: tasks/instance-fleet-refresh.yml
   task: Work out whether the tokens are due
   field: vars.fleet_token_list
@@ -2136,12 +2151,12 @@ cases:
   task: Write the refresh record
   field: ansible.builtin.command.stdin
   context: fleet-record-write
-  expected: '{"code": "a1", "converged": "1794610740", "grants": "b2", "tokens": "29991101100000"}'
+  expected: '{"code": "a1", "converged_app_dev": "1794610741", "converged_app_prod": "1794610742", "converged_gateway": "1794610740", "grants": "b2", "tokens": "29991101100000"}'
 - file: tasks/instance-fleet-refresh.yml
   task: Write the refresh record
   field: ansible.builtin.command.stdin
   context: fleet-record-write-no-tokens
-  expected: '{"code": "a1", "converged": "1794610740"}'
+  expected: '{"code": "a1", "converged_app_dev": "1794610741", "converged_app_prod": "1794610742", "converged_gateway": "1794610740"}'
 - file: tasks/instance-fleet-ready.yml
   task: Check Doctor
   field: vars.fleet_doctor_issues

@@ -1,0 +1,43 @@
+order = 1490
+source_sha256 = "8019f28cc459baeee33d090d66e47d7c480d625c6ac4629bd1a27936afdca535"
+cases = [
+  "every file a nested Node's base converge reads is in the converge digest's list",
+  "the list holds only files a base converge reads, each exists, ships in the manifest, and each cut still guards its include",
+  "each cut import is used only by methods a converge never runs, or only under its guard",
+  "a cut import fails when the converge workflow calls its method or a use leaves its guard",
+  "the refresh hashes the listed inputs and the inner Gateway's base intent digests",
+]
+file = "swamp/tests/fleet_converge_inputs_test.ts"
+cost = 1 # ESTIMATE: five read-only cases completed in 0.05 s locally
+inputs = [
+  "swamp/ansible/fleet-converge-inputs.json",
+  "swamp/ansible/tasks/instance-fleet-refresh.yml",
+  "swamp/manifest.yaml",
+  "swamp/extensions/behaviors/operations/ansible-input/write.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/clone_payload.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/fleet_reboot_result.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/role_add_plans.ts",
+  "swamp/ansible/operation-node-converge.yml",
+  "swamp/workflows/workflow-operation-node-converge-direct.yaml",
+  "swamp/extensions/behaviors/operations/analytics/clickhouse_files.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_input.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_result.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_tool.ts",
+  "swamp/extensions/behaviors/operations/node/ci_host_spec.ts",
+  "swamp/extensions/behaviors/operations/tools/constraints.ts",
+  "swamp/extensions/behaviors/operations/tools/contract.ts",
+  "swamp/extensions/behaviors/operations/tools/native.ts",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/build_vars.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/tasks/node-converge-address.yml",
+  "swamp/ansible/tasks/node-converge-base.yml",
+  "swamp/ansible/tasks/node-converge-cli-absent.yml",
+  "swamp/ansible/tasks/node-converge-hub.yml",
+  "swamp/ansible/tasks/node-converge-hub-prune.yml",
+  "swamp/ansible/tasks/node-converge-replace.yml",
+  "swamp/ansible/tasks/node-hub-source.yml",
+  "swamp/ansible/tasks/node-kernel-policy.yml",
+  "swamp/ansible/tasks/node-update-policy.yml",
+]
