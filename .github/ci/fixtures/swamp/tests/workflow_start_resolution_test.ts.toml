@@ -1,5 +1,5 @@
 order = 1490
-source_sha256 = "f13d5b3ca797cf4d0969e487d07b86dc9296fe288f01a137aa6b9b66928d3a14"
+source_sha256 = "614ce7eb5f7f46521d5046e699a0ba5f14841cb405ebba97f230050c4be950e0"
 cases = [
   "a task VM sync starts: every expression of operation-task-sync resolves against its intent",
   "a copy sync starts: every expression of operation-task-sync-copy resolves against its intent",
@@ -7,6 +7,7 @@ cases = [
   "a publish starts for a task VM and for a copy: every expression of operation-task-publish resolves",
   "serve's secret rule: a vault.get expression with any container comparison is refused, has() is not one",
   "no workflow holds a vault.get expression that serve refuses at run start",
+  "the child workflows that a run starts resolve against the inputs their caller builds",
 ]
 file = "swamp/tests/workflow_start_resolution_test.ts"
 cost = 1

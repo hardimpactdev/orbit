@@ -12,12 +12,31 @@ import { environment, secretRefusal } from "./_support/swamp_workflow.ts";
 type Inputs = Record<string, unknown>;
 const intents = JSON.parse(Deno.readTextFileSync(new URL("./fixtures/workflow-start-intents.json", import.meta.url))) as Record<string, Inputs>;
 
+type Step = { name: string; guard?: unknown; forEach?: unknown; task?: { type?: string; workflowIdOrName?: string; inputs?: Record<string, unknown> } };
+const RUN = { id: "0f0e0d0c-0b0a-4908-8706-050403020100" };
+
+/** A step output stands in as this string: its value is known only once the step ran, and a child reads it as a value. */
+const withoutOutputs = (expression: string): string =>
+  expression.replace(/steps\[("[^"]*")\]\.outputs(?:\.[A-Za-z_]\w*\b(?!\())*/g, '"step-output"');
+
+/** The value of a workflow input as its caller writes it: one whole `${{ … }}` is that value, text with expressions is a string. */
+function value(raw: unknown, context: Record<string, unknown>): unknown {
+  if (typeof raw !== "string") return raw;
+  const whole = /^\s*\$\{\{([\s\S]*?)\}\}\s*$/.exec(raw);
+  const evaluate = (expression: string) => environment.evaluate(withoutOutputs(expression.trim()), context);
+  if (whole) return evaluate(whole[1]);
+  return raw.replace(/\$\{\{([\s\S]*?)\}\}/g, (_, expression: string) => String(evaluate(expression)));
+}
+
 /**
  * The expressions of a workflow that fail at run start: every `${{ … }}` anywhere in a job or step that reads no step output (`steps.`)
- * and no forEach item (`self.`), which Swamp resolves later, evaluated with the pinned CEL environment against the run's inputs.
+ * and no forEach item (`self.`), which Swamp resolves later, evaluated with the pinned CEL environment against the run's inputs. A child
+ * workflow resolves its own inputs when its step starts it, so each child step that can run (its guard, read with the steps before it
+ * as skipped or succeeded, is not true) is followed: its inputs are built from the caller's map, a step output standing in as a
+ * string, and the child is resolved against them in turn.
  */
-function unresolved(workflow: string, inputs: Inputs): string[] {
-  const parsed = parse(Deno.readTextFileSync(new URL(`../workflows/${workflow}`, import.meta.url))) as { jobs: { name: string; steps: { name: string }[] }[] };
+function unresolved(workflow: string, inputs: Inputs, caller = "", followed: string[] = []): string[] {
+  const parsed = parse(Deno.readTextFileSync(new URL(`../workflows/${workflow}`, import.meta.url))) as { jobs: { name: string; steps: Step[] }[] };
   const failed: string[] = [];
   const walk = (where: string, value: unknown): void => {
     if (typeof value === "string") {
@@ -31,7 +50,7 @@ function unresolved(workflow: string, inputs: Inputs): string[] {
         }
         if (/\b(steps|self)\b/.test(expression)) continue;
         try {
-          environment.evaluate(expression.replaceAll("vault.get(", "vaultget("), { inputs, run: { id: "0f0e0d0c-0b0a-4908-8706-050403020100" } });
+          environment.evaluate(expression.replaceAll("vault.get(", "vaultget("), { inputs, run: RUN });
         } catch (error) {
           failed.push(`${where}: ${(error as Error).message.split("\n")[0]}`);
         }
@@ -42,9 +61,30 @@ function unresolved(workflow: string, inputs: Inputs): string[] {
       for (const [key, item] of Object.entries(value)) if (key !== "steps") walk(where, item);
     }
   };
+  const steps: Record<string, { status: string; outputs: Record<string, unknown> }> = {};
   for (const job of parsed.jobs) {
-    walk(job.name, job);
-    for (const step of job.steps) walk(`${job.name} / ${step.name}`, step);
+    walk(`${caller}${job.name}`, job);
+    for (const step of job.steps) {
+      const where = `${caller}${job.name} / ${step.name}`;
+      walk(where, step);
+      let skipped = false;
+      try {
+        skipped = value(step.guard ?? false, { inputs, steps, run: RUN }) === true;
+      } catch {
+        // A guard over a step output is read when the step is reached; the step may run.
+      }
+      steps[step.name] = { status: skipped ? "skipped" : "succeeded", outputs: {} };
+      if (skipped || step.task?.type !== "workflow" || step.forEach !== undefined) continue;
+      const child: Inputs = {};
+      try {
+        for (const [key, raw] of Object.entries(step.task.inputs ?? {})) child[key] = value(raw, { inputs, steps, run: RUN });
+      } catch (error) {
+        failed.push(`${where}: the inputs of ${step.task.workflowIdOrName}: ${(error as Error).message.split("\n")[0]}`);
+        continue;
+      }
+      followed.push(`${step.name} -> ${step.task.workflowIdOrName}`);
+      failed.push(...unresolved(`workflow-${step.task.workflowIdOrName}.yaml`, child, `${where} -> ${step.task.workflowIdOrName} / `, followed));
+    }
   }
   return failed;
 }
@@ -94,4 +134,18 @@ Deno.test("no workflow holds a vault.get expression that serve refuses at run st
     walk(parse(Deno.readTextFileSync(new URL(`../workflows/${entry.name}`, import.meta.url))));
   }
   assertEquals(offenders, []);
+});
+
+Deno.test("the child workflows that a run starts resolve against the inputs their caller builds", () => {
+  const followed = (workflow: string, inputs: Inputs): string[] => {
+    const list: string[] = [];
+    assertEquals(unresolved(workflow, inputs, "", list), []);
+    return list;
+  };
+  assertEquals(followed("workflow-operation-task-sync-copy.yaml", intents.sync_copy),
+    ["Bring in the base -> task-copy-base", "Discard the base scratch -> task-copy-base"]);
+  assertEquals(followed("workflow-operation-task-publish.yaml", intents.publish_copy).filter((line) => line.includes("task-instance-workspace")),
+    ["Preflight the copy -> task-instance-workspace", "Export the copy -> task-instance-workspace", "Discard the copy scratch -> task-instance-workspace"]);
+  // A task VM's publish skips the copy's steps, so it starts no workspace child.
+  assertEquals(followed("workflow-operation-task-publish.yaml", intents.publish_vm).filter((line) => line.includes("task-instance-workspace")), []);
 });
