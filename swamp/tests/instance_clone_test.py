@@ -481,12 +481,13 @@ class CloneTest(unittest.TestCase):
     def test_a_seed_bundle_without_the_root_gets_it_once_with_its_owner_and_mode_before_the_first_start(self):
         pem, _ = self.certificate("Orbit Test Root")
         # No newline at the end of the seed's bundle: the root still starts on its own line.
-        held = {"content": self.PUBLIC_BUNDLE.rstrip("\n"), "uid": "0", "gid": "0", "mode": "0644"}
+        # An owner and mode that differ from the hosts push's root 0644: the push must keep what it read.
+        held = {"content": self.PUBLIC_BUNDLE.rstrip("\n"), "uid": "5", "gid": "7", "mode": "0664"}
         calls, _, error = self.clone_trusting(pem, {"boot_files": [self.TRUST]}, bundle=held)
         self.assertEqual(error, "")
         pushes = self.bundle_pushes(calls)
         self.assertEqual([call[3:] for call in pushes],
-                         [["file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", "instance-7" + self.BUNDLE]])
+                         [["file", "push", "--uid", "5", "--gid", "7", "--mode", "0664", "-", "instance-7" + self.BUNDLE]])
         self.assertEqual(self.inputs[id(pushes[0])], self.PUBLIC_BUNDLE + pem)
         self.assertEqual(self.inputs[id(pushes[0])].count(pem), 1)
         # The bundle is read through the local API's socket, after the root's own file and links, and before the start.
