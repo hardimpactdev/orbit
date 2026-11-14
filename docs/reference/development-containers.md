@@ -591,6 +591,10 @@ Updated endpoint settings rewrite the proxy services and restart active proxies,
 
 A clone keeps the seed's mail socket links. Its default's mail units are the Node's, the same for every copy, so the container launch finds them in place and reports `unchanged`. A seed taken before mail existed gets them as `applied`. The launch rewrites and restarts them only when the Node's endpoint changed after the seed.
 
+A socket's link in `sockets.target.wants`, absolute or relative, is its enablement. The preflight reads it on disk, because a clone's mail part runs right after `incus start`, often before the copy's systemd answers. A missing link is a change: the install enables and starts the socket. A linked socket that does not listen is started, which is no change; `enable` would reload systemd in the middle of the boot.
+
+The install reads the sockets again after its reload, so a booting copy whose units changed still ends with both sockets listening. A silent systemd means a boot only in a copy that the clone's container phase has just started. That boot starts the linked sockets itself, so a clone of a seed with the right units runs no install and reports `unchanged`. Anywhere else a silent systemd fails the install, as before.
+
 Destroy deletes the container, its private Node activation state and its own ACL, including the SMTP rule. It does not withdraw the shared bridge tuple: that stays for ordinary host reconciliation, like database tuples, and remains needed while other Instances use Mailpit. There is no new helper withdrawal.
 
 The mailer rule edits `/srv/workspace/.env` only when the byte string `MAIL_MAILER` occurs exactly once in the whole file and that occurrence forms exactly `MAIL_MAILER=log`, with or without matching single or double quotes, as a whole line. It replaces only `log` with `smtp`, preserving the quote style. It keeps LF or CRLF, all other bytes, and the file's owner, group, mode, POSIX ACLs and extended attributes.
