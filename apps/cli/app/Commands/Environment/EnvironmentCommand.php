@@ -17,7 +17,8 @@ abstract class EnvironmentCommand extends GatewayCommand
 
     protected function renderEnvironmentOperation(EnvironmentOperationResponse $response): int
     {
-        $payload = [...$response->toArray(), 'workload_file_changed' => false];
+        // A store writes no file: `env:sync` writes the stored keys into `.env` (docs/cli/env/index.mdx).
+        $payload = $response->toArray();
 
         if ($this->option('json') === true) {
             $this->writeJson($payload);
@@ -30,7 +31,7 @@ abstract class EnvironmentCommand extends GatewayCommand
             'Operation' => $response->operation,
             'Changed' => $response->changed ? 'true' : 'false',
             'Stored keys' => $response->keyCount,
-            'Workload file' => 'unchanged',
+            '.env' => 'written by the next env:sync',
             'Request ID' => $response->requestId,
         ];
 

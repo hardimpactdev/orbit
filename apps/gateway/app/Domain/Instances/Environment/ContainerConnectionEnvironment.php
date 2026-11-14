@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * `env:sync` on a container Instance. Orbit never renders an existing container's `.env` again, so this writes only the keys of the
- * Instance's attached connections into the file in place, adds the network paths to their servers, and restarts what runs.
+ * Instance's attached connections, and the keys env:update stored since the last sync, into the file in place, adds the network paths to their servers, and restarts what runs.
  * The values travel only as one vault copy; the Operation input and result hold key names.
  */
 final readonly class ContainerConnectionEnvironment implements DirectOperationProjection
@@ -88,6 +88,16 @@ final readonly class ContainerConnectionEnvironment implements DirectOperationPr
     {
         $projection = app(DatabaseConnectionEnvProjection::class);
         $lines = [];
+        // Each key env:update stored since the last sync, once; a connection's own line below wins.
+        $pending = $instance->environment_pending_keys ?? [];
+        $values = $pending === [] ? [] : array_intersect_key(app(InstanceEnvironmentStore::class)->values($instance), array_flip($pending));
+        if ($values !== []) {
+            // Rendered as a full render renders them, so `{{instance.domain}}` names this Instance's Route.
+            $context = app(InstanceEnvironmentContextResolver::class)->resolve($instance, requireActiveNode: true);
+            foreach ($values as $key => $value) {
+                $lines[$key] = rtrim(app(InstanceEnvironmentRenderer::class)->render($context, [$key => $value]), "\n");
+            }
+        }
         foreach (DatabaseConnectionTarget::query()->with('databaseConnection')->where('instance_id', $instance->id)->orderBy('id')->get() as $target) {
             $projected = $projection->project($target->databaseConnection, $target->prefix, $target->network, $instance->node);
             foreach ($projected['values'] as $key => $value) {
@@ -114,7 +124,7 @@ final readonly class ContainerConnectionEnvironment implements DirectOperationPr
         $admitted = ValidatedData::stringList(ValidatedData::object($operation->input['connection_environment'])['keys']);
         $lines = $this->lines($instance);
         if (array_keys($lines) !== $admitted) {
-            throw new ResourceOperationException('env.connection_changed', 'The attached connections changed after admission; run env:sync again.', 409);
+            throw new ResourceOperationException('env.connection_changed', 'The attached connections or the stored keys to write changed after admission; run env:sync again.', 409);
         }
         $secrets = ['connection_environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-environment-'.$operation->id]];
         if (! $operation->status->terminal()) {
@@ -141,7 +151,12 @@ final readonly class ContainerConnectionEnvironment implements DirectOperationPr
                     ...ValidatedData::stringList($environment['added'] ?? []), ...ValidatedData::stringList($environment['unchanged'] ?? [])];
                 $keys = array_values(array_unique($keys));
                 sort($keys, SORT_STRING);
-                $instance->forceFill(['environment_owned_keys' => $keys])->saveOrFail();
+                // The admitted keys of env:update are written (or kept as the Project's reference): later syncs leave their lines alone.
+                $admitted = ValidatedData::stringList(ValidatedData::object($operation->input['connection_environment'])['keys']);
+                // A key whose stored value is gone leaves the list too: only a new env:update marks it again.
+                $stored = array_keys(app(InstanceEnvironmentStore::class)->values($instance));
+                $pending = array_values(array_intersect(array_diff($instance->environment_pending_keys ?? [], $admitted), $stored));
+                $instance->forceFill(['environment_owned_keys' => $keys, 'environment_pending_keys' => $pending === [] ? null : $pending])->saveOrFail();
             }
 
             return $projected;

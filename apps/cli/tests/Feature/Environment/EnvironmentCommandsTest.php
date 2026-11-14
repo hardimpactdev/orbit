@@ -145,7 +145,7 @@ describe('environment value preservation', function (): void {
 });
 
 describe('environment output', function (): void {
-    it('renders a complete value-free human result and states that a store leaves the workload file unchanged', function (): void {
+    it('renders a complete value-free human result and states that the next env:sync writes the file', function (): void {
         MockClient::global([
             UpdateInstanceEnvironmentRequest::class => environment_cli_response('update'),
         ]);
@@ -161,7 +161,7 @@ describe('environment output', function (): void {
         expect($flat)->toContain('Operation update');
         expect($flat)->toContain('Changed true');
         expect($flat)->toContain('Stored keys 3');
-        expect($flat)->toContain('Workload file unchanged');
+        expect($flat)->toContain('.env written by the next env:sync');
         expect($output)->toContain(environment_cli_request_id());
         expect($output)->not->toContain('environment-secret-sentinel');
     });
@@ -173,7 +173,7 @@ describe('environment output', function (): void {
 
         $this
             ->artisan('env:update', ['--instance' => 'app.com', '--key' => 'APP_DEBUG', '--value' => 'true', '--json' => true])
-            ->expectsOutput(environment_cli_result_json('update', workloadFileChanged: false))
+            ->expectsOutput(environment_cli_result_json('update'))
             ->assertExitCode(0);
     });
 });
@@ -499,7 +499,7 @@ function environment_cli_response(string $operation, bool $changed = true): Mock
     ]);
 }
 
-function environment_cli_result_json(string $operation, ?bool $workloadFileChanged = null): string
+function environment_cli_result_json(string $operation): string
 {
     $payload = [
         'instance_id' => 17,
@@ -508,10 +508,6 @@ function environment_cli_result_json(string $operation, ?bool $workloadFileChang
         'key_count' => 3,
         'request_id' => environment_cli_request_id(),
     ];
-
-    if ($workloadFileChanged !== null) {
-        $payload['workload_file_changed'] = $workloadFileChanged;
-    }
 
     return json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }
