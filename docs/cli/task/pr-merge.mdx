@@ -6,6 +6,8 @@ description: "Squash-merge the pull request of an external task group once the g
 
 Merge the published pull request of an external task group straight into its base branch with a squash merge. The Gateway first reads the PR, its checks and its reviews with read-only tokens and checks the gate: in manual mode, the configured reviewer's latest review must approve the exact head. It then mints a fresh write token. Swamp merges with the expected head SHA, so a moved head refuses. This is the merge step of [stage 4 of the command development pipeline](/reference/command-development-pipeline#4-pr-and-ci). There is no merge queue and no GitHub auto-merge. See [Ready and merge a task pull request](/reference/tasks#ready-and-merge-a-task-pull-request).
 
+Orbit never merges the pull request of a group whose workspace is a [task copy](/reference/tasks#task-copy): the command refuses it with `tasks.copy_pr_no_merge` before any GitHub read, and a person merges it on GitHub. See [No merge](/reference/tasks#no-merge).
+
 There is no `orbit` command yet. Use the API or the MCP tool `task-pr-merge`.
 
 ```bash
@@ -33,6 +35,7 @@ A merge conflict with the base branch refuses the merge. The author rebases, whi
 | --- | --- | --- |
 | `extension.disabled` | 409 | The tasks extension is off. |
 | `tasks.group_closed` | 409 | The group has ended. |
+| `tasks.copy_pr_no_merge` | 409 | The group's workspace is a task copy. A person merges its pull request on GitHub. |
 | `operation.target_busy` | 409 | Another task holds the group. |
 | `tasks_pr.no_pull_request` | 409 | The group has no published PR, or its PR is not open. |
 | `tasks_pr.draft` | 409 | The PR is still a draft. Run `task-pr-ready` first. |

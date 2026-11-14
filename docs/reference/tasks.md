@@ -350,6 +350,8 @@ Direct turn cancellation uses native Swamp cancellation and official SSH session
 
 `task:publish <group> --check=<id> [--title=… --body=…]` starts the native `operation-task-publish` workflow through `POST /api/v1/tasks/{task}/publish`. The JSON input is `{ check, pull_request?: { title, body, draft? } }`. Supply title and body together. `--draft` sets `draft` and opens a new pull request as a draft, as the Orbit App; an open pull request keeps its state. The CLI accepts `--idempotency-key` and `--json`; the PHP SDK and MCP carry the same inputs.
 
+For a group with a task copy, `task:publish <group>` without `--check` publishes the group's done check, as [Release a waiting group](#release-a-waiting-group) describes. The JSON input is then `{}`.
+
 The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work. It mints no token. The intent names two vault keys, one for the GitHub installation token and one for its Git authorization header.
 
 A step of the run asks the Gateway for the token right before the push (`operation:direct:github-token`, with the run id), so the token is fresh whenever the run reaches that step. The Gateway checks the Operation, the run and the repository. It mints a token for that one repository with `contents: write`, `pull_requests: write` and `workflows: write`, and writes the two values. The reply holds vault descriptors only.
@@ -973,7 +975,7 @@ The copy's `.env` holds its secrets. Git never takes it: every container create 
 | --- | --- |
 | Source | The Project's default Instance, active with a seed, whose container runs: `task:start` reads it once before it admits the copy, because the power record can be stale |
 | Cap | A start needs a free [isolated ID range](/reference/development-containers#isolated-id-ranges) for the copy and one for the default's next seed, else `tasks.copy_id_range_full`. `ORBIT_TASKS_COPIES_MAX` (default 1) caps nested-fleet copies per Node: `tasks.copy_capacity_full`. Neither waits |
-| Publish | Only for a nested-fleet trial Project or a Project on `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`. Otherwise `tasks.copy_publish_held` (409), before any Operation |
+| Publish | Only for a nested-fleet trial Project or a Project on `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`. Otherwise `tasks.copy_publish_held` (409), before any Operation. The [mode](#task-group-modes) decides whether Orbit publishes by itself once the work is done |
 | Model key | The copy's agent gets the fixed task model key, as every clone does. It is not per task. Per-task model keys are an open decision |
 | Ready | The task runs when its copy is `active`: after the copy's [completion](/reference/development-containers#complete-a-clone) succeeded. A create that succeeds leaves the task `reserved` until then |
 | Failed create | The task is `failed`, and Orbit destroys the copy with force. A refused start or a cancel before the run counts too, and so does a failed or cancelled completion |
@@ -1171,6 +1173,95 @@ Swamp can request a reviewer turn through `tasks.turn`. The Gateway records the 
 
 The workflow that requested a reviewer owns review policy. The Gateway records its receipt as evidence. The operator or Swamp changes board status explicitly.
 
+## Task group modes
+
+A group whose workspace is a [task copy](#task-copy) has a mode. The mode decides what Orbit does once the group's work is done: it waits for a person, or it opens the pull request by itself. Orbit never merges the pull request of such a group. A person merges it on GitHub.
+
+| Mode | When the work is done |
+| --- | --- |
+| `review_before_pr` | Nothing happens on GitHub. The group waits until a person runs `task:publish <group>`. This is the default, and it is how every group worked before modes existed |
+| `pr_when_done` | Orbit publishes the group by itself and opens a ready pull request |
+
+### Where the mode comes from
+
+The mode is resolved each time Orbit reads it, in this order:
+
+1. The group's own `pr_mode`, set by [`task:create --pr-mode`](/cli/task/create) or [`task:update --pr-mode`](/cli/task/update).
+2. The Project's `task_pr_mode`, set by [`project:update --task-pr-mode`](/cli/project/update).
+3. The Gateway's `ORBIT_TASKS_PR_MODE`, default `review_before_pr`. Any other value refuses with `tasks.pr_mode_setting_invalid` (503).
+
+[`task:show`](/cli/task/show) returns the mode as `pr_mode` and where it came from as `pr_mode_source`: `group`, `project` or `gateway`. A subtask has no mode. `task:update --pr-mode` is refused with `tasks.pr_mode_locked` (409) once the group has a pull request, while a publish of the group runs, and after the group ended.
+
+When a handoff check passes, Orbit records on the check the mode that was in effect at that moment. Orbit publishes by itself only when both that recorded mode and the mode now in effect are `pr_when_done`. So a later change of the Project or the Gateway setting to `pr_when_done` never publishes a group that was already done: such a group needs a new handoff check, or a person runs `task:publish <group>`.
+
+### When the work is done
+
+Orbit decides from its own records that a group's work is done. All of these must hold:
+
+- The group is open, its workspace is a task copy, and it has no pull request.
+- Every subtask has ended, and at least one is `completed`.
+- The last completed subtask has a passed handoff check that is an [eligible candidate](#check-an-external-group), and no handoff check of the group is newer. This is the done check.
+- The newest turn of the group's reviewer thread reviewed exactly the done check's commit, ended `done`, and finished before the caller completed that subtask.
+- No earlier copy turn may still run, and no other Operation of the group runs.
+
+A copy reviewer turn records no verdict. The caller's move of the last subtask to `completed`, after a reviewer turn on exactly the done check, is the approval.
+
+### Publish by itself
+
+The Gateway scheduler runs `task:pr-when-done` every minute while the Tasks extension is on. For each group in `pr_when_done` whose work is done, and whose done check recorded `pr_when_done`, it starts the same `tasks.publish` as [`task:publish`](#publish-an-external-group), with the done check, a title and a body. Every guard of a manual publish applies: the group lock, the [copy publish allow list](#task-copy), the candidate check, the `.env` and Club key checks, and the token minted at the push. The [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/pr-when-done.mmd) shows the tick.
+
+The title is the group title. The body holds the group brief, the completed subtasks, and the checked commit with its handoff check ID. The pull request opens ready, not as a draft. Each start is keyed `pr-when-done:<group>:<check>`, so a repeat tick on the same done check starts nothing.
+
+### Publication state
+
+`task:show` returns `publication` on a group with a task copy:
+
+| Field | Meaning |
+| --- | --- |
+| `mode`, `mode_source` | The mode in effect and where it came from |
+| `state` | `working`, `waiting_for_release`, `publishing`, `refused` or `published` |
+| `check_id`, `commit` | The done check and its commit, or null while the group is `working` |
+| `operation_id` | The `tasks.publish` Operation, when one started |
+| `error_code` | The code of a refused publish, or null |
+
+| State | Meaning |
+| --- | --- |
+| `working` | The work is not done yet |
+| `waiting_for_release` | The work is done, and Orbit does not publish by itself: the mode is `review_before_pr`, or the done check recorded `review_before_pr` |
+| `publishing` | A publish of the done check runs |
+| `refused` | The automatic publish of the done check was refused |
+| `published` | The group has its pull request |
+
+[`task:status`](/cli/task/status) lists every group in `waiting_for_release` or `refused` under `releases`. These states are not board statuses: the group keeps its status.
+
+### Release a waiting group
+
+`task:publish <group>` without `--check`, `--title` and `--body` publishes what the automatic publish would: the done check, the same title and body, and a ready pull request. It refuses with `tasks.not_done` (409) when the group's work is not done. It also releases a group in `refused` after the cause is fixed. The form with `--check` stays as [Publish an external group](#publish-an-external-group) describes.
+
+### A refused automatic publish
+
+A refusal at admission, such as `tasks.copy_publish_held` or `tasks.commit_not_checked`, starts no Operation. Orbit stores its code on the group, and `publication` shows `refused` with that code. A failed run, such as `tasks.publish_secret_content` or `tasks.push_failed`, keeps its code on its Operation, and `publication` shows it the same way. Orbit does not try the same done check again. A new handoff check or `task:publish <group>` tries again.
+
+`operation.target_busy` and `tasks.copy_turn_unended` are no refusal: the next tick reads the group again.
+
+A refused publish changes nothing else. The group keeps its status, and the task copy and its checked commit stay until `task:cancel` or `task:complete`.
+
+### No merge
+
+Orbit never merges the pull request of a group whose workspace is a task copy, also after the group has ended. A pull request counts as such when a `tasks.publish` from a task copy opened it. Every merge path refuses it with `tasks.copy_pr_no_merge` (409):
+
+| Path | Behavior |
+| --- | --- |
+| [`task:pr-merge`](/cli/task/pr-merge) | Refused before any GitHub read |
+| [`project:pr-merge`](/cli/project/pr-merge) | Refused for the pull request of such a group, open or ended |
+| [`task:pr-gate`](#gate-check) | Skips the group with `tasks.copy_pr_no_merge`: no ready step, no review round, no merge |
+| [Review and merge](#review-and-merge) | Acts only through `task:pr-gate` and `project:pr-merge`, so it merges no such pull request |
+| [Dependency merge](#dependency-batch-squash-admission) | Refused for a batch group whose publish came from a task copy |
+| [Automatic deployments](/reference/deployments#automatic-deployments) | Deploy commits already on the default branch, and merge nothing |
+| Task VM paths | Push and publish, and merge nothing |
+
+A test in CI lists every Swamp workflow that calls GitHub's merge API. A new one fails the test until it refuses these pull requests too.
+
 ## Pull request and settle metrics
 
 Orbit publishes through the Project's [GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request) installation. Agents hold no GitHub token and never fetch or push. [What the App does not cover](/reference/github-app#what-the-app-does-not-cover) states how that is enforced. A task whose Project changes to `source_access: gh_cli` fails to publish and asks for assistance.
@@ -1310,6 +1401,8 @@ The Gateway keeps one row for each round, with the head, the round number, the o
 
 A group is put in automatic mode with `orbit task:create --review=automatic`; without the option it is in manual mode.
 
+A group whose workspace is a task copy is skipped with `tasks.copy_pr_no_merge`, as [No merge](#no-merge) describes.
+
 ### Not built
 
 These parts of stage 4 do not exist yet:
@@ -1323,6 +1416,8 @@ Until the App opens the pull request, its author is `nckrtl`. GitHub refuses `nc
 ## Review and merge
 
 The Gateway retains existing Project settings and review records for the board. Swamp owns incoming PRs, final-review tasks, approval and merge. Swamp owns any workflow that uses those records. A Project's review-and-merge setting does not prevent it from creating an external group.
+
+Review and merge never merges the pull request of a group whose workspace is a task copy ([No merge](#no-merge)).
 
 ## Web task board
 
@@ -1473,6 +1568,7 @@ These Gateway environment keys configure the extension.
 | `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new implementer and reviewer threads, on a task VM and in a task copy. Defaults: `medium` and `high`. See [Drivers](#drivers) for when changes apply |
 | `ORBIT_TASKS_GITHUB_REVIEWERS` | Trusted reviewer account IDs per repository, `owner/repo:id,id;owner/repo:id`. Unset or empty trusts no one. See [Trusted GitHub feedback](#trusted-github-feedback) |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | Comma-separated GitHub logins requested as reviewers when a task pull request is opened or reused. Unset or empty requests no one. The pull request author is skipped |
+| `ORBIT_TASKS_PR_MODE` | The [mode](#task-group-modes) of a group whose group and Project set none: `review_before_pr` (default) or `pr_when_done`. Any other value is `tasks.pr_mode_setting_invalid` |
 | `ORBIT_PI_PORT` | The port of the Pi server on each task VM, default `3774`. Each VM has its own token |
 | `TYPESAFE_API_KEY` | The key for Jev calls |
 | `TYPESAFE_URL`, `TYPESAFE_MODEL` | The TypeSafe endpoint, default `https://api.typesafe.ai/v1`, and the classification model, default `jev-latest` |

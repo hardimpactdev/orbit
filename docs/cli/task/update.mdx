@@ -3,10 +3,10 @@ title: "orbit task:update"
 sidebarTitle: "task:update"
 ---
 
-Change a task's title, brief, or status. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` leaves the parent ready for `task:start`. Groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. See [external status rules](/reference/tasks#tasks-and-subtasks).
+Change a task's title, brief, status, or mode. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` leaves the parent ready for `task:start`. Groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. See [external status rules](/reference/tasks#tasks-and-subtasks).
 
 ```bash
-orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--position=N] [--deliverables=FILE] [--topology=JSON] [--json]
+orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--pr-mode=MODE] [--position=N] [--deliverables=FILE] [--topology=JSON] [--json]
 ```
 
 | Option | Meaning |
@@ -16,6 +16,7 @@ orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--prev
 | `--status=STATUS` | `backlog` or `todo`; an external group also accepts its current status or an allowed active status move. |
 | `--preview` | Keep the sandbox running during review. It can change while the task is in `backlog`, waiting, or active. |
 | `--no-preview` | Let the sandbox park during review. Do not combine it with `--preview`. |
+| `--pr-mode=MODE` | `review_before_pr` or `pr_when_done`: what Orbit does once the work is done. It changes only until the group has a pull request. See [Task group modes](/reference/tasks#task-group-modes). |
 
 ```bash
 orbit task:update 13 --status=todo
@@ -30,6 +31,8 @@ In a terminal, the task list includes active tasks for a status update. Title an
 | `tasks.not_in_backlog` | A title or brief change outside `backlog`. |
 | `tasks.no_subtasks` | A move to `todo` for a task without subtasks. |
 | `tasks.subtask_deliverables_missing` | A move to `todo` while a subtask has no deliverables. The error details name the subtasks. |
+| `tasks.pr_mode_invalid` | `--pr-mode` is not `review_before_pr` or `pr_when_done`. |
+| `tasks.pr_mode_locked` | The group has a pull request, a publish of it runs, or it has ended. |
 | `tasks.already_claimed` | The scheduler claimed the task before the status change. |
 
-The Task ID may select a parent or child. Children also accept `--position`, `--deliverables` and `--topology`; parents accept preview intent. Each level keeps its existing status rules. Updating a parent to Todo does not start work.
+The Task ID may select a parent or child. Children also accept `--position`, `--deliverables` and `--topology`; parents accept preview intent and `--pr-mode`. Each level keeps its existing status rules. Updating a parent to Todo does not start work.

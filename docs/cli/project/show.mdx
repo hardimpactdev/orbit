@@ -7,3 +7,5 @@ description: "Show one Project with its source access, source defaults, task che
 ```bash
 orbit project:show <project> [--json]
 ```
+
+JSON includes `task_pr_mode`: `review_before_pr`, `pr_when_done`, or null when the Project sets none and its task groups use the Gateway's default. Human output labels it `Task pull request mode`. See [Task group modes](/reference/tasks#task-group-modes).
