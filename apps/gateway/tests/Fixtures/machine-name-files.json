@@ -1,0 +1,41 @@
+{
+    "_comment": "The machine name's files as the Gateway (InstanceMachineName) and Swamp (swamp/ansible/instance_machine_name.py) both write them; each suite asserts its side against these cases.",
+    "cases": [
+        {
+            "instance_id": 2865,
+            "instance": "task-5003",
+            "project_id": 7,
+            "slug": "dlf-leden",
+            "hostname": "task-5003.dlf-leden",
+            "pretty": "task-5003.dlf-leden",
+            "files": {
+                "/etc/hostname": "task-5003.dlf-leden\n",
+                "/etc/machine-info": "PRETTY_HOSTNAME=task-5003.dlf-leden\n"
+            }
+        },
+        {
+            "instance_id": 123,
+            "instance": "default",
+            "project_id": 9,
+            "slug": "My_App",
+            "hostname": "default-0000000000000000000000000000000000000000000000123.my-app",
+            "pretty": "default.My_App",
+            "files": {
+                "/etc/hostname": "default-0000000000000000000000000000000000000000000000123.my-app\n",
+                "/etc/machine-info": "PRETTY_HOSTNAME=default.My_App\n"
+            }
+        },
+        {
+            "instance_id": 1846,
+            "instance": "external-connections",
+            "project_id": 7,
+            "slug": "dlf-leden",
+            "hostname": "external-connections.dlf-leden",
+            "pretty": "external-connections.dlf-leden",
+            "files": {
+                "/etc/hostname": "external-connections.dlf-leden\n",
+                "/etc/machine-info": "PRETTY_HOSTNAME=external-connections.dlf-leden\n"
+            }
+        }
+    ]
+}

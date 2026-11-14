@@ -34,13 +34,19 @@ final readonly class InstanceMachineName
 
     /**
      * A clone's `/etc/machine-info`, written before its first start so T3's first start reads the label; the copy's own Incus templates
-     * leave the file alone. Its text is what instance_machine_name.py `render` writes into an empty file.
+     * leave the file alone.
      *
      * @return array{path: string, content: string, uid: int, gid: int, mode: string}
      */
     public static function bootFile(Instance $instance): array
     {
-        return ['path' => '/etc/machine-info', 'content' => 'PRETTY_HOSTNAME='.self::intent($instance)['pretty']."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'];
+        return ['path' => '/etc/machine-info', 'content' => self::machineInfo(self::intent($instance)['pretty']), 'uid' => 0, 'gid' => 0, 'mode' => '0644'];
+    }
+
+    /** The whole text of `/etc/machine-info`, Orbit's file; tests/Fixtures/machine-name-files.json ties it to instance_machine_name.py. */
+    public static function machineInfo(string $pretty): string
+    {
+        return 'PRETTY_HOSTNAME='.$pretty."\n";
     }
 
     /**

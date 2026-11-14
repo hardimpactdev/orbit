@@ -69,3 +69,15 @@ it('keeps the hostname unique on a Node: two Projects, colliding labels, long na
         expect(validHostname($hostname))->toBeTrue();
     }
 });
+
+it('writes the file texts that the shared fixture names, which the Swamp writer asserts too', function (): void {
+    $fixture = json_decode((string) file_get_contents(__DIR__.'/../../../Fixtures/machine-name-files.json'), true, flags: JSON_THROW_ON_ERROR);
+
+    foreach ($fixture['cases'] as $case) {
+        $pretty = InstanceMachineName::presented($case['instance'], $case['slug']);
+        expect($pretty)->toBe($case['pretty'])
+            ->and(InstanceMachineName::hostname($case['instance_id'], $case['instance'], $case['project_id'], $case['slug']))->toBe($case['hostname'])
+            ->and(InstanceMachineName::machineInfo($pretty))->toBe($case['files']['/etc/machine-info'])
+            ->and($case['hostname']."\n")->toBe($case['files']['/etc/hostname']);
+    }
+});
