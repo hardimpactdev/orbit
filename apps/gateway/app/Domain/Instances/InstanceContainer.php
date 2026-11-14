@@ -65,6 +65,12 @@ final readonly class InstanceContainer
     /** The placeholder model key and the model origin, which T3's unit hands to Claude Code and Codex. */
     public const string ModelEnvironment = '/home/agent/.config/orbit/model.env';
 
+    /**
+     * The line after a clone's credential line on `clone-container`'s stdin; the model environment follows it. The copy's first boot then
+     * starts T3 (docs/reference/development-containers.md#t3-starts-with-the-copy). Git's credential store skips the line and the rest.
+     */
+    public const string ModelEnvironmentFrame = '#orbit-model-environment';
+
     /** T3's command in a container, from the agent release its image holds. */
     public const string T3 = InstanceHostIntent::AgentFolder.'/current/agent/bin/t3';
 
@@ -406,8 +412,8 @@ final readonly class InstanceContainer
                 'title' => $project->name ?: $project->slug,
                 'unit' => self::T3Unit, 'internal_port' => InstanceHostIntent::T3Port, 'ready_seconds' => 30,
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
-                't3' => self::T3, 'project_mark' => '/home/agent/.config/orbit/t3-project'],
-            'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600'],
+                't3' => self::T3, 'project_mark' => '/home/agent/.config/orbit/t3-project', 'condition' => self::InstanceFile],
+            'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'frame' => self::ModelEnvironmentFrame],
             // The value the clone script writes into the copy's proxy drop-ins before its first start (instance_node_services.py
             // `proxy-files`): the composed one, with the copy's private names and a nested fleet's inner fleet. A copy of a default with a
             // Node service elsewhere gets it even at the base, so that host goes. Absent, the seed's drop-ins stay.
@@ -415,17 +421,19 @@ final readonly class InstanceContainer
             // The container phase writes these before a copy's first start, so its first boot, T3 included, reads them: the files every
             // container needs, which a seed taken before them lacks. A container that a migrate builds from the image has the files already.
             ...($source === null ? [] : ['boot_files' => self::bootFiles()]),
+            // `before_start`: the files T3 and its providers read at its start. The container phase writes them before the copy's first start, with the
+            // model environment, and the file T3's unit waits for last; the agent part finds them in place.
             'files' => [
-                ['path' => self::InstanceFile, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => "# Managed by Orbit.\n"
+                ['path' => self::InstanceFile, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => "# Managed by Orbit.\n"
                     ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\n"
                     ."ORBIT_PROJECT_ID={$project->id}\nORBIT_PROJECT_NAME=".InstanceEnvironmentRenderer::quote(str_replace(["\r", "\n"], ' ', $project->name))."\n"
                     ."ORBIT_NODE={$node->name}\nORBIT_URL=".($url ?? '')."\n"
                     .($this->servesDevPorts($instance, $runtime) ? 'ORBIT_DEV_PORTS='.InstanceDevPorts::First.'-'.InstanceDevPorts::Last."\n"
                         .'ORBIT_DEV_PORTS_TAKEN='.implode(',', app(InstanceDevPorts::class)->excluded($node))."\n" : '')],
-                ['path' => '/home/agent/.codex/config.toml', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],
-                ['path' => '/home/agent/.claude.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]],
+                ['path' => '/home/agent/.codex/config.toml', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],
+                ['path' => '/home/agent/.claude.json', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]],
                 // A task copy's turns pick their effort through these instances: stock T3's CLI takes none.
-                ['path' => '/home/agent/.t3/userdata/settings.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true,
+                ['path' => '/home/agent/.t3/userdata/settings.json', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true,
                     ...($instance->task_workspace_owner_id === null ? [] : ['providerInstances' => self::claudeInstances()])]],
             ],
             // The note of the Project's type, as the agents' own instructions file; it states facts about the container only.

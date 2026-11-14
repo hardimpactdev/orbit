@@ -87,7 +87,9 @@ sequenceDiagram
     %%> - before the first start, the stopped copy gets the Orbit root in its CA bundle when the seed's bundle lacks it, so Chromium trusts Orbit's sites; a copy without a bundle refuses
     %%> - before the first start, the stopped copy gets the composed `NO_PROXY` drop-ins, the bytes `env:sync` writes
     %%> - a nested-fleet copy starts only through the start guard: its config and devices exactly as the intent writes them, no `inner-pool` device without an inner volume in the intent, the copy's inner volume with exactly its keys, and a root volume without `zfs.delegate`
-    %%> - starts the copy: nftables, `hidepid` and the image's units start; T3 does not, because `/etc/orbit/instance` does not exist yet
+    %%> - before the first start, T3's files (docs/reference/development-containers.md#t3-starts-with-the-copy): the model environment from this step's stdin (`agent`, 0600), Codex's `config.toml`, Claude Code's `.claude.json` and T3's `settings.json` (the JSON files merged into the seed's), and last `/etc/orbit/instance`, the file `t3.service` waits for; the copy is stopped, so nothing reads a half-written file
+    %%> - stdin: the Git credential line, `#orbit-model-environment` and the model environment, one vault copy `instance-create-clone-<operation>`; a run without the frame (an older Gateway's) or a copy that already runs gets no T3 files, and the T3 step starts T3
+    %%> - starts the copy: nftables, `hidepid` and the image's units start, and T3 with them when its files went in; T3's cold start runs beside the parts below
     %%> - right after the start, after the copy's own hosts template rewrote `/etc/hosts`: writes the plan's private names block with the renderer `env:sync` uses, so the clone resolves its own Route names; a failure is `instance.clone_private_names_failed`
     %%> Mail:
     %%> - the same launch applies the exact SMTP path before the four root-owned mail units; no separate mail playbook or step
@@ -133,12 +135,13 @@ sequenceDiagram
     %%> On failure:
     %%> - `failed_step: workspace`, `instance.create_workspace_failed`
     and T3 beside the checkout
-    SW->>C: Start T3<br/>native clone-t3
+    SW->>C: Wait for T3<br/>native clone-t3
     %%> When: with the checkout; a failed copy or Club key skips it, as it skips the checkout
     %%> What it does, in one step:
     %%> - the agent part: writes the placeholder key for `agent` from SSH stdin, and the Claude Code and Codex settings that point at the model forwarder
-    %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type, and writes `/etc/orbit/instance`, owned by root and readable by all
-    %%> - the T3 part: T3 starts for the first time and creates its identity; while it starts, T3's own CLI issues the `Orbit Gateway` and `Orbit Swamp` sessions at once, as `agent`; the tokens go only to the run's private folder
+    %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type, and writes `/etc/orbit/instance`, owned by root and readable by all; files the copy step wrote are found in place
+    %%> - the T3 part: a T3 that the copy's boot started is not started again (`timings.t3.at_boot` 1); a T3 that does not run is started here, and one that failed at boot is started once more after `reset-failed`, named `restart:t3`; T3 creates its identity at its first start
+    %%> - while T3 starts or runs, T3's own CLI issues the `Orbit Gateway` and `Orbit Swamp` sessions at once, as `agent`; the tokens go only to the run's private folder
     %%> - after T3 answers, the T3 project `/srv/workspace` is added as `agent`; during T3's start that call fails
     %%> - a failed session issue fails this step with `instance.t3_unready`
     %%> Check:
