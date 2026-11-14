@@ -215,7 +215,11 @@ Container host preparation uses one case per unit. Each of its declared body cos
 
 Each fixture unit has its own child subreaper. It reaps adopted children while the session leader runs, so exited grandchildren do not remain zombies until the unit ends. The leader alone decides success or failure. Deadlines and cancellation still kill and reap the unit’s remaining descendants before temporary files are removed.
 
-Direct input matches take priority when work exceeds that limit, then the metadata `order` values decide admission. A file runs with all its slices or is deferred whole; the plan names deferred units, their cases and unmapped Swamp paths in its summary. A file that cannot fit even an otherwise empty eight-shard plan, or contains a unit above the lane budget, makes Required checks fail; admitted files still run. Unmapped paths select the table’s default checks.
+Direct input matches take priority when work exceeds that limit, then the metadata `order` values decide admission. A file normally runs with all its slices or is deferred whole.
+
+A fixture can declare `mandatory_cases`, mapping an input pattern from its `inputs` to exact retained case names. A matching change reserves the units containing those cases before other work; changing the fixture, its registry entry or the shared planner, registry loader or slice preload reserves them too. If the required units cannot fit, the plan emits a capacity error and Required fails. Only the remaining units may be deferred as a group. The plan names required cases, deferred units and unmapped Swamp paths in its summary.
+
+A file that cannot fit even an otherwise empty eight-shard plan, or contains a unit above the lane budget, makes Required checks fail; admitted files still run. Unmapped paths select the table’s default checks.
 
 Migration remains after-merge-only: its declared work needs twelve shards, above the eight-shard limit. The host ACL file also exceeds a lane, and the host build-list file needs an isolated measurement before admission. The FrankenPHP proxy fixture needs the pinned binary through `ORBIT_FRANKENPHP`, which hosted fixture setup does not install. Their table entries explain these coverage gaps. The measured container file remains eligible.
 
@@ -224,6 +228,8 @@ The native migration fixture also forces advisory mail failure and malformed rec
 The task VM host egress Python file is also after-merge-only: it repeatedly reached the 180-second PR ceiling, including run 43102509039. Python files run as whole units; the full-set receiver retains every case until measured case splitting makes PR admission possible. These explicit deferrals do not fail Required checks.
 
 The Instance host updates file runs after merge only. Across 24 PR observations per case, the runtime update reached 166.761 seconds and the Squid rollback reached 152.639 seconds, leaving about 7% and 15% of the 180-second ceiling. Both cases already run alone and require an initial converge followed by a changed-input converge. All four cases remain in Main full set; restoring PR coverage requires a measured faster fixture that preserves those transitions.
+
+Changes to `swamp/ansible/tasks/instance-host.yml` require the dir, ZFS and nested prepare-boundary producers, the nested prepare repeat, and the default-remote replacement proof. These five cases cannot be silently deferred. Their names are validated against the registry, so a rename must update the admission rule.
 
 The nested-fleet image cases of the Instance host image file run on pull requests, one case per slice. Their costs are Beast estimates until hosted runs measure them.
 

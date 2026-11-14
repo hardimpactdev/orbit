@@ -130,3 +130,5 @@ A required docs-impact check must read per-page reasons from the PR body as data
 When splitting a shared test registry, preserve admission order as well as record values. Replay selected and deferred units and ordered case slices against the old planner, and compare metadata through the PR merge base. Keep historical format readers data-only; load only the new format for the current checkout.
 
 For Python fixture registration, whole-file costs and shared test harnesses, follow [fixture policy](../../../docs/reference/implementation-loop.md#ci-budget).
+
+Saved fixture boundaries need pre-merge producer checks when their source tasks change. Declare required cases through [fixture admission](../../../docs/reference/implementation-loop.md#ci-budget); test that pressure cannot defer them and that insufficient capacity fails Required.

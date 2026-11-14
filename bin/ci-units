@@ -102,6 +102,14 @@ def configuration(path=TABLE):
             # Full set replaces stored names with live collection. Validate that
             # same population on every PR, including unselected Python fixtures.
             units_for({**fixture, **collect(file)}, budget)
+        mandatory = fixture.get('mandatory_cases', {})
+        if not isinstance(mandatory, dict):
+            raise ValueError(f'{file}: mandatory_cases must map input patterns to retained case names')
+        for pattern, cases in mandatory.items():
+            if pattern not in fixture['inputs'] or not isinstance(cases, list) or not cases or \
+                    any(not isinstance(name, str) or name not in fixture.get('cases', []) or name in excluded for name in cases) or \
+                    len(cases) != len(set(cases)) or fixture.get('after_merge'):
+                raise ValueError(f'{file}: mandatory_cases needs a declared input and unique retained case names, without after_merge')
         slices = fixture.get('slices', True)
         if type(slices) not in (int, bool) or type(slices) is int and slices < 1:
             raise ValueError(f'{file}: slices must be a positive count or a boolean')
@@ -186,29 +194,51 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
         for file, fixture in fixtures.items():
             selected.setdefault(file, (-1, 0, 0))
     admitted, deferred, capacity = [], [], []
+    mandatory, reserved = [], []
+    for file in selected:
+        fixture = fixtures[file]
+        changed = all_fixtures or file in paths or file in inventory_changed or file in registry_changed
+        cases = {name for pattern, names in fixture.get('mandatory_cases', {}).items()
+                 if changed or any(selection_regex(pattern).fullmatch(path) for path in paths)
+                 for name in names}
+        if not cases:
+            continue
+        candidates = [(name, cost, selected[file]) for name, cost in units_for(fixture, budget)
+                      if cases.intersection(case_names(name, fixtures))]
+        mandatory.append({'file': file, 'cases': [name for name in fixture['cases'] if name in cases],
+                          'units': [name for name, _, _ in candidates]})
+        reserved.extend(candidates)
+    if reserved and (any(cost > budget['shard_seconds'] for _, cost, _ in reserved) or pack(reserved, budget) is None):
+        capacity.append({'mandatory': mandatory, 'seconds': round(sum(cost for _, cost, _ in reserved), 3)})
+    else:
+        admitted.extend(reserved)
+    reserved_names = {name for name, _, _ in admitted}
     order = {file: index for index, file in enumerate(fixtures)}
     # Admission is by directness, then table order. Size only decides packing.
     for file in sorted(selected, key=lambda file: (tuple(-p for p in selected[file]), order[file])):
         fixture = fixtures[file]
         candidates = [(name, cost, selected[file]) for name, cost in units_for(fixture, budget)]
+        remaining = [row for row in candidates if row[0] not in reserved_names]
         if not fixture.get('after_merge'):
             oversize = [{'unit': name, 'seconds': cost, 'cases': case_names(name, fixtures)}
                         for name, cost, _ in candidates if cost > budget['shard_seconds']]
             if oversize:
                 capacity.append({'file': file, 'seconds': round(sum(c[1] for c in candidates), 3),
                                  'oversize': oversize})
-                deferred.extend(name for name, _, _ in candidates)
+                deferred.extend(name for name, _, _ in remaining)
                 continue
             required = len(pack(candidates, {**budget, 'pr_shards': len(candidates)}))
             if required > budget['pr_shards']:
                 capacity.append({'file': file, 'seconds': round(sum(c[1] for c in candidates), 3),
                                  'shards': required, 'workers': required * budget['shard_workers']})
-        if fixture.get('after_merge') or pack([*admitted, *candidates], budget) is None:
-            deferred.extend(name for name, _, _ in candidates)
+        if fixture.get('after_merge') or pack([*admitted, *remaining], budget) is None:
+            deferred.extend(name for name, _, _ in remaining)
         else:
-            admitted.extend(candidates)
+            admitted.extend(remaining)
     shards = pack(admitted, budget) or []
     result = {'shards': shards, 'deferred': sorted(deferred), 'unmapped': sorted(set(unmapped))}
+    if mandatory:
+        result['mandatory'] = mandatory
     if capacity:
         result['capacity'] = capacity
     excluded = [{'file': file, 'case': name} for file in selected for name in fixtures[file].get('after_merge_cases', [])]
@@ -246,12 +276,16 @@ def summary(text):
 def plan_summary(result, fixtures):
     lines = [f"Fixture plan: {len(result['shards'])} shards; {sum(len(s['units']) for s in result['shards'])} units; "
              f"{len(result['deferred'])} deferred; {len(result['unmapped'])} unmapped."]
+    for row in result.get('mandatory', []):
+        lines.append(f"- Mandatory `{row['file']}`: {json.dumps(row['cases'])}")
     for name in result['deferred']:
         reason = fixtures[name.split('#')[0]].get('reason', 'pull request shard limit')
         lines.append(f'- Deferred `{name}`: {reason}')
         lines += [f'  - {case}' for case in case_names(name, fixtures)]
     for row in result.get('capacity', []):
-        if row.get('oversize'):
+        if row.get('mandatory'):
+            lines.append(f"- CAPACITY: mandatory cases need {row['seconds']} declared seconds and cannot fit the fixture budget: {json.dumps(row['mandatory'])}. Required checks will fail.")
+        elif row.get('oversize'):
             for unit in row['oversize']:
                 lines.append(f"- CAPACITY: `{unit['unit']}` needs {unit['seconds']} declared seconds, above the 150-second lane; cases: {json.dumps(unit['cases'])}. Required checks will fail.")
         else:
