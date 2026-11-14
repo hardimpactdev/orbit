@@ -35,6 +35,8 @@ use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCheckIntent;
 use App\Domain\Tasks\TaskCheckKind;
@@ -220,6 +222,27 @@ function destroySucceeded(Operation $destroy): void
     $destroy->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1'], 'input' => Arr::except($destroy->input, 'container_destroy')])->save();
     app(DevelopmentInstanceDestroyProjection::class)->apply($destroy->refresh(), ['status' => 'succeeded', 'run_id' => 'run-1',
         'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => []]);
+}
+
+/**
+ * A copy whose create succeeded at its thread and whose completion runs.
+ *
+ * @return array{Instance, Operation}
+ */
+function copyCompleting(Task $group): array
+{
+    $create = startCopy($group);
+    $copy = Instance::query()->findOrFail($create->target_id);
+    $copy->update(['status' => InstanceState::SourceResolved, 'branch' => $copy->name, 'starting_commit' => str_repeat('c', 40)]);
+    app(OperationStore::class)->change($create, ['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'lock_key' => null]);
+
+    return [$copy->refresh(), copyCompletion($copy)];
+}
+
+function copyCompletion(Instance $copy): Operation
+{
+    return Operation::query()->create(['kind' => 'instance.complete', 'target_type' => 'instance', 'target_id' => $copy->id, 'node_id' => $copy->node_id,
+        'input' => [], 'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
 }
 
 function runningOperation(Operation $operation): Operation
@@ -655,33 +678,37 @@ describe('the end of the copy\'s create', function (): void {
         Queue::assertNotPushed(DestroyTaskCopy::class);
     });
 
-    it('runs the group when the copy\'s completion makes it active, and fails the group when the completion fails', function (): void {
-        $default = copySource();
-        config(['orbit.tasks.copies_max' => 2]);
-        $ends = [];
-        foreach ([OperationStatus::Succeeded, OperationStatus::Failed] as $status) {
-            $group = copyGroup($default->project);
-            $create = startCopy($group);
-            $copy = Instance::query()->findOrFail($create->target_id);
-            // The create succeeded at the thread; the copy waits for its completion.
-            $copy->update(['status' => InstanceState::SourceResolved]);
-            app(OperationStore::class)->change($create, ['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'lock_key' => null]);
-            $completion = Operation::query()->create(['kind' => 'instance.complete', 'target_type' => 'instance', 'target_id' => $copy->id, 'node_id' => $copy->node_id,
-                'input' => [], 'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
-            expect($group->refresh()->status)->toBe(TaskGroupStatus::Reserved);
-            if ($status === OperationStatus::Succeeded) {
-                $copy->update(['status' => InstanceState::Active]);
-            }
-            app(OperationStore::class)->change($completion, ['status' => $status, 'finished_at' => now(),
-                ...($status === OperationStatus::Failed ? ['error_code' => 'instance.container_process_inactive'] : [])]);
-            $ends[] = [$group->refresh()->status, $copy->id];
-        }
-        expect([$ends[0][0], $ends[1][0]])->toBe([TaskGroupStatus::Running, TaskGroupStatus::Failed]);
-        Queue::assertPushed(DestroyTaskCopy::class, 1);
-        Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $ends[1][1]);
+    it('runs the group when the copy\'s completion makes it active', function (): void {
+        $group = copyGroup(copySource()->project);
+        [$copy, $completion] = copyCompleting($group);
+        $copy->update(['status' => InstanceState::Active]);
+
+        app(OperationStore::class)->change($completion, ['status' => OperationStatus::Succeeded, 'finished_at' => now()]);
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->assistance_requested)->toBeFalse();
+        Queue::assertNotPushed(DestroyTaskCopy::class);
     });
 
-    it('fails the group and queues the destroy when the create\'s end records a refused completion, instead of leaving it reserved', function (): void {
+    it('keeps the copy and the group reserved with a failure assistance request when the completion fails or is cancelled', function (OperationStatus $status, ?string $code, string $step, string $named): void {
+        $group = copyGroup(copySource()->project);
+        [$copy, $completion] = copyCompleting($group);
+
+        app(OperationStore::class)->change($completion, ['status' => $status, 'finished_at' => now(), 'error_code' => $code, 'failed_step' => $step === 'complete' ? null : $step]);
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)
+            ->and($group->taskable_id)->toBe($copy->id)
+            ->and($group->assistance_requested)->toBeTrue()
+            ->and($group->assistance_kind)->toBe(AssistanceKind::Failure)
+            ->and($group->assistance_reason)->toBe(TaskCopyLifecycle::CompletionFailedReason
+                ."Operation {$completion->id} ended at step {$step} with {$named}. Retry: orbit instance:complete {$copy->id}.")
+            ->and($copy->refresh()->status)->toBe(InstanceState::SourceResolved);
+        Queue::assertNotPushed(DestroyTaskCopy::class);
+    })->with([
+        'failed' => [OperationStatus::Failed, 'instance.container_fleet_drift', 'clone-fleet', 'instance.container_fleet_drift'],
+        'cancelled' => [OperationStatus::Cancelled, 'operation.cancelled', 'complete', 'operation.cancelled'],
+    ]);
+
+    it('keeps the copy when the create\'s end records a refused completion', function (): void {
         $group = copyGroup(copySource()->project);
         $create = startCopy($group);
         $copy = Instance::query()->findOrFail($create->target_id);
@@ -693,8 +720,74 @@ describe('the end of the copy\'s create', function (): void {
         $completion = app(StartInstanceCompleteAction::class)->refused($copy, $create->refresh(), 'cluster.router_required', 'The Cluster Route requires a recorded Router.');
 
         expect([$completion->status, $completion->error_code])->toBe([OperationStatus::Failed, 'cluster.router_required'])
-            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
-        Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $copy->id);
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)
+            ->and($group->assistance_reason)->toContain("Operation {$completion->id} ended at step complete with cluster.router_required");
+        Queue::assertNotPushed(DestroyTaskCopy::class);
+    });
+
+    it('leaves the group reserved with its copy and asks nothing when the completion\'s budget expired', function (): void {
+        $group = copyGroup(copySource()->project);
+        [$copy, $completion] = copyCompleting($group);
+
+        app(OperationStore::class)->change($completion, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'operation.timed_out']);
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)->and($group->taskable_id)->toBe($copy->id)
+            ->and($group->assistance_requested)->toBeFalse()
+            ->and(TaskCopyLifecycle::completionFailure($copy->refresh()))->toBeNull();
+        Queue::assertNotPushed(DestroyTaskCopy::class);
+    });
+
+    it('never replaces an open direction request with a failed completion', function (): void {
+        $group = copyGroup(copySource()->project);
+        [, $completion] = copyCompleting($group);
+        TaskAssistance::apply($group, AssistanceKind::Direction, 'Which way?', 'Asked.');
+
+        app(OperationStore::class)->change($completion, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'instance.container_fleet_drift']);
+
+        expect($group->refresh()->only(['assistance_kind', 'assistance_question', 'assistance_reason']))
+            ->toBe(['assistance_kind' => AssistanceKind::Direction, 'assistance_question' => 'Which way?', 'assistance_reason' => 'Asked.'])
+            ->and($group->status)->toBe(TaskGroupStatus::Reserved);
+        Queue::assertNotPushed(DestroyTaskCopy::class);
+    });
+
+    it('runs the group and clears exactly the completion\'s request when a retried completion succeeds', function (bool $other): void {
+        $group = copyGroup(copySource()->project);
+        [$copy, $completion] = copyCompleting($group);
+        app(OperationStore::class)->change($completion, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'instance.container_fleet_drift']);
+        $first = $group->refresh()->assistance_reason;
+        if ($other) {
+            // Another failure that someone else recorded in between stays.
+            TaskAssistance::apply($group, AssistanceKind::Failure, reason: 'The check failed.', replaceFailure: true);
+        }
+
+        $retry = copyCompletion($copy);
+        app(OperationStore::class)->change($retry, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'instance.container_process_inactive']);
+        expect($group->refresh()->assistance_reason)->toBe($other ? 'The check failed.' : str_replace(
+            ["Operation {$completion->id}", 'instance.container_fleet_drift'], ["Operation {$retry->id}", 'instance.container_process_inactive'], $first));
+
+        $success = copyCompletion($copy);
+        $copy->update(['status' => InstanceState::Active]);
+        app(OperationStore::class)->change($success, ['status' => OperationStatus::Succeeded, 'finished_at' => now()]);
+
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)
+            ->and($group->assistance_requested)->toBe($other)
+            ->and($group->assistance_reason)->toBe($other ? 'The check failed.' : null);
+        Queue::assertNotPushed(DestroyTaskCopy::class);
+    })->with(['only the completion\'s request' => false, 'another failure request' => true]);
+
+    it('changes no group when the completion of a clone that no task owns fails', function (): void {
+        $default = copySource();
+        $normal = runningOperation(containerCreate($default->project, $default->node, 'feature'));
+        $clone = Instance::query()->findOrFail($normal->target_id);
+        $clone->update(['status' => InstanceState::SourceResolved]);
+        app(OperationStore::class)->change($normal, ['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'lock_key' => null]);
+        $completion = copyCompletion($clone);
+
+        app(OperationStore::class)->change($completion, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'instance.container_fleet_drift']);
+
+        expect($clone->refresh()->status)->toBe(InstanceState::SourceResolved)
+            ->and(Task::query()->where('assistance_requested', true)->exists())->toBeFalse();
+        Queue::assertNotPushed(DestroyTaskCopy::class);
     });
 
     it('fails the group and queues the destroy when the create is cancelled before its run starts', function (): void {
