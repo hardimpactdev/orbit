@@ -431,7 +431,7 @@ The native Swamp workflow runs these phases in order. Input preparation writes p
 | Phase | Work |
 | --- | --- |
 | `input` | Prepare this attempt's recorded roles, Tools, network and release pins, plus vault key references. Require a CLI pin only when the Gateway includes a CLI plan. |
-| `agent` | Reconcile the pinned agent, the Node’s CLI state, Orbit-owned files and units, the [kernel policy](#kernel-policy) and the [update policy](#update-policy). Restart only for managed changes. |
+| `agent` | Reconcile the pinned agent, the Node’s CLI state, Orbit-owned files and units, the [role units](#role-units-at-a-converge), the [kernel policy](#kernel-policy) and the [update policy](#update-policy). Restart only for managed changes. |
 | `software` | Read the selected pins from `recipe.json`, install them and hold the selected packages at those pins. On the Swamp Node, install the recipe's pinned Deno, which runs the Tool helper. |
 | `roles` | Repair the selected roles' configuration without changing an Instance or assignment. |
 | `tools` | Run the Tool helper once to prove that it works. Then apply recorded Tools within scope, recording each Tool's own result and continuing after an individual Tool failure. |
@@ -445,6 +445,21 @@ A failed phase stops later phases and fails the Operation with its failed step a
 The Tool helper is the TypeScript policy that judges each Tool. It runs on the Swamp Node, with the Deno at `/usr/local/bin/deno`; on its first run for a worker, Deno downloads the helper's two pinned npm imports. A helper that cannot run is not a Tool failure: the `tools` phase fails before it judges a Tool, and no Tool is marked failed. Converge the Swamp Node to install its Deno, then converge the Node again.
 
 Without a CLI plan, the base phase removes `/usr/local/bin/orbit` when it is a managed version link, regular `/usr/local/bin/orbit-0.N.0` binaries and the managed root profile `/root/.orbit/config.json`. It preserves unrelated executables, backups and directories. The final check requires these managed files to be absent. A failed phase retains completed changes; a new converge repeats the same desired state.
+
+### Role units at a converge
+
+Every converge writes the units that the Node's roles own, the `base` scope included. `NodeRoleUnits` picks them from the Node's role assignments:
+
+| Role | Unit |
+| --- | --- |
+| `swamp` | The worker template `orbit-swamp-worker@.service` |
+| `websocket` | `orbit-websocket.service` |
+
+The `agent` phase writes each one and reloads systemd when one changed. It never starts, stops or restarts them. A running service takes the new text at its next start: a Swamp worker at its renewal restart, Reverb at a reboot, a new Reverb release or a changed `.env`. A role converge runs after the `agent` phase, so it finds the unit current and does not restart Reverb for it. A current unit reports no change.
+
+The Swamp serve unit is not among them. The role renders it with the release checkout of the Swamp Node, which is not the folder that serve reads on a Gateway that is its own Swamp Node.
+
+The units are part of the base intent, so the [base digest](/reference/development-containers#what-a-refresh-skips) of a nested fleet moves when their text does.
 
 Agent and CLI replacements and CLI removal share the existing Node-local update lock with self-update. Replacements hold it only for the final atomic rename; removal holds it across its read and deletion. [One update at a time](/reference/self-update#one-update-at-a-time) owns the staging, timeout and failure rules. Converge checks the existing agent secret against the admitted verifier without rotating it or changing the Gateway's hash.
 

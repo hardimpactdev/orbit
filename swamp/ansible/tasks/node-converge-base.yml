@@ -43,6 +43,17 @@
     enabled: true
     daemon_reload: "{{ agent_files is changed }}"
     state: "{{ 'restarted' if agent_binary_changed or agent_files is changed else 'started' }}"
+# The units of the Node's roles (NodeRoleUnits): written and loaded, never started or restarted. A running service takes the new text
+# at its next start: a Swamp worker at its renewal restart, Reverb at a reboot, a new Reverb release or a changed .env. Never the
+# Swamp serve unit.
+- name: Write the units of the Node's roles
+  ansible.builtin.copy: { dest: "/etc/systemd/system/{{ item.name }}", content: "{{ item.content }}", owner: root, group: root, mode: "0644" }
+  loop: "{{ intent.role_units }}"
+  loop_control: { label: "{{ item.name }}" }
+  register: role_units_written
+- name: Load the changed role units
+  when: role_units_written is changed
+  ansible.builtin.systemd: { daemon_reload: true }
 - name: Require a valid recorded CLI release
   when: intent.cli != None
   ansible.builtin.assert:
