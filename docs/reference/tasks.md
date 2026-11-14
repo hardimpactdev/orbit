@@ -1169,9 +1169,14 @@ The check runs at the repository root, as every task check does.
 
 The start commit is HEAD's merge base with `origin/main` when that ref exists, else with `main`. The first line of the output names the start commit and the ref that gave it. `bin/review-check` uses the same rule.
 
-A copy's branch starts at the seed commit, which is `origin/main` in the copy, so a branch at its start is checked against the seed. A copy never fetches, so its `origin/main` is the driver's to move. A driver that brings a newer main into the branch first moves `origin/main` to it, from a bundle made from the real `main`, then merges or rebases:
+A copy's branch starts at the seed commit, which is `origin/main` in the copy, so a branch at its start is checked against the seed. A copy never fetches, so its `origin/main` is the driver's to move. A driver that brings a newer main into the branch makes a bundle of the real `main` in a clone of the real repository, copies it into the copy's `/tmp`, and moves the copy's `origin/main` to it. Then the driver merges or rebases:
 
 ```bash
+# In a clone of the real repository, at the newest main:
+git bundle create main.bundle main
+# Copy it into the copy, for example from its Node:
+incus file push main.bundle <container>/tmp/main.bundle
+# In the copy's /srv/workspace:
 git fetch /tmp/main.bundle +main:refs/remotes/origin/main
 git merge origin/main        # or: git rebase origin/main
 ```
