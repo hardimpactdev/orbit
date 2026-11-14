@@ -152,28 +152,44 @@ it('does not count a group without a task copy and without a copy publish', func
 });
 
 /**
- * The CI guard: only these Swamp sources call GitHub's merge, and every Operation kind whose workflow is one of them refuses a task copy's
- * pull request with a test in this file. A new merge path fails here until it refuses too.
+ * The CI guard: only these sources call GitHub's merge, in Swamp or in the Gateway's own code, and every Operation kind whose workflow is
+ * one of them refuses a task copy's pull request with a test in this file. A merge URL counts in any quoting, and unquoted. A new merge
+ * path fails here until it refuses too.
+ *
+ * @param  list<string>  $folders
+ * @return list<string>
  */
-it('knows every Swamp source that calls GitHub\'s merge, and each kind that runs one has a copy refusal test', function (): void {
-    $root = base_path('../../swamp');
+function noMergeCallers(string $root, array $folders): array
+{
     $callers = [];
-    foreach (['workflows', 'extensions', 'ansible'] as $folder) {
+    foreach ($folders as $folder) {
         $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator("{$root}/{$folder}", FilesystemIterator::SKIP_DOTS));
         foreach ($files as $file) {
             if (! $file instanceof SplFileInfo) {
                 continue;
             }
             $path = substr($file->getPathname(), strlen($root) + 1);
-            if (! preg_match('/\.(ya?ml|ts|py)$/', $path) || preg_match('/(_test\.|\/tests\/)/', $path)) {
+            if (! preg_match('/\.(ya?ml|ts|py|php)$/', $path) || preg_match('/(_test\.|\/tests\/)/', $path)) {
                 continue;
             }
-            if (preg_match('/\/merge"|\/merge`|merge_method|mergePullRequest|gh pr merge|PullRequestAutoMerge/', (string) file_get_contents($file->getPathname())) === 1) {
+            if (preg_match(NO_MERGE_CALL, (string) file_get_contents($file->getPathname())) === 1) {
                 $callers[] = $path;
             }
         }
     }
     sort($callers);
+
+    return $callers;
+}
+
+const NO_MERGE_CALL = '/pulls\/[^\n]*\/merge\b|merge_method|mergePullRequest|gh pr merge|PullRequestAutoMerge/';
+
+it('knows every Swamp source that calls GitHub\'s merge, and each kind that runs one has a copy refusal test', function (): void {
+    expect(noMergeCallers(base_path('app'), ['.']))->toBe([])
+        ->and(preg_match(NO_MERGE_CALL, "\$path = 'repos/'.\$repository.'/pulls/'.\$number.'/merge';"))->toBe(1)
+        ->and(preg_match(NO_MERGE_CALL, 'url: https://api.github.com/repos/example/trial/pulls/7/merge'))->toBe(1)
+        ->and(preg_match(NO_MERGE_CALL, '# diff/merge drivers stay off'))->toBe(0);
+    $callers = noMergeCallers(base_path('../../swamp'), ['workflows', 'extensions', 'ansible']);
 
     expect($callers)->toBe([
         'extensions/behaviors/operations/dependency-merge/mod.ts',
