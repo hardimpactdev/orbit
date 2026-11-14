@@ -927,6 +927,47 @@ contexts:
     fleet_recorded:
       code: 4f1c2a6b
       converged: 12ab
+  # The record's creation time of the oldest token (`YYYYMMDDHHMMSS`, UTC), far from today so the 20-day bound decides the same way always.
+  fleet-tokens-recorded-young:
+    fleet_recorded:
+      tokens: '29991231235959'
+  fleet-tokens-recorded-old:
+    fleet_recorded:
+      tokens: '20200101000000'
+  fleet-tokens-recorded-malformed:
+    fleet_recorded:
+      tokens: 12ab
+  # A list read because the record could not vouch: the oldest of six young tokens goes to the record.
+  fleet-tokens-mark-read:
+    fleet_club: {rc: 0}
+    fleet_due: {tokens: true}
+    fleet_recorded: {}
+    fleet_token_names: [serve-driver, orbit-gateway-run]
+    fleet_tokens_read:
+      rc: 0
+      stdout: '[{"name": "serve-driver", "createdAt": "2999-11-07T22:58:48.977Z"}, {"name": "orbit-gateway-run", "createdAt": "2999-11-01T10:00:00.000Z"}]'
+  fleet-tokens-mark-recorded:
+    fleet_club: {rc: 0}
+    fleet_due: {tokens: false}
+    fleet_recorded: {tokens: '29991231235959'}
+    fleet_token_names: [serve-driver]
+    fleet_tokens_read: {skipped: true}
+  fleet-tokens-mark-no-key:
+    fleet_club: {rc: 1}
+    fleet_due: {tokens: false}
+    fleet_recorded: {}
+    fleet_token_names: [serve-driver]
+    fleet_tokens_read: {skipped: true}
+  fleet-record-write:
+    fleet_now: {code: a1, grants: b2}
+    fleet_due: {converge: false}
+    fleet_recorded: {converged: '1794610740'}
+    fleet_tokens_mark: '29991101100000'
+  fleet-record-write-no-tokens:
+    fleet_now: {code: a1}
+    fleet_due: {converge: false}
+    fleet_recorded: {converged: '1794610740'}
+    fleet_tokens_mark: null
 cases:
 - file: tasks/task-vm-fleet.yml
   task: Reconcile the nested Swamp grants
@@ -2002,6 +2043,46 @@ cases:
   field: vars.fleet_tools_out
   context: fleet-tools-cut
   expected: {}
+- file: tasks/instance-fleet-refresh.yml
+  task: Name the due parts
+  field: vars.fleet_tokens_recorded
+  context: fleet-tokens-recorded-young
+  expected: true
+- file: tasks/instance-fleet-refresh.yml
+  task: Name the due parts
+  field: vars.fleet_tokens_recorded
+  context: fleet-tokens-recorded-old
+  expected: false
+- file: tasks/instance-fleet-refresh.yml
+  task: Name the due parts
+  field: vars.fleet_tokens_recorded
+  context: fleet-tokens-recorded-malformed
+  expected: false
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out whether the tokens are due
+  field: ansible.builtin.set_fact.fleet_tokens_mark
+  context: fleet-tokens-mark-read
+  expected: '29991101100000'
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out whether the tokens are due
+  field: ansible.builtin.set_fact.fleet_tokens_mark
+  context: fleet-tokens-mark-recorded
+  expected: '29991231235959'
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out whether the tokens are due
+  field: ansible.builtin.set_fact.fleet_tokens_mark
+  context: fleet-tokens-mark-no-key
+  expected: null
+- file: tasks/instance-fleet-refresh.yml
+  task: Write the refresh record
+  field: ansible.builtin.command.stdin
+  context: fleet-record-write
+  expected: '{"code": "a1", "converged": "1794610740", "grants": "b2", "tokens": "29991101100000"}'
+- file: tasks/instance-fleet-refresh.yml
+  task: Write the refresh record
+  field: ansible.builtin.command.stdin
+  context: fleet-record-write-no-tokens
+  expected: '{"code": "a1", "converged": "1794610740"}'
 non_command_output:
 - file: tasks/instance-fleet-refresh.yml
   task: Read the digests of the checkout

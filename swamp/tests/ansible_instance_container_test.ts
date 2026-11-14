@@ -2506,14 +2506,10 @@ Deno.test({
       assert(!f.run("fleet_refresh").ok);
       assertEquals(f.result(), { error_code: "instance.container_fleet_refresh_failed",
         detail: "Migrate the nested Gateway: non-zero return code: SQLSTATE no such table" });
-      // The start after a passed refresh: its failure keeps the seed's commit, has its own code, and says the new seed stays.
-      Deno.writeTextFileSync(`${f.folder}/run/result.json`, JSON.stringify({ commit }));
+      // A deployment starts its fleet with `fleet_resume` only after a restore: it keeps the first failure and adds why the restored
+      // fleet did not start.
       Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-resume.yml`,
         `- name: Check the agents\n  ansible.builtin.assert: { that: false, fail_msg: "Readiness check 'agents' failed: the agent of app-prod is not online", quiet: true }\n`);
-      assert(!f.run("fleet_resume").ok);
-      assertEquals(f.result(), { error_code: "instance.container_fleet_resume_failed", commit,
-        detail: "The new seed and base stay; the inner fleet on the new commit did not start: Check the agents: Readiness check 'agents' failed: the agent of app-prod is not online" });
-      // After a restore it keeps the first failure and adds why the restored fleet did not start.
       const first = { error_code: "instance.container_fleet_refresh_failed", detail: "Check the base converge: ended failed" };
       Deno.writeTextFileSync(`${f.folder}/run/failed.json`, JSON.stringify(first));
       Deno.writeTextFileSync(`${f.folder}/run/result.json`, JSON.stringify(first));

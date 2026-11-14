@@ -1770,7 +1770,9 @@ The start guard admits the copy's volume with exactly the keys above. A failed c
 
 ### Fleet rules
 
-Each rule below is a device or config key of a nested container, a file it reads, or a key of the inner bridge `oe-nested`. The container rules are in `base`, because a restore of `base` reverts device and config keys. The bridge is in the inner Incus, not in a container, so a restore of `base` keeps its keys. A file rule is owned: the refresh writes the whole file where it differs, root-owned with mode 0644. The rules are the shape of the first inner fleet, which was built by hand and runs.
+Each rule below is a device or config key of a nested container, a file it reads, or a key of the inner bridge `oe-nested`. The container rules are in `base`, because a restore of `base` reverts device and config keys. The bridge is in the inner Incus, not in a container, so a restore of `base` keeps its keys.
+
+A file rule is owned: the refresh writes the whole file where it differs, root-owned with mode 0644. A check or a start only compares: it reads the device and config keys and the bridge, and no file, because a file that differs never refuses. The rules are the shape of the first inner fleet, which was built by hand and runs.
 
 | Rule | Where | Why |
 | --- | --- | --- |
@@ -1791,7 +1793,7 @@ The cost: while `raw.dnsmasq` is set, the inner Incus runs the inner bridge's dn
 
 Incus restarts the bridge's dnsmasq when the key changes, so only the refresh writes it, with the fleet stopped. A start only compares. A copy whose seed lacks the key starts as before. A bridge that cannot be read is refused with `instance.container_fleet_drift`.
 
-The `environment.*` keys reach only `incus exec`. SSH and sudo sessions read `/etc/environment` instead, so the egress files give the base converge its proxy. The apt file replaces the task VM package cache that the image names. No Instance runs that cache. A role add through the nested Gateway still writes the cache back, and the next refresh replaces it. The refresh writes both files before the converge.
+The `environment.*` keys reach only `incus exec`. SSH and sudo sessions read `/etc/environment` instead, so the egress files give the base converge its proxy. The apt file replaces the task VM package cache that the image names. No Instance runs that cache. A role add through the nested Gateway still writes the cache back. The next refresh that reads the fleet files replaces it: one whose files moved, one that converges, or one that retakes `base`. The refresh writes both files before the converge.
 
 A unit in the fleet reads its secret from `SetCredential` or a file, never `LoadCredential`: there systemd gives the unit no credential and no error. The fleet check fails on a unit that breaks this rule. The nested Nodes keep `wg-quick` from their own Node converge; the fleet build's cloud-init `bootcmd` turns off the `wg` and `wg-quick` profiles.
 
@@ -1860,7 +1862,7 @@ Before the delivery, an operator placed the key by hand in `/etc/orbit/swamp-clu
 
 ### Refresh after a release
 
-After each Gateway release, Orbit deploys each nested-fleet default to the release commit. The deployment is `instance.deploy` with more steps, which only an intent with `fleet` runs. It first takes the seed of the default as it is, fleet included. Then it starts the inner fleet, refreshes it, takes the seed snapshot again and starts the fleet again. The [refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd) has the steps. An `instance:deploy` of the default runs the same flow.
+After each Gateway release, Orbit deploys each nested-fleet default to the release commit. The deployment is `instance.deploy` with more steps, which only an intent with `fleet` runs. The inner fleet keeps running between releases. The run checks it once, first, then takes the seed of the default as it is, fleet included. Then it refreshes the fleet and takes the seed snapshot again. The [refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/fleet-refresh.mmd) has the steps. An `instance:deploy` of the default runs the same flow.
 
 A default gets `fleet` when its runtime is in `orbit-instances-nested`, its Project has `nested_fleet` on and its Node's switch is on (`InstancePlacement::keepsFleet`). Every other deployment runs the same steps and calls as before.
 
@@ -1878,14 +1880,14 @@ The run deploys the release commit itself. A commit missing from the Project's r
 | The fleet stays | A step that fails from the checkout on restores the newest seed: the one the run took first, or a newer one. A restore never goes back past the fleet |
 | Check before a change | The check compares the inner fleet with its [rules](#fleet-rules) before the first seed. A refusal, `instance.container_fleet_drift`, changes nothing and restores nothing |
 | A failure names its step | The Operation names the first failed step and its code, such as `instance.container_fleet_refresh_failed`. `error.detail` names the failed task and its message |
-| Migrate before Doctor | The start checks only the containers and the tunnel. The refresh migrates the nested Gateway before its Doctor wait |
-| The fleet runs after the run | A passed run starts the fleet again after the seed. After a restore, the run starts the restored fleet |
+| Migrate before Doctor | The check checks only the containers and the tunnel. The refresh migrates the nested Gateway before its Doctor wait |
+| The fleet runs after the run | The refresh starts again what it stopped for `base`, before the seed. After a restore, the run starts the restored fleet |
 
 A Swamp step that exits nonzero keeps no output. So a failed fleet phase or seed step writes why into the run's result file, and the Gateway shows it as `error.detail`. For the readiness wait, that is the Doctor body. For a seed, it is the [cause](#a-retake-keeps-the-seed), such as no free ID range.
 
 The release step that admits the refresh ends before the refresh does. So a failed refresh that a release admitted also writes the Activity row `instance.refresh_failed`: status failed, command `instances:refresh-nested-fleets`, with the Operation, its code and its detail. `activity:list` and the problem collector show it.
 
-The checkout moves under the running nested Gateway, with its old schema and processes. So the start of the fleet checks only that the containers run and the tunnel reaches the hub. The refresh migrates and restarts the nested Gateway. When the converge is due, it waits for the three agents and converges the Nodes. Only then does it wait for Doctor.
+The checkout moves under the running nested Gateway, with its old schema and processes. So the run's one fleet check, before the checkout, starts what is stopped and checks only that the containers run and the tunnel reaches the hub. Nothing in the run stops the fleet before the refresh, so no second start follows. The refresh migrates and restarts the nested Gateway. When the converge is due, it waits for the three agents and converges the Nodes. Only then does it wait for Doctor.
 
 #### What a refresh skips
 
@@ -1896,8 +1898,11 @@ A refresh does only the parts whose inputs changed, as the task VM refresh did. 
 | Migrate the nested Gateway, restart its services | Git object IDs of `apps/gateway` and `apps/agent/contract`, which it reads | The digest differs |
 | Wait for the three agents | | The converges run |
 | Base converge of the three nested Nodes | The `swamp` files a base converge reads, the nested Gateway's digest of each Node's base intent, and the fleet intent | The digest differs, a digest cannot be read, or the last converge that ran is more than 7 days old |
-| Agent delivery, grants, state mounts, fleet files, readiness | None | Every run. The delivery writes into the checkout. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
-| Renew the nested Gateway's Swamp tokens, restart its services | The names and creation times of its six tokens | With the Club key: a token is missing, older than 20 days or unreadable. See [The nested Gateway's tokens](#the-nested-gateways-tokens) |
+| Agent delivery | `code` | The code digest differs. The delivery writes into the checkout, from `apps/gateway` |
+| Reload the grants | Git object IDs of `apps/gateway` and `swamp`, from which the nested Gateway renders them; recorded only with the Club key | With the Club key: the digest differs. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
+| Read the fleet files, write those that differ | The fleet files' content | The digest differs, the converge runs (it needs the egress files), or `base` is retaken (a partly stopped fleet only compares) |
+| Wait for the state mounts, check the nested Gateway's services (one read), read the fleet's devices and keys, readiness | None | Every run |
+| Renew the nested Gateway's Swamp tokens, restart its services | The names and creation times of its six tokens; the record keeps the oldest | With the Club key, when the record's oldest token is missing or older than 20 days. See [The nested Gateway's tokens](#the-nested-gateways-tokens) |
 | Stop the fleet, apply the rules, retake `base` | See below | Only when the fleet's disks changed |
 | Build the pinned shape tools in the outer container | The checkout's three pin files, through `bin/swamp-shape-gate`, and four packages | The tools of these pins are not complete, or a package is missing. Every run reads them. See [The pinned shape tools](#the-pinned-shape-tools) |
 
@@ -1941,7 +1946,11 @@ The nested Gateway's serve loads the workflows of the checkout as they change, w
 
 Swamp serve writes `swamp/.swamp` all the time, with or without a refresh. It holds run records, outputs, an audit log and caches built from the checkout. These are records, not inputs. After a reset, serve builds the caches again.
 
-With only some containers stopped, the rules only compare. A rule that differs on a running container fails the refresh, so the refresh never writes to a container whose `base` it keeps. Each container to retake stops; the others keep running. While the nested Gateway is stopped, the agents of the other two lose it and connect again after its start, as after the restart of its services. The start of the refreshed fleet starts what stopped and waits for readiness. If nothing changed, the fleet keeps running and `base` stays.
+With only some containers stopped, the rules only compare. A rule that differs on a running container fails the refresh, so the refresh never writes to a container whose `base` it keeps. Each container to retake stops; the others keep running. While the nested Gateway is stopped, the agents of the other two lose it and connect again after its start, as after the restart of its services.
+
+After `base` the refresh starts what stopped and waits for readiness, its one readiness wait in that case. If nothing changed, the fleet keeps running, `base` stays, and the refresh waits for readiness before the tools.
+
+If that start fails, the refresh fails and the run restores the old seed. The new `base` snapshots are inside the outer container's disk, so the restore takes them back too. The default then runs on the old seed's commit with the old seed's fleet, as before the run. Existing copies are clones of older seeds and stay as they are. New copies clone the restored seed until the next release.
 
 The refresh removes the record before its first write to a nested disk, and writes it again as its last task, before the seed. So:
 
@@ -1959,7 +1968,7 @@ The write goes to a file beside the record, and a rename puts it in place. So a 
 
 The nested Gateway runs its own Swamp. Its six tokens live 30 days: the serve driver, the Gateway's run and read tokens, and the access tokens of workers a, b and c. A fleet lives longer than that, and its copies inherit its tokens. So the refresh keeps them young.
 
-With the Club key, every refresh reads their names and creation times with `swamp access token list`, which shows no secret. The tokens are due when one is missing, one is older than `fleet_token_max_age` (20 days), or the list cannot be read. Then the refresh runs the `remint` play of `gateway-bootstrap.yml` on the nested Gateway:
+The record keeps `tokens`, the creation time of the oldest of the six, as `YYYYMMDDHHMMSS` in UTC. With the Club key, a refresh whose record has no such time, or one older than `fleet_token_max_age` (20 days), reads their names and creation times with `swamp access token list`, which shows no secret. Any other refresh reads no list: `tokens: young`, `tokens_reason: recorded`. The tokens are due when one is missing, one is older than 20 days, or the list cannot be read. Then the refresh runs the `remint` play of `gateway-bootstrap.yml` on the nested Gateway:
 
 1. It stops the workers and serve, which hold the token store open.
 2. It makes the worker set whole (`gateway-swamp-workers.yml`). A worker without token files gets its folder and tokens. A fleet built with workers a and b only gets worker c. Its first refresh remints with `tokens_reason: incomplete`.
@@ -1968,7 +1977,7 @@ With the Club key, every refresh reads their names and creation times with `swam
 
 The refresh then restarts the nested Gateway's services, because they read the new tokens. It checks serve and the three workers before any converge.
 
-The remint takes about 1 to 3 minutes. A refresh that does not remint reads the list once, in about 2 seconds. A remint writes the nested Gateway's disk, so its `base` is retaken. A failed remint fails the refresh with `instance.container_fleet_refresh_failed`, its step "Renew the inner Swamp tokens", and the run restores the old seed. No token reaches a log line or the result. Without the Club key the nested Swamp does not run, and the tokens are `skipped`.
+The remint takes about 1 to 3 minutes; the record then holds the time of the remint. A refresh that reads the list but does not remint takes about 2 seconds for it. A remint writes the nested Gateway's disk, so its `base` is retaken. A failed remint fails the refresh with `instance.container_fleet_refresh_failed`, its step "Renew the inner Swamp tokens", and the run restores the old seed. No token reaches a log line or the result. Without the Club key the nested Swamp does not run, and the tokens are `skipped`.
 
 #### The pinned shape tools
 
@@ -2000,13 +2009,13 @@ A failed build or package install never fails the refresh. The refresh goes on a
 
 The gate and the runner take the tools as ready only when the venv holds `.complete`. The script writes that marker last, after the collections are in place, so a failed or stopped build leaves no venv that looks ready, and the next refresh builds again. A proof in a copy without ready tools builds them in its own cache, as before, which needs `python3-venv` and the internet. When that build fails, the fleet preparation fails with one line from the runner (`proof_controller` in `swamp/proof/runner/fleet.py`). The line names the cache build that failed and ends with the missing folder, `/opt/orbit-shape-gate/venv-<digest>`.
 
-The Operation's result has `fleet_refresh`. It holds `migrate` (`applied`, `nothing` or `skipped`), `converge` (`ran` or `skipped`), `converge_reason` (`changed`, `record`, `digest_unreadable`, `stale` or `unchanged`), `changed` (the tasks the converges changed), `tokens` (`reminted`, `young` or `skipped`), `tokens_reason` (`age`, `incomplete`, `unreadable`, `young` or `no_key`), `tools` (`present`, `built` or `failed`), `tools_reason` (see [The pinned shape tools](#the-pinned-shape-tools)), `base` (`retaken` or `kept`), `base_containers` (the containers whose `base` was retaken), `restart` (`yes` or `no`), `record` (`present`, `missing` or `unreadable`) and `seconds` per part.
+The Operation's result has `fleet_refresh`. It holds `migrate` (`applied`, `nothing` or `skipped`), `converge` (`ran` or `skipped`), `converge_reason` (`changed`, `record`, `digest_unreadable`, `stale` or `unchanged`), `changed` (the tasks the converges changed), `tokens` (`reminted`, `young` or `skipped`), `tokens_reason` (`age`, `incomplete`, `unreadable`, `young`, `recorded` or `no_key`), `tools` (`present`, `built` or `failed`), `tools_reason` (see [The pinned shape tools](#the-pinned-shape-tools)), `base` (`retaken` or `kept`), `base_containers` (the containers whose `base` was retaken), `restart` (`yes` or `no`), `record` (`present`, `missing` or `unreadable`) and `seconds` per part.
 
-When `base` stays, the seed is taken while the inner fleet runs. The inner storage pool is a directory pool on the outer container's disk, one ZFS dataset. So the seed is one point in time of all three containers and the inner Incus database, the state a power cut leaves. The nested Gateway's database is SQLite, which recovers from a power cut. A copy boots its nested containers cold, as a copy of a stopped seed does.
+The seed is taken while the inner fleet runs, also after a retaken `base`. The inner storage pool is a directory pool on the outer container's disk, one ZFS dataset. So the seed is one point in time of all three containers and the inner Incus database, the state a power cut leaves. The nested Gateway's database is SQLite, which recovers from a power cut. A copy boots its nested containers cold, as a copy of a stopped seed does.
 
 The first seed of every run, "Keep the current seed", was always taken with the fleet running. On a nested proof Node with a directory pool, the seed is a file copy and not one point in time; that affects only proofs.
 
-A passed run starts the fleet again after the seed and waits for readiness. If only that start fails, the run fails with `instance.container_fleet_resume_failed`. The new seed and `base` stay. After a restore, the run starts the restored fleet. If that start fails, the detail says so too.
+After a restore, the run starts the restored fleet and waits for readiness. If that start fails, the detail says so too.
 | An update, not a rebuild | The image variant's tools change only with a new image |
 | The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Cancel an open refresh before the next release |
 
@@ -2016,15 +2025,15 @@ What stops during a refresh:
 
 - The outer container keeps running. Its Processes stop only for the seed snapshot: under 1 s on ZFS, plus their stop and start.
 - The inner fleet runs from its start. A nested container stops only for its own `base`.
-- A container stopped for `base` stays stopped for the last seed. It starts again after the seed.
-- When `base` stays, the fleet runs through the seed.
+- A container stopped for `base` starts again inside the refresh, before the last seed.
+- The fleet runs through the seed.
 - A clone starts its own copy.
 - The run's first seed stops the Processes as briefly as the last one.
 - After a failure, the outer container stops for the restore (at most 30 s for the stop) and starts again.
 
 | Step | Time | Source |
 | --- | --- | --- |
-| Start the inner fleet (running fleet: rules, link, tunnel) | About 6 s, measured | Operation 19765 |
+| The fleet check (running fleet: rules, link, tunnel) | About 6 s for the separate start, measured | Operation 19765 |
 | Apply the checkout: delivery, grants, migrate, restart | 9 s, measured | The first build by hand |
 | Converge of the three nested Nodes | Not measured in a container | |
 | Readiness after the converge | 16 s, measured | The first build by hand |
@@ -2035,7 +2044,7 @@ What stops during a refresh:
 | A whole refresh whose converges change nothing (`base` kept) | About 3 min 55 s, estimated | Operation 20121 minus stop, `base` and start |
 | A whole refresh that changes neither `apps/gateway` nor `swamp` | About 2 min 20 s, estimated | Operation 20121 minus the converges too |
 
-Each step has a bound. The check has 300 s, the first seed 120 s, the start 300 s and the refresh 3,600 s. The start of the refreshed fleet has 600 s. The restore has 150 s, the start after it 120 s, and the start of the restored fleet 600 s. The run budget grows by their sum, 5,790 s. Inside the refresh, the agent wait and the Doctor wait are bounded by 300 s each, and each Node converge by 900 s.
+Each step has a bound. The check, the run's one fleet start, has 400 s, the first seed 120 s and the refresh 4,200 s, with the start of what it stopped for `base`. The restore has 150 s, the start after it 120 s, and the start of the restored fleet 600 s. The run budget grows by their sum, 5,590 s. Inside the refresh, the agent wait and the Doctor wait are bounded by 300 s each, and each Node converge by 900 s.
 
 ### A clone starts its fleet
 

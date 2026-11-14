@@ -90,6 +90,7 @@ additionalFiles:
   - ansible/tasks/instance-fleet-ready.yml
   - ansible/tasks/instance-fleet-proxy.yml
   - ansible/tasks/instance-fleet-refresh.yml
+  - ansible/tasks/instance-fleet-mounts.yml
   - ansible/tasks/instance-fleet-converge-node.yml
   - ansible/tasks/instance-fleet-files.yml
   - ansible/tasks/instance-fleet-reset.yml
