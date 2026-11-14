@@ -34,9 +34,9 @@ final readonly class StartNodeConvergeAction
             return $existing;
         }
 
-        return app(NodeNetworkReservation::class)->hold($node, function (?Node $hub) use ($node, $base, $roles, $selected, $requestId): Operation {
+        return app(NodeNetworkReservation::class)->hold($node, $base, function (?Node $hub) use ($node, $base, $roles, $selected, $requestId): Operation {
             $operation = $this->operations->execute('node.converge', 'node', $node->id, $node->id,
-                ['_converge' => ['network' => ['hub_id' => $hub?->id]],
+                ['_converge' => ['network' => ['hub_id' => $hub?->id, 'base' => $base]],
                     'participant_node_ids' => array_values(array_unique([$node->id, $hub->id ?? $node->id]))],
                 'operator', $requestId, lockKey: OperationStore::lockKey('node', $node->id));
             if ($operation->wasRecentlyCreated) {
@@ -47,7 +47,7 @@ final readonly class StartNodeConvergeAction
                 $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $hub);
                 // Dispatch is deferred until this reservation transaction commits.
                 $operation->input = [...$operation->input, '_converge' => [
-                    ...$snapshot, 'network' => ['hub_id' => $hub?->id],
+                    ...$snapshot, 'network' => ['hub_id' => $hub?->id, 'base' => $base],
                 ]];
                 $operation->save();
             }

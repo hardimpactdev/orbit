@@ -446,6 +446,8 @@ if (command[0] === "curl") {
     if (command.at(-1) !== '{"base":true}') fail("A refresh converges the base");
     state.operations ??= [];
     const node = Number(converge[1]);
+    // `convergeRefused`: the Nodes whose admission the nested Gateway refuses, as curl --fail reports a 409.
+    if (state.convergeRefused?.includes(node)) fail("curl: (22) The requested URL returned error: 409", 22);
     // `egressNeeded`: a base converge runs apt and downloads the agent, so it fails on a Node without the egress files.
     const guest = containers[["nested-gateway", "nested-app-dev", "nested-app-prod"][node - 1]];
     const egress = !state.egressNeeded || state.egressNeeded.every((path: string) => (guest.files ?? {})[path]?.includes("10.253.0.1:3128"));
@@ -455,6 +457,11 @@ if (command[0] === "curl") {
   const operation = /^\/operations\/(\d+)$/.exec(path);
   if (method === "GET" && operation) {
     const found = state.operations[Number(operation[1]) - 901];
+    // `convergeRunning`: the reads in which a Node's converge still runs.
+    if ((state.convergeRunning?.[found.node] ?? 0) > 0) {
+      state.convergeRunning[found.node] -= 1;
+      done({ data: { id: Number(operation[1]), status: "running", error_code: null, result: null } });
+    }
     // `convergeChanged`: the tasks each Node's base converge changed, as the Operation's `result.changed`; 0 by default.
     // `convergeNoCount`: a result without a count.
     done({ data: { id: Number(operation[1]), status: found.status, error_code: found.status === "failed" ? "node.converge_failed" : null,

@@ -4,7 +4,7 @@
 # The record `fleet_record` holds the digests of the parts the last passed refresh did; a part runs when its digest differs, and a
 # missing or unreadable record makes every part run. `code` migrates and restarts the nested Gateway and places the agent delivery,
 # `grants` reloads the nested Swamp's grants, `tokens` reads the nested Swamp's tokens when the oldest may be due, `rules` reads the fleet
-# files, and `converge` waits for the three agents and converges the base of each nested Node whose own digest changed, one by one. A
+# files, and `converge` waits for the three agents and converges the base of each nested Node whose own digest changed, side by side. A
 # Node's converge is also due 7 days after its last one. The fleet's devices and keys are read, and readiness is waited for once, every time. `base` is
 # retaken, with those containers stopped and started again, only for the containers whose disks changed: the grants or a remint
 # changed the nested Gateway, a converge changed a task, a rule or file differed, a `base` is missing, or the record was. A migration
@@ -321,13 +321,13 @@
   failed_when: fleet_updates.rc != 0 or not fleet_updates_idle
   changed_when: false
   loop: "{{ fleet_converge_roles }}"
-# One Node after the other, and an include per Node stops at the first Node whose converge fails. They cannot run side by side: every
-# step of the converge workflow has a fixed behavior name, so a second run waits for the first one's Swamp lock and fails after 60 s.
-- name: Converge the base of each due nested Node
+# The due Nodes converge side by side: all are admitted, then each is awaited, and a failure fails the refresh only after every
+# admitted converge has ended (instance-fleet-converge-node.yml).
+- name: Converge the base of the due nested Nodes
   when: fleet_due.converge
   ansible.builtin.include_tasks: instance-fleet-converge-node.yml
-  loop: "{{ fleet_nodes | selectattr('name', 'in', fleet_converge_roles) | list }}"
-  loop_control: { loop_var: fleet_node, label: "{{ fleet_node.name }}" }
+  vars:
+    fleet_converge_nodes: "{{ fleet_nodes | selectattr('name', 'in', fleet_converge_roles) | list }}"
 
 - name: Time the converge
   ansible.builtin.set_fact:
