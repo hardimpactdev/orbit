@@ -84,3 +84,12 @@ it('reads the containers of every project, stopped ones included, with the reade
         ->and($source)->toContain('/etc/subuid')->and($source)->toContain('/etc/subgid')
         ->and($source)->not->toContain('status');
 });
+
+it('keeps for Doctor the free full-size ranges and the normal slots left before one would split a full-size gap', function (): void {
+    // One 65,536 slot, a held small map, then exactly one full-size gap.
+    $ranges = new IsolatedIdRanges([1000000, 65536 * 3 + InstanceHostIntent::TaskPlaceIds], [[1131072, 65536]]);
+    expect($ranges->summary())->toBe(['full' => 1, 'small' => 1])
+        // Beast on 2026-11-14: one full-size range and more than ten slots below it.
+        ->and(beastRanges()->summary())->toBe(['full' => 1, 'small' => 10])
+        ->and(beastRanges()->with(InstanceHostIntent::TaskPlaceIds)?->summary())->toBe(['full' => 0, 'small' => 10]);
+});

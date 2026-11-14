@@ -11,7 +11,8 @@ use Illuminate\Support\Carbon;
 
 /**
  * A pairing link the Gateway minted on a T3 server for one Node. The session the Node gets from it
- * retains the label for Conn clients; MCP sessions require bounded source-IP attribution.
+ * retains the label for Conn clients; MCP sessions require bounded source-IP attribution. A held pairing is one
+ * the Gateway redeemed itself: it keeps the session for its Node ([Held sessions](/reference/conn#held-sessions)).
  *
  * @property int $id
  * @property int $node_id
@@ -22,6 +23,10 @@ use Illuminate\Support\Carbon;
  * @property string|null $credential
  * @property Carbon|null $issue_started_at
  * @property Carbon|null $revoked_at
+ * @property bool $held
+ * @property string|null $session
+ * @property Carbon|null $session_expires_at
+ * @property Carbon|null $withdrawn_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read Node $node
@@ -31,10 +36,10 @@ final class ConnPairing extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['node_id', 'conn_environment_id', 'pairing_link_id', 'client_label', 'expires_at', 'revoked_at', 'credential', 'issue_started_at'];
+    protected $fillable = ['node_id', 'conn_environment_id', 'pairing_link_id', 'client_label', 'expires_at', 'revoked_at', 'credential', 'issue_started_at', 'held', 'session', 'session_expires_at', 'withdrawn_at'];
 
     #[\Override]
-    protected $hidden = ['credential'];
+    protected $hidden = ['credential', 'session'];
 
     /** @return BelongsTo<Node, $this> */
     public function node(): BelongsTo
@@ -58,6 +63,10 @@ final class ConnPairing extends Model
             'revoked_at' => 'datetime',
             'issue_started_at' => 'datetime',
             'credential' => 'encrypted',
+            'held' => 'boolean',
+            'session' => 'encrypted',
+            'session_expires_at' => 'datetime',
+            'withdrawn_at' => 'datetime',
         ];
     }
 }

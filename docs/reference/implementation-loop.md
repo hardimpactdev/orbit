@@ -3,7 +3,7 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,test,ci-build-plan,ci-units,ci-delivery,ci-tree-receipt,ci-proof-eligibility,ci-proof-run,ci-cache-ref,ci-runner-prerequisites,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
+  - bin/{review-check,task-check,test,ci-build-plan,ci-units,ci-delivery,ci-tree-receipt,ci-proof-eligibility,ci-proof-run,ci-cache-ref,ci-runner-prerequisites,worktree-create,worktree-remove,check-processes,php-build,swamp-shape-gate}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy,swamp-shape-python,swamp_shape_host_tools}.py,swamp/bin/{check-swamp-shape,gate-test-support}.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - "{tools/check_budget.py,swamp/tests/_support/slice.ts}"
   - "{apps/*,packages/php-sdk}/rector.php"
@@ -71,7 +71,9 @@ Saved refresh records keep the code and converge digests. Their `converged` time
 
 A separate remote Node service access fixture covers exact TCP admission, proxy bypass for execution sessions and systemd Processes, shared paths and detach. It uses fake commands and connections; the release fixture proves live reachability and isolation.
 
-The retained guard fixture pins only the source-removal step and the absence of workflow dependency checks, so unrelated Route phases can change. The withdrawal fixture runs two local Ansible applications to verify cleanup after a partial publication and after an already absent site. [Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. It runs two workers per Sabre shard to reduce timeouts caused by runner load. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
+The retained guard fixture pins only the source-removal step and the absence of workflow dependency checks, so unrelated Route phases can change. The withdrawal fixture runs two local Ansible applications to verify cleanup after a partial publication and after an already absent site.
+
+[Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. Its independent deferred receiver also runs each main push’s omitted cases at that push SHA, so newer pushes cannot replace their coverage. Both receivers run two workers per Sabre shard to reduce timeouts caused by runner load. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
 
 Withdrawal fixtures also check that publication stops when the live checksum differs from the base used for composition. The Node helper tests use temporary files, fake Caddy commands and real file locks; they cover contention, holder death and reload failure.
 
@@ -183,7 +185,7 @@ Every executable check job has a `timeout-minutes` equal to its table `ceiling`,
 
 Required checks has static dependencies on the selected checks, including Swamp. It accepts success or an unselected skip and checks that the plan's boolean selection keys exactly match its dependencies. Its API wait covers only blocking proof. The two proof switches retain their meaning.
 
-Each registered fixture has one metadata file under `.github/ci/fixtures/`, mirroring its source path with `.toml` appended. It holds the input rules, costs, ordered case names and source hash. Shared budgets, defaults and build checks stay in `.github/ci/checks.toml`.
+Each registered fixture has one metadata file under `.github/ci/fixtures/`, mirroring its source path with `.toml` appended. It holds the input rules, costs, ordered case names and source hash. When the fixture's tests run a host program, such as `zip` or `jq`, `host_programs` lists it; `bin/ci-units` refuses a list that is empty or names a program twice. Shared budgets, defaults and build checks stay in `.github/ci/checks.toml`.
 
 `bin/ci-registry` is the loader for PR selection, fixture execution and Main full set. Editing fixture metadata selects only those fixtures, using the same merge base as path selection. Formatting and edits to check definitions select no extra fixture bodies. Changes to shared fixture budgets, defaults or fixture order, or to the loader, runner and slice preload, select all fixtures within the existing budget.
 
@@ -502,7 +504,7 @@ bin/swamp-shape-gate --base REF     # compare with another base
 bin/swamp-shape-gate --only shape   # or --only validate
 ```
 
-The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate`, keyed by their pins, and reuses it. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts` and the frozen agent command check.
+The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate`, keyed by their pins, and reuses it. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts`, the frozen agent command check and the workflow placement lint, `lint-workflow-placement.ts`. The placement lint needs no credential, so it is one of the static controls that `--only control` runs.
 
 Independent commands share up to four workers, with one worker inside each command. The Instance host fixture files run in two serial groups at the front of the queue: updates and ACL cases in one; host, image and runtime cases in the other. At most two Instance host playbooks run at once, leaving workers for the other checks. The updates and ACL cases measured 356 and 257 seconds on ci-shark-2, or 613 seconds together. The image/runtime group must not also carry those ACL cases.
 
@@ -574,6 +576,86 @@ Each failure names the file and line.
 The gate writes a receipt, `result.json`, and one log per command in a new `review-*` directory under `orbit-checks/<HEAD>/` in the Git common directory. Each command also prints its duration in seconds, so stored task output shows slow steps without opening the receipt. The receipt passes only when at least one command ran, every command passed, and the commit and the working tree did not change during the run.
 
 Before it writes, the gate removes the `review-*` directories its own Unix user wrote more than a day ago, and `<HEAD>` directories that stayed empty for a day. It cannot remove another user's reports; each user cleans up its own on its next run.
+
+### The scoped task check
+
+`bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks only what the task changed since its start commit, so it catches in the copy what CI would otherwise catch after the push. It runs in under five minutes.
+
+```bash
+bin/task-check                    # against the merge base with origin/main, else main
+bin/task-check --base REF         # against another start commit
+bin/task-check --budget 200       # seconds for the whole run (default 270)
+bin/task-check --only pest,phpstan
+```
+
+The changed paths are those since the start commit, with uncommitted and untracked files, as the candidate gate reads them. The command asks `bin/ci-build-plan --pull-request` which CI jobs those paths select, and `bin/ci-units plan` which Swamp fixture units. When the tree has uncommitted work, both plans read a commit of the working tree that no branch holds. Inside a selected Pest job, it reuses the file-level mapping that the repository already has, `bin/cli-contract`, and adds none. The parts run in this order.
+
+| Part | Runs when | What it runs |
+| --- | --- | --- |
+| `docs-impact` | Always | `bin/docs-impact --gate` against the start commit, with the proposed PR body as the candidate gate passes it |
+| `check-flows` | The plan selects the Docs job | `node bin/check-flows`, with `BASE` set to the start commit, as CI runs it |
+| `docs-lint` | The plan selects the Docs job | `bin/docs-openapi` when the plan selects the API reference job, as root `composer check` does, then `composer docs-build` and `composer docs-lint`, which is strict |
+| `pint <project>` | A PHP file of the project changed | `vendor/bin/pint --test` on the changed PHP files of that project |
+| `phpstan <project>` | The plan selects the project's static job | `vendor/bin/phpstan analyse` with the project's `phpstan.neon`, on the changed PHP files inside the paths that config analyses |
+| `swamp-shape` | The plan selects the Swamp checks | `bin/swamp-shape-gate --only control`, the static controls that CI's shape job runs, in a checkout of the candidate |
+| `fixture-population` | `bin/ci-units plan` plans Deno fixture units for the PR | `bin/ci-units` collection of each such Deno fixture, compared with the cases stored for it |
+| `pest <project>` | The plan selects the project's Pest job | See below |
+| `fixtures` | `bin/ci-units plan` plans units | The planned units that fit the budget, through `bin/ci-units run`. A unit whose declared host program is missing does not run |
+
+The Pest jobs are `gateway-tests`, `cli-tests`, `sdk-tests` and `docs` for the docs app. For a selected job:
+
+- `packages/php-sdk` runs its whole suite. It takes about a second.
+- `apps/gateway`, `apps/cli` and `apps/docs` run their changed test files in one Pest run. `apps/cli` also runs the CLI tests that replay a changed SDK fixture, as `bin/cli-contract --changed <start commit>` names them.
+- The whole suite of `apps/gateway`, `apps/cli` and `apps/docs` is a `pest <project> suite` line, `skipped` with the reason "CI runs the full suite".
+
+A job that CI does not select is `not selected`.
+
+The Swamp checkers read committed `HEAD` and the tracked files. When the tree has uncommitted work, `swamp-shape` runs in a temporary Git worktree of the candidate commit and removes it afterwards, so an untracked Swamp file is checked too. A SIGTERM, such as Orbit's outer timeout, ends the check through its cleanup, which removes the worktree.
+
+Only the Swamp shape steps need that worktree. The other parts, fixture units included, run on the working tree, which already holds the uncommitted work.
+
+The population check catches a Deno fixture whose registered cases differ from the `cases` in its `.github/ci/fixtures` file. CI fails such a fixture before it runs any case. It checks each fixture whose units the plan runs on the PR, so a changed shared helper that registers tests is caught too. A unit the plan defers runs in the exact-push deferred receiver and the main full set, which collect its cases live, so this pre-merge check leaves it out. The check also loads the fixture table, which refuses a Python fixture whose `case_costs` name other cases than its tests.
+
+#### Budget
+
+The budget is wall time from the start of the run. Each part gets the time left as a hard limit. A part that reaches the end of the budget is stopped and reported as `skipped (budget: stopped after Ns)`. A part with no time left does not start and is reported as skipped.
+
+A fixture collection starts only with at least 15 seconds left; a collection that outlasts its 15-second limit, such as with a cold Deno cache, is a named budget skip. A unit joins only when the units chosen so far still fit the time left, by the `pack` rule of `bin/ci-units`.
+
+The fixture units run with as many workers as `bin/check-processes` gives, not CI's `shard_workers`. Orbit's value of 1 runs one unit at a time on the shared host. The check packs the units into that many lanes and passes the count to `bin/ci-units run --workers`. Every file and unit that did not start or was stopped is named, with the reason. A budget skip does not fail the check; CI still runs it.
+
+Only the check's own time limit stops a unit. A unit that did not run for another reason, such as a failed tool setup, fails the `fixtures` part, with the end of the output. A capacity row of the CI plan, which `bin/ci-units` marks "Required checks will fail", is a failed `fixture-capacity` line.
+
+Measure the check with `ORBIT_CHECK_PROCESSES=1`. Orbit sets that value for every task check, whatever the copy's CPU count, so PHPStan and Pest run in one process.
+
+#### Output
+
+Each part prints its output when it fails. The run ends with one line per part: `passed`, `FAILED`, `skipped` with its reason, or `not selected`. The last line names the start commit and the total seconds. The command exits 1 when a part failed.
+
+A part whose program is missing fails with `<program>: required tool not found`. The command installs nothing.
+
+A fixture unit whose fixture declares a host program in `host_programs` does not run when the copy lacks that program. The `fixtures` line counts and names it, for example `1 skipped: zip missing in this copy (swamp/tests/ansible_instance_host_runtime_test.ts#0/2)`. Such a skip does not fail the check. The [fleet refresh](/reference/development-containers#the-pinned-shape-tools) installs `zip`, `unzip` and `jq` in the default, so a copy of a refreshed seed has them. A Pest test that needs a program the copy lacks still fails as its test fails.
+
+#### What it leaves to CI
+
+The scoped check does not run Rector, the full PHPStan analysis or the Gateway, CLI and docs Pest suites. Nor does it run the web and Pi server checks, Rust formatting, the Generated contracts job, the Swamp shape fixtures outside the plan, or Swamp workflow validation. It also leaves out a fixture unit whose declared host program the copy lacks. It does not fix files: Pint runs with `--test`. CI runs all of these on the handoff commit.
+
+#### Its tests
+
+Two files test the command:
+
+- `tools/test_ci_task_check.py` needs no vendor folder. CI's "Check CI scope and import fixtures" step runs it with the other `tools/test_ci_*.py` files.
+- `tools/test_task_check.py` needs a task copy or a seeded checkout. CI does not run it. Run it with `python3 tools/test_task_check.py`.
+
+The CI file covers Pest selection and the `skipped` and `not selected` labels. It also covers budget stops, a failed fixture tool setup, the fixture worker count, a capacity row, a collection timeout, a unit whose host program is missing, the worktree cleanup on SIGTERM, the default start commit and the summary format.
+
+The seeded file holds one change set for each real failure that CI caught after a task's own checks passed:
+
+- From #3713: an SDK Pest test and a strict docs-lint finding.
+- From #3715: a PHPStan error, a stale fixture case population and a flow chart finding.
+- An uncommitted Swamp file that breaks a shape rule.
+
+Each case applies its change set in a scratch clone of the checkout and runs the part that must fail. The cases need the vendor folders of `packages/php-sdk` and `apps/docs`, Deno and Node.
 
 ### Gateway test databases
 

@@ -8,6 +8,8 @@ const Pairing = z.object({
     issuedAfter: z.iso.datetime(),
     expiresAt: z.iso.datetime(),
     delivered: z.boolean(),
+    // The Gateway redeemed this link itself, so its session is a one-time-token session with the exact label, never an MCP client.
+    held: z.boolean().optional(),
 }).strict();
 export const Intent = z.object({
     url: z.string().url(),
@@ -67,7 +69,7 @@ export function selectPairings(
             !row.current && (
                 (row.subject === "one-time-token" &&
                     row.client?.label === pairing.label) ||
-                (row.subject === "mcp-client" &&
+                (row.subject === "mcp-client" && pairing.held !== true &&
                     row.client?.ipAddress === pairing.ipAddress &&
                     row.issuedAt !== undefined &&
                     Date.parse(row.issuedAt) >=
@@ -148,7 +150,7 @@ export async function readReplies(
 }
 export const behavior = {
     type: "@nckrtl/conn-revocation-plan",
-    version: "2026.11.10.3",
+    version: "2026.11.14.1",
     resources: {
         private: {
             schema: z.object({ directory: Directory, reader: z.string() }),

@@ -38,4 +38,4 @@ Removing a grant to the Gateway Node also revokes Grafana access that depends on
 | `metrics.caddy_publication_failed` | The Gateway Node's Caddy reload failed (502). The grant is already deleted; run the command again. |
 | `node_access.required` | The caller is not the Gateway Node or its serving host and has no grant to the Gateway Node. |
 
-Removing a grant also removes the consumer's [Conn](/reference/conn#access) access to the serving Node's T3 servers, but it does not revoke T3 sessions already paired from them. Revoke those with the pairing revocation for that Node.
+Removing a grant also removes the consumer's [Conn](/reference/conn#access) access to the serving Node's T3 servers. The sessions Orbit holds for the consumer there end at once, and Orbit revokes them on each server ([Held sessions](/reference/conn#held-sessions)). Sessions that a device paired itself are not revoked. Revoke those with the pairing revocation for that Node.

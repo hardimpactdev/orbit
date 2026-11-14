@@ -1,22 +1,22 @@
 ---
 title: "Conn layer"
-description: "How the Gateway signs in Conn devices as Nodes, shares workspaces, appearance, and per-device settings through profiles, holds an admin session for each registered T3 server, and mints and revokes device pairings."
+description: "How the Gateway signs in Conn devices as Nodes and shares their settings through profiles. It holds an admin session for each registered T3 server, mints and revokes device pairings, and holds each Node's session on container T3 servers."
 covers:
   - apps/gateway/extensions/conn/**
-  - swamp/extensions/behaviors/operations/conn-revocation/**
-  - swamp/extensions/behaviors/operations/conn-pairing/**
+  - swamp/extensions/behaviors/operations/conn-*/**
   - swamp/workflows/workflow-operation-conn-*.yaml
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/database/migrations/2027_02_03_000001_add_instance_to_conn_environments.php
   - apps/gateway/database/migrations/2027_02_10_000000_add_renewal_to_conn_environments.php
   - apps/gateway/database/migrations/2027_02_15_000000_create_conn_threads_table.php
+  - apps/gateway/database/migrations/2027_02_17_000000_add_held_sessions_to_conn_pairings.php
 ---
 
 # Conn layer
 
 This page is for the person who builds the Conn client, and for the Gateway maintainer. Conn is the fork of T3 Code that works with Orbit. The Gateway gives Conn one central layer: a device signs in as its Node, sees every registered T3 server, and shares workspaces, appearance, device settings, and the attached threads with the other devices of its profile. T3 traffic does not pass through the Gateway. A device talks to each T3 server directly over WireGuard.
 
-The Gateway answers lists, profiles, and pairing. It mints T3 pairing links with an admin session that each T3 server hands it at registration, and it revokes the sessions it paired.
+The Gateway answers lists, profiles, and pairing. It mints T3 pairing links with an admin session that each T3 server hands it at registration, and it revokes the sessions it paired. On the T3 server of a container Instance it pairs itself for a Node when that Node first asks, and holds that Node's session, so a device never pairs there: see [Held sessions](#held-sessions).
 
 The Conn layer is the `conn` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/conn`. While the switch is off, every endpoint below refuses with `extension.disabled` (409), including registration by a T3 server, and the MCP server hides the Conn tools. Profiles, servers, and pairings stay. New installs start with the switch off. Upgrades preserve its stored value. Activity keeps admin sessions and settings documents out through the `ActivityInputRedaction` plug-in point, also while the switch is off.
 
@@ -30,7 +30,7 @@ Conn uses the existing [node access](/cli/node/access-add) edges. It has no gran
 
 | Endpoints | The caller needs |
 | --- | --- |
-| Server list, pairing list, show, create and revoke | Node access to the Node that registered the server. The list shows only those servers. |
+| Server list, pairing list, show, create and revoke, the held session | Node access to the Node that registered the server. The list shows only those servers. |
 | `GET /me`, `PUT /me/profile`, profiles and settings, Conn Operation show and cancel | Node access to at least one Node: the [collection rule](/cli/node#authority) that `node:list` uses. |
 | Project list | Node access to at least one Node. The list shows only the Projects whose default Instance runs on a Node the caller has node access to. |
 | Thread index list, `GET /threads` | Node access to at least one Node. The list covers only the container servers the server list shows the caller. |
@@ -48,7 +48,7 @@ The calling Node becomes the server's Node. Once a Node registered an environmen
 
 ### Removing an edge
 
-Removing an edge does not revoke sessions that the consumer already paired. Revoke them with `POST /environments/{environment_id}/pairings/revoke` and the consumer's `node_id`.
+Removing an edge ends the sessions the Gateway holds for the consumer on the servers that the consumer now cannot reach. The Gateway stops serving them at once and admits their revoke on each server ([Held sessions](#held-sessions)). It does not revoke sessions that the consumer's device paired itself. Revoke those with `POST /environments/{environment_id}/pairings/revoke` and the consumer's `node_id`.
 
 ## Profiles
 
@@ -260,7 +260,7 @@ T3 issues the Gateway's session for 30 days. Orbit keeps it alive; no device and
 
 Every hour the Gateway admits `conn.environment_renew` for each active Instance server whose session ends within seven days. It also admits one for a session that has ended. So a container that was stopped past the end gets a new session within an hour of its start. When a try found it stopped, the wait is up to six hours; the route below renews it at once.
 
-The hourly renewal skips a [sleeping](/reference/development-containers#sleep-and-wake) Instance. A successful `instance.wake` admits the renewal at once instead, through `InstanceLifecycleContribution::projectWake()`, when the session ends within seven days or ended during the sleep. A wake's renewal does not wait for the one-per-Node limit below: the woken server gets its session at once. A refused admission (a renewal already runs, Conn is off) is logged and never fails the wake. Devices then renew their pairings through the Gateway as below, with no new pairing by the user.
+The hourly renewal skips a [sleeping](/reference/development-containers#sleep-and-wake) Instance. A successful `instance.wake` admits the renewal at once instead, through `InstanceLifecycleContribution::projectWake()`, when the session ends within seven days or ended during the sleep. A wake's renewal does not wait for the one-per-Node limit below: the woken server gets its session at once. A refused admission (a renewal already runs, Conn is off) is logged and never fails the wake. The wake also renews the server's [held sessions](#held-sessions) that end within seven days. Devices that paired themselves renew their pairings through the Gateway as below, with no new pairing by the user.
 
 #### The idle sleep's read
 
@@ -602,6 +602,140 @@ The Idempotency-Key covers the body. A client that repeats a renewal sends the s
 
 To revoke, Orbit reads the initial `payload.clientSessions` snapshot from upstream T3’s `subscribeAuthAccess` WebSocket RPC at `/ws?orchestrationProtocol=2`, authenticated with the same admin bearer session. This path serves both stock T3 container servers and Conn host servers. It revokes each session whose label belongs to the Node's open pairings on that server with `POST <url>/api/auth/clients/revoke`, and it revokes each pairing link that was not used with `POST <url>/api/auth/pairing-links/revoke`. It never revokes its own current session. The device loses that server at once; its WireGuard access does not change.
 
+## Held sessions
+
+On the T3 server of a container Instance, a device never pairs. The Gateway pairs itself on demand: for a Node with node access to the server, at that Node's first read of its session, or earlier by the optional pre-mint below. It holds the resulting session, renews it, and hands it to the Node when the Node asks. The Node then talks to the server directly; the Gateway is not in that path. Container servers stay stock T3. The [session chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/session-hold.mmd) has the steps.
+
+A held session is a held pairing: a pairing row with `held` set, whose link the Gateway minted and redeemed itself. So it has a `pairing_id`, and revoke works per pairing as for a device pairing.
+
+### Attach
+
+`GET /environments/{environment_id}/session` (MCP `conn-environment-session`) answers the calling Node's held session. The caller is identified as for every Conn call: the active Node that owns its WireGuard address. It needs node access to the server's Node, else `node_access.required` (403).
+
+- With a held session that has not ended, it answers 200 at once, with no Operation and no T3 call. The answer has `Cache-Control: no-store`.
+- Without one, it admits one `conn.session_hold` and answers 202 with that Operation, in the shape of the other Conn handles.
+- The caller follows it on `GET /operations/{id}`. After it succeeds, the next read answers 200.
+- Concurrent first reads of one Node start one Operation: admission takes the server's row lock, and a later read gets the open Operation.
+- The read ignores `Idempotency-Key`: a repeated read answers the current state, never a replay of an earlier 202.
+
+```json
+{"data": {"environment_id": "env-fix-login", "url": "http://10.44.0.30:3812", "pairing_id": 41, "token_type": "Bearer", "access_token": "<session>", "expires_at": "2026-12-14T12:13:38+00:00"}}
+```
+
+The client presents `access_token` as its bearer to `url`: `Authorization: Bearer <access_token>` on HTTP, and the WebSocket ticket it gets with it. A detach costs nothing on the server: the client closes its socket and keeps nothing it must renew. When the server answers 401, the session was revoked or has ended: the client reads the handle again, which answers the current session or starts a new one.
+
+Refusals before any Operation:
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| `conn.environment_not_instance` | 409 | A host server. Its devices pair with it themselves. |
+| `conn.environment_asleep` | 409 | The Instance sleeps and the Node holds no session yet. Wake it, then read again. A held session answers also while the Instance sleeps. |
+| `conn.session_expired` | 409 | The Gateway's admin session on the server has ended; its renewal brings it back. |
+| `instance.removal_conflict` | 409 | The Instance is being removed. |
+
+### How the Gateway makes one
+
+The run `operation-conn-session-hold` runs on the Swamp worker:
+
+| Step | What it does |
+| --- | --- |
+| Mint a pairing link | `POST <url>/api/auth/pairing-token`, as a device pairing does, with the admin session, T3's administrative scopes and a unique label such as `phone via Orbit k3j9x0qa`. |
+| Read the link | A typed data method reads T3's reply and stores the one-time link as a native sensitive field. |
+| Redeem the link | `POST <url>/oauth/token`, T3's normal pairing endpoint: the OAuth token exchange a device makes, without a DPoP proof. curl reads the link from the vault into a variable, never into argv. |
+| Store the session | A typed data method reads T3's access-token reply (`access_token`, `token_type: Bearer`, `expires_in`, `scope`) and stores the session as a native sensitive field. |
+
+The Gateway reads the session key once, stores the session encrypted on the pairing, and deletes the run's vault keys. The result holds only `backend: held`, `pairing_id`, `pairing_link_id` and `session_expires_at`.
+
+When T3 answered, no session exists. The Operation ends with that answer's code, and the pairing is settled with a revoke time: `conn.session_rejected` (the admin session got 401), `conn.request_refused` (another status), `conn.response_invalid` (a link reply without T3's shape) or `conn.redeem_refused` (T3 refused the link at `/oauth/token`). Any other failure is `conn.session_outcome_unknown`: a session may exist, so the Gateway withdraws the pairing and revokes it by its label. The next read starts a new Operation with a new label.
+
+**Pre-mint.** The operator's switch `ORBIT_CONN_HELD_SESSION_PREMINT` (`orbit.conn.held_session_premint`) makes sessions before the first read. It is off by default, because it adds Swamp runs to every container create. The Gateway operator turns it on in `/home/orbit/shared/gateway.env` and [applies the env change](/reference/gateway-recovery#apply-an-env-change); no release is needed. While it is off, the first read makes each session. The handle, renewal and revoke do not depend on the switch.
+
+While it is on, the Gateway pre-mints each time it records a container Instance's T3 server: at the end of `instance:create` of a development container, from Conn's New-instance flow or any other caller, and at the end of `instance:migrate`. It admits a `conn.session_hold` for each Node of the creating Node's profile that has node access to the server, or for the creating Node alone when it has no profile. The creating Node is the Node that started the Instance's first `instance.create`; an Instance that no Node created gets none. A refused admission is logged as `conn.held_premint_deferred`, and that Node's first read makes its session.
+
+### Renewal of a held session
+
+T3 issues the session for 30 days. The hourly renewal tick ([Renewal of an Instance server](#renewal-of-an-instance-server)) then admits a `conn.session_hold` for each held session that ends within seven days, at most 20 a tick, the earliest end first. A session whose last renewal failed goes after the others, so failing sessions never take every slot from healthy ones. It does so also for Instances no device is connected to.
+
+A sleeping Instance is skipped; a successful wake renews its held sessions that end within seven days and admits the server's next owed revoke. A held session that waits on an ended admin session renews as soon as the renewed admin session is recorded. No device renews anything.
+
+The old session serves until the new one is recorded. Then the Gateway withdraws the old one and admits its revoke by `pairing_id`.
+
+### Revoke and removal
+
+Revoke stays per pairing: `POST /environments/{environment_id}/pairings/revoke` with `pairing_id` ends one held session. Without `pairing_id` it keeps its meaning for installed clients: the Node's own open pairings, never a held one. The Node keeps its node access, so its next read makes a new held session. To stop a Node for good, remove its node access.
+
+A revoke by `pairing_id` withdraws a held pairing at its admission: the handle stops serving it at once. An unmatched revoke of that one pairing proves that T3 holds no session with its label only when no hold of the pairing ran at the revoke's admission. Then the Gateway settles the pairing, and the next read makes a new one. If its hold ran, the session may come after the revoke read the server, so the pairing stays withdrawn and the hold's end revokes it again.
+
+A client whose server answers 401 reads the handle again. If the handle answers the same `pairing_id` again, the client revokes that pairing by its id, then reads again.
+
+A held session ends in two steps. The Gateway withdraws it: it stops serving it and clears it at once. Then it owes the revoke on the server: it admits a revoke by `pairing_id`. One revoke holds a server at a time, so when a revoke ends, the next owed revoke on that server starts. While the server cannot take one (asleep, busy, its admin session ended) the hourly tick admits it again. A session past its end owes nothing, and the tick settles it.
+
+- Removing a Node's node access withdraws its held sessions on the servers that the Node now cannot reach. Core calls Conn through the `NodeAccessRemovalHook` plug-in point of `node:access:remove`.
+- The hourly tick also withdraws a held session whose Node lost access another way.
+
+Deleting a Node ([`node:remove`](/cli/node/remove)) withdraws its unsettled held sessions just before the Node row goes. Core calls Conn through the `NodeRemovalHook` plug-in point.
+
+- Each of those pairings passes to the Gateway Node, which made it. So the row survives the delete.
+- The owed revoke by `pairing_id` then runs as above.
+- The first revoke on each server starts at once. One whose hold still runs revokes at that hold's end.
+- With no active Gateway Node, nothing can revoke them, so the pairings go with the Node.
+- The Gateway then logs `conn.held_handover_skipped`. Each of those sessions stays valid on T3 until it ends, at most 30 days.
+
+Destroying the Instance deletes its held pairings with its other pairings. T3 goes with the container, so nothing is left to revoke.
+
+`GET /environments/{environment_id}/pairings` keeps its default answer: device pairings only. `include_held=1` or `include_held=true` adds the held pairings, and then each row has `held`. The optional `include_held` accepts only `1`, `true`, `0` or `false`, else `validation.failed` (422). A device's `renew: true` pairing looks only at the device's own pairings, so a revoked held pairing never refuses it.
+
+### Security
+
+**Who may read a held session.** Only the Node it is held for, and only while that Node has node access to the server's Node. The handle answers the calling Node's own session; no endpoint answers another Node's, and a Node with Gateway access gets only its own.
+
+**What a stolen answer is worth.** A bearer session with T3's administrative scopes on that one server. That is the same trust as a device pairing, and it gives no access to Orbit.
+
+T3 0.1.7 does not bind the session to a client. It checks only the signature, the end and the revocation. It records the address and user agent of the redeemer only as labels. So anyone who reaches the server over WireGuard can use a stolen copy until one of these comes first:
+
+- it ends, at most 30 days after it was issued;
+- the next renewal revokes it, at most 23 days after it was issued;
+- a revoke by `pairing_id`, removing the Node's node access, or deleting the Node: it ends once the server takes that revoke;
+- a server that is asleep or down takes that revoke at its wake or at the next hourly tick.
+
+Binding would need a DPoP proof key that the client presents when the link is redeemed. The Gateway redeems for the client, so it cannot present the client's key. Stock T3 also issues a bound token for one hour only.
+
+**The admin session never leaves the Gateway and Swamp.** It is stored encrypted on the server record and goes to the run only as a Swamp execution copy. No handle answers it.
+
+**Where the held session lives.** Encrypted in `conn_pairings.session` with the Gateway's application key, hidden from serialization. It never enters an Operation input or result, Activity, a log or run history: the run's result and the Operation hold only vault key names and public metadata.
+
+**Vault keys.** Each lives for one run, seconds:
+
+| Key | Holds | Removed |
+| --- | --- | --- |
+| `conn-session-hold-<uuid>` | The execution copy of the admin session | The Gateway deletes it when the run ends, on every path |
+| `nckrtl-conn-session-<model>-link-link-pairing-<id>-credential` | The one-time link; T3 consumes it at the redeem, and an unused one expires within five minutes | The Gateway deletes it when the run ends, on every path |
+| `nckrtl-conn-session-<model>-hold-held-pairing-<id>-access_token` | The session | The Gateway deletes it when the run ends, on every path: after it stores the session encrypted, or, on a failure, by the name it derives from the link key |
+
+A failed delete is logged as `conn.held_vault_cleanup_failed`.
+
+**The revoke race of [issue 3540](https://github.com/hardimpactdev/orbit/issues/3540).**
+
+A revoke by `pairing_id` during the hold that makes that pairing's session reads the server before the session exists. It can end first, unmatched, or after the hold. The Gateway closes the gap from both ends:
+
+- The revoke withdraws the held pairing at its admission and records that its hold still runs.
+- Its unmatched answer then settles nothing.
+- No owed revoke of that pairing starts during its hold.
+- When the hold ends, it finds the pairing withdrawn. It never serves the session, and it admits the revoke by id.
+- If the first revoke still holds the server, the end of that revoke starts the next one.
+
+So no session outlives a revoke that named it, in either order. A renewal makes a new pairing, so a revoke of the old pairing ends only the old session; the renewal's own session is a new `pairing_id`.
+
+Two pairings of one device within five minutes are not ambiguous when one is held. The Gateway redeemed the held link itself, and T3 keeps the grant label on that `one-time-token` session. So a held session is matched by its exact label alone, and the MCP rule of source address and issue window does not apply to it. A revoke of a device pairing that overlaps another device pairing still refuses with `conn.revocation_ambiguous`.
+
+### Host servers
+
+Host servers are not covered: their devices pair with them as before. The same run would work there, because it needs only the Gateway's admin session, and each host's job keeps that fresh by registering again. Covering them would take three changes:
+
+- allow `conn.session_hold` for an environment with no Instance;
+- renew the held sessions of host servers in the hourly tick;
+- decide how a host that was down for longer than the margin comes back, because Orbit cannot wake a host.
+
 ## API
 
 Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data": ..., "meta": {"request_id": ...}}`. A failure answers `{"error": {"code", "message", "details"}}`. The generated [API reference](/api/overview) lists the same operations with their schemas.
@@ -623,7 +757,8 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `POST /instances/{id}/complete` | no body; `Idempotency-Key` | Operation (202) |
 | `GET /environments` | — | list of environment |
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |
-| `GET /environments/{environment_id}/pairings` | — | list of pairing, newest first |
+| `GET /environments/{environment_id}/pairings` | `include_held` query, optional | list of pairing, newest first |
+| `GET /environments/{environment_id}/session` | — | held session (200), or Operation (202) |
 | `POST /environments/{environment_id}/pairings` | `{"renew": true}`, optional | Operation (202) |
 | `POST /environments/{environment_id}/pairings/revoke` | `{"node_id": 4, "pairing_id": 7}`, both optional | Operation (202) |
 | `POST /environments/{environment_id}/renew` | — | Operation (202) |
@@ -639,6 +774,7 @@ The objects:
   "settings": {"profile_id": 1, "version": 3, "settings": {"workspaces": []}, "sections": {"workspaces": {"version": 1, "updated_at": "2026-10-08T10:00:00+00:00", "updated_by": "phone"}}, "updated_at": "2026-10-08T10:00:00+00:00"},
   "environment": {"environment_id": "env-beast", "label": "beast", "url": "http://10.44.0.30:3773", "server_version": "0.9.1", "registered_by": "beast", "registered_at": "2026-10-08T09:00:00+00:00", "admin_session_expires_at": "2026-11-07T09:00:00+00:00", "status": "registered", "instance_id": null, "power_state": null, "project_id": null, "project_name": null, "project_slug": null, "instance_name": null, "node_name": null, "instance_url": null, "renewal_error_code": null, "renewal_checked_at": null},
   "project": {"id": 3, "slug": "mealou", "name": "Mealou", "node_id": 7, "node_name": "beast", "instance_domain_suffix": ".mealou.test", "cloneable": true, "cloneable_reason": null, "checks": [{"key": "default_instance", "label": "Default Instance", "status": "pass"}, {"key": "container", "label": "Runs in a container", "status": "pass"}, {"key": "active", "label": "Active", "status": "pass"}, {"key": "seed_snapshot", "label": "Seed snapshot", "status": "pass"}, {"key": "node_access", "label": "Node access", "status": "pass"}, {"key": "source_access", "label": "Source access", "status": "pass"}, {"key": "source_defaults", "label": "Source defaults", "status": "pass"}, {"key": "production_placement", "label": "Development placement", "status": "pass"}, {"key": "node_active_linux", "label": "Active Linux Node", "status": "pass"}, {"key": "app_dev_role", "label": "App-dev role", "status": "pass"}, {"key": "source_profile", "label": "Source metadata", "status": "pass"}, {"key": "php_readiness", "label": "PHP readiness", "status": "pass"}, {"key": "runtime_contributions", "label": "Conn runtime", "status": "pass"}, {"key": "model_route", "label": "Model router", "status": "pass"}, {"key": "native_create", "label": "Create support", "status": "pass"}]},
+  "held_session": {"environment_id": "env-fix-login", "url": "http://10.44.0.30:3812", "pairing_id": 41, "token_type": "Bearer", "access_token": "<session>", "expires_at": "2026-12-14T12:13:38+00:00"},
   "pairing": {"id": 7, "environment_id": "env-beast", "node_id": 4, "node_name": "phone", "client_label": "phone via Orbit k3j9x0qa", "issued_at": "2026-10-08T10:00:00+00:00", "expires_at": "2026-10-08T10:05:00+00:00", "revoked_at": null},
   "thread": {"environment_id": "env-fix-login", "instance_id": 12, "project_id": 3, "thread_id": "a1b2", "title": "Fix the login", "state": "waiting", "needs_input": true, "last_user_message_at": "2026-11-14T11:55:00+00:00", "last_run_completed_at": null, "seen_at": "2026-11-14T12:00:00+00:00"},
   "meta.environments": [{"environment_id": "env-fix-login", "instance_id": 12, "power_state": "running", "read_at": "2026-11-14T12:00:00+00:00", "read_error": null}]
@@ -660,9 +796,10 @@ The objects:
 | `conn.environment_mismatch` | 422 | `url` serves another environment. |
 | `conn.admin_scope_missing` | 422 | The registered session is not an admin session. |
 | `conn.session_expired` | 409 | The Gateway's admin session on that server expired. |
-| `conn.environment_not_instance` | 409 | A renewal asked for a host server; its host renews it. |
+| `conn.environment_not_instance` | 409 | A renewal or a held session asked for a host server; its host renews its own session, and its devices pair themselves. |
 | `conn.thread_index_unsupported` | 409 | A thread record named a host server; only container servers have an index. |
 | `conn.pairing_in_progress` | 409 | A Gateway session cleanup waits for a pairing that runs with the earlier session. |
+| `conn.environment_asleep` | 409 | The Instance sleeps and the Node holds no session on its server yet. |
 | `conn.pairing_revoked` | 409 | A renewal asked for a server where the Node's newest pairing was revoked. Pair without `renew` to bring it back. |
 | `conn.server_unreachable` | 502 | The T3 server did not answer. |
 | `conn.session_rejected` | 502 | T3 does not accept the admin session: it answered 401, or `/api/auth/session` reported it unauthenticated. |
@@ -687,7 +824,7 @@ The server is keyed on the Node that registered it, not on the host of its URL. 
 
 A registration cannot move an environment id to another Node. Otherwise any Node could register a server of its own under a known id and send devices that pair with it there. The same holds for a server whose Node was removed, so taking it over needs Gateway access. The ownership check reads the same row that the registration transaction locks and compares, so a concurrent registration by another Node fails with `conn.environment_changed`.
 
-Removing an edge does not revoke paired sessions. The `node:access:remove` command lives in core, which cannot call an extension, and a hook for it is a plug-in point of its own.
+Removing an edge ends the sessions the Gateway holds for the consumer, through the core plug-in point `NodeAccessRemovalHook`: core cannot call an extension, so Conn contributes the hook. It does not revoke sessions a device paired itself: the Gateway does not hold those, and their revoke stays the device owner's choice.
 
 The Node is the identity because the Gateway already knows every WireGuard peer as a Node, phones included, and WireGuard binds each address to one key. Revocation happens only in T3 and leaves WireGuard access alone, so a revoked device keeps its other servers and Orbit access.
 
@@ -721,7 +858,7 @@ Steps make no Gateway calls.
 
 Gateway session cleanup runs the shared native revocation workflow on Node 209 for the fixed Gateway client label. It captures the T3 URL, registration revision and vault reference at admission, with no step-to-Gateway callback. The child lists sessions once and keeps the current admin and every other label. Failed HTTP or reply checks report `conn.revocation_failed`; the revision stays pending.
 
-Registration, and the [renewal of an Instance server](#renewal-of-an-instance-server), store the new encrypted admin session and increment its cleanup revision. After that transaction commits, the Gateway admits `conn.gateway_sessions_revoke` once. It refuses with `conn.pairing_in_progress` while a `conn.pairing_create` of that server runs, because that pairing carries the earlier session; the revision stays pending. For an Instance server, the hourly renewal tick admits a pending cleanup again. Registration keeps its normal response if admission or cleanup fails. A failed start records a safe warning, and the revision stays pending. No scheduled publisher scans host registrations. Cleanup keeps the current admin session and other client labels.
+Registration, and the [renewal of an Instance server](#renewal-of-an-instance-server), store the new encrypted admin session and increment its cleanup revision. After that transaction commits, the Gateway admits `conn.gateway_sessions_revoke` once. It refuses with `conn.pairing_in_progress` while a `conn.pairing_create` or a `conn.session_hold` of that server runs, because that run carries the earlier session; the revision stays pending. For an Instance server, the hourly renewal tick admits a pending cleanup again. Registration keeps its normal response if admission or cleanup fails. A failed start records a safe warning, and the revision stays pending. No scheduled publisher scans host registrations. Cleanup keeps the current admin session and other client labels.
 
 Registration refuses with `operation.target_busy` while a cleanup or pairing revocation holds that environment. Session validation runs outside the database transaction; a concurrent revocation or registration refuses with `conn.environment_changed` before storing the candidate session. The list and registration replies expose the non-secret `cleanup_version`. The environment lock prevents overlapping revocations. For a host server, a failed revision stays pending without another automatic Operation; a new registration or an explicit cleanup request permits a new attempt. A completed revision returns HTTP 204 without starting a run. Cleanup never discards the current admin session.
 
@@ -755,7 +892,7 @@ A failed session-list read ends the revocation Operation with its safe `conn.*` 
 
 ## Direct Swamp writer
 
-`conn.pairing_create` starts `operation-conn-pairing-create` with full native inputs and a fixed terminal selector. Pairing revocation uses `operation-conn-pairing-revoke`. Gateway session cleanup retains `operation-conn-direct` and its current-registration checks; that is a separate kind. Existing profile and registration reads remain local Gateway behavior.
+`conn.pairing_create` starts `operation-conn-pairing-create` with full native inputs and a fixed terminal selector. `conn.session_hold` starts `operation-conn-session-hold` the same way. Pairing revocation uses `operation-conn-pairing-revoke`. Gateway session cleanup retains `operation-conn-direct` and its current-registration checks; that is a separate kind. Existing profile and registration reads remain local Gateway behavior.
 
 Core sensitive resources provide protected generated outputs without a new custody protocol. Official core commands and vaults, plus the official extension catalogue, were checked first. There is no official T3 pairing API integration. The single typed HTTP action is needed to validate the provider response and mark the generated credential sensitive before native persistence. There is no custom transport or subscriber.
 

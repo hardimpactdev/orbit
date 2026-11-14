@@ -26,6 +26,7 @@ use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use LogicException;
 
 /**
  * The start of a task whose Project's tasks run as copies (docs/cli/task/start.mmd): one clone of the Project's default Instance,
@@ -141,7 +142,7 @@ final readonly class TaskCopyStart
                 "The ID ranges of the default's Node cannot be read, so the Gateway cannot show a free range for the copy and its next seed.", 409);
         }
         $runtimes = InstanceRuntime::query()->where('node_id', $default->node_id)->whereIn('incus_project', InstancePlacement::projects())
-            ->get(['instance_id', 'incus_project', 'container_name']);
+            ->get(['instance_id', 'incus_project', 'container_name', 'idmap_size']);
         // A runtime row whose container is not on the host holds a range only while its create is open; a failed one never will.
         $open = Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')
             ->whereIn('target_id', $runtimes->pluck('instance_id'))->whereNotIn('status', OperationStatus::terminalValues())->pluck('target_id')->all();
@@ -149,13 +150,13 @@ final readonly class TaskCopyStart
             && ! in_array($other->incus_project.'/'.$other->container_name, $host['containers'], true));
         $ranges = $host['ranges'];
         foreach ($pending as $other) {
-            $ranges = $ranges?->with(self::rangeSize($other->incus_project));
+            $ranges = $ranges?->with(self::rangeSize($other));
         }
-        $size = self::rangeSize($runtime->incus_project);
+        $size = self::rangeSize($runtime);
         $placed = $ranges?->with($size);
         $defaults = Instance::query()->where('node_id', $default->node_id)->where('name', DefaultInstanceName::Name)->pluck('id')->all();
         $seeds = $runtimes->filter(static fn (InstanceRuntime $other): bool => in_array($other->instance_id, $defaults, true))
-            ->map(static fn (InstanceRuntime $other): int => self::rangeSize($other->incus_project))->push($size)->unique()->values();
+            ->map(static fn (InstanceRuntime $other): int => self::rangeSize($other))->push($size)->unique()->values();
         $short = $placed === null ? $seeds : $seeds->filter(static fn (int $seed): bool => $placed->place($seed) === null)->values();
         if ($short->isNotEmpty()) {
             $free = $ranges?->free($size, 2) ?? 0;
@@ -166,10 +167,14 @@ final readonly class TaskCopyStart
         }
     }
 
-    /** The isolated range of a container in this Incus project: a nested-fleet container's, or the Incus default. */
-    private static function rangeSize(string $incusProject): int
+    /**
+     * The isolated range of a container: a nested-fleet container's recorded size, which a copy shares with its default, or the Incus
+     * default (docs/reference/development-containers.md#the-id-map-size).
+     */
+    private static function rangeSize(InstanceRuntime $runtime): int
     {
-        return $incusProject === InstancePlacement::NestedProject ? InstanceHostIntent::TaskPlaceIds : InstanceHostIntent::IdMapSize;
+        return $runtime->incus_project === InstancePlacement::NestedProject
+            ? ($runtime->idmap_size ?? throw new LogicException('A nested-fleet runtime records its ID map size.')) : InstanceHostIntent::IdMapSize;
     }
 
     /**

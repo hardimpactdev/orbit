@@ -409,7 +409,7 @@
 
 # The pinned shape tools in the Instance container itself, so the seed that the phase after this one takes holds them for every copy
 # (docs/reference/development-containers.md#the-pinned-shape-tools). instance_shape_tools.py names them with the workspace's own
-# bin/swamp-shape-gate and only reads when they are complete. It never fails the refresh: a failed install is the result's
+# bin/swamp-shape-gate and only reads when they are complete, and keeps zip, unzip and jq for the fixture units. It never fails the refresh: a failed install is the result's
 # `tools: failed` with the step in `tools_reason`, and the seed is taken without the tools.
 - name: Time the base
   ansible.builtin.set_fact:

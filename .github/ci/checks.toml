@@ -24,7 +24,7 @@ inputs = [".github/workflows/ci.yml", ".github/actions/**", ".github/ci/checks.t
 
 [ignored]
 # These paths have intentionally paused checks, prose skips, or always-run plan tests.
-inputs = ["bin/ci-units", "bin/ci-delivery", "bin/ci-tree-receipt", "bin/ci-proof-eligibility", "tools/test_ci_*", "tools/test_swamp_import_base*", "tools/test_frozen_agent_commands*", "apps/desktop/**", "apps/agent/**/*.md", "apps/agent/**/*.mdx", "apps/pi-server/**/*.md", "apps/pi-server/**/*.mdx"]
+inputs = ["bin/ci-units", "bin/ci-full-set", "bin/ci-deferred", "bin/ci-delivery", "bin/ci-tree-receipt", "bin/ci-proof-eligibility", "tools/test_ci_*", "tools/test_swamp_import_base*", "tools/test_frozen_agent_commands*", "apps/desktop/**", "apps/agent/**/*.md", "apps/agent/**/*.mdx", "apps/pi-server/**/*.md", "apps/pi-server/**/*.mdx"]
 
 [check.php]
 inputs = [
@@ -249,8 +249,8 @@ ceiling = 240
 [check.swamp]
 inputs = [
 ]
-# Aggregate of the three Swamp checks; no independent path rules.
-cost = 117
+# Aggregate of the three Swamp checks; no independent path rules. Its cost is the largest of the three.
+cost = 119
 ceiling = 120
 
 [check.proof]
@@ -294,7 +294,10 @@ inputs = [
   "!swamp/**/*.mdx",
   "!swamp/**/*.mmd",
 ]
-cost = 117
+# 117 s before the workflow placement lint joined the static controls, plus 2 s: its warm run took a median 0.14 s and a
+# maximum 0.18 s in 20 runs on Beast (0.66 s with a cold Deno cache); the controls warm the cache first. Max x 2.1 + 1 s, rounded up.
+# An estimate until a hosted run replaces it.
+cost = 119
 ceiling = 120
 
 [check.swamp-validate]
@@ -318,6 +321,7 @@ inputs = [
   "!swamp/**/*.mdx",
   "!swamp/**/*.mmd",
 ]
+# The workflow placement lint moved to swamp-shape; it took under 0.2 s warm, so the cost stays 38 s, a ceiling for this job.
 cost = 38
 ceiling = 120
 

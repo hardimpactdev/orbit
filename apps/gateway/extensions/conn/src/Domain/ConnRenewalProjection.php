@@ -96,6 +96,8 @@ final readonly class ConnRenewalProjection implements DirectOperationProjection
                 // A pairing that still uses the old session holds the cleanup; the next renewal sweep admits it.
                 Log::info('conn.cleanup_deferred', ['environment_id' => $recorded->environment_id, 'error_code' => $error->errorCode]);
             }
+            // Held sessions that waited on this Gateway session renew now (/reference/conn#held-sessions).
+            app(ConnHeldSessions::class)->renewDue($recorded);
         }
 
         return $projected;

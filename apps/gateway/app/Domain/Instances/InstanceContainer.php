@@ -185,6 +185,9 @@ final readonly class InstanceContainer
             // runtime, Instance 2454 and its copies among them, records none (docs/reference/development-containers.md#the-inner-volume).
             'inner_volume' => ($source === null && $instance->name === DefaultInstanceName::Name && $incusProject === InstancePlacement::NestedProject)
                 || $sourceRuntime?->inner_volume !== null ? NestedFleetInnerVolume::name(self::name($instance)) : null,
+            // A copy takes its default's map size, which its seed's inner fleet was made for; a new nested-fleet default the full size
+            // until its conversion (docs/reference/development-containers.md#the-id-map-size).
+            'idmap_size' => $incusProject === InstancePlacement::NestedProject ? ($sourceRuntime->idmap_size ?? InstanceHostIntent::TaskPlaceIds) : null,
         ]);
     }
 
@@ -254,7 +257,7 @@ final readonly class InstanceContainer
         return [
             'instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
             'config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096',
-                ...InstancePlacement::config($runtime->incus_project),
+                ...InstancePlacement::config($runtime->incus_project, $runtime->idmap_size),
                 ...(! $ownProxy && ! isset($clone['proxy_environment']) ? []
                     : array_combine(array_map(static fn (string $key): string => 'environment.'.$key, ['NO_PROXY', 'no_proxy']), array_values($proxy)))],
             'root_disk_pool' => InstanceHostIntent::Pool, 'root_disk_size' => '40GiB',

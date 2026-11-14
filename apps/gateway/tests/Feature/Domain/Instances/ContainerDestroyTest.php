@@ -185,7 +185,7 @@ it('keeps a listed nested-fleet default without an inner volume refused while a 
     $row = $default->runtime()->firstOrFail()->getAttributes();
     $default->runtime()->delete();
     unset($row['id']);
-    InstanceRuntime::query()->create([...$row, 'incus_project' => InstancePlacement::NestedProject, 'inner_volume' => null]);
+    InstanceRuntime::query()->create([...$row, 'incus_project' => InstancePlacement::NestedProject, 'inner_volume' => null, 'idmap_size' => 101000000]);
     config(['instances.default_destroy_projects' => [$default->project_id]]);
     $copy = destroyClone($default->refresh());
     $before = Operation::query()->count();

@@ -19,6 +19,7 @@ cases = [
   "a rebuild deletes the base VM and its seed; a recorded-base refresh preserves them",
 ]
 file = "swamp/tests/ansible_task_vm_host_clean_test.ts"
+host_programs = ["jq"]
 cost = 231 # Per-case hosted maxima plus 25%, rounded up plus one second; four slices.
 inputs = [
   "bin/swamp-shape-gate",

@@ -110,6 +110,11 @@ def configuration(path=TABLE):
                     any(not isinstance(name, str) or name not in fixture.get('cases', []) or name in excluded for name in cases) or \
                     len(cases) != len(set(cases)) or fixture.get('after_merge'):
                 raise ValueError(f'{file}: mandatory_cases needs a declared input and unique retained case names, without after_merge')
+        # The host programs the fixture's tests run, such as zip or jq. A check on a host without one names the unit as skipped.
+        programs = fixture.get('host_programs', [])
+        if not isinstance(programs, list) or 'host_programs' in fixture and not programs or len(programs) != len(set(programs)) or \
+                any(not isinstance(name, str) or not re.fullmatch(r'[a-z0-9][a-z0-9.+_-]*', name) for name in programs):
+            raise ValueError(f'{file}: host_programs must list unique program names')
         slices = fixture.get('slices', True)
         if type(slices) not in (int, bool) or type(slices) is int and slices < 1:
             raise ValueError(f'{file}: slices must be a positive count or a boolean')
@@ -572,6 +577,7 @@ def main():
     runner = commands.add_parser('run')
     runner.add_argument('--units', required=True, help='JSON array of unit names')
     runner.add_argument('--times', type=Path, default=Path('ci-unit-times.json'))
+    runner.add_argument('--workers', type=int, help="concurrent units (default: the budget's shard_workers)")
     args = parser.parse_args()
     if args.command == 'collect':
         print(json.dumps(collect(args.file), indent=2))
@@ -581,6 +587,10 @@ def main():
         units = json.loads(args.units)
         if not isinstance(units, list) or any(not isinstance(unit, str) for unit in units):
             parser.error('--units must be a JSON array of strings')
+        if args.workers is not None:
+            if args.workers < 1:
+                parser.error('--workers must be positive')
+            budget = {**budget, 'shard_workers': args.workers}
         signal.signal(signal.SIGTERM, lambda *_: CANCELLED.set())
         signal.signal(signal.SIGINT, lambda *_: CANCELLED.set())
         return run(units, budget, fixtures, args.times)

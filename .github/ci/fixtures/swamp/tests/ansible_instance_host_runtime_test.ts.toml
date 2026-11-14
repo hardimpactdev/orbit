@@ -6,6 +6,7 @@ cases = [
   "the runtime folder builds its Vite+ home once, links vp and the home into each version, and drops a home no version links",
 ]
 file = "swamp/tests/ansible_instance_host_runtime_test.ts"
+host_programs = ["zip", "unzip"]
 # 180.025s, hosted four-worker run 43000765953 (unit cutoff; case unfinished).
 after_merge_cases = ["the runtime folder builds its Vite+ home once, links vp and the home into each version, and drops a home no version links"]
 cost = 205

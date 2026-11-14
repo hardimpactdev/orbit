@@ -65,10 +65,18 @@ sequenceDiagram
     %%> Mail:
     %%> - the same launch applies the exact SMTP path before the four root-owned mail units; no separate mail playbook or step
     %%> - two IPv4 loopback sockets forward 1025 and 2525; foreign units or listeners skip setup without stopping their Process
+    %%> - the seed's mail socket links stay: the units are the Node's, so a clone's launch reports `unchanged` unless the Node's endpoint changed
     %%> On mail failure:
     %%> - keep a mail warning and continue workspace, T3 and registration; mail:update remains the repair command
-    %%> Branch:
-    %%> - fetches the Instance's branch into the Node's mirror with the read token, or creates it at the seed commit; the token stays on the Node
+    %%> ACL:
+    %%> - reads the copy's own ACL by its name, never the list of every ACL on the Node; a missing ACL is created, a different one is set
+    %%> Branch (a branch the seed already holds needs no network and no mirror):
+    %%> - an explicit branch choice (`branch_selection`) runs no `ls-remote`: the admission read GitHub. A new branch whose admitted source commit is the seed commit fetches nothing; any other choice fetches its source into the Node's mirror with the read token
+    %%> - a create by name only reads GitHub with `ls-remote`: a branch on the origin is fetched into the Node's mirror; a branch the origin lacks fetches nothing
+    %%> - the Node's mirror holds the branch only when it was fetched; the token stays on the Node
+    %%> - a branch made on GitHub after the admission: the copy still starts at the admitted commit; a later push of it is refused as `tasks.not_fast_forward` when the GitHub branch has commits the copy lacks, and fast-forwards, losing no commit, when it does not
+    %%> Timing:
+    %%> - each clone phase prints the seconds of each of its parts; the result carries them as `timings`, so every create shows where its time went
     opt nested-fleet clone with a Club key
       SW->>C: Deliver the Club key<br/>native clone-club-key
       %%> When: right after the copy's first start; the copy's inner Swamp serve starts with the container and reads the key from `/run/orbit-club`
@@ -84,7 +92,7 @@ sequenceDiagram
     %%> Why beside: the T3 step never writes the workspace; T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no Git lock; the join below checks both
     %%> Why the same level: Swamp starts a level of steps only when the whole level before it has ended, in each job and across jobs; both depend on the copy and the Club key, so both start when that level ends
     %%> What it does:
-    %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
+    %%> - a branch in the Node's mirror goes in as a bundle; a branch the mirror lacks starts at the seed commit, which the seed's own repository holds, with no bundle; it is checked out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
     %%> - runs only the guest's `checkout` part: the bundle, the checkout mark, `.env`; PHP settings, Process files and units are the completion's `services` part; the step keeps its name, which Conn maps to its workspace row
     %%> - after the checkout it checks the branch and commit, then writes the root-owned mark `/var/lib/orbit/workspace-checkout` with the Instance id and commit; when the mark already names this Instance, a retry skips the fetch and checkout, so the branch never moves and the result's commit stays the mark's
     %%> - writes `.env` for `orbit` with group `work`: the default's file from the seed, with the clone's own connection keys, the keys of the connections it shares with its default and `APP_URL`, without the default's other connection and Reverb keys or a copy of its credentials; `APP_KEY` stays the default's, because the cloned data is encrypted with it
@@ -103,7 +111,9 @@ sequenceDiagram
     %%> What it does, in one step:
     %%> - the agent part: writes the placeholder key for `agent` from SSH stdin, and the Claude Code and Codex settings that point at the model forwarder
     %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type, and writes `/etc/orbit/instance`, owned by root and readable by all
-    %%> - the T3 part: T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`
+    %%> - the T3 part: T3 starts for the first time and creates its identity; while it starts, T3's own CLI issues the `Orbit Gateway` and `Orbit Swamp` sessions at once, as `agent`; the tokens go only to the run's private folder
+    %%> - after T3 answers, the T3 project `/srv/workspace` is added as `agent`; during T3's start that call fails
+    %%> - a failed session issue fails this step with `instance.t3_unready`
     %%> Check:
     %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`
     %%> On failure:
@@ -115,6 +125,7 @@ sequenceDiagram
     %%> When: the join; the sessions check waits for T3 and the checkout, because it checks the branch and the checkout mark
     %%> On a failed checkout: no sessions check, no registration; the container stop below still runs
     %%> What it does:
+    %%> - the sessions check issues no session: it checks the two that the T3 step issued against the running T3
     %%> - see conn/environment-renew.mmd: the sessions go to the vault, and the step checks the environment id and scopes
     %%> - checks no Process unit: the units start in the completion, whose check refuses a dead one with `instance.container_process_inactive`
   alt all steps pass in budget
