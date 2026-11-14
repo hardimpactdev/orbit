@@ -7,6 +7,7 @@ namespace App\Commands\Projects;
 use App\Commands\Concerns\ReadsTaskAgentOptions;
 use App\Commands\GatewayCommand;
 use App\Commands\Projects\Concerns\ParsesTaskWorkspaceRouted;
+use App\Commands\Tasks\TaskCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
@@ -128,7 +129,7 @@ final class UpdateProjectCommand extends GatewayCommand
             return $this->renderGatewayFailure('project.task_pr_mode_conflict', 'Choose either --task-pr-mode or --clear-task-pr-mode.');
         }
 
-        if ($taskPrMode !== null && ! in_array($taskPrMode, ['review_before_pr', 'pr_when_done'], true)) {
+        if ($taskPrMode !== null && ! in_array($taskPrMode, TaskCommand::PR_MODES, true)) {
             return $this->renderGatewayFailure('project.task_pr_mode_invalid', 'The task pull request mode must be review_before_pr or pr_when_done.');
         }
 

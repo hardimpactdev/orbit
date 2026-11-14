@@ -312,7 +312,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     }
 
     /** The values of a task group's pull request mode (docs/reference/tasks.md#task-group-modes). */
-    protected const array PR_MODES = ['review_before_pr', 'pr_when_done'];
+    public const array PR_MODES = ['review_before_pr', 'pr_when_done'];
 
     /** A `--pr-mode`-style option: null when omitted, false after the refusal. */
     protected function prModeOption(string $option): string|false|null
