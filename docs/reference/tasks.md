@@ -1562,7 +1562,11 @@ These reasons explain the design. Check them before you propose a change.
 
 A turn and its check are separate operations. The group's Operation lock makes the check wait for the turn to end. Detached check supervision gives every requested check one execution and output rule. A failed check is evidence for the orchestrator, so it is a result rather than an operation failure. A passed handoff commits the checked tree so later review and publication can name one recorded commit.
 
-The [hosted-CI prerequisite](#check-an-external-group) needs a fresh sanitized commit per operation because sanitizing a proposed message cannot remove skip directives inherited from an old commit. Recovery must retain that same commit, or a lost reply would create extra commits and pushes. Pinning the CI plan prevents a Project edit from changing what passed. Reviewer and publish admission share one predicate because a local pass cannot prove hosted CI completed; the owning successful operation supplies that evidence without a duplicate check-status schema.
+In a task copy, a clean checked tree is already a commit, the implementer's `HEAD`, so it is the recorded commit and the check makes no empty one ([check phases](/reference/task-instance-workspace#check-phases)).
+
+The [hosted-CI prerequisite](#check-an-external-group) needs a fresh sanitized commit per operation because sanitizing a proposed message cannot remove skip directives inherited from an old commit.
+
+A copy runs no handoff with hosted CI, so its clean-tree candidate keeps the implementer's message. That is an accepted risk: a skip directive in that message, such as `[skip ci]`, reaches the draft pull request's push, and GitHub then skips its CI. The skip-directive rule has one home, the Gateway's handoff message, and the Gateway never reads the copy's commit messages. The reviewer reads the commits before approval. Recovery must retain that same commit, or a lost reply would create extra commits and pushes. Pinning the CI plan prevents a Project edit from changing what passed. Reviewer and publish admission share one predicate because a local pass cannot prove hosted CI completed; the owning successful operation supplies that evidence without a duplicate check-status schema.
 
 ### An external turn records evidence without choosing the next step
 
