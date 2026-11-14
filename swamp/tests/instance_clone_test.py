@@ -1562,7 +1562,11 @@ class ServicesPhaseFailureTest(unittest.TestCase):
         code, _, _, error = self.services((1, stderr))
         lines = error.splitlines()
         self.assertEqual(code, 1)
-        self.assertLessEqual(len(error), 4001)
+        self.assertLessEqual(len(error.encode()), 4001)
+        # The bound counts UTF-8 bytes: wide characters keep the code line inside the Gateway's 4,096 bytes.
+        _, _, _, wide = self.services((1, "".join("ü" * 50 + "\n" for _ in range(200))))
+        self.assertLessEqual(len(wide.encode()), 4001)
+        self.assertTrue(wide.startswith("instance.container_services_failed: command incus exited 1 ("))
         self.assertEqual(lines[0], "instance.container_services_failed: command incus exited 1 (" + self.EXEC + "):")
         self.assertEqual(lines[-1], "line 01999 " + "x" * 40)
         self.assertTrue(all(line.startswith("line ") and len(line) == 51 for line in lines[1:]))

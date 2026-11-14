@@ -492,7 +492,7 @@ def phase_main(phase, raw):
         if web_config is not None:
             write(web_config["path"], web_config["content"])
         web_config_changed = len(changes) > before_web_config
-        node = run(["python3", NODE_RUNTIME, "clone-fetch", json.dumps(c)], orbit=True, timeout=75, private_input=json.dumps(inputs.get("processes", {})))
+        node = run(["python3", NODE_RUNTIME, "clone-fetch", json.dumps({k: v for k, v in c.items() if k != "node_runtime"})], orbit=True, timeout=75, private_input=json.dumps(inputs.get("processes", {})))
         if json.loads(node.stdout)["status"] == "converted":
             changes.append("node-runtime")
         desired = c["units"] + c["processes"]

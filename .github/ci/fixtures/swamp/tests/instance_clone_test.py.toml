@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "a2af6de5973dd3aec1c8f27a74e7df900f0878c96cb33d42d8edd1a93a42da88"
+source_sha256 = "4ffb47ef84bda81b65e5c9b0f962a7f70f159f0daa2ae9d1c763f248140804ef"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror",

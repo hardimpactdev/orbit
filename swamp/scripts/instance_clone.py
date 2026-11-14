@@ -24,9 +24,9 @@ INCUS_SOCKET = "/var/lib/incus/unix.socket"
 # Mirrored by the guest emitter; the clone tests keep the two sets in sync.
 GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 
-# A failed command's detail: its code line, what it did and the end of its stderr, in at most this many characters, so the native
+# A failed command's detail: its code line, what it did and the end of its stderr, in at most this many UTF-8 bytes, so the native
 # step's wrapper ("exec failed on 1/1 host(s): target (exit 1: ...)") still fits the Gateway's 4,096-byte detail.
-DETAIL_CHARACTERS = 4000
+DETAIL_BYTES = 4000
 # The shortest private value that is replaced; shorter ones would blank ordinary words (the Gateway's LogRedactor::ShortestValue).
 SHORTEST_VALUE = 8
 
@@ -73,7 +73,7 @@ def private_values(*texts):
 
 
 def public_text(text, values, room):
-    """The end of a command's stderr that may leave the Node, in at most `room` characters. Known private values are replaced in one
+    """The end of a command's stderr that may leave the Node, in at most `room` UTF-8 bytes. Known private values are replaced in one
     pass; credentials in URLs, Authorization headers and `password=`-style pairs are replaced by shape; a line that still holds an
     8-character piece of a private value is dropped; only whole lines are kept. The Gateway redacts the detail once more."""
     text = text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")[-65536:]
@@ -96,7 +96,7 @@ def public_text(text, values, room):
     for line in reversed(text.strip().splitlines()):
         if any(line[i:i + SHORTEST_VALUE] in pieces for i in range(len(line) - SHORTEST_VALUE + 1)):
             continue
-        used += len(line) + 1
+        used += len(line.encode()) + 1
         if used > room + 1:
             break
         kept.append(line)
@@ -194,7 +194,7 @@ def main():
         """A failed command as the phase's failure: its code line, what it did, and the redacted end of its stderr."""
         values = private_values(secret, content if isinstance(content, str) else None)
         line = code + " (" + public_text(purpose(argv), values, 400) + ")"
-        return PhaseFailure(line, public_text(result.stderr or "", values, DETAIL_CHARACTERS - len(line) - 2))
+        return PhaseFailure(line, public_text(result.stderr or "", values, DETAIL_BYTES - len(line.encode()) - 2))
 
     def run(argv, content=None, check=True):
         remaining = 100 if workspace_deadline is None else workspace_deadline - time.monotonic()
@@ -279,7 +279,7 @@ def main():
                 first,
             ):
                 values = private_values(secret, private)
-                raise PhaseFailure(first, public_text(rest, values, DETAIL_CHARACTERS - len(first) - 2))
+                raise PhaseFailure(first, public_text(rest, values, DETAIL_BYTES - len(first.encode()) - 2))
             raise failure("instance.container_" + member + "_failed: command incus exited " + str(result.returncode),
                           project + ["exec", name, "--", "python3", "guest", member], result, private)
         return json.loads(result.stdout)

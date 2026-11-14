@@ -1191,7 +1191,7 @@ Every phase of a clone's create and completion runs `swamp/scripts/instance_clon
 2. What the command did, in public words, such as `(incus exec instance-7 python3 guest services)`. No option or `-c` program appears.
 3. The end of the command's stderr, in whole lines.
 
-The whole detail has at most 4,000 characters. The native step adds its own words, and the Gateway keeps 4,096 bytes.
+The whole detail has at most 4,000 UTF-8 bytes. The native step adds its own words, and the Gateway keeps 4,096 bytes.
 
 Native run history keeps a step's stderr. So the script redacts the text before it prints it:
 
