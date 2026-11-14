@@ -1,10 +1,12 @@
 order = 1490
-source_sha256 = "33389426048772fe4f580f48bbc71ba47bd3631d9937254ce5406dc772f24b22"
+source_sha256 = "f13d5b3ca797cf4d0969e487d07b86dc9296fe288f01a137aa6b9b66928d3a14"
 cases = [
   "a task VM sync starts: every expression of operation-task-sync resolves against its intent",
   "a copy sync starts: every expression of operation-task-sync-copy resolves against its intent",
   "the task VM sync workflow could not start for a copy, so the Gateway never starts it for one",
   "a publish starts for a task VM and for a copy: every expression of operation-task-publish resolves",
+  "serve's secret rule: a vault.get expression with any container comparison is refused, has() is not one",
+  "no workflow holds a vault.get expression that serve refuses at run start",
 ]
 file = "swamp/tests/workflow_start_resolution_test.ts"
 cost = 1
@@ -17,7 +19,5 @@ inputs = [
   "swamp/tests/_support/swamp_workflow.ts",
   "swamp/tests/_support/swamp_expression.ts",
   "swamp/tests/fixtures/workflow-start-intents.json",
-  "swamp/workflows/workflow-operation-task-sync.yaml",
-  "swamp/workflows/workflow-operation-task-sync-copy.yaml",
-  "swamp/workflows/workflow-operation-task-publish.yaml",
+  "swamp/workflows/*.yaml",
 ]

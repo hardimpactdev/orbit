@@ -7,7 +7,7 @@
  */
 import { assertEquals, assertNotEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { environment } from "./_support/swamp_workflow.ts";
+import { environment, secretRefusal } from "./_support/swamp_workflow.ts";
 
 type Inputs = Record<string, unknown>;
 const intents = JSON.parse(Deno.readTextFileSync(new URL("./fixtures/workflow-start-intents.json", import.meta.url))) as Record<string, Inputs>;
@@ -23,6 +23,12 @@ function unresolved(workflow: string, inputs: Inputs): string[] {
     if (typeof value === "string") {
       for (const match of value.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) {
         const expression = match[1].trim();
+        // Serve applies the secret rule to every expression when the run starts, also to one that reads a step output later.
+        const refused = secretRefusal(expression);
+        if (refused !== null) {
+          failed.push(`${where}: ${refused}`);
+          continue;
+        }
         if (/\b(steps|self)\b/.test(expression)) continue;
         try {
           environment.evaluate(expression.replaceAll("vault.get(", "vaultget("), { inputs, run: { id: "0f0e0d0c-0b0a-4908-8706-050403020100" } });
@@ -60,4 +66,32 @@ Deno.test("the task VM sync workflow could not start for a copy, so the Gateway 
 Deno.test("a publish starts for a task VM and for a copy: every expression of operation-task-publish resolves", () => {
   assertEquals(unresolved("workflow-operation-task-publish.yaml", intents.publish_vm), []);
   assertEquals(unresolved("workflow-operation-task-publish.yaml", intents.publish_copy), []);
+});
+
+Deno.test("serve's secret rule: a vault.get expression with any container comparison is refused, has() is not one", () => {
+  const refused = (expression: string) => secretRefusal(expression) !== null;
+  // The turn-11 guard of "Check the .env content", which serve would have refused for every publish.
+  assertEquals(refused('vault.get(inputs.execution_secrets.git_authorization.vault, "workspace" in inputs.intent ? inputs.a.key : inputs.b.key)'), true);
+  assertEquals(refused('vault.get(inputs.v, inputs.k) != null && [1] == [1]'), true);
+  assertEquals(refused('vault.get(inputs.v, inputs.m != {} ? inputs.k : inputs.j)'), true);
+  assertEquals(refused('vault.get(inputs.v, has(inputs.intent.workspace) ? inputs.a.key : inputs.b.key)'), false);
+  assertEquals(refused('vault.get(inputs.v, inputs.kind == "tasks.publish" ? inputs.a.key : inputs.b.key)'), false);
+  assertEquals(refused('"workspace" in inputs.intent'), false);
+});
+
+Deno.test("no workflow holds a vault.get expression that serve refuses at run start", () => {
+  const offenders: string[] = [];
+  for (const entry of Deno.readDirSync(new URL("../workflows/", import.meta.url))) {
+    const walk = (value: unknown): void => {
+      if (typeof value === "string") {
+        for (const match of value.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) {
+          if (secretRefusal(match[1].trim()) !== null) offenders.push(`${entry.name}: ${match[1].trim().slice(0, 120)}`);
+        }
+      } else if (value !== null && typeof value === "object") {
+        Object.values(value).forEach(walk);
+      }
+    };
+    walk(parse(Deno.readTextFileSync(new URL(`../workflows/${entry.name}`, import.meta.url))));
+  }
+  assertEquals(offenders, []);
 });

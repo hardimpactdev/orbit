@@ -11,6 +11,28 @@ export const environment = new Environment({ enableOptionalTypes: true, unlisted
 
 export { TopologicalSortService };
 
+type Node = { op: string; args: unknown };
+
+/**
+ * The pinned Swamp's secret rule (e459, cel/container_comparison.ts and cel_evaluator.ts `secret_operation_unsupported`): it refuses
+ * as a whole an expression that calls `vault.get` and holds a container comparison anywhere in it: any `in`, and `==` or `!=` with a
+ * list or map on either side. `has()` is not one. Serve refuses such an expression when the run starts, so every publish would fail.
+ * Returns the refusal for an expression written with `vault.get(`, or null.
+ */
+export function secretRefusal(expression: string): string | null {
+  if (!expression.includes("vault.get(")) return null;
+  const nodes = (value: unknown): Node[] => {
+    if (Array.isArray(value)) return value.flatMap(nodes);
+    if (value === null || typeof value !== "object" || typeof (value as Node).op !== "string") return [];
+    return [value as Node, ...nodes((value as Node).args)];
+  };
+  const literal = (value: unknown): boolean => ["list", "map"].includes((value as Node | undefined)?.op ?? "");
+  const all = nodes((environment.parse(expression.replaceAll("vault.get(", "vaultget(")) as unknown as { ast: unknown }).ast);
+  const container = all.some((node) => node.op === "in"
+    || (["==", "!="].includes(node.op) && Array.isArray(node.args) && node.args.some(literal)));
+  return container ? "secret_operation_unsupported: a vault.get expression with a container comparison" : null;
+}
+
 type Workflow = { jobs: { steps: { name: string; task?: unknown }[] }[] };
 
 /**
@@ -27,6 +49,11 @@ export function failures(workflow: string, inputs: Record<string, unknown>): str
       for (const match of value.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) {
         const expression = match[1].trim();
         if (!/execution_secrets|intent\.read/.test(expression) || /\b(self|steps)\./.test(expression)) continue;
+        const refused = secretRefusal(expression);
+        if (refused !== null) {
+          failed.push(`${step}: ${refused}`);
+          continue;
+        }
         try {
           environment.evaluate(expression.replaceAll("vault.get(", "vaultget("), { inputs, run: { id: "run-1" } });
         } catch (error) {
