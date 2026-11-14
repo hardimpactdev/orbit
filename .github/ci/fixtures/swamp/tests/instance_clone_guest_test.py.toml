@@ -1,5 +1,5 @@
 order = 820
-source_sha256 = "5b40dc40db3e744498bf2c0fcb2dcd9931f89cd354a2ab56d5809430755817f7"
+source_sha256 = "cbe7b49946c249818c0dfa192a01a1a2c11fb4829e5cac5d5f76dd3ad6a3a236"
 cases = [
   "test_a_clone_keeps_its_defaults_hand_set_keys_and_owns_its_connections",
   "test_a_dropped_key_of_the_default_goes_even_when_the_clone_does_not_own_it",
@@ -51,6 +51,8 @@ cases = [
   "test_non_php_sessions_keep_both_authenticated_sessions_without_php",
   "test_sessions_without_the_t3_steps_sessions_fail_and_issue_none",
   "test_the_t3_step_issues_both_sessions_and_adds_the_project_while_t3_starts",
+  "test_a_t3_that_does_not_answer_still_leaves_the_projects_mark_for_the_retry",
+  "test_a_failed_session_issue_fails_the_t3_step_by_the_command_and_its_exit",
   "test_non_php_check_has_no_php_probe",
   "test_php_readiness_still_checks_the_project_runtime",
   "test_command_failure_names_command_and_exit_code_without_private_output",
