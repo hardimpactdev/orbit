@@ -1,7 +1,8 @@
-source_sha256 = "39c46a3e8134637bbb4156536ba454c6717cdf3704091ee04966873e4400c1b6"
+source_sha256 = "3d0fa868b4eda2af28c48d9494d4a5a0a23fe2c3ee52ae33ef6aec7502d04b91"
 cases = [
   "test_a_publication_export_fetches_the_bundle_to_the_worker_and_keeps_no_node_scratch",
   "test_the_candidate_holds_no_environment_file_that_the_create_excluded",
+  "test_the_native_end_check_runs_after_a_success_on_either_path",
   "test_a_copy_runs_its_export_and_only_a_succeeded_bundle_step_starts_the_import",
   "test_the_environment_file_never_leaves_a_copy_in_any_commit_of_the_range",
 ]
