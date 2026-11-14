@@ -130,7 +130,7 @@
     ]
   },
   "swamp/tests/ansible_instance_fleet_test.ts": {
-    "source_sha256": "f2cde755518e9d6f7271213a9f411adc50c9492c271ffca5bcb68419750c8125",
+    "source_sha256": "e94b74fa547cefc66dc1d6bf3ecd8bb3dff9b28ce4595aa6ecbba799f8246b24",
     "cases": [
       "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
       "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",

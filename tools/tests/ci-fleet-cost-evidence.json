@@ -1,5 +1,5 @@
 {
-  "source_sha256": "f2cde755518e9d6f7271213a9f411adc50c9492c271ffca5bcb68419750c8125",
+  "source_sha256": "e94b74fa547cefc66dc1d6bf3ecd8bb3dff9b28ce4595aa6ecbba799f8246b24",
   "note": "Completed local Beast run with four concurrent fixture processes after merging #3661 and regenerating the saved state and records through the shipped refresh. These are local body seconds, not hosted times or a p90. Existing estimates outside the split are retained.",
   "estimate_factor": 2.1,
   "single_refresh_cases": [

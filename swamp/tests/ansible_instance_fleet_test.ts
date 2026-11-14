@@ -1139,8 +1139,6 @@ for (const [name, change, recordState, writes, base] of recordCases) {
     fn() {
       const f = refreshedOnce();
       try {
-        const previous = JSON.parse(f.state().outer.files[record]).converged;
-        const before = Math.floor(Date.now() / 1000);
         f.change(change);
         const refreshed = f.run("refresh");
         assert(refreshed.ok, refreshed.output);
