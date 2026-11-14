@@ -49,9 +49,12 @@ Deno.test({
                 "333333333333",
             );
             assert(!f.has("opt/orbit-runtime/111111111111"));
-            const restarts = f.calls().slice(before).filter((c) =>
+            const execs = f.calls().slice(before).filter((c) =>
                 c.includes("exec")
             );
+            // Exactly two execs in the running container: the Process restart of the flip, and the one CA bundle read of the trust
+            // step (instance_container_files.py), because the fixture container's bundle does not hold the Node's Orbit root yet.
+            const restarts = execs.filter((c) => c.includes("try-restart"));
             assertEquals(restarts, [[
                 "exec",
                 "--project",
@@ -61,6 +64,14 @@ Deno.test({
                 "systemctl",
                 "try-restart",
                 "orbit-*.service",
+            ]]);
+            assertEquals(execs.filter((c) => !c.includes("try-restart")), [[
+                "exec",
+                "--project",
+                "orbit-instances",
+                "app-default",
+                "--",
+                "update-ca-certificates",
             ]]);
             // The agent folder did not change, so T3 keeps running.
             assert(!restarts.flat().includes("t3.service"));

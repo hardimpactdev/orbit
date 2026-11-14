@@ -7,8 +7,8 @@ covers:
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy,swamp-shape-python,swamp_shape_host_tools}.py,swamp/bin/{check-swamp-shape,gate-test-support}.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - "{tools/check_budget.py,swamp/tests/_support/slice.ts}"
   - "{apps/*,packages/php-sdk}/rector.php"
-  - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py},agent_command.py}
-  - .github/{ci/checks.toml,workflows/*.yml,actions/php/action.yml}
+  - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py,user-manager.sh},agent_command.py}
+  - .github/{ci/**,workflows/*.yml,actions/php/action.yml}
   - apps/gateway/{phpunit.xml,database/migrations/2026_12_04_000000_seed_schema_baseline_reference_rows.php,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php,tests/Support/PythonPrograms.php,tests/Support/FixtureProcessRunner.php,tests/Support/GatewayReleaseFixture.php,tests/Support/TaskSchedulerTickFixtures.php,tests/Feature/Domain/TaskWorkspaceTmpdirTest.php,tests/Feature/Infrastructure/Instances/DevelopmentSourceRemovalCommandTest.php}
 ---
 
@@ -57,7 +57,17 @@ The migration environment fixtures cover dependency-file isolation and explicit 
 
 Migration Git fixtures use real temporary repositories to compare branches, complete stash history, staging, status and tracked contents. They check that the source stays unchanged, objects are independent, partial imports can repeat and retirement refuses later changes. The large fixture that runs the migration phases remains in Main full set. The smaller Git checks run in selected PR shards.
 
+Image fixture cases run one host preparation, image build, replacement or retry from a saved boundary. Producer cases run the shipped tasks and compare the full saved state before other cases consume it. The boundaries preserve the Incus state, persistent fixture files and facts used by the next stage. The saved files include the stock-image archives: the next stock check reads both the archive and the Incus API state.
+
+When a host task changes persistent state, run `deno run -A swamp/tests/_support/regenerate_host_image_boundaries.ts --write` from the repository root with the pinned Ansible tools on `PATH`. The helper captures all twelve boundaries from the shipped stages, including replacement and failure states. Use `--check` to compare fresh captures with the saved file without writing it. Keep the producer comparisons and zero-change repeat assertions; do not repair expected state by hand.
+
+Default-remote replacement and failure cases rerun full preparation, including stock reconciliation, the clone probe and local-daemon identity checks. The five repeat-stage cases cover the complete host role and each require zero changes.
+
 The nested fleet step fixture runs the rules, start, refresh and reset of an Instance container's fleet against an Incus stand-in. The stand-in holds the device and configuration shape exported from the three nested containers of a task base.
+
+Refresh cases start from saved Incus state. A separate case runs the first refresh and start, then compares all persistent fields with that saved state. Each check of changed inputs, repeated refreshes, snapshots or failure recovery runs its own refresh. It does not rerun setup playbooks. The first refresh for each changed input verifies the record consumed by its repeat case.
+
+Saved refresh records keep the code and converge digests. Their `converged` timestamp is normalized and rebound to the current time when restored. Producer checks require a real timestamp within the refresh interval; a skipped converge must preserve its prior timestamp. The stale-record cases use explicit ages. Regenerate the saved state and records through the shipped refresh when its format changes.
 
 A separate remote Node service access fixture covers exact TCP admission, proxy bypass for execution sessions and systemd Processes, shared paths and detach. It uses fake commands and connections; the release fixture proves live reachability and isolation.
 
@@ -82,14 +92,14 @@ Withdrawal fixtures also check that publication stops when the live checksum dif
 | Proof harness | Run the case runner unit tests and lint the proof programs with `ruff` |
 | CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. The blocking switches decide whether it gates Required checks; see [the proof run job](#the-proof-run-job) |
 | Required checks | On PRs, require selected builds, static checks, Pest suites and fixture shards, including capacity. Proof follows the blocking switches. Untouched jobs and metadata-ineligible proofs may skip |
-| Main delivery checks | On main, require the same selected fast jobs, independently of duplicate fixture shards and Main full set |
-| Main fixture report | After selected main fixtures finish, report failure, cancellation or capacity to the CI summary and the causal merged PR; never gate delivery |
+| Main delivery checks | On main, require the selected jobs and fixture shards with the same capacity and result rules as PRs; a verified tree receipt reuses its passed fixtures |
+| Main fixture report | After selected main fixtures finish, report failure, cancellation or capacity to the CI summary and the causal merged PR; report publication never gates delivery |
 
-`Main delivery checks` depends exactly on `php`, `gateway-static`, `gateway-tests`, `cli`, `cli-static`, `cli-tests`, `sdk-static`, `sdk-tests`, `e2e-static`, `docs`, `api-reference`, `web`, `pi`, `agent`, `proof`, `gateway-release`, `changes` and `swamp`. These are the existing builds, Pest suites, static checks, contracts and other fast checks. It adds no test or build. `Start the CLI release` depends on this result.
+`Main delivery checks` depends exactly on `php`, `gateway-static`, `gateway-tests`, `cli`, `cli-static`, `cli-tests`, `sdk-static`, `sdk-tests`, `e2e-static`, `docs`, `api-reference`, `web`, `pi`, `agent`, `proof`, `gateway-release`, `changes`, `swamp` and `fixtures`. These are the existing builds, Pest suites, static checks, contracts and selected fixture shards. It adds no test or build. `Start the CLI release` depends on this result.
 
-The release resolver verifies a successful delivery job on the exact SHA in this repository's `ci.yml` main push or manual run; it accepts neither a PR check with the same name nor a commit status. The run may still be running or finish red because fixtures failed. Old commits without this result cannot be backfilled.
+The release resolver verifies a successful delivery job on the exact SHA in this repository's `ci.yml` main push or manual run; it accepts neither a PR check with the same name nor a commit status. The run may still be running or finish red because publishing the fixture report failed; a failed selected fixture blocks delivery. Old commits without this result cannot be backfilled.
 
-Gateway automatic releases retain the `Required checks` name: on main, `main-required` verifies the exact SHA and main CI run before forwarding a successful `Main delivery checks` result. Its summary links the source CI and fixture report. It has no fixture dependency. Skipped gates have distinct names in each event, so a skipped PR gate cannot invalidate the main result. The Gateway also requires `Gateway release inputs`, preserving its current reader and rollout guards.
+Gateway automatic releases retain the `Required checks` name: on main, `main-required` verifies the exact SHA and main CI run before forwarding a successful `Main delivery checks` result. Its summary links the source CI and fixture report. Its delivery dependency waits for selected fixtures. A failed, cancelled or incomplete delivery makes main Required fail, rather than skip. Skipped gates have distinct names in each event, so a skipped PR gate cannot invalidate the main result. The Gateway also requires `Gateway release inputs`, preserving its current reader and rollout guards.
 
 ### Reuse a green PR tree on main
 
@@ -99,9 +109,9 @@ Every PR builds a web artifact and records its digest, tested commit and tree, a
 
 It reads job logs and artifact archives as bytes with `gh api --allow-escape-sequences`; those bytes are parsed or hashed, never printed to a terminal. It downloads and verifies the source artifact before publishing `web-dist-<main SHA>`. A changed body needs a new successful Docs run; rerunning only Required cannot bless an old acknowledgement. If a failed-only rerun copies a successful Required job into a new attempt without producing its receipt, main runs normal CI.
 
-The receipt keeps `Main delivery checks`, `Required checks` and `Gateway release inputs` on the main SHA. Release readers and CLI dispatch keep their existing names and lookup rules. Duplicate main fixtures skip for a reused tree; the independent Main full set still runs.
+The receipt keeps `Main delivery checks`, `Required checks` and `Gateway release inputs` on the main SHA. Release readers and CLI dispatch keep their existing names and lookup rules. Selected main fixtures skip for a reused tree because the receipt proves that tree passed in its PR. Without a receipt, a selected fixture failure, cancellation, unexpected skip or capacity error blocks delivery and Required. Shard budgets stay unchanged; Required keeps its five-minute target. The independent Main full set still runs.
 
-`Resolve release` gates `Build CLI`, `Build Linux agent` and `Build macOS agent`; `Publish release` requires the resolver and those builds. Version, main ancestry, tags, provenance and publication guards still apply. Neither fixture shards nor the independent Main full set receiver belongs to these dependencies.
+`Resolve release` gates `Build CLI`, `Build Linux agent` and `Build macOS agent`; `Publish release` requires the resolver and those builds. Version, main ancestry, tags, provenance and publication guards still apply. Selected fixture results reach the resolver through main delivery; Main full set remains independent.
 
 `Main fixture report` runs for main pushes and manual main runs that do not reuse PR evidence, after `changes` and `fixtures`. The job has two minutes for API reads and comment writes. It reports the exact tested SHA, source run, fixture job URLs, matrix outcome and capacity errors. Only merged PRs into this repository's main whose merge SHA equals the tested SHA receive a comment. A main push containing several merges reports only the PR for its tested head; a direct push has no causal PR comment. The comment is updated on reruns.
 
@@ -173,21 +183,29 @@ Every executable check job has a `timeout-minutes` equal to its table `ceiling`,
 
 Required checks has static dependencies on the selected checks, including Swamp. It accepts success or an unselected skip and checks that the plan's boolean selection keys exactly match its dependencies. Its API wait covers only blocking proof. The two proof switches retain their meaning.
 
-The fixture table in `.github/ci/checks.toml` maps changed inputs to files and declares their costs. Editing fixture entries selects only those fixtures, using the same merge base as path selection. Formatting and edits to check definitions select no extra fixture bodies. Changes to shared fixture budgets, defaults or fixture order, or to the runner and slice preload, select all fixtures within the existing budget.
+Each registered fixture has one metadata file under `.github/ci/fixtures/`, mirroring its source path with `.toml` appended. It holds the input rules, costs, ordered case names and source hash. Shared budgets, defaults and build checks stay in `.github/ci/checks.toml`.
+
+`bin/ci-registry` is the loader for PR selection, fixture execution and Main full set. Editing fixture metadata selects only those fixtures, using the same merge base as path selection. Formatting and edits to check definitions select no extra fixture bodies. Changes to shared fixture budgets, defaults or fixture order, or to the loader, runner and slice preload, select all fixtures within the existing budget.
 
 `bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill four lanes per shard, each with at most 150 declared seconds, with at most eight shards per pull request. Runs with six shards peaked at 16 to 17 concurrent hosted jobs, so eight shards reach about 19 of the organisation's 20 concurrent hosted jobs; a second run at the same time queues. Each shard runs up to four units at once. A file can declare a larger slice count when its cases need finer slices.
 
-For example, `swamp/tests/ansible_instance_fleet_test.ts` declares fifteen slices. Its seven longest cases, among them the refreshes, the state-mount wait and the readiness responses, take about 13 to 27 seconds each locally, and no two of them share a slice.
+For example, `swamp/tests/ansible_instance_fleet_test.ts` declares one slice per case, so a long refresh cannot share its unit with another refresh.
 
 A slice takes every n-th case, so a new case can move two long cases into one slice; then raise the slice count until no slice is above the lane budget. A slice count equal to the number of retained cases always meets this: each case gets its own slice.
 
-A file without its own command in the shape gate runs with Deno only while it is sliceable; `slices = false` makes the runner start it with `python3`. So register a Deno file that the gate does not list without `slices = false`. A Deno file of at most 60 seconds runs as one unit anyway.
+A new Python fixture needs its own `.github/ci/fixtures/<source>.toml`, with `slices = false`, measured whole-file cost, inputs, ordered cases and source hash. It does not need a shape-gate listing: the PR and full-set planners read the registry, and the runner uses `python3 -I` for a registered unsliceable file. A new Deno fixture remains sliceable. A listing adds the file to the broad local gate and its Ruff audit. Editing that shared list selects all fixtures, so work beyond the PR budget is deferred; registry-only additions avoid that effect.
+
+The Instance workspace proof runs in five independent Python files: target and identity, snapshots, receipts, export, and check workflow. Each file keeps its complete assertions and uses the test-free `swamp/tests/_support/task_instance_workspace.py` harness. Load it with `runpy.run_path` using a path relative to the test file, then subclass `WorkspaceHarness` or `CheckHarness`; this also works with Python isolated mode.
+
+Register new cases in their own file without editing the shared gate. The four copy-publication cases use the same harness from their separate registry-only file. These five split files also stay in the broad local gate and its Ruff audit. Python costs cover the whole file, including all its cases; their regression reserves six extra seconds below the 90-second target.
 
 Measured container and fleet files declare costs by exact case name, with run IDs for completed measurements and explicit estimates for unmeasured cases. Their file cost equals the retained case total. Packing includes six seconds of startup per slice. Slice counts never exceed the retained case count.
 
 A case cost is a high percentile of hosted runs, not one run. When a case is added or changed, declare its local time × 2.1, rounded up, plus one second, marked `ESTIMATE`. When the case has completed in at least five hosted pull request runs, replace the estimate with the 90th percentile of those completed times, rounded up, plus one second, and name the runs.
 
-The fleet refresh fixture uses one case per unit. Its planning estimates include the hosted refresh and record-recovery times; the two slowest cases use their own lanes and the runtime headroom. Before a CI sweep admits another change to a fleet input, compare completed `ci-unit-times-*.json` case bodies with `case_costs` on main, matching exact case names and source hashes. Warn on an observation above its estimate and recalibrate before the next affected PR; do not count deadline cuts as completed samples. This is a sweep check, not an automatic CI warning.
+The fleet refresh fixture uses one case per unit. Its costs combine hosted observations for earlier cases with local estimates for the split refresh cases. Before a CI sweep admits another change to a fleet input, compare completed `ci-unit-times-*.json` case bodies with `case_costs` on main, matching exact case names and source hashes. Warn on an observation above its estimate and recalibrate before the next affected PR; do not count deadline cuts as completed samples. This is a sweep check, not an automatic CI warning.
+
+The fleet reboot fixture uses six interleaved units. Each unit is costed from the slowest measured group, including the declared startup allowance. All cases remain in Required.
 
 The 40 seconds between the 150-second lane and the 190-second shard deadline is the headroom above that percentile. A case moves to after-merge only when its own cost plus startup exceeds the 150-second lane; name it and its percentile in the table.
 
@@ -197,7 +215,11 @@ Container host preparation uses one case per unit. Each of its declared body cos
 
 Each fixture unit has its own child subreaper. It reaps adopted children while the session leader runs, so exited grandchildren do not remain zombies until the unit ends. The leader alone decides success or failure. Deadlines and cancellation still kill and reap the unit’s remaining descendants before temporary files are removed.
 
-Direct input matches take priority when work exceeds that limit, then fixture table order decides admission. A file runs with all its slices or is deferred whole; the plan names deferred units, their cases and unmapped Swamp paths in its summary. A file that cannot fit even an otherwise empty eight-shard plan, or contains a unit above the lane budget, makes Required checks fail; admitted files still run. Unmapped paths select the table’s default checks.
+Direct input matches take priority when work exceeds that limit, then the metadata `order` values decide admission. A file normally runs with all its slices or is deferred whole.
+
+A fixture can declare `mandatory_cases`, mapping an input pattern from its `inputs` to exact retained case names. A matching change reserves the units containing those cases before other work; changing the fixture, its registry entry, shared budgets or admission order, the planner, registry loader or slice preload reserves them too. If the required units cannot fit, the plan emits a capacity error and Required fails. Only the remaining units may be deferred as a group. The plan names required cases, deferred units and unmapped Swamp paths in its summary.
+
+A file that cannot fit even an otherwise empty eight-shard plan, or contains a unit above the lane budget, makes Required checks fail; admitted files still run. Unmapped paths select the table’s default checks.
 
 Migration remains after-merge-only: its declared work needs twelve shards, above the eight-shard limit. The host ACL file also exceeds a lane, and the host build-list file needs an isolated measurement before admission. The FrankenPHP proxy fixture needs the pinned binary through `ORBIT_FRANKENPHP`, which hosted fixture setup does not install. Their table entries explain these coverage gaps. The measured container file remains eligible.
 
@@ -207,15 +229,19 @@ The task VM host egress Python file is also after-merge-only: it repeatedly reac
 
 The Instance host updates file runs after merge only. Across 24 PR observations per case, the runtime update reached 166.761 seconds and the Squid rollback reached 152.639 seconds, leaving about 7% and 15% of the 180-second ceiling. Both cases already run alone and require an initial converge followed by a changed-input converge. All four cases remain in Main full set; restoring PR coverage requires a measured faster fixture that preserves those transitions.
 
+Changes to `swamp/ansible/tasks/instance-host.yml` require the dir, ZFS and nested prepare-boundary producers, the nested prepare repeat, and the default-remote replacement proof. These five cases cannot be silently deferred. Their names are validated against the registry, so a rename must update the admission rule.
+
 The nested-fleet image cases of the Instance host image file run on pull requests, one case per slice. Their costs are Beast estimates until hosted runs measure them.
 
 Each fixture shard has a four-minute job limit. The runner stops the shard at 190 seconds, names running units as `OVER BUDGET` and queued units as `NOT RUN`, and fails the shard.
 
 Each unit has a 180-second ceiling; a unit that exceeds it fails with its name, time and an instruction to raise its table cost for another slice or make it faster. Units that cannot be sliced and cost more than 150 seconds run after merge only, with a reason in the table.
 
-The case inventory in `tools/tests/ci-fixture-cases.json` records measured registrations. Inventory edits select only the fixtures whose entries differ between the merge base and PR head, including added or removed entries for fixtures that still exist. Edits that only change JSON formatting select no fixture bodies.
+A fixture’s metadata records its measured registrations in order. Population edits select only fixtures whose records differ between the merge base and PR head, including added or removed records for sources that still exist. Formatting alone selects no fixture bodies. The loader reads the old combined files only when comparing commits from before and after the move; the current checkout has one source for each record.
 
-A PR that adds or renames a Deno case updates its entry's `cases` and `source_sha256` and the fixture's `cost` and `case_costs` together. `bin/ci-units collect --file <test>` prints the entry. A stale entry fails the fixture before any case runs: `Stale fixture case population`. A renamed case also renames its `case_costs` key: a cost for a name that the entry does not register fails `bin/ci-units plan` with `invalid case_costs`. A new case in a fixture without `case_costs` needs only the entry.
+Required planning also collects the live names of every Python fixture with `case_costs`, without running test bodies. It checks the complete name set and cost total through the same validator as Main full set, even when the PR does not select that file. Stored inventory names alone cannot satisfy this check.
+
+A PR that adds or renames a Deno case updates `cases`, `source_sha256`, `cost` and `case_costs` in that fixture’s metadata file together. Existing `order` values preserve admission priority when capacity is full; a new record without `order` follows them in path order. `bin/ci-units collect --file <test>` prints the entry. A stale entry fails the fixture before any case runs: `Stale fixture case population`. A renamed case also renames its `case_costs` key: a cost for a name that the entry does not register fails `bin/ci-units plan` with `invalid case_costs`. A new case in a fixture without `case_costs` needs only the entry.
 
 A playbook expression that parses command output has a recorded output case in `swamp/tests/fixtures/command-output/cases.yaml`. Renaming its task or adding such a parser without a case fails `swamp/tests/ansible_command_output_test.py`.
 
@@ -223,7 +249,7 @@ Source hashes are evidence, not a gate on unrelated changes. Selected Deno units
 
 The from-stock fleet case runs in PR fixtures with a deterministic fixture key pair, without installed WireGuard tools. It checks the stored private key and both public-key consumers, then stops before real WireGuard or systemd activation. Its table cost remains an estimate until a hosted run measures the restored case.
 
-Two more cases run only after merge. Restarting the worker needs a running user systemd manager. Rebooting a persistently unreachable ordinary Node hit the shard deadline at 72.3 seconds. Their exact names and evidence are recorded in `checks.toml`. Other cases in those files remain eligible. Strict receipts and deadlines still apply, including in the full-set receiver. Deferral is a coverage gap until that receiver executes the case successfully.
+Two more cases run only after merge. Restarting the worker needs a running user systemd manager. Rebooting a persistently unreachable ordinary Node hit the shard deadline at 72.3 seconds. Their exact names and evidence are recorded in each fixture’s metadata file. Other cases in those files remain eligible. Strict receipts and deadlines still apply, including in the full-set receiver. Deferral is a coverage gap until that receiver executes the case successfully.
 
 Shards publish source hashes, declared costs, unit and startup times, exact case names and completed case times as artifacts. Running cases at a cutoff are censored lower bounds, not completed measurements; queued cases remain `NOT RUN`. A failed Python file reports unknown case outcomes and retains unittest output. Startup time covers launch and module load before the first case.
 
@@ -322,7 +348,7 @@ Two checks guard the flow charts. Generated contracts requires a chart or a `doc
 
 Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective token with only `extensions:read`. Validation keeps its read-only key and signed sign-in proof on pull requests and pushes to main. Shape and ordinary Operation test jobs receive no secret environment.
 
-CI uses `pull_request_target` only in the label workflow `proof-outside.yml`, which checks out one script from the base branch and passes only a commit SHA to Orbit ([the proof CI](/reference/feature-flow#the-proof-ci)). The runtime and local extension tree remain pinned. Validation, placement and Operation tests remain required, including when authentication is absent or refused. Full shape fixtures never gate Required checks; the existing switches apply to proof. No personal key or initial-import validation exception is used.
+CI uses `pull_request_target` only in the label workflow `proof-outside.yml`, which checks out one script from the base branch and passes only a commit SHA to Orbit ([the proof CI](/reference/feature-flow#the-proof-ci)). The runtime and local extension tree remain pinned. Validation, placement and Operation tests remain required, including when authentication is absent or refused. Main full set never gates Required checks; selected shape fixture shards do. The existing switches apply to proof. No personal key or initial-import validation exception is used.
 
 The plan passes three booleans and the resolved comparison base to the Swamp workflow. Each selected subjob starts directly, and Required checks requires the reusable call's result as a static dependency.
 
@@ -365,7 +391,9 @@ Gateway Pest runs in one hosted job with four workers and no shards. Gateway sta
 
 During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway, CLI and SDK Pest, Pi and Rust tests. Web unit tests stay local. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
 
-Sabre and Shark run CI runners in unprivileged Incus containers. With Nick's approval, both hosts also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Task VMs run only on Beast and Shark through Incus.
+Sabre and Shark run CI runners in unprivileged Incus containers.
+
+The container setup enables the runner’s user systemd manager with lingering. Apply that prerequisite alone to an existing container with `tools/ci-runners/setup.sh user_manager NAME`; it does not restart the Actions listener or grant sudo to jobs. With operator approval, both hosts also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Task VMs run only on Beast and Shark through Incus.
 
 Public repositories use GitHub-hosted runners, with self-hosted runners available when configured. Private repositories use self-hosted runners.
 
@@ -783,11 +811,11 @@ The migration mail fixture also checks the phase order: copy first, bounded mail
 
 The destroy dependency fixture uses real Git in private temporary directories, runs unprivileged and launches no Ansible playbooks. It covers confirmed dependents, moved and prunable worktrees, unreadable candidates, malformed rows and named target failures without scanning checkout contents. Gateway tests bind a deterministic remote-program fake by default and prove an admission refusal leaves serving records untouched. Inventory and named cost keys are collected together.
 
-Clone branch fixtures use unprivileged local Git repositories and run without an Ansible playbook. Their registered case names and conservative costs change together in `tools/tests/ci-fixture-cases.json` and `.github/ci/checks.toml`; collect names with `bin/ci-units collect --file swamp/tests/instance_clone_test.py`. The same file runs the real `container` phase of `instance_clone.py` with a fake `incus`, so a case can check the order of the pushes, the start and the Node services apply. It also runs the real `t3` phase: a case checks that the agent part gets the model key on stdin and T3 gets none.
+Clone branch fixtures use unprivileged local Git repositories and run without an Ansible playbook. Their registered case names and conservative costs change together in `.github/ci/fixtures/swamp/tests/instance_clone_test.py.toml`; collect names with `bin/ci-units collect --file swamp/tests/instance_clone_test.py`. The same file runs the real `container` phase of `instance_clone.py` with a fake `incus`, so a case can check the order of the pushes, the start and the Node services apply. It also runs the real `t3` phase: a case checks that the agent part gets the model key on stdin and T3 gets none.
 
 Its `checkout`, `services` and `check` cases check that each part gets only its half of the workspace value. The guest fixture runs `checkout` then `services` on a real Git workspace and compares the files, the mark, the units started and the result with the one `workspace` phase.
 
-The `instance:complete` workflow fixture runs `operation-instance-complete` on the pinned engine's levels, with the real `finish` receipt, for a plain clone, a database clone and a nested-fleet clone, and for each failure. Its native fixture runs the real workflow on the pinned Swamp binary with local stubs for the machine steps and the Route children; it needs `ORBIT_SWAMP_PROOF_BINARY`, so CI runs it after merge.
+The `instance:complete` workflow fixture runs `operation-instance-complete` on the pinned engine's levels, with the real `finish` receipt, for a plain clone, a database clone and a nested-fleet clone, and for each failure. Its native fixture runs the real workflow on the pinned Swamp binary with local stubs for the machine steps and the Route children; it needs `ORBIT_SWAMP_PROOF_BINARY`, so CI runs it after merge. The create's level fixture in `workflow_absent_secrets_test.ts` and its native fixture, `instance_create_native_test.ts`, do the same for a clone's create, which ends at `clone-register`.
 
 The `instance:restore` workflow fixture evaluates every expression of `operation-instance-restore` against the input its projection renders. It needs no Node, database or playbook.
 

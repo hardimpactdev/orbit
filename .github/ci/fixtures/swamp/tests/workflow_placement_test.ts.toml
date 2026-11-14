@@ -1,0 +1,25 @@
+order = 1170
+source_sha256 = "2c9bae7667abc1f1291bd9604d0514b53d19819428dbd979c46fa8db74467dad"
+cases = [
+  "placement lint rejects an unplaced effect",
+  "native workflow and job placement inherit to steps",
+  "empty step labels erase inherited labels but keep an inherited target",
+  "intrinsic steps also declare placement; malformed labels do not place work",
+  "only the Gateway bootstrap runs without a worker placement",
+]
+file = "swamp/tests/workflow_placement_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/bin/lint-workflow-placement.ts",
+]
+
+# CI check inputs. Includes are ORed; any !exclude wins, regardless of order.
+# ** crosses directories; * and ? stay within one name (selection_regex).
+# Costs are pull_request median wall seconds from ci-speed.md (2026-11-11).
+# swamp and swamp-shape use the current static control median, not retired fixtures.
+# Each executable check uses ceiling seconds rounded up to minutes as its job timeout.

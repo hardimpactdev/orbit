@@ -2,11 +2,16 @@
 # Read the fleet rules of instance-fleet.yml from the inner Incus and set `fleet_drift`: one entry for each rule that a nested container
 # lacks, with the container, the rule's name and its class. instance-fleet-rules.yml reads before it applies and again to check.
 # Classes: `owned`, a rule Orbit writes on an existing fleet; `build`, a build rule whose key is absent; `foreign`, a build rule whose
-# key holds another value, or a nested container that cannot be read. Only `owned` and `build` are ever written.
+# key holds another value, or a nested container or the inner bridge that cannot be read. Only `owned` and `build` are ever written.
 - name: Read the nested containers
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['query', '/1.0/instances/' ~ intent.fleet.guests[item]] }}" }
   loop: "{{ fleet_roles }}"
   register: fleet_rules_read
+  changed_when: false
+  failed_when: false
+- name: Read the inner bridge
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['query', '/1.0/networks/' ~ fleet_network] }}" }
+  register: fleet_network_read
   changed_when: false
   failed_when: false
 - name: Read the fleet files
@@ -43,6 +48,16 @@
       {%-     endfor -%}
       {%-   endif -%}
       {%- endfor -%}
+      {%- if fleet_network_read.rc != 0 -%}
+      {%-   set _ = out.append({'container': fleet_network, 'kind': 'network', 'name': fleet_network, 'class': 'foreign'}) -%}
+      {%- else -%}
+      {%-   set have = fleet_network_read.stdout | from_json -%}
+      {%-   for key, value in fleet_network_rules.items() -%}
+      {%-     if have.config[key] | default(none) != value -%}
+      {%-       set _ = out.append({'container': fleet_network, 'kind': 'network', 'name': key, 'want': value, 'class': 'owned'}) -%}
+      {%-     endif -%}
+      {%-   endfor -%}
+      {%- endif -%}
       {%- for read in fleet_files_read.results -%}
       {%-   if read.rc != 0 or read.stdout | trim != read.item.content | trim -%}
       {%-     set _ = out.append({'container': read.item.container, 'kind': 'file', 'name': read.item.path, 'want': read.item.content,

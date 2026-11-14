@@ -258,32 +258,6 @@ describe('the result of a start', function (): void {
         'refused' => [['failed_step' => 'container', 'error_code' => 'instance.nested_club_key_unsafe_transfer'], 'failed', 'refused'],
     ]);
 
-    it('records why a clone\'s fleet did not start as the failure detail, redacted, and changes no other failure', function (): void {
-        SwampNodeFixture::ensure();
-        $node = clubSwitchedOnNode();
-        $fleet = containerCreate(clubProject('trial', true), $node);
-        $normal = containerCreate(clubProject('plain', false), $node);
-        $native = ['failed_step' => 'clone-fleet', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false];
-        $runs = [[$fleet, ['failed_step' => 'fleet', 'error_code' => 'instance.container_fleet_resume_failed',
-            'detail' => "Check Doctor: Readiness check 'doctor' failed after 300 s: HTTP 200: {} password=hunter2-secret-value"]],
-            [$normal, ['failed_step' => 'workspace', 'error_code' => 'instance.create_workspace_failed']]];
-        foreach ($runs as [$admitted, $result]) {
-            $admitted->forceFill(['status' => 'running', 'finished_at' => null, 'error_code' => null, 'result' => null, 'state' => ['swamp_run_id' => 'run-1']])->save();
-            app(DevelopmentInstanceCreateProjection::class)->apply($admitted->refresh(), ['status' => 'failed', 'run_id' => 'run-1',
-                'error_code' => $result['error_code'], 'failure' => [...$native, 'failed_step' => $result['failed_step'] === 'fleet' ? 'clone-fleet' : 'clone-workspace'],
-                'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-                'result' => ['ready' => false, 'instance_id' => $admitted->target_id, ...$result]]);
-        }
-        $failure = $fleet->refresh()->state['native_failure'];
-        expect($fleet->error_code)->toBe('instance.container_fleet_resume_failed')
-            ->and($fleet->result)->not->toHaveKey('detail')
-            ->and([$failure['failed_step'], $failure['stderr_recorded']])->toBe(['clone-fleet', true])
-            ->and($failure['detail'])->toStartWith("Check Doctor: Readiness check 'doctor' failed after 300 s")
-            ->and($failure['detail'])->not->toContain('hunter2-secret-value')
-            // Any other failed create keeps the native step's failure as it was.
-            ->and($normal->refresh()->state['native_failure'])->toBe([...$native, 'failed_step' => 'clone-workspace']);
-    });
-
     it('reports on a deployment what its start did', function (?array $file, string $status, array $failed, string $outcome): void {
         SwampNodeFixture::ensure();
         placeClubKey($this->clubEnvironment, FakeNestedClubKey);
@@ -314,7 +288,8 @@ describe('the result of a start', function (): void {
         SwampNodeFixture::ensure();
         placeClubKey($this->clubEnvironment, FakeNestedClubKey);
         $instance = Instance::query()->findOrFail(containerCreate(clubProject('trial', true), clubSwitchedOnNode())->target_id);
-        $refresh = ['migrate' => 'nothing', 'restart' => 'yes', 'converge' => 'ran', 'changed' => 0, 'base' => 'kept', 'base_containers' => [], 'record' => 'present',
+        $refresh = ['migrate' => 'nothing', 'restart' => 'yes', 'converge' => 'ran', 'converge_reason' => 'stale', 'changed' => 0, 'tokens' => 'reminted', 'tokens_reason' => 'incomplete',
+            'base' => 'kept', 'base_containers' => [], 'record' => 'present',
             'seconds' => ['gateway' => 14, 'converge' => 70, 'ready' => 3, 'base' => 1]];
         $deploy = static function (array $file) use ($instance): Operation {
             $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
@@ -332,7 +307,12 @@ describe('the result of a start', function (): void {
             ->and($deploy(['commit' => $commit, 'club_key' => 'unchanged'])->result)->not->toHaveKey('fleet_refresh')
             // Words the refresh does not use, or a count that is no count, are not recorded.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'base' => 'maybe']])->result)->not->toHaveKey('fleet_refresh')
+            // Why the converge ran or was skipped is one of the refresh's own words.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reason' => 'because']])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'changed' => '3']])->result)->not->toHaveKey('fleet_refresh')
+            // What the refresh did with the nested Gateway's Swamp tokens, and why, are its own words too.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'tokens' => 'renewed']])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'tokens_reason' => 'expired']])->result)->not->toHaveKey('fleet_refresh')
             // Unknown parts of `seconds` are dropped.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'seconds' => ['gateway' => 2, 'secret' => 'x']]])->result['fleet_refresh']['seconds'])
             ->toBe(['gateway' => 2]);

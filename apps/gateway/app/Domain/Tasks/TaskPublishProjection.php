@@ -37,7 +37,7 @@ final readonly class TaskPublishProjection implements DirectOperationProjection
                 $detail = $failure['detail'] ?? null;
                 $step = $failure['failed_step'] ?? null;
                 $code = in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
-                    ? $detail : ($step === 'Push the branch' ? 'tasks.push_failed' : (in_array($step, ['Init the bare repo', 'Import the bundle', 'Read bundle contents'], true) ? 'tasks.repository_execution_unknown' : 'tasks.publish_failed'));
+                    ? $detail : ($step === 'Check the environment file' ? 'tasks.publish_secret_path' : ($step === 'Push the branch' ? 'tasks.push_failed' : (in_array($step, ['Init the bare repo', 'Import the bundle', 'Read bundle contents'], true) ? 'tasks.repository_execution_unknown' : 'tasks.publish_failed')));
                 $data['error_code'] = $code;
                 $result = ['error_code' => $code];
             } else {

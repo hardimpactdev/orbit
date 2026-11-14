@@ -260,6 +260,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.commit(self.origin, "fetched")
         self.expected = self.head(self.origin)
         self.git(self.base, "clone", "--quiet", str(self.origin), str(self.workspace))
+        self.exclude_users = []
 
     def git(self, cwd, *args):
         return subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", *args], cwd=cwd,
@@ -292,6 +293,11 @@ class WorkspaceCheckoutTest(unittest.TestCase):
 
         def command(argv, **_kwargs):
             actual = argv[4:] if argv[0] == "runuser" else argv
+            if GUEST.EXCLUDE_PROGRAM in actual:
+                # The exclude write runs for real in the workspace; it must run as orbit, never as root.
+                self.exclude_users.append(argv[2] if argv[0] == "runuser" else "root")
+                return REAL_RUN(actual, cwd=self.workspace, check=False, capture_output=True, text=True, timeout=10,
+                                env=dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null"))
             if commands is not None and actual[0] != "git":
                 commands.append(actual)
             if actual[0] == "git" and actual[-3:] == ["config", "--global", "user.name"]:
@@ -347,6 +353,35 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.assertEqual((self.branch(), self.head(self.workspace)), ("proof", self.expected))
         self.assertEqual(self.mark(), ({"instance_id": 9, "commit": self.expected}, 0o600))
         self.assertFalse((self.base / "tmp/proof.bundle").exists())
+
+    def test_the_checkout_keeps_the_env_out_of_git_once_and_keeps_the_exclude_files_lines(self):
+        # The seed copy: the default's .env, which the Project's .gitignore does not name, and an exclude line of its own.
+        self.seed("main", self.older)
+        (self.workspace / ".env").write_text("APP_KEY=base64:fixture-key\n")
+        exclude = self.workspace / ".git/info/exclude"
+        exclude.write_text("# local\n*.log")
+        first = self.phase("checkout")
+        self.assertIn("exclude", first["changes"])
+        self.assertEqual(exclude.read_text(), "# local\n*.log\n/.env\n")
+        self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, "")
+        self.assertEqual(self.exclude_users, ["orbit"])
+        # A retry, and a clone of this clone, find the line and add nothing.
+        self.assertNotIn("exclude", self.phase("checkout")["changes"])
+        self.assertNotIn("exclude", self.phase("workspace")["changes"])
+        self.assertEqual(exclude.read_text(), "# local\n*.log\n/.env\n")
+
+    def test_an_application_folder_names_its_own_env_and_a_missing_exclude_file_is_made(self):
+        self.seed("main", self.older)
+        exclude = self.workspace / ".git/info/exclude"
+        exclude.unlink(missing_ok=True)
+        container = {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
+                     "bundle": "/tmp/proof.bundle", "php": None, "environment_file": "/srv/workspace/apps/web/.env",
+                     "units": [], "processes": [], "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}}}
+        (self.workspace / "apps/web").mkdir(parents=True)
+        self.phase("checkout", container)
+        self.assertEqual(exclude.read_text(), "/apps/web/.env\n")
+        (self.workspace / "apps/web/.env").write_text("APP_KEY=base64:fixture-key\n")
+        self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, "")
 
     def test_a_first_run_on_a_seed_branch_of_the_same_name_still_checks_out_the_fetched_commit(self):
         # The default's own branch has the target's name but an older head; a mark of another Instance does not count.
@@ -675,7 +710,8 @@ class CloneGuestTest(unittest.TestCase):
             self.assertTrue(output.getvalue().startswith("orbit-commit=first-checkout\n"))
             self.assertNotIn('"commit"', output.getvalue())
 
-    def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=False, inactive=False, state=None, desired="running", is_active=1, expected_exit=1):
+    def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=False, inactive=False, state=None, desired="running", is_active=1, expected_exit=1,
+                  branch="proof", mark=None):
         container = {
             "workspace": "/srv/workspace",
             "branch": "proof",
@@ -710,7 +746,7 @@ class CloneGuestTest(unittest.TestCase):
                 observed = state if state is not None else {'ActiveState': 'failed', 'SubState': 'failed', 'Result': 'exit-code', 'ExecMainStatus': '1', 'NRestarts': '5'}
                 stdout = '\n'.join(key + '=' + str(value) for key, value in observed.items())
             if actual[0] == "git":
-                stdout = "proof\n" if "symbolic-ref" in actual else "abc123\n"
+                stdout = branch + "\n" if "symbolic-ref" in actual else "abc123\n"
             if actual[0] == "/opt/agent/bin/t3":
                 stdout = actual[actual.index("--label") + 1] + "-PRIVATE-TOKEN\n"
             return subprocess.CompletedProcess(argv, code, stdout, "token=ghp_SUPER_PRIVATE_TOKEN_12345678901234567890")
@@ -741,7 +777,7 @@ class CloneGuestTest(unittest.TestCase):
                 io.StringIO(json.dumps(sessions) if existing else ""),
             ),
             patch.object(GUEST.http.client, "HTTPConnection", return_value=connection),
-            checkout_mark(),
+            checkout_mark((mark or {}).get("instance_id", 9)),
             contextlib.redirect_stdout(output),
             contextlib.redirect_stderr(error),
         ):
@@ -758,8 +794,21 @@ class CloneGuestTest(unittest.TestCase):
         self.assertNotIn("PRIVATE", error.getvalue())
         return commands, output.getvalue(), error.getvalue()
 
-    def test_inactive_process_names_unit_states_and_exit_without_private_log(self):
-        commands, output, error = self.readiness('sessions', entrypoint=True, inactive=True)
+    def test_sessions_never_check_units_but_keep_the_branch_and_mark_checks(self):
+        # The Processes start in the completion: a dead or absent unit no longer fails the create's sessions check.
+        commands, output, error = self.readiness('sessions', entrypoint=True, inactive=True, expected_exit=0)
+        self.assertEqual((json.loads(output)['phase'], error), ('sessions', ''))
+        self.assertNotIn('process_failure', output)
+        self.assertFalse(any(argv[:1] == ['systemctl'] for argv in commands))
+        self.assertTrue(any('symbolic-ref' in argv for argv in commands))
+        # Another branch, or a mark that names another Instance, still fails it.
+        _, output, error = self.readiness('sessions', entrypoint=True, branch='other')
+        self.assertEqual((output, error), ('', 'instance.container_sessions_failed\n'))
+        _, output, error = self.readiness('sessions', entrypoint=True, mark={'instance_id': 8, 'commit': 'abc123'})
+        self.assertEqual((output, error), ('', 'instance.container_sessions_failed\n'))
+
+    def test_the_check_names_unit_states_of_a_dead_process_and_exits_without_private_log(self):
+        commands, output, error = self.readiness('check', entrypoint=True, inactive=True)
         receipt = json.loads(output)
         self.assertEqual(receipt, {'error_code': 'instance.container_process_inactive', 'process_failure': {
             'unit': 'orbit-process-vp-dev.service', 'process_id': 19, 'ActiveState': 'failed',
@@ -775,9 +824,9 @@ class CloneGuestTest(unittest.TestCase):
             ('desired stopped', {'desired': 'stopped'}),
         ]:
             with self.subTest(label=label):
-                calls, output, error = self.readiness('sessions', entrypoint=True, inactive=True,
+                calls, output, error = self.readiness('check', entrypoint=True, inactive=True,
                                                      expected_exit=0, **options)
-                self.assertEqual(json.loads(output)['phase'], 'sessions')
+                self.assertEqual(json.loads(output)['phase'], 'check')
                 self.assertNotIn('process_failure', output)
                 self.assertEqual(error, '')
                 if label == 'desired stopped':
@@ -785,13 +834,13 @@ class CloneGuestTest(unittest.TestCase):
 
         stopped = {'ActiveState': 'inactive', 'SubState': 'dead', 'Result': 'success',
                    'ExecMainStatus': '0', 'NRestarts': '0'}
-        _, output, _ = self.readiness('sessions', entrypoint=True, inactive=True, state=stopped)
+        _, output, _ = self.readiness('check', entrypoint=True, inactive=True, state=stopped)
         self.assertEqual(json.loads(output)['process_failure']['ActiveState'], 'inactive')
         self.assertEqual(json.loads(output)['process_failure']['ExecMainStatus'], 0)
 
         transitional = {'ActiveState': 'activating', 'SubState': 'auto-restart', 'Result': 'exit-code',
                         'ExecMainStatus': '1', 'NRestarts': '5'}
-        _, output, _ = self.readiness('sessions', entrypoint=True, inactive=True, state=transitional)
+        _, output, _ = self.readiness('check', entrypoint=True, inactive=True, state=transitional)
         reported = json.loads(output)['process_failure']
         self.assertEqual(reported['ActiveState'], 'activating')
         self.assertEqual(reported['SubState'], 'auto-restart')
@@ -799,7 +848,7 @@ class CloneGuestTest(unittest.TestCase):
 
         private = {key: 'PRIVATE_TOKEN_ghp_12345678901234567890' for key in ('ActiveState', 'SubState', 'Result')}
         private.update(ExecMainStatus='-1', NRestarts='999999999999999999999')
-        _, output, _ = self.readiness('sessions', entrypoint=True, inactive=True, state=private)
+        _, output, _ = self.readiness('check', entrypoint=True, inactive=True, state=private)
         reported = json.loads(output)['process_failure']
         self.assertEqual({key: reported[key] for key in ('ActiveState', 'SubState', 'Result')},
                          dict.fromkeys(('ActiveState', 'SubState', 'Result'), 'unknown'))

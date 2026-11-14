@@ -1,0 +1,18 @@
+order = 1360
+source_sha256 = "8a652cb65effdf0c3971b1482d1bfaa8798263319980d8182bd38d3ce700b977"
+cases = [
+  "withdrawal removes a published site and its CSR residue with real Ansible",
+  "withdrawal accepts an absent site and removes CSR residue with real Ansible",
+  "withdrawal refuses an old writer between composition and apply with real Ansible",
+]
+file = "swamp/tests/ansible_instance_route_withdraw_test.ts"
+cost = 12
+slices = false
+inputs = [
+  "swamp/ansible/library/orbit_caddy_publish.py",
+  "swamp/ansible/module_utils/orbit_caddy_publish.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/route-withdraw.yml",
+  "swamp/ansible/tasks/caddy-publish.yml",
+  "swamp/workflows/workflow-operation-instance-destroy.yaml",
+]

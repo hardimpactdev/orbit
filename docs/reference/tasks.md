@@ -368,6 +368,14 @@ After cleanup removes scratch, start a fresh command. Its push step mints a fres
 
 Token revocation (`gh api --method DELETE installation/token`) and scratch cleanup on the VM and on 209 are separate native steps. Publication requests no reviewers and runs no brief coverage. A native assert confirms publication and worker cleanup. The Gateway projects the PR step’s public metadata into `pr_url` and the watched PR fields and releases the VM after successful publication. Raw Git and GitHub replies stay in the private scratch directory. Typed data readers preserve public refusal codes without retaining those replies in run history.
 
+A group whose workspace is a [task copy](#task-copy) publishes the same way, with the same result. The Gateway admits it without a task VM, while its container runs (`tasks.instance_not_running`) and no earlier copy turn may still run (`tasks.copy_turn_unended`). The intent adds the copy's container, its start commit and the path of its `.env`, from the Instance's record.
+
+Instead of the VM reads, the [workspace phases](/reference/task-instance-workspace#contract) `preflight` and `export` read the checkout as `agent` and fetch the branch bundle to 209; the Node keeps no copy, and the copy receives no token.
+
+After the import, a step on 209 checks every commit from the copy's start to the candidate: each must hold the `.env` path exactly as the start does. A commit that adds or changes it fails with `tasks.publish_secret_path` before the token is minted, also when a later commit removes it again, because the key would stay in the pushed history. The same code answers when the branch history lacks the start commit, for example after a rebase past it.
+
+The check reads that one path: a copy of the file's content under another name is not detected. A Project that tracks `.env` in Git cannot publish from a copy: Orbit's write changes the tracked file, so every check commit holds it. No task VM is released: the copy stays until `task:cancel`, and the group keeps its status. A moved head refuses in the preflight and fails with `tasks.publish_failed`, not `tasks.head_moved`.
+
 The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
 
 #### Prepare a command
@@ -924,14 +932,19 @@ Orbit writes an untracked `.mcp.json` into the workspace before a reviewer start
 
 ### Task copy
 
-A task of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on has no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) destroys it; the cancel result records the copy's unpushed work. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases). Turns, publish, prep and build do not run in a copy yet.
+A task of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on has no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) destroys it; the cancel result records the copy's unpushed work. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
+
+[`task:turn`](/cli/task/turn#a-task-that-runs-in-a-copy) runs a new implementer turn in it as `tasks.copy_turn`, with T3's own CLI as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes; the turn's thread and transcript stay on the Gateway after the copy is gone. [`task:publish`](#publish-an-external-group) pushes its checked commit and opens the pull request from 209. Reviewer turns, continued threads, a handoff check with hosted CI, prep and build do not run in a copy yet.
+
+The copy's `.env` holds its secrets. Git never takes it: every container create and clone names it in the checkout's own `info/exclude` ([what is built](/reference/development-containers#what-is-built)), so neither the check's commit nor an agent's commit holds it. A copy or container made before that line existed lacks it until its next create or clone: its check can still commit the file. The publish refusal `tasks.publish_secret_path` covers such a copy too: nothing of it is pushed. Cancel it and start the task again.
 
 | Part | Rule |
 | --- | --- |
 | Source | The Project's default Instance, active with a seed, whose container runs: `task:start` reads it once before it admits the copy, because the power record can be stale |
 | Cap | `ORBIT_TASKS_COPIES_MAX` in the Gateway's `.env`, default 1: the task copies one Node holds at once. A start over it fails with `tasks.copy_capacity_full`, with no wait |
 | Model key | The copy's agent gets the fixed task model key, as every clone does. It is not per task. Per-task model keys are an open decision |
-| Failed create | The task is `failed`, and Orbit destroys the copy with force. A refused start or a cancel before the run counts too |
+| Ready | The task runs when its copy is `active`: after the copy's [completion](/reference/development-containers#complete-a-clone) succeeded. A create that succeeds leaves the task `reserved` until then |
+| Failed create | The task is `failed`, and Orbit destroys the copy with force. A refused start or a cancel before the run counts too, and so does a failed or cancelled completion |
 | Kept copy | After an expired run budget or a failed destroy, the task keeps the copy until `task:cancel` or `instance:destroy --force` |
 | End | When the copy's destroy succeeds, a running task is `cancelled` and a failed task stays `failed`. Both let go of the copy |
 
@@ -1094,7 +1107,7 @@ When the requested handoff includes hosted CI, the operation sanitizes the check
 
 ### Baseline check
 
-Swamp requests a baseline before implementation when its workflow calls for one. The operation runs setup and check commands, records evidence and returns. A failure starts no agent.
+Swamp requests a baseline before implementation when its workflow calls for one. The operation runs setup and check commands, records evidence and returns. A failure starts no agent. In a task copy the baseline runs no setup steps, because the copied seed already ran them ([check phases](/reference/task-instance-workspace#check-phases)).
 
 ## Review a subtask
 
@@ -1354,7 +1367,7 @@ An admitted cancel answers HTTP 202 with its `tasks.cancel` Operation. The run r
 
 A task that holds no VM and no workspace, such as one in `todo` or one that waits for a place, has nothing to release. Admission marks it and its open subtasks `cancelled` and records the Operation as succeeded at once, with no run (R1). So the 202 already carries a succeeded Operation, and `task:show` reads `cancelled` from then on. The same holds for `tasks.maintenance_finish` on a task whose VM publication already released.
 
-Cancel asks a running group Operation to stop. If it is still running, the call returns HTTP 409 `operation.target_busy` with its id and confirms the stop request. Run `task:cancel` again once that Operation has ended.
+Cancel asks a running group Operation to stop. If it is still running, the call returns HTTP 409 `operation.target_busy` with its id and confirms the stop request. Run `task:cancel` again once that Operation has ended. A timed-out Operation whose run nothing has proven ended still holds the group, for up to an hour; the cancel then returns the same 409 before it admits the destroy of the task's copy.
 
 - **Approved work not on origin.** Cancel and complete refuse with HTTP 409 `tasks.approved_work_unpublished` and change nothing. Run `task:publish` first; it resumes a parked VM.
 - **Parked VM.** Neither cancel nor complete starts a parked VM. The release deletes it as it is.

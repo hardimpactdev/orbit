@@ -58,6 +58,16 @@ class PlanningTest(unittest.TestCase):
         self.assertCountEqual(['swamp/migration.ts', 'swamp/host.py'], result['after_merge_files'])
         self.assertFalse(any(f.get('after_merge_cases') or f.get('after_merge') for f in result['fixtures'].values()))
 
+    def test_repository_python_costs_accept_the_full_sets_live_population(self):
+        _, configured, _ = self.api.configuration()
+        fixtures = [f for f in configured.values() if f['file'].endswith('.py') and f.get('case_costs')]
+        self.assertTrue(fixtures)
+        current = {f['file']: self.api.collect(f['file'])['cases'] for f in fixtures}
+        result = self.plan(fixtures, current)
+        for file, cases in current.items():
+            actual = [case for unit in result['units'] if unit['unit'] == file for case in unit['cases']]
+            self.assertCountEqual(actual, cases)
+
     def test_egress_budget_deferral_keeps_every_python_case_in_receiver(self):
         file = 'swamp/tests/ansible_task_vm_host_egress_test.py'
         _, configured, _ = self.api.configuration()
@@ -74,7 +84,7 @@ class PlanningTest(unittest.TestCase):
         files = ['swamp/tests/node_worker_systemd_cleanup_test.ts',
                  'swamp/tests/fleet_reboot_unreachable_test.ts']
         budget, configured, defaults = self.api.configuration()
-        inventory = json.loads((ROOT / 'tools/tests/ci-fixture-cases.json').read_text())
+        inventory = self.api.registry.load(ROOT)[1]
         fixtures = [configured[file] for file in files]
         for fixture in fixtures:
             excluded = fixture['after_merge_cases']
@@ -274,6 +284,34 @@ class PrerequisitesTest(unittest.TestCase):
             self.assertEqual('NOT RUN', results[0]['status'])
             self.assertIn('pinned FrankenPHP prerequisite: FAILED', results[0]['reason'])
             fixture_api.run.assert_not_called()
+
+    def test_systemd_case_gets_the_runner_bus_even_without_a_login_session(self):
+        file = 'swamp/tests/node_worker_systemd_cleanup_test.ts'
+        for selected in (file, 'swamp/unrelated.ts'):
+            plan = sample_plan()
+            plan['shards'][0]['units'] = [selected]
+            plan['units'][0]['unit'] = selected
+            plan['budget'] = {'shard_deadline_seconds': 2100}
+            fixture_api = SimpleNamespace(CANCELLED=Mock(), gate=SimpleNamespace(Step=lambda *a, **kw: SimpleNamespace(name=a[1])))
+            fixture_api.run_unit = Mock(return_value={'status': 'passed'})
+            observed = {}
+            def execute(*_args):
+                observed.update({key: os.environ.get(key) for key in ('XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS')})
+                return 0
+            fixture_api.run = execute
+            with tempfile.TemporaryDirectory() as scratch, \
+                    patch.dict(full.run_shard.__globals__, {'api': lambda: fixture_api}), \
+                    patch.dict(os.environ, XDG_RUNTIME_DIR='/wrong', DBUS_SESSION_BUS_ADDRESS='wrong'), \
+                    patch.object(os, 'getuid', return_value=1234), \
+                    patch.object(full.run_shard.__globals__['signal'], 'signal'):
+                output = Path(scratch) / 'times.json'
+                output.with_suffix('.swamp').write_text('/pinned/swamp')
+                output.with_suffix('.frankenphp').write_text('/pinned/frankenphp')
+                self.assertEqual(full.run_shard(plan, '01', output), 0)
+            if selected == file:
+                self.assertEqual(observed, {'XDG_RUNTIME_DIR': '/run/user/1234', 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/1234/bus'})
+            else:
+                self.assertEqual(observed, {'XDG_RUNTIME_DIR': '/wrong', 'DBUS_SESSION_BUS_ADDRESS': 'wrong'})
 
 
 class RangeTest(unittest.TestCase):

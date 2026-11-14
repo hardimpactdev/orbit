@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#create): every new Instance is a ZFS clone of the Project's default Instance on its Node, with a clone of its database. Built for the Nodes of the build list. The kind and its step names follow docs/cli/instance/create.mmd; the intent's `container.clone` marks a clone. The Project's first default Instance is container/create-default.mmd; when the charts move into place, it becomes the first-default branch of this chart.
+  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#create): every new Instance is a ZFS clone of the Project's default Instance on its Node. A clone's create ends when its thread is usable: the checkout, T3 and its registration (docs/reference/development-containers.md#a-clone-create-is-two-operations); its terminal projection admits `instance.complete` for the database, a nested fleet, the Processes and the Route (docs/cli/instance/complete.mmd). Built for the Nodes of the build list. The kind and its step names follow docs/cli/instance/create.mmd; the intent's `container.clone` marks a clone. The Project's first default Instance is container/create-default.mmd; when the charts move into place, it becomes the first-default branch of this chart.
   %% status: draft
   %% command: instance:create
   %% kind: instance.create
@@ -17,7 +17,7 @@ sequenceDiagram
   CLI->>GW: instance:create<br/>PROJECT NODE NAME
   %%> Command:
   %%> - `orbit instance:create PROJECT NODE NAME`
-  %%> - syntax: `<project> <node> <name> [--root=PATH] [--domain=HOST] [--branch=BRANCH] [--database-server=SLUG]`
+  %%> - syntax: `<project> <node> <name> [--root=PATH] [--domain=HOST] [--branch=BRANCH] [--database-server=SLUG] [--wait-active]`
   Note over GW: Validate, reserve Instance<br/>address · T3 port · .env
   %%> Requirements:
   %%> - the calling Node has node access to the target Node, an active `app-dev` Node
@@ -32,12 +32,13 @@ sequenceDiagram
   %%> - each attachment of the default marked shared is attached to the clone as it is (same connection, prefix and network, still shared) before `.env` renders, so `.env` holds its keys and the container intent its network path
   %%> - the clone workspace reads one private JSON vault value with `.env`, the Process environment files and the names of the keys the clone owns, of the default's connection keys, of its credential keys and of the shared connections' keys, and the default's Route host with the clone's; SSH stdin takes the whole value
   %%> - a task is recorded with the full intent and `container.clone`
+  %%> - the Route record and the database records are reserved here, but the create publishes no Route, takes no Route publication hold and creates no database: the completion does
+  %%> - the Route publication is captured as the completion will capture it and then dropped: a Route the capture refuses (for example `cluster.router_required`) refuses the create before any record
   %%> - a retained create retry records the Project's current development Processes in this admission transaction; changed definitions update their records, removed definitions remove theirs
   %%> - each Process takes its desired state from the default's copy of the same definition: stopped on the default stays stopped (installed, not started, startable by `process:start`); failed, absent or running runs
   Note over GW: Commit, push copies<br/>queue start · answer 202
   GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start run from queue<br/>operation-instance-create
-  par isolated container job · native progress per phase
     SW->>N: Stage clone helpers<br/>native clone-input
     %%> What it does:
     %%> - stages the release's helpers and intent from stdin in a private folder for this run; later phases run its launcher by path
@@ -60,67 +61,31 @@ sequenceDiagram
     %%> - fetches the Instance's branch into the Node's mirror with the read token, or creates it at the seed commit; the token stays on the Node
     opt nested-fleet clone with a Club key
       SW->>C: Deliver the Club key<br/>native clone-club-key
+      %%> When: right after the copy's first start; the copy's inner Swamp serve starts with the container and reads the key from `/run/orbit-club`
       %%> What it does:
       %%> - SSH stdin into the copy's /run (a tmpfs, never a snapshot); a new key restarts the nested Gateway's Swamp serve
       %%> - the result's `nested_fleet_club_key` is what this step did; a clone that skips it says `missing`
+      %%> - the inner fleet starts later, in the completion ([instance:complete](docs/cli/instance/complete.mmd))
       %%> On failure:
-      %%> - `instance.nested_club_key_not_tmpfs` or `instance.nested_club_key_delivery_failed`; the workspace phase does not run
+      %%> - `instance.nested_club_key_not_tmpfs` or `instance.nested_club_key_delivery_failed`; the checkout and T3 do not run
     end
-    opt clone of a nested-fleet default
-      SW->>C: Start the inner fleet<br/>clone-fleet · fleet_check · fleet_resume
-      %%> What it does:
-      %%> - waits for the inner Incus and checks the fleet rules, then starts the three nested containers and the operator tunnel `wg-nested`
-      %%> - waits for the same Doctor check a proof uses: the nested Gateway is healthy and its three agents are online
-      %%> - only an intent with `fleet` runs it; every other clone skips it, and the workspace phase and T3 wait for it or its skip
-      %%> Why:
-      %%> - the seed holds a stopped, ready fleet, so a clone builds and converges nothing
-      %%> - the clone's first start drops the copied boot links, so the tunnel comes from this step, not from a unit
-      %%> On failure:
-      %%> - `instance.container_fleet_drift`, `instance.container_fleet_check_failed` or `instance.container_fleet_resume_failed`; `error.detail` says why (the Doctor body for a readiness wait); the container is kept for a retry
-    end
-    opt database on a Database server
-      SW->>N: Create the database<br/>child operation-database-create
-      %%> What it does, through the database family:
-      %%> - creates the Instance's owner and an empty database on the default's server
-      SW->>N: Clone the default database<br/>docker exec · admin login
-      %%> What it does:
-      %%> - PostgreSQL: refuses new connections to the default database and ends its sessions, then `CREATE DATABASE … TEMPLATE`, and gives the clone's objects to the new owner
-      %%> - a cleanup that always runs allows connections to the default database again
-      %%> - MySQL: a dump of the default database restored into the new one
-      %%> Runs beside the clone step: Swamp starts both at once.
-    end
-    opt Valkey target on the default
-      SW->>N: Create the clone's Valkey user<br/>child operation-database-create
-      %%> What it does, through the database family:
-      %%> - one ACL user on the default's Valkey server with the default user's commands except FLUSHDB and its index, but only the keys `orbit_instance_<id>_*` and no channels
-      %%> - attached under the default's prefix, so `.env` gets the connection keys, and for Laravel `<PREFIX>_PREFIX` and `HORIZON_PREFIX` under that key prefix
-      %%> - the container's ACL and UFW admit the server's port; no data is copied
-      SW->>N: Check the Valkey login<br/>docker exec · owner login
-      %%> Runs beside the clone step. A default with more than one Valkey target, or one without an Orbit-made user, or one whose user grants pub/sub, refuses `instance.database_clone_unsupported`.
-    end
-    par workspace beside T3
-    SW->>C: Prepare the workspace<br/>native clone-workspace
+    par checkout beside T3
+    SW->>C: Check out the workspace<br/>native clone-workspace
     %%> Why beside: the T3 step never writes the workspace; T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no Git lock; the join below checks both
-    %%> When: after the copy, the Club key, the fleet start and the database steps
-    %%> Why the same level: Swamp starts a level of steps only when the whole level before it has ended, in each job and across jobs; the workspace and T3 depend on steps of the same depth, so both start when that level ends
+    %%> Why the same level: Swamp starts a level of steps only when the whole level before it has ended, in each job and across jobs; both depend on the copy and the Club key, so both start when that level ends
     %%> What it does:
     %%> - pushes the branch in as a bundle and checks it out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
-    %%> - inside the container it runs two parts in order: `checkout` (bundle, checkout mark, `.env`), then `services` (PHP settings, file rights, Process files, web config, Node store, units)
+    %%> - runs only the guest's `checkout` part: the bundle, the checkout mark, `.env`; PHP settings, Process files and units are the completion's `services` part; the step keeps its name, which Conn maps to its workspace row
     %%> - after the checkout it checks the branch and commit, then writes the root-owned mark `/var/lib/orbit/workspace-checkout` with the Instance id and commit; when the mark already names this Instance, a retry skips the fetch and checkout, so the branch never moves and the result's commit stays the mark's
     %%> - writes `.env` for `orbit` with group `work`: the default's file from the seed, with the clone's own connection keys, the keys of the connections it shares with its default and `APP_URL`, without the default's other connection and Reverb keys or a copy of its credentials; `APP_KEY` stays the default's, because the cloned data is encrypted with it
+    %%> - `.env` names the clone's database before the completion creates it; nothing in the container reads it before the completion starts the units
     %%> - a copied value that points at the default's Route host (its Route without a web root) points at the clone's Route host; the rest of the value stays
     %%> - prints only the names of the copied, dropped, rewritten and shared keys; the result carries them as `environment`
-    %%> - before Process start, prepares and fetches Node as orbit in this same phase; an inherited private recipe is kept, an old store is converted once even without Processes, so a later Node consumer can install its pin
-    %%> No setup steps:
-    %%> - the default Instance installed the dependencies and migrated; a later lockfile change is installed in the workspace
-    %%> What it does:
-    %%> - writes the shared FrankenPHP Caddyfile and unit, then restarts it as `orbit`; only the Node's bridge peer with `X-Forwarded-Proto: https` sets PHP's HTTPS scheme, port and resolved client IP
-    %%> - starts use nonblocking systemd jobs, then a bounded readiness check for each running unit; container Process units order after `network.target`
-    and T3 beside the workspace
+    %%> On failure:
+    %%> - `failed_step: workspace`, `instance.create_workspace_failed`
+    and T3 beside the checkout
     SW->>C: Start T3<br/>native clone-t3
-    %%> When: with the workspace; it depends on the copy, the Club key and the fleet start, which also sets its level; it reads nothing of the fleet or the database steps
-    %%> - a failed Club key or fleet start skips it, as it skips the workspace
-    %%> - a nested-fleet clone starts T3 after the fleet step, beside the workspace; T3 still reads the seed's `NO_PROXY` files at boot
+    %%> When: with the checkout; a failed copy or Club key skips it, as it skips the checkout
     %%> What it does, in one step:
     %%> - the agent part: writes the placeholder key for `agent` from SSH stdin, and the Claude Code and Codex settings that point at the model forwarder
     %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type, and writes `/etc/orbit/instance`, owned by root and readable by all
@@ -130,60 +95,62 @@ sequenceDiagram
     %%> On failure:
     %%> - before each part the step writes the part's name to its private `t3.json`, and success removes it; on a failure or timeout `clone-session-copy` brings that file to the run, so the result keeps `failed_step: t3` with the part's code: `instance.create_agent_failed` or `instance.t3_unready`
     %%> - the Operation's failure detail is the part's own line, `instance.container_agent_failed` or `instance.container_t3_failed`, or the timeout
-    %%> Why its own lock: the clone steps share one Swamp lock; T3 takes `ic-clone-t3-…`, so it runs beside the workspace
+    %%> Why its own lock: the clone steps share one Swamp lock; T3 takes `ic-clone-t3-…`, so it runs beside the checkout
     end
     SW->>C: Register the T3 server<br/>native clone-register
-    %%> When: the join; the sessions check waits for T3 and the workspace, because it checks the branch, the checkout mark and every Process unit
-    %%> On a failed workspace: no sessions check, no registration; the container stop below still runs
+    %%> When: the join; the sessions check waits for T3 and the checkout, because it checks the branch and the checkout mark
+    %%> On a failed checkout: no sessions check, no registration; the container stop below still runs
     %%> What it does:
     %%> - see conn/environment-renew.mmd: the sessions go to the vault, and the step checks the environment id and scopes
-    %%> - an inactive required unit refuses with `instance.container_process_inactive`; copy its structured public refusal even when sessions failed, skip registration, and retain the unit states in the Operation
-  and independent Route job · no depth link
-    opt web-serving Project
-      SW->>N: Make, sign Route key<br/>child route-create-csr
-      SW->>N: Create the Route<br/>child operation-route-create
-      %%> What it adds:
-      %%> - the same steps as `route:create`, with the signed certificate, then a TLS handshake check; no HTTP request waits for app startup
-      %%> - the Node's Caddy proxies the Route to FrankenPHP at the container's bridge address
-      %%> - the Route job waits only for its CSR; jobs of one level keep their own step levels, so the Route steps never delay the container phases; the create job starts when every job of this level has ended
-      %%> - the prepared Route skips workspace ACL and environment writes; the container job owns those
-    end
-  end
+    %%> - checks no Process unit: the units start in the completion, whose check refuses a dead one with `instance.container_process_inactive`
   alt all steps pass in budget
-    C-->>SW: T3 and site answer
+    C-->>SW: T3 answers
     SW-->>GW: Run succeeded<br/>terminal event
-    Note over GW: Record Instance, T3 server<br/>active · registered
+    Note over GW: Read the baseline, record T3<br/>admit instance.complete
+    %%> Before the transaction:
+    %%> - reads the workspace baseline over SSH (`ContainerWorkspaceRead::baseline`, at most 4 s) and the T3 session from the vault; no lock waits on the network
+    %%> In one transaction:
+    %%> - the clone stays `source_resolved` with its `starting_commit`; the runtime is `running`; the Conn layer records the T3 server from the result
+    %%> - writes `workspace_baseline` and `workspace_baseline_at`, then turns the create `succeeded`, so the baseline is older than the create's end and than any pairing
+    %%> - after the create row is terminal, admits `instance.complete` with the Instance lock, so nothing takes the Instance in between; the result's `completion_operation_id` names it
+    %%> - the completion's vault copy and its Swamp start run after the commit
+    %%> - a completion that is refused all the same (the Route capture again, after a change to the fleet) is recorded as a failed `instance.complete` with that code, `failed_step: complete` and the recovery `instance:complete`; another error is recorded as `operation.admission_failed`; the create still succeeds and names it
     %%> Result:
-    %%> - the Instance, its runtime and its Route become active; the runtime records the default Instance it came from
-    %%> - the Conn layer records the T3 server from the result; its Node is the container's Node and it names the Instance
-    %%> - the result's `processes_stopped` names the Processes left stopped, as on the default
-    %%> - the receipt includes when T3 answered, its sessions passed, and the Route TLS probes passed
+    %%> - the user can pair with T3 and work; the Processes, the database, a nested fleet and the Route follow in the completion
+    %%> - "fully set up" is only the Instance's `status: active`, which a succeeded completion sets ([instance:complete](docs/cli/instance/complete.mmd))
+    %%> - the result's `processes_stopped` names the Processes the completion installs but leaves stopped, as on the default
+    %%> - the receipt includes when T3 answered and when its sessions passed
+    %%> On a failed baseline read:
+    %%> - the create fails with `instance.workspace_baseline_unavailable`, `failed_step: register`; the T3 server is not recorded and no completion starts
+    %%> - the container keeps running; a retry of the create runs again over it, and `instance:destroy` removes it
   else Instance already created
     Note over GW: Skipped — already created<br/>instance.exists
   else a step fails or the budget ends
     C--xSW: exit ≠ 0 or timeout
-    SW->>N: Attempt Route withdrawal<br/>child route-withdraw
-    %%> Caddy publication:
-    %%> - on the Node, wait at most 5 s for the publish lock; compare the composed-from SHA-256 with the live file, then validate, rename and reload under that lock
-    %%> - a changed base refuses with `caddy.composed_from_live_mismatch`; a busy lock refuses with `caddy.publish_busy`; the live Caddyfile stays unchanged and the normal failure path runs
-    %%> When:
-    %%> - only when the run published it
     SW->>N: Attempt container stop<br/>incus stop
     %%> What stays:
-    %%> - the reservation, runtime, and any container, workspace, owned databases, test databases and role stay until the owner acts
-    %%> - a refused retry removes none of them; stop and Route withdrawal are attempted; failed compensation leaves its step failed
+    %%> - the reservation, runtime, and any container, workspace and owned database records stay until the owner acts; the create made no Route publication and no database
+    %%> - a refused retry removes none of them; stop is attempted; failed compensation leaves its step failed
     %%> - shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live
     %%> - failed and cancelled creates, including cancellation before work starts, report retained_for_retry, the same create command with a new idempotency key, and forced destroy
     %%> Cleanup:
-    %%> - remove the private clone folder after success or failure, even if staging or the first launch failed
+    %%> - remove the private clone folder after success or failure, beside `finish`, even if staging or the first launch failed
     SW--xGW: Run failed<br/>failed step, error_code
-    %%> - an inactive Project Process adds recovery.retry.requires=project_process_definition; fix or remove its definition before retry
     Note over GW: Record the failure
     %%> Retry:
-    %%> - run the same command again; it resumes on the same container and database
+    %%> - run the same command again; it resumes on the same container
     %%> - a resume never moves a branch this Instance checked out: commits on it stay
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show TASK
     GW-->>CLI: status + result
+  end
+  opt --wait-active
+    loop every 2 s until terminal
+      CLI->>GW: operation:show COMPLETION
+      GW-->>CLI: status + result
+    end
+    CLI->>GW: instance:show INSTANCE
+    GW-->>CLI: status
+    %%> - exits 0 only when the Instance is `active`; any other end exits 1
   end

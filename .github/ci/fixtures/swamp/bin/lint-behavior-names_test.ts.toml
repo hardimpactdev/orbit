@@ -1,0 +1,21 @@
+order = 130
+source_sha256 = "4d39dac8c2ce44f2dab4be0e96792fe08e58eeccaebf2edd9d98f79bb14ec427"
+cases = [
+  "a behavior named by run or Operation is reported",
+  "a behavior named by target or fixed is allowed",
+  "a per-run behavior the workflow deletes is allowed",
+  "a name Swamp would refuse at run time fails here",
+  "dotless, integer and passed-in names are valid",
+  "one behavior name used with two behavior types fails",
+]
+file = "swamp/bin/lint-behavior-names_test.ts"
+cost = 3
+inputs = [
+  "swamp/bin/constant-name.ts",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/bin/lint-behavior-names.ts",
+]

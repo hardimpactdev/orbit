@@ -38,6 +38,7 @@ sequenceDiagram
   %%> - your Node has an access grant to the owner's Node
   %%> - the name is free for this owner
   %%> - the `--user` account exists on the Node, from the Node agent's recorded state
+  %%> - a Docker `--port` in 5173-5199 binds to an address other than every address or the Instance bridge address (`instance.dev_band_reserved`)
   %%> - a production release directory is checked against the recorded releases, not on the Node
   %%> Result:
   %%> - Process 418 recorded with its definition, status pending

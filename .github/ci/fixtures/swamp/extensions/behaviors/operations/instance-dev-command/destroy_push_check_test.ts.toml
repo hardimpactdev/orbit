@@ -1,0 +1,17 @@
+order = 1310
+source_sha256 = "65b450caf23a54ac6dc5cce5e6c345e1406561a2a8815cdc508c0ddb4752323c"
+cases = [
+  "the files Orbit renders do not count as unpushed work, at any depth",
+  "any other change is still work that is not pushed",
+  "every destroy Ansible step enables failed task stderr",
+]
+file = "swamp/extensions/behaviors/operations/instance-dev-command/destroy_push_check_test.ts"
+cost = 3
+inputs = [
+  "swamp/ansible/instance/destroy-git.py",
+  "swamp/workflows/workflow-operation-instance-destroy.yaml",
+]
+[case_costs]
+"the files Orbit renders do not count as unpushed work, at any depth" = 1
+"any other change is still work that is not pushed" = 1
+"every destroy Ansible step enables failed task stderr" = 1

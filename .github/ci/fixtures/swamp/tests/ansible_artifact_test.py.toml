@@ -1,0 +1,23 @@
+order = 260
+source_sha256 = "3a9f7cd695d5bfe91773efe3c3c2e6a037a251651a7572e50ca72616b35359d7"
+cases = [
+  "test_mirror_success_does_not_fetch_upstream",
+  "test_missing_mirror_dns_and_timeout_fall_back",
+  "test_write_limit_and_unknown_errors_stop",
+  "test_corrupt_mirror_never_fetches_upstream_or_publishes",
+  "test_integrity_failure_preserves_existing_destination",
+  "test_tool_manager_sha512_fetches_keep_transport_only_fallback_and_integrity",
+  "test_local_publication_failure_stops_and_cleans_staging",
+  "test_matching_cache_makes_no_download_or_change",
+]
+file = "swamp/tests/ansible_artifact_test.py"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/library/orbit_artifact.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/transport-exit-codes.json",
+]

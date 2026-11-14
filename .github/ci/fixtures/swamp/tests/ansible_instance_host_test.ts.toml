@@ -1,0 +1,63 @@
+order = 50
+source_sha256 = "c75d43758dc4e64a6a2bbf7bcbdd951509b9b6f96c1ae814fadf08794bc86bed"
+cases = [
+  "a stuck Instance host playbook throws with its last task and kills a descendant holding stdout",
+  "a late playbook gets only the shared command budget left, then no new playbook starts",
+  "the shared command budget stays exhausted across Deno test file isolates",
+  "an ordinary playbook refusal preserves its exit status, including 124",
+  "deadline reaps a detached stdout holder forked before leader exit",
+  "deadline reaps a detached stdout holder forked during TERM",
+  "a real Ansible deadline kills a stalled command after its worker detaches",
+  "a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing",
+  "a task VM host keeps the ZFS ARC its task side sets: the Instance side writes no cap",
+  "an Instance bridge range that another interface of the Node holds refuses before any change",
+]
+file = "swamp/tests/ansible_instance_host_test.ts"
+after_merge = true
+reason = "The build-list case has no completed individual measurement; its conservative 186-second declaration exceeds the 150-second lane. This file stays after-merge-only pending an isolated hosted measurement; its other cases are also deferred and named."
+cost = 293
+# Completed Deno case times rounded up by one second; startup is added per slice.
+# Unmeasured cases use the observed maximum (88s); these are estimates, not completed measurements.
+slices = 10
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[case_costs]
+  "a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing" = 180 # UNMEASURED individual estimate; run 43000765953 cut a MULTI-CASE unit at 180.032s, not this case alone.
+  "a stuck Instance host playbook throws with its last task and kills a descendant holding stdout" = 3 # completed body 2.153s, run 43010311414; larger completed history retained
+  "a late playbook gets only the shared command budget left, then no new playbook starts" = 2 # UNMEASURED estimate; observed maximum body cost
+  "the shared command budget stays exhausted across Deno test file isolates" = 3 # UNMEASURED estimate; observed maximum body cost
+  "an ordinary playbook refusal preserves its exit status, including 124" = 1 # completed body 0.130s, run 43010311414; larger completed history retained
+  "deadline reaps a detached stdout holder forked before leader exit" = 3 # UNMEASURED estimate; observed maximum body cost
+  "deadline reaps a detached stdout holder forked during TERM" = 3 # UNMEASURED estimate; observed maximum body cost
+  "a real Ansible deadline kills a stalled command after its worker detaches" = 7 # UNMEASURED estimate; observed maximum body cost
+  "a task VM host keeps the ZFS ARC its task side sets: the Instance side writes no cap" = 88 # completed body 67.161s, run 43010311414; larger completed history retained
+  "an Instance bridge range that another interface of the Node holds refuses before any change" = 3 # UNMEASURED estimate; observed maximum body cost

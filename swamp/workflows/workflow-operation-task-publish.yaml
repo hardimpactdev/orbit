@@ -1,6 +1,6 @@
 id: dd1ccba6-5339-44da-8040-616a905706a4
 name: operation-task-publish
-description: Publish the admitted checked commit in the chart's six steps; task VM work is official SSH exec argv, 209 work is inline git and gh api.
+description: Publish the admitted checked commit in the chart's six steps; task VM work is official SSH exec argv, a task copy's export is its workspace phase, 209 work is inline git and gh api.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -64,6 +64,23 @@ inputs:
           enum:
           - sha1
           - sha256
+        # A task copy: its recorded container, its start commit and the path of the .env Orbit wrote (docs/reference/tasks.md#task-copy).
+        workspace:
+          type: object
+          properties:
+            runtime:
+              type: object
+              properties:
+                project: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$'}
+                name: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$'}
+              required: [project, name]
+              additionalProperties: false
+            branch: {type: string, minLength: 1}
+            snapshot_id: {type: string, format: uuid}
+            start: {type: string, pattern: '^(?:[a-f0-9]{40}|[a-f0-9]{64})$'}
+            environment_path: {type: string, minLength: 1, pattern: '^[^/]'}
+          required: [runtime, branch, snapshot_id, start, environment_path]
+          additionalProperties: false
         pull_request:
           default: null
           anyOf:
@@ -209,10 +226,44 @@ jobs:
       inputs:
         run: timeout 5 mktemp -d /tmp/orbit-task-publish-XXXXXXXX
     writes: true
+  - name: Preflight the copy
+    # A task copy: its checkout is read as agent through its Node, and the bundle comes to this worker. The task VM steps skip.
+    labels:
+      role: swamp
+    queueTimeout: 30
+    guard: '${{ !("workspace" in inputs.intent) }}'
+    task:
+      type: workflow
+      workflowIdOrName: task-instance-workspace
+      inputs:
+        node_id: ${{ inputs.intent.node_id }}
+        phase: preflight
+        intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution} }}'
+    dependsOn:
+    - step: Create publication scratch
+      condition:
+        type: succeeded
+  - name: Export the copy
+    labels:
+      role: swamp
+    queueTimeout: 30
+    guard: '${{ !("workspace" in inputs.intent) }}'
+    task:
+      type: workflow
+      workflowIdOrName: task-instance-workspace
+      inputs:
+        node_id: ${{ inputs.intent.node_id }}
+        phase: export
+        intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution, "checkout_fingerprint": steps["Preflight the copy"].outputs.evidence.evidence.checkout_fingerprint, "candidate": {"head": inputs.intent.commit, "tree": inputs.intent.tree}, "worker_bundle": steps["Create publication scratch"].outputs.stdout.trim() + "/candidate.bundle"} }}'
+    dependsOn:
+    - step: Preflight the copy
+      condition:
+        type: succeeded
   - name: Read the index
     labels:
       role: swamp
     queueTimeout: 30
+    guard: '${{ "workspace" in inputs.intent }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -464,10 +515,13 @@ jobs:
           GIT_CONFIG_NOSYSTEM: '1'
           ORBIT_OBJECT_FORMAT: ${{ inputs.intent.object_format }}
           ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
+    # One of the two bundle steps skips; a skip after a failure must not start the import, so the step of this path must have succeeded.
+    guard: '${{ !(("workspace" in inputs.intent ? "Export the copy" : "Copy the bundle") in steps && steps["workspace" in inputs.intent ? "Export the copy" : "Copy the bundle"].status == "succeeded") }}'
     dependsOn:
     - step: Copy the bundle
-      condition:
-        type: succeeded
+      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
+    - step: Export the copy
+      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
     writes: true
   - name: Import the bundle
     labels:
@@ -479,10 +533,12 @@ jobs:
       behaviorName: ${{ "task-publish-import-" + string(inputs.intent.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 60 git -C "$ORBIT_REPOSITORY" fetch --quiet --no-tags "$ORBIT_BUNDLE" HEAD:refs/heads/candidate
+        run: timeout 60 git -C "$ORBIT_REPOSITORY" fetch --quiet --no-tags "$ORBIT_BUNDLE" "$ORBIT_REF:refs/heads/candidate"
         env:
           GIT_CONFIG_GLOBAL: /dev/null
           GIT_CONFIG_NOSYSTEM: '1'
+          # A task VM bundles HEAD; a task copy's export bundles only its branch.
+          ORBIT_REF: '${{ "workspace" in inputs.intent ? "refs/heads/" + inputs.intent.workspace.branch : "HEAD" }}'
           ORBIT_BUNDLE: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/candidate.bundle" }}
           ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
     dependsOn:
@@ -526,6 +582,36 @@ jobs:
     - step: Read bundle contents
       condition:
         type: succeeded
+  - name: Check the environment file
+    # The .env Orbit wrote never leaves a copy: every commit from the copy's start to the candidate holds that path as the start does.
+    labels:
+      role: swamp
+    queueTimeout: 30
+    guard: '${{ !("workspace" in inputs.intent) }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publish-environment-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: >-
+          set -eu;
+          base=$(git -C "$ORBIT_REPOSITORY" rev-parse -q --verify "$ORBIT_START:$ORBIT_PATH" || true);
+          commits=$(timeout 30 git -C "$ORBIT_REPOSITORY" rev-list "$ORBIT_START..refs/heads/candidate" --);
+          for commit in $commits; do
+          held=$(git -C "$ORBIT_REPOSITORY" rev-parse -q --verify "$commit:$ORBIT_PATH" || true);
+          if [ "$held" != "$base" ]; then echo tasks.publish_secret_path; exit 3; fi;
+          done
+        env:
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_NOSYSTEM: '1'
+          ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
+          ORBIT_START: ${{ inputs.intent.workspace.start }}
+          ORBIT_PATH: ${{ inputs.intent.workspace.environment_path }}
+    dependsOn:
+    - step: Check imported commit
+      condition:
+        type: succeeded
   - name: Mint the push token
     labels:
       role: swamp
@@ -541,6 +627,8 @@ jobs:
     - step: Check imported commit
       condition:
         type: succeeded
+    - step: Check the environment file
+      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
   - name: Push the branch
     labels:
       role: swamp
@@ -713,6 +801,7 @@ jobs:
     labels:
       role: swamp
     queueTimeout: 30
+    guard: '${{ "workspace" in inputs.intent }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -743,6 +832,19 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
     allowFailure: true
     writes: true
+  - name: Discard the copy scratch
+    labels:
+      role: swamp
+    queueTimeout: 30
+    guard: '${{ !("Preflight the copy" in steps && steps["Preflight the copy"].status == "succeeded") }}'
+    task:
+      type: workflow
+      workflowIdOrName: task-instance-workspace
+      inputs:
+        node_id: ${{ inputs.intent.node_id }}
+        phase: discard
+        intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution, "checkout_fingerprint": steps["Preflight the copy"].outputs.evidence.evidence.checkout_fingerprint} }}'
+    allowFailure: true
   - name: Remove local scratch
     labels:
       role: swamp
@@ -767,12 +869,14 @@ jobs:
     - step: Revoke the token
       condition:
         type: completed
+    # Each path guards off the other path's scratch step; a skipped dependency must still let the end check run.
     - step: Remove remote scratch
-      condition:
-        type: completed
+      condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
     - step: Remove local scratch
       condition:
         type: completed
+    - step: Discard the copy scratch
+      condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
     task:
       type: assert
       expr: '"Read push result" in steps && steps["Read push result"].status == "succeeded" && (inputs.intent.pull_request == null || ("Read PR result" in steps && steps["Read PR result"].status

@@ -414,21 +414,16 @@ Deno.test({
             const acls = Object.fromEntries(
                 state["network-acls"].map((a: { name: string }) => [a.name, a]),
             );
-            // The common NIC ACL reaches only the model forwarder and the egress proxy. The profile protects a build container with no own ACL and no
-            // route of its own: it goes out through the proxy, as every container does.
-            assertEquals(acls["orbitinst0-egress"].egress, [{
+            // The bridge ACL lets containers send to the model forwarder, the egress proxy, and a container's own site on 443 and the
+            // development listener 444, where the dev-port table sends the bridge range: never the raw range. It names no build ACL.
+            // The profile protects a build container with no own ACL and no route of its own: it goes out through the proxy.
+            assertEquals(acls["orbitinst0-egress"].egress, ["8319", "3128", "443", "444"].map((port) => ({
                 action: "allow",
                 destination: "10.253.0.1/32",
                 protocol: "tcp",
-                destination_port: "8319",
+                destination_port: port,
                 state: "enabled",
-            }, {
-                action: "allow",
-                destination: "10.253.0.1/32",
-                protocol: "tcp",
-                destination_port: "3128",
-                state: "enabled",
-            }]);
+            })));
             assertEquals(acls["orbitinst0-build"], undefined);
             // Into a container, the bridge admits what a container's own ACL may admit: the Node's Caddy to FrankenPHP and the
             // development ports, and T3's clients. Everything else gets the default reject.
@@ -438,9 +433,22 @@ Deno.test({
             assert(!bridgeAdmits(state, { source: peer, port: 8080 }));
             assert(!bridgeAdmits(state, { source: peer, port: 5173 }));
             assert(!bridgeAdmits(state, { source: caddy, port: 22 }));
-            // The input rules have the names of the firewall catalog: DHCP and the proxy, and no DNS.
-            for (const name of ["dhcp", "egress"]) {
+            // The input rules have the names of the firewall catalog: DHCP, the proxy and the own site, and no DNS.
+            for (const name of ["dhcp", "egress", "own-site", "own-dev"]) {
                 assert(f.has(`firewall-orbit_instances-${name}.json`), name);
+            }
+            for (const [name, port] of [["own-site", "443"], ["own-dev", "444"]]) {
+                assertEquals(
+                    JSON.parse(Deno.readTextFileSync(`${f.folder}/firewall-orbit_instances-${name}.json`)),
+                    {
+                        rule: "allow",
+                        interface_in: "orbitinst0",
+                        proto: "tcp",
+                        to_ip: "10.253.0.1",
+                        to_port: port,
+                        comment: `orbit:instances-${name}`,
+                    },
+                );
             }
             for (const name of ["dns-udp", "dns-tcp", "build"]) {
                 assert(!f.has(`firewall-orbit_instances-${name}.json`), name);
@@ -573,7 +581,8 @@ Deno.test({
                 c.includes("orbit-instances") &&
                 c.includes("orbit-instance-build")
             );
-            assertEquals(project_calls[1], [
+            // The first call that names the build container is its init.
+            assertEquals(project_calls[0], [
                 "--project",
                 "orbit-instances",
                 "init",
@@ -583,6 +592,11 @@ Deno.test({
                 "security.idmap.isolated=true",
                 "--device",
                 "eth0,ipv4.address=10.253.0.254",
+                // Its fixed address takes the address filters of an Instance NIC.
+                "--device",
+                "eth0,security.ipv4_filtering=true",
+                "--device",
+                "eth0,security.mac_filtering=true",
             ]);
             assert(
                 f.calls().some((c) =>

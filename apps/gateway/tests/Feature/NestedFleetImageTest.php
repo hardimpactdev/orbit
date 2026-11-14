@@ -47,7 +47,8 @@ it('gives a Node without the switch the same host intent members as before, and 
 
     expect(array_keys($off))->toBe(['project', 'network', 'nic_acl', 'pool', 'cidr', 'address', 'build_address', 'dhcp_range', 'stock',
         'forwarder_port', 'ingress', 'bridge_admitted_at', 'bridge_endpoints', 'egress', 'ids', 'arc', 'incus', 'image', 'folders',
-        'dev_ports', 'profile_config'])
+        // `own_site` holds the bridge ACL rows and UFW rules of the own-site path (docs/reference/development-containers.md).
+        'dev_ports', 'own_site', 'profile_config'])
         ->and($off['image'])->toBe(InstanceImage::for('10.253.0.1'))
         ->and($on['nested'])->toBe(['project' => 'orbit-instances-nested', 'image' => InstanceImage::for('10.253.0.1', nestedImageIncus())])
         // The hosting change adds the two spare ID maps of a switched-on Node; everything else is the same.

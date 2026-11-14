@@ -26,10 +26,8 @@ final readonly class NodeDesiredConvergeInput
      */
     public function capture(Node $node, array $roles, bool $all, Operation $operation, ?Node $hub): array
     {
-        $delivery = app(AgentDelivery::class);
-        $apps = ValidatedData::object($node->settings['apps'] ?? []);
-        $root = ValidatedData::nullableString($apps['path'] ?? null) ?? ($node->user === 'root' ? '/root' : '/home/'.$node->user).'/apps';
-        $agent = app(NodeAgentSshExecutor::class)->configurationForRoot($node, $root);
+        // The agent's configuration refuses an unsupported Node before any execution copy.
+        $agent = $this->agent($node);
         $recipe = new RecipeLoader()->source();
         $copies = ['agent_verifier' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'node-converge-operation-'.$operation->id.'-agent-verifier', (string) $node->agent_secret_hash)];
         $plans = [];
@@ -58,6 +56,46 @@ final readonly class NodeDesiredConvergeInput
             }
             $copies = [...$copies, ...$plan['execution_secrets']];
         }
+
+        return ['intent' => $this->intent($node, $agent, $roles, $all, $hub, $plans, $playbook), 'execution_secrets' => $copies];
+    }
+
+    /**
+     * The intent of a base converge (`node.converge` with `base: true`), as {@see capture()} builds it, without an Operation:
+     * it makes no execution copy and writes nothing. The nested-fleet refresh compares its digest (`orbit:node-converge-digest`).
+     *
+     * @return array<string,mixed>
+     */
+    public function baseIntent(Node $node): array
+    {
+        return $this->intent($node, $this->agent($node), [], false, null, [], null);
+    }
+
+    /** The digest of {@see baseIntent()}: it holds no time, token or random id, so it moves only when the base intent does. */
+    public function baseDigest(Node $node): string
+    {
+        return hash('sha256', json_encode($this->baseIntent($node), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+
+    /** @return array<string,mixed> */
+    private function agent(Node $node): array
+    {
+        $apps = ValidatedData::object($node->settings['apps'] ?? []);
+        $root = ValidatedData::nullableString($apps['path'] ?? null) ?? ($node->user === 'root' ? '/root' : '/home/'.$node->user).'/apps';
+
+        return app(NodeAgentSshExecutor::class)->configurationForRoot($node, $root);
+    }
+
+    /**
+     * @param  array<string,mixed>  $agent
+     * @param  list<string>  $roles
+     * @param  list<array<string,mixed>>  $plans
+     * @return array<string,mixed>
+     */
+    private function intent(Node $node, array $agent, array $roles, bool $all, ?Node $hub, array $plans, ?string $playbook): array
+    {
+        $delivery = app(AgentDelivery::class);
+        $recipe = new RecipeLoader()->source();
         $tools = [];
         // Tool records have Node ownership, not an assignment. Explicit role-only scopes do not widen to Node Tools.
         if ($all) {
@@ -75,11 +113,12 @@ final readonly class NodeDesiredConvergeInput
             $network['hub'] = [...NodeWireGuardHubInput::intent($hub), 'public_key' => $hub->wireguard_public_key];
         }
 
-        return ['intent' => ['node_id' => $node->id, 'user' => $node->user,
+        return ['node_id' => $node->id, 'user' => $node->user,
             'ssh' => app(SwampSshExecutionInput::class)->forNode($node), 'roles' => $plans, 'selected_roles' => $roles,
             'agent' => [...$agent, 'sha256' => $delivery->pin($node), 'url' => $delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null],
             'cli' => app(CliConvergePlan::class)->nodeInput($node), 'kernel' => NodeKernelPolicy::intent(), 'updates' => NodeUpdatePolicy::for($node), 'recipe' => $recipe->json,
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']->forArchitecture('amd64')),
-            'tools' => $tools, 'network' => $network, ...($playbook === null ? [] : ['playbook' => $playbook])], 'execution_secrets' => $copies];
+            'tools' => $tools, 'network' => $network, 'role_units' => NodeRoleUnits::for($node),
+            ...($playbook === null ? [] : ['playbook' => $playbook])];
     }
 }

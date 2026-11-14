@@ -39,6 +39,8 @@ inputs:
             tree: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
           required: [head, tree]
           additionalProperties: false
+        # Publication of a task copy: export fetches the bundle into its scratch on this worker and leaves no Node scratch.
+        worker_bundle: {type: string, pattern: '^/tmp/orbit-task-publish-[A-Za-z0-9]+/candidate\.bundle$'}
         # The shared address-node tasks own the pinned SSH descriptor contract.
         ssh_execution: {type: object}
       required: [runtime, branch, head, snapshot_id, ssh_execution]

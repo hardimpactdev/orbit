@@ -51,6 +51,8 @@
     # disk, so a seed holds the record of the fleet it holds. Absent while a refresh runs. Root-owned, in a root-owned folder.
     fleet_record: /var/lib/orbit/fleet-refresh.json
     fleet_tunnel: wg-nested
+    # The inner bridge of the nested containers (TaskVmNestedFleet::Network). The seed holds it; no fleet step creates it.
+    fleet_network: oe-nested
     fleet_tunnel_port: "51821"
     fleet_hub_port: "51820"
     fleet_ready_delay: 5
@@ -58,7 +60,9 @@
     fleet_boot_seconds: 60
     # The services of the nested Gateway that run the checkout, and the Swamp units that need the Club key.
     fleet_gateway_services: [orbit-gateway-horizon.service, orbit-gateway-schedule.service, orbit-agent-view.service]
-    fleet_swamp_services: [orbit-swamp-serve.service, orbit-swamp-worker@a.service, orbit-swamp-worker@b.service]
+    fleet_swamp_services: [orbit-swamp-serve.service, orbit-swamp-worker@a.service, orbit-swamp-worker@b.service, orbit-swamp-worker@c.service]
+    # The Swamp tokens of the nested Gateway that the refresh keeps young (gateway-swamp.yml mints them, gateway-swamp-remint.yml renews them).
+    fleet_token_names: [serve-driver, orbit-gateway-run, orbit-gateway-read, orbit-worker-a-access, orbit-worker-b-access, orbit-worker-c-access]
     fleet_state_mounts: [home-orbit-orbit-apps-gateway-.env.mount, home-orbit-orbit-apps-gateway-storage.mount,
                          home-orbit-orbit-apps-gateway-bootstrap-cache.mount]
     # The nested Gateway's Swamp state on its own disk: run records, vault files and the grants (TaskVmNestedFleet::GatewayState).
@@ -127,6 +131,11 @@
         config: "{{ fleet_autostart | combine(fleet_environment) }}"
         files: "{{ fleet_egress_files }}"
     fleet_build_rules: [raw.idmap]
+    # The inner bridge's own keys, owned. Its dnsmasq answers the fleet's names and forwards every other name to the Instance
+    # container's resolver, which has no DNS server and refuses at once; dnsmasq drops a refusal, so each such lookup waited out its
+    # timeouts (about 15 s in each start of a nested unit). `no-resolv` gives it no upstream: it refuses at once. Incus then runs that
+    # dnsmasq without its AppArmor profile, still as the user `incus`, in the unprivileged Instance container.
+    fleet_network_rules: {raw.dnsmasq: no-resolv}
 - name: List the fleet files
   ansible.builtin.set_fact:
     # Each file rule with its nested container: the rules read, write and check files by this list.

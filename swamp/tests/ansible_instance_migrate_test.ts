@@ -111,6 +111,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   for (const path of ["bin", "tasks", "home", "run", "markers"]) Deno.mkdirSync(`${folder}/${path}`);
   Deno.copyFileSync(new URL("instance_bridge.py", root), `${folder}/instance_bridge.py`);
     Deno.copyFileSync(new URL("instance_network.py", root), `${folder}/instance_network.py`);
+    Deno.copyFileSync(new URL("instance-nic-filters.json", root), `${folder}/instance-nic-filters.json`);
   Deno.writeTextFileSync(`${folder}/bin/curl`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-bridge-curl.ts", import.meta.url).pathname}' "$@"\n`);
   Deno.chmodSync(`${folder}/bin/curl`, 0o755);
   Deno.writeTextFileSync(`${folder}/nat.txt`, "");
@@ -133,7 +134,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   Deno.copyFileSync(new URL("instance_migrate_files.py", root), `${folder}/instance_migrate_files.py`);
   Deno.copyFileSync(new URL("instance_migrate_links.py", root), `${folder}/instance_migrate_links.py`);
   Deno.copyFileSync(new URL("instance_migrate_git.py", root), `${folder}/instance_migrate_git.py`);
-  for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-process-ready.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-schedules.yml", "instance-migrate-schedule-check.yml", "instance-migrate-link-result.yml", "instance-migrate-env-check.yml"]) {
+  for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-process-ready.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-schedules.yml", "instance-migrate-schedule-check.yml", "instance-migrate-link-result.yml", "instance-migrate-env-check.yml", "instance-private-names.yml"]) {
     const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => {
       const transformed = transform(structuredClone(task));
       return name.startsWith("instance-migrate-schedule") ? scheduleHostPaths(transformed) : transformed;
@@ -783,6 +784,10 @@ Deno.test({
       assertEquals(f.state().containers["instance-7"].config, ["security.idmap.isolated=true", "limits.cpu=4", "limits.memory=8GiB", "limits.processes=4096"]);
       assertEquals(f.state().containers["instance-7"].devices.filter((device: string) => device.startsWith("root,")), [
         "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB",
+      ]);
+      // Its NIC accepts only its own IPv4 and MAC address, as a create's.
+      assertEquals(f.state().containers["instance-7"].devices.filter((device: string) => device.includes("_filtering=")), [
+        "eth0,security.ipv4_filtering=true", "eth0,security.mac_filtering=true",
       ]);
       // Container staging is removed; the private source snapshot stays until retirement or restore.
       assertEquals([...Deno.readDirSync(`${f.rootfs}/srv`)].map((entry) => entry.name), ["workspace"]);

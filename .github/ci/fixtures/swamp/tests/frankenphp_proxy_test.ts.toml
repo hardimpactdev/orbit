@@ -1,0 +1,17 @@
+order = 760
+source_sha256 = "592ce7ae0e6606805f5abeeed8fca6f89d6cb675f304ae071c359ea8a099f088"
+cases = [
+  "FrankenPHP translates CGI only for the trusted Node peer with forwarded HTTPS",
+]
+file = "swamp/tests/frankenphp_proxy_test.ts"
+after_merge = true
+reason = "Requires the pinned FrankenPHP binary; hosted PR fixture setup does not install it. An ignored case is not passing coverage; run after merge with ORBIT_FRANKENPHP supplied."
+cost = 1
+inputs = [
+  "apps/gateway/resources/instances/frankenphp.Caddyfile",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]

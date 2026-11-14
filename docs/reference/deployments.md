@@ -285,7 +285,7 @@ To opt out, set `restart_on_deploy: false` in a Process create or update request
 
 Orbit runs no migration, Laravel cache clear, dependency install, asset build, or application health check of its own. With no deploy steps, Orbit runs only its runtime operations. The `current` switch is atomic, but the dedicated FPM restart is not zero-downtime: requests can fail briefly while its socket and workers are unavailable, and in-flight requests can be interrupted. Other Instances keep their own PHP services. A confirmed no-op reconciliation does not restart FPM.
 
-Each step has its own timeout. A timeout stops the step's process group and every later step. The whole deployment has a deadline of the step timeouts plus 900 seconds, the [run budget of an operation](/reference/operations#native-run-budgets). A rollback has a deadline of 900 seconds. When a deadline stops the run, the error code is `operation.timed_out`.
+Each step has its own timeout. A timeout stops the step's process group and every later step. The whole deployment has a deadline of the step timeouts plus 900 seconds, the [run budget of an operation](/reference/operations#native-run-budgets). A rollback has a deadline of 900 seconds. When a deadline stops the run, the error code is `operation.timed_out`. When the run ends but its end check was skipped or failed, the operation and its history row record `operation.result_unreadable` at once.
 
 ## Failures
 

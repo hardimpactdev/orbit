@@ -10,8 +10,10 @@ import { fixture as hostFixture } from "./_support/instance_host.ts";
 /** The normal host transcript of main; see the case that compares it. */
 // The browser change adds exactly one task (the image's shared files in existing containers) and two Incus calls (its instance
 // list, and the image's last `rm -f /etc/ld.so.cache`); the Orbit root CA in the image adds one task and two Incus calls (one push, and
-// `update-ca-certificates` in the definition's finish); the host files stay as they were.
-const MAIN_NORMAL_HOST = {calls: 66, tasks: 174, digest: "4f193b4cd5168f4f65ae0c51b5a3e9698b8144f7ea613dead27c2cd60da768d0"};
+// `update-ca-certificates` in the definition's finish); the host files stay as they were. The NIC address filters add two `--device`
+// keys to the build container's init (digest 4f193b4c… → b21a521d…). The strict filter check has no report task, so the tasks are
+// 174 again and the digest, which covers the task names, is 20b1670d…; the Incus calls stay the same.
+const MAIN_NORMAL_HOST = {calls: 66, tasks: 175, digest: "2e6fc2fde5b6f09a3429faf934f652016cbf73d6ed2d2c8c7d2e2a5ca69131f8"};
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -59,6 +61,7 @@ function fixture() {
   Deno.mkdirSync(`${folder}/tasks`);
   Deno.copyFileSync(new URL("instance_bridge.py", root), `${folder}/instance_bridge.py`);
     Deno.copyFileSync(new URL("instance_network.py", root), `${folder}/instance_network.py`);
+    Deno.copyFileSync(new URL("instance-nic-filters.json", root), `${folder}/instance-nic-filters.json`);
     Deno.copyFileSync(new URL("instance_nested.py", root), `${folder}/instance_nested.py`);
   Deno.writeTextFileSync(`${folder}/bin/curl`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-bridge-curl.ts", import.meta.url).pathname}' "$@"\n`);
   Deno.chmodSync(`${folder}/bin/curl`, 0o755);
@@ -83,11 +86,13 @@ function fixture() {
   Deno.writeTextFileSync(`${folder}/tasks/instance-container-phase.yml`,
     stringify(tasks).replaceAll("/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`));
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml",
-    "tasks/instance-container-power.yml",
+    "tasks/instance-container-power.yml", "tasks/instance-private-names.yml",
     "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
+  // The composed proxy environment goes into the container through instance_node_services.py `proxy`; the fake keeps its value.
+  Deno.copyFileSync(new URL("instance_node_services.py", root), `${folder}/instance_node_services.py`);
   Deno.copyFileSync(new URL("tasks/instance-node-runtime.yml", root), `${folder}/tasks/instance-node-runtime.yml`);
   Deno.copyFileSync(new URL("tasks/instance-fleet.yml", root), `${folder}/tasks/instance-fleet.yml`);
   Deno.mkdirSync(`${folder}/run`);
@@ -202,6 +207,9 @@ Deno.test({
         "eth0,security.acls=orbitinst0-proxy,instance-7",
         "eth0,security.acls.default.egress.action=reject",
         "eth0,security.acls.default.ingress.action=reject",
+        // The NIC accepts only its own IPv4 and MAC address (instance_network.py's FILTERS).
+        "eth0,security.ipv4_filtering=true",
+        "eth0,security.mac_filtering=true",
         "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB",
       ]);
       assertEquals(state.containers["instance-7"].config, ["security.idmap.isolated=true", "limits.cpu=4", "limits.memory=8GiB", "limits.processes=4096"]);
@@ -215,6 +223,9 @@ Deno.test({
       assertEquals(f.workspace("symbolic-ref", "--short", "HEAD"), "main");
       assertEquals(state.files["/srv/workspace/.env"], { uid: "1000", gid: "2760", mode: "0640" });
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/.env`), "APP_KEY=base64:secret\n");
+      // Git never takes the .env, although the Project's own files do not ignore it.
+      assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/.git/info/exclude`).split("\n").filter((line) => line === "/.env").length, 1);
+      assertEquals(f.workspace("status", "--porcelain", "--untracked-files=all"), "");
       assertEquals(state.containers["instance-7"].snapshots, [`seed-${head}`]);
       assert(state.systemctl.some((call: string[]) => call.join(" ") === "enable --now --no-block -- orbit-frankenphp.service"));
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/orbit/frankenphp.Caddyfile`), f.container.web_config.content);
@@ -233,6 +244,21 @@ Deno.test({
       }
 
       assertEquals(Deno.readTextFileSync(helper), "pre-existing helper: do not install or convert");
+
+      // A container made before the .env line existed: its own exclude lines stay, the .env line comes once.
+      const exclude = `${guest}/srv/workspace/.git/info/exclude`;
+      Deno.writeTextFileSync(exclude, "# local\n*.log");
+      for (const _ of [1, 2]) assert(f.run("workspace").ok);
+      assertEquals(Deno.readTextFileSync(exclude), "# local\n*.log\n/.env\n");
+      // An application folder names its own .env.
+      Object.assign(f.container, { environment_file: "/srv/workspace/apps/web/.env" });
+      f.write();
+      Deno.mkdirSync(`${guest}/srv/workspace/apps/web`, { recursive: true });
+      assert(f.run("workspace").ok);
+      assertEquals(Deno.readTextFileSync(exclude), "# local\n*.log\n/.env\n/apps/web/.env\n");
+      assertEquals(f.workspace("status", "--porcelain", "--untracked-files=all"), "");
+      Object.assign(f.container, { environment_file: "/srv/workspace/.env" });
+      f.write();
       assertEquals(Deno.readLinkSync(guest + "/var/lib/orbit/vite-plus-home/js_runtime"), "/opt/orbit-runtime/current/vite-plus-home/js_runtime");
 
       // Configuration drift alone restarts PHP, even when its unit has not changed.
@@ -466,7 +492,8 @@ Deno.test({
       }
       const state = f.state();
       assertEquals(state.containers["instance-8"].source, `instance-7/seed-${seed}`);
-      assertEquals(state.containers["instance-8"].devices, ["eth0,ipv4.address=10.253.0.3", "eth0,security.acls=orbitinst0-proxy,instance-8", "eth0,security.acls.default.egress.action=reject", "eth0,security.acls.default.ingress.action=reject", "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB"]);
+      // The copy's NIC carries the same address filters as a create.
+      assertEquals(state.containers["instance-8"].devices, ["eth0,ipv4.address=10.253.0.3", "eth0,security.acls=orbitinst0-proxy,instance-8", "eth0,security.acls.default.egress.action=reject", "eth0,security.acls.default.ingress.action=reject", "eth0,security.ipv4_filtering=true", "eth0,security.mac_filtering=true", "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB"]);
       assertEquals(state.containers["instance-8"].added, {
         t3: { type: "proxy", settings: ["listen=tcp:10.44.0.7:3800", "connect=tcp:10.253.0.3:3773", "nat=true"] },
       });
@@ -479,6 +506,9 @@ Deno.test({
       // The branch is new, at the seed's commit; the default's workspace and seed stay as they were.
       assertEquals(git(`${clone}/srv/workspace`, "symbolic-ref", "--short", "HEAD"), "feature");
       assertEquals(git(`${clone}/srv/workspace`, "rev-parse", "HEAD"), seed);
+      // The seed's exclude line comes with the copy; the clone's own write keeps it once.
+      assertEquals(Deno.readTextFileSync(`${clone}/srv/workspace/.git/info/exclude`).split("\n").filter((line) => line === "/.env").length, 1);
+      assertEquals(git(`${clone}/srv/workspace`, "status", "--porcelain", "--untracked-files=all"), "");
       assertEquals(f.workspace("symbolic-ref", "--short", "HEAD"), "main");
       assertEquals(state.containers["instance-7"].snapshots, [`seed-${seed}`]);
       assertEquals(Deno.readTextFileSync(`${clone}/etc/orbit/instance`), "ORBIT_INSTANCE_ID=8\n");
@@ -1352,6 +1382,54 @@ Deno.test({
   },
 });
 
+Deno.test({
+  name: "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    const hosts = `${f.folder}/containers/instance-7/etc/hosts`;
+    const block = "# BEGIN Orbit private names\n10.44.0.3 reverb.orbit\n# END Orbit private names\n";
+    try {
+      // A normal Instance: the plan has no names, and the step writes nothing, also where the image has a hosts file.
+      const plain = f.run("container");
+      assert(plain.ok, plain.output);
+      assert(!/Write the changed hosts file\]\s*\n\s*changed/.test(plain.output), plain.output);
+      Deno.writeTextFileSync(hosts, "127.0.0.1 localhost\n");
+      const again = f.run("start");
+      assert(again.ok, again.output);
+      assertEquals(Deno.readTextFileSync(hosts), "127.0.0.1 localhost\n");
+      assertEquals(again.changed, 0, again.output);
+      // Without a composed value other than the base, nothing writes the container's proxy bypass.
+      assertEquals(f.state().proxyWrites ?? 0, 0);
+
+      // An Instance with a private websocket app: its name at the plan's address, after the image's own lines.
+      const proxy = { NO_PROXY: "localhost,127.0.0.1,reverb.orbit", no_proxy: "localhost,127.0.0.1,reverb.orbit" };
+      Object.assign(f.container, { private_names: [{ name: "reverb.orbit", host: "10.44.0.3", port: 8443 }], proxy_environment: proxy });
+      f.write();
+      const named = f.run("start");
+      assert(named.ok, named.output);
+      assertEquals(Deno.readTextFileSync(hosts), "127.0.0.1 localhost\n" + block);
+      assertEquals(f.state().files["/etc/hosts"], { uid: "0", gid: "0", mode: "0644" });
+      const rerun = f.run("start");
+      assertEquals(rerun.changed, 0, rerun.output);
+      // The one writer got the composed value once; the rerun found it in place.
+      assertEquals(f.state().containers["instance-7"].proxy, proxy);
+      assertEquals(f.state().proxyWrites, 2);
+
+      // The app is removed: the next start takes the block away and keeps every other line.
+      Deno.writeTextFileSync(hosts, "127.0.0.1 localhost\n" + block + "10.1.1.1 operator\n");
+      delete (f.container as Record<string, unknown>).private_names;
+      delete (f.container as Record<string, unknown>).proxy_environment;
+      f.write();
+      const removed = f.run("start");
+      assert(removed.ok, removed.output);
+      assertEquals(Deno.readTextFileSync(hosts), "127.0.0.1 localhost\n10.1.1.1 operator\n");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
 for (const damage of ["missing ACL", "permissive default", "bridge union ACL"]) {
   Deno.test({
     name: `start refuses a NIC with ${damage} before starting the container`,
@@ -1377,6 +1455,40 @@ for (const damage of ["missing ACL", "permissive default", "bridge union ACL"]) 
     },
   });
 }
+
+Deno.test({
+  name: "start refuses a NIC without the address filters with its own code, and starts it once the device set adds them",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      assert(f.run("container").ok);
+      assert(f.run("stop").ok);
+      // Both keys missing, then only one: each refuses before the start, with the filters' own code.
+      for (const missing of [["ipv4", "mac"], ["mac"]]) {
+        const state = f.state();
+        state.containers["instance-7"].devices = state.containers["instance-7"].devices
+          .filter((device: string) => !missing.some((key) => device.startsWith(`eth0,security.${key}_filtering=`)));
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+        const refused = f.run("start");
+        assert(!refused.ok, refused.output);
+        assertEquals(f.result(), { error_code: "instance.nic_filters_missing" }, refused.output);
+        assertEquals(f.state().containers["instance-7"].status, "Stopped");
+      }
+      // The by-hand repair: one device set adds the keys, and the next start passes.
+      const set = new Deno.Command(`${f.folder}/bin/incus`, {
+        args: ["--project", "orbit-instances", "config", "device", "set", "instance-7", "eth0", "security.ipv4_filtering=true",
+          "security.mac_filtering=true"],
+        env: { HOST_FIXTURE: f.folder },
+      }).outputSync();
+      assert(set.success, new TextDecoder().decode(set.stderr));
+      assertEquals(f.state().containers["instance-7"].status, "Stopped");
+      const filtered = f.run("start");
+      assert(filtered.ok, filtered.output);
+      assertEquals(f.state().containers["instance-7"].status, "Running");
+    } finally { f.cleanup(); }
+  },
+});
 
 Deno.test({
   name: "start refuses an unguarded extra bridge NIC beside guarded eth0",
@@ -1588,7 +1700,7 @@ for (const damage of [...Object.keys(nestedDamage), "extra-device", "changed-hos
         };
         Object.assign(f.container, {project: "orbit-instances-nested", config: NESTED_CONFIG, allowed_devices: {
           root: {type: "disk", path: "/", pool: "orbit-instances", size: "40GiB"},
-          eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject"},
+          eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject", "security.ipv4_filtering": "true", "security.mac_filtering": "true"},
           ...structuredClone(disks),
         }});
         // The config create wrote; Incus's own keys and the profile's environment come on top.
@@ -1644,7 +1756,7 @@ Deno.test({
 function nestedCreate(f: ReturnType<typeof fixture>) {
   Object.assign(f.container, {project: "orbit-instances-nested", image: "orbit-instance-nested", config: NESTED_CONFIG, allowed_devices: {
     root: {type: "disk", path: "/", pool: "orbit-instances", size: "40GiB"},
-    eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject"},
+    eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject", "security.ipv4_filtering": "true", "security.mac_filtering": "true"},
   }});
   f.write();
 }
@@ -1748,7 +1860,8 @@ Deno.test({
       const seen = await hostTranscript(f, result.output);
       if (Deno.env.get("ORBIT_PRINT_HOST_TRANSCRIPT")) console.log(JSON.stringify(seen));
       // Captured by this same case from the tasks of origin/main 77f6bf5c22 (2a-local 7b9e25ba02 changes no task), plus the five tasks
-      // that install the fast wake of a frozen container (#3639); its Incus calls and host files are unchanged.
+      // that install the fast wake of a frozen container (#3639); its Incus calls and host files are unchanged. Plus the one task that
+      // admits the containers to their own sites, with its two UFW rule files (443 and the development listener); no Incus call changes.
       assertEquals({calls: seen.calls, tasks: seen.tasks, digest: seen.digest}, MAIN_NORMAL_HOST);
       assertEquals(f.state().projects.map((row: {name: string}) => row.name), ["orbit-instances"]);
       assert(!f.has("modules-load/orbit-instances.conf"));

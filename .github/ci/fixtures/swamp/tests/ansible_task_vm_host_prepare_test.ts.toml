@@ -1,0 +1,19 @@
+order = 580
+source_sha256 = "d33ec9f38e034e6e362df54f24483f37523f17f8e926ba74387411f055804a36"
+cases = [
+  "a deny-input host admits bridge DHCP and DNS without exposing other host services",
+  "a new loop host gets a sized ZFS pool, ARC cap and isolated network, then changes nothing",
+  "native ZFS uses a new dataset and never changes ARC, including an existing pool without a dataset setting",
+  "host preparation refuses conflicting storage, project and bridge before resource changes",
+]
+file = "swamp/tests/ansible_task_vm_host_prepare_test.ts"
+cost = 85
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-host.yml",
+  "swamp/ansible/tasks/task-vm-host-prepare.yml",
+]

@@ -431,7 +431,7 @@ The native Swamp workflow runs these phases in order. Input preparation writes p
 | Phase | Work |
 | --- | --- |
 | `input` | Prepare this attempt's recorded roles, Tools, network and release pins, plus vault key references. Require a CLI pin only when the Gateway includes a CLI plan. |
-| `agent` | Reconcile the pinned agent, the Node’s CLI state, Orbit-owned files and units, the [kernel policy](#kernel-policy) and the [update policy](#update-policy). Restart only for managed changes. |
+| `agent` | Reconcile the pinned agent, the Node’s CLI state, Orbit-owned files and units, the [role units](#role-units-at-a-converge), the [kernel policy](#kernel-policy) and the [update policy](#update-policy). Restart only for managed changes. |
 | `software` | Read the selected pins from `recipe.json`, install them and hold the selected packages at those pins. On the Swamp Node, install the recipe's pinned Deno, which runs the Tool helper. |
 | `roles` | Repair the selected roles' configuration without changing an Instance or assignment. |
 | `tools` | Run the Tool helper once to prove that it works. Then apply recorded Tools within scope, recording each Tool's own result and continuing after an individual Tool failure. |
@@ -445,6 +445,21 @@ A failed phase stops later phases and fails the Operation with its failed step a
 The Tool helper is the TypeScript policy that judges each Tool. It runs on the Swamp Node, with the Deno at `/usr/local/bin/deno`; on its first run for a worker, Deno downloads the helper's two pinned npm imports. A helper that cannot run is not a Tool failure: the `tools` phase fails before it judges a Tool, and no Tool is marked failed. Converge the Swamp Node to install its Deno, then converge the Node again.
 
 Without a CLI plan, the base phase removes `/usr/local/bin/orbit` when it is a managed version link, regular `/usr/local/bin/orbit-0.N.0` binaries and the managed root profile `/root/.orbit/config.json`. It preserves unrelated executables, backups and directories. The final check requires these managed files to be absent. A failed phase retains completed changes; a new converge repeats the same desired state.
+
+### Role units at a converge
+
+Every converge writes the units that the Node's roles own, the `base` scope included. `NodeRoleUnits` picks them from the Node's role assignments:
+
+| Role | Unit |
+| --- | --- |
+| `swamp` | The worker template `orbit-swamp-worker@.service` |
+| `websocket` | `orbit-websocket.service` |
+
+The `agent` phase writes each one and reloads systemd when one changed. It never starts, stops or restarts them. A running service takes the new text at its next start: a Swamp worker at its renewal restart, Reverb at a reboot, a new Reverb release or a changed `.env`. A role converge runs after the `agent` phase, so it finds the unit current and does not restart Reverb for it. A current unit reports no change.
+
+The Swamp serve unit is not among them. The role renders it with the release checkout of the Swamp Node, which is not the folder that serve reads on a Gateway that is its own Swamp Node.
+
+The units are part of the base intent, so the [base digest](/reference/development-containers#what-a-refresh-skips) of a nested fleet moves when their text does.
 
 Agent and CLI replacements and CLI removal share the existing Node-local update lock with self-update. Replacements hold it only for the final atomic rename; removal holds it across its read and deletion. [One update at a time](/reference/self-update#one-update-at-a-time) owns the staging, timeout and failure rules. Converge checks the existing agent secret against the admitted verifier without rotating it or changing the Gateway's hash.
 
@@ -551,7 +566,9 @@ With `--operator-ip`, `orbit:bootstrap` also records the Node `operator`: no rol
 
 The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phase of `gateway-bootstrap.yml` and a local connection. `orbit:bootstrap-control-plan` prints the plan: the serve and worker units for the machine's `swamp/` checkout, the release grants, the units of the scheduler and Horizon, and the tmpfiles rule that creates `/run/orbit` for the [Documents cleanup state](/reference/project-documents#local-state-and-startup-ordering). The phase writes them, applies the rule, and starts the scheduler and Horizon after serve and the workers. So the Gateway records its first run, the converge of its own Node, before its role.
 
-The phase also mints the serve driver token, the two worker tokens and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`. The play `remint` of the same playbook renews them later, with `swamp access token rotate` and a new worker enrollment token, when the fleet phase of the converge of a task VM renews them.
+The phase also mints the serve driver token, the tokens of workers a, b and c, and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`. The play `remint` of the same playbook renews them later, with `swamp access token rotate` and a new worker enrollment token. The [refresh of a nested-fleet default](/reference/development-containers#the-nested-gateways-tokens) runs it when a token is old or missing.
+
+The remint first makes the worker set whole. A worker without token files gets its folder and tokens, so a fleet with workers a and b only gets c. A worker c with only part of its files, or with files under other names, is refused before any service stops.
 
 The `remint` play prints no token either, so a failed renewal shows its command and its error. It rotates the serve driver token in a task of its own, with one short command, so the recorded error shows the CLI message.
 
@@ -576,6 +593,8 @@ The hub step marks the `vpn` role active. After serve and both workers run, the 
 `orbit:node-add NODE HOST [--role=ROLE] [--wireguard-ip=IP] [--host-key-fingerprint=SHA256:...]` admits `node.add` from the Gateway itself, as `node:add` does through the API; Swamp then enrolls the Node.
 
 `orbit:node-converge NODE` admits `node.converge` from the Gateway itself. The Gateway converges its own Node this way, which installs the agent and removes the packaged CLI from its machine.
+
+`orbit:node-converge-digest --base NODE...` prints one JSON object with the SHA-256 digest of each named Node's base converge intent. It builds the intent as `node.converge` with `base: true` does, but it admits no Operation, makes no execution copy and writes nothing. An unknown Node, or an intent it cannot build, fails the command with no digest. The nested-fleet refresh compares these digests to decide whether the inner Nodes need a converge ([what a refresh skips](/reference/development-containers#what-a-refresh-skips)).
 
 The Swamp role's own steps are workflow steps bound to worker labels, so a Gateway without a worker cannot run them; once its own Swamp serves, `node:role:add` converges the roles through it.
 
@@ -673,7 +692,7 @@ A new Swamp release reaches serve and its workers through the role, with one res
 
 1. Merge the pin change in the recipe and the other pins. Each task VM host then refreshes its base snapshot.
 2. Converge the role: `orbit node:role:add <node> swamp --converge`. Nothing restarts; the running processes keep their release.
-3. When `operation:list --status=running` is empty, restart serve, which drains in-flight runs, then all three workers: `systemctl restart orbit-swamp-serve`, then `systemctl restart orbit-swamp-worker@a orbit-swamp-worker@b orbit-swamp-worker@c`. The workers retry until serve listens.
+3. When `operation:list --status=running` is empty, restart serve, which drains in-flight runs, then all three workers: `systemctl restart orbit-swamp-serve`, then `systemctl restart orbit-swamp-worker@a orbit-swamp-worker@b orbit-swamp-worker@c`. Each worker waits for serve's `/ready` before it connects.
 4. Check that each process runs the pinned file (`readlink /proc/<pid>/exe`).
 
 Earlier releases stay in `/usr/local/lib/orbit-swamp`, about 400 MB each. Rollback points the link at one and restarts the same way. Remove an old release or `replaced-*` directory by hand once no process runs from it: no `/proc/*/exe` names it.
@@ -681,6 +700,8 @@ Earlier releases stay in `/usr/local/lib/orbit-swamp`, about 400 MB each. Rollba
 Another installer can put a plain file back at `/usr/local/bin/swamp`, such as the Node worker installer. The next converge renames that file into a new directory and links the path again, so no running process loses its binary. Serve's grants follow the checkout: the release's Swamp load renders them and runs `swamp access reload` ([Load Swamp](/reference/gateway-recovery#load-swamp)).
 
 The role runs three permanent Swamp workers, `orbit-swamp-worker@a`, `@b` and `@c`. Each reaches serve on loopback with one dispatch slot per CPU core (`--concurrency auto`) and the labels `role=swamp` and `node=<id>`. On Node 209 this gives twelve configured slots on four cores; two workers retain the previous eight slots while the third drains. It adds admission capacity, not CPU cores. Each worker keeps its own enrollment, server token, state and cache.
+
+`swamp worker connect` gives up after three tries in about 3 seconds, and serve listens only after its boot reconciliation, about 9 seconds after a cold start. So the template starts after `orbit-swamp-serve.service`, and its `ExecStartPre` waits for `http://127.0.0.1:9418/ready` for at most about 62 seconds (`--retry-max-time 60`), within the 90-second start timeout. A serve that never gets ready does not fail the start: the worker then fails and restarts after 30 seconds, as before. A new template takes effect at each worker's next start.
 
 Before adding or converging the role, the operator must place distinct, valid credentials for **all three** workers at `/etc/orbit/swamp-role-worker/<a|b|c>/{enrollment,server}.token`. On Node 209 the additional files are:
 
@@ -836,7 +857,9 @@ Removal captures its role publication, private DNS, hub, Router firewall and Met
 
 Remove Instances, Database servers, Schedules, Routes and user firewall rules first, including before offline removal. Use `--force` to consent to shedding the Node’s mutable roles. Protected roles stay with their owning lifecycle. The caller, Gateway, VPN and Swamp control Node are protected. Drain a task VM host and clear `settings.task_vms` before removing it. TaskVM guests stay with their owning lifecycle; standalone removal accepts no provider-deletion assertion.
 
-The parent sheds admitted roles through native workflow children, restores public SSH, removes the obsolete worker and observer footprint, revokes the departing worker credentials, and then removes only its admitted management SSH keys. The hub peer withdrawal follows those target-side actions. It retains user data, package managers and unrelated SSH keys. Network and serving publications use their shared native children from Node 209. A child failure prevents later retirement steps and keeps the Node record with failed status. An expired budget (`operation.timed_out`) does the same. Cleanup does not roll back completed effects; the terminal result reports only completed work.
+The parent sheds admitted roles through native workflow children, restores public SSH, removes the obsolete worker and observer footprint, revokes the departing worker credentials, and then removes only its admitted management SSH keys. The hub peer withdrawal follows those target-side actions. It retains user data, package managers and unrelated SSH keys.
+
+Network and serving publications use their shared native children from Node 209. A child failure prevents later retirement steps and keeps the Node record with failed status. An expired budget (`operation.timed_out`) or a run that ends without a readable result (`operation.result_unreadable`) does the same. Cleanup does not roll back completed effects; the terminal result reports only completed work.
 
 Task VM guest Nodes skip Node removal's Swamp token list and revoke phases. Admission records `task_vm_guest` only for a Node referenced by a TaskVM row with no selected Swamp worker; callers cannot set it. Real Node removals retain token cleanup.
 

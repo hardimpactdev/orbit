@@ -6,6 +6,7 @@
  */
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
+import { nativeAuth } from "./_support/native_auth.ts";
 import { Swamp } from "../extensions/behaviors/node-worker/config.ts";
 
 const binary = Deno.env.get("ORBIT_SWAMP_PROOF_BINARY");
@@ -27,8 +28,9 @@ const receipt = '{"error_code":"instance.container_process_inactive","process_fa
 
 async function fixture(mode: Mode, slow: Long = "clone-services") {
     const folder = Deno.makeTempDirSync({ prefix: "orbit-ansible-" });
+    const auth = await nativeAuth(folder);
     const call = async (...args: string[]) => {
-        const done = await new Deno.Command(binary!, { args: [...args, "--json"], cwd: folder, env: { SWAMP_NO_INBOX_NOTICE: "1" } }).output();
+        const done = await new Deno.Command(binary!, { args: [...args, "--json"], cwd: folder, ...auth }).output();
         return { ok: done.success, stdout: text(done.stdout), stderr: text(done.stderr) };
     };
     const version = await new Deno.Command(binary!, { args: ["--version"] }).output();
@@ -93,7 +95,7 @@ async function fixture(mode: Mode, slow: Long = "clone-services") {
     const history = async () => JSON.parse((await call("workflow", "history", "get", created.name)).stdout);
     const steps = async (): Promise<Record<string, RecordValue>> =>
         Object.fromEntries((await history()).jobs.flatMap((job: { steps: RecordValue[] }) => job.steps).map((step: RecordValue) => [step.name, step]));
-    return { folder, created, input, steps, slow, cleanup: () => Deno.removeSync(folder, { recursive: true }) };
+    return { folder, auth, created, input, steps, slow, cleanup: () => Deno.removeSync(folder, { recursive: true }) };
 }
 
 /**
@@ -102,7 +104,7 @@ async function fixture(mode: Mode, slow: Long = "clone-services") {
  */
 async function execute(f: Awaited<ReturnType<typeof fixture>>, cancel: boolean): Promise<Deno.CommandOutput & { stopSeconds: number }> {
     const child = new Deno.Command("setsid", { args: [binary!, "workflow", "run", f.created.name, "--stdin", "--json"], cwd: f.folder,
-        env: { SWAMP_NO_INBOX_NOTICE: "1" }, stdin: "piped", stdout: "piped", stderr: "piped" }).spawn();
+        ...f.auth, stdin: "piped", stdout: "piped", stderr: "piped" }).spawn();
     const writer = child.stdin.getWriter();
     await writer.write(new TextEncoder().encode(f.input));
     await writer.close();

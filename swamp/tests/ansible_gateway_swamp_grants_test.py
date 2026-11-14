@@ -29,7 +29,11 @@ class GatewaySwampGrantsTest(unittest.TestCase):
             (folder / 'swamp/proof/cli-release.json').write_text((ANSIBLE.parent / 'proof/cli-release.json').read_text())
             environment = folder / 'apps/gateway/.env'
             environment.write_text('APP_NAME=Orbit\n')
-            (folder / 'bin/git').write_text('#!/bin/sh\ncat "$FIXTURE/tested-head.txt"\n')
+            # As Git does for a checkout that another user owns (an Instance container's workspace): it refuses unless this call trusts the checkout.
+            (folder / 'bin/git').write_text('#!/bin/sh\n'
+                                            '[ "$1 $2 $3 $4" = "-c safe.directory=$FIXTURE -C $FIXTURE" ] '
+                                            '|| { echo "fatal: detected dubious ownership in repository at $FIXTURE" >&2; exit 128; }\n'
+                                            'cat "$FIXTURE/tested-head.txt"\n')
             (folder / 'bin/php').write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$FIXTURE/config.log"\n')
             for name in ('git', 'php'):
                 (folder / 'bin' / name).chmod(0o755)

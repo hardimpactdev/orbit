@@ -22,7 +22,7 @@ Every `main` commit whose `Main delivery checks` passed gets a GitHub release on
 
 On a push or manual CI run on `main`, CI's `Start the CLI release` job dispatches `Orbit CLI Release`, `.github/workflows/orbit-cli-release.yml`, as soon as `Main delivery checks` passes. This does not depend on `ORBIT_SLOW_CHECKS_BLOCKING`, and a test job that the change did not select, so CI skipped it, does not stop it. The release workflow confirms that the commit is on the first-parent history of `main` and that its latest trusted `ci.yml` main run has a successful `Main delivery checks` job on that exact SHA, then builds and publishes. A pull-request run never starts a release.
 
-The release workflow also starts when a `CI` run on `main` completes, including a red fixture result, from a push or a manual dispatch. Runs for the same commit run in sequence. A later run checks the existing release and changes nothing when its commit and assets match. The release appears a few minutes after `Main delivery checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
+The release workflow also starts when a `CI` run on `main` completes, from a push or a manual dispatch. It verifies delivery before publication: failed selected fixtures fail delivery and block the release. A failed fixture report or independent Main full set does not invalidate successful delivery. Runs for the same commit run in sequence. A later run checks the existing release and changes nothing when its commit and assets match. The release appears a few minutes after `Main delivery checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
 
 Releases are public, need no login, and do not expire. A published release is never replaced.
 
@@ -214,7 +214,9 @@ These reasons explain the design. Check them before you propose a change.
 
 ### Separate workflows
 
-Packaging time and artifacts stay out of the quality checks in `ci.yml`, so a packaging failure never hides a test failure, and the reverse. The release workflow verifies the main delivery job without waiting for duplicate main fixtures. Its summary links source CI and the independent fixture report, so pending or red fixtures stay visible. [Delivery dependencies](/reference/implementation-loop#ci) lists the exact jobs. PR Required checks still blocks on fixtures and capacity. Both release paths reuse one build workflow, so a pull request tests the same steps that publish a release.
+Packaging time and artifacts stay out of the quality checks in `ci.yml`, so a packaging failure never hides a test failure, and the reverse. Both release paths reuse one build workflow, so a pull request tests the same steps that publish a release.
+
+The release workflow verifies the main delivery job. On a normal main run, delivery waits for the selected fixtures and blocks on their failure or a capacity limit, just as PR Required checks does. A verified tree receipt reuses the passed PR tree and selects no duplicate fixtures. Report publication and Main full set remain independent of delivery. The release summary links source CI and the fixture report. [Delivery dependencies](/reference/implementation-loop#ci) lists the exact jobs.
 
 The release workflow runs from `main` with a token that can write releases. Only the publish job holds that token and the OIDC token that signs the release, and it runs only the workflow's own scripts from `main`. The build jobs run the release commit's code with a read-only token. A pull request's code never runs in the release workflow.
 

@@ -54,6 +54,7 @@ sequenceDiagram
           %%> - instance.node_service_protocol_unsupported and instance.node_service_process_stopped refuse non-TCP or desired-stopped targets.
           %%> - instance.node_service_port_required and instance.node_service_port_unpublished refuse an omitted choice among several ports or an unpublished TCP host port.
           %%> - instance.node_service_port_reserved, instance.host_unavailable and instance.node_service_listener_private refuse infrastructure ports, a missing Instance bridge, or an ineligible bind. A remote target needs exactly one TCP publication at its owner's private IPv4 WireGuard address.
+          %%> - instance.dev_band_reserved refuses a same-Node target in the development band, 5173-5199
         else valid endpoint
           alt identical attachment
             GW-->>CLI: Already attached<br/>changed false, reason code

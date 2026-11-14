@@ -385,9 +385,28 @@
         that: workspace_bundle_stat.stat.checksum == workspace_result.sha256
         fail_msg: tasks.workspace_phase_failed
     - name: Return the Node export path
+      when: intent.worker_bundle is not defined
       ansible.builtin.set_fact:
         workspace_result: >-
           {{ workspace_result | combine({'node_scratch': workspace_export.path, 'bundle': workspace_export.path ~ '/branch.bundle'}) }}
+    # A publication takes the bundle to the worker, which pushes it; the Node keeps nothing.
+    - name: Fetch the bundle to the worker
+      when: intent.worker_bundle is defined
+      ansible.builtin.fetch:
+        src: "{{ workspace_export.path }}/branch.bundle"
+        dest: "{{ intent.worker_bundle }}"
+        flat: true
+        fail_on_missing: true
+        validate_checksum: true
+      changed_when: false
+    - name: Remove the Node export after the fetch
+      when: intent.worker_bundle is defined
+      ansible.builtin.file: { path: "{{ workspace_export.path }}", state: absent }
+      changed_when: false
+    - name: Return the worker bundle path
+      when: intent.worker_bundle is defined
+      ansible.builtin.set_fact:
+        workspace_result: "{{ workspace_result | combine({'bundle': intent.worker_bundle}) }}"
   rescue:
     - name: Remove the incomplete Node export
       when: workspace_export.path is defined

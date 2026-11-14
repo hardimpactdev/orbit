@@ -163,17 +163,12 @@
     # Network-only baseline. Endpoint rules are merged below; NICs use the separate proxy ACL.
     container_acl_rules:
       description: Orbit Instance boundary
-      egress:
-        - action: allow
-          destination: "{{ instances.address.split('/')[0] }}/32"
-          protocol: tcp
-          destination_port: "{{ instances.forwarder_port | string }}"
-          state: enabled
-        - action: allow
-          destination: "{{ instances.address.split('/')[0] }}/32"
-          protocol: tcp
-          destination_port: "{{ instances.egress.port | string }}"
-          state: enabled
+      # The model forwarder, the egress proxy, and a container's own site on 443 and the development listener (InstanceOwnSite).
+      egress: &instance_bridge_egress >-
+        {{ [{'action': 'allow', 'destination': instances.address.split('/')[0] ~ '/32', 'protocol': 'tcp',
+             'destination_port': instances.forwarder_port | string, 'state': 'enabled'},
+            {'action': 'allow', 'destination': instances.address.split('/')[0] ~ '/32', 'protocol': 'tcp',
+             'destination_port': instances.egress.port | string, 'state': 'enabled'}] + instances.own_site.acl }}
       # Incus checks the bridge ACL before a container's own, and its default rejects what the Node sends or forwards to the bridge.
       # So it admits what a container's ACL may admit: the Node's Caddy to FrankenPHP and the development ports, and T3's clients.
       ingress: "{{ instances.ingress }}"
@@ -232,17 +227,7 @@
     bridge_admitted_at: "{{ instances.bridge_admitted_at }}"
     bridge_reconcile: true
     bridge_baseline:
-      egress:
-        - action: allow
-          destination: "{{ instances.address.split('/')[0] }}/32"
-          protocol: tcp
-          destination_port: "{{ instances.forwarder_port | string }}"
-          state: enabled
-        - action: allow
-          destination: "{{ instances.address.split('/')[0] }}/32"
-          protocol: tcp
-          destination_port: "{{ instances.egress.port | string }}"
-          state: enabled
+      egress: *instance_bridge_egress
       ingress: "{{ instances.ingress }}"
 
 - name: Keep endpoint mappings current after Docker restarts
@@ -377,6 +362,20 @@
         daemon_reload: "{{ wake_service.changed or wake_path.changed }}"
         enabled: true
         state: started
+
+# A container's own site (docs/reference/development-containers.md#the-own-site-from-inside): UFW admits 443 and the development
+# listener in from the bridge to its gateway address, where the table above sends the development range. Caddy admits only the
+# container that a site belongs to.
+- name: Admit the containers to their own sites
+  community.general.ufw:
+    rule: "{{ item.action }}"
+    interface_in: "{{ item.in_interface }}"
+    proto: "{{ item.protocol }}"
+    to_ip: "{{ item.destination }}"
+    to_port: "{{ item.port }}"
+    comment: "{{ item.comment }}"
+  loop: "{{ instances.own_site.rules }}"
+  loop_control: { label: "{{ item.comment }}" }
 
 - name: Build the Instance image
   ansible.builtin.include_tasks: instance-image.yml

@@ -1,0 +1,47 @@
+order = 170
+source_sha256 = "452425133aa49d63c3319ed9652914696c90c09c74ff931709d783acfe6f47ce"
+cases = [
+  "validation receives only its registry-read credentials",
+  "required validation only receives event-scoped credentials",
+  "serve grant validation and coverage regressions remain required",
+  "native environment is explicit and configuration is isolated",
+]
+file = "swamp/bin/validate-swamp-workflows_test.ts"
+cost = 4
+inputs = [
+  ".github/ci/checks.toml",
+  ".github/workflows/ci.yml",
+  ".github/workflows/swamp-shape.yml",
+  "apps/agent/Cargo.lock",
+  "apps/agent/Cargo.toml",
+  "apps/cli/composer.json",
+  "apps/cli/composer.lock",
+  "apps/gateway/.env.example",
+  "apps/gateway/bin/render-swamp-grants",
+  "apps/gateway/composer.json",
+  "apps/gateway/composer.lock",
+  "apps/gateway/resources/agent/frozen-manifest.json",
+  "apps/gateway/resources/machine-software/recipe.json",
+  "bin/build-api",
+  "bin/gateway-app-key",
+  "bin/swamp-shape-gate",
+  "packages/php-sdk/composer.json",
+  "packages/php-sdk/composer.lock",
+  "packages/php-sdk/src/Requests/Logs/LogStreamTarget.php",
+  "packages/php-sdk/src/Requests/Logs/ScheduleLogStreamTarget.php",
+  "swamp/.swamp.yaml",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/bin/check-grant-patterns.py",
+  "swamp/bin/gate-test-support.ts",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp_shape_host_tools.py",
+  "swamp/bin/swamp_shape_polling.py",
+  "swamp/bin/validate-swamp-workflows.py",
+  "swamp/config/gateway-workflow-grants.json",
+  "swamp/config/serve-grants.json",
+  "swamp/extensions/behaviors/node-worker/config.ts",
+  "swamp/extensions/behaviors/operations/workflow_grant_patterns_test.ts",
+]

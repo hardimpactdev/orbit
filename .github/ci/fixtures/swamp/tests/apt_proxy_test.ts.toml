@@ -1,0 +1,23 @@
+order = 640
+source_sha256 = "904a87f65af12780fead9a23bdfcbe208f119164070d5a27357a118f8c6c42b4"
+cases = [
+  "the first apt call of a nested Gateway names the package cache of its intent, as the drop-in does",
+  "the plan of the nested Gateway carries the package cache of its intent",
+  "every apt run of a nested Node comes after the drop-in",
+  "a nested Node gets the drop-in",
+  "every other Node gets none and loses a stale one",
+]
+file = "swamp/tests/apt_proxy_test.ts"
+cost = 6
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/operation-node-add.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/apt-proxy.yml",
+  "swamp/ansible/tasks/exporter.yml",
+  "swamp/ansible/tasks/role-prerequisites.yml",
+  "swamp/workflows/workflow-gateway-bootstrap.yaml",
+]

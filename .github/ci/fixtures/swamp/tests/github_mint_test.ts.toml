@@ -1,0 +1,19 @@
+order = 790
+source_sha256 = "f8c86939edaab180e9d7fab380f66e8c342ce044f4c3dc2c51dba1be7b2523f2"
+cases = [
+  "only the mint workflow and the check push post to the Gateway mint",
+  "every mint step names a purpose the Gateway issues and the run it belongs to",
+  "a step reads a minted key only after the step that mints it",
+  "a workflow that writes the dependency auth removes it on every outcome, and installs only after the write",
+]
+file = "swamp/tests/github_mint_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-task-check-push.yaml",
+  "swamp/workflows/workflow-task-github-mint.yaml",
+]

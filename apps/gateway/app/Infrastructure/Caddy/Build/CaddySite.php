@@ -15,6 +15,7 @@ final readonly class CaddySite
      * @param  list<string>  $hosts  The site addresses without scheme or port.
      * @param  string  $body  The rendered site block. A shared site binds `$bindPlaceholder`.
      * @param  list<string>  $unixSockets  Unix socket listeners, which keep their own addresses.
+     * @param  ?string  $client  The one client address a `Bridge` site admits: its own container's bridge address.
      */
     public function __construct(
         public string $source,
@@ -25,6 +26,7 @@ final readonly class CaddySite
         public string $body,
         public ?string $bindPlaceholder = null,
         public array $unixSockets = [],
+        public ?string $client = null,
     ) {}
 
     public function describe(): string

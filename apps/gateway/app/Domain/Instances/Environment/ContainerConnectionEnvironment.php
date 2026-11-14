@@ -16,11 +16,13 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WebSocket\WebSocketAppEnvProjection;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\Operation;
+use App\Models\WebSocketAppTarget;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
@@ -53,10 +55,9 @@ final readonly class ContainerConnectionEnvironment implements DirectOperationPr
             if ($runtime->power_state !== InstanceRuntimePowerState::Running) {
                 throw new ResourceOperationException('process.target_inactive', 'The container is stopped; env:sync does not start it.', 409);
             }
+            // With no key to write, the run still reconciles the websocket path: a removed app closes it in the running container.
             $keys = array_keys($this->lines($instance));
-            if ($keys === []) {
-                throw new ResourceOperationException('env.connection_missing', 'The container Instance has no attached connection whose keys env:sync writes.', 409);
-            }
+            $paths = app(InstanceContainer::class)->connectionPaths($instance, $runtime);
             $container = app(InstanceContainer::class)->intent($instance, $runtime);
             $running = $container['web_config'] === null ? [] : [InstanceContainer::FrankenPhpUnit];
             foreach (app(ContainerProcesses::class)->units($instance) as $unit) {
@@ -69,7 +70,9 @@ final readonly class ContainerConnectionEnvironment implements DirectOperationPr
                 'container' => ['instance_id' => $instance->id, 'project' => $container['project'], 'name' => $container['name'],
                     'acl' => $container['acl'], 'network' => $container['network'], 'bridge_cidr' => $container['bridge_cidr'],
                     'bridge_admitted_at' => $container['bridge_admitted_at'], 'environment_file' => $container['environment_file']],
-                'connection_environment' => ['keys' => $keys, ...app(InstanceContainer::class)->connectionPaths($instance, $runtime),
+                'connection_environment' => ['keys' => $keys, ...$paths,
+                    // The one composed NO_PROXY value when it is not the base, for the one guest writer; null leaves the container's files alone.
+                    'proxy_environment' => $container['proxy_environment'] ?? null,
                     // What runs in the Instance: its own web unit and its running Process units. try-restart skips a stopped unit.
                     'refresh' => ['php' => $container['php'], 'application' => InstanceContainer::application($instance), 'units' => $running]],
             ], $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
@@ -89,6 +92,15 @@ final readonly class ContainerConnectionEnvironment implements DirectOperationPr
             $projected = $projection->project($target->databaseConnection, $target->prefix, $target->network, $instance->node);
             foreach ($projected['values'] as $key => $value) {
                 $lines[$key] = $key.'='.InstanceEnvironmentRenderer::quote($value);
+            }
+        }
+        // The Instance's websocket app: its keys as the attach stored them, the one source (docs/reference/websocket-apps.md#reach-from-a-container).
+        if (WebSocketAppTarget::query()->where('instance_id', $instance->id)->exists()) {
+            $stored = app(InstanceEnvironmentStore::class)->values($instance);
+            foreach (WebSocketAppEnvProjection::Keys as $key) {
+                if (isset($stored[$key])) {
+                    $lines[$key] = $key.'='.InstanceEnvironmentRenderer::quote($stored[$key]);
+                }
             }
         }
         ksort($lines, SORT_STRING);

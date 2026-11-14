@@ -1,0 +1,25 @@
+order = 250
+source_sha256 = "ee80c3c86b5e69e7bb950230993133d008bce504d49c9d3110dc6e91558c2143"
+cases = [
+  "one candidate becomes one ordered backlog task through the Gateway, never a live start",
+  "baseline is one task and repeated scans create no second baseline",
+  "lost create reply is adopted by exact brief and never posted twice",
+  "uncertain absent creates stop for reconciliation; duplicates also stop",
+  "website Project and automatic merge settings cannot receive parity tasks",
+  "current upstream creates no group and does not call the Gateway",
+]
+file = "swamp/extensions/behaviors/projects/horizon-new-dawn/queue_test.ts"
+cost = 2
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/detect.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/queue.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/surface.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/tasks.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/config.ts",
+]

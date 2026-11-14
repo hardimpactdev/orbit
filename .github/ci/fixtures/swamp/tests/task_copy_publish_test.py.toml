@@ -1,0 +1,25 @@
+source_sha256 = "3d0fa868b4eda2af28c48d9494d4a5a0a23fe2c3ee52ae33ef6aec7502d04b91"
+cases = [
+  "test_a_publication_export_fetches_the_bundle_to_the_worker_and_keeps_no_node_scratch",
+  "test_the_candidate_holds_no_environment_file_that_the_create_excluded",
+  "test_the_native_end_check_runs_after_a_success_on_either_path",
+  "test_a_copy_runs_its_export_and_only_a_succeeded_bundle_step_starts_the_import",
+  "test_the_environment_file_never_leaves_a_copy_in_any_commit_of_the_range",
+]
+file = "swamp/tests/task_copy_publish_test.py"
+# ESTIMATE: local 14.0s for the whole file (python3 -I, Beast) x 2.1, rounded up, plus 1s; runs took 12.5-15.4s (21.5s under load); first hosted run 43557203693 completed in 25.859s. Keep the estimate until five completed hosted samples establish p90.
+cost = 31
+inputs = [
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**",
+  "swamp/extensions/behaviors/operations/task-repository/**",
+  "swamp/tests/fixtures/task-instance-workspace.json",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/workflows/workflow-operation-task-check.yaml",
+  "swamp/workflows/workflow-operation-task-publish.yaml",
+  "swamp/workflows/workflow-task-instance-check.yaml",
+  "swamp/workflows/workflow-task-instance-workspace.yaml",
+]

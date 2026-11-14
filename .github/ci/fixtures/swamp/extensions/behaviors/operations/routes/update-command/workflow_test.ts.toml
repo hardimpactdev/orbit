@@ -1,0 +1,36 @@
+order = 1400
+source_sha256 = "eadf8cae203253a968a5b5d38bd8d9e4e19a3a46120625d2c751ff9a109aab29"
+cases = [
+  "Route update workflows place every step on the swamp role and keep mutation parents small",
+  "restore keeps the observed candidate serving, then withdraws it after DNS grace",
+  "Route primitive and shared publication children use one209selector",
+  "a clone's completion publishes its prepared Route beside the services without waiting for app startup",
+  "a captured same-Node move retains its first live DNS child and omits only the redundant final child",
+  "a captured replacement with real record changes runs both DNS stages and completes",
+  "mixed captured Nodes keep dense final child indexes and exact contribution completeness",
+  "the retained first child repairs drift of captured owned DNS keys through the real merger",
+  "a previous Gateway intent needs no new key and skipped DNS steps need no outputs",
+  "a failed first publication still fails completeness and guards later work",
+  "DNS grace and withdrawal order remain independent of omitting the final publication",
+  "either a records-only or catalog-only final difference retains the final DNS child",
+]
+file = "swamp/extensions/behaviors/operations/routes/update-command/workflow_test.ts"
+cost = 12
+inputs = ["swamp/workflows/**", "swamp/tests/fixtures/route-forward-intents.json", "swamp/extensions/behaviors/operations/routes/{mutation-command/{assets,dns},publication-command/sections,update-command/result}.ts"]
+
+[case_costs]
+"Route update workflows place every step on the swamp role and keep mutation parents small" = 1
+"restore keeps the observed candidate serving, then withdraws it after DNS grace" = 1
+"Route primitive and shared publication children use one209selector" = 1
+"a clone's completion publishes its prepared Route beside the services without waiting for app startup" = 1
+"a captured same-Node move retains its first live DNS child and omits only the redundant final child" = 1
+"a captured replacement with real record changes runs both DNS stages and completes" = 1
+"mixed captured Nodes keep dense final child indexes and exact contribution completeness" = 1
+"the retained first child repairs drift of captured owned DNS keys through the real merger" = 1
+"a previous Gateway intent needs no new key and skipped DNS steps need no outputs" = 1
+"a failed first publication still fails completeness and guards later work" = 1
+"DNS grace and withdrawal order remain independent of omitting the final publication" = 1
+"either a records-only or catalog-only final difference retains the final DNS child" = 1
+
+# The shape gate lists no command for this file, so it runs only through this entry. No `slices` key: a Deno file
+# with `slices = false` would start under python3 (docs/reference/implementation-loop.md).

@@ -1,0 +1,20 @@
+order = 890
+source_sha256 = "b17bd154ef0e630fb3efc54944c3766275d86f6d4b6d886b5163822e33479e92"
+cases = [
+  "failure capture is opt-in and never swallows abort or infrastructure failure",
+]
+file = "swamp/tests/maintenance_resources_test.ts"
+cost = 4
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/maintenance/context.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+]

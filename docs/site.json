@@ -1100,6 +1100,10 @@
     {
       "source": "/decisions/0241-firewall-source-allowlists",
       "destination": "/decisions/0245-identify-firewall-rules-by-port-protocol-and-source"
+    },
+    {
+      "source": "/decisions/0256-a-clone-create-is-two-operations",
+      "destination": "/reference/development-containers#a-clone-create-is-two-operations"
     }
   ]
 }

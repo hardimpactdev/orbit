@@ -109,6 +109,7 @@ function writeTasks(folder: string) {
     Deno.mkdirSync(`${folder}/tasks`, { recursive: true });
     Deno.copyFileSync(new URL("instance_bridge.py", root), `${folder}/instance_bridge.py`);
     Deno.copyFileSync(new URL("instance_network.py", root), `${folder}/instance_network.py`);
+    Deno.copyFileSync(new URL("instance-nic-filters.json", root), `${folder}/instance-nic-filters.json`);
     Deno.copyFileSync(new URL("instance_nested.py", root), `${folder}/instance_nested.py`);
     Deno.copyFileSync(new URL("instance_folder_debs.py", root), `${folder}/instance_folder_debs.py`);
     Deno.copyFileSync(new URL("instance_folder_same.py", root), `${folder}/instance_folder_same.py`);
@@ -469,6 +470,27 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
             unit: "orbit-instance-dev-ports.service",
             ruleset:
                 "table inet orbit_instance_dev_ports\ndelete table inet orbit_instance_dev_ports\ntable inet orbit_instance_dev_ports {}\n",
+        },
+        own_site: {
+            acl: ["443", "444"].map((port) => ({
+                action: "allow",
+                destination: "10.253.0.1/32",
+                protocol: "tcp",
+                destination_port: port,
+                state: "enabled",
+            })),
+            rules: [["443", "orbit:instances-own-site"], ["444", "orbit:instances-own-dev"]].map(([port, comment]) => ({
+                comment,
+                action: "allow",
+                direction: "in",
+                source: "any",
+                destination: "10.253.0.1",
+                port,
+                protocol: "tcp",
+                in_interface: "orbitinst0",
+                out_interface: null,
+                family: "v4",
+            })),
         },
         ids: 201 * 65536,
         profile_config: {

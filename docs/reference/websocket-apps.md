@@ -72,7 +72,7 @@ orbit env:sync --instance=<instance>
 | `REVERB_APP_KEY` | The app's `key` |
 | `REVERB_APP_SECRET` | The app's `secret` |
 | `REVERB_HOST` | `reverb.orbit` |
-| `REVERB_PORT` | `443` |
+| `REVERB_PORT` | `8443`, the [Instance listener](#reach-from-a-container). A public attachment writes `443` |
 | `REVERB_SCHEME` | `https` |
 
 An Instance holds at most one app. A second add replaces the first app's values. The result names the Instance, the app, the keys, whether stored configuration changed, and the key count. It never holds a value. So the secret reaches the app without passing through a terminal or a chat.
@@ -84,6 +84,26 @@ The CLI command is `instance:websocket:remove <app> --instance=<instance>`. It a
 Add and remove change the stored environment. A public attachment also rebuilds the existing Route’s Caddy sites. Run [`env:sync`](/reference/environment-variables#synchronize) to write the Instance's `.env`. A production [clone](/reference/environment-variables#laravel-mode) does not copy the seven keys of a candidate that holds an app. Add an app to the production Instance.
 
 `reverb.orbit` is a private name. Only machines on the WireGuard network reach it.
+
+## Reach from a container
+
+A [container Instance](/reference/development-containers) that holds a private app reaches exactly that app's endpoint: `reverb.orbit` on port 8443. It reaches nothing else on the websocket Node.
+
+### Two listeners
+
+The websocket Node serves `reverb.orbit` on two listeners. Port 443 is shared with the Node's other private sites, such as `analytics.orbit`. The Gateway, task VMs and browsers use it. Caddy routes that listener by Host, whatever the SNI. So an exact path to port 443 would also reach the other sites.
+
+Port 8443 is a listener of its own. It binds only the `reverb.orbit` site, so a request there with another Host or SNI finds no site. `/internal` stays Gateway-only on both listeners. The rule `orbit:wireguard-members` already admits port 8443 from every WireGuard member, so the Node gets no new firewall rule.
+
+### Keys and path
+
+A private attachment writes `REVERB_PORT=8443`, for a checkout and a container alike. A checkout Instance that still has `443` from an earlier attachment keeps working, because port 443 still serves the app. To move it to `8443`, run `instance:websocket:add` with the same app again: it stores `8443`. Then run `env:sync`.
+
+The app is one target of the container's [access plan](/reference/development-containers#private-names-of-the-access-plan). The plan holds the exact NIC ACL rule, route allowance and bridge endpoint to the address of `reverb.orbit` on port 8443. It also writes the name into the container's hosts file. The migrate's env check reads the same plan. It admits `REVERB_HOST=reverb.orbit` with `REVERB_PORT=8443`, and it still refuses port 443. A container on the websocket Node itself gets no target: its traffic arrives from the bridge address, which the listener refuses, so the check refuses the move too.
+
+The publisher verifies the Orbit CA certificate of `reverb.orbit`. Verification stays on.
+
+When the container runs, `env:sync` writes the seven keys and reconciles the path. After a remove, the next `env:sync` withdraws the ACL rule, the firewall rule and the hosts line. The keys stay in the file, because `env:sync` on a container removes no key. `reverb.orbit` also stays in the container's `NO_PROXY` until the container is created again; with no hosts line and no rule, it reaches nothing.
 
 ## Publish on the existing public app Route
 
@@ -174,7 +194,9 @@ Changes to PHP code still require a process restart. Announce a reconnect window
 
 The agent's `websocket.converge-runtime` builds, checks, and activates a release, and `websocket.remove-runtime` removes it. After a successful server activation, the agent keeps the active release and its immediate predecessor and deletes older staged releases. Activation waits up to 30 seconds for the local listener on the configured port. The server opens it only after loading a fresh registry snapshot. A timeout fails with `websocket.runtime_convergence_failed`, skips publication, and keeps the staged releases for recovery. A failed preparation or restart does not prune releases.
 
-The unit `orbit-websocket.service` starts after `network-online.target` and waits for the Gateway API before Reverb starts. Its `ExecStartPre` is a stock `curl` that retries `https://gateway.orbit/up` up to 30 times, one second apart. The unit starts either way. Reverb loads its registry at start, so when the machines of a fleet boot together, Reverb accepts connections about 5 seconds after the boot and not at its next reconcile, about 35 seconds later. A converge writes the unit; a running Reverb takes it at its next restart.
+The unit `orbit-websocket.service` starts after `network-online.target`, `wg-quick@orbit.service` and `orbit-gateway-dns.service`, and waits for the Gateway API before Reverb starts. The two units route `.orbit` names to the private DNS: wg-quick's `PostUp` on a peer Node, `orbit-gateway-dns` on the Gateway host. Without that order the first lookup of `gateway.orbit` can fail, and curl keeps a failed lookup for 30 seconds, so every retry in that time fails too.
+
+Its `ExecStartPre` is a stock `curl` that retries `https://gateway.orbit/up` up to 30 times, one second apart. The unit starts either way. Reverb loads its registry at start, so when the machines of a fleet boot together, Reverb accepts connections about 5 seconds after the boot and not at its next reconcile, about 35 seconds later. Nothing changes on a Node until a converge writes the unit, and a running Reverb keeps running until its next restart.
 
 ## Deploy and recover
 

@@ -30,7 +30,6 @@ use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
-use App\Jobs\RecordWorkspaceBaseline;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -265,7 +264,7 @@ it('records a created routed container default at its first seed and admits depl
         ->and($runtime->power_state)->toBe(InstanceRuntimePowerState::Running)
         ->and($runtime->seed_commit)->toBe($commit);
     // A default has no baseline: its read is the plain truth.
-    Queue::assertNotPushed(RecordWorkspaceBaseline::class);
+    expect($runtime->workspace_baseline)->toBeNull();
     $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(['head' => $commit, 'files' => [
         '.env.example' => null, 'artisan' => ['mode' => '100644', 'object' => $commit, 'content' => 'entry'],
         'composer.json' => ['mode' => '100644', 'object' => $commit, 'content' => '{"require":{"php":"^8.5","laravel/framework":"^13.0"}}'],
@@ -382,7 +381,8 @@ describe('the container PHP runtime development SSR origin', function (): void {
             $targetReads = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'from "instance_node_service_targets"'));
             expect($targetReads)->toHaveCount(1);
             // A vp-dev Process path check reads the runtime's recorded Incus project once (InstanceContainer::workspaceOnNode).
-            expect(DB::getQueryLog())->toHaveCount(($production ? 16 : 19) + ($vpDev ? 1 : 0));
+            // The access plan asks once whether the Instance holds a private websocket app (InstanceWebSocketTarget).
+            expect(DB::getQueryLog())->toHaveCount(($production ? 17 : 20) + ($vpDev ? 1 : 0));
         } finally {
             DB::disableQueryLog();
             DB::flushQueryLog();

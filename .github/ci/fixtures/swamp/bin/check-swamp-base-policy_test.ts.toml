@@ -1,0 +1,26 @@
+order = 110
+source_sha256 = "bb97c5f5b46301e2747291bcfb737bf70ddb42ce65fd7c5d2024c0aab59ff129"
+cases = [
+  "real frozen policy owns limits and dependencies",
+  "stale baseline evidence can be repaired without growing immutable source debt",
+]
+file = "swamp/bin/check-swamp-base-policy_test.ts"
+cost = 20
+after_merge = true
+reason = "Repository scanner fixtures create dynamic source inventories; their complete input closure needs a separate mapping."
+inputs = [
+  "swamp/bin/constant-name.ts",
+  "swamp/bin/bounded-phase-scripts.ts",
+  "swamp/bin/check-swamp-base-policy.py",
+  "swamp/bin/check-swamp-shape.ts",
+  "swamp/bin/gate-test-support.ts",
+  "swamp/bin/native-host-start.py",
+  "swamp/bin/swamp-liveness.py",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp-shape-relocations.ts",
+  "swamp/bin/swamp_shape_host_tools.py",
+  "swamp/bin/swamp_shape_polling.py",
+  "swamp/bin/workflow-placement.ts",
+  "swamp/config/agent-command-kinds.json",
+  "swamp/config/swamp-shape-baseline.json",
+]

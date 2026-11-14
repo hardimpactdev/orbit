@@ -14,6 +14,7 @@ use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstanceOwnSite;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Routes\PublicRouteEligibility;
@@ -37,10 +38,10 @@ final readonly class NodeFirewallRuleCatalog
     public const array TaskContainerInputComments = ['orbit:task-containers-dhcp', 'orbit:task-containers-dns-tcp', 'orbit:task-containers-dns-udp'];
 
     /**
-     * DHCP and the egress proxy for the Instance bridge of a Node on the build list, and no DNS: the proxy resolves every name
-     * (docs/reference/development-containers.md#egress-and-dns).
+     * DHCP, the egress proxy and a container's own site for the Instance bridge of a Node on the build list, and no DNS: the proxy
+     * resolves every name (docs/reference/development-containers.md#egress-and-dns, #the-own-site-from-inside).
      */
-    public const array InstanceInputComments = ['orbit:instances-dhcp', InstanceEgress::Comment];
+    public const array InstanceInputComments = ['orbit:instances-dhcp', InstanceEgress::Comment, ...InstanceOwnSite::Ports];
 
     /** @return list<UfwManagedRule> */
     public function instanceHostInput(Node $node): array
@@ -53,6 +54,7 @@ final readonly class NodeFirewallRuleCatalog
         return [
             $this->dhcpInput(InstanceHostIntent::Network, self::InstanceInputComments[0]),
             InstanceEgress::rule(InstanceHostIntent::Network, $gateway),
+            ...InstanceOwnSite::rules($gateway),
         ];
     }
 

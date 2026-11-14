@@ -1,0 +1,15 @@
+order = 940
+source_sha256 = "8e5e861695a1705935c833e80a639fc8490402318b9f51f519daed6d3da2e908"
+cases = [
+  "the prune of the hub does not wait for the peer files, which a removal leaves without a step",
+]
+file = "swamp/tests/node_network_hub_prune_test.ts"
+cost = 2
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-node-network-hub.yaml",
+]

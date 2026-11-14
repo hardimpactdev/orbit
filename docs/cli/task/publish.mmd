@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, R2-R4, swamp-tasks-model. Nick 2026-11-06: a task VM never holds a GitHub credential; the push step mints its token when it runs, not at admission (an installation token lives one hour). docs/reference/tasks.md#publish-an-external-group.
   %% Tightened: flow-tighten 2026-11-02, rule 16 (no tip read: a push without force refuses a divergent tip and pushes nothing for an identical one); rule 22 (no shipped scripts: task VM work is `@swamp/ssh exec` argv, 209 work is inline `git` and `gh api`; one workspace check, since import checks the bundled commit and tree).
+  %% Task copy (2026-11-14): a group whose workspace is a task copy exports through its container's workspace phase; the push stays on the worker. The .env Orbit wrote never leaves a copy: the range from the copy's start is checked before the mint. docs/reference/tasks.md#task-copy.
   %% status: migrated
   %% command: task:publish
   %% kind: tasks.publish
@@ -13,7 +14,7 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as Task VM<br/>reached over ssh
+  participant N as Task VM, Node<br/>reached over ssh
   participant GH as GitHub<br/>repository · PRs
   CLI->>GW: task:publish 42<br/>--check=17
   %%> Command:
@@ -25,13 +26,15 @@ sequenceDiagram
   Note over GW: Check the candidate<br/>task #5165 · record the key names
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway
-  %%> - group 42 is an open external group with its own task VM workspace
+  %%> - group 42 is an open external group with its own task VM workspace, or with its own task copy whose container runs (`tasks.instance_not_running`) and has a start commit
+  %%> - a task copy has no earlier turn that may still run (`tasks.copy_turn_unended`)
   %%> - group 42 is provisioned: while its `tasks.provision` Operation waits or runs, the publish answers `tasks.not_provisioned` (409) with that Operation's ID in `details.operation_id`
-  %%> - the task VM runs; a parked VM is woken by the admission, which records its resume, creates no Operation of this kind and answers `tasks.vm_resuming`; repeat the call once the VM runs
+  %%> - a task VM runs; a parked VM is woken by the admission, which records its resume, creates no Operation of this kind and answers `tasks.vm_resuming`; repeat the call once the VM runs
   %%> - check 17 passed for group 42, and required hosted CI passed on its commit, else `tasks.commit_not_checked`
   %%> - no other task runs on group 42; the Gateway holds one lock per group
   %%> What it does:
   %%> - captures the repository, default branch, commit, checked tree and the task VM's SSH target
+  %%> - for a task copy: its Node's SSH target, its container, its start commit and the path of the `.env` Orbit wrote, from the Instance's record
   %%> - names two `task-publish-token-<uuid>` vault keys for the token and the Git authorization header; it mints and writes no value at admission
   %%> Result:
   %%> - task #5165 recorded with the full intent
@@ -49,27 +52,36 @@ sequenceDiagram
   Note over SW: Create publication scratch
   %%> How:
   %%> - a private worker directory holds the bundle, bare repository and bounded CLI replies
-  SW->>N: Read the index
-  %%> How:
-  %%> - one bounded native Git command, with an isolated alternate index on the task VM
-  SW->>N: Add workspace files
-  %%> How:
-  %%> - one bounded native Git command, with an isolated alternate index on the task VM
-  SW->>N: Read workspace tree
-  %%> How:
-  %%> - one bounded native Git command, with an isolated alternate index on the task VM
-  SW->>N: Read workspace HEAD
-  %%> How:
-  %%> - one bounded native Git command, with an isolated alternate index on the task VM
-  Note over SW: Check the workspace
-  %%> How:
-  %%> - typed data compares HEAD and the complete tree to the admitted candidate; a mismatch refuses before export
-  SW->>N: Export the commit
-  %%> How:
-  %%> - one bounded native command on the worker; no shipped script
-  SW->>N: Copy the bundle
-  %%> How:
-  %%> - official SSH copy reads the bundle onto the worker; no code is copied to the task VM
+  alt a task copy
+    SW->>N: Preflight the copy
+    %%> How:
+    %%> - the workspace phase reads the checkout as `agent` in the container through its Node; HEAD must be the checked commit
+    SW->>N: Export the copy
+    %%> How:
+    %%> - the workspace phase bundles the branch as `agent`, checks its head and tree against the candidate, and fetches it to this worker; the Node keeps no copy
+  else a task VM
+    SW->>N: Read the index
+    %%> How:
+    %%> - one bounded native Git command, with an isolated alternate index on the task VM
+    SW->>N: Add workspace files
+    %%> How:
+    %%> - one bounded native Git command, with an isolated alternate index on the task VM
+    SW->>N: Read workspace tree
+    %%> How:
+    %%> - one bounded native Git command, with an isolated alternate index on the task VM
+    SW->>N: Read workspace HEAD
+    %%> How:
+    %%> - one bounded native Git command, with an isolated alternate index on the task VM
+    Note over SW: Check the workspace
+    %%> How:
+    %%> - typed data compares HEAD and the complete tree to the admitted candidate; a mismatch refuses before export
+    SW->>N: Export the commit
+    %%> How:
+    %%> - one bounded native command on the worker; no shipped script
+    SW->>N: Copy the bundle
+    %%> How:
+    %%> - official SSH copy reads the bundle onto the worker; no code is copied to the task VM
+  end
   Note over SW: Init the bare repo
   %%> How:
   %%> - one bounded native command on the worker; no shipped script
@@ -82,6 +94,11 @@ sequenceDiagram
   Note over SW: Check imported commit
   %%> How:
   %%> - typed data compares the imported commit and tree without a second workspace observation
+  opt a task copy
+    Note over SW: Check the environment file
+    %%> How:
+    %%> - every commit from the copy's start to the candidate must hold the `.env` path exactly as the start does; a commit that adds it, even one a later commit removes, refuses with `tasks.publish_secret_path` before any token exists
+  end
   SW->>GW: Mint the push token<br/>operation:direct:github-token
   %%> How:
   %%> - one bounded `curl` step posts the run id to the Gateway when the push is next; the run id proves the caller
@@ -112,9 +129,15 @@ sequenceDiagram
   SW->>GH: Revoke the token
   %%> How:
   %%> - one bounded gh api call, only after a token was minted; a refused revoke is best effort and the token expires within an hour
-  SW->>N: Remove remote scratch
-  %%> How:
-  %%> - one bounded SSH argv removes this run's index and bundle after failure too
+  alt a task copy
+    SW->>N: Discard the copy scratch
+    %%> How:
+    %%> - the workspace phase removes its guest scratch after failure too, once the preflight passed
+  else a task VM
+    SW->>N: Remove remote scratch
+    %%> How:
+    %%> - one bounded SSH argv removes this run's index and bundle after failure too
+  end
   Note over SW: Remove local scratch
   %%> How:
   %%> - one bounded command removes the private worker directory and CLI configuration
@@ -131,6 +154,7 @@ sequenceDiagram
     Note over GW: Record the publication<br/>branch · commit · task done
     %%> Result:
     %%> - a PR receipt makes the group watch its PR and release its VM; a branch-only push keeps its workspace
+    %%> - a task copy stays until `task:cancel` or the group's end; its group keeps its status
     %%> - task #5165 succeeds
     opt PR receipt
       GW->>SW: Delete the task VM
@@ -142,6 +166,7 @@ sequenceDiagram
     GH--xSW: refused or no reply
     %%> When:
     %%> - the workspace moved, the tip diverged, the push or PR write was refused, or a reply was lost
+    %%> - a commit of a task copy holds the `.env` Orbit wrote, or the copy's start is gone from the branch history: `tasks.publish_secret_path`; cancel the copy and start the task again
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code, such as `tasks.push_failed`

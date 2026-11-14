@@ -1,0 +1,46 @@
+order = 1280
+source_sha256 = "0d72054aca82600352c35d7afcb9fdb985755a9c94de0af14361a5d43e57468e"
+cases = [
+  "create returns only the commit when every step finished",
+  "create names the first unfinished phase",
+  "a Project without setup steps runs no setup phase",
+  "a web-serving create needs its Route; a Project without one skips it",
+  "an already active create reports ready without step evidence",
+  "VP preparation uses stock CLI environment installation and discrete official SSH effects",
+  "a create that copies the default database needs that copy; others skip it",
+  "a Route certificate that failed is the Route's failure, not the setup it skipped",
+  "a failed setup wins over the Route it skipped",
+  "the Route is not finished until every certificate step succeeded",
+  "a container default takes its commit from the workspace and finishes after the seed snapshot",
+  "a clone finishes only with its registered T3 server, which the receipt carries; it has no deploy step or seed",
+  "readiness records only timestamps from the T3 checks and the Route TLS probe",
+  "container mail skips retain their reason and missing mail observations stay advisory",
+  "default and clone finish workspace T3 and registration despite bounded mail failure",
+  "a Node without the main Mailpit gets no mail warning or failure",
+  "a failed container phase keeps a Node service target refusal and the nested-fleet image refusal, nothing else",
+  "a nested-fleet create carries what its start did with the Club key, from the run, and a normal create never names it",
+  "the fleet phase's result file gives its own code, detail and drift lines to the completion's receipt",
+]
+file = "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts"
+cost = 19
+inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts", "swamp/workflows/workflow-operation-instance-create.yaml"]
+[case_costs]
+"create returns only the commit when every step finished" = 1
+"create names the first unfinished phase" = 1
+"a Project without setup steps runs no setup phase" = 1
+"a web-serving create needs its Route; a Project without one skips it" = 1
+"an already active create reports ready without step evidence" = 1
+"VP preparation uses stock CLI environment installation and discrete official SSH effects" = 1
+"a create that copies the default database needs that copy; others skip it" = 1
+"a Route certificate that failed is the Route's failure, not the setup it skipped" = 1
+"a failed setup wins over the Route it skipped" = 1
+"the Route is not finished until every certificate step succeeded" = 1
+"a container default takes its commit from the workspace and finishes after the seed snapshot" = 1
+"a clone finishes only with its registered T3 server, which the receipt carries; it has no deploy step or seed" = 1
+"readiness records only timestamps from the T3 checks and the Route TLS probe" = 1
+"container mail skips retain their reason and missing mail observations stay advisory" = 1
+"default and clone finish workspace T3 and registration despite bounded mail failure" = 1
+"a Node without the main Mailpit gets no mail warning or failure" = 1
+"a failed container phase keeps a Node service target refusal and the nested-fleet image refusal, nothing else" = 1
+"a nested-fleet create carries what its start did with the Club key, from the run, and a normal create never names it" = 1
+"the fleet phase's result file gives its own code, detail and drift lines to the completion's receipt" = 1

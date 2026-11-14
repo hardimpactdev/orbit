@@ -1,0 +1,19 @@
+order = 950
+source_sha256 = "105c1ca46dc06861adbc2bccd26442708437fa91b68a7e4073ac8d70f4f3ace1"
+cases = [
+  "worker drain retains final child cleanup after its main process exits",
+  "systemd restarts the rendered worker policy despite a lingering connection child",
+]
+file = "swamp/tests/node_worker_systemd_cleanup_test.ts"
+cost = 3
+after_merge_cases = ["systemd restarts the rendered worker policy despite a lingering connection child"]
+reason = "Requires a running systemd user manager and DBUS_SESSION_BUS_ADDRESS, absent in hosted fixture setup (ignored in run 43020616292). The full-set runner supplies these prerequisites; an ignored case remains a failure there."
+inputs = [
+  "tools/ci-runners/user-manager.sh",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/node-worker/config.ts",
+]

@@ -1,0 +1,31 @@
+order = 840
+source_sha256 = "ab1d1b4d7a8e8ed8d5f157fc7c627055fbdc7a49780dae104b845bdc70ce36f3"
+cases = [
+  "pinned migrate failure: real native finish proves restoration, including the restore Route child after a lost root",
+  "pinned migrate timeout: real native finish proves restoration, including the restore Route child after a lost root",
+  "pinned migrate cancel: real native finish proves restoration, including the restore Route child after a lost root",
+  "pinned migrate deadline: real native finish proves restoration, including the restore Route child after a lost root",
+  "pinned migrate lost: real native finish proves restoration, including the restore Route child after a lost root",
+  "pinned migrate advisory mail mail-failure (default): cutover and retirement succeed without rollback",
+  "pinned migrate advisory mail mail-failure (clone): cutover and retirement succeed without rollback",
+  "pinned migrate advisory mail mail-invalid (default): cutover and retirement succeed without rollback",
+  "pinned migrate advisory mail mail-invalid (clone): cutover and retirement succeed without rollback",
+]
+file = "swamp/tests/instance_migrate_native_faults_test.ts"
+cost = 100
+after_merge = true
+reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
+inputs = [
+  "swamp/tests/_support/native_auth.ts",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/node-worker/config.ts",
+  "swamp/workflows/workflow-operation-instance-migrate.yaml",
+  "swamp/extensions/behaviors/operations/instance-dev-command/assets.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+]

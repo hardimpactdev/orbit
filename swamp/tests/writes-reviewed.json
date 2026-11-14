@@ -329,8 +329,6 @@
    "server-valkey-check": "read-only"
   },
   "operation-instance-create": {
-   "clone-server-database-check": "read-only",
-   "clone-server-valkey-check": "read-only",
    "server-database-check": "unreviewed"
   },
   "operation-instance-deploy-direct": {
@@ -436,6 +434,9 @@
   },
   "operation-instance-start": {
    "result": "read-only",
+   "cleanup": "idempotent"
+  },
+  "operation-task-copy-turn": {
    "cleanup": "idempotent"
   },
   "operation-instance-connection-environment": {
@@ -570,6 +571,7 @@
    "Read the readiness": "read-only"
   },
   "operation-task-publish": {
+   "Check the environment file": "read-only",
    "Copy the bundle": "idempotent",
    "Read bundle contents": "read-only",
    "Read open PRs": "unreviewed",

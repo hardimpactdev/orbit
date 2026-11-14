@@ -10,17 +10,23 @@ use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
+use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Schedule;
+use App\Models\WebSocketApp;
+use App\Models\WebSocketAppTarget;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -169,7 +175,9 @@ describe('the recorded Incus project', function (): void {
                 'root' => ['type' => 'disk', 'path' => '/', 'pool' => 'orbit-instances', 'size' => '40GiB'],
                 'eth0' => ['type' => 'nic', 'name' => 'eth0', 'network' => 'orbitinst0', 'ipv4.address' => $runtime->bridge_address,
                     'security.port_isolation' => 'true', 'security.acls' => 'orbitinst0-proxy,'.$runtime->container_name,
-                    'security.acls.default.egress.action' => 'reject', 'security.acls.default.ingress.action' => 'reject'],
+                    'security.acls.default.egress.action' => 'reject', 'security.acls.default.ingress.action' => 'reject',
+                    // The NIC accepts only its own IPv4 and MAC address, as create, clone and migrate write it.
+                    'security.ipv4_filtering' => 'true', 'security.mac_filtering' => 'true'],
                 'orbit-runtime' => ['type' => 'disk', 'source' => '/opt/orbit-runtime', 'path' => '/opt/orbit-runtime', 'readonly' => 'true', 'shift' => 'true'],
                 'orbit-agent' => ['type' => 'disk', 'source' => '/opt/orbit-agent', 'path' => '/opt/orbit-agent', 'readonly' => 'true', 'shift' => 'true'],
                 ...($clone ? ['t3' => ['type' => 'proxy', 'listen' => 'tcp:10.44.0.7:'.$runtime->t3_port, 'connect' => 'tcp:'.$runtime->bridge_address.':3773', 'nat' => 'true']] : []),
@@ -194,7 +202,8 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
             'name' => 'default', 'checkout_path' => '/test/default']), $node->refresh());
         $expected = app(BaselineNormalInstanceHostIntent::class)->for($node);
         $actual = app(InstanceHostIntent::class)->for($node);
-        expect(json_encode($actual, JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
+        // `own_site` came after the frozen copy: every Node gets it alike, and ContainerDevPortsTest pins it.
+        expect(json_encode(array_diff_key($actual ?? [], ['own_site' => true]), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
             ->and($actual)->not->toHaveKeys(['nested', 'runtime_projects']);
     })->with(['absent', 'off'])->with([false, true]);
 
@@ -224,6 +233,33 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
         }
         expect(json_encode($containers->intent($instance, $runtime), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR));
     })->with([false, true]);
+
+    it('keeps the full intent of an Instance with a database server and no websocket app, while another Instance holds one', function (): void {
+        $this->freezeTime();
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/default']);
+        $containers = app(InstanceContainer::class);
+        $runtime = $containers->reserve($instance, $node);
+        $services = containerDefaultNode('Services', '10.44.0.3', false);
+        $services->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']);
+        $server = DatabaseServer::query()->create(['slug' => 'catalog', 'driver' => 'pgsql', 'node_id' => $services->id, 'tag' => '18',
+            'port' => 5434, 'root_password' => 'root-sentinel', 'status' => 'active']);
+        $connection = DatabaseConnection::query()->forceCreate(['slug' => 'catalog', 'driver' => 'pgsql', 'node_id' => $services->id,
+            'database_server_id' => $server->id, 'owner_instance_id' => $instance->id, 'host' => '10.44.0.3', 'port' => 5434,
+            'database' => 'catalog', 'username' => 'catalog_reader', 'password' => 'catalog-secret']);
+        DatabaseConnectionTarget::query()->create(['instance_id' => $instance->id, 'database_connection_id' => $connection->id, 'prefix' => 'DB', 'network' => 'wireguard']);
+        // Another Instance's private app opens nothing for this one.
+        $other = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'other', 'checkout_path' => '/test/other']);
+        $app = WebSocketApp::query()->create(['name' => 'tool', 'app_id' => '1001', 'key' => 'reverb-key', 'secret' => 'reverb-secret', 'credential_generation' => 1]);
+        WebSocketAppTarget::query()->create(['websocket_app_id' => $app->id, 'instance_id' => $other->id]);
+
+        $intent = $containers->intent($instance, $runtime);
+        expect(json_encode($intent, JSON_THROW_ON_ERROR))
+            ->toBe(json_encode(app(BaselineNormalInstanceContainer::class)->intent($instance, $runtime), JSON_THROW_ON_ERROR))
+            ->and($intent)->not->toHaveKey('private_names')
+            ->and(array_column($intent['bridge_endpoints'], 'port'))->toBe([5434]);
+    });
 
     it('admits a normal default create with the same runtime, workspace path and captured container intent', function (): void {
         SwampNodeFixture::ensure();

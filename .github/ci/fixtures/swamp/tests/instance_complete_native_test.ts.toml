@@ -1,0 +1,23 @@
+order = 850
+source_sha256 = "f2fccac0581053e5d4529d7d0d6531b602d734bfa1f26570abef4e40a3b85fe9"
+cases = [
+  "pinned complete: a normal clone with a Route runs every step and ends ready",
+  "pinned complete: a dead unit fails the check with its receipt and withdraws the Route",
+  "pinned complete: a failed Route names the Route and is withdrawn",
+  "pinned complete: a cancel during clone-services stops it within 10 s, withdraws the Route and removes the private folder",
+  "pinned complete: a cancel during server-database-fill stops it within 10 s, withdraws the Route and removes the private folder",
+  "pinned complete: a cancel during clone-fleet stops it within 10 s, withdraws the Route and removes the private folder",
+]
+file = "swamp/tests/instance_complete_native_test.ts"
+cost = 30
+after_merge = true
+reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
+inputs = [
+  "swamp/tests/_support/native_auth.ts",
+  "swamp/extensions/behaviors/node-worker/config.ts",
+  "swamp/workflows/workflow-operation-instance-complete.yaml",
+  "swamp/extensions/behaviors/operations/instance-dev-command/assets.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+]

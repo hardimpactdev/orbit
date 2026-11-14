@@ -26,7 +26,7 @@ The caller supplies the recorded Incus project and container name, expected bran
 | `before` | Preflight identity | Original HEAD, workspace tree, index tree and digest, bound to this snapshot and runtime |
 | `after` | Original snapshot digest | The same evidence after the turn, with the original digest |
 | `receipt` | Original digest and candidate head/tree | At most 65,536 UTF-8 bytes from the guest scratch receipt; reject a symlink, oversized data or a different snapshot/candidate |
-| `export` | Preflight identity and candidate head/tree | Create and verify the exact candidate bundle as `agent`; transfer it to Node scratch and verify its checksum |
+| `export` | Preflight identity and candidate head/tree | Create and verify the exact candidate bundle as `agent`; transfer it to Node scratch and verify its checksum, or with `worker_bundle` fetch it to the worker |
 | `discard` | Preflight identity | Remove only this snapshot's guest scratch after its users have stopped |
 
 Snapshots use a temporary Git index. They include unignored untracked files, staged files (including force-added ignored paths), spaces and symlinks, and leave the real index unchanged. Guest scratch contains all indexes and evidence. Git hooks and fsmonitor are disabled. Commands isolate global and system Git configuration and trust only the exact checkout. Evidence does not execute project setup, checks or scripts.
@@ -35,13 +35,19 @@ The caller passes the preflight `checkout_fingerprint` to every later phase. Ori
 
 The receipt lives at `/tmp/orbit-task-workspace-SNAPSHOT/receipt.json`, outside the checkout. Its envelope contains `snapshot_id`, `candidate: {head, tree}` and an object `receipt`. The reader bounds bytes before JSON decoding and checks the envelope against the requested candidate. The original snapshot must also match that candidate.
 
-Worker input and result files are private and removed after the phase settles, including failure. A failed phase retains guest evidence for diagnosis. A successful export returns its Node scratch path to the caller, which removes it after use. Transfer or guest-cleanup failure removes Node scratch before returning failure. Export removes its guest bundle after transfer, including failure. The parent calls `discard` after all guest evidence users stop, on success or failure. Interrupted cleanup can leave scratch for explicit recovery; it never justifies deleting user files.
+Worker input and result files are private and removed after the phase settles, including failure. A failed phase retains guest evidence for diagnosis. A successful export returns its Node scratch path to the caller, which removes it after use.
+
+[`task:publish`](/reference/tasks#publish-an-external-group) of a task copy names `worker_bundle`, a path in its own publication scratch on the worker: the export fetches the bundle there, checks its checksum, and leaves no Node scratch.
+
+Transfer or guest-cleanup failure removes Node scratch before returning failure. Export removes its guest bundle after transfer, including failure. The parent calls `discard` after all guest evidence users stop, on success or failure. Interrupted cleanup can leave scratch for explicit recovery; it never justifies deleting user files.
 
 ## Check phases
 
-`tasks.check` takes this path when the group owns a container Instance: the group's Instance has a recorded runtime and names the group as its workspace owner. Today only a test fixture creates that state; attach and task start add it later. The admission skips the task VM wake and VM ownership checks and calls no task VM admission, slot or image code. It requires a running runtime (`tasks.instance_not_running`) and a recorded Instance branch (`tasks.no_workspace`).
+`tasks.check` takes this path when the group owns a container Instance: the group's Instance has a recorded runtime and names the group as its workspace owner. A [task copy](/cli/task/start) creates that state. The admission skips the task VM wake and VM ownership checks and calls no task VM admission, slot or image code. It requires a running runtime (`tasks.instance_not_running`) and a recorded Instance branch (`tasks.no_workspace`).
 
-Before it records a check row, it refuses a handoff whose Project requires hosted CI (`tasks.instance_hosted_check_unavailable`) and a setup step named `@orbit/ci-caches` (`tasks.instance_setup_unavailable`). The hosted push from the Node arrives with publication. There is no task VM fallback.
+Before it records a check row, it refuses a handoff whose Project requires hosted CI (`tasks.instance_hosted_check_unavailable`). The hosted push from the Node arrives with publication. There is no task VM fallback.
+
+A baseline in a container workspace runs no setup steps: its intent holds an empty `setup` list. The container is a copy of the Project default, whose seed already ran them, as for every [clone](/reference/development-containers#lifecycle). The baseline runs the Project check alone; a Project without one passes on the snapshot. A task VM baseline keeps every setup step.
 
 The intent is the task VM check intent with two differences: `checkout_path` is `/srv/workspace`, and `workspace` holds the recorded Incus project and container, the Instance branch and a new scratch ID. The SSH target is the Instance Node. The parent workflow runs `Check in the Instance` and skips the task VM steps.
 
@@ -49,7 +55,7 @@ The child runs three Ansible phases through this playbook. Each runs as `agent` 
 
 | Phase | What it does |
 | --- | --- |
-| `check` | Runs baseline setup, the Project check, the snapshot, each command deliverable and its start-commit run, and the final snapshot |
+| `check` | Runs the Project check, the snapshot, each command deliverable and its start-commit run, and the final snapshot |
 | `commit` | Stages everything, commits as Orbit with hooks off and reads back `HEAD`, its tree and its parent |
 | `commit-ref` | Records the accepted candidate under `refs/orbit/check-operations/{operation}` |
 
@@ -78,7 +84,6 @@ A failed phase returns one of these codes.
 | `tasks.workspace_phase_failed` | A tool, command time limit, transfer or cleanup failed |
 | `tasks.instance_not_running` | The check admission found a stopped container runtime |
 | `tasks.instance_hosted_check_unavailable` | A container handoff needs hosted CI, which needs the Node push |
-| `tasks.instance_setup_unavailable` | A container baseline names the `@orbit/ci-caches` setup step |
 
 ## Execution choices
 

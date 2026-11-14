@@ -88,14 +88,16 @@ final readonly class ContainerDeployOutcome
      * The refresh's own words for each part (docs/reference/development-containers.md#what-a-refresh-skips), or null when the run
      * has no refresh or its words are not these.
      *
-     * @return array{migrate:string,restart:string,converge:string,changed:int,base:string,base_containers:list<string>,record:string,seconds:array<string,int>}|null
+     * @return array{migrate:string,restart:string,converge:string,converge_reason:string,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,seconds:array<string,int>}|null
      */
     private static function fleetRefresh(mixed $raw): ?array
     {
         if (! is_array($raw)) {
             return null;
         }
-        $words = ['migrate' => ['applied', 'nothing', 'skipped'], 'restart' => ['yes', 'no'], 'converge' => ['ran', 'skipped'], 'base' => ['retaken', 'kept'],
+        $words = ['migrate' => ['applied', 'nothing', 'skipped'], 'restart' => ['yes', 'no'], 'converge' => ['ran', 'skipped'],
+            'converge_reason' => ['changed', 'record', 'digest_unreadable', 'stale', 'unchanged'],
+            'tokens' => ['reminted', 'young', 'skipped'], 'tokens_reason' => ['age', 'incomplete', 'unreadable', 'young', 'no_key'], 'base' => ['retaken', 'kept'],
             'record' => ['present', 'missing', 'unreadable']];
         $refresh = [];
         foreach ($words as $part => $allowed) {
@@ -113,7 +115,8 @@ final readonly class ContainerDeployOutcome
             return null;
         }
         $refresh = ['migrate' => $refresh['migrate'], 'restart' => $refresh['restart'], 'converge' => $refresh['converge'],
-            'changed' => $raw['changed'], 'base' => $refresh['base'], 'base_containers' => $containers, 'record' => $refresh['record']];
+            'converge_reason' => $refresh['converge_reason'], 'changed' => $raw['changed'], 'tokens' => $refresh['tokens'], 'tokens_reason' => $refresh['tokens_reason'],
+            'base' => $refresh['base'], 'base_containers' => $containers, 'record' => $refresh['record']];
         $seconds = is_array($raw['seconds'] ?? null) ? $raw['seconds'] : [];
         $refresh['seconds'] = [];
         foreach (['gateway', 'converge', 'ready', 'base'] as $part) {

@@ -1,0 +1,46 @@
+order = 980
+source_sha256 = "107878a15bac0755ddbc8c66fb004d215d0e35541c117a7ade287cf770d88325"
+cases = [
+  "nckrtl-com: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "launch-starter-kit: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "launch: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "treadmill-website: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "orbit-website: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "recall: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "ai-cli-proxy: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "laravel-toolbar-site: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "operator-website: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "operator: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "fitta: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "house-italy: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "lindaretel: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "srpm: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "tankwerk: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "ditis-hr: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "platform11: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "hauzer: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "mealou: routine, detect, major and advisory groups pass Orbit's todo deliverable contract",
+  "the contract fixture rejects malformed typed deliverables at creation",
+]
+file = "swamp/tests/project_deliverables_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/project_schedule.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+  "swamp/extensions/behaviors/operations/project-maintenance/projects.json",
+  "swamp/tests/_support/projects.ts",
+  "swamp/tests/_support/task_contract.ts",
+  "swamp/tests/fixtures/project-extensions/fleet.json",
+]

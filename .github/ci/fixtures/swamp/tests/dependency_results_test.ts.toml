@@ -1,0 +1,36 @@
+order = 720
+source_sha256 = "2f3a93812167346c7f8d9a9232f63672afa4ca6c02af5ac24d1006244e7f1a2c"
+cases = [
+  "producer schemas accept frozen canonical fixture success",
+  "producer schemas accept frozen canonical fixture running-partial",
+  "producer schemas accept frozen canonical fixture failed",
+  "producer schemas accept frozen canonical fixture blocked",
+  "producer schemas accept frozen canonical fixture pr-unknown",
+  "PR lookup failure retains last success/value, missing group fields are unknown",
+  "PR observation verifies exact URL/head/native run, including a still-open PR on a failed group",
+  "cancelled PR observation starts no Gateway or GitHub lookup",
+  "PR refresh projects real immutable batch targets into its publication contract",
+]
+file = "swamp/tests/dependency_results_test.ts"
+cost = 3
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/project_schedule.ts",
+  "swamp/extensions/behaviors/_lib/service_detection.ts",
+  "swamp/extensions/behaviors/_lib/worker_query.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+  "swamp/tests/fixtures/worker_query.ts",
+]

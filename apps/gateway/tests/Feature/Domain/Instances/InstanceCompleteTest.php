@@ -23,10 +23,13 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Process;
+use App\Models\ProcessDefinition;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -287,6 +290,85 @@ describe('the terminal projection', function (): void {
             ->and($result['recovery']['destroy']['command'])->toBe('instance:destroy');
         // The retry is the same admission again.
         expect(completionRefusal($instance))->toBe('admitted');
+    });
+
+    it('records why the fleet did not start as the failure detail, redacted, and changes no other failure', function (): void {
+        [$instance] = clonePendingCompletion();
+        $native = ['failed_step' => 'clone-fleet', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false];
+        $runs = [['failed_step' => 'fleet', 'error_code' => 'instance.container_fleet_resume_failed',
+            'detail' => "Check Doctor: Readiness check 'doctor' failed after 300 s: HTTP 200: {} password=hunter2-secret-value"],
+            ['failed_step' => 'workspace', 'error_code' => 'instance.create_workspace_failed']];
+        $ended = [];
+        foreach ($runs as $result) {
+            $operation = runningCompletion($instance->refresh());
+            $ended[] = app(InstanceCompleteProjection::class)->apply($operation, ['status' => 'failed', 'run_id' => 'complete-run', 'error_code' => $result['error_code'],
+                'failure' => [...$native, 'failed_step' => $result['failed_step'] === 'fleet' ? 'clone-fleet' : 'clone-services'],
+                'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+                'result' => ['ready' => false, 'instance_id' => $instance->id, ...$result]]);
+        }
+        [$fleet, $other] = $ended;
+        $failure = $fleet->refresh()->state['native_failure'];
+        expect($fleet->error_code)->toBe('instance.container_fleet_resume_failed')
+            ->and($fleet->result)->not->toHaveKey('detail')
+            ->and([$failure['failed_step'], $failure['stderr_recorded']])->toBe(['clone-fleet', true])
+            ->and($failure['detail'])->toStartWith("Check Doctor: Readiness check 'doctor' failed after 300 s")
+            ->and($failure['detail'])->not->toContain('hunter2-secret-value')
+            // Any other failed completion keeps the native step's failure as it was.
+            ->and($other->refresh()->state['native_failure'])->toBe([...$native, 'failed_step' => 'clone-services']);
+    });
+
+    it('asks for a definition change after a dead Project Process, and the retry installs the definitions as they are now', function (): void {
+        [$instance] = clonePendingCompletion();
+        $definition = ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => 'worker', 'environments' => ['development'],
+            'spec' => ['runtime' => 'systemd', 'command' => ['/bin/false']]]);
+        $operation = runningCompletion($instance);
+        $process = Process::query()->where('owner_id', $instance->id)->where('source_definition_id', $definition->id)->sole();
+        expect(array_column($operation->input['direct_provisioning']['container']['processes'], 'id'))->toContain($process->id);
+        $dead = ['ready' => false, 'failed_step' => 'check', 'error_code' => 'instance.container_process_inactive'];
+
+        completionEnds($operation, 'failed', [...$dead, 'process_failure' => ['process_id' => $process->id, 'unit' => 'u', 'state' => 'failed']], 'instance.container_process_inactive');
+        expect($operation->refresh()->result['recovery']['retry']['requires'] ?? null)->toBe('project_process_definition');
+        // A failure the activity log and the alert webhook report, as for a failed create.
+        expect(Activity::query()->where('description', 'instance.operation_failed')->get()->pluck('properties.kind')->all())->toContain('instance.complete');
+
+        $definition->update(['spec' => ['runtime' => 'systemd', 'command' => ['/bin/sleep', '3600']]]);
+        $retry = runningCompletion($instance->refresh());
+        expect($process->refresh()->runtime_config['command'][0])->toBe('/bin/sleep');
+        // A built-in unit's failure keeps the plain retry.
+        completionEnds($retry, 'failed', [...$dead, 'process_failure' => ['process_id' => $process->id + 1000, 'unit' => 'orbit-frankenphp.service', 'state' => 'failed']],
+            'instance.container_process_inactive');
+        expect($retry->refresh()->result['recovery']['retry'])->not->toHaveKey('requires');
+    });
+
+    it('keeps, in the first completion, the Processes its create admitted: a definition edited before the hand-over is not installed', function (): void {
+        $node = containerDefaultNode();
+        $node->update(['tld' => 'beast.test']);
+        $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
+        $definition = ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'worker', 'environments' => ['development'],
+            'spec' => ['runtime' => 'systemd', 'command' => ['/bin/false']]]);
+        $seed = containerCreate($project, $node);
+        $seed->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'seed-run']])->save();
+        app(DevelopmentInstanceCreateProjection::class)->apply($seed, ['status' => 'succeeded', 'run_id' => 'seed-run', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['instance_id' => $seed->target_id, 'ready' => true, 'commit' => str_repeat('c', 40)]]);
+        $create = containerCreate($project, $node, 'feature');
+        $create->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']])->save();
+        $process = Process::query()->where('owner_id', $create->target_id)->where('source_definition_id', $definition->id)->sole();
+        // The definition changes while the create runs.
+        $definition->update(['spec' => ['runtime' => 'systemd', 'command' => ['/bin/sleep', '3600']]]);
+        swampVaultStandIn();
+        workspaceReader();
+
+        app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), ['status' => 'succeeded', 'run_id' => 'run-1',
+            'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+            'result' => ['ready' => true, 'instance_id' => $create->target_id, 'commit' => str_repeat('c', 40), 't3' => [
+                'environment_id' => 'env-feature', 'server_version' => '0.1.7', 'expires_at' => '2026-12-10T10:00:00.000Z',
+                'gateway_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-gateway-1-token'],
+                'swamp_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-swamp-1-token']]]]);
+
+        $first = Operation::query()->findOrFail($create->refresh()->result['completion_operation_id']);
+        $unit = collect($first->input['direct_provisioning']['container']['processes'])->firstWhere('id', $process->id);
+        expect($process->refresh()->runtime_config['command'][0])->toBe('/bin/false')
+            ->and($unit['content'])->toContain('/bin/false')->not->toContain('/bin/sleep');
     });
 
     it('marks the Route of a failed publication, and keeps the clone after a cancel', function (): void {

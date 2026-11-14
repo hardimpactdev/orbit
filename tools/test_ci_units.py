@@ -2,6 +2,7 @@
 import contextlib
 import io
 import heapq
+import math
 import json
 import os
 from pathlib import Path
@@ -111,7 +112,7 @@ class PlanningTest(unittest.TestCase):
         for path in ('swamp/tests/a.ts', 'swamp/tests/_support/helper.ts', 'swamp/ansible/tasks/a-b.yml'):
             self.assertEqual(names(planned([path], fixtures)), ['swamp/tests/a.ts'])
         self.assertEqual(names(planned(['swamp/ansible/tasks/a-sub/file.yml'], fixtures)), [])
-        for path in ('bin/ci-units', units.PRELOAD):
+        for path in ('bin/ci-units', 'bin/ci-registry', units.PRELOAD):
             result = planned([path], fixtures)
             self.assertEqual(set(names(result)), {'swamp/tests/a.ts', 'swamp/tests/b.py'})
             self.assertEqual(result['deferred'], ['swamp/tests/c.ts'])
@@ -149,13 +150,13 @@ class InventorySelectionTest(unittest.TestCase):
         return self.git('rev-parse', 'HEAD')
 
     def changed(self, base, head):
-        with patch.object(units, 'ROOT', self.root):
+        with contextlib.chdir(self.root):
             return units.inventory_changes(base, head)
 
     def test_population_edit_selects_only_its_fixture_through_cli(self):
         head = self.commit({**self.initial, self.a: {'cases': ['old', 'new']}})
         fixtures = {file: fixture(file) for file in (self.a, self.b)}
-        with patch.object(units, 'ROOT', self.root), \
+        with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root), \
              patch.object(units, 'configuration', return_value=(BUDGET, fixtures, [])), \
              patch.object(units.gate, 'resolve_base', return_value=self.base), \
              patch.object(units.selection, 'changed_inputs', return_value=(self.base, [
@@ -300,7 +301,7 @@ class TableTest(unittest.TestCase):
         budget, fixtures, defaults = units.configuration()
         self.assertNotIn(file, units.fixture_steps())
         self.assertNotIn(file, fixtures)
-        self.assertNotIn(file, json.loads(units.INVENTORY.read_text()))
+        self.assertNotIn(file, units.registry.load(ROOT)[1])
         for path in (file, 'swamp/tests/writes-reviewed.json',
                      'swamp/workflows/workflow-operation-instance-mail-update.yaml',
                      'swamp/models/@nckrtl/orbit-gateway/orbit-gateway.yaml', 'bin/ci-units'):
@@ -328,6 +329,19 @@ class TableTest(unittest.TestCase):
             result = units.plan([f['file']], budget, fixtures, defaults)
             self.assertIn(f['file'], {u.split('#')[0] for u in names(result) + result['deferred']})
 
+    def test_required_planner_rejects_live_python_cost_drift_even_when_unselected(self):
+        file = 'swamp/tests/instance_clone_test.py'
+        collect = units.collect
+        current = collect(file)
+        for cases in ([*current['cases'], 'test_added_without_cost'], current['cases'][1:]):
+            with self.subTest(cases=len(cases)):
+                def changed_population(path):
+                    return {**current, 'cases': cases} if path == file else collect(path)
+                with patch.object(units, 'collect', side_effect=changed_population):
+                    with self.assertRaisesRegex(ValueError, file + ': case_costs must name every retained case'):
+                        budget, fixtures, defaults = units.configuration()
+                        units.plan(['docs/mission.md'], budget, fixtures, defaults)
+
     def test_new_gate_files_get_default_cost_and_invalid_long_python_is_refused(self):
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch) / 'checks.toml'
@@ -345,23 +359,19 @@ class TableTest(unittest.TestCase):
             with patch.object(units, 'fixture_steps', return_value=steps):
                 with self.assertRaisesRegex(ValueError, 'Invalid fixture file'):
                     units.configuration(path)
-            path.write_text(source + '\n[[fixture]]\nfile = \"swamp/tests/_support/fixture_supervisor.py\"\ncost = 151\ninputs = []\n')
-            with self.assertRaisesRegex(ValueError, 'unsliceable cost exceeds'):
-                units.configuration(path)
+            config, inventory = units.registry.load(ROOT)
+            config['fixture'].append(fixture('swamp/tests/_support/fixture_supervisor.py', cost=151))
+            with patch.object(units.registry, 'load', return_value=(config, inventory)):
+                with self.assertRaisesRegex(ValueError, 'unsliceable cost exceeds'):
+                    units.configuration(path)
 
     def test_case_exclusions_cannot_survive_a_test_rename(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            path = Path(scratch) / 'checks.toml'
-            source = (ROOT / '.github/ci/checks.toml').read_text()
-            entry = next(f for f in tomllib.loads(source)['fixture']
-                         if f['file'] == 'swamp/tests/ansible_instance_host_image_test.ts')
-            excluded = entry['after_merge_cases'][0]
-            changed = source.replace(json.dumps(excluded), json.dumps('renamed case no longer in source'))
-            self.assertNotEqual(source, changed)
-            source = changed
-            path.write_text(source)
+        config, inventory = units.registry.load(ROOT)
+        entry = next(f for f in config['fixture'] if f.get('after_merge_cases'))
+        entry['after_merge_cases'][0] = 'renamed case no longer in source'
+        with patch.object(units.registry, 'load', return_value=(config, inventory)):
             with self.assertRaisesRegex(ValueError, 'every after_merge_cases name must be registered'):
-                units.configuration(path)
+                units.configuration()
 
     def test_container_dependency_closure_selects_the_affected_files(self):
         budget, fixtures, defaults = units.configuration()
@@ -486,7 +496,7 @@ class ExecutionTest(unittest.TestCase):
             self.assertEqual(result['status'], 'OVER BUDGET')
             self.assertLess(result['seconds'], 3)
             self.assertIn('==> fake#0/2: OVER BUDGET', output.getvalue())
-            self.assertIn('ceiling 0.3 s. Raise its cost in .github/ci/checks.toml (the plan adds a slice) or make it faster.', output.getvalue())
+            self.assertIn('ceiling 0.3 s. Raise its cost in .github/ci/fixtures (the plan adds a slice) or make it faster.', output.getvalue())
             child = int(pid.read_text())
             try:
                 deadline = time.monotonic() + 2
@@ -677,12 +687,10 @@ class PopulationTest(unittest.TestCase):
 
     def test_fixture_hashes_do_not_gate_docs_or_unrelated_inputs(self):
         with tempfile.TemporaryDirectory() as scratch:
-            inventory = json.loads(units.INVENTORY.read_text())
+            config, inventory = units.registry.load(ROOT)
             file = 'swamp/tests/ansible_instance_migrate_test.ts'
             inventory[file]['source_sha256'] = 'stale'
-            path = Path(scratch) / 'inventory.json'
-            path.write_text(json.dumps(inventory))
-            with patch.object(units, 'INVENTORY', path):
+            with patch.object(units.registry, 'load', return_value=(config, inventory)):
                 budget, fixtures, defaults = units.configuration()
                 self.assertEqual(units.plan(['docs/mission.md'], budget, fixtures, defaults)['shards'], [])
                 selected = units.plan(['swamp/tests/ansible_instance_container_test.ts'], budget, fixtures, defaults)
@@ -705,11 +713,14 @@ class PopulationTest(unittest.TestCase):
         self.assertEqual(len(result['deferred']), 25)
         self.assertEqual(result['capacity'], [{'file': 'swamp/cases.ts', 'seconds': 2650, 'shards': 7, 'workers': 28}])
 
-    def test_fleet_refresh_costs_keep_hosted_cases_inside_the_shard_deadline(self):
+    def test_fleet_refresh_costs_keep_every_case_and_bound_each_refresh(self):
         budget, fixtures, defaults = units.configuration()
         file = 'swamp/tests/ansible_instance_fleet_test.ts'
         evidence = json.loads((ROOT / 'tools/tests/ci-fleet-cost-evidence.json').read_text())
         result = units.plan([file], budget, fixtures, defaults)
+        for name in evidence['single_refresh_cases']:
+            self.assertIn(name, fixtures[file]['cases'])
+            self.assertLessEqual(fixtures[file]['case_costs'][name] + budget['slice_startup_seconds'], 90, name)
         self.assertFalse(result.get('capacity'))
         self.assertFalse(result['deferred'])
         self.assertFalse(result.get('excluded'))
@@ -721,9 +732,53 @@ class PopulationTest(unittest.TestCase):
                 cases = units.case_names(unit, fixtures)
                 self.assertEqual(len(cases), 1, unit)
                 seen.extend(cases)
-                seconds = sum(evidence['case_seconds'][name] for name in cases)
+                # Later main cases retain their own table estimates; replay measured split cases from evidence.
+                seconds = sum(math.ceil(evidence['case_seconds'][name] * evidence['estimate_factor']) + 1
+                              if name in evidence['case_seconds'] else fixtures[file]['case_costs'][name] for name in cases)
                 heapq.heapreplace(loads, loads[0] + seconds + budget['slice_startup_seconds'])
             self.assertLess(max(loads), budget['shard_deadline_seconds'], shard['name'])
+        self.assertCountEqual(seen, fixtures[file]['cases'])
+
+    def test_reboot_slices_cover_every_case_with_measured_headroom(self):
+        budget, fixtures, defaults = units.configuration()
+        file = 'swamp/tests/fleet_reboot_test.ts'
+        evidence = json.loads((ROOT / 'tools/tests/ci-reboot-cost-evidence.json').read_text())
+        self.assertEqual(evidence['source_sha256'], fixtures[file]['source_sha256'])
+        self.assertCountEqual(evidence['case_seconds'], fixtures[file]['cases'])
+        result = units.plan([file], budget, fixtures, defaults)
+        self.assertFalse(result.get('capacity'))
+        self.assertFalse(result['deferred'])
+        self.assertFalse(result.get('excluded'))
+        selected = [unit for shard in result['shards'] for unit in shard['units']
+                    if unit.split('#')[0] == file]
+        self.assertEqual(len(selected), evidence['slices'])
+        seen = []
+        for unit in selected:
+            cases = units.case_names(unit, fixtures)
+            seen.extend(cases)
+            measured = sum(evidence['case_seconds'][name] for name in cases)
+            estimate = math.ceil(measured * evidence['estimate_factor']) + 1
+            declared = fixtures[file]['cost'] / evidence['slices']
+            self.assertGreaterEqual(declared, estimate)
+            self.assertLessEqual(declared + budget['slice_startup_seconds'], 90)
+        self.assertCountEqual(seen, fixtures[file]['cases'])
+
+    def test_image_cases_all_remain_required_and_have_ninety_second_planning_headroom(self):
+        budget, fixtures, defaults = units.configuration()
+        file = 'swamp/tests/ansible_instance_host_image_test.ts'
+        result = units.plan([file], budget, fixtures, defaults)
+        self.assertFalse(result['deferred'])
+        self.assertFalse(result.get('excluded'))
+        self.assertFalse(result.get('capacity'))
+        seen = []
+        for shard in result['shards']:
+            for unit in shard['units']:
+                if unit.split('#')[0] != file:
+                    continue
+                cases = units.case_names(unit, fixtures)
+                self.assertEqual(len(cases), 1)
+                self.assertLessEqual(fixtures[file]['case_costs'][cases[0]] + budget['slice_startup_seconds'], 90)
+                seen.extend(cases)
         self.assertCountEqual(seen, fixtures[file]['cases'])
 
     def test_container_host_prepare_packs_completed_case_costs_individually(self):
@@ -792,30 +847,28 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn('bin/ci-units plan --base "$BASE" --head "$HEAD" --github-output "$GITHUB_OUTPUT"', source)
 
     def test_required_stays_red_when_whole_file_capacity_is_exceeded(self):
-        source = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:\n', 1)[1]
-        code = textwrap.dedent(source.split("          python3 - <<'PYTHON'\n", 1)[1].split('          # Shared', 1)[0])
-        needs = {'changes': {'result': 'success', 'outputs': {'fixture_capacity': '[{"file":"migration","shards":11}]',
-                                                           'fixture_shards': '[]'}}, 'fixtures': {'result': 'success'}}
-        with patch.dict(os.environ, {'NEEDS': json.dumps(needs)}):
-            with self.assertRaisesRegex(SystemExit, 'Required fixture capacity exceeded.*migration'):
-                exec(code, {})
+        from test_ci_delivery import delivery, needs_for
+        needs = needs_for('required')
+        needs['changes']['outputs'].update(fixture_capacity='[{"file":"migration","shards":11}]', fixture_shards='[]')
+        with self.assertRaisesRegex(SystemExit, 'Required fixture capacity exceeded.*migration'):
+            delivery.validate(needs)
 
     def test_required_accepts_skipped_only_with_empty_shards_and_preserves_job_selection_rules(self):
-        # Exercise Required's actual inline rule before its unchanged build-selection checks.
+        from test_ci_delivery import delivery, needs_for
         source = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:\n', 1)[1]
         self.assertIn('changes, swamp, fixtures]', source)
-        code = textwrap.dedent(source.split("          python3 - <<'PYTHON'\n", 1)[1].split('          # Shared', 1)[0])
-        for shards in ([], [{'name': '01', 'units': ['a']} ]):
+        for shards in ([], [{'name': '01', 'units': ['a']}]):
             for result in ('success', 'skipped', 'failure', 'cancelled'):
-                needs = {'changes': {'result': 'success', 'outputs': {'fixture_shards': json.dumps(shards), 'fixture_capacity': '[]'}}, 'fixtures': {'result': result}}
-                with patch.dict(os.environ, {'NEEDS': json.dumps(needs)}):
+                needs = needs_for('required')
+                needs['changes']['outputs']['fixture_shards'] = json.dumps(shards)
+                needs['fixtures']['result'] = result
+                with self.subTest(shards=shards, result=result), patch.dict(os.environ, PROOF_REQUIRED='false',
+                        PROOF_BLOCKING='false', SLOW_CHECKS_BLOCKING='false'):
                     if result == 'success' or (result == 'skipped' and not shards):
-                        scope = {}
-                        exec(code, scope)
-                        self.assertNotIn('fixtures', scope['needs'])
+                        delivery.validate(needs)
                     else:
                         with self.assertRaisesRegex(SystemExit, 'Required fixtures failed'):
-                            exec(code, {})
+                            delivery.validate(needs)
         self.assertIn("runpy.run_path('bin/ci-delivery')['validate'](needs)", source)
 
 

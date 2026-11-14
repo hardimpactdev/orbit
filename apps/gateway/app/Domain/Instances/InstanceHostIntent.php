@@ -32,6 +32,15 @@ final readonly class InstanceHostIntent
 
     public const string NicAcl = self::Network.'-proxy';
 
+    /**
+     * The address filters of every Instance NIC: it accepts only its own IPv4 and MAC address. Swamp holds the same keys in
+     * `instance_network.py` (Python) and `instance-nic-filters.json` (Ansible); `swamp/tests/instance_clone_test.py` keeps the three
+     * equal (docs/reference/development-containers.md#network).
+     *
+     * @var array<string, string>
+     */
+    public const array NicFilters = ['security.ipv4_filtering' => 'true', 'security.mac_filtering' => 'true'];
+
     /** The Incus storage pool the Node provides: ZFS, so a copy is a clone, or `dir` on a nested proof Node. */
     public const string Pool = 'orbit-instances';
 
@@ -86,6 +95,17 @@ final readonly class InstanceHostIntent
         if ($this->applies($node)) {
             $this->bridges->execute($node);
         }
+    }
+
+    /**
+     * The Instance bridge's gateway address, its first usable address, or null while the Node has no bridge. It reads the stored
+     * bridge, so a caller with an older copy of the Node still gets the bridge that the admission allocated.
+     */
+    public static function gateway(Node $node): ?string
+    {
+        $cidr = $node->exists ? Node::query()->whereKey($node->id)->value('instance_bridge') : null;
+
+        return is_string($cidr) ? Ipv4Subnet::from($cidr)->usableRange()[0] : null;
     }
 
     /** @return array<string, mixed>|null */
@@ -147,6 +167,8 @@ final readonly class InstanceHostIntent
             // The redirect of agent development ports on the WireGuard address to Caddy's development listener.
             'dev_ports' => ['table' => InstanceDevPorts::Table, 'unit' => InstanceDevPorts::TableUnit,
                 'ruleset' => app(InstanceDevPorts::class)->ruleset($node)],
+            // The bridge ACL and UFW admit a container to its own site on the bridge's gateway address (InstanceOwnSite).
+            'own_site' => InstanceOwnSite::for($gateway),
             // `incus exec` sessions get the container environment from the profile; the image gives it to units and login shells.
             'profile_config' => [
                 'environment.PATH' => InstanceImage::Path,

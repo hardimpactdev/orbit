@@ -1,0 +1,22 @@
+order = 460
+source_sha256 = "86d9ee6d2294d2486faf022aabe804f61a155fe082d16e6b821dfbac8ecd28c4"
+cases = [
+  "test_matching_build_passes",
+  "test_a_missing_and_an_extra_extension_fail_for_their_binary",
+  "test_frankenphp_s_own_module_is_no_extension",
+  "test_another_php_version_fails",
+  "test_a_binary_that_fails_stops_the_check",
+  "test_the_folder_install_checks_each_static_php_part",
+]
+file = "swamp/tests/ansible_static_php_test.py"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/library/orbit_static_php.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-container-files.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+]

@@ -1,11 +1,11 @@
 ---
 title: "orbit instance:create"
 sidebarTitle: "instance:create"
-description: "Create a development Instance of a Project on an app-dev Node: checkout, environment, database, setup, Processes and Route."
+description: "Create a development Instance of a Project on an app-dev Node. A container clone's create ends when its thread is usable; its completion makes it active."
 ---
 
 ```bash
-orbit instance:create <project> <node> <name> [--root=PATH] [--domain=HOST] [--branch=BRANCH] [--database-server=SLUG] [--json]
+orbit instance:create <project> <node> <name> [--root=PATH] [--domain=HOST] [--branch=BRANCH] [--database-server=SLUG] [--wait-active] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -21,6 +21,7 @@ orbit instance:create <project> <node> <name> [--root=PATH] [--domain=HOST] [--b
 | `--branch=BRANCH` | see [branch selection](#branch-selection) | Source branch. |
 | `--database-server=SLUG` | none | Create the Instance's database on this [Database server](/reference/database-servers) before setup. See [database on a server](/domains/applications#database-on-a-server). |
 | `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
+| `--wait-active` | off | After the create, follow the clone's completion too. Exit 0 only when the Instance is `active`. See [fully set up](#fully-set-up). |
 | `--json` | off | Print the result as JSON. |
 
 In a terminal, an omitted project and node are chosen from interactive lists, with the Nodes limited to active `app-dev` Nodes, and an omitted name is asked for with the default `default`. A noninteractive or `--json` call that omits one is refused with `input.invalid`, naming the input, and sends no request.
@@ -43,19 +44,27 @@ In a terminal, the CLI shows the steps below as a progress tree, then the result
 
 The run has 60 seconds, plus the setup step timeouts, 30 seconds for the Processes, 180 seconds for the Route, and 180 seconds for a database copy or a database on a server.
 
-A Project that serves no web pages has no Route and takes no `--domain` (`instance.route_unserved`). A domain that another Route owns, or a reserved name such as `gateway.orbit`, is refused with `route.domain_conflict`.
+A clone's create checks at its admission that its completion can capture the Route; a Route that cannot, such as a Cluster Route without a recorded Router (`cluster.router_required`), refuses the create before anything is recorded. A Project that serves no web pages has no Route and takes no `--domain` (`instance.route_unserved`). A domain that another Route owns, or a reserved name such as `gateway.orbit`, is refused with `route.domain_conflict`.
 
 ## On a container Node
 
 On a Node of the [build list](/reference/development-containers#the-build-list), the Project's first `default` Instance is a container, not a checkout ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd)). Orbit creates the container from the Node's image and fetches the default branch into a mirror on the Node. It pushes the branch in, writes `.env`, and runs the Project's [development deploy steps](/reference/deployments#development-deploy-steps) as `orbit`; there are no setup steps. Then it starts FrankenPHP, publishes the Route to it, and takes the first seed snapshot. A Project has one `default` in the fleet, and its other Instances are made on that `default`'s Node. [The default Instance](/reference/development-containers#the-default-instance) has the details and what a container default cannot run yet.
 
-Every other Instance of the Project is a clone of that `default` ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd)). Orbit copies the default's newest seed snapshot, a ZFS clone, and gives the copy its own address, ACL and T3 port. It clones the default's database on the same Database server, brings in the Instance's branch, and writes `.env`, the agent settings and `/etc/orbit/instance`. The clone's `.env` is the default's, with the clone's own keys in place of the default's ([the environment of a clone](/reference/development-containers#the-environment-of-a-clone)); a connection that the default marks shared stays attached. Then it starts FrankenPHP and T3, publishes the Route, and records the T3 server with the [Conn layer](/reference/conn#instance-servers). The branch is the matching origin branch, or a new branch at the seed's commit. [Create](/reference/development-containers#create) has the details.
+Every other Instance of the Project is a clone of that `default` ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd)). Orbit copies the default's newest seed snapshot, a ZFS clone, and gives the copy its own address, ACL and T3 port. It brings in the Instance's branch, and writes `.env`, the agent settings and `/etc/orbit/instance`. The clone's `.env` is the default's, with the clone's own keys in place of the default's ([the environment of a clone](/reference/development-containers#the-environment-of-a-clone)); a connection that the default marks shared stays attached. Then it starts T3 and records the T3 server with the [Conn layer](/reference/conn#instance-servers). The branch is the matching origin branch, or a new branch at the seed's commit. [Create](/reference/development-containers#create) has the details.
 
-A failed or cancelled create keeps its reservation, runtime, and any container, workspace, owned databases, test databases and role until the owner acts. A refused retry removes none of them. After work starts, Orbit attempts to stop the container and withdraw the Route. Compensation can fail; its step then stays failed. Shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live.
+A clone's create ends there, when the user can start a thread. In the same transaction the Gateway starts the clone's completion, [`instance:complete`](/cli/instance/complete). The completion clones the default's database, starts a nested fleet, starts FrankenPHP and the Processes, publishes the Route and checks the clone.
+
+### Fully set up
+
+A clone is fully set up only when its `status` is `active`. A succeeded create leaves it `source_resolved`; only a succeeded completion makes it `active`. The create's result names the completion in `completion_operation_id`. Follow that Operation, or read the Instance until its `status` is `active`. In a terminal, the result names it as `Completion: <id>`. With `--wait-active`, the command follows the create, then the completion, then reads the Instance. It exits 0 only when the Instance is `active`; with `--json` it prints the last Operation it followed. A create that has no completion, such as the create of a `default`, is fully set up when it succeeds.
+
+A clone is fully set up about 10 seconds later than when one create did every step: two runs start and stage their folders. The thread is usable about 10 seconds sooner.
+
+A failed or cancelled create keeps its reservation, runtime, and any container, workspace, owned databases, test databases and role until the owner acts. A refused retry removes none of them. After work starts, Orbit attempts to stop the container and to withdraw a Route that the run published; a clone's create publishes none. Compensation can fail; its step then stays failed. Shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live.
 
 Its Operation result names `recovery.state=retained_for_retry`, the create identity and the destroy path. Retry with a new idempotency key and the original options, including the source selection and Database server.
 
-At retry admission, Orbit derives the Processes from the Project's current development definitions. Changed definitions update their Processes; removed definitions remove theirs. Orbit replaces their units and environment files in the create run. An inactive Project Process adds `recovery.retry.requires=project_process_definition`: fix or remove its definition before retry. A clone can be removed with `instance:destroy INSTANCE --yes --force`; container-default removal remains unavailable.
+At retry admission, Orbit derives the Processes from the Project's current development definitions. Changed definitions update their Processes; removed definitions remove theirs. Orbit replaces their units and environment files in the run that installs them: the create for a `default`, the completion for a clone. A retry of a clone's create admits a new completion when it succeeds. A dead Process of a clone fails its completion with `instance.container_process_inactive`, not the create. A clone can be removed with `instance:destroy INSTANCE --yes --force`; container-default removal remains unavailable.
 
 The API answers `202` with a queued Operation after recording the create, before work on the Node starts. Clients follow that Operation as usual. While it waits to start, another create for the same name is refused with `operation.target_busy`; a replay with the same Idempotency-Key returns the original Operation.
 
@@ -71,7 +80,7 @@ An existing local branch is not reset. If the fetched `default_branch` is needed
 
 ## Repeat and failure
 
-The Instance and its Route become active only after every step succeeds. A successful create means every setup step succeeded; an empty list counts as success. The application can still fail for other reasons.
+The Instance and its Route become active only after every step succeeds: for a clone, every step of its completion. A successful create means every setup step succeeded; an empty list counts as success. The application can still fail for other reasons.
 
 Repeating the command for an Instance that is already created succeeds with `Skipped — already created (instance.exists)`.
 
@@ -101,6 +110,7 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | `instance.database_clone_unsupported` | The default's database cannot be cloned: a clone in a container names another Database server, or the database is not on a server. |
 | `instance.create_agent_failed`, `instance.t3_unready` | A clone's T3 step failed; `failed_step` is `t3` for both, because one step writes the agent's files and then starts T3. The first code means the agent part failed or timed out; the second means T3 did not answer within 30 seconds of its start, or that part failed or timed out. |
 | `instance.create_register_failed` | A clone's T3 server refused a session the run issued, or the Gateway's session lacks `access:read` and `access:write`. The step's report names the `conn.*` code. |
+| `instance.workspace_baseline_unavailable` | The run of a clone succeeded, but the Gateway could not read the workspace baseline before it ended the create. `failed_step` is `register`. The T3 server is not recorded, no completion starts, and the container keeps running. Retry the same command, or destroy the clone. |
 | `instance.host_unavailable` | The container Node is not prepared, its bridge or its T3 ports are full, or its runtime folder lacks the Project's PHP build. |
 | `project.source_defaults_incomplete` | The Project's source defaults are incomplete, or a web-serving Project in a container has no PHP version. |
 | `operation.kind_unavailable` | The request needs a part of the container runtime that is not built yet, or a clone needs Conn or the model router guard. |

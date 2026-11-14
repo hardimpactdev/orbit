@@ -1,0 +1,55 @@
+order = 70
+source_sha256 = "cb555c5e368582d1e98b18d3f961e82f9a8c6ba547981a98e5b47b6e7973b45c"
+cases = [
+  "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart",
+  "two Debian packages that give the same library name fail the folder build: one would hide the other",
+  "a second pass writes nothing and runs no ldconfig; a new library reaches running and stopped containers alike",
+  "a new folder version that only adds files keeps every running process valid; a changed, missing or relinked file does not",
+  "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container",
+  "a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec",
+  "a Node without a readable Orbit root CA fails the step by name and writes nothing",
+]
+file = "swamp/tests/ansible_instance_host_browser_test.ts"
+cost = 238
+# Beast case times * 2.1, rounded up + 1s; startup is added per slice.
+slices = 7
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "apps/gateway/resources/machine-software/recipe.json",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[case_costs]
+  "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart" = 82 # ESTIMATE: Beast 35-38s * 2.1, rounded up + 1s
+  "two Debian packages that give the same library name fail the folder build: one would hide the other" = 18 # ESTIMATE: Beast 8s * 2.1, rounded up + 1s
+  "a second pass writes nothing and runs no ldconfig; a new library reaches running and stopped containers alike" = 2 # ESTIMATE: Beast 0.82s, no Ansible; rounded up
+  "a new folder version that only adds files keeps every running process valid; a changed, missing or relinked file does not" = 1 # ESTIMATE: Beast 0.1s, no Ansible; rounded up
+  "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container" = 130 # ESTIMATE: Beast 61s * 2.1, rounded up + 1s; two converges, with 6s startup within the 150s lane
+  "a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec" = 4 # ESTIMATE: Beast 1s, no Ansible; rounded up
+  "a Node without a readable Orbit root CA fails the step by name and writes nothing" = 1 # ESTIMATE: Beast 0.1s, no Ansible; rounded up

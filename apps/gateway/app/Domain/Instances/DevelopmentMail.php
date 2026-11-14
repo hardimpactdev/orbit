@@ -8,6 +8,7 @@ use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Models\Instance;
 use App\Models\Node;
@@ -25,6 +26,11 @@ final readonly class DevelopmentMail
         $name = config('instances.mailpit.process');
         if (! is_int($port) || $port < 1 || $port > 65535 || ! is_string($name) || ! is_string($node->instance_bridge)) {
             return null;
+        }
+        // The bridge redirect takes the development band on the gateway, so Mailpit there would never answer: refuse it by name.
+        if (InstanceDevPorts::inBand($port)) {
+            throw new ResourceOperationException('instance.dev_band_reserved',
+                "The configured Mailpit port {$port} lies in the development band ".InstanceDevPorts::BridgeBand.' of Instance containers. Configure another port.', 422);
         }
         $process = Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->where('name', $name)
             ->where('runtime', ProcessRuntime::Docker)->where('status', LifecycleStatus::Active)->where('desired_state', DesiredProcessState::Running)->first();

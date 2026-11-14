@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Actions\Operations\ExpireOperationAction;
+use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
 use Illuminate\Support\Carbon;
@@ -28,7 +29,8 @@ final readonly class NativeRunCancellation
      * `NativeRunCancellationTest` ties each name and bound to the workflow files.
      */
     public const array CopySteps = [
-        'instance.create' => ['server-database-fill' => 600, 'clone-server-database-fill' => 600],
+        // A clone's create copies no database: its completion does.
+        'instance.create' => ['server-database-fill' => 600],
         'instance.complete' => ['server-database-fill' => 600],
     ];
 
@@ -39,12 +41,13 @@ final readonly class NativeRunCancellation
 
     /**
      * Records the request once on the Operation; the reconciler forwards it until Swamp confirms. Only an operator's cancel
-     * records it again, for a request that Swamp never confirmed.
+     * records it again, for a request that Swamp never confirmed. `$reconcile`: dispatch a reconciler pass after commit to send it;
+     * a caller that sends it itself after its response passes false, so one request is sent once, and the minute pass stays its retry.
      */
-    public function request(Operation $operation, bool $again = false): bool
+    public function request(Operation $operation, bool $again = false, bool $reconcile = true): bool
     {
         // The row as it is under the lock: a step event that landed after the caller loaded the Operation keeps its state keys.
-        return DB::transaction(function () use ($operation, $again): bool {
+        return DB::transaction(function () use ($operation, $again, $reconcile): bool {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $run = $operation->state['swamp_run_id'] ?? null;
             if (! is_string($run) || ! Str::isUuid($run) || ! DirectOperation::owns($operation)
@@ -55,9 +58,35 @@ final readonly class NativeRunCancellation
             $state = $operation->state ?? [];
             unset($state['native_cancel_confirmed_at']);
             $this->store->change($operation, ['state' => [...$state, 'native_cancel_requested_at' => now()->toISOString()]]);
-            ReconcileSwampOperations::dispatch()->afterCommit();
+            if ($reconcile) {
+                ReconcileSwampOperations::dispatch()->afterCommit();
+            }
 
             return true;
+        });
+    }
+
+    /**
+     * Sends a recorded request to Swamp, the one send path for the reconciler and for a cancel request after its response. It reads
+     * the row again first: a run that ended, a request already confirmed, or a database copy that started since holds the send.
+     * Swamp's confirmation is recorded, unless the request was recorded again while Swamp answered. A failed send leaves the request
+     * recorded, and the reconciler sends it again.
+     */
+    public function forward(Operation $operation): void
+    {
+        $operation->refresh();
+        if (! $this->awaitsForwarding($operation)) {
+            return;
+        }
+        $requested = $operation->state['native_cancel_requested_at'] ?? null;
+        $this->logBoundPassed($operation);
+        app(CancelSwampRun::class)->execute($operation);
+        DB::transaction(function () use ($operation, $requested): void {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            $state = $current->state ?? [];
+            if (($state['native_cancel_requested_at'] ?? null) === $requested) {
+                $this->store->change($current, ['state' => [...$state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+            }
         });
     }
 

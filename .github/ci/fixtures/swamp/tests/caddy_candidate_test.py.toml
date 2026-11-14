@@ -1,0 +1,35 @@
+order = 1330
+source_sha256 = "5bf480ed9590e20b0026069e203f48edf4f9a89843d9ab8d7c4302d301add93a"
+cases = [
+  "test_native_whole_node_caddy_publication",
+  "test_native_delta_used_by_all_three_migrate_caddy_passes",
+  "test_native_ingress_publication",
+  "test_validated_inode_has_final_metadata_at_interrupted_rename",
+  "test_ansible_route_site",
+  "test_ansible_route_withdrawal",
+  "test_ansible_bootstrap_swamp_front",
+]
+file = "swamp/tests/caddy_candidate_test.py"
+cost = 27
+slices = false
+inputs = [
+  "swamp/ansible/library/orbit_caddy_publish.py",
+  "swamp/ansible/module_utils/orbit_caddy_publish.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/library/orbit_route_site.py",
+  "swamp/ansible/tasks/caddy-publish.yml",
+  "swamp/ansible/tasks/gateway-swamp.yml",
+  "swamp/ansible/route-create-site.yml",
+  "swamp/ansible/route-withdraw.yml",
+  "swamp/workflows/workflow-operation-route-caddy.yaml",
+  "swamp/workflows/workflow-operation-route-caddy-delta.yaml",
+  "swamp/workflows/workflow-route-create-ingress.yaml",
+]
+[case_costs]
+"test_native_whole_node_caddy_publication" = 1
+"test_native_delta_used_by_all_three_migrate_caddy_passes" = 1
+"test_native_ingress_publication" = 1
+"test_ansible_route_site" = 6
+"test_ansible_route_withdrawal" = 6
+"test_ansible_bootstrap_swamp_front" = 6
+"test_validated_inode_has_final_metadata_at_interrupted_rename" = 6

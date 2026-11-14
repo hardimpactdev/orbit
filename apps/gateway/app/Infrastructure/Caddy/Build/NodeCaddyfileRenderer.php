@@ -98,12 +98,16 @@ final readonly class NodeCaddyfileRenderer
             $bind = $listeners->bind($site->listener, $site->port);
 
             if ($bind === []) {
-                $problems[] = "The {$site->describe()} needs the WireGuard IPv4 address of Node [{$node->name}].";
+                $problems[] = $site->listener === CaddyListenerRule::Bridge
+                    ? "The {$site->describe()} needs the Instance bridge of Node [{$node->name}]."
+                    : "The {$site->describe()} needs the WireGuard IPv4 address of Node [{$node->name}].";
 
                 continue;
             }
 
-            foreach ($bind as $listener) {
+            // The address check catches a wrong stored WireGuard or LAN address. The Instance bridge's address is Orbit's own: the
+            // converge makes it, and the Node's non-local bind lets Caddy load while the bridge is down, so a down bridge fails no build.
+            foreach ($site->listener === CaddyListenerRule::Bridge ? [] : $bind as $listener) {
                 if ($listener !== self::Wildcard) {
                     $listenAddresses[$listener] = $listener;
                 }
@@ -122,7 +126,7 @@ final readonly class NodeCaddyfileRenderer
             $body = $site->bindPlaceholder === null
                 ? $site->body
                 : str_replace($site->bindPlaceholder, implode(' ', $bind), $site->body);
-            $clients = $listeners->clients($site->listener);
+            $clients = $listeners->clients($site);
             $refused = $listeners->refused($site);
 
             if ($clients !== null || $refused !== null) {

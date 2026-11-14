@@ -1,0 +1,31 @@
+order = 1090
+source_sha256 = "a91e1fa6087cc9dae10e36afb642c64e126e12e1122a7f1ea7735f686f083cf4"
+cases = [
+  "unavailable native PR observations retain the last good publication",
+  "cancellation kills a tool's descendants and closes inherited output pipes",
+  "captured maintenance publishes exact PR and target links without retired factory records",
+]
+file = "swamp/tests/service_detection_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/project_schedule.ts",
+  "swamp/extensions/behaviors/_lib/service_detection.ts",
+  "swamp/extensions/behaviors/_lib/worker_query.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+  "swamp/tests/_support/dependency_projects.ts",
+  "swamp/tests/fixtures/worker_query.ts",
+]

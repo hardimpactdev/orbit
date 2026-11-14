@@ -150,6 +150,14 @@ if (family === "list") {
   const [, , , name, device, type, ...settings] = args;
   state.containers[name].added ??= {};
   state.containers[name].added[device] = { type, settings };
+} else if (family === "config" && args[1] === "device" && args[2] === "set") {
+  // A key on a local device, as on a running or frozen container on Incus 7: no restart, so the status stays.
+  const [, , , name, device, ...settings] = args;
+  for (const setting of settings) {
+    const key = setting.slice(0, setting.indexOf("="));
+    state.containers[name].devices = [...state.containers[name].devices.filter((value: string) => !value.startsWith(`${device},${key}=`)),
+      `${device},${setting}`];
+  }
 } else if (family === "config" && args[1] === "set") {
   // A local key replaces a key of the same name.
   const [, , name, setting] = args;
@@ -309,6 +317,16 @@ if (family === "list") {
       for (const unit of command.slice(3)) console.log(inactive.includes(unit) ? "inactive" : "active");
       Deno.exit(inactive.length > 0 ? 3 : 0);
     }
+    Deno.exit(0);
+  }
+  if (command[0] === "python3" && command[1] === "-c" && command.at(-1) === "proxy" && command[2].includes("def write_proxy_environment")) {
+    // instance_node_services.py `proxy`, the one writer of the container's proxy bypass: keep the value it was given.
+    const given = JSON.parse(new TextDecoder().decode(await new Response(Deno.stdin.readable).arrayBuffer())).proxy_environment;
+    const changed = JSON.stringify(state.containers[name].proxy ?? null) !== JSON.stringify(given);
+    state.containers[name].proxy = given;
+    state.proxyWrites = (state.proxyWrites ?? 0) + 1;
+    save();
+    console.log(JSON.stringify({ changed }));
     Deno.exit(0);
   }
   if (command[0] === "python3" && (command[1] === "/usr/local/libexec/orbit-instance-node-runtime.py" || command.includes("seed-prepare") || command.includes("seed-complete"))) {

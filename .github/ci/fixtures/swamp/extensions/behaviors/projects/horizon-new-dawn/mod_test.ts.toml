@@ -1,0 +1,29 @@
+order = 240
+source_sha256 = "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5"
+cases = [
+  "exact script output: v5.11.0 → v5.12.0",
+  "exact script output: v5.42.0 → v5.43.0",
+  "exact script output: v5.49.0 → v5.50.0",
+  "exact script output: v5.50.0 → v5.50.1",
+  "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
+  "missing, invalid and unknown baselines fail before diffing",
+  "upstream failures never become a clean empty detection",
+  "route and action text changes retain the script boundaries",
+  "nested config changes collapse only parent changes, including add and delete",
+  "baseline plan is one task and an up-to-date ledger produces none",
+  "non-object ledgers report an invalid synced_tag without reading upstream",
+]
+file = "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts"
+cost = 3
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/detect.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/surface.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/tasks.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/config.ts",
+]

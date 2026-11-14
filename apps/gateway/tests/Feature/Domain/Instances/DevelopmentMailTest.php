@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Instances\DevelopmentMail;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
@@ -99,4 +100,15 @@ it('uses the one configured endpoint when its public port or gateway changes', f
     $endpoint = app(DevelopmentMail::class)->forInstance($instance);
     expect($endpoint)->toBe(['host' => '10.253.8.1', 'port' => 2025, 'docker' => true])
         ->and(app(DevelopmentMail::class)->units($endpoint)[1]['content'])->toContain('10.253.8.1:2025');
+});
+
+it('refuses a Mailpit port configured in the development band by name instead of hiding mail', function (): void {
+    [$instance] = forwarderFixture();
+    config(['instances.mailpit.port' => 5180]);
+
+    expect(fn () => app(DevelopmentMail::class)->endpoint($instance->node))
+        ->toThrow(ResourceOperationException::class, 'development band 5173-5199');
+
+    config(['instances.mailpit.port' => 1025]);
+    expect(app(DevelopmentMail::class)->endpoint($instance->node))->toBe(['host' => '10.253.0.1', 'port' => 1025, 'docker' => true]);
 });

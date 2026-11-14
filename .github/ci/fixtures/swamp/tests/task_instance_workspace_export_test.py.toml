@@ -1,0 +1,25 @@
+file = "swamp/tests/task_instance_workspace_export_test.py"
+slices = false
+cost = 43
+source_sha256 = "de934a4717086a5384c79295074bb3792b6df87506baf255bce90708e41d6803"
+cases = [
+  "test_export_refuses_a_branch_move_during_bundle_creation",
+  "test_export_removes_node_scratch_when_guest_cleanup_fails",
+  "test_exact_branch_export_and_corrupt_transfer_cleanup"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/fixtures/task-instance-workspace.json",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/ssh-execution-*.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_export_refuses_a_branch_move_during_bundle_creation" = 8
+"test_export_removes_node_scratch_when_guest_cleanup_fails" = 12
+"test_exact_branch_export_and_corrupt_transfer_cleanup" = 23

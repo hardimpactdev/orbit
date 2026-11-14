@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -54,18 +55,30 @@ final readonly class TaskInstanceWorkspace
     }
 
     /**
-     * Refuses what the container check cannot run yet, before a check row exists: the hosted CI push needs the Node-side
-     * push of publication, and the CI cache setup program reads the Gateway mirror from a task VM. There is no task VM fallback.
+     * What a publication from a task copy adds to its intent (docs/reference/tasks.md#task-copy): the recorded guest target, the copy's
+     * start commit and the path of the `.env` Orbit wrote, relative to the checkout. No commit from the start on may hold that file.
      *
-     * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup
+     * @return array{runtime: array{project: string, name: string}, branch: string, snapshot_id: string, start: string, environment_path: string}
      */
-    public static function refuseUnavailable(?string $hostedCheck, array $setup): void
+    public function publication(): array
+    {
+        $start = $this->instance->starting_commit;
+        $environment = InstanceContainer::environmentFile($this->instance);
+        if (! is_string($start) || preg_match('/\A(?:[a-f0-9]{40}|[a-f0-9]{64})\z/D', $start) !== 1 || ! str_starts_with($environment, self::Root.'/')) {
+            throw new ResourceOperationException('tasks.no_workspace', 'The task copy has no recorded start commit.', 409);
+        }
+
+        return [...$this->intent(), 'start' => $start, 'environment_path' => substr($environment, strlen(self::Root) + 1)];
+    }
+
+    /**
+     * Refuses what the container check cannot run yet, before a check row exists: the hosted CI push needs the Node-side
+     * push of publication. There is no task VM fallback.
+     */
+    public static function refuseUnavailable(?string $hostedCheck): void
     {
         if ($hostedCheck !== null) {
             throw new ResourceOperationException('tasks.instance_hosted_check_unavailable', 'A container task workspace cannot run a hosted handoff check yet.', 409);
-        }
-        if (in_array('@orbit/ci-caches', array_column($setup, 'command'), true)) {
-            throw new ResourceOperationException('tasks.instance_setup_unavailable', 'A container task workspace cannot run the @orbit/ci-caches setup step.', 409);
         }
     }
 }

@@ -4,8 +4,19 @@
 - name: Name the container commands
   tags: [always]
   when: phase != 'node-service'
+  vars:
+    nic_filters: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance-nic-filters.json') | from_json }}"
   ansible.builtin.set_fact:
     incus_project: [incus, --project, "{{ container.project }}"]
+    # The NIC of a new container, in the one call that makes it: its address, both ACLs with reject defaults, and the address filters
+    # of instance-nic-filters.json, so it accepts only its own IPv4 and MAC address. Create and migrate write these; the native clone
+    # writes the same filters from instance_network.py's FILTERS.
+    nic_args: >-
+      {{ ['--device', 'eth0,ipv4.address=' ~ container.address,
+          '--device', 'eth0,security.acls=' ~ container.nic_acl ~ ',' ~ container.acl,
+          '--device', 'eth0,security.acls.default.egress.action=reject',
+          '--device', 'eth0,security.acls.default.ingress.action=reject']
+         + (['--device'] | product(['eth0,'] | product(nic_filters.items() | map('join', '=')) | map('join')) | flatten) }}
     resource_args: >-
       {{ (['--config'] | product(container.config.items() | map('join', '=')) | list | flatten)
          + ['--device', 'root,type=disk', '--device', 'root,path=/',
@@ -176,11 +187,7 @@
       when: phase == 'container' and container_read.rc != 0
       ansible.builtin.command:
         argv: >-
-          {{ incus_project + ['init', container.image, container.name, '--config', 'security.idmap.isolated=true',
-              '--device', 'eth0,ipv4.address=' ~ container.address,
-              '--device', 'eth0,security.acls=' ~ container.nic_acl ~ ',' ~ container.acl,
-              '--device', 'eth0,security.acls.default.egress.action=reject',
-              '--device', 'eth0,security.acls.default.ingress.action=reject'] + resource_args }}
+          {{ incus_project + ['init', container.image, container.name, '--config', 'security.idmap.isolated=true'] + nic_args + resource_args }}
       changed_when: true
 
 # Lifecycle mutations only add; removal belongs to host reconciliation from current Gateway intent.
@@ -219,11 +226,7 @@
       when: container_read.rc != 0
       ansible.builtin.command:
         argv: >-
-          {{ incus_project + ['copy', container.clone.source ~ '/' ~ container.clone.snapshot, container.name,
-              '--device', 'eth0,ipv4.address=' ~ container.address,
-              '--device', 'eth0,security.acls=' ~ container.nic_acl ~ ',' ~ container.acl,
-              '--device', 'eth0,security.acls.default.egress.action=reject',
-              '--device', 'eth0,security.acls.default.ingress.action=reject'] + resource_args }}
+          {{ incus_project + ['copy', container.clone.source ~ '/' ~ container.clone.snapshot, container.name] + nic_args + resource_args }}
       changed_when: true
     - name: Read the copy's devices
       ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
@@ -418,6 +421,31 @@
     # Finish the restart dispatch before any readiness check later in the phase.
     - name: Finish applying changed PHP settings
       ansible.builtin.meta: flush_handlers
+
+# The access plan's private names, such as `reverb.orbit` for an attached websocket app (docs/reference/development-containers.md#private-names-of-the-access-plan).
+- name: Write the private names of the access plan
+  tags: [container, clone, start]
+  when: phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool
+  ansible.builtin.include_tasks:
+    file: instance-private-names.yml
+    apply:
+      tags: [container, clone, start]
+  vars:
+    private_names_root: "{{ as_root }}"
+    private_names_push: "{{ incus_project }}"
+    private_names_container: "{{ container.name }}"
+    private_names: "{{ container.private_names | default([]) }}"
+
+# The composed NO_PROXY, present only when it is not the image's base (InstanceNodeServiceTargets::proxyEnvironment, the one builder),
+# for the units and login shells. instance_node_services.py `proxy` is the one writer; a unit reads the value at its next start.
+- name: Write the composed proxy environment
+  tags: [container, clone, start]
+  when: phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool and container.proxy_environment is defined
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + as_root + ['python3', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_node_services.py'), 'proxy'] }}"
+    stdin: "{{ {'proxy_environment': container.proxy_environment} | to_json }}"
+  register: composed_proxy_write
+  changed_when: composed_proxy_write.rc == 0 and (composed_proxy_write.stdout | from_json).changed
 
 - name: Stop the container
   tags: [stop]
@@ -619,6 +647,38 @@
   always:
     - name: Remove the .env on the Node
       ansible.builtin.file: { path: "{{ environment_path }}", state: absent }
+
+# The .env holds the Instance's secrets, so Git must never take it, also when the Project's .gitignore does not name it. One line in
+# the checkout's own info/exclude, written once; its other lines and the Project's files stay as they are.
+- name: Keep .env out of Git
+  tags: [workspace]
+  when: phase == 'workspace' and container.environment_file.startswith(container.workspace ~ '/')
+  block:
+    - name: Find the exclude file of the checkout
+      ansible.builtin.command: { argv: "{{ in_workspace + ['rev-parse', '--git-path', 'info/exclude'] }}" }
+      register: workspace_exclude
+      changed_when: false
+    - name: Name .env in the exclude file
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['python3', '-I', '-c', exclude_program, workspace_exclude.stdout | trim, container.environment_file[container.workspace | length + 1:]] }}"
+      vars:
+        exclude_program: |
+          import os, re, sys
+          path, entry = sys.argv[1], '/' + re.sub(r'([\\*?\[])', r'\\\1', sys.argv[2])
+          try:
+              with open(path, 'rb') as stream:
+                  data = stream.read()
+          except FileNotFoundError:
+              data = b''
+          if entry.encode() in data.splitlines():
+              print('unchanged')
+              sys.exit(0)
+          os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+          with open(path, 'ab') as stream:
+              stream.write((b'' if not data or data.endswith(b'\n') else b'\n') + entry.encode() + b'\n')
+          print('changed')
+      register: workspace_exclude_write
+      changed_when: workspace_exclude_write.stdout == 'changed'
 
 # A deployment checks out only a clean tree that the commit fast-forwards.
 - name: Check out the commit

@@ -567,7 +567,8 @@ test("same-process reconnect clears old enrolledAt lockout and renews on connect
 const remintTasks =
   new URL("../ansible/tasks/gateway-swamp-remint.yml", import.meta.url)
     .pathname;
-for (const missing of ["directory", "enrollment", "server", "empty server"]) {
+// A c without any token file is made by the remint after serve stops; a c with only part of its files is refused first.
+for (const missing of ["enrollment", "server", "empty server"]) {
   test(`proof remint with missing c ${missing} fails before any service stops`, async (f) => {
     const config = `${f.root}/.config/swamp`;
     Deno.mkdirSync(config, { recursive: true });
@@ -606,6 +607,39 @@ for (const missing of ["directory", "enrollment", "server", "empty server"]) {
       f.output,
       "Swamp remint stopped before stopping any service",
     );
+  });
+}
+for (const absent of ["directory", "files"]) {
+  test(`proof remint preflight passes a c without ${absent}, which the remint makes after serve stops`, async (f) => {
+    const config = `${f.root}/.config/swamp`;
+    Deno.mkdirSync(config, { recursive: true });
+    Deno.writeTextFileSync(`${config}/api-key`, "synthetic-test-only");
+    const credentials = `${f.root}/credentials`;
+    if (absent === "files") Deno.mkdirSync(`${credentials}/c`, { recursive: true });
+    const tasks = parse(Deno.readTextFileSync(remintTasks)) as Array<Record<string, unknown>>;
+    const stop = tasks.findIndex((task) => task.name === "Stop the workers");
+    const serve = tasks.findIndex((task) => task.name === "Stop serve");
+    // The worker set is made whole with serve stopped, before the first rotation.
+    assertEquals(tasks[serve + 1]?.["ansible.builtin.import_tasks"], "gateway-swamp-workers.yml");
+    // The remint enables the three workers, so a new c starts at boot too, and its last task waits until serve and all three run.
+    const start = tasks.find((task) => task.name === "Start the workers")!;
+    assertEquals([(start["ansible.builtin.systemd"] as Record<string, unknown>).enabled, start.loop], [true, ["a", "b", "c"]]);
+    const wait = tasks.at(-1)!;
+    assertEquals(wait.name, "Wait for serve and the workers");
+    assertEquals((wait["ansible.builtin.command"] as { argv: string[] }).argv.slice(2),
+      ["orbit-swamp-serve.service", "orbit-swamp-worker@a.service", "orbit-swamp-worker@b.service", "orbit-swamp-worker@c.service"]);
+    assertEquals(wait.until, "swamp_remint_active.stdout_lines == ['active', 'active', 'active', 'active']");
+    const testPlaybook = `${f.root}/preflight.yml`;
+    Deno.writeTextFileSync(
+      testPlaybook,
+      JSON.stringify([{ name: "Exercise the production remint preflight", hosts: "localhost", gather_facts: false, tasks: tasks.slice(0, stop) }]),
+    );
+    f.start(testPlaybook, {
+      control: { user: identity("-un"), repository: f.root },
+      swamp_home: f.root,
+      swamp_credentials: credentials,
+    });
+    assertEquals(await f.result(), []);
   });
 }
 for (const suffix of ["", "-1794127800"]) {
@@ -727,3 +761,36 @@ for (
     assert(!f.output.includes("synthetic-test-only"));
   });
 }
+
+const workersTasks = new URL("../ansible/tasks/gateway-swamp-workers.yml", import.meta.url).pathname;
+test("the worker set is made whole: only a worker without token files is minted and placed, with no secret in output", async (f) => {
+  const tasks = parse(Deno.readTextFileSync(workersTasks)) as Array<Record<string, unknown>>;
+  const named = (name: string) => tasks.find((task) => task.name === name)!;
+  // Both control-plane plays use this one file: the first build and the remint.
+  for (const file of ["gateway-swamp.yml", "gateway-swamp-remint.yml"]) {
+    const imported = (parse(Deno.readTextFileSync(new URL(`../ansible/tasks/${file}`, import.meta.url))) as Array<Record<string, unknown>>)
+      .filter((task) => task["ansible.builtin.import_tasks"] === "gateway-swamp-workers.yml");
+    assertEquals(imported.length, 1, file);
+  }
+  assertEquals(named("Mint the worker tokens").loop, "{{ swamp_workers_missing }}");
+  assertEquals(named("Place the worker tokens").loop, "{{ swamp_workers_missing | product(['enrollment', 'server']) | list }}");
+  // Every staged file is removed, also one a cut run left behind.
+  assertEquals(named("Remove the staged worker tokens").loop, "{{ ['a', 'b', 'c'] | product(['enrollment', 'server']) | list }}");
+  assert(named("Mint the worker tokens").no_log && named("Place the worker tokens").no_log);
+  // The real selection on a folder where a and b have their files and c has none.
+  const credentials = `${f.root}/credentials`;
+  for (const slot of ["a", "b"]) {
+    Deno.mkdirSync(`${credentials}/${slot}`, { recursive: true });
+    Deno.writeTextFileSync(`${credentials}/${slot}/server.token`, "orbit-worker-access.synthetic-test-only");
+  }
+  const look = tasks.findIndex((task) => task.name === "Look for the worker tokens");
+  const testPlaybook = `${f.root}/workers.yml`;
+  Deno.writeTextFileSync(testPlaybook, JSON.stringify([{
+    name: "Select the workers without tokens", hosts: "localhost", gather_facts: false,
+    tasks: [...tasks.slice(look, look + 2), { "ansible.builtin.copy": { content: "{{ swamp_workers_missing | to_json }}", dest: `${f.root}/missing.json` } }],
+  }]));
+  f.start(testPlaybook, { swamp_credentials: credentials });
+  assertEquals(await f.result(), []);
+  assertEquals(JSON.parse(Deno.readTextFileSync(`${f.root}/missing.json`)), ["c"]);
+  assert(!f.output.includes("synthetic-test-only"));
+});

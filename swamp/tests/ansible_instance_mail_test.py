@@ -285,6 +285,20 @@ class MailPhase(unittest.TestCase):
         )
         self.assertEqual(sum(c[:2] == ["incus", "exec"] for c in self.calls), 1)
 
+    def test_each_admission_replaces_the_older_mail_record(self):
+        # A clone's mail phase (instance_clone.py -> instance_mail.py -> the shipped bridge helper), once per create.
+        for step in range(3):
+            self.plan["bridge_admitted_at"] = 1800000000000000 + step * 1000
+            self.apply()
+        records = list((self.root / "bridge/endpoints").glob("*.json"))
+        self.assertEqual(
+            [path.name for path in records], ["10.253.0.1-1025-1800000000002000.json"]
+        )
+        self.assertEqual(
+            [rule["description"] for rule in self.bridge["egress"]],
+            ["orbit:endpoint:1800000000002000"],
+        )
+
     def test_failed_unit_write_keeps_network_path_and_a_retry_completes_it(self):
         self.failure = "orbit-mail-1025.socket"
         with self.assertRaises(RuntimeError):

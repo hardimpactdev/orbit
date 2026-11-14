@@ -63,7 +63,8 @@ final readonly class NodeServiceTargetOperation implements DirectOperationProjec
             'bridge_cidr' => $instance->node->instance_bridge, 'bridge_admitted_at' => (int) now()->format('Uu'),
             'node_services' => $endpoints, 'node_service_withdraw' => true,
             'environment' => array_map(static fn (string $key, string $value): string => $key.'='.$value,
-                array_keys($proxy = InstanceNodeServiceTargets::proxyEnvironment($gateway, $endpoints, $runtime->incus_project === InstancePlacement::NestedProject, [])),
+                array_keys($proxy = InstanceNodeServiceTargets::proxyEnvironment($gateway, $endpoints, $runtime->incus_project === InstancePlacement::NestedProject,
+                    $policy->privateNamesOf($instance, $runtime))),
                 $proxy),
             'node_service_removed_ports' => $remote ? [] : [$target->port],
             ...($remote ? [

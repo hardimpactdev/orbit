@@ -1,0 +1,22 @@
+order = 440
+source_sha256 = "662af869588dfb3d6c78efe1761a2eebe0b4ae53e263fb58eab63f885895b6de"
+cases = [
+  "test_every_host_is_pinned_and_the_private_files_have_their_custody",
+  "test_every_phase_is_one_tag_and_runs_on_the_hosts_it_needs",
+  "test_the_machine_phase_validates_the_sudo_rule_before_it_replaces_the_old_one",
+  "test_the_agent_starts_only_after_its_group_and_unit_exist",
+  "test_the_tunnel_key_is_checked_before_any_tunnel_change",
+  "test_a_hub_node_has_no_hub_peer",
+  "test_a_condition_is_a_string_and_host_keys_stay_checked",
+]
+file = "swamp/tests/ansible_node_add_test.py"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/build_vars.py",
+  "swamp/ansible/operation-node-add.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]

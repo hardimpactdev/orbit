@@ -1,0 +1,117 @@
+order = 60
+source_sha256 = "4ca9f634c7d8c79fe693641f8d15f73e03db9da5a9371014ba01364ddcc3f003"
+cases = [
+  "the saved dir host system boundary matches the shipped tasks",
+  "the saved dir host prepare boundary matches the shipped tasks",
+  "the saved zfs host system boundary matches the shipped tasks",
+  "the saved zfs host prepare boundary matches the shipped tasks",
+  "the saved nested host system boundary matches the shipped tasks",
+  "the saved nested host prepare boundary matches the shipped tasks",
+  "the normal image on a nested host reaches the verified nested-build boundary",
+  "a passed nested-fleet image build repeats the host system stage without changes",
+  "a passed nested-fleet image build repeats the host prepare stage without changes",
+  "a passed nested-fleet image build repeats the host normal stage without changes",
+  "a passed nested-fleet image build repeats the host nested stage without changes",
+  "a passed nested-fleet image build repeats the host finish stage without changes",
+  "a new image definition takes the stable alias while retaining the old image",
+  "a Node without its Instance pool is refused before anything changes",
+  "a directory pool skips the clone probe: a copy there is a full copy",
+  "an image that keeps a sudo path is never published",
+  "orbit-instance-build refuses an inherited unguarded profile NIC before starting",
+  "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting",
+  "prepared publication clears inherited stock build ownership",
+  "a prepared-image replacement rechecks the local socket despite the default remote",
+  "a failed replacement cleans up through the rechecked local socket and leaves the default remote intact",
+  "a prior prepared-image builder is refused by exact name and recipe without deletion",
+  "a Node without the nested-fleet switch runs the exact command lines of the normal image",
+  "a switched-on Node builds the nested-fleet image in its project from the verified pinned packages",
+  "a wrong pinned digest fails only the nested-fleet image: the role succeeds and records the failed task",
+  "a sudo path in the nested-fleet image fails only the nested-fleet image: the role succeeds and records the failed task",
+  "a good nested-fleet image build after a failed digest publishes the image and clears the record",
+  "a failed normal image build on a switched-on Node still fails the role and builds no nested-fleet image",
+  "a hosting intent without the nested-fleet image builds only the normal image",
+  "the nested-fleet audit judges visudo by its exit code, not by what it prints",
+]
+file = "swamp/tests/ansible_instance_host_image_test.ts"
+# ESTIMATE: completed Beast run, four workers, each case ceil(local seconds x 2.1) + 1.
+# Cases use verified boundaries; every case remains in Required. No timeout increase.
+cost = 712
+slices = 30
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
+  "swamp/ansible/instance_nested.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/artifact-fetch.yml",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-ids.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/_support/host_image_boundary.ts",
+  "swamp/tests/_support/regenerate_host_image_boundaries.ts",
+  "swamp/tests/fixtures/host-image-boundaries.json",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[case_costs]
+  "the saved dir host system boundary matches the shipped tasks" = 33
+  "the saved dir host prepare boundary matches the shipped tasks" = 34
+  "the saved zfs host system boundary matches the shipped tasks" = 34
+  "the saved zfs host prepare boundary matches the shipped tasks" = 40
+  "the saved nested host system boundary matches the shipped tasks" = 40
+  "the saved nested host prepare boundary matches the shipped tasks" = 49
+  "the normal image on a nested host reaches the verified nested-build boundary" = 17
+  "a passed nested-fleet image build repeats the host system stage without changes" = 24
+  "a passed nested-fleet image build repeats the host prepare stage without changes" = 39
+  "a passed nested-fleet image build repeats the host normal stage without changes" = 6
+  "a passed nested-fleet image build repeats the host nested stage without changes" = 7
+  "a passed nested-fleet image build repeats the host finish stage without changes" = 7
+  "a new image definition takes the stable alias while retaining the old image" = 21
+  "a Node without its Instance pool is refused before anything changes" = 4
+  "a directory pool skips the clone probe: a copy there is a full copy" = 42
+  "an image that keeps a sudo path is never published" = 14
+  "orbit-instance-build refuses an inherited unguarded profile NIC before starting" = 35
+  "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting" = 18
+  "prepared publication clears inherited stock build ownership" = 22
+  "a prepared-image replacement rechecks the local socket despite the default remote" = 53
+  "a failed replacement cleans up through the rechecked local socket and leaves the default remote intact" = 38
+  "a prior prepared-image builder is refused by exact name and recipe without deletion" = 4
+  "a Node without the nested-fleet switch runs the exact command lines of the normal image" = 20
+  "a switched-on Node builds the nested-fleet image in its project from the verified pinned packages" = 22
+  "a wrong pinned digest fails only the nested-fleet image: the role succeeds and records the failed task" = 14
+  "a sudo path in the nested-fleet image fails only the nested-fleet image: the role succeeds and records the failed task" = 22
+  "a good nested-fleet image build after a failed digest publishes the image and clears the record" = 22
+  "a failed normal image build on a switched-on Node still fails the role and builds no nested-fleet image" = 11
+  "a hosting intent without the nested-fleet image builds only the normal image" = 18
+  "the nested-fleet audit judges visudo by its exit code, not by what it prints" = 2
+
+# Verify the persistent host state before a host-task change can merge.
+[mandatory_cases]
+"swamp/ansible/tasks/instance-host.yml" = [
+  "the saved dir host prepare boundary matches the shipped tasks",
+  "the saved zfs host prepare boundary matches the shipped tasks",
+  "the saved nested host prepare boundary matches the shipped tasks",
+  "a passed nested-fleet image build repeats the host prepare stage without changes",
+  "a prepared-image replacement rechecks the local socket despite the default remote"
+]

@@ -118,7 +118,7 @@ class BranchSelectionTest(unittest.TestCase):
 
 
 class CloneTest(unittest.TestCase):
-    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None):
+    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None):
         calls = []
         self.inputs = {}
         real_run = subprocess.run
@@ -220,7 +220,9 @@ class CloneTest(unittest.TestCase):
                         if arg.startswith("eth0,"):
                             key, value = arg[5:].split("=", 1)
                             device[key] = value
+                    # Incus names the instance in its own record; the NIC check's report reads it.
                     read = {
+                        "name": container["name"],
                         "status": "Stopped",
                         "devices": {"t3": {}},
                         "expanded_devices": {"eth0": device},
@@ -238,7 +240,7 @@ class CloneTest(unittest.TestCase):
                         str(SCRIPT),
                         json.dumps(container),
                         "guest",
-                        (NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0] + (NETWORK_CHECK.parent / "instance_nested.py").read_text()) if container.get("allowed_devices") else NETWORK_CHECK.read_text(),
+                        (NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0] + (NETWORK_CHECK.parent / "instance_nested.py").read_text()) if container.get("allowed_devices") else (network_check or NETWORK_CHECK.read_text()),
                         pwd.getpwuid(os.getuid()).pw_name,
                         folder + "/private",
                         json.dumps({"node_services": node_service_code or 'print(\'{"status":"unchanged"}\')', "mail": mail_code or 'print(\'{"status":"unchanged"}\')'}),
@@ -272,6 +274,12 @@ class CloneTest(unittest.TestCase):
         self.assertEqual(nic["security.acls"], "orbitinst0-proxy,instance-7")
         self.assertEqual(nic["security.acls.default.egress.action"], "reject")
         self.assertEqual(nic["security.acls.default.ingress.action"], "reject")
+        # The copy's NIC accepts only its own IPv4 and MAC address: the clone reads FILTERS from the check's source it receives.
+        self.assertEqual(nic["security.ipv4_filtering"], "true")
+        self.assertEqual(nic["security.mac_filtering"], "true")
+        _, read, error = self.clone(network_check='FILTERS = {"security.ipv4_filtering": "true"}\n' + NETWORK_CHECK.read_text().replace("FILTERS = {", "_FILTERS = {", 1))
+        self.assertEqual(error, "")
+        self.assertNotIn("security.mac_filtering", read["expanded_devices"]["eth0"])
         start = ["incus", "--project", "orbit-instances", "start", "instance-7"]
         self.assertIn(start, calls)
         links = next(call for call in calls if call[3:5] == ['file', 'delete'] and '--force' not in call)
@@ -417,11 +425,12 @@ class CloneTest(unittest.TestCase):
         self.assertIn(f"instance-7/etc/ssl/certs/{new_digest}.0", [call[-2] for call in calls if call[3:5] == ["file", "create"]])
 
     def test_a_running_copy_and_a_clone_without_boot_files_push_none(self):
-        running = {"status": "Running", "devices": {"t3": {}}, "config": {"volatile.uuid": "abc-123"},
+        running = {"name": "instance-7", "status": "Running", "devices": {"t3": {}}, "config": {"volatile.uuid": "abc-123"},
                    "expanded_devices": {"eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",
                                                  "security.acls": "orbitinst0-proxy,instance-7",
                                                  "security.acls.default.egress.action": "reject",
-                                                 "security.acls.default.ingress.action": "reject"}}}
+                                                 "security.acls.default.ingress.action": "reject",
+                                                 "security.ipv4_filtering": "true", "security.mac_filtering": "true"}}}
         for case, clone, existing in (("retry on a running copy", {"boot_files": self.BOOT_FILES}, running),
                                       ("normal clone", {}, None),
                                       # An intent admitted by the previous Gateway release: the files are in clone.files,
@@ -555,6 +564,79 @@ class CloneTest(unittest.TestCase):
                 self.assertEqual(error, "instance.container_network_unsafe\n")
                 self.assertFalse(any("start" in call for call in calls))
 
+    def test_nic_check_refuses_a_nic_without_filters_with_exit_2_and_exempts_a_nic_without_its_own_address(self):
+        stock = {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2", "security.port_isolation": "true",
+                 "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject",
+                 "security.acls.default.ingress.action": "reject"}
+        filters = {"security.ipv4_filtering": "true", "security.mac_filtering": "true"}
+
+        def check(device, name="instance-7"):
+            container = {"name": name, "expanded_devices": {"eth0": device}}
+            return subprocess.run(["python3", str(NETWORK_CHECK), "orbitinst0", "eth0"], input=json.dumps(container),
+                                  capture_output=True, text=True, check=False)
+
+        # An Instance NIC without both filters refuses with exit 2, which every caller maps to instance.nic_filters_missing.
+        for partial in [{}, {"security.ipv4_filtering": "true"}, {"security.mac_filtering": "true"}, {"security.ipv4_filtering": "false",
+                                                                                                         "security.mac_filtering": "true"}]:
+            result = check({**stock, **partial})
+            self.assertEqual(result.returncode, 2, partial)
+            self.assertEqual(result.stdout, "instance-7/eth0 lacks security.ipv4_filtering and security.mac_filtering\n")
+        # With both filters it passes, silently.
+        self.assertEqual((check({**stock, **filters}).returncode, check({**stock, **filters}).stdout), (0, ""))
+        # A real defect keeps its own exit, filters or not.
+        for keys in [{}, filters]:
+            self.assertEqual(check({**stock, **keys, "security.acls": ""}).returncode, 1)
+        # The clone probe: the profile's eth0 has no address of its own, so it takes no filter and passes on its ACLs alone.
+        profile = {key: value for key, value in stock.items() if key != "ipv4.address"}
+        self.assertEqual(check(profile, "orbit-clone-probe-copy").returncode, 0)
+        self.assertEqual(check({**profile, "security.acls": ""}, "orbit-clone-probe-copy").returncode, 1)
+
+    def test_clone_refuses_a_copy_without_filters_with_the_filters_code_before_start(self):
+        for key in ["security.ipv4_filtering", "security.mac_filtering"]:
+            with self.subTest(key=key):
+                calls, _, error = self.clone(lambda read, key=key: read["expanded_devices"]["eth0"].pop(key))
+                self.assertEqual(error, "instance.nic_filters_missing\n")
+                self.assertFalse(any("start" in call for call in calls))
+
+    def test_a_check_source_without_literal_filters_refuses_the_copy_with_a_named_code(self):
+        source = NETWORK_CHECK.read_text()
+        for broken in [source.replace("FILTERS = {", "_FILTERS = {", 1),
+                       source.replace("FILTERS = {", "FILTERS = dict(**{", 1).replace('"true"}\n', '"true"})\n', 1)]:
+            with self.subTest(source=broken[:0]):
+                calls, _, error = self.clone(network_check=broken)
+                self.assertEqual(error, "instance.nic_filters_missing\n")
+                self.assertFalse(any("copy" in call for call in calls))
+
+    def test_the_three_holders_of_the_nic_filters_are_equal(self):
+        # One holder per language: Python (the shared NIC check, which the native clone reads), Ansible and the Gateway.
+        namespace = {}
+        exec(NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0], namespace)
+        python = namespace["FILTERS"]
+        ansible = json.loads((NETWORK_CHECK.parent / "instance-nic-filters.json").read_text())
+        php = (SCRIPT.parents[2] / "apps/gateway/app/Domain/Instances/InstanceHostIntent.php").read_text()
+        constant = php.split("public const array NicFilters = [", 1)[1].split("];", 1)[0]
+        gateway = dict(pair.strip().replace("'", "").split(" => ") for pair in constant.split(","))
+        self.assertEqual(python, {"security.ipv4_filtering": "true", "security.mac_filtering": "true"})
+        self.assertEqual(ansible, python)
+        self.assertEqual(gateway, python)
+
+    def test_nested_guard_refuses_a_nic_without_filters_with_the_filters_code(self):
+        program = NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0] + (NETWORK_CHECK.parent / "instance_nested.py").read_text()
+        nic = {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7",
+               "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject"}
+        allowed = {"eth0": {**nic, "security.ipv4_filtering": "true", "security.mac_filtering": "true"}}
+
+        def check(device):
+            container = {"name": "instance-7", "expanded_config": {}, "expanded_devices": {"eth0": device}}
+            return subprocess.run(["python3", "-c", program, "orbitinst0", "eth0", json.dumps(allowed), "{}"],
+                                  input=json.dumps(container), capture_output=True, text=True, check=False).returncode
+
+        # The exact device check leaves the filters out, so a NIC without them gets the filters' own exit, not the guard's.
+        self.assertEqual(check(dict(nic)), 2)
+        self.assertEqual(check(dict(allowed["eth0"])), 0)
+        # Any other change to the NIC is the guard's refusal.
+        self.assertEqual(check({**allowed["eth0"], "ipv4.address": "10.253.0.9"}), 1)
+
     def test_normal_clone_uses_the_exact_original_checker_program_and_argv(self):
         calls, _, error = self.clone()
         self.assertEqual(error, "")
@@ -565,7 +647,8 @@ class CloneTest(unittest.TestCase):
             "root": {"type": "disk", "path": "/", "pool": "orbit-instances", "size": "40GiB"},
             "eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",
                      "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject",
-                     "security.acls.default.ingress.action": "reject"},
+                     "security.acls.default.ingress.action": "reject",
+                     "security.ipv4_filtering": "true", "security.mac_filtering": "true"},
             "orbit-runtime": {"type": "disk", "source": "/opt/orbit-runtime", "path": "/opt/orbit-runtime", "readonly": "true", "shift": "true"},
             "orbit-agent": {"type": "disk", "source": "/opt/orbit-agent", "path": "/opt/orbit-agent", "readonly": "true", "shift": "true"},
             "t3": {"type": "proxy", "listen": "tcp:10.44.0.7:3800", "connect": "tcp:10.253.0.2:3773", "nat": "true"},
@@ -699,48 +782,45 @@ class CloneTest(unittest.TestCase):
             ):
                 runpy.run_path(str(SCRIPT), run_name="__main__")
             self.assertEqual(exit_status.exception.code, 1)
+            self.assertNotIn("PRIVATE", output.getvalue() + error.getvalue())
+            # Only the T3 step leaves its part's name in the private folder; no phase leaves a unit receipt there.
+            if phase != 't3':
+                self.assertFalse((Path(folder) / 't3.json').exists())
+            if evidence and phase == 'check':
+                # The check keeps no private folder: its public receipt is its own output.
+                printed = json.loads(output.getvalue())
+                self.assertEqual(printed, evidence)
+                return printed
             self.assertEqual(output.getvalue(), "")
-            self.assertNotIn("PRIVATE", error.getvalue())
-            if evidence:
-                ownership.assert_any_call(Path(folder) / 't3.json', account.pw_uid, account.pw_gid)
-                recorded = json.loads((Path(folder) / 't3.json').read_text())
-                self.assertEqual(recorded, evidence)
-                self.assertEqual((Path(folder) / 't3.json').stat().st_mode & 0o777, 0o600)
-                return recorded
             return error.getvalue()
 
-    def assert_structured_process_failure_reaches_create_terminal_receipt(self):
+    def assert_structured_process_failure_reaches_the_completion_receipt(self):
         import importlib.util
         spec = importlib.util.spec_from_file_location('guest_fixture', SCRIPT.parents[1] / 'tests/instance_clone_guest_test.py')
         fixture = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(fixture)
         # Execute the production guest entry point; only its system boundaries are faked.
-        _, output, _ = fixture.CloneGuestTest().readiness('sessions', entrypoint=True, inactive=True)
+        _, output, _ = fixture.CloneGuestTest().readiness('check', entrypoint=True, inactive=True)
         evidence = json.loads(output)
-        self.invoke('token=ghp_PRIVATE_TOKEN_12345678901234567890', evidence=evidence)
-        with tempfile.TemporaryDirectory() as temporary:
-            folder = Path(temporary)
-            (folder / 't3.json').write_text(json.dumps(evidence))
-            script = """
-import { behavior } from './swamp/extensions/behaviors/operations/instance-dev-command/assets.ts';
-const folder = Deno.args[0];
-const ctx = {writeResource: async () => {}};
-const created = await behavior.methods.create_result.execute({
-    folder, intent: {instance_id: 7, setup_steps: [], container: {clone: {}}},
-    checkout: null, database: 'succeeded', setup: 'skipped', processes: [], route: 'skipped',
-    container: {launch: 'succeeded', workspace: {status: 'succeeded', outputs: {stdout: 'orbit-commit=' + 'a'.repeat(40)}},
-        deploy: [], processes: 'succeeded', seed: 'skipped', t3: 'succeeded', register: 'failed'},
-}, ctx);
-console.log(JSON.stringify(JSON.parse(created.stdout)));
+        printed = self.invoke('token=ghp_PRIVATE_TOKEN_12345678901234567890', phase='check', evidence=evidence)
+        # A sessions failure is a plain phase failure now: no receipt crosses, and none reaches the create's result.
+        self.assertEqual(self.invoke('token=ghp_PRIVATE_TOKEN_12345678901234567890', evidence=evidence),
+                         "instance.container_sessions_failed: command incus exited 7\n")
+        script = """
+import { completeResult } from './swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts';
+const stdout = Deno.args[0];
+const result = completeResult({instance_id: 7, route: null}, {stage: 'succeeded', database: 'skipped', fleet: 'skipped', services: 'succeeded',
+    check: {status: 'succeeded', outputs: {stdout, exitCode: 1}}, route: 'skipped', certificates: [], route_observation: {}});
+console.log(JSON.stringify(JSON.parse(result.stdout)));
 """
-            result = subprocess.run(['deno', 'eval', '--no-check', script, str(folder)],
-                                    cwd=SCRIPT.parents[2], text=True, capture_output=True, check=False, timeout=20)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            receipt = json.loads(result.stdout)
-            self.assertEqual(receipt['error_code'], evidence['error_code'])
-            self.assertEqual(receipt['process_failure'], evidence['process_failure'])
-            self.assertFalse(receipt['ready'])
-            self.assertNotIn('PRIVATE', json.dumps(receipt))
+        result = subprocess.run(['deno', 'eval', '--no-check', script, json.dumps(printed)],
+                                cwd=SCRIPT.parents[2], text=True, capture_output=True, check=False, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        receipt = json.loads(result.stdout)
+        self.assertEqual([receipt['failed_step'], receipt['error_code']], ['check', evidence['error_code']])
+        self.assertEqual(receipt['process_failure'], evidence['process_failure'])
+        self.assertFalse(receipt['ready'])
+        self.assertNotIn('PRIVATE', json.dumps(receipt))
 
     def test_preserves_only_the_guest_command_and_exit_code(self):
         for command in ["curl", "git", "mkdir", "php", "systemctl", "t3"]:
@@ -751,7 +831,7 @@ console.log(JSON.stringify(JSON.parse(created.stdout)));
                     + " exited 17\n"
                 )
                 self.assertEqual(self.invoke(diagnostic), diagnostic)
-        self.assert_structured_process_failure_reaches_create_terminal_receipt()
+        self.assert_structured_process_failure_reaches_the_completion_receipt()
 
     def test_rejects_private_or_mismatched_guest_diagnostics(self):
         for stderr in [

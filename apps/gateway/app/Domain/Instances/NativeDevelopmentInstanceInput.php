@@ -62,19 +62,19 @@ final readonly class NativeDevelopmentInstanceInput
         }
 
         $testing = $environment->testing($instance);
-        $server = ($plan['server_database'] ?? null) === null ? null : $this->serverDatabase($operation, ValidatedData::object($plan['server_database']));
-        $valkey = ($plan['server_valkey'] ?? null) === null ? null : $this->serverDatabase($operation, ValidatedData::object($plan['server_valkey']));
+        // A clone's create ends when its thread is usable: its completion creates the database, starts a nested fleet and publishes the
+        // Route (NativeInstanceCompleteInput), so its create run gets none of them and no vault copy for them.
+        $clone = $container !== null && (ValidatedData::object($container)['clone'] ?? null) !== null;
+        $server = $clone || ($plan['server_database'] ?? null) === null ? null : $this->serverDatabase($operation, ValidatedData::object($plan['server_database']));
+        $valkey = $clone || ($plan['server_valkey'] ?? null) === null ? null : $this->serverDatabase($operation, ValidatedData::object($plan['server_valkey']));
 
         // Minting writes the read token's credential line into the vault; the fetch reads it as a 0600 file.
         app(InstanceGitHubReadTokens::class)->start($operation);
 
         $club = NestedFleetClubKey::forRun($container === null ? null : ValidatedData::object($container));
-        // A clone of a nested-fleet default starts the fleet it copied (docs/reference/development-containers.md#a-clone-starts-its-fleet).
-        // Every other create's intent has no `fleet` key at all, so its steps read the same intent as before.
-        $fleet = $container === null || (ValidatedData::object($container)['clone'] ?? null) === null ? null
-            : app(NestedFleetIntent::class)->forClone($instance, $instance->runtime()->firstOrFail());
 
-        return ['intent' => [...$plan, 'container' => $club['container'], ...($fleet === null ? [] : ['fleet' => $fleet]), 'ssh_execution' => $input['ssh_execution'],
+        return ['intent' => [...$plan, 'container' => $club['container'], 'ssh_execution' => $input['ssh_execution'],
+            ...($clone ? ['database' => null, 'route' => null] : []),
             'instance_name' => $instance->name, 'name_converted_from' => $input['name_converted_from'] ?? null,
             'processes' => $processes, 'setup_steps' => $steps, 'environment_directory' => $environment->directory($instance),
             'server_database' => $server === null ? null : array_diff_key($server, ['secrets' => true]),

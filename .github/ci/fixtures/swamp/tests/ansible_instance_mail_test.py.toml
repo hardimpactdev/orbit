@@ -1,0 +1,46 @@
+order = 1230
+source_sha256 = "48bd3274e7588f23488f76c58a84453fd2fc65ac0a95adcce5502968079be996"
+cases = [
+  "test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes",
+  "test_new_admission_metadata_and_incus_empty_fields_are_unchanged",
+  "test_each_admission_replaces_the_older_mail_record",
+  "test_failed_unit_write_keeps_network_path_and_a_retry_completes_it",
+  "test_failure_after_one_successful_service_write_finishes_pending_activation",
+  "test_failure_after_all_writes_before_reload_finishes_pending_activation",
+  "test_foreign_listener_or_unit_skips_both_ports_without_mutation",
+  "test_stopped_missing_binary_or_path_failure_never_changes_guest",
+  "test_migrate_selected_smtp_passes_real_preflight_and_installs_forwarders",
+  "test_active_owned_socket_with_missing_enable_link_is_repaired",
+  "test_failed_guest_entry_preserves_only_exact_public_codes_at_subprocess_boundary",
+  "test_real_default_launch_continues_after_mail_failure",
+  "test_no_endpoint_does_no_work",
+  "test_create_launches_share_the_mail_step_and_receipt",
+]
+file = "swamp/tests/ansible_instance_mail_test.py"
+cost = 15
+# Batched production converger with unprivileged host/guest tool boundaries; no playbook per case.
+slices = false
+inputs = [
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/instance_mail.py",
+  "swamp/ansible/tasks/instance-mail.yml",
+  "swamp/ansible/tasks/instance-container-phase.yml",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/scripts/instance_clone.py",
+  "swamp/workflows/workflow-operation-instance-create.yaml",
+]
+[case_costs]
+"test_each_admission_replaces_the_older_mail_record" = 1
+"test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes" = 1
+"test_new_admission_metadata_and_incus_empty_fields_are_unchanged" = 1
+"test_failed_unit_write_keeps_network_path_and_a_retry_completes_it" = 1
+"test_failure_after_one_successful_service_write_finishes_pending_activation" = 1
+"test_failure_after_all_writes_before_reload_finishes_pending_activation" = 1
+"test_foreign_listener_or_unit_skips_both_ports_without_mutation" = 1
+"test_stopped_missing_binary_or_path_failure_never_changes_guest" = 1
+"test_no_endpoint_does_no_work" = 1
+"test_create_launches_share_the_mail_step_and_receipt" = 1
+"test_migrate_selected_smtp_passes_real_preflight_and_installs_forwarders" = 1
+"test_active_owned_socket_with_missing_enable_link_is_repaired" = 1
+"test_failed_guest_entry_preserves_only_exact_public_codes_at_subprocess_boundary" = 1
+"test_real_default_launch_continues_after_mail_failure" = 2

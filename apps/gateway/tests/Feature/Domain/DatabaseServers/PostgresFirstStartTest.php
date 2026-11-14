@@ -13,7 +13,8 @@ uses(LazilyRefreshDatabase::class);
 
 /*
  * The postgres image's initdb trusts the socket and the loopback for every user, so a client in the container logs in
- * as anyone without a password. A new PostgreSQL server initializes with SCRAM for both instead.
+ * as anyone without a password. A new PostgreSQL server initializes with peer for the socket and SCRAM for the loopback
+ * instead: only the container's OS user postgres logs in as postgres without a password.
  */
 
 beforeEach(function (): void {
@@ -26,16 +27,16 @@ beforeEach(function (): void {
     ]);
 });
 
-it('initializes a PostgreSQL server without trust for the socket or the loopback', function (): void {
+it('initializes a PostgreSQL server with peer for the socket and SCRAM for the loopback', function (): void {
     $server = ($this->server)('pgsql');
 
     expect(DatabaseServerProcess::firstStartEnvironment($server, 'root-secret-sentinel'))->toBe([
         'POSTGRES_PASSWORD' => 'root-secret-sentinel',
-        'POSTGRES_INITDB_ARGS' => '--auth-local=scram-sha-256 --auth-host=scram-sha-256',
+        'POSTGRES_INITDB_ARGS' => '--auth-local=peer --auth-host=scram-sha-256',
     ])->and(DatabaseServerProcess::data($server, $this->node, 'root-secret-sentinel')->environment)
         ->toBe(DatabaseServerProcess::firstStartEnvironment($server, 'root-secret-sentinel'))
         ->and(DatabaseServerProcess::firstStartEnvFile($server, 'root-secret-sentinel'))
-        ->toBe("POSTGRES_PASSWORD=root-secret-sentinel\nPOSTGRES_INITDB_ARGS=--auth-local=scram-sha-256 --auth-host=scram-sha-256\n");
+        ->toBe("POSTGRES_PASSWORD=root-secret-sentinel\nPOSTGRES_INITDB_ARGS=--auth-local=peer --auth-host=scram-sha-256\n");
 });
 
 it('gives a MySQL server only its root password', function (): void {
@@ -44,12 +45,13 @@ it('gives a MySQL server only its root password', function (): void {
 });
 
 /*
- * The real image with the exact env file: no trust line, no login without the password, and Orbit's own admin login
- * still works. It starts a throwaway postgres:18 container, so it runs only in the `privileged` group with
- * ORBIT_REAL_DATABASE_CLIENTS=1 on a host where that is allowed, and removes it afterwards:
+ * The real image with the exact env file: no trust line; over the socket only the OS user postgres logs in, as
+ * postgres; root and the loopback need the password; and Orbit's own admin login still works. It starts a throwaway
+ * postgres:18 container, so it runs only in the `privileged` group with ORBIT_REAL_DATABASE_CLIENTS=1 on a host where
+ * that is allowed, and removes it afterwards:
  * `ORBIT_REAL_DATABASE_CLIENTS=1 vendor/bin/pest --group privileged --default-time-limit=300 <this file>`. CI does not run it.
  */
-it('makes the real postgres:18 image ask every login for its password', function (): void {
+it('makes the real postgres:18 image ask every login but the socket peer for its password', function (): void {
     if (getenv('ORBIT_REAL_DATABASE_CLIENTS') !== '1') {
         $this->markTestSkipped('Set ORBIT_REAL_DATABASE_CLIENTS=1 on a host where throwaway database containers are allowed.');
     }
@@ -60,9 +62,9 @@ it('makes the real postgres:18 image ask every login for its password', function
         fwrite($pipes[0], $stdin);
         fclose($pipes[0]);
         $out = (string) stream_get_contents($pipes[1]);
-        stream_get_contents($pipes[2]);
+        $err = (string) stream_get_contents($pipes[2]);
 
-        return ['exit' => proc_close($process), 'out' => trim($out)];
+        return ['exit' => proc_close($process), 'out' => trim($out), 'err' => $err];
     };
     try {
         expect($run(['sudo', '-n', 'docker', 'run', '--detach', '--pull=never', '--name', $name, '--env-file', '/dev/stdin', 'postgres:18'],
@@ -72,14 +74,19 @@ it('makes the real postgres:18 image ask every login for its password', function
         }
         $trust = $run(['sudo', '-n', 'docker', 'exec', $name, 'sh', '-c', 'grep -v "^#" "$PGDATA/pg_hba.conf" | grep -c trust']);
         $socket = $run(['sudo', '-n', 'docker', 'exec', $name, 'psql', '-X', '-w', '--username=postgres', '-tAc', 'SELECT 1']);
+        $peer = $run(['sudo', '-n', 'docker', 'exec', '--user=postgres', $name, 'psql', '-X', '-w', '--dbname=postgres', '-tAc', 'SELECT current_user']);
         $loopback = $run(['sudo', '-n', 'docker', 'exec', $name, 'psql', '-X', '-w', '--host=127.0.0.1', '--username=postgres', '-tAc', 'SELECT 1']);
         $admin = $run(DatabaseStatements::login(DatabaseDriver::Pgsql, $name, 'postgres', 'postgres'), "{$password}\nSELECT current_user;\n");
         $wrong = $run(DatabaseStatements::login(DatabaseDriver::Pgsql, $name, 'postgres', 'postgres'), "wrong-{$password}\nSELECT current_user;\n");
 
         expect($trust['out'])->toBe('0')
             ->and($socket['exit'])->not->toBe(0)
+            ->and($socket['err'])->toContain('Peer authentication failed for user "postgres"')
+            ->and($peer['exit'])->toBe(0)
+            ->and($peer['out'])->toBe('postgres')
             ->and($loopback['exit'])->not->toBe(0)
-            ->and($admin)->toBe(['exit' => 0, 'out' => 'postgres'])
+            ->and($admin['exit'])->toBe(0)
+            ->and($admin['out'])->toBe('postgres')
             ->and($wrong['exit'])->not->toBe(0);
     } finally {
         exec('sudo -n docker rm --force --volumes '.escapeshellarg($name).' >/dev/null 2>&1');

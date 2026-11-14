@@ -1,0 +1,25 @@
+file = "swamp/tests/task_instance_workspace_test.py"
+slices = false
+cost = 32
+source_sha256 = "e5725169ece009ac29fa941bb2e4b5b4d28a4cf731f02fed67f17934b50fb828"
+cases = [
+  "test_tagged_playbook_pins_target_and_writes_failure_without_node_execution",
+  "test_exact_checkout_trust_survives_isolated_git_config",
+  "test_refuses_missing_invalid_project_and_changed_checkout_identity"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/fixtures/task-instance-workspace.json",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/ssh-execution-*.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_tagged_playbook_pins_target_and_writes_failure_without_node_execution" = 7
+"test_exact_checkout_trust_survives_isolated_git_config" = 11
+"test_refuses_missing_invalid_project_and_changed_checkout_identity" = 14

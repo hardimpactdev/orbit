@@ -1,7 +1,8 @@
 /**
  * Stateful Incus boundary for the nested fleet of an Instance container (swamp/ansible/tasks/instance-fleet-*.yml). The Node's `incus`
  * reaches only `exec` into the Instance container; there the inner `incus`, `ip`, `wg`, `ping`, `test` and `curl` act on one JSON state:
- * the nested containers with their devices, configuration keys, files and snapshots, the operator tunnel, and the nested Gateway's API.
+ * the nested containers with their devices, configuration keys, files and snapshots, the inner bridge's keys, the operator tunnel, and
+ * the nested Gateway's API.
  * Every call is one JSON line in `calls`. No live host command runs.
  */
 const folder = Deno.env.get("HOST_FIXTURE")!;
@@ -25,6 +26,9 @@ const done = (output?: unknown): never => {
 const pairs = (values: string[]) =>
   Object.fromEntries(values.map((value) => [value.slice(0, value.indexOf("=")), value.slice(value.indexOf("=") + 1)]));
 const copy = <T>(value: T): T => structuredClone(value);
+/** The nested Gateway's six Swamp tokens that the refresh keeps young (instance-fleet.yml `fleet_token_names`). */
+const tokenNames = ["serve-driver", "orbit-gateway-run", "orbit-gateway-read", "orbit-worker-a-access", "orbit-worker-b-access", "orbit-worker-c-access"];
+const iso = (milliseconds: number) => new Date(milliseconds).toISOString();
 
 // The Node's own read of the Instance container (instance-fleet-proxy.yml): `lastUsedAt` is its last start.
 if (args[0] === "query" && args[1] === "--" && args[2] === `/1.0/instances/${state.outer.name}?project=${state.outer.project}`) {
@@ -90,11 +94,13 @@ if (command[0] === "sh" && command[1] === "-c" && command[2].includes('cat > "$1
   state.outer.modes[path] = [...command[2].matchAll(/(?:chown|chmod) (\S+) /g)].map((match) => match[1]).join(" ");
   done();
 }
-// The Git object IDs of the workspace's checkout: `digests` maps each path to its ID; `digestsFail` makes the read fail.
+// The Git object IDs of the workspace's checkout: `digests` maps each path to its ID; `digestsFail` makes the read fail. A path under
+// `swamp/` that `digests` does not name has the ID `c3`.
 if (command[0] === "git" && command.includes("rev-parse")) {
   if (state.digestsFail) fail("fatal: not a git repository");
-  const digests = { "apps/agent/contract": "d4", ...(state.digests ?? { "apps/gateway": "a1", swamp: "c3" }) };
-  done(command.slice(command.indexOf("rev-parse") + 1).map((object) => digests[object.slice("HEAD:".length)]).join("\n"));
+  const digests: Record<string, string> = { "apps/agent/contract": "d4", ...(state.digests ?? { "apps/gateway": "a1" }) };
+  done(command.slice(command.indexOf("rev-parse") + 1).map((object) => object.slice("HEAD:".length))
+    .map((path) => digests[path] ?? (path.startsWith("swamp/") ? "c3" : "")).join("\n"));
 }
 
 if (command[0] === "incus") {
@@ -102,6 +108,20 @@ if (command[0] === "incus") {
   if (inner[0] === "admin" && inner[1] === "waitready") done();
   if (inner[0] === "list") {
     done(Object.entries(containers).map(([name, value]) => `${name},${value.status.toUpperCase()}`).join("\n"));
+  }
+  // The inner bridge: `network` is its name and keys; `networkUnreadable` makes its read fail.
+  if (inner[0] === "query" && inner[1].startsWith("/1.0/networks/")) {
+    const name = inner[1].slice("/1.0/networks/".length);
+    if (state.networkUnreadable || name !== state.network.name) fail("Network not found");
+    done({ name, type: "bridge", config: state.network.config });
+  }
+  if (inner[0] === "network" && inner[1] === "set") {
+    if (inner[2] !== state.network.name) fail("Network not found");
+    // Incus restarts the bridge's dnsmasq, and a nested container on it loses DNS and DHCP while it runs: the fake refuses that.
+    const running = Object.entries(containers).filter(([, value]) => value.status === "Running").map(([name]) => name);
+    if (running.length > 0) fail(`The bridge changed under running nested containers: ${running.join(", ")}`);
+    Object.assign(state.network.config, pairs(inner.slice(3)));
+    done();
   }
   if (inner[0] === "query") {
     const [route, query] = inner[1].slice("/1.0/instances/".length).split("?");
@@ -228,6 +248,27 @@ if (command[0] === "incus") {
       Deno.exit(inactive.length > 0 ? 3 : 0);
     }
     if (rest[0] === "systemctl" && rest[1] === "show") done("inactive\ninactive");
+    // The nested Gateway's Swamp tokens, names and dates only, as `swamp access token list --json` prints them. `tokens` maps a name to its
+    // creation time; by default the six exist and are one day old. `tokensUnreadable` makes the list fail.
+    if (rest[0] === "env" && rest.includes("swamp") && rest.includes("list")) {
+      if (state.tokensUnreadable) fail("Error: the token store is locked");
+      const tokens: Record<string, string> = state.tokens ?? Object.fromEntries(tokenNames.map((token) => [token, iso(Date.now() - 86400_000)]));
+      done(JSON.stringify(Object.entries(tokens).map(([token, created]) => ({ name: token, createdAt: created, expiresAt: created })), null, 2));
+    }
+    // The remint play in the nested Gateway: it makes the worker set whole, renews the six tokens and starts serve and the three
+    // workers. `remintFail` makes it fail with a play error; its output holds no token, as the real play's.
+    if (rest[0] === "env" && rest.some((value) => value.endsWith("ansible-playbook")) && rest.includes("remint")) {
+      state.reminted = (state.reminted ?? 0) + 1;
+      if (state.remintFail) {
+        console.log("TASK [Rotate the serve driver token] ***\nfatal: [localhost]: FAILED! => {\"changed\": true, \"cmd\": \"umask 077 && swamp access token rotate serve-driver --duration 30d --json >/dev/null\", \"rc\": 1}");
+        fail("PLAY RECAP *********\nlocalhost                  : ok=12   changed=3    unreachable=0    failed=1    skipped=0");
+      }
+      state.tokens = Object.fromEntries(tokenNames.map((token) => [token, iso(Date.now())]));
+      const gateway = container(name);
+      gateway.files ??= {};
+      gateway.files["/etc/orbit/swamp-role-worker/c/server.token"] = "made";
+      done("PLAY RECAP *********\nlocalhost                  : ok=40   changed=21   unreachable=0    failed=0    skipped=0");
+    }
     // The grants play in the nested Gateway: its recap names how many files it changed (`grantsChanged`, 0 by default).
     if (rest[0] === "env" && rest.some((value) => value.endsWith("ansible-playbook"))) {
       const changed = state.grantsChanged ?? 0;
@@ -236,6 +277,14 @@ if (command[0] === "incus") {
     }
     // A checkout that moved under the running nested Gateway (`schemaBehind`): Doctor is unhealthy until the migrate and a restart after it.
     // `pendingMigration`: the migrate applies one (Laravel prints each migration); otherwise it prints that nothing was due.
+    // The nested Gateway's digest of each named Node's base converge intent (`orbit:node-converge-digest`): `intentDigests` names a
+    // Node's digest, `intentDigestFail` makes the command fail.
+    if (rest[0] === "php" && rest.includes("orbit:node-converge-digest")) {
+      if (state.intentDigestFail) fail("The base intent of app-dev cannot be built: RuntimeException");
+      const own: Record<string, string> = { gateway: "1", "app-dev": "2", "app-prod": "3" };
+      const nodes = rest.slice(rest.indexOf("--base") + 1);
+      done(JSON.stringify(Object.fromEntries(nodes.map((node) => [node, state.intentDigests?.[node] ?? own[node].repeat(64)]))));
+    }
     if (rest[0] === "php" && rest.includes("migrate")) {
       state.migrated = true;
       const applied = state.pendingMigration || state.schemaBehind;

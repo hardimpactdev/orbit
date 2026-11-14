@@ -22,6 +22,7 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\WebSocketAppTarget;
 use App\Support\ValidatedData;
 use RuntimeException;
 
@@ -50,6 +51,9 @@ final readonly class InstanceContainer
     /** The ports of the Node's WireGuard address that publish T3, one per clone. */
     public const int T3PortFirst = 3800;
 
+    /** The description of the NIC ACL egress rule to an attached websocket app's private endpoint; `env:sync` withdraws a stale one by it. */
+    public const string WebSocketEgressDescription = 'Orbit websocket app';
+
     public const int T3PortLast = 3999;
 
     /** The Node's WireGuard interface, where T3's clients come in. */
@@ -60,6 +64,9 @@ final readonly class InstanceContainer
 
     /** The placeholder model key and the model origin, which T3's unit hands to Claude Code and Codex. */
     public const string ModelEnvironment = '/home/agent/.config/orbit/model.env';
+
+    /** T3's command in a container, from the agent release its image holds. */
+    public const string T3 = InstanceHostIntent::AgentFolder.'/current/agent/bin/t3';
 
     public function __construct(private RecipeImageBuilds $recipes) {}
 
@@ -96,6 +103,12 @@ final readonly class InstanceContainer
     public static function application(Instance $instance): string
     {
         return ApplicationDirectory::resolve(InstanceHostIntent::Workspace, $instance->root ?? $instance->project->root);
+    }
+
+    /** The `.env` that Orbit writes, with the Instance's secrets: in the application's folder (development-containers.md#what-is-built). */
+    public static function environmentFile(Instance $instance): string
+    {
+        return self::application($instance).'/.env';
     }
 
     /** The Node keeps a bare mirror of the Project's repository per Instance: Git runs there, never in the container. */
@@ -186,9 +199,12 @@ final readonly class InstanceContainer
         $nodeServices = InstanceNodeServiceTargets::endpoints($instance);
         // Only a container in the nested project holds an inner fleet; its own CLI reaches the nested Gateway without the proxy.
         $nestedFleet = $runtime->incus_project === InstancePlacement::NestedProject;
-        $proxy = InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices, $nestedFleet, []);
-        $environment = [...$environment, ...$proxy];
         $access = $this->targetAccesses($instance, $runtime, $database, $mail, $nodeServices);
+        $privateNames = self::privateNames($access)['private_names'] ?? [];
+        $proxy = InstanceNodeServiceTargets::proxyEnvironment($gateway, $nodeServices, $nestedFleet, $privateNames);
+        // One rule for Node services, an inner fleet and private names alike: a value other than the base is written into the container.
+        $ownProxy = $proxy !== InstanceNodeServiceTargets::proxyEnvironment($gateway, [], false, []);
+        $environment = [...$environment, ...$proxy];
         $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url);
         ['vite' => $vitePort, 'server' => $devServerPort] = app(ContainerProcesses::class)->ports($instance);
 
@@ -196,7 +212,7 @@ final readonly class InstanceContainer
             'instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
             'config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096',
                 ...InstancePlacement::config($runtime->incus_project),
-                ...(! array_any($nodeServices, static fn (array $target): bool => ! $target['docker']) && ! isset($clone['proxy_environment']) && ! $nestedFleet ? []
+                ...(! $ownProxy && ! isset($clone['proxy_environment']) ? []
                     : array_combine(array_map(static fn (string $key): string => 'environment.'.$key, ['NO_PROXY', 'no_proxy']), array_values($proxy)))],
             'root_disk_pool' => InstanceHostIntent::Pool, 'root_disk_size' => '40GiB',
             // A runtime recorded in the nested-fleet project starts from the nested-fleet image; every other one from the normal image.
@@ -207,14 +223,17 @@ final readonly class InstanceContainer
             'acl' => $runtime->container_name, 'nic_acl' => InstanceHostIntent::NicAcl,
             'bridge_cidr' => ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')),
             'bridge_admitted_at' => $admittedAt,
-            'bridge_endpoints' => array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port'], 'docker' => $target['docker']], $access),
+            'bridge_endpoints' => self::bridgeEndpoints($access),
             // The common NIC ACL keeps the ways to the model forwarder and egress proxy; this one lets the Node's Caddy reach
             // FrankenPHP, a clone's T3 clients reach T3, and the container reach each attached target.
             'acl_rules' => ['description' => 'Orbit Instance '.$instance->id,
-                'egress' => array_map(static fn (array $target): array => [...self::egressRule($target),
+                'egress' => [...array_map(static fn (array $target): array => [...self::egressRule($target),
                     ...(($target['node_service'] ?? false) ? ['description' => 'Orbit Node service:'.$target['port']]
+                        : (isset($target['description']) ? ['description' => $target['description']]
                         : ($mail !== null && $target['host'] === $mail['host'] && $target['port'] === $mail['port']
-                            ? ['description' => 'Orbit development SMTP'] : []))], $access),
+                            ? ['description' => 'Orbit development SMTP'] : [])))], $access),
+                    // A clone with its own site also reaches its own development ports, through the dev-port table's bridge redirect.
+                    ...(self::ownSite($access) === [] ? [] : [InstanceOwnSite::nicEgress($instance->node)])],
                 'ingress' => [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
                     'destination_port' => (string) self::WebPort, 'state' => 'enabled'],
                     ...($vitePort === null ? [] : [['action' => 'allow', 'source' => $gateway.'/32', 'protocol' => 'tcp',
@@ -228,12 +247,15 @@ final readonly class InstanceContainer
             'mirror' => self::mirror($instance), 'repository' => $project->repository_url,
             'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])),
             'branch' => $branch !== '' ? $branch : ValidatedData::string($project->default_branch), 'commit' => null,
-            'workspace' => $workspace, 'environment_file' => $application.'/.env',
+            'workspace' => $workspace, 'environment_file' => self::environmentFile($instance),
             // The deploy commands' whole environment: `orbit`'s home and the runtime folder, the Project's PHP first, the Vite+ home and
             // the egress proxy (docs/reference/development-containers.md#egress-and-dns).
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.self::path($project),
                 ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment)],
             ...($nodeServices === [] ? [] : ['node_services' => $nodeServices]),
+            ...self::privateNames($access),
+            // The units and login shells read it from the one guest writer at their next start (instance_node_services.py `proxy`).
+            ...($ownProxy ? ['proxy_environment' => $proxy] : []),
             'mail' => $mail,
             'mail_units' => $mail === null ? [] : app(DevelopmentMail::class)->units($mail),
             'units' => $this->units($instance, $runtime, $application, $devServerPort),
@@ -259,7 +281,8 @@ final readonly class InstanceContainer
             'eth0' => ['type' => 'nic', 'name' => 'eth0', 'network' => InstanceHostIntent::Network,
                 'ipv4.address' => $runtime->bridge_address, 'security.port_isolation' => 'true',
                 'security.acls' => InstanceHostIntent::NicAcl.','.$runtime->container_name,
-                'security.acls.default.egress.action' => 'reject', 'security.acls.default.ingress.action' => 'reject'],
+                'security.acls.default.egress.action' => 'reject', 'security.acls.default.ingress.action' => 'reject',
+                ...InstanceHostIntent::NicFilters],
             'orbit-runtime' => ['type' => 'disk', 'source' => InstanceHostIntent::RuntimeFolder, 'path' => InstanceHostIntent::RuntimeFolder, 'readonly' => 'true', 'shift' => 'true'],
             'orbit-agent' => ['type' => 'disk', 'source' => InstanceHostIntent::AgentFolder, 'path' => InstanceHostIntent::AgentFolder, 'readonly' => 'true', 'shift' => 'true'],
             ...($runtime->t3_port === null ? [] : [self::T3Device => ['type' => 'proxy',
@@ -305,8 +328,10 @@ final readonly class InstanceContainer
             : InstanceRuntime::query()->where('instance_id', $runtime->clone_source_instance_id)->firstOrFail();
         $node = Node::query()->findOrFail($runtime->node_id);
         $nestedFleet = $runtime->incus_project === InstancePlacement::NestedProject;
-        $resetProxy = $source !== null && InstanceNodeServiceTarget::query()->where('instance_id', $source->instance_id)
-            ->where('node_id', '!=', $source->node_id)->exists();
+        // The seed carries the default's proxy bypass: a remote Node service host, or the private name of its websocket app.
+        $resetProxy = $source !== null && (InstanceNodeServiceTarget::query()->where('instance_id', $source->instance_id)
+            ->where('node_id', '!=', $source->node_id)->exists()
+            || WebSocketAppTarget::query()->where('instance_id', $source->instance_id)->whereNull('route_id')->exists());
         $project = $instance->project;
         $agent = InstanceHostIntent::AgentUid;
         $workspace = InstanceHostIntent::Workspace;
@@ -323,7 +348,7 @@ final readonly class InstanceContainer
                 'title' => $project->name ?: $project->slug,
                 'unit' => self::T3Unit, 'internal_port' => InstanceHostIntent::T3Port, 'ready_seconds' => 30,
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
-                't3' => InstanceHostIntent::AgentFolder.'/current/agent/bin/t3', 'project_mark' => '/home/agent/.config/orbit/t3-project'],
+                't3' => self::T3, 'project_mark' => '/home/agent/.config/orbit/t3-project'],
             'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600'],
             // A copy of a default with a Node service elsewhere drops that host, and a nested-fleet copy keeps its inner fleet.
             ...($resetProxy || $nestedFleet ? ['proxy_environment' => InstanceNodeServiceTargets::proxyEnvironment($gateway, [], $nestedFleet, [])] : []),
@@ -402,7 +427,7 @@ final readonly class InstanceContainer
     /** Attached targets and the Node's development SMTP publication share one endpoint policy.
      * @param  array{host:string,port:int,docker:bool}|null  $mail
      * @param  list<array{id:int,process_id:int,process_name:string,host:string,port:int,docker:bool,host_env_key:string,port_env_key:string}>|null  $nodeServices
-     * @return list<array{host:string,port:int,docker:bool,node_service?:bool,rule?:array<string,string>}>
+     * @return list<array{host:string,port:int,docker:bool,node_service?:bool,name?:string,description?:string,rule?:array<string,string>}>
      */
     private function targetAccesses(Instance $instance, InstanceRuntime $runtime, ?DatabaseConnection $primary, ?array $mail, ?array $nodeServices = null): array
     {
@@ -415,11 +440,64 @@ final readonly class InstanceContainer
                     'node-service-'.$endpoint['host'].'-'.$endpoint['port'])])];
         }
         $targets = [...$targets, ...array_values($attached)];
+        $websocket = $this->websocketAccess($instance, $runtime);
+        if ($websocket !== null && ! isset($attached[$websocket['host'].':'.$websocket['port']])) {
+            $targets[] = $websocket;
+        }
         if ($mail !== null && ! in_array($mail, array_map(static fn (array $target): array => array_intersect_key($target, $mail), $targets), true)) {
             $targets[] = $mail;
         }
 
-        return $targets;
+        return [...$targets, ...$this->ownSiteAccesses($instance, $runtime)];
+    }
+
+    /**
+     * A clone's own site on the Instance bridge's gateway address (docs/reference/development-containers.md#the-own-site-from-inside):
+     * one target on 443 per private Route name of the clone, by the same rule as its Caddy own sites. Its name gives the hosts line and
+     * the NO_PROXY entry, and its rule the NIC ACL row, so nothing else lists the names.
+     *
+     * @return list<array{host: string, port: int, docker: false, name: string, description: string}>
+     */
+    private function ownSiteAccesses(Instance $instance, InstanceRuntime $runtime): array
+    {
+        $gateway = self::runsT3($runtime) ? InstanceHostIntent::gateway(Node::query()->findOrFail($runtime->node_id)) : null;
+        if ($gateway === null) {
+            return [];
+        }
+        $targets = [];
+        foreach ($instance->routes()->orderBy('routes.id')->get() as $route) {
+            if ($this->servesDevPorts($instance, $runtime, $route)) {
+                $targets[$route->domain] = ['host' => $gateway, 'port' => 443, 'docker' => false, 'name' => $route->domain,
+                    'description' => InstanceOwnSite::SiteDescription];
+            }
+        }
+
+        return array_values($targets);
+    }
+
+    /**
+     * The own-site targets of an access plan.
+     *
+     * @param  list<array<string, mixed>>  $access
+     * @return list<array<string, mixed>>
+     */
+    private static function ownSite(array $access): array
+    {
+        return array_values(array_filter($access, static fn (array $target): bool => ($target['description'] ?? null) === InstanceOwnSite::SiteDescription));
+    }
+
+    /**
+     * The bridge endpoints of an access plan: every target but a clone's own site, which the Node's own-site rows admit at the bridge
+     * (InstanceOwnSite::bridgeAcl).
+     *
+     * @param  list<array<string, mixed>>  $access
+     * @return list<array{host: string, port: int, docker: bool}>
+     */
+    private static function bridgeEndpoints(array $access): array
+    {
+        return array_values(array_map(static fn (array $target): array => ['host' => ValidatedData::string($target['host']),
+            'port' => ValidatedData::integer($target['port']), 'docker' => (bool) $target['docker']],
+            array_filter($access, static fn (array $target): bool => self::ownSite([$target]) === [])));
     }
 
     /**
@@ -431,10 +509,78 @@ final readonly class InstanceContainer
     public function connectionPaths(Instance $instance, InstanceRuntime $runtime): array
     {
         $access = $this->databaseAccesses($instance, $runtime, null);
+        $websocket = $this->websocketAccess($instance, $runtime);
 
         return ['egress' => array_map(self::egressRule(...), $access),
             'bridge_endpoints' => array_map(static fn (array $target): array => ['host' => $target['host'], 'port' => $target['port'], 'docker' => $target['docker']], $access),
-            'firewall' => array_column($access, 'rule')];
+            'firewall' => array_column($access, 'rule'),
+            // The websocket path is reconciled, not only added: a removed app closes it in the running container.
+            'websocket' => $websocket === null ? null : ['egress' => [...self::egressRule($websocket), 'description' => self::WebSocketEgressDescription],
+                'bridge_endpoint' => ['host' => $websocket['host'], 'port' => $websocket['port'], 'docker' => false], 'firewall' => $websocket['rule']],
+            'websocket_comment' => self::firewallPrefix($instance).'websocket',
+            // The egress rules that env:sync reconciles by description: the websocket app's, and a clone's own site with its development
+            // ports. A rule of a description the plan no longer holds goes.
+            'reconciled' => ['descriptions' => [self::WebSocketEgressDescription, InstanceOwnSite::SiteDescription, InstanceOwnSite::DevDescription],
+                'egress' => $this->reconciledEgress($instance, $runtime, $websocket)],
+            'private_names' => $this->privateNamesOf($instance, $runtime)];
+    }
+
+    /**
+     * @param  array{host: string, port: int}|null  $websocket
+     * @return list<array<string, string>>
+     */
+    private function reconciledEgress(Instance $instance, InstanceRuntime $runtime, ?array $websocket): array
+    {
+        $own = $this->ownSiteAccesses($instance, $runtime);
+        $rules = $websocket === null ? [] : [[...self::egressRule($websocket), 'description' => self::WebSocketEgressDescription]];
+        foreach ($own as $target) {
+            $rules[] = [...self::egressRule($target), 'description' => $target['description']];
+        }
+
+        return $own === [] ? $rules : [...$rules, InstanceOwnSite::nicEgress(Node::query()->findOrFail($runtime->node_id))];
+    }
+
+    /**
+     * The plan's private names of a container Instance, for each caller of the one NO_PROXY composer outside `intent()`.
+     *
+     * @return list<array{name: string, host: string, port: int}>
+     */
+    public function privateNamesOf(Instance $instance, InstanceRuntime $runtime): array
+    {
+        $websocket = $this->websocketAccess($instance, $runtime);
+
+        return self::privateNames([...($websocket === null ? [] : [$websocket]), ...$this->ownSiteAccesses($instance, $runtime)])['private_names'] ?? [];
+    }
+
+    /**
+     * The exact path to the private endpoint of the Instance's websocket app, or null without one (InstanceWebSocketTarget).
+     *
+     * @return array{host: string, port: int, docker: false, name: string, description: string, rule: array<string, string>}|null
+     */
+    private function websocketAccess(Instance $instance, InstanceRuntime $runtime): ?array
+    {
+        $endpoint = InstanceWebSocketTarget::endpoint($instance);
+
+        return $endpoint === null ? null : ['host' => $endpoint['host'], 'port' => $endpoint['port'], 'docker' => false, 'name' => $endpoint['name'],
+            'description' => self::WebSocketEgressDescription,
+            'rule' => $this->tcpRule($instance, $runtime, $endpoint['host'], $endpoint['port'], false, 'websocket')];
+    }
+
+    /**
+     * The fleet private names of the plan's targets, each with the exact address and port the plan admits for it. The container has no
+     * DNS server, so Orbit writes each name into the container's hosts file, and the migrate's env check admits each name at that port.
+     * Absent when no target has a name, so the plan of every other Instance stays as it was.
+     *
+     * @param  list<array<string, mixed>>  $access
+     * @return array{}|array{private_names: list<array{name: string, host: string, port: int}>}
+     */
+    public static function privateNames(array $access): array
+    {
+        $names = array_values(array_map(static fn (array $target): array => ['name' => ValidatedData::string($target['name']),
+            'host' => ValidatedData::string($target['host']), 'port' => ValidatedData::integer($target['port'])],
+            array_filter($access, static fn (array $target): bool => isset($target['name']))));
+
+        return $names === [] ? [] : ['private_names' => $names];
     }
 
     /**
@@ -482,9 +628,9 @@ final readonly class InstanceContainer
     {
         $endpoints = [];
         foreach (InstanceRuntime::query()->where('node_id', $node->id)->with('instance')->orderBy('id')->get() as $runtime) {
-            foreach ($this->targetAccesses($runtime->instance, $runtime, null, app(DevelopmentMail::class)->forInstance($runtime->instance),
-                InstanceNodeServiceTargets::endpoints($runtime->instance, requireRunning: false)) as $access) {
-                $endpoints[$access['host'].':'.$access['port']] = ['host' => $access['host'], 'port' => $access['port'], 'docker' => $access['docker']];
+            foreach (self::bridgeEndpoints($this->targetAccesses($runtime->instance, $runtime, null, app(DevelopmentMail::class)->forInstance($runtime->instance),
+                InstanceNodeServiceTargets::endpoints($runtime->instance, requireRunning: false))) as $endpoint) {
+                $endpoints[$endpoint['host'].':'.$endpoint['port']] = $endpoint;
             }
         }
         ksort($endpoints);

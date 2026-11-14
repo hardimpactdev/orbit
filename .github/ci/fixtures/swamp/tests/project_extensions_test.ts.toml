@@ -1,0 +1,30 @@
+order = 990
+source_sha256 = "a6f9a470a47b496b07736aca46d4218d49fb18cc76d4e45baf25cba6b6f609ca"
+cases = [
+  "the data file holds the recorded Project 20 configuration",
+  "weekly slots cross year boundaries and hourly inspection stays separate",
+  "project findings retain reports and blocked reasons and create one deterministic whole batch receipt",
+  "cancelled schedule cleanup requires ended children, no assistance and a removed or absent VM",
+]
+file = "swamp/tests/project_extensions_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/project_schedule.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+  "swamp/extensions/behaviors/operations/project-maintenance/projects.json",
+  "swamp/tests/_support/projects.ts",
+  "swamp/tests/fixtures/project-extensions/detection.json",
+  "swamp/tests/fixtures/project-extensions/nckrtl-com.json",
+]

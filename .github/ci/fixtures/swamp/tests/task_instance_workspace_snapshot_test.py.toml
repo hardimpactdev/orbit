@@ -1,0 +1,23 @@
+file = "swamp/tests/task_instance_workspace_snapshot_test.py"
+slices = false
+cost = 32
+source_sha256 = "d5e5c501e46492d004eb497c03bf2af5b7c59b4535359f7d5e20250a0e5dddd6"
+cases = [
+  "test_snapshots_include_force_added_ignored_work_without_changing_index",
+  "test_immutable_after_evidence_and_discard_leave_checkout_unchanged"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/fixtures/task-instance-workspace.json",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/ssh-execution-*.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_snapshots_include_force_added_ignored_work_without_changing_index" = 9
+"test_immutable_after_evidence_and_discard_leave_checkout_unchanged" = 23

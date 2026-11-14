@@ -1,0 +1,60 @@
+order = 540
+source_sha256 = "5849b616aa352cec579e249341e7363b18bdfef7ce87af5640d5bec83b7a8f16"
+cases = [
+  "a blank seed gets the network, then the containers, the Gateway bootstrap and the nested Orbit steps in order, then the operator join",
+  "a half-made fleet starts from nothing: its containers go first",
+  "a fleet whose build stopped after its containers existed has no operator stamp: all three go and the build runs whole",
+  "a build removes the operator stamp first, so a build that stops leaves the fleet incomplete",
+  "a complete fleet creates nothing, restarts nothing and changes nothing",
+  "a from-stock refresh with no Gateway release metadata reaches all nested roles after private DNS lets the websocket dependency listen",
+  "local Gateway DNS fails with a named error before activation when dig is missing",
+  "local Gateway DNS fails with a named error before activation when dig is missing in check mode",
+  "an already-running local listener is reused with zero changes and peer-managed Gateway DNS is preserved",
+  "production Gateway vars from main create no listener or catalog and change no resolver",
+  "local Gateway DNS check mode skips activation and readiness without retries or mutation",
+  "a recorded local listener is disabled and its stale catalog removed after routing to a separate VPN",
+  "fresh local Gateway DNS check mode plans resources without requiring an installed release",
+  "withdrawal retains the listener when resolver policy still names its local address",
+  "conservative DNS ownership can withdraw after later-failure",
+  "conservative DNS ownership can withdraw after not-started",
+]
+file = "swamp/tests/ansible_task_vm_fleet_build_test.ts"
+cost = 677
+slices = 16
+inputs = [
+  "apps/gateway/tests/Fixtures/production-gateway-converge-main.json",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/operation-node-converge.yml",
+  "swamp/ansible/operation-node-role-add-local-dns.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-host.yml",
+  "swamp/ansible/tasks/gateway-dns.yml",
+  "swamp/ansible/tasks/node-role-runtime.yml",
+  "swamp/ansible/tasks/private-dns-listener.yml",
+  "swamp/ansible/tasks/private-dns-withdraw.yml",
+  "swamp/ansible/tasks/task-vm-fleet-operator.yml",
+  "swamp/ansible/tasks/task-vm-fleet.yml",
+  "swamp/tests/_support/task_vm_stock_roles.ts",
+  "swamp/tests/_support/task_vm_stock_systemd.py",
+]
+
+[case_costs]
+  "a blank seed gets the network, then the containers, the Gateway bootstrap and the nested Orbit steps in order, then the operator join" = 36 # completed body 35.708s, run 43010311414; larger completed history retained
+  "a half-made fleet starts from nothing: its containers go first" = 17 # completed body 16.154s, run 43010311414; larger completed history retained
+  "a fleet whose build stopped after its containers existed has no operator stamp: all three go and the build runs whole" = 37 # completed body 36.842s, run 43010311414; larger completed history retained
+  "a build removes the operator stamp first, so a build that stops leaves the fleet incomplete" = 36 # completed body 35.292s, run 43010311414; larger completed history retained
+  "a complete fleet creates nothing, restarts nothing and changes nothing" = 8 # completed body 7.327s, run 43010311414; larger completed history retained
+  "a from-stock refresh with no Gateway release metadata reaches all nested roles after private DNS lets the websocket dependency listen" = 79 # UNMEASURED hosted estimate: existing file maximum; fixture-owned keys passed locally in 27.045s body / 27.127s wall; current-head hosted proof pending
+  "local Gateway DNS fails with a named error before activation when dig is missing" = 2 # completed body 1.642s, run 43010311414; larger completed history retained
+  "local Gateway DNS fails with a named error before activation when dig is missing in check mode" = 2 # completed body 1.890s, run 43010311414; larger completed history retained
+  "an already-running local listener is reused with zero changes and peer-managed Gateway DNS is preserved" = 68 # completed body 67.121s, run 43010311414; larger completed history retained
+  "production Gateway vars from main create no listener or catalog and change no resolver" = 5 # completed body 4.012s, run 43010311414; larger completed history retained
+  "local Gateway DNS check mode skips activation and readiness without retries or mutation" = 29 # CENSORED lower bound 28.766s, run 43010311414; not a completed measurement
+  "a recorded local listener is disabled and its stale catalog removed after routing to a separate VPN" = 42 # CENSORED lower bound 41.562s, run 43010311414; not a completed measurement
+  "fresh local Gateway DNS check mode plans resources without requiring an installed release" = 79 # UNMEASURED estimate; observed maximum body cost
+  "withdrawal retains the listener when resolver policy still names its local address" = 79 # UNMEASURED estimate; observed maximum body cost
+  "conservative DNS ownership can withdraw after later-failure" = 79 # UNMEASURED estimate; observed maximum body cost
+  "conservative DNS ownership can withdraw after not-started" = 79 # UNMEASURED estimate; observed maximum body cost

@@ -1,0 +1,16 @@
+order = 1130
+source_sha256 = "4b9dfb055f1b756e22b2216061ff32c586f10cdbdf4c3f52057243375956ea59"
+cases = [
+  "worker projection uses only permitted query records and no select",
+  "worker capability refusal propagates without local data fallback",
+]
+file = "swamp/tests/worker_query_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/worker_query.ts",
+]

@@ -1,0 +1,204 @@
+# Managed by Orbit: Node Caddy build
+{
+    auto_https disable_certs
+    order abort first
+    metrics {
+        per_host
+    }
+}
+
+# orbit: app-dev route-7
+https://api.test {
+    bind 10.44.0.7 192.168.1.5
+    @orbit_task_vms remote_ip 10.44.0.128/25
+    abort @orbit_task_vms
+    tls /etc/caddy/orbit-certificates/route-7/current/cert.pem /etc/caddy/orbit-certificates/route-7/current/key.pem
+    reverse_proxy https://10.44.0.9 {
+    header_up Host api.test
+    transport http {
+        tls_server_name api.test
+        tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
+    }
+}
+}
+
+# orbit: app-dev app-instance-13
+https://blog.test {
+    bind 10.44.0.7 192.168.1.5
+    @orbit_task_vms remote_ip 10.44.0.128/25
+    abort @orbit_task_vms
+    tls /etc/caddy/orbit-certificates/app-instance-13/current/cert.pem /etc/caddy/orbit-certificates/app-instance-13/current/key.pem
+    @orbit_probe header X-Orbit-Probe 1
+log_skip @orbit_probe
+@orbit_asleep {
+    not header X-Orbit-Probe 1
+    not file {
+        root /dev/shm/orbit/hibernation
+        try_files /app-instance-13.awake
+    }
+}
+handle @orbit_asleep {
+    forward_auth https://gateway.orbit {
+        uri /api/v1/runtime-activations/app-instance/13
+        header_up Host gateway.orbit
+        transport http {
+            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
+            tls_server_name gateway.orbit
+        }
+    }
+}
+log {
+    output file /data/caddy/orbit/hibernation/app-instance-13.log
+}
+@orbit_vite {
+    path /__orbit/vite /__orbit/vite/*
+}
+handle @orbit_vite {
+    reverse_proxy 127.0.0.1:5174
+}
+handle {
+    root * /home/orbit/apps/blog/public
+encode zstd gzip
+php_fastcgi unix//run/php/orbit-app-instance-13.sock
+file_server
+}
+}
+
+# orbit: app-dev app-instance-12
+https://feature.tool.test {
+    bind 10.44.0.7 192.168.1.5
+    @orbit_task_vms remote_ip 10.44.0.128/25
+    abort @orbit_task_vms
+    tls /etc/caddy/orbit-certificates/app-instance-12/current/cert.pem /etc/caddy/orbit-certificates/app-instance-12/current/key.pem
+    @orbit_probe header X-Orbit-Probe 1
+log_skip @orbit_probe
+log_skip @orbit_asleep
+log {
+    output file /data/caddy/orbit/hibernation/app-instance-12.log {
+        roll_size 1MiB
+        roll_keep 1
+    }
+}
+@orbit_asleep {
+    not header X-Orbit-Probe 1
+    file {
+        root /var/lib/orbit/power
+        try_files /app-instance-12.asleep
+    }
+}
+handle @orbit_asleep {
+    forward_auth https://gateway.orbit {
+        uri /api/v1/runtime-activations/app-instance/12
+        header_up Host gateway.orbit
+        transport http {
+            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
+            tls_server_name gateway.orbit
+        }
+    }
+}
+    @orbit_vite {
+    path /__orbit/vite /__orbit/vite/*
+}
+handle @orbit_vite {
+    reverse_proxy 10.253.0.3:5173
+}
+handle {
+    reverse_proxy 10.253.0.3:8080 {
+    flush_interval -1
+    transport http {
+        read_timeout 1h
+        response_header_timeout 1h
+    }
+}
+}
+}
+
+# orbit: ingress app-instance-14
+shop.example.com {
+    bind 0.0.0.0 10.44.0.7 192.168.1.5
+    @orbit_task_vms remote_ip 10.44.0.128/25
+    abort @orbit_task_vms
+    tls force_automate
+    reverse_proxy 10.253.0.5:8080 {
+    flush_interval -1
+    transport http {
+        read_timeout 1h
+        response_header_timeout 1h
+    }
+}
+}
+
+# orbit: app-prod app-instance-15
+https://shop.test {
+    bind 10.44.0.7 192.168.1.5
+    @orbit_task_vms remote_ip 10.44.0.128/25
+    abort @orbit_task_vms
+    tls /etc/caddy/orbit-certificates/app-instance-15/current/cert.pem /etc/caddy/orbit-certificates/app-instance-15/current/key.pem
+    root * /home/shop/current/
+encode zstd gzip
+php_fastcgi unix//run/php/orbit-app-instance-15.sock {
+    resolve_root_symlink
+}
+file_server
+}
+
+# orbit: app-dev app-instance-11
+https://tool.test {
+    bind 10.44.0.7 192.168.1.5
+    @orbit_task_vms remote_ip 10.44.0.128/25
+    abort @orbit_task_vms
+    tls /etc/caddy/orbit-certificates/app-instance-11/current/cert.pem /etc/caddy/orbit-certificates/app-instance-11/current/key.pem
+    @orbit_probe header X-Orbit-Probe 1
+log_skip @orbit_probe
+log_skip @orbit_asleep
+log {
+    output file /data/caddy/orbit/hibernation/app-instance-11.log {
+        roll_size 1MiB
+        roll_keep 1
+    }
+}
+@orbit_asleep {
+    not header X-Orbit-Probe 1
+    file {
+        root /var/lib/orbit/power
+        try_files /app-instance-11.asleep
+    }
+}
+handle @orbit_asleep {
+    forward_auth https://gateway.orbit {
+        uri /api/v1/runtime-activations/app-instance/11
+        header_up Host gateway.orbit
+        transport http {
+            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
+            tls_server_name gateway.orbit
+        }
+    }
+}
+    reverse_proxy 10.253.0.2:8080 {
+    flush_interval -1
+    transport http {
+        read_timeout 1h
+        response_header_timeout 1h
+    }
+}
+}
+
+# orbit: app-dev app-instance-12-dev
+https://feature.tool.test:444 {
+    bind 10.44.0.7
+    @orbit_outside not remote_ip 10.44.0.0/24
+    abort @orbit_outside
+    @orbit_task_vms remote_ip 10.44.0.128/25
+    abort @orbit_task_vms
+    tls /etc/caddy/orbit-certificates/app-instance-12/current/cert.pem /etc/caddy/orbit-certificates/app-instance-12/current/key.pem
+    @orbit_dev_port expression `string({http.request.port}).matches('^[0-9]+$') && int({http.request.port}) >= 1024 && int({http.request.port}) <= 65535`
+    handle @orbit_dev_port {
+        reverse_proxy 10.253.0.3:{http.request.port} {
+            flush_interval -1
+            transport http {
+                read_timeout 1h
+            }
+        }
+    }
+    respond "Orbit development port refused" 404
+}

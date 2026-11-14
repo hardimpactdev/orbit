@@ -1,0 +1,34 @@
+order = 610
+source_sha256 = "660277578d9da80844e58536e256c311337418d4f7f1eb015ae134fee2e728d8"
+cases = [
+  "test_every_phase_is_one_tag_and_the_recipe_is_always_resolved",
+  "test_the_nested_gateway_restarts_and_redelivers_only_for_what_changed",
+  "test_a_task_start_converges_the_converge_part_of_its_whole_intent_and_keeps_the_host_pins",
+  "test_a_phase_that_is_not_due_is_one_skipped_task",
+  "test_the_files_name_no_version",
+  "test_a_task_vm_is_reached_directly",
+  "test_a_task_vm_with_its_identity_is_reached_over_wireguard_and_not_through_its_host",
+  "test_a_guest_is_reached_through_its_host_with_both_pinned_keys",
+  "test_a_guest_of_an_incus_host_takes_its_address_and_key_from_the_run",
+  "test_every_condition_of_the_role_is_a_string",
+  "test_every_package_download_retries_with_the_tool_and_no_shell",
+  "test_the_wait_for_a_new_server_is_for_an_image_only",
+  "test_every_new_vm_gets_the_full_ssh_readiness_budget",
+]
+file = "swamp/tests/ansible_task_vm_role_test.py"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/build_vars.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-host.yml",
+  "swamp/ansible/task-vm-role.yml",
+  "swamp/ansible/tasks/task-vm-apt-config.yml",
+  "swamp/ansible/tasks/task-vm-apt.yml",
+  "swamp/ansible/tasks/task-vm-fleet.yml",
+  "swamp/ansible/tasks/task-vm-ready.yml",
+  "swamp/ansible/tasks/task-vm-tools.yml",
+]

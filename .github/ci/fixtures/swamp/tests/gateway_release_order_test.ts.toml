@@ -1,0 +1,18 @@
+order = 770
+source_sha256 = "715fd4cb90009e75ba626f51abde818013d60611f513866ef35026ae4683afce"
+cases = [
+  "refresh admission follows successful verify and the new Horizon start, tolerating admission failure only",
+  "Swamp load requires the bounded DB busy guard, including forced releases",
+  "the nested-fleet refresh is admitted beside the VM refreshes, best effort, once per release",
+]
+file = "swamp/tests/gateway_release_order_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-gateway-release-activate.yaml",
+  "swamp/workflows/workflow-operation-gateway-release.yaml",
+]

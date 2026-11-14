@@ -1,0 +1,32 @@
+order = 680
+source_sha256 = "96bae22479d2fb4b6bdd80408b427a59731a2ea482f1100727a4580bb7195cd0"
+cases = [
+  "Composer inventory retains transitive and both-scope resolutions, path and git provenance",
+  "npm inventory preserves multiple resolutions, workspace links and shared scopes without installs",
+  "Bun inventory follows both scope graphs and retains nested versions and local packages",
+  "pnpm inventory uses exact snapshot versions; planning support is a separate contract",
+  "repository inventory refuses external source-file symlinks before reading them",
+  "pnpm v9 keeps distinct peer snapshots and resolves importer peer selectors",
+  "unsafe absolute locked versions fail instead of exposing local paths",
+  "npm workspace package without a version remains a path resolution",
+  "pnpm aliases and oversized YAML are refused before parsing",
+  "pnpm inventory accepts a realistic lockfile above the old 256 KiB cap",
+]
+file = "swamp/tests/dependency_inventory_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_inventory.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/js-maintenance/_lib/workspace.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+]

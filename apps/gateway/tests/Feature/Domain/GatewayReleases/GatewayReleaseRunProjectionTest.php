@@ -108,3 +108,21 @@ it('records a busy refusal with the blocker IDs and pauses after migration witho
         ->and($record->message)->toContain('41, 42')
         ->and($record->phases['idle'])->toBe(['outcome' => 'failed', 'error_code' => 'gateway.release_busy']);
 });
+
+it('pauses a release whose run ended without a readable result as a failed run, and one that timed out as timed out', function (string $code, string $phase): void {
+    $sha = str_repeat('ab', 20);
+    $record = GatewayRelease::query()->create(['requested' => $sha, 'trigger' => 'auto', 'outcome' => GatewayRelease::Running,
+        'force' => false, 'phases' => [], 'duration_ms' => 0]);
+    $operation = Operation::query()->create(['kind' => 'gateway.release', 'target_type' => 'gateway_release', 'target_id' => $record->id,
+        'node_id' => null, 'status' => 'failed', 'error_code' => $code, 'input' => ['sha' => $sha, 'id' => substr($sha, 0, 12), 'previous' => str_repeat('cd', 6)],
+        'triggered_by' => 'gateway-release', 'state' => ['swamp_run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f']]);
+    $record->update(['phases' => ['run' => ['operation_id' => $operation->id]]]);
+
+    new GatewayReleaseRunProjection()->timedOut($operation);
+
+    expect($record->refresh()->outcome)->toBe('paused')
+        ->and($record->phases['run']['error_code'])->toBe($phase);
+})->with([
+    'unreadable result' => ['operation.result_unreadable', 'gateway.release_run_failed'],
+    'timeout' => ['operation.timed_out', 'gateway.release_run_timed_out'],
+]);

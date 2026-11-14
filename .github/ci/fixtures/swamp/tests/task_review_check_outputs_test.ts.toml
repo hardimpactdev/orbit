@@ -1,0 +1,29 @@
+order = 1120
+source_sha256 = "f4a498f1e249bca5d012977685fde1813bd378df59b496726b6b9d4c2c7c9a3a"
+cases = [
+  "review fixes consume a direct check receipt and retain failed evidence",
+  "reviewer receives the passed handoff and hosted Required-check conclusions",
+  "reviewer rejects evidence with another head",
+  "reviewer rejects evidence with another handoff head",
+  "reviewer rejects evidence with another hosted head",
+  "reviewer rejects evidence with another tree",
+  "reviewer rejects evidence with another handoff tree",
+  "reviewer rejects raw fields and failed check evidence",
+  "turns without review evidence retain their original prompt",
+]
+file = "swamp/tests/task_review_check_outputs_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/bin/gate-test-support.ts",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp_shape_host_tools.py",
+  "swamp/bin/swamp_shape_polling.py",
+  "swamp/extensions/behaviors/_lib/public_output.ts",
+  "swamp/extensions/behaviors/operations/tasks/transcript.ts",
+  "swamp/extensions/behaviors/operations/tasks/turn.ts",
+]

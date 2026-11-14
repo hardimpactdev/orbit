@@ -1,0 +1,22 @@
+order = 710
+source_sha256 = "92b414265891f35ab86ba9493abe6a40252749afceda9635c5bb16895f4819a9"
+cases = [
+  "canonical dependency fixture: success",
+  "canonical dependency fixture: running-partial",
+  "canonical dependency fixture: failed",
+  "canonical dependency fixture: blocked",
+  "canonical dependency fixture: pr-unknown",
+  "running and partial refresh preserve original good commit, observation and immutable coordinates",
+  "PR unknown keeps last success; lifecycle publication preserves inventory time and run",
+  "canonical fixture bytes match the frozen SHA256SUMS manifest",
+]
+file = "swamp/tests/dependency_results_fixtures_test.ts"
+cost = 1
+inputs = [
+  "swamp/tests/fixtures/dependency-results-v1/**",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]
