@@ -12,6 +12,7 @@ cases = [
   "the checkout reads the release commit and the force flag from the load intent",
 ]
 file = "swamp/tests/gateway_swamp_load_test.ts"
+host_programs = ["jq"]
 cost = 1
 inputs = [
   "bin/swamp-shape-gate",

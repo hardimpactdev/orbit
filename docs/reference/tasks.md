@@ -1147,6 +1147,22 @@ When the requested handoff includes hosted CI, the operation sanitizes the check
 
 Swamp requests a baseline before implementation when its workflow calls for one. The operation runs setup and check commands, records evidence and returns. A failure starts no agent. In a task copy the baseline runs no setup steps, because the copied seed already ran them ([check phases](/reference/task-instance-workspace#check-phases)).
 
+### Scoped task check
+
+The Orbit Project whose default Instance is a container uses `bin/task-check` as its check. The candidate gate, `bin/review-check`, checks all five Composer projects and does not fit a handoff in a copy. `bin/task-check` checks only what the task changed since its start commit, and stays under five minutes.
+
+A person sets it on the Project once, after the release that ships the command. `orbit project:update` takes the numeric Project id; the Orbit container Project is 78:
+
+```bash
+orbit project:update 78 --task-check=bin/task-check
+```
+
+Orbit runs every task check with `ORBIT_CHECK_PROCESSES=1`, whatever the copy's CPU count, so the check runs PHPStan and Pest in one process. Its five-minute budget holds at that value.
+
+Another Project that develops Orbit sets the same setting on its own id. Its copy must hold what the parts run: the vendor folders of the Composer projects, Deno for the Swamp parts and Node for the flow charts. A seeded copy holds them; the command installs nothing. Project 46 keeps `composer check` as its task check, as [its task policy](/reference/instance-setup#configure-orbits-task-policy) states.
+
+The check runs at the repository root, as every task check does. The start commit is the merge base with `origin/main`, else with `main`. A copy's branch starts at the seed commit, which is `origin/main` in the copy, so the merge base is the start commit. [The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check, and the last lines of its output name each part's result.
+
 ## Review a subtask
 
 Swamp can request a reviewer turn through `tasks.turn`. The Gateway records the turn's output without approving a subtask, appending findings work, starting another reviewer or publishing a PR.
