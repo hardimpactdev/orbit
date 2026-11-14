@@ -382,7 +382,9 @@ The values come from two references: the copy's own file, fetched from its Node 
 
 A copy in the nested-fleet project also holds the [Club key](/reference/development-containers#the-club-key-of-the-nested-gateway) of its inner Swamp, so its run also reads the key's one vault entry, `nested-fleet-club-api-key`. That key counts as a value even if the start tree holds it; like every value, it must be 8 bytes or more. A hit on it refuses like any other, with no hint which secret matched.
 
-A value is read as Orbit writes it, with its escapes undone, and as a default's file may hold it: after `export`, before an inline comment, or in a commented-out line. The refusal names the commit and the object, and the file only when its path holds no value. Any error of the check refuses with `tasks.publish_secret_unchecked`. The token is minted only after the check succeeded.
+A value is read as Orbit writes it, with its escapes undone, and as a default's file may hold it: after `export`, before an inline comment, or in a commented-out line. The refusal names the commit and the object, and the file only when its path holds no value. Any error of the check refuses with `tasks.publish_secret_unchecked`.
+
+Swamp keeps no stderr of a failed command step. So the check keeps its exit code and writes its one refusal line to the private scratch. The next step, "Read the .env check", fails with that line as the Operation's detail. The token is minted only after the check succeeded.
 
 The content check catches copies and plain lines, not transformed text. It misses:
 

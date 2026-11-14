@@ -259,20 +259,31 @@ class TaskCopyPublishTest(unittest.TestCase):
 
 
 
-    def test_a_copy_mints_only_after_its_content_check_succeeded(self):
-        step = 'Check the .env content'
-        self.assertFalse(self.cel(step, 'guard', self.copy, {}))
-        self.assertTrue(self.cel(step, 'guard', self.vm, {}))
+    def test_a_copy_mints_only_after_its_content_check_passed(self):
+        step, read = 'Check the .env content', 'Read the .env check'
+        for name in [step, read]:
+            self.assertFalse(self.cel(name, 'guard', self.copy, {}), name)
+            self.assertTrue(self.cel(name, 'guard', self.vm, {}), name)
         mint = 'Mint the push token'
-        self.assertFalse(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}}))
+        # The check step succeeds also on a refusal (it keeps its exit code); only the typed read decides.
+        self.assertTrue(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}}))
+        self.assertFalse(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}, read: {'status': 'succeeded'}}))
         for status in ['skipped', 'failed']:
-            self.assertTrue(self.cel(mint, 'guard', self.copy, {step: {'status': status}}), status)
+            self.assertTrue(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}, read: {'status': status}}), status)
         self.assertTrue(self.cel(mint, 'guard', self.copy, {}))
-        self.assertFalse(self.cel(mint, 'guard', self.vm, {step: {'status': 'skipped'}}))
+        self.assertFalse(self.cel(mint, 'guard', self.vm, {step: {'status': 'skipped'}, read: {'status': 'skipped'}}))
         steps = {item['name']: item for job in yaml.safe_load(PUBLISH.read_text())['jobs'] for item in job['steps']}
-        self.assertIn({'step': step, 'condition': {'type': 'or', 'conditions': [{'type': 'succeeded'}, {'type': 'skipped'}]}},
-                      steps[mint]['dependsOn'])
+        for name in [step, read]:
+            self.assertIn({'step': name, 'condition': {'type': 'or', 'conditions': [{'type': 'succeeded'}, {'type': 'skipped'}]}},
+                          steps[mint]['dependsOn'])
         self.assertEqual(steps[step]['dependsOn'], [{'step': 'Check the environment file', 'condition': {'type': 'succeeded'}}])
+        self.assertIs(steps[step]['task']['inputs']['ignoreExitCode'], True)
+        self.assertEqual(steps[read]['dependsOn'], [{'step': step, 'condition': {'type': 'succeeded'}}])
+        self.assertEqual((steps[read]['task']['behaviorType'], steps[read]['task']['methodName']), ('@nckrtl/task-publication-data', 'content'))
+        outputs = {'Create publication scratch': {'status': 'succeeded', 'outputs': {'stdout': '/tmp/orbit-task-publish-abc\n'}},
+                   step: {'status': 'succeeded', 'outputs': {'exitCode': 3}}}
+        self.assertEqual(self.cel(read, 'directory', self.copy, outputs), '/tmp/orbit-task-publish-abc')
+        self.assertEqual(self.cel(read, 'exit_code', self.copy, outputs), 3)
         self.assertEqual(steps[step]['task']['inputs']['env']['ORBIT_ENVIRONMENT'],
                          '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}')
 
@@ -288,11 +299,13 @@ class TaskCopyPublishTest(unittest.TestCase):
         run = self.cel(step, 'run', intent, {})
         # The pull request text and the Club key flag come through the step's own expressions, with the pinned CEL engine.
         names = {name: self.cel(step, 'env.' + name, intent, {}) for name in ['ORBIT_PULL_TITLE', 'ORBIT_PULL_BODY', 'ORBIT_NESTED']}
-        return subprocess.run(['/bin/sh', '-c', run], capture_output=True, text=True, check=False, timeout=120,
+        done = subprocess.run(['/bin/sh', '-c', run], capture_output=True, text=True, check=False, timeout=120,
                               env={'PATH': os.environ['PATH'], 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1',
                                    'ORBIT_REPOSITORY': str(repository), 'ORBIT_DIRECTORY': str(directory),
                                    'ORBIT_FILE': str(directory / 'environment'), 'ORBIT_START': start, 'ORBIT_ENVIRONMENT': rendered,
                                    'ORBIT_CLUB': rendered if club is None else club, **names})
+        done.directory = directory
+        return done
 
     def copy_repository(self, files=None):
         work = self.root / ('work-' + uuid.uuid4().hex)
@@ -304,6 +317,8 @@ class TaskCopyPublishTest(unittest.TestCase):
     def refused(self, done, *names):
         self.assertEqual(done.returncode, 3, done.stdout + done.stderr)
         self.assertTrue(done.stderr.startswith('tasks.publish_secret_content: '), done.stderr)
+        # "Read the .env check" reads this file: the same one line.
+        self.assertEqual((done.directory / 'content.result').read_text(), done.stderr)
         for name in names:
             self.assertIn(name, done.stderr)
         for value in ['c2VjcmV0', 'pa55-w0rd', 'line-one', 'line-two', 'token-in-a-comment', 'rendered-only']:

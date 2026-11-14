@@ -615,7 +615,8 @@ jobs:
           mkdir "$work"
           range="$ORBIT_START..refs/heads/candidate"
           repo() { git -C "$ORBIT_REPOSITORY" "$@"; }
-          refuse() { printf 'tasks.publish_secret_content: %s\n' "$1" >&2; exit 3; }
+          # The refusal line goes to a file of the scratch: Swamp keeps no stderr of a command step, "Read the .env check" reads it.
+          refuse() { printf 'tasks.publish_secret_content: %s\n' "$1" | tee "$ORBIT_DIRECTORY/content.result" >&2; exit 3; }
           # A path or folder is named only when it holds no checked value, also with its slashes removed.
           named() {
             if [ -s "$work/checked" ] && { printf '%s\n' "$1" | grep -q -F -f "$work/checked" || printf '%s\n' "$1" | tr -d / | grep -q -F -f "$work/checked"; }; then
@@ -706,17 +707,37 @@ jobs:
           ORBIT_CLUB: '${{ vault.get(inputs.execution_secrets.environment.vault, has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.environment.key) }}'
           ORBIT_PULL_TITLE: '${{ inputs.intent.pull_request == null ? "" : inputs.intent.pull_request.title }}'
           ORBIT_PULL_BODY: '${{ inputs.intent.pull_request == null ? "" : inputs.intent.pull_request.body }}'
+        ignoreExitCode: true
     dependsOn:
     - step: Check the environment file
       condition:
         type: succeeded
     writes: true
+  - name: Read the .env check
+    # Exit 0 passes; exit 3 fails with the refusal line, which names a file and a commit only when they hold no value; any other
+    # exit fails with tasks.publish_secret_unchecked.
+    labels:
+      role: swamp
+    queueTimeout: 30
+    guard: '${{ !("workspace" in inputs.intent) }}'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publish-content-read-" + string(inputs.intent.node_id) }}
+      methodName: content
+      inputs:
+        directory: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
+        exit_code: ${{ steps["Check the .env content"].outputs.exitCode }}
+    dependsOn:
+    - step: Check the .env content
+      condition:
+        type: succeeded
   - name: Mint the push token
     labels:
       role: swamp
     queueTimeout: 30
-    # A copy mints only after its content check succeeded; a skip of that check is never a pass.
-    guard: '${{ "workspace" in inputs.intent && !("Check the .env content" in steps && steps["Check the .env content"].status == "succeeded") }}'
+    # A copy mints only after its content check passed; a skip of that check is never a pass.
+    guard: '${{ "workspace" in inputs.intent && !("Read the .env check" in steps && steps["Read the .env check"].status == "succeeded") }}'
     task:
       type: workflow
       workflowIdOrName: task-github-mint
@@ -731,6 +752,8 @@ jobs:
     - step: Check the environment file
       condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
     - step: Check the .env content
+      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
+    - step: Read the .env check
       condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
   - name: Push the branch
     labels:
