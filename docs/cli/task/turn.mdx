@@ -14,7 +14,20 @@ The VM receives the title, brief and deliverables of the subtask, then your prom
 
 `--model` selects a new thread's model. A continued thread keeps its model. A consult uses a reviewer thread and preserves the working tree.
 
+### A task that runs in a copy
+
+A task of a Project with a nested fleet runs in a [task copy](/reference/tasks#task-copy). Its turn is the Operation `tasks.copy_turn`: Swamp runs the turn with T3's own CLI in the copy, as `agent`, and records it as it records a task VM turn. What differs:
+
+- Only a new implementer thread runs. A reviewer turn, `--thread=ID` and `--model` answer `tasks.copy_turn_unsupported`.
+- The model is the Gateway's `ORBIT_TASKS_COPY_TURN_MODEL`, `claudeAgent/claude-opus-5-5` by default. T3 picks the effort.
+- The turn ends after one hour with `tasks.turn_timeout`. T3's CLI cannot stop a run, so the run may go on in the copy until `task:cancel` destroys it.
+- The transcript holds message text only, and the thread has no token metrics.
+
 
 ## How it works
 
 <div className="flow-at" data-chart="task/turn"></div>
+
+### In a task copy
+
+<div className="flow-at" data-chart="task/copy-turn"></div>
