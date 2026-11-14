@@ -243,7 +243,7 @@ describe('a clone of the container default', function (): void {
             ->and(collect($clone['files'])->firstWhere('path', '/home/agent/.t3/userdata/settings.json')['json'])->toBe(['linkedEnvironmentsEnabled' => true])
             ->and($clone['t3'])->toMatchArray(['port' => 3800, 'listen' => '10.44.0.7', 'device' => 't3', 'internal_port' => 3773,
                 'url' => 'http://10.44.0.7:3800', 'label' => 'tool / feature', 'title' => 'tool'])
-            ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json'])
+            ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json', '/etc/systemd/system/t3.service.d/10-orbit-boot.conf'])
             // A seed taken before the browser files lacks them: the copy gets them, and an empty linker cache that the stock
             // `ldconfig.service` rebuilds at its first start, before that start.
             ->and($clone['boot_files'])->toBe([
@@ -271,6 +271,9 @@ describe('a clone of the container default', function (): void {
             ->and($clone['files'][1]['content'])->toContain('base_url = "http://10.253.0.1:8319/v1"')
             ->and($clone['files'][2])->toBe(['path' => '/home/agent/.claude.json', 'before_start' => true, 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]])
             ->and($clone['files'][3])->toBe(['path' => '/home/agent/.t3/userdata/settings.json', 'before_start' => true, 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true]])
+            // T3 starts without default dependencies: `sysinit.target` held each boot's start about 0.6 s.
+            ->and($clone['files'][4])->toBe(['path' => '/etc/systemd/system/t3.service.d/10-orbit-boot.conf', 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644',
+                'content' => "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"])
             ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'frame' => '#orbit-model-environment'])
             ->and($clone['links'][0])->toBe(['path' => '/home/agent/.claude/CLAUDE.md', 'target' => '/opt/orbit-agent/current/notes/package.md'])
             // WireGuard peers reach T3, the task VM range first refused.
@@ -416,7 +419,7 @@ it('frames the model environment after the credential line on the copy step stdi
         ->and($run['intent']['container']['clone']['model_environment']['frame'])->toBe(InstanceContainer::ModelEnvironmentFrame)
         ->and($run['intent']['container']['clone']['t3']['condition'])->toBe(InstanceContainer::InstanceFile)
         ->and(collect($run['intent']['container']['clone']['files'])->where('before_start', true)->pluck('path')->all())
-        ->toBe([InstanceContainer::InstanceFile, '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json'])
+        ->toBe([InstanceContainer::InstanceFile, '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json', InstanceContainer::T3BootDropIn])
         ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
         // The clone's run reads only the framed copy: no second copy of the credential line.
         ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('instance-git-credential-'.$operation->id);

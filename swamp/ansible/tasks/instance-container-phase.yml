@@ -1311,11 +1311,12 @@
       register: agent_digests
       changed_when: false
       failed_when: false
+    # A folder the image lacks, such as T3's drop-in folder, is made with the file.
     - name: Write the changed files
       when: (item.stdout | default('')).split(' ') | first != item.item.content | hash('sha256')
       ansible.builtin.command:
         argv: >-
-          {{ incus_project + ['file', 'push', '--uid', item.item.uid | string, '--gid', item.item.gid | string, '--mode', item.item.mode,
+          {{ incus_project + ['file', 'push', '--create-dirs', '--uid', item.item.uid | string, '--gid', item.item.gid | string, '--mode', item.item.mode,
               '-', container.name ~ item.item.path] }}
         stdin: "{{ item.item.content }}"
         stdin_add_newline: false
