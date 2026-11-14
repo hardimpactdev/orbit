@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: stage 2 and stage 4 of the command development pipeline (docs/reference/pipeline/2-development-environment.mmd, 4-pr-and-ci.mmd). A task VM holds no GitHub credential, so the workspace cannot fetch. The author needs the branch of the pull request and main when either moved on origin (a merge of main into the branch, a correction pushed by the owner), to merge or rebase before the push. Decided by the orchestrator, for Nick's review.
-  %% Task copy (2026-11-14): the same kind brings the Project's default branch into a task copy through the copy's Node mirror and one incremental bundle; no credential enters the copy and the branch is never merged or rebased. The run selects the copy path by the intent key `copy`; the task VM steps read only the keys they read before, so a run that an older Gateway admitted keeps its task VM path. Task VMs get no new work. docs/reference/tasks.md#bring-main-into-a-copy.
+  %% Task copy (2026-11-14): the same kind brings the Project's default branch into a task copy through the copy's Node mirror and one incremental bundle; no credential enters the copy and the branch is never merged or rebased. The Gateway starts one of two workflows: `operation-task-sync-copy` for an intent with `copy`, `operation-task-sync` for a task VM. Swamp resolves every step input of a run when it starts, also of a step a guard will skip, so each workflow reads only the keys its own intent has (live: Operation 22250 never started). Task VMs get no new work. docs/reference/tasks.md#bring-main-into-a-copy.
   %% status: draft
   %% command: task:sync
   %% kind: tasks.sync
@@ -32,14 +32,15 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review:
   %%> - no Swamp step calls the Gateway: the Gateway mints the read token (`contents: read`, valid one hour) as it starts the run and writes it to that vault key, as it does for the Pi token of a turn; the run gets only the key name
   %%> - each run mints its own credential; a later run never reuses it
-  GW->>SW: Start one run, full intent<br/>operation-task-sync
-  %%> Inputs:
-  %%> - the whole intent above and the vault key name of the read credential, never the credential
-  %%> - no step of the run calls the Gateway
   GW-->>CLI: 202 Accepted<br/>Operation recorded
   %%> Next:
   %%> - the CLI follows the Operation with `operation:show`
   alt a task copy
+    GW->>SW: Start the copy's run<br/>operation-task-sync-copy
+    %%> Why its own workflow:
+    %%> - Swamp resolves every step's inputs when the run starts, also of a step that a guard skips; the task VM steps read `checkout_path`, which a copy intent has not, so one shared workflow could not start for a copy
+    %%> Inputs:
+    %%> - the copy intent and the vault key name of the read token, never the token; every expression of the workflow reads only its keys
     SW->>N: Bring in the base<br/>task-copy-base · base
     %%> Why its own child:
     %%> - only this path calls `task-copy-base`; the shared workspace child of turns, checks and publishes takes no secret and no base input
@@ -62,6 +63,10 @@ sequenceDiagram
     %%> Test:
     %%> - a failed fetch, a cancel during the fetch and a cancel after the push leave no credential anywhere and no bundle in the copy once this step or the next base ran
   else a task VM
+    GW->>SW: Start one run, full intent<br/>operation-task-sync
+    %%> Inputs:
+    %%> - the whole intent above and the vault key name of the read credential, never the credential
+    %%> - no step of the run calls the Gateway
     SW->>GH: Clone the refs<br/>git clone --bare · fetch
     %%> What it does:
     %%> - on Node 209, in a scratch directory of the run: a bare clone of the default branch and a fetch of `task-42`, with the token, read from its vault key, as an extra header of the commands and nowhere else
@@ -92,7 +97,7 @@ sequenceDiagram
   end
   Note over SW: Confirm the sync
   %%> What it does:
-  %%> - native assert: for a task VM, the read and both clean ups succeeded; for a task copy, the base and its discard succeeded
+  %%> - native assert, the last step of either workflow: for a task VM, the read and both clean ups succeeded; for a task copy, the base and its discard succeeded
   alt synced
     SW-->>GW: Run succeeded<br/>terminal event · commits
     %%> How the Gateway learns it:

@@ -1,4 +1,4 @@
-source_sha256 = "d74338800eaf1f9afe1ac4cb6f70798b3227b2d0087bec02a7c550d4357e5cfe"
+source_sha256 = "72c949095340e4d4e3fa7ed406b95cd97129eb2a5ba2aa7362ffca89c6f375b7"
 cases = [
   "test_a_publication_export_fetches_the_bundle_to_the_worker_and_keeps_no_node_scratch",
   "test_a_publication_export_fetches_the_copy_environment_file_to_the_worker_and_never_returns_it",

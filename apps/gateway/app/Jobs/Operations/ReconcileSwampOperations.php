@@ -212,8 +212,8 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             $operation = $expire->execute($operation);
             $run = $operation->state['swamp_run_id'] ?? null;
             if (! $operation->status->terminal() && $operation->node_id !== null && is_string($run) && Str::isUuid($run)) {
-                $definition = $direct->definition($operation->kind) ?? throw new \LogicException('The reconciler requires a registered kind.');
-                $receipt = app(ReadNativeRunFailure::class)->read($operation, $definition['workflow'], $run, $onTerminal);
+                $workflow = $direct->workflowFor($operation) ?? throw new \LogicException('The reconciler requires a registered kind.');
+                $receipt = app(ReadNativeRunFailure::class)->read($operation, $workflow, $run, $onTerminal);
                 if ($receipt !== null) {
                     return app(FailNativeOperationAction::class)->execute($operation, $run, $receipt['status'], $receipt['failure'], $receipt['finished_at']);
                 }

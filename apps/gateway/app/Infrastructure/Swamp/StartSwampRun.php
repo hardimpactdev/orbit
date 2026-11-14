@@ -30,6 +30,9 @@ final readonly class StartSwampRun
 {
     private const int ConfirmationSeconds = 120;
 
+    /** The events serve sends for a start before it saves a run. */
+    private const array PreRunEvents = ['validating_inputs', 'superseded_runs', 'evaluating_workflow'];
+
     /**
      * A start whose connection failed is queued again this many times. Serve admits 50 connections from one address in a fixed
      * minute and answers a refused one with the rest of that minute as `Retry-After`; three deferrals cover more than a minute.
@@ -67,7 +70,7 @@ final readonly class StartSwampRun
             }
             $endpoint = $this->endpoint();
             $payload = [
-                'workflowIdOrName' => $declaration['workflow'],
+                'workflowIdOrName' => app(DirectOperation::class)->workflowFor($operation),
                 'inputs' => app(DirectOperation::class)->workflowInputs($operation),
                 'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
             ];
@@ -291,6 +294,9 @@ final readonly class StartSwampRun
             $receiving = ($this->clock)();
             // Observed pre-dispatch setup took 32.7s and 55.3s; worker dispatch follows started.
             $deadline = ($this->clock)() + self::ConfirmationSeconds;
+            // Serve saves a run right before it yields `started`, and a `started` it cannot send is dropped unseen: once any event
+            // but a pre-run one arrived, a later error event may follow a run that exists.
+            $runMayExist = false;
             while ($socket->isConnected() && ($remaining = $deadline - ($this->clock)()) > 0) {
                 $confirmed = null;
                 foreach ($socket->receive(min(0.2, $remaining)) as $message) {
@@ -304,8 +310,19 @@ final readonly class StartSwampRun
                         && in_array($event['kind'] ?? null, ['started', 'failed', 'cancelled'], true)) {
                         $confirmed ??= ['run_id' => $event['runId'], 'failed' => $event['kind'] !== 'started'];
                     }
-                    if (($message['type'] ?? null) === 'error' && $confirmed === null) {
-                        $error = is_array($message['error'] ?? null) ? $message['error'] : $message;
+                    // Serve rejects a start whose inputs fail validation or resolution with a root error event that names no run,
+                    // after only pre-run events, then `done`; a protocol failure comes as a `type: error` message.
+                    $refusal = match (true) {
+                        ($message['type'] ?? null) === 'error' => ['error', is_array($message['error'] ?? null) ? $message['error'] : $message],
+                        ($message['type'] ?? null) === 'event' && is_array($event) && ($event['kind'] ?? null) === 'error' && ! $runMayExist
+                            && ! isset($event['runId']) && ! isset($event['parentRunId']) => ['event:error', is_array($event['error'] ?? null) ? $event['error'] : $event],
+                        default => null,
+                    };
+                    if (($message['type'] ?? null) === 'event' && ! in_array(is_array($event) ? ($event['kind'] ?? null) : null, self::PreRunEvents, true)) {
+                        $runMayExist = true;
+                    }
+                    if ($refusal !== null && $confirmed === null) {
+                        [$remoteType, $error] = $refusal;
                         $redact = static function (mixed $value, int $limit) use ($endpoint): string {
                             if (! is_string($value) || strlen($value) > 32768 || preg_match('//u', $value) !== 1) {
                                 return '[withheld]';
@@ -316,11 +333,11 @@ final readonly class StartSwampRun
                             return Str::limit(preg_replace('/[\x00-\x1f\x7f]/u', ' ', $safe) ?? '[withheld]', $limit);
                         };
                         Log::warning('Swamp direct start refused', [
-                            'workflow' => $payload['workflowIdOrName'], 'remote_type' => 'error',
+                            'workflow' => $payload['workflowIdOrName'], 'remote_type' => $remoteType,
                             'remote_code' => $redact($error['code'] ?? null, 100),
                             'remote_message' => $redact($error['message'] ?? null, 2000),
                         ]);
-                        // An explicit refusal before any root event proves that no run was accepted.
+                        // A refusal after only pre-run events, none of which confirms a run, proves that no run was accepted.
                         $submitted = false;
                         throw new ResourceOperationException('swamp.start_refused', 'Swamp refused the workflow start. Inspect Swamp before another admission.', 503);
                     }

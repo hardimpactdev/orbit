@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationWorkflowChoice;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -13,11 +14,21 @@ use App\Models\Task;
 use App\Support\ValidatedData;
 
 /**
- * Projects the terminal event of one `operation-task-sync` run: the two commits that the fetch stored, or for a task copy the
- * default head it imported and how far its branch is behind, or the step that failed.
+ * Projects the terminal event of one task:sync run: for a task VM's `operation-task-sync` run the two commits that the fetch stored,
+ * for a task copy's `operation-task-sync-copy` run the default head it imported and how far its branch is behind, or the step that
+ * failed. It also chooses which of the two workflows admission records for the intent.
  */
-final readonly class TaskSyncProjection implements DirectOperationProjection, DirectOperationWorkflowInput
+final readonly class TaskSyncProjection implements DirectOperationProjection, DirectOperationWorkflowChoice, DirectOperationWorkflowInput
 {
+    /**
+     * A task copy's intent runs operation-task-sync-copy, a task VM's operation-task-sync: Swamp resolves every step's inputs when a run
+     * starts, also of a step a guard skips, so one workflow for both could not start for a copy (docs/cli/task/sync.mmd).
+     */
+    public function workflow(Operation $operation): string
+    {
+        return isset(ValidatedData::object($operation->input)['copy']) ? 'operation-task-sync-copy' : 'operation-task-sync';
+    }
+
     /**
      * The run starts now, so the Gateway mints the read token now and writes it, as a Git header, to the vault key that admission
      * named: a task VM's clone on Node 209 and a task copy's fetch on its Node send it the same way.
