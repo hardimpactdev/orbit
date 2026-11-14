@@ -506,15 +506,56 @@ describe('a cancel while a database copy runs', function (): void {
         expect(app(NativeRunCancellation::class)->awaitsForwarding($operation->refresh()))->toBeFalse();
     });
 
-    it('forwards anyway and logs it when the copy step shows running past its bound, as when its end event never arrives', function (): void {
+    it('forwards anyway and logs it once per pass when the copy step shows running past its bound, as when its end event never arrives', function (): void {
         Log::spy();
         $bound = NativeRunCancellation::CopySteps['instance.complete']['server-database-fill'];
         $operation = cancelRecorded(copyingRun(seconds: $bound + NativeRunCancellation::CopyMarginSeconds + 1));
+        $socket = reconcileSocket($operation, 'running');
 
+        // One pass: the read loop's check, then the send, which checks again.
         expect(app(NativeRunCancellation::class)->awaitsForwarding($operation))->toBeTrue();
+        (new ReflectionMethod(ReconcileSwampOperations::class, 'forwardCancel'))
+            ->invoke(new ReconcileSwampOperations, $operation, app(CancelSwampRun::class), app(OperationStore::class));
+
+        expect(array_column($socket->frames, 'type'))->toContain('workflow.cancel');
         Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => $message === 'operation.cancel_copy_bound_passed'
             && $context['operation_id'] === $operation->id && $context['step'] === 'server-database-fill')->once();
         expect(app(NativeRunCancellation::class)->awaitsForwarding(cancelRecorded(copyingRun(seconds: $bound))))->toBeFalse();
+    });
+
+    it('logs a passed bound once when an operator\'s cancel goes to Swamp past it', function (): void {
+        Log::spy();
+        $operation = copyingRun(seconds: NativeRunCancellation::CopySteps['instance.complete']['server-database-fill'] + NativeRunCancellation::CopyMarginSeconds + 1);
+        $socket = reconcileSocket($operation, 'running');
+
+        app(CancelOperationAction::class)->execute($operation);
+
+        expect(array_column($socket->frames, 'type'))->toContain('workflow.cancel');
+        Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => $message === 'operation.cancel_copy_bound_passed'
+            && $context['operation_id'] === $operation->id)->once();
+    });
+
+    it('counts the bound from the Gateway\'s observation when Swamp\'s clock runs ahead', function (): void {
+        $bound = NativeRunCancellation::CopySteps['instance.complete']['server-database-fill'];
+        $observed = now()->subSeconds($bound + NativeRunCancellation::CopyMarginSeconds + 1);
+        $operation = copyingRun(step: null);
+        Carbon\Carbon::setTestNow($observed);
+        // Swamp says the step started five minutes after the Gateway saw it start.
+        app(NativeRunProgress::class)->apply($operation->id, RUN, ['kind' => 'step_started', 'stepId' => 'server-database-fill', 'jobId' => 'complete',
+            'seq' => 1, 'startedAt' => $observed->copy()->addMinutes(5)->toIso8601ZuluString('millisecond')]);
+        Carbon\Carbon::setTestNow();
+
+        expect(app(NativeRunCancellation::class)->holdsForCopy(cancelRecorded($operation->refresh())))->toBeFalse();
+    });
+
+    it('holds nothing for a copy step of an earlier run of a rebound Operation', function (): void {
+        $operation = cancelRecorded(copyingRun());
+        expect(app(NativeRunCancellation::class)->holdsForCopy($operation))->toBeTrue();
+
+        $operation->update(['state' => [...$operation->state, 'swamp_run_id' => '0f7d2b8a-1c3e-4b5a-9d6f-2e8c7a1b3d4f']]);
+
+        expect(app(NativeRunCancellation::class)->holdsForCopy($operation->refresh()))->toBeFalse()
+            ->and(app(NativeRunCancellation::class)->awaitsForwarding($operation))->toBeTrue();
     });
 
     it('lets an operator cancel record the request and send nothing to Swamp while the copy runs', function (string $kind, string $step): void {

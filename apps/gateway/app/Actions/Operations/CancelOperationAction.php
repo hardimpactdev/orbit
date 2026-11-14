@@ -77,6 +77,7 @@ final readonly class CancelOperationAction
                     // Recorded again, so an earlier request whose forward window has closed cannot swallow this one.
                     app(NativeRunCancellation::class)->request($operation, again: true);
                 } else {
+                    app(NativeRunCancellation::class)->logBoundPassed($operation);
                     app(CancelSwampRun::class)->execute($operation);
                 }
             }
