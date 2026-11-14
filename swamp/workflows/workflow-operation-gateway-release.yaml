@@ -150,7 +150,7 @@ jobs:
         - ${{ string(inputs.intent.web.artifact_id) }}
         - ${{ string(inputs.intent.web.size) }}
         - ${{ inputs.intent.web.digest }}
-    # VACUUM INTO a private copy before any migration; the newest three stay, and the one a pause names.
+    # VACUUM INTO a private copy before any migration above the disk floor; the newest two stay, and the one a pause names.
   - name: Snapshot the database
     labels: {role: swamp}
     writes: true

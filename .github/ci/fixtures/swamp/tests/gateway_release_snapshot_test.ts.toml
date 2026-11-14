@@ -1,0 +1,17 @@
+source_sha256 = "ea0a895cf7a9a2b08b1366dad3fc9de1fbaf3a2881bb438c9169242488a93790"
+cases = [
+  "the snapshot keeps the newest two pre-deploy snapshots: the new one and the one before it",
+  "the snapshot always keeps the one a pause names",
+  "the snapshot removes a stopped run's partial copy",
+  "when the copy would break the floor, the snapshot first removes all but the newest older snapshot",
+  "when even then the copy would break the floor, the snapshot fails with gateway.release_disk_low and writes nothing",
+  "the floor is 10 % of the disk when that is more than 2 GiB",
+  "the check counts the older snapshots the snapshot step would remove, but not the newest or the paused one",
+  "a new build fails with gateway.release_disk_low before it writes, when the build and a snapshot do not fit above the floor",
+]
+file = "swamp/tests/gateway_release_snapshot_test.ts"
+cost = 1
+inputs = [
+  "swamp/scripts/gateway-release-build.sh",
+  "swamp/scripts/gateway-release-snapshot.sh",
+]
