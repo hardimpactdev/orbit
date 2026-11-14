@@ -1,8 +1,8 @@
 #!/bin/bash
 # VACUUM INTO a private copy before any migration; keeps the newest two and the one a pause names. Argument: release id.
 # Run by the step "Snapshot the database" of swamp/workflows/workflow-operation-gateway-release.yaml.
-# With --check <database> <bytes> it only checks that the host can hold <bytes> more plus a copy of <database> above the floor, counting the
-# snapshots this script would remove first; the step "Build the release" runs it from the commit it builds, before it writes anything.
+# With --check <database> <bytes> it only checks, before anything is written, that <bytes> fit above the floor as the disk is, and that <bytes>
+# and a copy of <database> fit when the snapshots this script would remove first are gone. The step "Build the release" runs it from its commit.
 # The floor is the one of Doctor's node.disk_low: 2 GiB and 10 % of the disk stay free. ORBIT_RELEASE_BASE moves the base for tests only.
 set -euo pipefail
 shopt -s nullglob
@@ -10,9 +10,9 @@ base=${ORBIT_RELEASE_BASE:-/home/orbit}
 backups=$base/.orbit/backups
 fail() { echo "$1: $2" >&2; exit 1; }
 paused=$(jq -r '.snapshot // empty' "$base/.orbit/gateway-release.paused" 2>/dev/null || true)
-# The snapshots past the newest $1, without the one a pause names.
+# The snapshots past the newest $1, without the one a pause names and the one this run wrote.
 # shellcheck disable=SC2012
-older() { local files=("$backups"/pre-*.sqlite); [ ${#files[@]} -eq 0 ] || ls -1t -- "${files[@]}" | tail -n +$(($1 + 1)) | { grep -vxF -- "${paused:-/}" || true; }; }
+older() { local files=("$backups"/pre-*.sqlite); [ ${#files[@]} -eq 0 ] || ls -1t -- "${files[@]}" | tail -n +$(($1 + 1)) | { grep -vxF -e "${paused:-/}" -e "${path:-/}" || true; }; }
 # Prints the bytes free above the floor after <bytes> more are written: negative when the floor would break.
 room() {
   local size avail floor
@@ -24,7 +24,7 @@ bytes() { local total=0 file; while IFS= read -r file; do total=$((total + $(sta
 
 if [ "${1:-}" = --check ]; then
   need=$(($(stat -c %s "$2") + $3))
-  [ $(($(room "$need") + $(older 1 | bytes))) -ge 0 ] \
+  [ "$(room "$3")" -ge 0 ] && [ $(($(room "$need") + $(older 1 | bytes))) -ge 0 ] \
     || fail gateway.release_disk_low "$base cannot hold $need bytes for the build and the database snapshot above the floor of 2 GiB and 10 % free"
   exit 0
 fi

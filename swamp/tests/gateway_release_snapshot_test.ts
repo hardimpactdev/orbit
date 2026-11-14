@@ -114,20 +114,32 @@ Deno.test("the floor is 10 % of the disk when that is more than 2 GiB", () => {
 });
 
 Deno.test("the check counts the older snapshots the snapshot step would remove, but not the newest or the paused one", () => {
-  const { base, database, paths, size } = fixture(old);
-  const disk = floor + used(base) + size + 1_000_000 - 600_000;
-  // Needs 600,000 bytes from the two oldest snapshots.
-  assertEquals(run(snapshot, ["--check", database, "1000000"], base, disk).code, 0);
+  const { base, database, paths, size } = fixture(old, 100_000);
+  // The 1,000 bytes fit as the disk is; the copy needs 150,000 bytes from the two oldest snapshots (100,000 bytes each).
+  assert(size > 150_000);
+  const disk = floor + used(base) + size + 1_000 - 150_000;
+  assertEquals(run(snapshot, ["--check", database, "1000"], base, disk).code, 0);
   Deno.writeTextFileSync(`${base}/.orbit/gateway-release.paused`, JSON.stringify({ snapshot: paths[0] }));
-  const result = run(snapshot, ["--check", database, "1000000"], base, disk);
+  const result = run(snapshot, ["--check", database, "1000"], base, disk);
   assertEquals(result.code, 1);
   assertStringIncludes(result.stderr, "gateway.release_disk_low:");
   assertEquals(kept(base).filter((n) => n.startsWith("pre-")), old, "a check removes nothing");
 });
 
-Deno.test("a new build fails with gateway.release_disk_low before it writes, when the build and a snapshot do not fit above the floor", () => {
-  const { base, size } = fixture([]);
-  const repo = `${base}/shared/orbit.git`;
+Deno.test("the snapshot never removes the copy it just wrote, even behind an older file with a later time", () => {
+  const { base, paths } = fixture(old);
+  const future = new Date(Date.now() + 3600_000);
+  Deno.utimeSync(paths[0], future, future);
+  Deno.utimeSync(paths[1], future, future);
+  const result = run(snapshot, [id], base, floor + 500 * 1024 ** 2);
+  assertEquals(result.code, 0, result.stderr);
+  assert(kept(base).includes(result.stdout.trim().split("/").pop()!), "the new copy was removed");
+});
+
+/** A base whose live release is the first commit of a small shared repository; returns the next commit to build. */
+function buildFixture(snapshots: string[] = [], bytes = 300_000) {
+  const fx = fixture(snapshots, bytes);
+  const repo = `${fx.base}/shared/orbit.git`;
   const git = (...args: string[]) => {
     const out = new Deno.Command("git", { args: ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...args] }).outputSync();
     assert(out.success, new TextDecoder().decode(out.stderr));
@@ -141,12 +153,38 @@ Deno.test("a new build fails with gateway.release_disk_low before it writes, whe
   const current = git("rev-parse", "HEAD");
   git("commit", "-q", "--allow-empty", "-m", "next");
   const next = git("rev-parse", "HEAD");
-  Deno.renameSync(`${base}/releases/${id}`, `${base}/releases/${current.slice(0, 12)}`);
-  Deno.writeTextFileSync(`${base}/releases/${current.slice(0, 12)}/REVISION`, `${current}\n`);
-  Deno.symlinkSync(`releases/${current.slice(0, 12)}`, `${base}/orbit`);
+  Deno.renameSync(`${fx.base}/releases/${id}`, `${fx.base}/releases/${current.slice(0, 12)}`);
+  Deno.writeTextFileSync(`${fx.base}/releases/${current.slice(0, 12)}/REVISION`, `${current}\n`);
+  Deno.symlinkSync(`releases/${current.slice(0, 12)}`, `${fx.base}/orbit`);
+  return { ...fx, next };
+}
+
+function built(base: string, next: string): boolean {
+  return [...Deno.readDirSync(`${base}/releases`)].some((entry) => entry.name === next.slice(0, 12));
+}
+
+Deno.test("a new build fails with gateway.release_disk_low before it writes, when the build and a snapshot do not fit above the floor", () => {
+  const { base, size, next } = buildFixture();
   // Room for the snapshot, but not for the 1 GiB build as well.
   const result = run(build, [next, "false", "{}"], base, floor + used(base) + size + 1024 ** 3 - 1);
   assertEquals(result.code, 1);
   assertStringIncludes(result.stderr, "gateway.release_disk_low:");
-  assertFalse([...Deno.readDirSync(`${base}/releases`)].some((entry) => entry.name === next.slice(0, 12)), "the build wrote its release");
+  assertFalse(built(base, next), "the build wrote its release");
+});
+
+Deno.test("a new build fails before it writes when the 1 GiB build does not fit as the disk is, even if older snapshots could go", () => {
+  const { base, size, next } = buildFixture(old);
+  // The two oldest snapshots (600,000 bytes) would make room for the snapshot, but the build writes before they go.
+  assert(size < 600_000);
+  const result = run(build, [next, "false", "{}"], base, floor + used(base) + 1024 ** 3 - 1);
+  assertEquals(result.code, 1);
+  assertStringIncludes(result.stderr, "gateway.release_disk_low:");
+  assertFalse(built(base, next), "the build wrote its release");
+});
+
+Deno.test("a new build with room for itself and a snapshot passes the check", () => {
+  const { base, size, next } = buildFixture();
+  // The build goes on past the check; in this bare fixture a later step fails, which is not the disk check.
+  const result = run(build, [next, "false", "{}"], base, floor + used(base) + size + 1024 ** 3);
+  assertFalse(result.stderr.includes("gateway.release_disk_low"), result.stderr);
 });
