@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import urllib.parse
 from pathlib import Path
 from unittest.mock import patch
 
@@ -121,6 +122,7 @@ class CloneTest(unittest.TestCase):
     def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None):
         calls = []
         self.inputs = {}
+        self.decoding = {}
         real_run = subprocess.run
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder) / "rootfs"
@@ -160,11 +162,18 @@ class CloneTest(unittest.TestCase):
                 nonlocal read
                 calls.append(argv)
                 self.inputs[id(argv)] = kwargs.get("input")
+                self.decoding[id(argv)] = kwargs.get("errors")
                 if real_git and argv[0] in {"git", "timeout"}:
                     return real_run(argv, **kwargs)
                 if argv[:2] == ["python3", "-c"] or argv[0] == "openssl":
                     return real_run(argv, **kwargs)
                 output, status = "", 0
+                if argv[0] == "curl":
+                    # The files API's type header, read from the copy's real root file system; a link is never followed.
+                    local = root / urllib.parse.unquote(argv[-1].split("&path=", 1)[1]).lstrip("/")
+                    kind = None if rootfs is None or not os.path.lexists(local) else "symlink" if local.is_symlink() \
+                        else "directory" if local.is_dir() else "file"
+                    return subprocess.CompletedProcess(argv, 0, f"200 {kind}" if kind else "404 ", "")
                 if argv[3:5] == ["file", "pull"] and "fixture_pull" in container:
                     # What the copy holds at a path, as the seed left it; any other path is missing.
                     held = container["fixture_pull"].get("/" + argv[5].split("/", 1)[1])
@@ -423,6 +432,82 @@ class CloneTest(unittest.TestCase):
         first_push = next(i for i, call in enumerate(calls) if call[3:5] == ["file", "push"] and "ca-certificates" in call[-1])
         self.assertLess(calls.index(delete), first_push)
         self.assertIn(f"instance-7/etc/ssl/certs/{new_digest}.0", [call[-2] for call in calls if call[3:5] == ["file", "create"]])
+
+    STORE = {"home": "/home/agent", "directories": ["/home/agent/.pki", "/home/agent/.pki/nssdb"], "path": "/home/agent/.pki/nssdb/pkcs11.txt",
+             "entry": "library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so\nname=Orbit system trust\n\n",
+             "uid": 2750, "gid": 2750, "mode": "0600", "directory_mode": "0700", "library": "libp11-kit0", "version": "0.26.2-2"}
+
+    @staticmethod
+    def dpkg(version):
+        return "Package: libc6\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.42\n" + (
+            "" if version is None else f"\nPackage: libp11-kit0\nStatus: install ok installed\nArchitecture: amd64\nVersion: {version}\n")
+
+    def store_calls(self, calls):
+        return [call for call in calls if call[3:5] in (["file", "create"], ["file", "push"]) and "/home/agent/.pki" in call[-1]]
+
+    def store_clone(self, rootfs, held=None, version="0.26.2-2"):
+        pulls = {"/var/lib/dpkg/status": self.dpkg(version)}
+        if held is not None:
+            pulls[self.STORE["path"]] = held
+        return self.clone_with({"boot_files": [self.STORE]}, rootfs=rootfs, overrides={"fixture_pull": pulls})
+
+    def test_agents_nss_store_names_the_trust_module_in_a_copy_without_one_before_its_first_start(self):
+        calls, _, error = self.store_clone({"home/agent/.bashrc": ""})
+        self.assertEqual(error, "")
+        writes = self.store_calls(calls)
+        self.assertEqual([call[3:] for call in writes], [
+            ["file", "create", "--type=directory", "--uid", "2750", "--gid", "2750", "--mode", "0700", "instance-7/home/agent/.pki"],
+            ["file", "create", "--type=directory", "--uid", "2750", "--gid", "2750", "--mode", "0700", "instance-7/home/agent/.pki/nssdb"],
+            ["file", "push", "--uid", "2750", "--gid", "2750", "--mode", "0600", "-", "instance-7/home/agent/.pki/nssdb/pkcs11.txt"],
+        ])
+        self.assertEqual(self.inputs[id(writes[-1])], self.STORE["entry"])
+        # Every path's type comes from the local API's header, through its socket.
+        self.assertIn("/var/lib/incus/unix.socket", next(call for call in calls if call[0] == "curl"))
+        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+        self.assertTrue(all(calls.index(call) < start for call in writes))
+
+    def test_a_seed_store_without_the_entry_gets_it_appended_and_a_store_with_it_is_left_alone(self):
+        own = "library=\nname=NSS Internal PKCS #11 Module\nNSS=Flags=internal\n"
+        rootfs = {"home/agent/.pki/nssdb/pkcs11.txt": own}
+        calls, _, error = self.store_clone(rootfs, held=own)
+        self.assertEqual(error, "")
+        writes = self.store_calls(calls)
+        self.assertEqual([call[-1] for call in writes], ["instance-7/home/agent/.pki/nssdb/pkcs11.txt"])
+        self.assertEqual(self.inputs[id(writes[0])], own + "\n" + self.STORE["entry"])
+        calls, _, error = self.store_clone(rootfs, held=own + "\n" + self.STORE["entry"])
+        self.assertEqual(error, "")
+        self.assertEqual(self.store_calls(calls), [])
+
+    def test_a_copy_without_home_agent_gets_no_nss_store(self):
+        calls, _, error = self.store_clone({"etc/hostname": "copy\n"})
+        self.assertEqual(error, "")
+        self.assertEqual(self.store_calls(calls), [])
+        self.assertIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
+
+    def test_a_planted_path_of_another_type_refuses_the_create_before_any_store_write(self):
+        for case, rootfs in (("symlinked store", {"home/agent/.pki/nssdb/pkcs11.txt": "->/etc/passwd"}),
+                             ("a file where the store folder goes", {"home/agent/.pki/nssdb": "planted"}),
+                             ("a folder named like the store", {"home/agent/.pki/nssdb/pkcs11.txt/x": ""}),
+                             ("a symlinked folder", {"home/agent/.pki": "->/etc"})):
+            with self.subTest(case=case):
+                calls, _, error = self.store_clone(rootfs)
+                self.assertEqual(error, "instance.clone_browser_trust_refused\n")
+                self.assertEqual(self.store_calls(calls), [])
+                self.assertNotIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
+
+    def test_the_copys_dpkg_status_and_store_are_read_without_a_decode_failure(self):
+        calls, _, error = self.store_clone({"home/agent/.pki/nssdb/pkcs11.txt": "x"}, held="x\n")
+        self.assertEqual(error, "")
+        reads = [call for call in calls if call[3:5] == ["file", "pull"] and call[5].endswith(("/var/lib/dpkg/status", "pkcs11.txt"))]
+        self.assertEqual(len(reads), 2)
+        self.assertTrue(all(self.decoding[id(call)] == "surrogateescape" for call in reads))
+
+    def test_a_copy_whose_libp11_kit0_is_not_the_modules_version_refuses_the_create(self):
+        for version in ("0.25.5-3", None):
+            with self.subTest(version=version):
+                calls, _, error = self.store_clone({"home/agent/.bashrc": ""}, version=version)
+                self.assertEqual(error, "instance.clone_browser_trust_mismatch\n")
+                self.assertEqual(self.store_calls(calls), [])
 
     def test_a_running_copy_and_a_clone_without_boot_files_push_none(self):
         running = {"name": "instance-7", "status": "Running", "devices": {"t3": {}}, "config": {"volatile.uuid": "abc-123"},

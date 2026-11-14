@@ -52,8 +52,11 @@ Deno.test({
             const execs = f.calls().slice(before).filter((c) =>
                 c.includes("exec")
             );
-            // Exactly two execs in the running container: the Process restart of the flip, and the one CA bundle read of the trust
-            // step (instance_container_files.py), because the fixture container's bundle does not hold the Node's Orbit root yet.
+            // As root, exactly two execs in the running container: the Process restart of the flip, and the one CA bundle read of the
+            // trust step (instance_container_files.py), because the fixture container's bundle does not hold the Node's Orbit root yet.
+            // As agent, one more: the store step of Chromium's trust, which finds no home in this fixture container.
+            assertEquals(execs.filter((c) => c.includes("--user")).map((c) => c[3]), ["app-default"]);
+            execs.splice(0, execs.length, ...execs.filter((c) => !c.includes("--user")));
             const restarts = execs.filter((c) => c.includes("try-restart"));
             assertEquals(restarts, [[
                 "exec",

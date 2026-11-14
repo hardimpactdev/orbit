@@ -1635,6 +1635,19 @@
                         "sha256": "1ba5a9190119370912ec5955c8129cdf2780a098ed6c80e9ecca05cc515bd039"
                     }
                 }
+            },
+            "browser-p11-kit-modules": {
+                "version": "0.26.2-2",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://snapshot.ubuntu.com/ubuntu/20261103T000000Z/pool/main/p/p11-kit/p11-kit-modules_0.26.2-2_amd64.deb",
+                        "sha256": "633ac53737f9a284acc3df4d1d717857902fe04a222f19331c7b18092fe2448b"
+                    }
+                },
+                "trust_module": {
+                    "path": "usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so",
+                    "library": "libp11-kit0"
+                }
             }
         },
         "agent": {

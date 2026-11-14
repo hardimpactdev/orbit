@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "d44db346646501fb9f5a83fd42d67378c590861da8f2c27961788d9a33de2417"
+source_sha256 = "dc0d791ded78646a5703ef2b062e2948b27586f4fadd7f0716c70b1be3ae8edd"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -19,6 +19,12 @@ cases = [
   "test_an_intent_cannot_smuggle_a_delete_through_a_plain_boot_file",
   "test_another_source_path_and_a_missing_node_ca_fail_by_name_before_the_copy",
   "test_a_seed_that_trusts_an_older_root_loses_its_old_hashed_name",
+  "test_agents_nss_store_names_the_trust_module_in_a_copy_without_one_before_its_first_start",
+  "test_a_seed_store_without_the_entry_gets_it_appended_and_a_store_with_it_is_left_alone",
+  "test_a_copy_without_home_agent_gets_no_nss_store",
+  "test_a_planted_path_of_another_type_refuses_the_create_before_any_store_write",
+  "test_the_copys_dpkg_status_and_store_are_read_without_a_decode_failure",
+  "test_a_copy_whose_libp11_kit0_is_not_the_modules_version_refuses_the_create",
   "test_a_running_copy_and_a_clone_without_boot_files_push_none",
   "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement",
   "test_clone_of_a_default_with_a_node_service_target_strips_it_on_the_first_try_and_on_a_retry",
@@ -56,7 +62,7 @@ cases = [
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 101
+cost = 113
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -129,3 +135,9 @@ inputs = [
   "test_services_install_the_node_helper_and_pass_only_the_process_files" = 2
   "test_workspace_still_passes_the_whole_value_in_one_guest_call" = 2
   "test_check_reads_no_private_input_and_passes_a_dead_units_code_and_receipt" = 2
+  "test_agents_nss_store_names_the_trust_module_in_a_copy_without_one_before_its_first_start" = 2
+  "test_a_seed_store_without_the_entry_gets_it_appended_and_a_store_with_it_is_left_alone" = 2
+  "test_a_copy_without_home_agent_gets_no_nss_store" = 2
+  "test_a_planted_path_of_another_type_refuses_the_create_before_any_store_write" = 2
+  "test_a_copy_whose_libp11_kit0_is_not_the_modules_version_refuses_the_create" = 2
+  "test_the_copys_dpkg_status_and_store_are_read_without_a_decode_failure" = 2

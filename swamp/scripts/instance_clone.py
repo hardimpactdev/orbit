@@ -10,11 +10,16 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 
 # The Node files a `boot_files` entry may name as its `source`: the Orbit root CA that each Node's base converge writes for its agent
 # (docs/reference/development-containers.md#trust). No intent can make a clone copy any other host file into a container.
 BOOT_SOURCES = ("/etc/orbit/agent/ca.pem",)
+
+# The local Incus API, whose files endpoint names a path's type in `X-Incus-Type` without following a link
+# (docs/reference/development-containers.md#trust).
+INCUS_SOCKET = "/var/lib/incus/unix.socket"
 
 # Mirrored by the guest emitter; the clone tests keep the two sets in sync.
 GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
@@ -97,6 +102,8 @@ def main():
             check=False,
             input=content,
             text=True,
+            # A copy's own bytes, such as its dpkg status, need not be UTF-8: they never fail a decode.
+            errors="surrogateescape",
             capture_output=True,
             timeout=remaining,
             env=dict(os.environ, LC_ALL="C", GIT_TERMINAL_PROMPT="0"),
@@ -175,6 +182,10 @@ def main():
         hashed name in `hash_directory`, where OpenSSL looks a CA up: a missing or unreadable source fails the create by name."""
         files = []
         for item in container["clone"].get("boot_files", []):
+            if "entry" in item:
+                files.append({key: item[key] for key in ("home", "directories", "path", "entry", "uid", "gid", "mode", "directory_mode",
+                                                         "library", "version")})
+                continue
             if "source" not in item:
                 files.append({key: item[key] for key in ("path", "content", "uid", "gid", "mode")})
                 continue
@@ -197,6 +208,51 @@ def main():
                 files.append({"link": item["hash_directory"] + "/" + subject.stdout.strip() + ".0", "target": linked,
                               "replaces": item["path"]})
         return files
+
+    def file_type(path):
+        """What a path is in the copy, from the files API's `X-Incus-Type` header, or None when it is missing."""
+        url = (f"http://incus/1.0/instances/{urllib.parse.quote(name)}/files?project={urllib.parse.quote(container['project'])}"
+               f"&path={urllib.parse.quote(path)}")
+        result = run(["curl", "--silent", "--output", "/dev/null", "--write-out", "%{http_code} %header{x-incus-type}", "--unix-socket",
+                      INCUS_SOCKET, url], check=False)
+        code, _, kind = result.stdout.strip().partition(" ")
+        if code == "404":
+            return None
+        if result.returncode or code != "200":
+            raise RuntimeError("instance.clone_browser_trust_refused")
+        return kind or "unknown"
+
+    def installed(status, package):
+        for stanza in status.split("\n\n"):
+            fields = dict(line.split(": ", 1) for line in stanza.splitlines() if ": " in line and not line.startswith(" "))
+            if fields.get("Package") == package and fields.get("Architecture") == "amd64" and fields.get("Status") == "install ok installed":
+                return fields.get("Version")
+        return None
+
+    def nss_store(item):
+        """`agent`'s NSS store names the runtime folder's trust module (docs/reference/development-containers.md#trust). The copy has
+        not started, so no path changes between the reads and the writes. A copy without the home gets nothing. A path of another type
+        than expected, or a symlink, refuses the create, as does a library of the module at another version than it needs. A missing
+        store gets only the entry; a store without it gets it appended after a blank line, and its own text stays as it is."""
+        if file_type(item["home"]) is None:
+            return
+        kinds = {path: file_type(path) for path in [item["home"], *item["directories"], item["path"]]}
+        for path, kind in kinds.items():
+            allowed = ("directory",) if path == item["home"] else (None, "file") if path == item["path"] else (None, "directory")
+            if kind not in allowed:
+                raise RuntimeError("instance.clone_browser_trust_refused")
+        status = run(project + ["file", "pull", name + "/var/lib/dpkg/status", "-"], check=False)
+        if installed(status.stdout if status.returncode == 0 else "", item["library"]) != item["version"]:
+            raise RuntimeError("instance.clone_browser_trust_mismatch")
+        owner = ["--uid", str(item["uid"]), "--gid", str(item["gid"])]
+        for directory in item["directories"]:
+            if kinds[directory] is None:
+                change(project + ["file", "create", "--type=directory"] + owner + ["--mode", item["directory_mode"], name + directory])
+        store = run(project + ["file", "pull", name + item["path"], "-"]).stdout if kinds[item["path"]] == "file" else None
+        if store is not None and item["entry"].splitlines()[0] in store.splitlines():
+            return
+        content = item["entry"] if not store else store + ("" if store.endswith("\n\n") else "\n" if store.endswith("\n") else "\n\n") + item["entry"]
+        change(project + ["file", "push"] + owner + ["--mode", item["mode"], "-", name + item["path"]], content)
 
     if phase == "container":
         boot = boot_files()
@@ -406,6 +462,9 @@ def main():
                 for item in boot:
                     if "link" in item:
                         change(project + ["file", "create", "--type=symlink", "--force", name + item["link"], item["target"]])
+                        continue
+                    if "entry" in item:
+                        nss_store(item)
                         continue
                     change(project + ["file", "push", "--create-dirs", "--uid", str(item["uid"]), "--gid", str(item["gid"]),
                                       "--mode", item["mode"], "-", name + item["path"]], item["content"])

@@ -41,7 +41,7 @@ function converge_failed_run(string $runId, Operation $operation, ?string $inlin
             ['name' => 'check', 'status' => 'skipped', 'steps' => [['name' => 'Check the Node', 'status' => 'skipped']]],
             ['name' => 'converge', 'status' => 'succeeded', 'steps' => [$report]],
         ],
-        '_result' => ['outcome' => 'failed', 'phases' => $phases, 'changed' => 0, 'elapsed_seconds' => 6, 'tools' => [],
+        '_result' => ['outcome' => 'failed', 'phases' => $phases, 'changed' => 0, 'elapsed_seconds' => 6, 'tools' => [], 'browser_trust' => [],
             'cleanup_complete' => true, 'failed_phase' => 'network', 'error_code' => 'operation.native_failed']];
 }
 

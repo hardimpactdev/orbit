@@ -207,6 +207,10 @@ describe('a clone of the container default', function (): void {
                 // The Node's root CA: no content in the intent; the clone script reads the one allowed Node file.
                 ['source' => '/etc/orbit/agent/ca.pem', 'path' => '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
                     'hash_directory' => '/etc/ssl/certs', 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                // `agent`'s NSS store names the trust module for Chromium: the clone script makes the store or appends the entry.
+                ['home' => '/home/agent', 'directories' => ['/home/agent/.pki', '/home/agent/.pki/nssdb'], 'path' => '/home/agent/.pki/nssdb/pkcs11.txt',
+                    'entry' => "library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so\nname=Orbit system trust\n\n",
+                    'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'directory_mode' => '0700', 'library' => 'libp11-kit0', 'version' => '0.26.2-2'],
             ])
             ->and($clone['files'][0]['content'])->toBe("# Managed by Orbit.\nORBIT_INSTANCE_ID={$id}\nORBIT_INSTANCE=feature\nORBIT_PROJECT=tool\nORBIT_PROJECT_ID={$default->project_id}\nORBIT_PROJECT_NAME=\"tool\"\nORBIT_NODE={$node->name}\nORBIT_URL=\n")
             ->and($clone['files'][1]['content'])->toContain('base_url = "http://10.253.0.1:8319/v1"')

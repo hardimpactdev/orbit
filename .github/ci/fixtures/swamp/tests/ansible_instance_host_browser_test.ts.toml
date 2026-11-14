@@ -1,5 +1,5 @@
 order = 70
-source_sha256 = "cb555c5e368582d1e98b18d3f961e82f9a8c6ba547981a98e5b47b6e7973b45c"
+source_sha256 = "c18bd0ab128b3e5dcf76fe0d5953a05afc15183bb033d9a85b55a3a94520df18"
 cases = [
   "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart",
   "two Debian packages that give the same library name fail the folder build: one would hide the other",
@@ -8,11 +8,17 @@ cases = [
   "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container",
   "a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec",
   "a Node without a readable Orbit root CA fails the step by name and writes nothing",
+  "only agent writes its NSS store, only in a running container: a new store holds only the entry, an existing one gets it appended once; a stopped or frozen one waits",
+  "a planted symlink, a file where the store folder goes and a folder named like the store are refused and listed; every other step still runs",
+  "a container without /home/agent gets no NSS store and is listed by name; the step passes and keeps the library digest",
+  "a container whose libp11-kit0 is not the trust module's version is listed with both versions, and agent takes an Orbit entry out of its store; the step passes",
+  "a container whose dpkg status or user output is not UTF-8, or whose store step hangs, is listed and fails nothing",
+  "the trust module's package only adds its module to the runtime folder: no restart, and nothing new in lib",
 ]
 file = "swamp/tests/ansible_instance_host_browser_test.ts"
-cost = 238
+cost = 255
 # Beast case times * 2.1, rounded up + 1s; startup is added per slice.
-slices = 7
+slices = 13
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "apps/gateway/resources/machine-software/recipe.json",
@@ -53,3 +59,9 @@ inputs = [
   "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container" = 130 # ESTIMATE: Beast 61s * 2.1, rounded up + 1s; two converges, with 6s startup within the 150s lane
   "a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec" = 4 # ESTIMATE: Beast 1s, no Ansible; rounded up
   "a Node without a readable Orbit root CA fails the step by name and writes nothing" = 1 # ESTIMATE: Beast 0.1s, no Ansible; rounded up
+  "a container without /home/agent gets no NSS store and is listed by name; the step passes and keeps the library digest" = 3
+  "the trust module's package only adds its module to the runtime folder: no restart, and nothing new in lib" = 1
+  "only agent writes its NSS store, only in a running container: a new store holds only the entry, an existing one gets it appended once; a stopped or frozen one waits" = 4
+  "a planted symlink, a file where the store folder goes and a folder named like the store are refused and listed; every other step still runs" = 3
+  "a container whose libp11-kit0 is not the trust module's version is listed with both versions, and agent takes an Orbit entry out of its store; the step passes" = 3
+  "a container whose dpkg status or user output is not UTF-8, or whose store step hangs, is listed and fails nothing" = 3

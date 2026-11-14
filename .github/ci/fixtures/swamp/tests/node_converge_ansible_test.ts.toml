@@ -1,5 +1,5 @@
 order = 900
-source_sha256 = "ea836edce00318f8518fb8980aad21b2a244d27bc8edcdc4bb1d511581a10055"
+source_sha256 = "ef0a25fe5b374a8402a283a32ada0ed77a4c9bca00a9dc5b4f07d67c63264210"
 cases = [
   "generated converge vars preserve shell arguments, scalar strings and literal Jinja through Ansible",
   "peer DNS routing domains stay literal and a second application changes nothing",
@@ -28,6 +28,7 @@ cases = [
   "a Tool helper that cannot run with the compiled Swamp binary fails the tools phase and marks no Tool failed",
   "a Tool helper that cannot run with a missing Deno launcher fails the tools phase and marks no Tool failed",
   "with a working Tool helper, a refused Tool is marked failed alone and the tools phase succeeds",
+  "the roles phase records each container without Chromium's trust store for the result, and an empty list without an Instance host",
   "a converge writes the units of the Node's roles and reloads systemd once, never starts or restarts one, and a current unit changes nothing",
 ]
 file = "swamp/tests/node_converge_ansible_test.ts"

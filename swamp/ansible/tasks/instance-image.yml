@@ -30,6 +30,7 @@
     in_build: [incus, exec, --project, "{{ instance_variant.project }}", orbit-instance-build, --env, DEBIAN_FRONTEND=noninteractive, --]
     # The Orbit root CA that the Node's base converge writes for its agent (InstanceHostIntent::TrustSource).
     instance_trust_source: /etc/orbit/agent/ca.pem
+    browser_trust: "{{ instance_variant.image.browser_trust }}"
   block:
     - name: Read existing prepared-image builders
       ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances?project={{ instance_variant.project }}&recursion=1"] }
@@ -124,6 +125,22 @@
         - name: Remove the copied packages and the service block
           ansible.builtin.command: { argv: "{{ in_build + ['rm', '--', '/usr/sbin/policy-rc.d'] + inner_debs }}" }
           changed_when: true
+    # Chromium loads the runtime folder's trust module, which needs the image's own library at exactly the recipe part's version
+    # (docs/reference/development-containers.md#trust). A mismatch fails the build before `agent`'s NSS store names the module.
+    - name: Read the library of the trust module in the image
+      ansible.builtin.command:
+        argv: "{{ in_build + ['dpkg-query', '--show', '--showformat=${Version}', browser_trust.library] }}"
+      register: image_trust_library
+      changed_when: false
+      failed_when: false
+    - name: Require the library version of the trust module
+      ansible.builtin.assert:
+        that: image_trust_library.rc == 0 and image_trust_library.stdout == browser_trust.version
+        fail_msg: >-
+          instance.browser_trust_mismatch: the image has {{ browser_trust.library }}
+          {{ image_trust_library.stdout if image_trust_library.rc == 0 else 'not installed' }}; the trust module needs exactly
+          {{ browser_trust.version }}
+        quiet: true
     - name: Set up the users, the workspace and no sudo
       ansible.builtin.command: { argv: "{{ in_build + ['sh', '-c', instance_variant.image.prepare] }}" }
       changed_when: true
@@ -143,6 +160,21 @@
       ansible.builtin.command:
         argv: [incus, file, push, --project, "{{ instance_variant.project }}", --create-dirs, --uid, "0", --gid, "0", --mode, "0644",
                "{{ instance_trust_source }}", "{{ build }}/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"]
+      changed_when: true
+    # Chromium takes local roots only from `agent`'s NSS store; it names the trust module, which reads the bundle that the finish
+    # makes. NSS makes the store's databases at first use (docs/reference/development-containers.md#trust).
+    - name: Create the NSS store of agent in the image
+      ansible.builtin.command:
+        argv: >-
+          {{ in_build + ['install', '-d', '-o', browser_trust.uid | string, '-g', browser_trust.gid | string, '-m', browser_trust.directory_mode]
+             + browser_trust.directories }}
+      changed_when: true
+    - name: Name the trust module in the NSS store of agent
+      ansible.builtin.command:
+        argv: [incus, file, push, --project, "{{ instance_variant.project }}", --uid, "{{ browser_trust.uid }}", --gid, "{{ browser_trust.gid }}",
+               --mode, "{{ browser_trust.mode }}", "-", "{{ build }}{{ browser_trust.path }}"]
+        stdin: "{{ browser_trust.entry }}"
+        stdin_add_newline: false
       changed_when: true
     - name: Enable the units and clean up
       ansible.builtin.command: { argv: "{{ in_build + item }}" }

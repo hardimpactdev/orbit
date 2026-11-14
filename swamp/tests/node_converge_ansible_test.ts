@@ -397,6 +397,43 @@ Deno.test("with a working Tool helper, a refused Tool is marked failed alone and
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
+/** The roles-tagged tasks of the converge, each role standing in for a container step that kept `list` (none: no Instance host). */
+async function rolesPhase(folder: string, list?: unknown[]) {
+    const plays = parse(await Deno.readTextFile(new URL("../ansible/operation-node-converge.yml", import.meta.url))) as Array<{ tasks: Array<Record<string, unknown>> }>;
+    const tasks = structuredClone(plays[1].tasks.filter((task) => (task.tags as string[]).includes("roles")));
+    await Deno.writeTextFile(`${folder}/role.json`, JSON.stringify([list === undefined
+        ? { name: "Apply a role without an Instance host", "ansible.builtin.debug": { msg: "no instance host" } }
+        : { name: "Keep the containers without the browser trust store", "ansible.builtin.set_fact": { instance_browser_trust: list } }]));
+    for (const task of tasks) {
+        const include = task["ansible.builtin.include_tasks"] as { file: string } | undefined;
+        if (include) include.file = `${folder}/role.json`;
+    }
+    await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{
+        hosts: "localhost", connection: "local", gather_facts: false, tasks,
+        vars: { intent: { node_id: 7, user: "orbit", roles: [{ role: "app-dev" }] }, orbit_run: folder },
+    }]));
+    const result = await new Deno.Command("ansible-playbook", {
+        args: ["-i", "localhost,", `${folder}/play.json`], stdout: "piped", stderr: "piped",
+        env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default" },
+    }).output();
+    const recorded = await Deno.readTextFile(`${folder}/roles-result.json`).then(JSON.parse, () => null);
+    return { code: result.code, output: new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr), recorded };
+}
+
+Deno.test("the roles phase records each container without Chromium's trust store for the result, and an empty list without an Instance host", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const listed = [{ container: "orbit-instances/instance-7", reason: "not running" }];
+        let phase = await rolesPhase(folder, listed);
+        assertEquals(phase.code, 0, phase.output);
+        assertEquals(phase.recorded, { browser_trust: listed });
+        await Deno.remove(`${folder}/roles-result.json`);
+        phase = await rolesPhase(folder);
+        assertEquals(phase.code, 0, phase.output);
+        assertEquals(phase.recorded, { browser_trust: [] });
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
 Deno.test("a converge writes the units of the Node's roles and reloads systemd once, never starts or restarts one, and a current unit changes nothing", async () => {
     const folder = await Deno.makeTempDir();
     try {
