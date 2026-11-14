@@ -9,6 +9,7 @@ import runpy
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -925,7 +926,7 @@ class CloneGuestTest(unittest.TestCase):
             self.assertNotIn('"commit"', output.getvalue())
 
     def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=True, inactive=False, state=None, desired="running", is_active=1, expected_exit=1,
-                  branch="proof", mark=None, t3=None):
+                  branch="proof", mark=None, t3=None, on_curl=None):
         container = {
             "workspace": "/srv/workspace",
             "branch": "proof",
@@ -951,6 +952,8 @@ class CloneGuestTest(unittest.TestCase):
             if actual[0] == fail:
                 code = 17
             if actual[0] == "curl":
+                if on_curl is not None:
+                    on_curl(commands)
                 stdout = json.dumps(
                     {"environmentId": "proof", "serverVersion": "0.1.7"}
                 )
@@ -1095,26 +1098,43 @@ class CloneGuestTest(unittest.TestCase):
         self.assertEqual((output, error), ("", "instance.container_sessions_failed\n"))
         self.assertFalse(any(argv[0] == "/opt/agent/bin/t3" for argv in commands))
 
+    T3 = {"unit": "t3.service", "title": "Proof", "project_mark": "/home/agent/.config/orbit/t3-project"}
+
     def test_the_t3_step_issues_both_sessions_and_adds_the_project_while_t3_starts(self):
-        mark = "/home/agent/.config/orbit/t3-project"
-        commands, output, error = self.readiness("t3", existing=False, expected_exit=0,
-                                                 t3={"unit": "t3.service", "title": "Proof", "project_mark": mark})
+        seen = {}
+
+        def at_curl(commands):
+            # When the step starts to wait for T3's answer, both session issues have started and the project is added and marked.
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline and sum("--label" in argv for argv in list(commands)) < 2:
+                time.sleep(0.01)
+            seen["issues"] = sum("--label" in argv for argv in list(commands))
+            seen["marked"] = GUEST.pathlib.Path(self.T3["project_mark"]).is_file()
+
+        commands, output, error = self.readiness("t3", existing=False, expected_exit=0, t3=self.T3, on_curl=at_curl)
         result = json.loads(output)
         cli = [argv for argv in commands if argv[0] == "/opt/agent/bin/t3"]
         self.assertEqual(sorted(argv[1:3] for argv in cli), [["auth", "session"], ["auth", "session"], ["project", "add"]])
         self.assertEqual(sorted(argv[argv.index("--label") + 1] for argv in cli if "--label" in argv), ["Orbit Gateway", "Orbit Swamp"])
-        # Every T3 CLI call starts before the step waits for T3's answer is read: they run beside the server's first start.
-        started = commands.index(next(argv for argv in commands if argv[0] == "curl"))
-        self.assertTrue(all(commands.index(argv) <= started + 3 for argv in cli))
+        self.assertEqual(seen, {"issues": 2, "marked": True})
         # The tokens leave only as the private reply, which the Node keeps in the run's private file; never in the public receipt.
         self.assertEqual(result["private_reply"], {"gateway": {"token": "Orbit Gateway-PRIVATE-TOKEN"}, "swamp": {"token": "Orbit Swamp-PRIVATE-TOKEN"}})
         public = {key: value for key, value in result.items() if key != "private_reply"}
         self.assertNotIn("PRIVATE", json.dumps(public) + error)
-        # The project's mark is written; a retry that finds a mark (here: a file the copy holds) adds no second project.
-        self.assertTrue(any(change.endswith(mark) for change in result["changes"]))
-        commands, _, _ = self.readiness("t3", existing=False, expected_exit=0,
-                                        t3={"unit": "t3.service", "title": "Proof", "project_mark": GUEST.CHECKOUT_MARK})
+        # A retry that finds a mark (here: a file the copy holds) adds no second project, which T3 would refuse.
+        commands, _, _ = self.readiness("t3", existing=False, expected_exit=0, t3={**self.T3, "project_mark": GUEST.CHECKOUT_MARK})
         self.assertFalse(any(argv[:3] == ["/opt/agent/bin/t3", "project", "add"] for argv in commands))
+
+    def test_a_t3_that_does_not_answer_still_leaves_the_projects_mark_for_the_retry(self):
+        seen = {}
+        _, output, error = self.readiness("t3", existing=False, fail="curl", entrypoint=True, t3=self.T3,
+                                          on_curl=lambda _: seen.update(marked=GUEST.pathlib.Path(self.T3["project_mark"]).is_file()))
+        self.assertEqual((output, error), ("", "instance.container_t3_failed: command curl exited 17\n"))
+        self.assertEqual(seen, {"marked": True})
+
+    def test_a_failed_session_issue_fails_the_t3_step_by_the_command_and_its_exit(self):
+        _, output, error = self.readiness("t3", existing=False, fail="/opt/agent/bin/t3", entrypoint=True, t3=self.T3)
+        self.assertEqual((output, error), ("", "instance.container_t3_failed: command t3 exited 17\n"))
 
     def test_non_php_check_has_no_php_probe(self):
         commands, _, _ = self.readiness("check")

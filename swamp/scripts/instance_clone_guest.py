@@ -578,6 +578,10 @@ def phase_main(phase, raw):
             cli.append(("project", [t["t3"], "project", "add", ws, "--title", t["title"]]))
         with ThreadPoolExecutor(max_workers=len(cli)) as pool:
             started = {name: pool.submit(run, argv, agent=True) for name, argv in cli}
+            # The project's mark goes the moment T3 holds the project, before anything else can fail: a retry then adds no second
+            # project, which T3 refuses.
+            if "project" in started:
+                write(t["project_mark"], started.pop("project").result().stdout.strip() + "\n", 2750, 2750, "0600")
             ready = run(
                 [
                     "curl",
@@ -604,8 +608,6 @@ def phase_main(phase, raw):
         environment = json.loads(ready.stdout)
         assert environment["environmentId"] and environment["serverVersion"]
         assert all(issued[name] for name, _ in SESSIONS) and issued["gateway"] != issued["swamp"]
-        if "project" in issued:
-            write(str(mark), issued["project"] + "\n", 2750, 2750, "0600")
         print(
             json.dumps(
                 {
@@ -634,8 +636,7 @@ def phase_main(phase, raw):
             ).stdout
         )
         # The T3 step issued both sessions while T3 started; this step only checks them against the running server.
-        if not existing:
-            raise RuntimeError("instance.t3_sessions_missing")
+        assert existing
         for name, _ in SESSIONS:
             token = existing[name]["token"]
             # This is the clone's T3 server, reached directly over loopback without a proxy.
