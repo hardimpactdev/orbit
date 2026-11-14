@@ -128,3 +128,5 @@ A shared CI registry needs semantic selection for both fixture units and fast jo
 A required docs-impact check must read per-page reasons from the PR body as data, read the live body when failed jobs are rerun after a body edit, and keep generator failures non-waivable. Verify the same proposed body locally with `bin/docs-impact --gate --base origin/main --pr-body-file /tmp/orbit-pr-body.md`; private branch notes are not review evidence.
 
 When splitting a shared test registry, preserve admission order as well as record values. Replay selected and deferred units and ordered case slices against the old planner, and compare metadata through the PR merge base. Keep historical format readers data-only; load only the new format for the current checkout.
+
+Register a new Python fixture in its own per-fixture TOML with `slices = false`; it needs no shared shape-gate listing. Whole-file costs must include every case. A shared Python harness must contain no test methods, so importing it cannot register duplicate proof cases.

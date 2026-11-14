@@ -191,7 +191,9 @@ For example, `swamp/tests/ansible_instance_fleet_test.ts` declares one slice per
 
 A slice takes every n-th case, so a new case can move two long cases into one slice; then raise the slice count until no slice is above the lane budget. A slice count equal to the number of retained cases always meets this: each case gets its own slice.
 
-A file without its own command in the shape gate runs with Deno only while it is sliceable; `slices = false` makes the runner start it with `python3`. So register a Deno file that the gate does not list without `slices = false`. A Deno file of at most 60 seconds runs as one unit anyway.
+A new Python fixture needs its own `.github/ci/fixtures/<source>.toml`, with `slices = false`, measured whole-file cost, inputs, ordered cases and source hash. It does not need a shape-gate listing: the PR and full-set planners read the registry, and the runner uses `python3 -I` for a registered unsliceable file. A new Deno fixture remains sliceable. Changes to the shared gate still select all fixtures.
+
+The Instance workspace proof runs in five independent Python files: target and identity, snapshots, receipts, export, and check workflow. Each file keeps its complete assertions and uses the test-free `swamp/tests/_support/task_instance_workspace.py` harness. Load it with `runpy.run_path` using a path relative to the test file, then subclass `WorkspaceHarness` or `CheckHarness`; this also works with Python isolated mode. Register new cases in their own file without editing the shared gate. Python costs cover the whole file, including all its cases, and these five files target less than 90 seconds each with startup.
 
 Measured container and fleet files declare costs by exact case name, with run IDs for completed measurements and explicit estimates for unmeasured cases. Their file cost equals the retained case total. Packing includes six seconds of startup per slice. Slice counts never exceed the retained case count.
 

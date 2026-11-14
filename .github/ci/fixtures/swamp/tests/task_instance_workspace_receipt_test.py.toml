@@ -1,0 +1,23 @@
+file = "swamp/tests/task_instance_workspace_receipt_test.py"
+slices = false
+cost = 38
+source_sha256 = "42fc12207889a490c831a1d891229c665519f7a57fda6718532c89ee4e23d930"
+cases = [
+  "test_captured_evidence_and_bounded_bound_receipt",
+  "test_snapshot_and_receipt_refuse_wrong_digest_or_candidate_without_checkout_writes"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/fixtures/task-instance-workspace.json",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/ssh-execution-*.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_captured_evidence_and_bounded_bound_receipt" = 27
+"test_snapshot_and_receipt_refuse_wrong_digest_or_candidate_without_checkout_writes" = 11
