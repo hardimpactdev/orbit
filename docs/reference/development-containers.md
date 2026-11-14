@@ -794,7 +794,7 @@ A stale projection mark is repaired only for an active default on an active app-
 
 All Routes targeting the Instance must be active and published, with no failure, placement transition, replacement or target-set change. No unfinished Instance or Route publication and no retained publication hold may remain. A non-web Project without a Route counts as complete.
 
-After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the default branch. Automatic deployment depends on the [shared producer and policy setting](/reference/deployments#automatic-development-defaults). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. Before that snapshot, a Node/Vite default converts an old shared Node store once as `orbit`, without restarting a Process.
+After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the default branch. Automatic deployment depends on the [shared producer and policy setting](/reference/deployments#automatic-development-defaults). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. A step with [inputs](/reference/deployments#step-inputs) is skipped when they and its command are as at its last passed run in the workspace; its record is in the workspace's `.git/orbit-deploy-steps`, so a clone keeps it with the files it describes. Before that snapshot, a Node/Vite default converts an old shared Node store once as `orbit`, without restarting a Process.
 
 A converted store replaces the same-commit seed too: an immutable old snapshot cannot inherit a later filesystem change. Until this explicit deploy, clones of an old seed still convert their own store correctly.
 
