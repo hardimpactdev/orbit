@@ -36,14 +36,14 @@ describe('Project development deploy transport', function (): void {
         $connector = new GatewayConnector('https://gateway.test');
         $mock = new MockClient([
             ListProjectDevelopmentDeployStepsRequest::class => MockResponse::make([
-                'data' => [['name' => 'install', 'command' => 'private-lifecycle-command', 'timeout_seconds' => 20, 'required' => false]],
+                'data' => [['name' => 'install', 'command' => 'private-lifecycle-command', 'timeout_seconds' => 20, 'required' => false, 'inputs' => ['bun.lock']]],
                 'meta' => ['request_id' => $requestId],
             ]),
         ]);
         $connector->withMockClient($mock);
         $response = $connector->send(new ListProjectDevelopmentDeployStepsRequest(4))->dto();
         expect($response->requestId)->toBe($requestId)
-            ->and($response->steps[0]->toArray())->toBe(['name' => 'install', 'command' => 'private-lifecycle-command', 'timeout_seconds' => 20, 'required' => false])
+            ->and($response->steps[0]->toArray())->toBe(['name' => 'install', 'command' => 'private-lifecycle-command', 'timeout_seconds' => 20, 'required' => false, 'inputs' => ['bun.lock']])
             ->and(json_encode($response))->not->toContain('private-lifecycle-command')
             ->and(print_r($response, true))->not->toContain('private-lifecycle-command')
             ->and(fn () => serialize($response))->toThrow(LogicException::class);
@@ -51,7 +51,7 @@ describe('Project development deploy transport', function (): void {
 
     it('maps create update and delete responses with request correlation', function (): void {
         $connector = new GatewayConnector('https://gateway.test');
-        $payload = ['name' => 'cache', 'command' => 'private-command', 'timeout_seconds' => 300, 'required' => false];
+        $payload = ['name' => 'cache', 'command' => 'private-command', 'timeout_seconds' => 300, 'required' => false, 'inputs' => []];
         $response = MockResponse::make(['data' => $payload, 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a846']]);
         $connector->withMockClient(new MockClient([
             CreateProjectDevelopmentDeployStepRequest::class => $response,
@@ -66,9 +66,18 @@ describe('Project development deploy transport', function (): void {
         }
     });
 
+    it('sends inputs on create, replaces or clears them on update, and omits them when null', function (): void {
+        expect((new CreateProjectDevelopmentDeployStepRequest(4, 'install', 'composer install', inputs: ['composer.json', 'composer.lock']))->body()->all())
+            ->toBe(['name' => 'install', 'command' => 'composer install', 'inputs' => ['composer.json', 'composer.lock']])
+            ->and((new UpdateProjectDevelopmentDeployStepRequest(4, 'install', inputs: ['bun.lock']))->body()->all())->toBe(['inputs' => ['bun.lock']])
+            ->and((new UpdateProjectDevelopmentDeployStepRequest(4, 'install', inputs: []))->body()->all())->toBe(['inputs' => []])
+            ->and((new UpdateProjectDevelopmentDeployStepRequest(4, 'install', required: true))->body()->all())->toBe(['required' => true]);
+    });
+
     it('bounds malformed fields and defaults required when absent', function (): void {
-        $step = DevelopmentDeployStepResponse::fromData(['name' => [], 'command' => false, 'timeout_seconds' => '10', 'required' => 'false']);
-        expect($step->toArray())->toBe(['name' => '', 'command' => '', 'timeout_seconds' => 0, 'required' => true]);
+        $step = DevelopmentDeployStepResponse::fromData(['name' => [], 'command' => false, 'timeout_seconds' => '10', 'required' => 'false', 'inputs' => 'composer.json']);
+        expect($step->toArray())->toBe(['name' => '', 'command' => '', 'timeout_seconds' => 0, 'required' => true, 'inputs' => []]);
+        expect(DevelopmentDeployStepResponse::fromData(['inputs' => [1, 'composer.json']])->inputs)->toBe(['composer.json']);
         expect((new CreateProjectDevelopmentDeployStepRequest(4, 'install', 'true'))->body()->all())->toBe(['name' => 'install', 'command' => 'true']);
     });
 });

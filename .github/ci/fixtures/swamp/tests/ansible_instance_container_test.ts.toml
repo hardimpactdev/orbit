@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "a7fe9b20148047365584789f88cb42e39846016c353132949fb095d22b175ea6"
+source_sha256 = "108945f060588af2f6d2c1d60931cc0e67470667d66f1a1a54bb6a3b2ec2e1ff"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -7,6 +7,7 @@ cases = [
   "a retake on a host with no free ID range keeps the old seed, starts the Processes again and names the cause",
   "a retake that stopped between the delete and the rename is finished first; any other leftover retake goes",
   "a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs",
+  "a deploy step with inputs is named unchanged after it passed at the same inputs, and due again when one moves or is missing",
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP",
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -90,9 +91,12 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 3989
+cost = 4029
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
+  # The deploy-step record across four checkouts (45s locally, run in full before the PR): a 72nd slice would defer the whole file. The PR
+  # keeps the decision's expressions in cases.yaml (deploy-steps-read) and the guard and argv in workflow_instance_deploy_steps_test.ts.
+  "a deploy step with inputs is named unchanged after it passed at the same inputs, and due again when one moves or is missing",
   # The bundle's edge cases (44s locally, run in full before the PR): with it the file needs a 72nd slice and defers whole. The PR keeps
   # the fast-forward prerequisite of a normal default's deploy in "a deployment checks out the branch's new commit".
   "a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs",
@@ -205,7 +209,7 @@ inputs = [
   "nested fleet start gate: changed-host-path" = 25 # p90 of 15 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 17.5-29.4s
   "nested fleet start gate: writable-share" = 25 # p90 of 15 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 15.4-27.5s
   "nested fleet start gate: privileged" = 30 # p90 of 16 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 17.9-29.1s
-  "nested fleet start gate: clean" = 41 # p90 of 14 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 18.5-40.4s
+  "nested fleet start gate: clean" = 81 # p90 41s of 14 hosted PR runs on 2026-11-13, plus 40s for the four root-size starts added 2026-11-14 (local 16s to 33s)
   "nested fleet start gate: kernel-modules" = 30 # p90 of 11 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 18.1-29.4s
   "nested fleet start gate: mount-intercept" = 29 # p90 of 10 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 17.5-28.8s
   "nested fleet start gate: bpf-intercept" = 31 # p90 of 10 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 15.1-29.3s

@@ -486,6 +486,53 @@ Deno.test({
 });
 
 Deno.test({
+  name: "a deploy step with inputs is named unchanged after it passed at the same inputs, and due again when one moves or is missing",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      for (const phase of ["container", "workspace"]) assert(f.run(phase).ok);
+      const record = `${f.folder}/containers/instance-7/srv/workspace/.git/orbit-deploy-steps`;
+      const skip = () => Deno.readTextFileSync(`${f.folder}/run/deploy-steps-skip`);
+      const pass = (name: string) => Deno.renameSync(`${record}/pending/${name}`, `${record}/done/${name}`);
+      const steps: Record<string, unknown>[] = [
+        { name: "install-root", timeout_seconds: 300, required: true, inputs: ["index.php"], command_digest: "a".repeat(64) },
+        { name: "install-gone", timeout_seconds: 300, required: true, inputs: ["no-such-file"], command_digest: "b".repeat(64) },
+        { name: "migrate", timeout_seconds: 300, required: true, inputs: [], command_digest: "c".repeat(64) },
+      ];
+      f.intent.deployment = { variant: "container", steps };
+      f.write();
+      // No record yet: both watched steps are due; only the one whose inputs exist gets a pending record.
+      for (const phase of ["fetch", "checkout"]) assert(f.run(phase).ok, phase);
+      assertEquals(skip(), ",,");
+      assertEquals([...Deno.readDirSync(`${record}/pending`)].map((entry) => entry.name), ["install-root"]);
+      pass("install-root");
+      // A record of a step that is no longer watched goes, so it can never match by chance later.
+      Deno.writeTextFileSync(`${record}/done/removed-step`, "e".repeat(64));
+      // The same commit again: the passed step is unchanged; the step with a missing input stays due.
+      for (const phase of ["fetch", "checkout"]) assert(f.run(phase).ok, phase);
+      assertEquals(skip(), ",install-root,");
+      assertEquals([...Deno.readDirSync(`${record}/done`)].map((entry) => entry.name), ["install-root"]);
+      assertEquals([...Deno.readDirSync(`${record}/pending`)].length, 0);
+      // Its command changed: due again, with a new pending record and no old `done` one.
+      steps[0].command_digest = "d".repeat(64);
+      f.write();
+      for (const phase of ["fetch", "checkout"]) assert(f.run(phase).ok, phase);
+      assertEquals(skip(), ",,");
+      assertEquals([...Deno.readDirSync(`${record}/done`)].length, 0);
+      pass("install-root");
+      // A new commit that moves its input: due again.
+      Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 9;\n");
+      git(f.source, "commit", "--quiet", "-am", "moves the input");
+      for (const phase of ["fetch", "checkout"]) assert(f.run(phase).ok, phase);
+      assertEquals(skip(), ",,");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
   name: "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
   ignore: !hasAnsible,
   fn() {
@@ -1903,6 +1950,7 @@ for (const damage of [...Object.keys(nestedDamage), "extra-device", "changed-hos
           assertEquals(wrote, damage === "clean" ? 0 : 1);
           assert(f.run("start").ok);
           assertEquals(incusCalls(f).filter((args) => args.join(" ") === autostart.join(" ")).length, wrote);
+          if (damage === "clean") rootSizeShapes(f);
         } else {
           assert(!result.ok, result.output);
           assertEquals(f.result(), {error_code: "instance.container_network_unsafe"});
@@ -1913,6 +1961,39 @@ for (const damage of [...Object.keys(nestedDamage), "extra-device", "changed-hos
       } finally { f.cleanup(); }
     },
   });
+}
+
+/**
+ * The root disk of a nested-fleet default (docs/reference/development-containers.md#the-root-disk), on the clean nested container of
+ * the start gate: a start grows a smaller `<n>GiB` to the intent's size before the guard, keeps a larger one, and the guard refuses
+ * any other form. The shapes share that case's container: the file's slices are full.
+ */
+function rootSizeShapes(f: ReturnType<typeof fixture>) {
+  const devices = (f.container as unknown as {allowed_devices: Record<string, Record<string, string>>}).allowed_devices;
+  for (const [shape, has, intent] of [["grows", "40GiB", "80GiB"], ["keeps-larger", "80GiB", "40GiB"], ["same", "40GiB", "40GiB"],
+    ["odd-form", "50GB", "40GiB"]] as const) {
+    const state = f.state();
+    const row = state.containers["instance-7"];
+    row.status = "Stopped";
+    row.devices = row.devices.map((value: string) => value.startsWith("root,size=") ? `root,size=${has}` : value);
+    Object.assign(f.container, {root_disk_size: intent, allowed_devices: {...devices, root: {...devices.root, size: intent}}});
+    Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+    Deno.writeTextFileSync(`${f.folder}/calls`, "");
+    f.write();
+    const result = f.run("start");
+    const grow = ["--project", "orbit-instances-nested", "config", "device", "set", "instance-7", "root", `size=${intent}`].join(" ");
+    const grew = incusCalls(f).filter((args) => args.join(" ") === grow).length;
+    const size = f.state().containers["instance-7"].devices.filter((value: string) => value.startsWith("root,size="));
+    if (shape === "odd-form") {
+      assert(!result.ok, result.output);
+      assertEquals(f.result(), {error_code: "instance.container_network_unsafe"}, shape);
+      assertEquals([shape, f.state().containers["instance-7"].status, grew, size], [shape, "Stopped", 0, ["root,size=50GB"]]);
+      continue;
+    }
+    assert(result.ok, `${shape}: ${result.output}`);
+    assertEquals([shape, f.state().containers["instance-7"].status, grew, size],
+      [shape, "Running", shape === "grows" ? 1 : 0, [`root,size=${shape === "keeps-larger" ? "80GiB" : intent}`]]);
+  }
 }
 
 Deno.test({

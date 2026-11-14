@@ -68,6 +68,7 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `merge_check` | The check run that must pass on each [handoff commit](/reference/tasks#handoff-ci) and on a head before Orbit merges it, such as `Required checks`. Null by default; the flow needs it. |
 | `task_implementer_provider`, `task_implementer_model`, `task_implementer_effort` | The default implementer agent of the Project's [task copies](/reference/tasks#copy-turn-agents). A task that names its own value keeps it. Null takes the Gateway's |
 | `task_reviewer_provider`, `task_reviewer_model`, `task_reviewer_effort` | The same for the reviewer |
+| `task_pr_mode` | The [mode](/reference/tasks#task-group-modes) of the Project's task copy groups that set none: `review_before_pr` or `pr_when_done`. Null takes the Gateway's `ORBIT_TASKS_PR_MODE` |
 
 A parent task started with `task:start <id>` receives a workspace from the newest default-branch commit that passed the `merge_check`; see [`task:start`](/cli/task/start).
 
@@ -93,7 +94,7 @@ When a command is missing or not executable on that Node (exit 127 or 126), Orbi
 
 ## Development deploy steps
 
-A Project owns an ordered [development deploy list](/reference/deployments#development-deploy-steps), separate from setup and teardown and from production's per-Instance deploy steps. Use [`project:dev-deploy-step`](/cli/project/dev-deploy-step-list) to list, create, update, or remove a step. Each step stores a name, command, timeout, and `required` boolean, which defaults to true. These operations change configuration only; they never start a deployment.
+A Project owns an ordered [development deploy list](/reference/deployments#development-deploy-steps), separate from setup and teardown and from production's per-Instance deploy steps. Use [`project:dev-deploy-step`](/cli/project/dev-deploy-step-list) to list, create, update, or remove a step. Each step stores a name, command, timeout, a `required` boolean, which defaults to true, and optional `inputs`, the paths that let a container deployment [skip an unchanged step](/reference/deployments#step-inputs). These operations change configuration only; they never start a deployment.
 
 ## Project types
 
@@ -187,6 +188,7 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 | `merge_check` and `--merge-check=NAME` | Names the check that must pass before Orbit merges, and on each handoff commit. Send null or `--clear-merge-check` to clear it. |
 | `task_implementer_*` and `--task-implementer-*` | Set the implementer defaults of the Project's [copy turn agents](/reference/tasks#copy-turn-agents). Send null or `--clear-task-implementer-agent` to clear them. |
 | `task_reviewer_*` and `--task-reviewer-*` | The same for the reviewer. |
+| `task_pr_mode` and `--task-pr-mode` | Set the [mode](/reference/tasks#task-group-modes) of the Project's task copy groups that set none. Send null or `--clear-task-pr-mode` to clear it. Work done before the change waits for a release. |
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
 

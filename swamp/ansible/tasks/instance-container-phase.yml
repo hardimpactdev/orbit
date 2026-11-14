@@ -380,6 +380,20 @@
     argv: "{{ incus_project + ['config', 'set', container.name, 'boot.autostart=' ~ container.config['boot.autostart']] }}"
   changed_when: true
 
+# A nested-fleet default's root disk grows to its intent's size, which a Gateway setting names: its quota also counts the seeds that its
+# copies pin. Incus sets the ZFS quota on a running container. Only a smaller `<n>GiB` grows: a failed shrink below the used space
+# leaves the dataset without a quota, so no start shrinks one (docs/reference/development-containers.md#the-root-disk).
+- name: Grow the root disk to its intent
+  tags: [container, clone, start]
+  when: >-
+    phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool and container_read.rc == 0
+    and container.allowed_devices is defined
+    and (container_read.stdout | from_json).expanded_devices.root.size | default('') is match('^[1-9][0-9]*GiB$')
+    and ((container_read.stdout | from_json).expanded_devices.root.size[:-3] | int) < (container.root_disk_size[:-3] | int)
+  ansible.builtin.command:
+    argv: "{{ incus_project + ['config', 'device', 'set', container.name, 'root', 'size=' ~ container.root_disk_size] }}"
+  changed_when: true
+
 # Both independent ACLs reject by default. Validate all effective bridge NICs, including copied local extra devices.
 - name: Check the container's effective egress gates before starting it
   tags: [container, clone, start]
@@ -828,6 +842,99 @@
     - name: Remove the bundle in the container
       ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_bundle] }}" }
       changed_when: false
+
+# A development deploy step with `inputs` runs only when they or its command changed since its last passed run in this workspace
+# (docs/cli/instance/container/deploy-default.mmd). Its digest is the sha256 of its command's digest and the Git object IDs of its
+# inputs at the checked-out commit; a path missing at the commit gives no digest, so the step runs. The record is the workspace's own:
+# `.git/orbit-deploy-steps/done/<name>` holds the digest of the last passed run, and a step that is due gets `pending/<name>`, which
+# the step moves to `done` when it passes. The names to skip go to the run folder, where "Read the steps to skip" reads them for
+# the steps' guard. A deployment with no step that has `inputs` reads and writes none of it.
+- name: Decide which deploy steps run
+  tags: [checkout]
+  when: >-
+    phase == 'checkout' and intent.deployment is defined
+    and intent.deployment.steps | selectattr('inputs') | list | length > 0
+  vars:
+    deploy_steps_watched: "{{ intent.deployment.steps | selectattr('inputs') | list }}"
+    deploy_steps_record: "{{ container.workspace }}/.git/orbit-deploy-steps"
+  block:
+    - name: Read the deploy step inputs at the commit
+      ansible.builtin.command:
+        argv: "{{ in_workspace + ['cat-file', '--batch-check=%(objectname)'] }}"
+        stdin: "{{ deploy_steps_watched | map(attribute='inputs') | flatten | unique | map('regex_replace', '^', 'HEAD:') | join('\n') }}"
+      register: deploy_steps_objects
+      changed_when: false
+    - name: Read the deploy step records
+      ansible.builtin.command: { argv: "{{ as_orbit + ['grep', '-rH', '', deploy_steps_record ~ '/done'] }}" }
+      register: deploy_steps_done
+      changed_when: false
+      failed_when: deploy_steps_done.rc not in [0, 1, 2]
+    - name: Work out each deploy step's digest
+      vars:
+        deploy_steps_paths: "{{ deploy_steps_watched | map(attribute='inputs') | flatten | unique }}"
+        # `cat-file --batch-check` prints one object name per line, or `<object> missing` for a path the commit lacks.
+        deploy_steps_ids: "{{ dict(deploy_steps_paths | zip(deploy_steps_objects.stdout_lines)) }}"
+      ansible.builtin.set_fact:
+        deploy_steps_digest: >-
+          {%- set out = {} -%}
+          {%- for step in deploy_steps_watched -%}
+          {%-   set ids = step.inputs | map('extract', deploy_steps_ids) | list -%}
+          {%-   set known = ids | select('match', '^[0-9a-f]{40}([0-9a-f]{24})?$') | list | length == ids | length -%}
+          {%-   set _ = out.update({step.name: ((step.command_digest ~ ' ' ~ ids | join(' ')) | hash('sha256')) if known else ''}) -%}
+          {%- endfor -%}
+          {{ out }}
+        # `grep -rH` prints `<record>/done/<name>:<digest>` for each record.
+        deploy_steps_recorded: >-
+          {{ dict(deploy_steps_done.stdout_lines | select('match', '^.*/done/[^/:]+:[0-9a-f]{64}$')
+             | map('regex_replace', '^.*/done/([^/:]+):([0-9a-f]{64})$', '\1 \2') | map('split', ' ')) }}
+    - name: Name the unchanged deploy steps
+      ansible.builtin.set_fact:
+        deploy_steps_skip: >-
+          {%- set out = [] -%}
+          {%- for name, digest in deploy_steps_digest.items() -%}
+          {%-   if digest != '' and deploy_steps_recorded[name] | default('') == digest -%}
+          {%-     set _ = out.append(name) -%}
+          {%-   endif -%}
+          {%- endfor -%}
+          {{ out }}
+    # Each due step with a digest gets its pending record; the step itself moves it to `done` when it passes. A due step without a
+    # digest (a path missing at the commit) loses its old record, so it runs again until it has one.
+    - name: Write the pending deploy step records
+      ansible.builtin.command:
+        argv: >-
+          {{ as_orbit + ['python3', '-I', '-c', deploy_steps_program, deploy_steps_record,
+              deploy_steps_digest | dict2items | rejectattr('key', 'in', deploy_steps_skip) | items2dict | to_json,
+              deploy_steps_watched | map(attribute='name') | list | to_json] }}
+      vars:
+        deploy_steps_program: |
+          import json, os, sys
+          record, due, watched = sys.argv[1], json.loads(sys.argv[2]), set(json.loads(sys.argv[3]))
+          for folder in ("pending", "done"):
+              os.makedirs(os.path.join(record, folder), exist_ok=True)
+              # A record of a step that has no inputs now, or no longer exists, goes: it could match again later by chance.
+              for name in os.listdir(os.path.join(record, folder)):
+                  if name not in watched:
+                      os.remove(os.path.join(record, folder, name))
+          for name, digest in due.items():
+              for folder in ("pending", "done"):
+                  path = os.path.join(record, folder, name)
+                  if os.path.exists(path):
+                      os.remove(path)
+              if digest:
+                  with open(os.path.join(record, "pending", name), "w") as stream:
+                      stream.write(digest)
+      changed_when: true
+    - name: Name the unchanged deploy steps in the run folder
+      ansible.builtin.copy:
+        content: ",{{ deploy_steps_skip | join(',') }},"
+        dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/deploy-steps-skip"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
 # `orbit` and `agent` share the workspace through the group `work`. A tool that asks for 0755 folders, such as Bun in `node_modules`,
 # caps their ACL mask, so the other user cannot write there. Before the deploy steps (`checkout`) and after them (`processes`) root

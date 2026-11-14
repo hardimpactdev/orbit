@@ -3,12 +3,14 @@ import {
     BASE_MARK,
     BASE_PATHS,
     baseFacts,
+    BodyLimit,
     imported,
     PublishInput,
     pullPlan,
     pushed,
     verify,
     withBase,
+    withWaivers,
 } from "./publish.ts";
 
 export function publishInput(withPr = true) {
@@ -324,4 +326,37 @@ Deno.test("the planned pull request carries the Base section on creation and upd
         JSON.parse(plain.body).body,
         "Adds the export. $(touch inert)",
     );
+});
+
+Deno.test("a copy's publish appends the proposed body's waiver lines that the body lacks", () => {
+    const proposed = [
+        "Docs-unaffected: docs/reference/mcp.mdx: the tool schemas follow the request rules.",
+        "Some prose that is no waiver.",
+        "Docs-unaffected: docs/reference/projects.md: only the column exists.\r",
+        "Docs-unaffected: docs/reference/mcp.mdx: the tool schemas follow the request rules.",
+        "Docs-unaffected: /etc/passwd: no docs path.",
+    ].join("\n");
+
+    assertEquals(
+        withWaivers("Adds the export.", proposed),
+        "Adds the export.\n\nDocs-unaffected: docs/reference/mcp.mdx: the tool schemas follow the request rules.\nDocs-unaffected: docs/reference/projects.md: only the column exists.",
+    );
+});
+
+Deno.test("a copy's publish keeps the body when there is no proposed body, or it holds every line already", () => {
+    const line = "Docs-unaffected: docs/reference/mcp.mdx: generated.";
+    assertEquals(withWaivers("Adds the export.", null), "Adds the export.");
+    assertEquals(
+        withWaivers(`Adds the export.\n\n${line}`, line),
+        `Adds the export.\n\n${line}`,
+    );
+});
+
+Deno.test("the waiver lines stop where the body would pass the publish limit", () => {
+    const body = "x".repeat(BodyLimit - 60);
+    const short = "Docs-unaffected: docs/a.md: ok.";
+    const long = "Docs-unaffected: docs/reference/tasks.md: " + "y".repeat(80);
+    const result = withWaivers(body, `${short}\n${long}`);
+    assertEquals(result, `${body}\n\n${short}`);
+    assertEquals(result.length <= BodyLimit, true);
 });

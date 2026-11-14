@@ -22,6 +22,7 @@ class CreateDevelopmentDeployStepCommand extends GatewayCommand
         {--command= : Shell command the Gateway runs}
         {--timeout= : Timeout in seconds}
         {--required= : true for required or false for best effort}
+        {--input=* : Repository-relative path the step depends on; repeat for each path}
         {--before= : Place before this step}
         {--after= : Place after this step}
         {--json : Return machine-readable JSON}';
@@ -69,6 +70,7 @@ class CreateDevelopmentDeployStepCommand extends GatewayCommand
             before: $this->stringOption('before'),
             after: $this->stringOption('after'),
             required: $required,
+            inputs: $this->developmentInputs($this->option('input')),
         ), DevelopmentDeployStepResponse::class, ['Create step', 'Creating step', 'Created step']);
 
         return $response instanceof DevelopmentDeployStepResponse ? $this->renderDevelopmentDeployStep($response) : self::FAILURE;

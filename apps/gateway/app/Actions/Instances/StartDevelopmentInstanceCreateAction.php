@@ -418,7 +418,7 @@ final readonly class StartDevelopmentInstanceCreateAction
     /**
      * The container, its runtime row and, for the Project's default, its development deploy steps, which the run copies to the vault.
      *
-     * @param  list<array{name:string,phase:string,required:bool,timeout_seconds:int,command_digest:string}>  $steps
+     * @param  list<array{name:string,phase:string,required:bool,timeout_seconds:int,command_digest:string,inputs:list<string>}>  $steps
      * @return array<string,mixed>
      */
     private function containerIntent(Instance $instance, Node $node, array $steps, ?Instance $source, ?DatabaseConnection $database, string $branch, ?string $domain): array

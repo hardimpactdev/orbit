@@ -1,0 +1,71 @@
+sequenceDiagram
+  %% Target design: ADR 0257 (task group modes), docs/reference/tasks.md#task-group-modes. A scheduled Gateway command like task:pr-gate: it reads the Gateway's own records and admits the existing tasks.publish (docs/cli/task/publish.mmd) behind every guard of a manual publish. It starts no other work and merges nothing. The tick is a scheduled command, not an Operation kind: like instance/container/thread.mmd it names `kind: none`, and the Operation it admits is `tasks.publish`.
+  %% status: draft
+  %% command: none · task:pr-when-done schedule
+  %% kind: none
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane GH icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Task copy<br/>on its Node
+  participant GH as GitHub<br/>repository · PRs
+  Note over GW: Tick every minute<br/>task:pr-when-done
+  %%> When:
+  %%> - every minute while the Tasks extension is on, as one scheduled Gateway command beside `task:pr-gate`
+  %%> Why:
+  %%> - a group becomes done when the caller completes its last subtask, which ends no Operation; one tick reads the whole rule in one place and survives a lost callback or a worker restart
+  %%> Not included:
+  %%> - no command: no person starts the tick; a person releases a waiting group with `task:publish GROUP`
+  Note over GW: Find the done groups<br/>own records only
+  %%> What it does:
+  %%> - takes each open group whose workspace is a task copy and that has no pull request
+  %%> - keeps a group whose work is done: every subtask ended and one completed; the last completed one has an eligible passed handoff check, and no newer handoff check exists; the reviewer thread's newest turn reviewed exactly that commit and ended `done` (a subtask of a task copy cannot be completed while a turn runs); no turn may still run and no Operation of the group runs
+  %%> - keeps a group whose mode now resolves to `pr_when_done` (group, then Project, then Gateway) and whose done check recorded `pr_when_done` when it passed
+  %%> Result:
+  %%> - a group in `review_before_pr`, or whose done check recorded it, stays `waiting_for_release`; nothing happens on GitHub
+  Note over GW: Admit the publish<br/>pr-when-done:GROUP:CHECK
+  %%> What it does:
+  %%> - starts the `tasks.publish` admission of `task:publish` with the done check, the group title, a body of the brief, the completed subtasks and the checked commit, and a ready pull request
+  %%> Requirements:
+  %%> - every guard of a manual publish: the group lock, the copy publish allow list, the eligible candidate, the running container
+  %%> - the key `pr-when-done:GROUP:CHECK` was not admitted before, and no publish of this check failed or was cancelled; a repeat tick starts nothing
+  %%> - inside the admission's transaction, after the group's row lock, the group is still done with this check and still in `pr_when_done`, else `tasks.not_done`
+  %%> Result:
+  %%> - task #TASK recorded, kind `tasks.publish`, caller `gateway:pr-when-done`
+  GW->>SW: Start run, full intent<br/>operation-task-publish
+  %%> What it does:
+  %%> - starts the publish run that `docs/cli/task/publish.mmd` shows, unchanged
+  SW->>N: Export the copy<br/>workspace phase · bundle
+  %%> How:
+  %%> - the copy's checkout HEAD must be the done check's commit; the bundle comes to the worker and the copy never holds a token
+  Note over SW: Check the .env content
+  %%> How:
+  %%> - the `.env` path and content checks, with the Club key of a nested-fleet copy, run before any token exists; the title and body Orbit wrote are checked too
+  SW->>GH: Push and open the PR<br/>task-GROUP · ready
+  %%> How:
+  %%> - the push step mints its own token; the pull request opens ready, not as a draft
+  alt published
+    GH-->>SW: Branch pushed · PR number
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Record the publication<br/>pr_url · state published
+    %%> Result:
+    %%> - the group's `publication` state is `published`; the group keeps its status and its task copy
+    %%> - Orbit never merges this pull request (`tasks.copy_pr_no_merge` on every merge path); a person merges it on GitHub
+  else refused
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> When:
+    %%> - a step failed, such as `tasks.publish_secret_content` or `tasks.push_failed`
+    %%> - an admission refusal, such as `tasks.copy_publish_held` or `tasks.commit_not_checked`, starts no run and ends here too
+    %%> - a stopped task copy refuses at admission with `tasks.instance_not_running` and is stored too
+    %%> - only `operation.target_busy`, `tasks.copy_turn_unended` and `tasks.not_done` are no refusal: the next tick reads the group again and stores nothing
+    %%> - a fault that is no refusal is stored as `tasks.publish_failed`; a refusal is never stored over a publish admitted in between
+    Note over GW: Show the refusal<br/>state refused · error_code
+    %%> Result:
+    %%> - an admission refusal is stored on the group; a failed, interrupted or cancelled publish of the done check, by any caller, keeps its code on its Operation (`operation.cancelled` when it has none); `task:show` and `task:status` show `refused` with the code
+    %%> - the group keeps its status, and the task copy and its checked commit stay
+    %%> Retry:
+    %%> - the tick does not start the same done check again; a new handoff check or `task:publish GROUP` tries again
+  end

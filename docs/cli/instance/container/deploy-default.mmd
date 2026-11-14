@@ -42,9 +42,15 @@ sequenceDiagram
   SW->>C: Check out in the container<br/>Ansible · tags checkout
   %%> What it does:
   %%> - the same checks as a checkout default: a dirty tree refuses `deployment.checkout_dirty`, a diverged branch `deployment.branch_diverged`
+  Note over SW: Read the steps to skip<br/>run folder
+  %%> What it does:
+  %%> - reads the names the checkout found unchanged; only a deployment with a step that has `inputs` runs it
   SW->>C: Run dev deploy steps<br/>incus exec · vault copy
   %%> What it does:
   %%> - the Project's development deploy steps, as `orbit`: they install changed dependencies and migrate
+  %%> - a step with `inputs` runs only when they or its command changed since its last passed run in this workspace: the checkout compares the Git object IDs of its inputs at the commit and its command's digest with the step's record in `.git/orbit-deploy-steps`, and the step's guard skips it when they match; a passed step records them; a step without `inputs` always runs
+  %%> Why:
+  %%> - most releases change no lock file: an install that finds nothing to do still costs its tool's start, its autoload and its scripts, about 4 s a step
   SW->>C: Install the Processes<br/>Ansible · tags processes
   %%> What it does:
   %%> - installs the Project's new and changed development Process definitions as `orbit-*` units, with their environment files from the vault

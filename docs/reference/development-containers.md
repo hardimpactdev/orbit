@@ -133,7 +133,7 @@ The Node must meet the host requirements of ADR 0250: current kernel, SCTP off a
 
 ## Inside a container
 
-Every Instance container, default or clone, has 4 CPUs, 4,096 processes and a 40 GiB root disk on the `orbit-instances` ZFS pool. It has 8 GiB of memory, or 12 GiB in the [nested-fleet project](#nested-fleet).
+Every Instance container, default or clone, has 4 CPUs, 4,096 processes and a 40 GiB root disk on the `orbit-instances` ZFS pool. A nested-fleet default has a [larger root disk](#the-root-disk). It has 8 GiB of memory, or 12 GiB in the [nested-fleet project](#nested-fleet).
 
 Clone phases stage their release's helpers and intent once in a private folder for the run. Later phases run them by path. This keeps scripts off the SSH command and avoids its size limit. The repository credential stays on stdin. Cleanup removes the folder on success or failure, including a failed first launch.
 
@@ -480,6 +480,24 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 - **Thaw.** A frozen container keeps its cache, because it thaws without a boot. Its wake rebuilds a cache that lacks a runtime library.
 - **Failure.** A failed Incus call fails the converge after every other container had its turn.
 
+### The machine name
+
+A container Instance has a presented name, `<instance name>.<project slug>`, such as `task-5003.dlf-leden` or `default.shop`. It is the name a person sees for the machine, never `instance-<id>`. A new clone's T3 server shows it from its first start.
+
+`instance-<id>` stays the Incus name. It is the machine key: the ACL, the UFW comments, the mail state folder, the Node mirror `<id>.git` and the certificate scopes `app-instance-<id>` keep it. An Operation's `input` keeps it too, as `container.name`; it is the Incus name, not the presented name.
+
+`InstanceMachineName` holds the rule.
+
+**The presented name.** It is `<instance name>.<project slug>`, exactly as stored. It goes into `PRETTY_HOSTNAME` in `/etc/machine-info`. Stock T3 0.1.7 reads that line for its environment label before the kernel hostname. It reads it once, at its start.
+
+**The kernel hostname.** It is the same text when the slug is a lowercase hostname label and the name has at most 63 characters. Otherwise it is exactly 64 characters, the kernel's limit. A valid name of exactly 64 characters takes that form too, so the two forms never meet. The long form holds the start of the Instance name, a hyphen and the Instance ID padded with zeros. A dot and at most 31 characters of the slug's label follow. The label is the slug in lower case, with `_` as `-` and no hyphen at either end.
+
+**Unique on every Node.** An Instance name is unique in its Project, and a slug is unique, so a short name is unique. A 64-character name can equal no short one. It carries the Instance ID, so it can equal no other Instance's.
+
+For a slug such as `My_App`, a person sees `default.My_App` as T3's label; the kernel hostname is the mapped 64-character form.
+
+**What the Gateway sends.** Every container intent carries `machine_name`, with `hostname` and `pretty`. The host intent of an app-dev Node carries `machine_names`: the project, container and both names of each runtime on the Node. A clone's boot files include `/etc/machine-info`, so a new clone's T3 shows the name from its first start.
+
 ### Trust
 
 Every container trusts the Orbit root CA, so curl, PHP and OpenSSL verify an Orbit-signed site with no extra option. The source is the root that every Node's base converge writes for its agent, `/etc/orbit/agent/ca.pem`. The Gateway never puts the certificate in an intent.
@@ -794,7 +812,7 @@ A stale projection mark is repaired only for an active default on an active app-
 
 All Routes targeting the Instance must be active and published, with no failure, placement transition, replacement or target-set change. No unfinished Instance or Route publication and no retained publication hold may remain. A non-web Project without a Route counts as complete.
 
-After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the default branch. Automatic deployment depends on the [shared producer and policy setting](/reference/deployments#automatic-development-defaults). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. Before that snapshot, a Node/Vite default converts an old shared Node store once as `orbit`, without restarting a Process.
+After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the default branch. Automatic deployment depends on the [shared producer and policy setting](/reference/deployments#automatic-development-defaults). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. A step with [inputs](/reference/deployments#step-inputs) is skipped when they and its command are as at its last passed run in the workspace; its record is in the workspace's `.git/orbit-deploy-steps`, so a clone keeps it with the files it describes. Before that snapshot, a Node/Vite default converts an old shared Node store once as `orbit`, without restarting a Process.
 
 A converted store replaces the same-commit seed too: an immutable old snapshot cannot inherit a later filesystem change. Until this explicit deploy, clones of an old seed still convert their own store correctly.
 
@@ -934,7 +952,15 @@ On a container Instance, `env:sync` writes only the keys of the attached connect
 
 `orbit instance:create PROJECT NODE NAME` clones the default Instance. A clone's create ends when the user can start a thread: the checkout, T3 and its registration. Its [completion](#complete-a-clone) does the rest. The create copies the default container with `incus copy`, a ZFS clone. Then it starts the container and creates the Instance's branch from the default branch. A nested-fleet clone gets its Club key right after that start.
 
-Two steps then start at the same time. The workspace step runs the `checkout` part of the workspace phase: the branch, the checkout mark and `.env`. The T3 step first writes the agent settings, the note links and `/etc/orbit/instance`, then starts T3 and adds the T3 project at `/srv/workspace`. The T3 step never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs. So it does not wait for the workspace.
+Two steps then start at the same time. The workspace step runs the `checkout` part of the workspace phase: the branch, the checkout mark and `.env`. The T3 step first checks the agent settings and the note links, then waits for T3 and adds the T3 project at `/srv/workspace`. T3 has usually started with the copy ([T3 starts with the copy](#t3-starts-with-the-copy)). The T3 step never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs. So it does not wait for the workspace.
+
+#### T3 starts with the copy
+
+The copy step writes T3's files into the stopped copy before its first start. First the placeholder model environment, then Codex's `config.toml`, Claude Code's `.claude.json` and T3's `settings.json`. The two JSON files merge into the seed's own, as the agent part merges them. Last comes `/etc/orbit/instance`, the file that `t3.service` waits for. The copy's boot then starts T3, and T3's cold start runs beside private names, Node services, mail and branch. No snapshot holds the model environment: the default never has it, and Orbit takes no snapshot of a clone.
+
+The model environment reaches the copy step on its one SSH stdin. The Gateway writes the run's Git credential line, the line `#orbit-model-environment`, and the model environment into one execution copy, `instance-create-clone-<operation>`. The copy step's `git_credential` reference names it. Git's credential store skips the frame line and the rest. An Instance's destroy deletes the copy with the create's other copies, also after a failed or cancelled create.
+
+The T3 step does not start a T3 that runs. It starts T3 when the copy was not started by this run, or when the run carried no model environment, as a run of an older Gateway does. A T3 that failed at boot is started once more, after `systemctl reset-failed`, and the step names it as `restart:t3` in its changes. `timings.container.t3_files` is 1 when the copy step wrote T3's files, and `timings.t3.at_boot` is 1 when T3 ran as the T3 step began.
 
 Swamp starts a level of steps only when the whole level before it has ended ([Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md)). Both steps are in the level after the copy and the Club key, so both start when the Club key step ends or skips.
 
@@ -994,7 +1020,7 @@ An [explicit branch choice](/reference/conn#threads-in-an-orbit-project) runs no
 
 Someone may make the branch on GitHub between the admission and the copy. The copy still starts at the admitted commit. When the GitHub branch has commits the copy lacks, a later push of the branch is refused as `tasks.not_fast_forward`. When it has none, the push fast-forwards it, and no commit is lost. A clone's Node mirror exists only after a fetch: its own create's, or a later deployment's.
 
-The container, checkout, T3 and sessions phases print the seconds of their parts. The container phase names its ACL, copy, unit cleanup, boot files, firewall, network check, start, private names, Node services, mail and branch. The workspace phase names its bundle and its guest checkout. The T3 phase names its agent part and T3's first answer. The sessions phase names its guest check. The create's result carries them as `timings`: names and seconds only.
+The container, checkout, T3 and sessions phases print the seconds of their parts. The container phase names its ACL, copy, unit cleanup, boot files, T3's files, firewall, network check, start, private names, Node services, mail and branch. The workspace phase names its bundle and its guest checkout. The T3 phase names its agent part and T3's first answer. Two parts are facts, 1 or 0: `t3_files` and `at_boot` ([T3 starts with the copy](#t3-starts-with-the-copy)). The sessions phase names its guest check. The create's result carries them as `timings`: names and seconds only.
 
 Clone readiness checks PHP only when the Project has a PHP runtime. A Project without PHP can register T3 and its sessions. The Operation keeps its stable error code and shows the failed phase, command and exit code in `error.detail`; command output stays private.
 
@@ -1043,7 +1069,7 @@ Clones are built for the Nodes of the [build list](#the-build-list).
 | ACL | The Node's Caddy reaches port 8080 and ports 1024 to 65535, any WireGuard peer reaches port 3773, and the container reaches its database server's port |
 | T3 port | The proxy device `t3` in NAT mode, from the Node's WireGuard address and the T3 port to port 3773 |
 | UFW | Under the comment prefix `orbit:instance-<id>-`: a route deny from the task VM range, then a route allow to port 3773; and the rule to the database server |
-| Agent files | `/home/agent/.config/orbit/model.env` with the placeholder key from the vault, Codex's and Claude Code's settings that point at the forwarder, the note links, and `/etc/orbit/instance` |
+| Agent files | `/home/agent/.config/orbit/model.env` with the placeholder key from the vault, Codex's and Claude Code's settings that point at the forwarder, the note links, and `/etc/orbit/instance`. ([T3 starts with the copy](#t3-starts-with-the-copy)) |
 | Processes | In the [completion](#complete-a-clone): FrankenPHP's unit, rewritten for the clone's own address, and the Project's Process units |
 | T3 | Its first start, a check of `/.well-known/t3/environment` within 30 seconds, and the T3 project `/srv/workspace` |
 | Registration | [T3 registration](#t3-registration-and-pairing), from the run's result |
@@ -1071,6 +1097,7 @@ The clone script writes these, so a new clone works with no converge or `env:syn
 | Trust | Before the first start | The Orbit root as a local CA file, its two links, and in `/etc/ssl/certs/ca-certificates.crt`, so curl, PHP and Chromium trust Orbit's sites. See [trust](#trust) |
 | `NO_PROXY` | Before the first start | The composed value in the `environment.*` keys and in both drop-ins, with the private names. See [proxy settings](#proxy-settings-in-a-container) |
 | Private names | Right after the first start | The plan's `private_names` in `/etc/hosts`, such as the clone's own Route names. See [private names](#private-names-of-the-access-plan) |
+| Machine name | Before the first start | `/etc/machine-info` with `PRETTY_HOSTNAME`, which T3's first start reads. See [the machine name](#the-machine-name) |
 
 The hosts block comes after the start because the copy's own Incus template rewrites `/etc/hosts` at that start. The stock image's metadata holds `templates: /etc/hosts: when: [create, copy]`, which renders `127.0.1.1 <name>` and the localhost lines. A clone copies that metadata from its default, so a write before the start is lost.
 
@@ -1105,7 +1132,7 @@ Success turns the Route `active`, then the Instance `active` with `provisioning_
 
 A completion that publishes the Route holds its Nodes for the whole run; a completion with no publication holds none. A clone's create holds the Nodes only when they are free at its admission, and only until `clone-route` ends, so two creates admitted together never wait on each other. The budget is 1,800 seconds: the 600-second fill and the 900-second fleet start with margin.
 
-The create's terminal projection admits the first completion. A completion that ends `succeeded` or `failed` moves a [task copy](/reference/tasks#task-copy) on, as a create's end does: `active` makes its task run, and a failure fails it.
+The create's terminal projection admits the first completion. A completion that ends moves a [task copy](/reference/tasks#task-copy) on: `active` makes its task run. A failure keeps the copy, and its task stays `reserved` and asks for assistance with the retry.
 
 ### Clone the database
 
@@ -1410,11 +1437,12 @@ The Instance's create flow registers its T3 server with the [Conn layer](/refere
 
 In the container, as `agent`:
 
-1. The T3 step starts T3. T3's own CLI issues the `Orbit Gateway` session beside that start, as `agent`: `t3 auth session issue --label "Orbit Gateway" --token-only`.
-2. In parallel, the CLI issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3). PR 8 narrows its scopes.
-3. After T3 answers, `t3 project add` adds the workspace, once. During T3's start that call fails, so it waits.
-4. The tokens wait in the run's private folder, mode 0600. They never reach a log or a result.
-5. The sessions step reads the served environment and asks T3 about both sessions at `/api/auth/session`. It issues none. Its reply replaces the tokens in the private folder.
+1. T3 runs: the copy's boot started it ([T3 starts with the copy](#t3-starts-with-the-copy)), else the T3 step starts it.
+2. T3's own CLI issues the `Orbit Gateway` session as `agent`: `t3 auth session issue --label "Orbit Gateway" --token-only`.
+3. In parallel, the CLI issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3). PR 8 narrows its scopes.
+4. After T3 answers, `t3 project add` adds the workspace, once. During T3's start that call fails, so it waits.
+5. The tokens wait in the run's private folder, mode 0600. They never reach a log or a result.
+6. The sessions step reads the served environment and asks T3 about both sessions at `/api/auth/session`. It issues none. Its reply replaces the tokens in the private folder.
 
 Stock T3's CLI writes its sessions before and during the server's first start. So the two issues run while T3 starts and add no time of their own.
 
@@ -1701,6 +1729,8 @@ The refusal names the volume and its key, for example `volume inner-pool block.m
 
 The clone probe writes only `security.idmap.isolated=true`, so its guard admits only that key. A container of `orbit-instances` keeps its NIC guard, with the same program and arguments as before.
 
+The root disk's `size` is the one device key that may be larger than the intent's, as [The root disk](#the-root-disk) explains. Any other form than `<n>GiB` is refused.
+
 After a host reboot, Incus restores the containers that were running, without the guard. A nested-fleet container has `boot.autostart=false`, so it stays stopped. An Orbit start of the Instance, such as its deployment, starts it again through the guard. A container made before the key existed gets it at its next start, before the guard reads it: it is the one key a start writes, and Incus applies it without a restart.
 
 The outer container is only the operator of its fleet. It runs no fleet service itself. It holds:
@@ -1713,13 +1743,30 @@ The tunnel has no unit: `wg-quick` fails under the outer container's AppArmor pr
 
 ### Capacity
 
-Nested and normal Instances share the Node's address pool, T3 ports and storage pool. A `/24` bridge has 252 Instance addresses, `.2` to `.253`: the bridge takes `.1` and the image build `.254`. Each non-default Instance also takes one of the 200 T3 ports, `3800` to `3999`. Every root disk is 40 GiB on the `orbit-instances` pool.
+Nested and normal Instances share the Node's address pool, T3 ports and storage pool. A `/24` bridge has 252 Instance addresses, `.2` to `.253`: the bridge takes `.1` and the image build `.254`. Each non-default Instance also takes one of the 200 T3 ports, `3800` to `3999`. Every root disk is on the `orbit-instances` pool. It has 40 GiB, or for a nested-fleet default the size that [The root disk](#the-root-disk) names. A root size is a ZFS quota, not a reservation, and no admission or Doctor check adds root sizes up.
 
 At reservation, the placement rule refuses first, then a full bridge, then a full T3 port range; the last two refuse with `instance.host_unavailable` (409). So one Project with a default and 200 clones runs out of T3 ports first, and many Projects with defaults can run out of addresses first. Free pool space and the [subordinate-ID demand](/reference/node-settings#nested-fleet-instance-hosting), which the converge checks, can limit a Node earlier.
 
 ### Readers of the recorded project
 
 Each runtime records its Incus project once. Every step that reaches the container reads that record: create, deploy, clone, destroy, Processes, Schedules, mail, Node services, migration and T3 setup. The shared-folder refresh restarts running containers in every project that the Node's runtimes record, before it clears the folder's restart mark, also after the switch is off. With no nested runtime, it runs the same command as before.
+
+### The root disk
+
+The root disk of a nested-fleet default has the size of the Gateway setting [`ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE`](/reference/gateway-environment), 80 GiB by default. Every other container, a copy of a default among them, keeps 40 GiB.
+
+Incus sets the size as the ZFS `quota` of the container's dataset. A quota counts the dataset's snapshots. A default's seeds stay on its dataset while a copy made from them lives, as hidden `deleted-*` snapshots, and each one that a `base` retake replaced holds about 1.7 GiB. A copy's quota counts only its own blocks. The inner Doctor wants 2 GiB and 10% of the disk free, and a [refresh](#refresh-after-a-release) checks that room first. At 40 GiB, six living copies on old seeds left too little room on Instance 2454.
+
+The size reaches a container two ways:
+
+- A create and a clone write the intent's size.
+- An existing default grows at its next start, such as a deploy. The start reads a smaller `<n>GiB` and sets the intent's size before the guard.
+
+Incus sets the quota on the running container, without a restart. A failed grow fails the start before the guard, and the container keeps its old size.
+
+A start never shrinks a root disk. On ZFS, a quota below the used space fails, and Incus then leaves the dataset without a quota. So a lowered setting changes no existing default, and the guard admits a root size that is larger than the intent's. That also keeps a default's start working after a rollback to a release that writes a smaller size. A rollback to a release before this rule refuses a grown default at its start (`instance.container_network_unsafe`, device `root`): roll forward instead.
+
+A setting that is not a whole number of GiB of at least 40 GiB, such as `80GB`, refuses every intent of a nested-fleet default with `instance.nested_root_size_invalid` (503).
 
 ### The nested-fleet image
 
@@ -2348,6 +2395,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `node.instance_bridge_exhausted` | 409 | No `/24` of the fleet range is free for a Node's Instance bridge |
 | `instance.container_nodes_invalid` | 500 | `ORBIT_INSTANCES_CONTAINER_NODES` is not a JSON list of Node ids |
 | `instance.host_unavailable` | 409 | A build-list Node cannot be prepared: it lacks the pool `orbit-instances` or enough subordinate IDs, or the recipe has no pin for it. |
+| `instance.nested_root_size_invalid` | 503 | `ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE` is not a size in GiB of at least 40 GiB (see [The root disk](#the-root-disk)). Nothing changed |
 | `instance.nested_fleet_host_unavailable` | 409 | A new nested-fleet Instance on a Node whose nested-fleet switch is off. Not reachable yet |
 | `instance.nested_fleet_container_required` | 409 | A new nested-fleet Instance would not be a container: the Node is off the build list, or the default is a host checkout. Not reachable yet |
 | `instance.nested_fleet_image_unavailable` | 502 | The create of a nested-fleet default while the Node records a failed build of the [nested-fleet image](#the-nested-fleet-image). Orbit makes no container; converge the Node again |
@@ -2356,6 +2404,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.clone_browser_trust_mismatch` | 502 | A clone's copy holds another `libp11-kit0` than the trust module needs. The create stops before the copy starts |
 | `instance.clone_browser_trust_refused` | 502 | A path of `agent`'s NSS store in a clone's copy has another type than expected, or is a link. The create stops before the copy starts |
 | `instance.clone_trust_bundle_refused` | 502 | A clone's copy has no regular `/etc/ssl/certs/ca-certificates.crt`, or the file API could not read it. The create stops before the copy starts |
+| `instance.clone_t3_files_refused` | 502 | A folder or JSON file of [T3's files](#t3-starts-with-the-copy) in a clone's copy is a link or of another type. The create stops before the copy starts |
 | `instance.clone_private_names_failed` | 502 | A clone's create could not read, render or write `/etc/hosts` right after the copy's first start. The create's failure step stops the copy, and a retry writes it again |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |

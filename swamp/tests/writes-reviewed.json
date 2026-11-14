@@ -358,6 +358,7 @@
    "Read the checkout branch": "unreviewed",
    "Read the checkout commit": "unreviewed",
    "Read the container result": "read-only",
+   "Read the steps to skip": "read-only",
    "Read the key names": "read-only",
    "Read the local branch": "unreviewed",
    "Read the release commit": "unreviewed",

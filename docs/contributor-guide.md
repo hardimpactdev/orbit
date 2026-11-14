@@ -91,7 +91,7 @@ A Gateway task handoff opens a fresh SSH session on the task checkout; it does n
 
 `bin/review-check` and `bin/task-check` pass only that branch's file to the gate as its waiver file, and `bin/review-check` records the command in the check report. When an impacted page is missing, the gate names that file and says whether it is absent or holds no valid line for the page. In a task copy, the implementer writes `/srv/workspace/.git/orbit/proposed-pr-bodies/task-<id>.md` before the handoff check, as [the scoped task check](/reference/tasks#docs-impact-waivers-in-a-copy) states. A detached checkout has no branch file. An explicit local `ORBIT_DOCS_PR_BODY_FILE` takes precedence.
 
-The reviewer confirms these proposed lines at handoff. Copy them to the PR body before READY: CI reads only the live PR body, never the checkout's proposed-body file.
+The reviewer confirms these proposed lines at handoff. CI reads only the live PR body, never the checkout's proposed-body file. When Orbit's publish opens or updates the pull request of a [task copy](/reference/tasks#task-copy), it copies the proposed body's waiver lines into the PR body. Otherwise copy them to the PR body before READY.
 
 Run from the repository root:
 
@@ -338,7 +338,7 @@ A deterministic report makes the docs-first decision repeatable. It combines cha
 
 Deleting a migration without an owner does not require a new ownership binding for the removed file. Removing an owned migration still routes the change to its page, and new or changed migrations still need owners.
 
-A waiver belongs in the PR body so a reviewer can see it. Before the PR exists, the task check reads the branch-specific proposed-body file on its own checkout; the author copies those lines to the PR body before READY. Private Git notes are not review evidence. A shared tracked waiver file is rejected because concurrent branches would edit the same lines.
+A waiver belongs in the PR body so a reviewer can see it. Before the PR exists, the task check reads the branch-specific proposed-body file on its own checkout; Orbit's publish of a task copy copies those lines to the PR body; any other author copies them before READY. Private Git notes are not review evidence. A shared tracked waiver file is rejected because concurrent branches would edit the same lines.
 
 Page ownership belongs beside the documentation, in `covers:` frontmatter and the extractor's surface mappings. Listing owners in every task brief is rejected, because duplicate lists go stale and miss new surfaces. Running only existing generators is also rejected: generated API, CLI, and MCP contracts do not find every hand-written page affected by configuration, errors, migrations, or schedules. Current generator output needs no duplicate prose, but stale or missing output still requires an update.
 

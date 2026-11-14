@@ -1,5 +1,33 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  # `incus query /1.0/instances/<name>` of a nested-fleet default, cut to its root disk (2026-11-14, Beast).
+  root-smaller:
+    phase: start
+    container_read:
+      rc: 0
+      stdout: '{"name": "instance-2454", "project": "orbit-instances-nested", "status": "Running", "expanded_devices": {"root": {"path": "/", "pool": "orbit-instances", "size": "40GiB", "type": "disk"}}}'
+    container:
+      root_disk_size: 80GiB
+      allowed_devices:
+        root: {type: disk, path: /, pool: orbit-instances, size: 80GiB}
+  root-larger:
+    phase: start
+    container_read:
+      rc: 0
+      stdout: '{"name": "instance-2454", "project": "orbit-instances-nested", "status": "Running", "expanded_devices": {"root": {"path": "/", "pool": "orbit-instances", "size": "80GiB", "type": "disk"}}}'
+    container:
+      root_disk_size: 40GiB
+      allowed_devices:
+        root: {type: disk, path: /, pool: orbit-instances, size: 40GiB}
+  root-odd-form:
+    phase: start
+    container_read:
+      rc: 0
+      stdout: '{"name": "instance-2454", "project": "orbit-instances-nested", "status": "Running", "expanded_devices": {"root": {"path": "/", "pool": "orbit-instances", "size": "50GB", "type": "disk"}}}'
+    container:
+      root_disk_size: 40GiB
+      allowed_devices:
+        root: {type: disk, path: /, pool: orbit-instances, size: 40GiB}
   grants-current:
     fleet_grants:
       stdout: 'localhost : ok=3 changed=0 unreachable=0 failed=0'
@@ -981,6 +1009,24 @@ contexts:
       stdout_lines:
       - '<html>Bad Gateway</html>'
       - HTTP 502
+  # A deployment with two watched steps: `cat-file --batch-check=%(objectname)` names one object per input (or `missing`), and
+  # `grep -rH` prints each record as `<path>:<digest>`.
+  deploy-steps-read:
+    container: {workspace: /srv/workspace}
+    deploy_steps_watched:
+    - {name: install-root, inputs: [composer.json, composer.lock], command_digest: aaaa}
+    - {name: install-web, inputs: [apps/web/bun.lock], command_digest: bbbb}
+    deploy_steps_objects:
+      rc: 0
+      stdout_lines:
+      - 1111111111111111111111111111111111111111
+      - 2222222222222222222222222222222222222222
+      - HEAD:apps/web/bun.lock missing
+    deploy_steps_done:
+      rc: 0
+      stdout_lines:
+      - /srv/workspace/.git/orbit-deploy-steps/done/install-root:3333333333333333333333333333333333333333333333333333333333333333
+      - /srv/workspace/.git/orbit-deploy-steps/done/broken:short
 cases:
 - file: tasks/task-vm-fleet.yml
   task: Reconcile the nested Swamp grants
@@ -2107,6 +2153,39 @@ cases:
   field: vars.fleet_doctor_issues
   context: fleet-doctor-gateway-error
   expected: []
+- file: tasks/instance-container-phase.yml
+  task: Grow the root disk to its intent
+  field: when
+  context: root-smaller
+  expected: true
+- file: tasks/instance-container-phase.yml
+  task: Grow the root disk to its intent
+  field: when
+  context: root-larger
+  expected: false
+- file: tasks/instance-container-phase.yml
+  task: Grow the root disk to its intent
+  field: when
+  context: root-odd-form
+  expected: false
+- file: tasks/instance-container-phase.yml
+  task: Read the deploy step inputs at the commit
+  field: ansible.builtin.command.stdin
+  context: deploy-steps-read
+  expected: "HEAD:composer.json\nHEAD:composer.lock\nHEAD:apps/web/bun.lock"
+- file: tasks/instance-container-phase.yml
+  task: Work out each deploy step's digest
+  field: ansible.builtin.set_fact.deploy_steps_recorded
+  context: deploy-steps-read
+  expected:
+    install-root: '3333333333333333333333333333333333333333333333333333333333333333'
+- file: tasks/instance-container-phase.yml
+  task: Work out each deploy step's digest
+  field: ansible.builtin.set_fact.deploy_steps_digest
+  context: deploy-steps-read
+  expected:
+    install-root: 6ccb28b9f44de8cdf8af525fb074eeb5a7ca9a9f4c1b82e2245dc0e53ee17baa
+    install-web: ''
 non_command_output:
 - file: tasks/instance-fleet-refresh.yml
   task: Read the digests of the checkout
@@ -2132,6 +2211,10 @@ non_command_output:
   task: Validate the recorded workspace target
   field: ansible.builtin.assert.that[9]
   reason: Validates the admitted relative path of the copy's .env, not command output.
+- file: tasks/task-instance-workspace-phase.yml
+  task: Validate the recorded workspace target
+  field: ansible.builtin.assert.that[10]
+  reason: Validates the admitted relative path of the proposed pull request body, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[0]

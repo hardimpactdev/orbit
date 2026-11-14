@@ -929,7 +929,7 @@ class CloneGuestTest(unittest.TestCase):
             self.assertNotIn('"commit"', output.getvalue())
 
     def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=True, inactive=False, state=None, desired="running", is_active=1, expected_exit=1,
-                  branch="proof", mark=None, t3=None, on_curl=None):
+                  branch="proof", mark=None, t3=None, on_curl=None, t3_unit="active"):
         container = {
             "workspace": "/srv/workspace",
             "branch": "proof",
@@ -962,6 +962,11 @@ class CloneGuestTest(unittest.TestCase):
                 )
             if actual[:2] == ['systemctl', 'is-active'] and inactive:
                 code = is_active
+            # T3's unit: `active` when the copy's boot started it, `inactive` when nothing did, `failed` when its boot start failed.
+            if phase == "t3" and actual[:2] == ['systemctl', 'is-active']:
+                code = 0 if t3_unit == "active" else 3
+            if phase == "t3" and actual[:2] == ['systemctl', 'is-failed']:
+                code = 0 if t3_unit == "failed" else 1
             if actual[:2] == ['systemctl', 'show']:
                 observed = state if state is not None else {'ActiveState': 'failed', 'SubState': 'failed', 'Result': 'exit-code', 'ExecMainStatus': '1', 'NRestarts': '5'}
                 stdout = '\n'.join(key + '=' + str(value) for key, value in observed.items())
@@ -1127,6 +1132,28 @@ class CloneGuestTest(unittest.TestCase):
         # A retry that finds a mark (here: a file the copy holds) adds no second project, which T3 would refuse.
         commands, _, _ = self.readiness("t3", existing=False, expected_exit=0, t3={**T3_INTENT, "project_mark": GUEST.CHECKOUT_MARK})
         self.assertFalse(any(argv[:3] == ["/opt/agent/bin/t3", "project", "add"] for argv in commands))
+
+    def test_a_t3_the_boot_started_is_not_started_again_and_a_failed_one_is_restarted_once_by_name(self):
+        # The container phase wrote T3's files before the copy's first start, so its boot started T3: the step only waits for it.
+        commands, output, _ = self.readiness("t3", existing=False, expected_exit=0, t3=T3_INTENT, t3_unit="active")
+        result = json.loads(output)
+        self.assertIs(result["at_boot"], True)
+        self.assertFalse(any(argv[:2] == ["systemctl", "start"] for argv in commands))
+        self.assertNotIn("start:t3", result["changes"])
+        # A copy whose boot did not start T3 (an older Gateway's run, a copy that was running already): the step starts it.
+        commands, output, _ = self.readiness("t3", existing=False, expected_exit=0, t3=T3_INTENT, t3_unit="inactive")
+        result = json.loads(output)
+        self.assertIs(result["at_boot"], False)
+        self.assertIn(["systemctl", "start", "t3.service"], commands)
+        self.assertIn("start:t3", result["changes"])
+        self.assertFalse(any(argv[:2] == ["systemctl", "reset-failed"] for argv in commands))
+        # A T3 that failed at boot is started again once, after its failed state is cleared, and the step says so.
+        commands, output, _ = self.readiness("t3", existing=False, expected_exit=0, t3=T3_INTENT, t3_unit="failed")
+        result = json.loads(output)
+        self.assertIs(result["at_boot"], False)
+        self.assertEqual([argv for argv in commands if argv[:2] in (["systemctl", "reset-failed"], ["systemctl", "start"])],
+                         [["systemctl", "reset-failed", "t3.service"], ["systemctl", "start", "t3.service"]])
+        self.assertIn("restart:t3", result["changes"])
 
     def test_a_t3_that_does_not_answer_adds_no_project_so_a_retry_adds_it_once(self):
         commands, output, error = self.readiness("t3", existing=False, fail="curl", entrypoint=True, t3=T3_INTENT)

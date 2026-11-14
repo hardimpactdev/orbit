@@ -11,6 +11,7 @@ use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskDeliverableType;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskTopology;
 use App\Http\Requests\TopLevelJsonObjectInspector;
@@ -56,6 +57,7 @@ final class CreateTaskGroupRequest extends FormRequest
             'status' => ['sometimes', 'string', Rule::in([TaskGroupStatus::Backlog->value, TaskGroupStatus::Todo->value])],
             'orchestration' => ['sometimes', 'string', Rule::enum(TaskOrchestration::class)],
             'review' => ['sometimes', 'string', Rule::enum(TaskReviewMode::class)],
+            'pr_mode' => ['sometimes', 'string', Rule::enum(TaskPrMode::class)],
             'preview' => ['sometimes', 'boolean:strict'],
             'current_recipe' => ['sometimes', 'boolean:strict'],
             ...TaskCopyAgent::rules(),
@@ -92,6 +94,7 @@ final class CreateTaskGroupRequest extends FormRequest
                     'status',
                     'orchestration',
                     'review',
+                    'pr_mode',
                     'preview',
                     'current_recipe',
                     ...TaskCopyAgent::fields(),
@@ -131,6 +134,7 @@ final class CreateTaskGroupRequest extends FormRequest
             orchestration: TaskOrchestration::from($this->string('orchestration', TaskOrchestration::External->value)->toString()),
             review: TaskReviewMode::from($this->string('review', TaskReviewMode::Manual->value)->toString()),
             agents: TaskCopyAgent::provided($this->validated()),
+            prMode: is_string($this->validated('pr_mode')) ? TaskPrMode::from($this->validated('pr_mode')) : null,
         );
     }
 

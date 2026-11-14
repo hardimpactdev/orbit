@@ -41,6 +41,7 @@ Worker input and result files are private and removed after the phase settles, i
 
 [`task:publish`](/reference/tasks#publish-an-external-group) of a task copy names `worker_bundle`, a path in its own publication scratch on the worker: the export fetches the bundle there, checks its checksum, and leaves no Node scratch. It also names `environment_path` and `worker_environment`: the Node pulls the copy's `.env` from `/srv/workspace/<environment_path>`, requires a regular file, and fetches it to that worker path for the publish content check. Its bytes enter no phase result or log. A missing file or a link fails the export.
 
+The publish also names `proposed_body_path`, the task branch's proposed pull request body `.git/orbit/proposed-pr-bodies/task-<id>.md`, and `worker_proposed_body`. The Node pulls that file and fetches it to the worker only when it is a regular file of at most 64 KiB. A missing file or a link fetches nothing and does not fail the export. The file is data: the publish reads only its waiver lines ([Docs-impact waivers in a copy](/reference/tasks#docs-impact-waivers-in-a-copy)).
 [`task:sync`](/reference/tasks#bring-main-into-a-copy) of a task copy runs `base`, then always `base-cleanup`. `base` is the one phase that holds a credential: the read credential of the Project's repository. The caller names its vault key as the child's `git_credential` input, and only the child's step `Bring in the base` reads it, as one environment value; every other phase runs in `Run workspace phase` without it. The Node writes it to a file in the copy's Node scratch, mode `0600`, readable by root only, uses it for one fetch into the copy's mirror, `/var/lib/orbit/instance-repositories/<instance>.git`, and removes it in an `always` block. A missing mirror is first made from the default's mirror. The guest never receives the credential.
 
 The Node bundles the default branch with the copy's `origin/<default branch>` and branch heads as prerequisites, where the mirror holds them, and pushes the bundle into guest scratch owned by `agent`. As `agent`, the guest fetches it into `refs/remotes/origin/<default branch>` only. HEAD, the working tree, the index and the local branches stay as they are. When the copy holds the head already, no bundle is made.
@@ -51,7 +52,7 @@ Transfer or guest-cleanup failure removes Node scratch before returning failure.
 
 ## Check phases
 
-`tasks.check` takes this path when the group owns a container Instance: the group's Instance has a recorded runtime and names the group as its workspace owner. A [task copy](/cli/task/start) creates that state. The admission skips the task VM wake and VM ownership checks and calls no task VM admission, slot or image code. It requires a running runtime (`tasks.instance_not_running`) and a recorded Instance branch (`tasks.no_workspace`).
+`tasks.check` takes this path when the group owns a container Instance: the group's Instance has a recorded runtime and names the group as its workspace owner. A [task copy](/cli/task/start) creates that state. The admission skips the task VM wake and VM ownership checks and calls no task VM admission, slot or image code. It requires a task copy whose last completion did not fail (`tasks.copy_completion_failed`) and that is `active` (`tasks.copy_not_ready`), a running runtime (`tasks.instance_not_running`) and a recorded Instance branch (`tasks.no_workspace`).
 
 Before it records a check row, it refuses a handoff whose Project requires hosted CI (`tasks.instance_hosted_check_unavailable`). The hosted push from the Node arrives with publication. There is no task VM fallback.
 
@@ -94,6 +95,8 @@ A failed phase returns one of these codes.
 | `tasks.workspace_snapshot_mismatch` | Snapshot digest or candidate does not match |
 | `tasks.workspace_receipt_invalid` | Receipt is missing, oversized, unsafe, malformed or bound to other evidence |
 | `tasks.workspace_phase_failed` | A tool, command time limit, transfer or cleanup failed |
+| `tasks.copy_completion_failed` | The check admission found a task copy whose last completion failed; the details name the Operation, its failed step, its error code and the retry `orbit instance:complete <copy-id>` |
+| `tasks.copy_not_ready` | The check admission found a task copy that is not `active` yet: its create, its completion or a retry still runs |
 | `tasks.instance_not_running` | The check admission found a stopped container runtime |
 | `tasks.instance_hosted_check_unavailable` | A container handoff needs hosted CI, which needs the Node push |
 

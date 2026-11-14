@@ -3,7 +3,7 @@ title: "orbit project:review-and-merge:enable"
 sidebarTitle: "project:review-and-merge:enable"
 ---
 
-Turn on the [review-and-merge flow](/reference/tasks#review-and-merge): Orbit reviews every push and incoming pull request, and merges reviewed green heads. The flow keeps acting by itself after the command returns, so it is an `enable` and `disable` pair, not a `project:update` option. Set the merge check first with `project:update --merge-check`.
+Turn on the [review-and-merge flow](/reference/tasks#review-and-merge): Orbit reviews every push and incoming pull request, and merges reviewed green heads. The flow keeps acting by itself after the command returns, so it is an `enable` and `disable` pair, not a `project:update` option. Set the merge check first with `project:update --merge-check`. The flow never merges the pull request of a task group whose workspace is a task copy; a person merges it on GitHub ([No merge](/reference/tasks#no-merge)).
 
 ```bash
 orbit project:review-and-merge:enable <project> [--json]

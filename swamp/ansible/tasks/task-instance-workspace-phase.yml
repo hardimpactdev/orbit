@@ -16,6 +16,8 @@
       # A publication's content check also takes the copy's .env, by its path under the fixed workspace root.
       - intent.worker_environment is not defined or (intent.environment_path | default('') is match('^[^/]')
         and '..' not in intent.environment_path.split('/'))
+      # Its proposed pull request body: the task branch's own file, by the path the publish names.
+      - intent.worker_proposed_body is not defined or intent.proposed_body_path | default('') is match('^\.git/orbit/proposed-pr-bodies/task-[1-9][0-9]*\.md$')
       # task:sync of a copy: one default branch, the Project's repository and two Node mirrors by their full paths.
       - workspace_phase != 'base' or (intent.default_branch | default('') is match('^[A-Za-z0-9][A-Za-z0-9._/-]*$')
         and '..' not in intent.default_branch and not intent.default_branch.endswith(('/', '.lock')))
@@ -479,6 +481,38 @@
       ansible.builtin.fetch:
         src: "{{ workspace_export.path }}/environment"
         dest: "{{ intent.worker_environment }}"
+        flat: true
+        fail_on_missing: true
+        validate_checksum: true
+      changed_when: false
+      no_log: true
+    # The copy's proposed pull request body for the task branch is data: the publish appends its waiver lines to the body, and the
+    # .env content check reads the result. A copy without the file, or with no regular file there, publishes the caller's body.
+    - name: Copy the proposed body to the Node
+      when: intent.worker_proposed_body is defined
+      ansible.builtin.command:
+        argv: [incus, --project, "{{ intent.runtime.project }}", file, pull,
+               "{{ intent.runtime.name }}/srv/workspace/{{ intent.proposed_body_path }}", "{{ workspace_export.path }}/proposed-body"]
+        expand_argument_vars: false
+        stdin: ''
+        stdin_add_newline: false
+      register: workspace_proposed_pull
+      failed_when: false
+      changed_when: false
+    - name: Read the copied proposed body on the Node
+      when: intent.worker_proposed_body is defined
+      ansible.builtin.stat:
+        path: "{{ workspace_export.path }}/proposed-body"
+        follow: false
+        get_checksum: false
+      register: workspace_proposed_stat
+    - name: Fetch the proposed body to the worker
+      when: >-
+        intent.worker_proposed_body is defined and workspace_proposed_pull.rc == 0
+        and workspace_proposed_stat.stat.isreg | default(false) and workspace_proposed_stat.stat.size <= 65536
+      ansible.builtin.fetch:
+        src: "{{ workspace_export.path }}/proposed-body"
+        dest: "{{ intent.worker_proposed_body }}"
         flat: true
         fail_on_missing: true
         validate_checksum: true

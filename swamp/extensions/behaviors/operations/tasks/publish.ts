@@ -276,3 +276,39 @@ export function pullPlan(raw: unknown) {
         error_code: "",
     };
 }
+
+/** The limit of a pull request body that the publish request accepts (docs/cli/task/publish.mdx). */
+export const BodyLimit = 65536;
+// One waiver line, in the form the docs-impact gate reads. The rule's owner is DocsImpact::WAIVER_LINE in
+// apps/docs/app/Documentation/DocsImpact.php; this copy must match it, and apps/docs/tests/Unit/WaiverLinePatternTest.php checks that.
+const WaiverLine = /^Docs-unaffected: docs\/[^\s:*?]+\.mdx?:[ \t]*\S[^\r\n]*$/;
+
+/**
+ * The body a copy publishes: the caller's body, then each waiver line of the copy's proposed body that the body does not hold yet,
+ * in the file's order, as long as the body stays within the limit. The proposed body is data: only its waiver lines are read, and
+ * the .env content check reads the result before any token exists.
+ */
+export function withWaivers(body: string, proposed: string | null): string {
+    if (proposed === null) return body;
+    const held = new Set(
+        body.split("\n").map((line) => line.replace(/\r$/, "")),
+    );
+    const lines: string[] = [];
+    for (const raw of proposed.split("\n")) {
+        const line = raw.replace(/\r$/, "");
+        if (WaiverLine.test(line) && !held.has(line)) {
+            held.add(line);
+            lines.push(line);
+        }
+    }
+    let result = body;
+    let separator = body === "" ? "" : body.endsWith("\n") ? "\n" : "\n\n";
+    for (const line of lines) {
+        const next = result + separator + line;
+        if (next.length > BodyLimit) break;
+        result = next;
+        separator = "\n";
+    }
+
+    return result;
+}

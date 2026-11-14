@@ -654,6 +654,35 @@ describe('project:update', function (): void {
             ->toBe(['source_access' => 'gh_cli', 'default_branch' => 'main']);
     });
 
+    it('sets and clears the Project pull request mode through the SDK request', function (): void {
+        $setClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
+        $this->artisan('project:update', ['project' => '3', '--task-pr-mode' => 'pr_when_done'])->assertExitCode(0);
+        expect($setClient->getLastRequest()?->body()->all())->toBe(['task_pr_mode' => 'pr_when_done']);
+
+        $clearClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
+        $this->artisan('project:update', ['project' => '3', '--clear-task-pr-mode' => true])->assertExitCode(0);
+        expect($clearClient->getLastRequest()?->body()->all())->toBe(['task_pr_mode' => null]);
+    });
+
+    it('refuses the Project mode with its clear, and a value that is no mode, before contacting the Gateway', function (array $options, string $code): void {
+        $mockClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
+        $this->artisan('project:update', ['project' => '3', ...$options, '--json' => true])->expectsOutputToContain($code)->assertExitCode(1);
+        expect($mockClient->getLastRequest())->toBeNull();
+    })->with([
+        'both' => [['--task-pr-mode' => 'pr_when_done', '--clear-task-pr-mode' => true], 'project.task_pr_mode_conflict'],
+        'no mode' => [['--task-pr-mode' => 'merge_when_green'], 'project.task_pr_mode_invalid'],
+    ]);
+
+    it('shows the Project pull request mode, and the Gateway default for none', function (?string $mode, string $shown): void {
+        MockClient::global([
+            ShowProjectRequest::class => MockResponse::make(['data' => [...app_payload(), 'task_pr_mode' => $mode], 'meta' => ['request_id' => app_request_id()]]),
+            ListInstancesRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => app_request_id()]]),
+        ]);
+
+        expect(Artisan::call('project:show', ['project' => '3']))->toBe(0);
+        expect(Artisan::output())->toContain('Task pull request mode')->toContain($shown);
+    })->with([['pr_when_done', 'pr_when_done'], [null, 'Gateway default']]);
+
     it('sets and clears the Project copy turn agent defaults through the SDK request', function (): void {
         $setClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
         $this->artisan('project:update', ['project' => '3', '--task-implementer-model' => 'claude-sonnet-5-5', '--task-reviewer-effort' => 'max'])->assertExitCode(0);
