@@ -9,6 +9,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskGroupActivity;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskInstanceWorkspace;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPlaces;
 use App\Domain\Tasks\TaskPrMode;
@@ -90,8 +91,9 @@ final class TaskGroupData extends Data
         $group->loadMissing(['project', 'tasks']);
         $taskable = $group->taskable;
         $status = $group->groupStatus();
+        // Only a task copy's group has a mode (docs/reference/tasks.md#task-group-modes).
         try {
-            $mode = TaskPrModeChoice::of($group);
+            $mode = TaskInstanceWorkspace::forGroup($group) === null ? null : TaskPrModeChoice::of($group);
         } catch (ResourceOperationException) {
             $mode = null;
         }

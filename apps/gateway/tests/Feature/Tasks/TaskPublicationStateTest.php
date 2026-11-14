@@ -58,7 +58,7 @@ it('reports a pr_when_done group whose done check recorded pr_when_done as publi
     expect(TaskPublicationData::fromModel($world->group->refresh())?->state)->toBe('publishing');
 });
 
-it('shows the mode, its source and the publication on task:show, and no publication for a group without a task copy', function (): void {
+it('shows the mode, its source and the publication on task:show, and none of them for a group without a task copy', function (): void {
     $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
     $world->group->project->update(['task_pr_mode' => TaskPrMode::ReviewBeforePr]);
     $plain = Task::query()->create(['project_id' => Project::query()->sole()->id, 'title' => 'Plain', 'brief' => 'Brief', 'status' => 'running']);
@@ -69,7 +69,7 @@ it('shows the mode, its source and the publication on task:show, and no publicat
         ->and($shown['pr_mode_source'])->toBe('project')
         ->and($shown['publication'])->toMatchArray(['mode' => 'review_before_pr', 'mode_source' => 'project', 'state' => 'waiting_for_release', 'check_id' => $world->check->id,
             'commit' => TaskCopyDoneFixture::Commit, 'operation_id' => null, 'error_code' => null])
-        ->and(TaskGroupData::fromModel($plain->refresh())->toArray()['publication'])->toBeNull();
+        ->and(TaskGroupData::fromModel($plain->refresh())->toArray())->toMatchArray(['pr_mode' => null, 'pr_mode_source' => null, 'publication' => null]);
 });
 
 it('lists the waiting and the refused task copies under releases in task:status', function (): void {

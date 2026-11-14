@@ -505,6 +505,7 @@ final readonly class HttpGitHubApi implements GitHubApi
             draft: $response->json('draft') === true,
             authorLogin: $this->text($response->json('user.login')),
             fromFork: ! is_string($response->json('head.repo.full_name')) || $response->json('head.repo.full_name') !== $response->json('base.repo.full_name'),
+            headRef: $this->text($response->json('head.ref')),
         );
     }
 

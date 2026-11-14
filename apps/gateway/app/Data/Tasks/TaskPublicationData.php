@@ -7,6 +7,7 @@ namespace App\Data\Tasks;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskDonePublication;
 use App\Domain\Tasks\TaskGroupDone;
 use App\Domain\Tasks\TaskInstanceWorkspace;
 use App\Domain\Tasks\TaskPrMode;
@@ -77,9 +78,9 @@ final class TaskPublicationData extends Data
         if ($refusal !== null && $refusal['check_id'] === $check->id) {
             return new self($mode, $source, self::Refused, $check->id, $check->commit_sha, null, $refusal['code']);
         }
-        $failed = (clone $publishes)->where('input->check', $check->id)->whereIn('status', [OperationStatus::Failed->value, OperationStatus::Interrupted->value])->first();
+        $failed = TaskDonePublication::unsuccessful($group, $check);
         if ($failed instanceof Operation) {
-            return new self($mode, $source, self::Refused, $check->id, $check->commit_sha, $failed->id, $failed->error_code);
+            return new self($mode, $source, self::Refused, $check->id, $check->commit_sha, $failed->id, TaskDonePublication::code($failed));
         }
         // A pr_when_done group whose done check recorded pr_when_done is the tick's to publish, within a minute.
         $state = $mode === TaskPrMode::PrWhenDone && $check->pr_mode === TaskPrMode::PrWhenDone ? self::Publishing : self::WaitingForRelease;

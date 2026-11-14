@@ -26,9 +26,10 @@ use Illuminate\Support\Str;
 /** Records the exact checked candidate. Swamp owns Git and GitHub effects. */
 final readonly class TaskPublishIntent
 {
-    public function __construct(private StartOperationAction $start, private OperationIdempotency $idempotency, private TaskCheckedCandidate $candidates) {}
+    public function __construct(private StartOperationAction $start, private OperationIdempotency $idempotency, private TaskCheckedCandidate $candidates, private TaskGroupDone $done) {}
 
-    public function start(Task $group, StartTaskPublishData $input, string $caller, ?string $request): Operation
+    /** @param  int|null  $doneCheck  the done check a release or the tick read before the lock; it must still be the done check under the lock */
+    public function start(Task $group, StartTaskPublishData $input, string $caller, ?string $request, ?int $doneCheck = null): Operation
     {
         if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
             return $existing;
@@ -38,10 +39,10 @@ final readonly class TaskPublishIntent
             TaskVmAwake::require($group);
         }
 
-        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Operation => $this->admit($group, $input, $caller, $request));
+        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Operation => $this->admit($group, $input, $caller, $request, $doneCheck));
     }
 
-    private function admit(Task $group, StartTaskPublishData $input, string $caller, ?string $request): Operation
+    private function admit(Task $group, StartTaskPublishData $input, string $caller, ?string $request, ?int $doneCheck): Operation
     {
         if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
             return $existing;
@@ -61,6 +62,10 @@ final readonly class TaskPublishIntent
         if ($copy !== null) {
             self::refuseHeld($group->project);
             TaskCopyTurn::refuseUnended($group);
+        }
+        // A subtask created or a turn started since the done read changes the answer: read it again under the group lock.
+        if ($doneCheck !== null && $this->done->check(Task::topLevel()->findOrFail($group->id))?->id !== $doneCheck) {
+            throw new ResourceOperationException('tasks.not_done', 'The task group\'s work is no longer done with this check.', 409);
         }
         $workspace = $copy?->publication();
         $check = TaskCheck::query()->whereKey($input->check)->whereHas('task', fn ($tasks) => $tasks->where('parent_id', $group->id))->first();

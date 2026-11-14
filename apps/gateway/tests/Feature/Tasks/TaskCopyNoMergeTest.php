@@ -38,10 +38,10 @@ beforeEach(function (): void {
 });
 
 /** A GitHub that would let any merge pass: an open, green pull request out of draft. With `$read` false, any read fails the test. */
-function noMergeGitHub(bool $read = true): void
+function noMergeGitHub(bool $read = true, ?string $headRef = null): void
 {
     app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'gate', 'gate', 'example', 'organization', 'https://github.com/apps/gate', 'unused'));
-    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($read): void {
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($read, $headRef): void {
         if (! $read) {
             $github->shouldNotReceive('pullRequest', 'reviews', 'checkRuns', 'repositoryReviewsToken', 'repositoryChecksToken');
 
@@ -50,7 +50,7 @@ function noMergeGitHub(bool $read = true): void
         $github->shouldReceive('repositoryInstallation')->andReturn(7);
         $github->shouldReceive('repositoryReviewsToken')->andReturn('reviews-token');
         $github->shouldReceive('repositoryChecksToken')->andReturn('checks-token');
-        $github->shouldReceive('pullRequest')->andReturn(new GitHubPullRequest(GitHubPullRequestState::Open, true, 'clean', NO_MERGE_HEAD, 'main', draft: false, authorLogin: 'someone', fromFork: false));
+        $github->shouldReceive('pullRequest')->andReturn(new GitHubPullRequest(GitHubPullRequestState::Open, true, 'clean', NO_MERGE_HEAD, 'main', draft: false, authorLogin: 'someone', fromFork: false, headRef: $headRef));
         $github->shouldReceive('checkRuns')->andReturn([new GitHubCheckRun('Required checks', 'success', null, status: 'completed', headSha: NO_MERGE_HEAD, appSlug: 'github-actions')]);
     }));
 }
@@ -102,6 +102,16 @@ it('refuses project:pr-merge for a task copy\'s pull request, whether its group 
     expect(noMergeCode(fn () => app(StartProjectPullRequestMergeAction::class)->execute($world->group->project, 7, NO_MERGE_HEAD, 'test', (string) Str::uuid())))->toBe(TaskCopyPullRequest::Code)
         ->and(Operation::query()->where('kind', OperationKinds::ProjectPrMerge)->count())->toBe(0);
 })->with(['open' => [TaskGroupStatus::Running], 'completed' => [TaskGroupStatus::Completed], 'cancelled' => [TaskGroupStatus::Cancelled]]);
+
+it('refuses project:pr-merge for a pull request on the task branch of a copy group whose publish ended before it recorded the number', function (): void {
+    $world = noMergeWorld();
+    Operation::query()->where('kind', OperationKinds::TasksPublish)->update(['status' => 'interrupted', 'result' => null]);
+    $world->group->update(['status' => TaskGroupStatus::Cancelled, 'taskable_type' => null, 'taskable_id' => null, 'watched_pr_number' => null, 'watched_pr_url' => null]);
+    noMergeGitHub(headRef: 'task-'.$world->group->id);
+
+    expect(TaskCopyPullRequest::published($world->group->project, 7))->toBeFalse()
+        ->and(noMergeCode(fn () => app(StartProjectPullRequestMergeAction::class)->execute($world->group->project, 7, NO_MERGE_HEAD, 'test', (string) Str::uuid())))->toBe(TaskCopyPullRequest::Code);
+});
 
 it('still merges another pull request of the same Project through project:pr-merge', function (): void {
     $world = noMergeWorld();

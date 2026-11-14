@@ -43,6 +43,8 @@ final readonly class StartProjectPullRequestMergeAction
             throw new ResourceOperationException('project.pr_in_task_group', 'A Task group watches this pull request; merge it with task:pr-merge.', 409);
         }
         $target = $this->evidence->outside($project, $number, $head);
+        // A copy publish that ended before it recorded the number still pushed `task-<id>`.
+        TaskCopyPullRequest::refuseBranch($project, $target->pull->headRef);
         // Only the vault key name is admitted. The step mints its token when it runs ({@see TaskGitHubTokens}).
         $secrets = ['write_token' => ['vault' => 'orbit-control-inputs', 'key' => 'pr-merge-write-'.Str::uuid()]];
 
