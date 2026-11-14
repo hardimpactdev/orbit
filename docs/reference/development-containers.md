@@ -1591,7 +1591,7 @@ An Instance container with a nested fleet lives in its own Incus project on the 
 | `security.syscalls.intercept.mknod` | `true` | The inner Incus makes device nodes for its containers |
 | `security.syscalls.intercept.setxattr` | `true` | The inner Incus and Docker set trusted extended attributes |
 | `security.idmap.isolated` | `true` | The container has its own ID range, as every Instance container |
-| `security.idmap.size` | `101000000` | The inner range below must fit inside |
+| `security.idmap.size` | The runtime's [recorded size](#the-id-map-size): `101000000`, or `1165536` after a conversion | The inner range below must fit inside |
 | `limits.memory` | `12GiB` | The inner fleet shares the container's memory |
 | `boot.autostart` | `false` | Incus never starts it at host boot, without the guard below |
 | `user.max_user_namespaces` | Not set to zero | The inner Incus needs user namespaces |
@@ -1653,7 +1653,7 @@ It is the normal image with these changes:
 | Inner Incus | `incus-base` and `incus-client` from the recipe's pinned artifacts, checked by SHA-256 |
 | Packages | `wireguard-tools`, `sqlite3`, `sudo`, `zstd` and `btrfs-progs` too. `zstd` reads the `.tar.zst` archives of the inner fleet's containers; the inner Incus's btrfs driver needs `btrfs-progs` for the pool on the [inner volume](#the-inner-volume) |
 | User namespaces | No `/etc/sysctl.d/90-orbit-no-userns.conf` |
-| Subordinate IDs | `/etc/subuid` and `/etc/subgid` give root `1000:1` and `1000000:100000000` |
+| Subordinate IDs | `/etc/subuid` and `/etc/subgid` give root `1000:1` and `1000000:65536` |
 | AppArmor marker | `/etc/orbit/apparmor-off` holds `N` |
 | `agent` | A member of the inner `incus-admin` group, with passwordless sudo from `/etc/sudoers.d/orbit-agent` (root:root, mode 0440) |
 | `orbit` | Neither the group nor sudo. The first rule of the firewall's output chain drops its traffic to the inner fleet's networks, `10.45.0.0/24` and `10.232.2.0/24`. The other rules stay the same |
@@ -1704,7 +1704,40 @@ The first nested-fleet default and every Instance without `inner_volume`, its co
 
 `TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
 
-In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:100000000`, plus `1000:1` for the [workspace mapping](#fleet-rules). The range fits inside the outer 101,000,000 IDs.
+In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:65536`, plus `1000:1` for the [workspace mapping](#fleet-rules). The first nested-fleet default, and every default made from an image before 2026-11-14, gives `1000000:100000000` until its [conversion](#convert-a-default). Either range fits inside the outer map.
+
+### The ID map size
+
+Each nested-fleet runtime records the size of its isolated ID map in `idmap_size`. The create and the clone write it as `security.idmap.size`, and the start guard requires that value.
+
+| Runtime | Size |
+| --- | --- |
+| A new nested-fleet default | 101,000,000 |
+| A copy, a plain clone or a task copy | Its default's size at the copy's reservation |
+| A converted default | 1,165,536: the inner Incus's base of 1,000,000, its range of 65,536 and 100,000 spare |
+| A normal container | None: Incus's 65,536 |
+
+The inner fleet's three containers share one range of the outer container. They use IDs up to 65,534 (`nobody`), and Docker in them runs without user namespaces, so 65,536 IDs are enough. Every nested container mounts its root disk idmapped (`volatile.last_state.idmap` is `[]`), so a changed outer size moves no file on the host.
+
+A copy keeps its size for its whole life. So copies made before a conversion keep 101,000,000 and still match their start guard, beside new copies of 1,165,536. The [task start check](#the-check-at-a-task-start) and the converge's [subordinate-ID demand](/reference/node-settings#nested-fleet-instance-hosting) read the recorded sizes.
+
+#### Convert a default
+
+An operator converts a nested-fleet default once, outside any task turn. The steps:
+
+1. Stop the default. Its copies keep running; their ranges do not change.
+2. Take a container snapshot `pre-idmap-<time>`. Incus needs a free range of the old size for it, for a moment.
+3. Write `/etc/subuid` and `/etc/subgid` in the container: `root:1000000:65536` and `root:1000:1`.
+4. Set `security.idmap.size` to `1165536` on the container.
+5. Run `php artisan gateway:instance-idmap-size <id> 1165536` on the Gateway host. It records the size and clears the default's seed, so clones refuse until a new seed exists.
+6. Start the outer container and its inner containers once by hand. The inner Incus then rewrites the owners of their files on its pool, once.
+7. Deploy the default. Its start passes the guard with the new size, and the deployment takes a new seed. New copies get the small size.
+
+At step 6 the inner containers' stored maps do not fit the new inner range, so the inner Incus maps them again. That rewrite is a walk over their files, so it takes minutes on a large pool.
+
+The command refuses a size other than the two above with `instance.idmap_size_invalid`. It refuses an Instance that is not a nested-fleet default with `instance.idmap_size_not_nested_default`. It refuses a default that an open Operation holds with `operation.target_busy`.
+
+A rollback restores `pre-idmap-<time>`, which brings back the old config and the old inner range, and runs the command with `101000000`. The inner Incus rewrites the owners once more. Copies made after the conversion must be destroyed first.
 
 #### The seed pair
 
@@ -2151,9 +2184,9 @@ The T3 server's record in the Conn layer names its Instance. Only the Instance's
 
 ## Isolated ID ranges
 
-Each container takes an isolated ID map from root's one subordinate range in `/etc/subuid` and `/etc/subgid`: 65,536 IDs for an Instance container, 101,000,000 for a nested-fleet container (`InstanceHostIntent::TaskPlaceIds`). A stopped container keeps its range. Incus places a new range in the first gap that fits, from 65,536 IDs past root's base, and a new snapshot needs one for a moment.
+Each container takes an isolated ID map from root's one subordinate range in `/etc/subuid` and `/etc/subgid`: 65,536 IDs for an Instance container, and the [recorded size](#the-id-map-size) for a nested-fleet container, 101,000,000 or 1,165,536. A stopped container keeps its range. Incus places a new range in the first gap that fits, from 65,536 IDs past root's base, and a new snapshot needs one for a moment.
 
-On a host with 1,000,000,000 subordinate IDs, nine nested-fleet ranges fit. A small range can sit in a gap a destroyed copy left, so only the bases that Incus chose say which gaps are free.
+On a host with 1,000,000,000 subordinate IDs, nine nested-fleet ranges of 101,000,000 fit, and about 850 of 1,165,536. A small range can sit in a gap a destroyed copy left, so only the bases that Incus chose say which gaps are free.
 
 ### The check at a task start
 
@@ -2162,6 +2195,10 @@ A [task copy](/cli/task/start) start reads them. One bounded SSH call (at most a
 The copy needs one range of its default's size. With the copy placed, a range must stay free for the next seed of this default and of every other default on the Node, so a small copy never fills the last nested-sized gap. Otherwise the start refuses with `tasks.copy_id_range_full`, before any record. A runtime whose container is not on the host counts only while its create is open. An unreadable host refuses with `tasks.copy_id_ranges_unreadable`: the Gateway cannot show a free range. `ORBIT_TASKS_COPIES_MAX` stays an upper bound for nested-fleet copies that an operator may lower.
 
 However, two starts within the same moment can still both pass. Then the later create or seed fails at Incus. The seed step keeps the old seed and names the cause, so the default stays copyable.
+
+### The Doctor warning
+
+Each read is kept on the Node: how many full-size ranges of 101,000,000 are free (up to 2), how many normal containers still fit before one would land in a full-size gap and split it (up to 10), and when it was read. Doctor reads it without reaching the Node. While the Node records a nested runtime of 101,000,000, it warns with `node.id_ranges_low` when fewer than 2 full-size ranges or fewer than 4 normal slots are free. The warning names the read's time, so an old read shows. A Node with only converted nested runtimes needs no full-size range, so it does not warn.
 
 ## Errors
 

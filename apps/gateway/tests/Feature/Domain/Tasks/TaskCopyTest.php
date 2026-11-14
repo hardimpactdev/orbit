@@ -481,7 +481,9 @@ describe('a task start on the copy path', function (): void {
             $containers[] = $nested($i === 0 ? $default->runtime->container_name : 'instance-'.(100 + $i), 1065536 + $i * 101000000);
         }
         $this->ssh->ids = ['uid' => [1000000, 1000000000], 'gid' => [1000000, 1000000000], 'containers' => $containers];
-        expect(copyRefusal(fn () => startCopy(copyGroup($default->project))))->toBe('tasks.copy_id_range_full 409');
+        expect(copyRefusal(fn () => startCopy(copyGroup($default->project))))->toBe('tasks.copy_id_range_full 409')
+            // The read is kept on the Node for Doctor (docs/reference/development-containers.md#isolated-id-ranges).
+            ->and(Arr::except($default->node->refresh()->id_ranges ?? [], 'read_at'))->toBe(['full' => 0, 'small' => 10]);
 
         // docs/reference/development-containers.md#the-id-map-size: a converted default and its next copies record the small size.
         InstanceRuntime::query()->where('instance_id', $default->id)->update(['idmap_size' => 1165536]);

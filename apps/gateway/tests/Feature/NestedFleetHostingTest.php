@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Schedules\RunScheduleAction;
 use App\Data\Nodes\NodeTaskVmsData;
+use App\Domain\Doctor\DoctorFamily;
+use App\Domain\Doctor\FactDoctor;
 use App\Domain\Instances\BaselineNormalInstanceContainer;
 use App\Domain\Instances\BaselineNormalInstanceHostIntent;
 use App\Domain\Instances\ContainerInstanceDestroy;
@@ -482,4 +484,37 @@ describe('the id map size', function (): void {
         'a normal default' => ['a normal default', 'instance.idmap_size_not_nested_default'],
         'an open Operation' => ['an open Operation', 'operation.target_busy'],
     ]);
+
+    it('warns in Doctor from the kept ID map read while a full-size nested container is on the Node, and not after its conversion', function (): void {
+        $node = nestedSwitch(containerDefaultNode(), true);
+        // Doctor observes only a Node whose SSH management is verified.
+        DB::table('nodes')->where('id', $node->id)->update(['ssh_host_fingerprint' => 'SHA256:test']);
+        $default = recordedNestedInstance(otherProject('doctor', true), $node);
+        $issues = static fn (): array => array_values(array_filter(app(FactDoctor::class)->report([$node->refresh()], [DoctorFamily::Node])->toArray()['nodes'][0]['families'][0]['issues'],
+            static fn (array $issue): bool => $issue['code'] === 'node.id_ranges_low'));
+        DB::table('nodes')->where('id', $node->id)->update(['id_ranges' => json_encode(['full' => 1, 'small' => 10, 'read_at' => '2026-11-14T13:00:00+00:00'])]);
+        expect($issues())->toHaveCount(1);
+        DB::table('nodes')->where('id', $node->id)->update(['id_ranges' => json_encode(['full' => 2, 'small' => 3, 'read_at' => '2026-11-14T13:00:00+00:00'])]);
+        expect($issues())->toHaveCount(1)->and($issues()[0]['observed'])->toBe('2 full-size, 3 normal slots free, read at 2026-11-14T13:00:00+00:00');
+        DB::table('nodes')->where('id', $node->id)->update(['id_ranges' => json_encode(['full' => 2, 'small' => 4, 'read_at' => '2026-11-14T13:00:00+00:00'])]);
+        expect($issues())->toBe([]);
+
+        DB::table('nodes')->where('id', $node->id)->update(['id_ranges' => json_encode(['full' => 0, 'small' => 0, 'read_at' => '2026-11-14T13:00:00+00:00'])]);
+        expect($issues())->toHaveCount(1);
+        InstanceRuntime::query()->where('instance_id', $default->id)->update(['idmap_size' => 1165536]);
+        expect($issues())->toBe([]);
+    });
+
+    it('fills the full size for every nested runtime that exists when the column comes, and none for a normal one', function (): void {
+        $node = nestedSwitch(containerDefaultNode(), true);
+        $nested = recordedNestedInstance(otherProject('existing', true), $node);
+        $normal = Instance::query()->create(['project_id' => containerDefaultProject()->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/normal']);
+        app(InstanceContainer::class)->reserve($normal, $node);
+        $migration = require database_path('migrations/2027_02_16_000000_add_idmap_size_to_instance_runtimes.php');
+        $migration->down();
+        $migration->up();
+
+        expect(InstanceRuntime::query()->where('instance_id', $nested->id)->value('idmap_size'))->toBe(101000000)
+            ->and(InstanceRuntime::query()->where('instance_id', $normal->id)->value('idmap_size'))->toBeNull();
+    });
 });

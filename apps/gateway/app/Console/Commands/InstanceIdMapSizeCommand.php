@@ -29,20 +29,20 @@ final class InstanceIdMapSizeCommand extends Command
 
     public function handle(): int
     {
-        $id = $this->argument('instance');
-        $size = $this->argument('size');
+        $id = (string) $this->argument('instance');
+        $size = (string) $this->argument('size');
         $sizes = [InstanceHostIntent::NestedIdMapSize, InstanceHostIntent::TaskPlaceIds];
-        if (! is_string($size) || ! in_array((int) $size, $sizes, true) || (string) (int) $size !== $size) {
+        if (! in_array((int) $size, $sizes, true) || (string) (int) $size !== $size) {
             return $this->refuse('instance.idmap_size_invalid', 'The size must be '.implode(' or ', $sizes).'.');
         }
-        $instance = is_string($id) && ctype_digit($id) ? Instance::query()->find((int) $id) : null;
+        $instance = ctype_digit($id) ? Instance::query()->find((int) $id) : null;
         $runtime = $instance?->runtime()->first();
         if ($instance === null || $runtime === null || $instance->name !== DefaultInstanceName::Name || $runtime->incus_project !== InstancePlacement::NestedProject) {
             return $this->refuse('instance.idmap_size_not_nested_default', 'Only a nested-fleet default with a container records an ID map size.');
         }
         $open = Operation::query()->where('target_type', 'instance')->where('target_id', $instance->id)
             ->whereNotIn('status', OperationStatus::terminalValues())->value('id');
-        if ($open !== null) {
+        if (is_int($open)) {
             return $this->refuse('operation.target_busy', "Operation {$open} holds the default; run this when it has ended.");
         }
         DB::transaction(static fn () => InstanceRuntime::query()->whereKey($runtime->id)->update(['idmap_size' => (int) $size, 'seed_commit' => null]));
