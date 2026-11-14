@@ -286,7 +286,7 @@ class TaskCopyPublishTest(unittest.TestCase):
         self.assertEqual(self.cel(read, 'exit_code', self.copy, outputs), 3)
         # One whole vault.get; a task VM's run, which has no .env render, names the push header's copy, which its skipped step never reads.
         self.assertEqual(steps[step]['task']['inputs']['env']['ORBIT_ENVIRONMENT'],
-                         '${{ vault.get(inputs.execution_secrets.git_authorization.vault, "workspace" in inputs.intent'
+                         '${{ vault.get(inputs.execution_secrets.git_authorization.vault, has(inputs.intent.workspace)'
                          ' ? inputs.execution_secrets.environment.key : inputs.execution_secrets.git_authorization.key) }}')
 
     ENV = 'APP_NAME=Orbit\nAPP_DEBUG=true\nDB_PORT=8080\nexport APP_KEY="base64:c2VjcmV0LWtleS1ub3QtcmVhbA=="\r\nDB_PASSWORD=\'pa55-w0rd-xyz\'\nPEM="line-one-abcdefgh\\nline-two-ijklmnop"\n# old token-in-a-comment-123\n'
