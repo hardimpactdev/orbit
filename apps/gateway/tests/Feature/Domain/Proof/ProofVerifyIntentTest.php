@@ -241,6 +241,11 @@ describe('orbit proof admission', function (): void {
     })->with([
         'a Project without a nested fleet' => [fn (Task $group) => $group->project->forceFill(['nested_fleet' => false])->save(), 'proof.wrong_project'],
         'a copy that is not active yet' => [fn (Task $group, Instance $instance) => $instance->forceFill(['status' => InstanceState::SourceResolved])->save(), 'tasks.copy_not_ready'],
+        'a copy whose completion failed' => [function (Task $group, Instance $instance): void {
+            $instance->forceFill(['status' => InstanceState::SourceResolved])->save();
+            Operation::query()->create(['kind' => 'instance.complete', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+                'status' => OperationStatus::Failed, 'error_code' => 'instance.container_fleet_drift', 'input' => []]);
+        }, 'tasks.copy_completion_failed'],
         'a stopped container' => [fn (Task $group, Instance $instance, InstanceRuntime $runtime) => $runtime->update(['power_state' => 'stopped']), 'tasks.instance_not_running'],
         'a copy turn that may still run' => [fn (Task $group) => Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id,
             'status' => OperationStatus::Failed, 'input' => ['thread_id' => 1], 'state' => ['swamp_run_id' => 'run-1'], 'result' => []]), 'tasks.copy_turn_unended'],
