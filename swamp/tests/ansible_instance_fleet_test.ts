@@ -1993,7 +1993,7 @@ Deno.test({
     delete old["nested-app-prod"].config["raw.idmap"];
     const f = fixture(old, { base: true });
     try {
-      const started = f.run("start", ["-e", "fleet_refresh_follows=true"]);
+      const started = f.run("start", ["-e", "fleet_deploy_allow_missing_build=true"]);
       assert(started.ok, started.output);
       assertEquals(writes(f.calls()), []);
       const refreshed = f.run("refresh");
@@ -2023,7 +2023,7 @@ Deno.test({
   name: "standalone starts and proof resets refuse absent caller maps, and deployment starts still refuse conflicting maps",
   ignore: !hasAnsible,
   fn() {
-    for (const phase of ["check", "start", "reset"]) {
+    for (const phase of ["check", "start", "resume", "reset"]) {
       const old = ruled();
       delete old["nested-app-prod"].config["raw.idmap"];
       const f = fixture(old, { base: true });
@@ -2041,10 +2041,43 @@ Deno.test({
     wrong["nested-app-prod"].config["raw.idmap"] = "both 1000 1000";
     const f = fixture(wrong, { base: true });
     try {
-      const refused = f.run("start", ["-e", "fleet_refresh_follows=true"]);
-      assert(!refused.ok);
-      assertStringIncludes(refused.output, "instance.container_fleet_drift");
+      for (const phase of ["start", "resume"]) {
+        const refused = f.run(phase, ["-e", "fleet_deploy_allow_missing_build=true"]);
+        assert(!refused.ok);
+        assertStringIncludes(refused.output, "instance.container_fleet_drift");
+        assertEquals(writes(f.calls()), []);
+      }
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
+  ignore: !hasAnsible,
+  fn() {
+    const old = ruled();
+    delete old["nested-app-prod"].devices.checkout;
+    delete old["nested-app-prod"].config["raw.idmap"];
+    const f = fixture(old, { base: true });
+    try {
+      const admitted = f.run("start", ["-e", "fleet_deploy_allow_missing_build=true"]);
+      assert(admitted.ok, admitted.output);
+      f.calls();
+      // The outer seed contains the admitted inner fleet. Restore returns those containers stopped, including their old base.
+      // The outer seed capture/restore itself is covered by ansible_instance_container_test.ts.
+      const seed = structuredClone(f.state().containers);
+      f.change((state) => {
+        state.containers = seed;
+        for (const name of names) state.containers[name].status = "Stopped";
+      });
+      const resumed = f.run("resume", ["-e", "fleet_deploy_allow_missing_build=true"]);
+      assert(resumed.ok, resumed.output);
       assertEquals(writes(f.calls()), []);
+      for (const name of names) assertEquals(f.state().containers[name].status, "Running");
+      assertEquals(f.state().containers["nested-app-prod"].config["raw.idmap"], undefined);
+      assertEquals(f.state().containers["nested-app-prod"].devices.checkout, undefined);
     } finally {
       f.cleanup();
     }

@@ -2457,6 +2457,8 @@ Orbit owns every rule except `raw.idmap`: the refresh writes an owned rule that 
 
 A fleet whose `raw.idmap` holds another value, or a nested container or the inner bridge that cannot be read, is refused with `instance.container_fleet_drift` before any change; a standalone check, start or proof reset also refuses a fleet that lacks `raw.idmap`. The deployment’s initial start permits an absent build rule because its later refresh writes it with the fleet stopped and retakes `base`. A conflicting value still refuses before any change. This lets an older fleet acquire a newly required map through its normal deployment.
 
+If the deployment fails, the resume of the restored seed permits absent build rules too. It starts the fleet that Prepare admitted, without changing its maps. The next deployment installs the missing rules. Conflicting maps still refuse on rollback.
+
 The Operation's result `fleet_drift` names each difference, as `<container> <kind> <name>`; for the inner bridge the first part is the bridge, as in `oe-nested network raw.dnsmasq`.
 
 The deployment runs the check right after it starts the container, before it takes its first seed. A refusal there changed nothing, so no seed is restored. A failure from the checkout on, such as a start that fails after a change, restores the seed.

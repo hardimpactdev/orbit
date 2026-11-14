@@ -17,13 +17,14 @@
 - name: Wait for the inner Incus
   ansible.builtin.command: { argv: "{{ ['timeout', '90'] + fleet_incus + ['admin', 'waitready', '--timeout', '80'] }}" }
   changed_when: false
-# Only a deployment's initial start is followed by refresh, which installs absent build rules with the fleet stopped.
-# A proof reset or standalone start must already have them. Never admit a conflicting map.
+# Deployment admits absent build rules at its initial start and when it resumes the restored seed after failure.
+# Refresh installs them with the fleet stopped; rollback leaves them for the next deployment. A proof reset or standalone
+# start must already have them. Never admit a conflicting map.
 - name: Check the fleet rules
   ansible.builtin.import_tasks: instance-fleet-rules.yml
   vars:
     fleet_rules_apply: false
-    fleet_rules_allow_missing_build: "{{ fleet_refresh_follows | default(false) | bool }}"
+    fleet_rules_allow_missing_build: "{{ fleet_deploy_allow_missing_build | default(false) | bool }}"
 
 - name: Read the state of the nested containers
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['list', '--format', 'csv', '--columns', 'ns'] }}" }

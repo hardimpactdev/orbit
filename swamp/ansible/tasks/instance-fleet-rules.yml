@@ -5,7 +5,7 @@
 # Before any change, a fleet whose difference Orbit does not write is refused with `instance.container_fleet_drift`, and the result
 # names each difference (`fleet_drift`): a build rule with another value, or a nested container or the inner bridge that cannot be read; without
 # `fleet_rules_apply`, also a build rule that is absent unless the deployment start sets `fleet_rules_allow_missing_build`
-# because its refresh follows. A conflicting build rule always refuses. Without `fleet_rules_apply` an owned rule that differs passes: the refresh
+# at its initial start or restored-seed resume. A conflicting build rule always refuses. Without `fleet_rules_apply` an owned rule that differs passes: the refresh
 # writes it with the fleet stopped. With it, only owned rules and absent build rules are written, and then every rule must hold.
 # Input: instance-fleet.yml. Each change is one inner `incus` call; a rerun changes nothing.
 - { name: Name the fleet commands, ansible.builtin.import_tasks: instance-fleet.yml }

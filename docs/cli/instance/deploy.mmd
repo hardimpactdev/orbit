@@ -137,6 +137,7 @@ sequenceDiagram
       SW->>N: Start the restored fleet<br/>Ansible · tags fleet_resume
       %%> What it does:
       %%> - puts the default back on its newest seed and starts it, inner fleet included; the failed phase's result stays the run's result
+      %%> - admits absent build rules in that restored fleet, as Prepare did, without writing a map; conflicting maps still refuse, and the next deployment installs missing rules
     end
     Note over SW: Read the container result<br/>result file
     %%> Returns:
